@@ -7,73 +7,48 @@ use icy_engine_gui::TerminalMessage;
 use icy_ui::widget::{row, text, toggler, Space};
 use icy_ui::{Element, Length};
 
-use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
+use super::paint::SharedBrush;
+use super::{BrushSettings, ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode;
 use icy_engine_edit::tools::Tool;
-
-#[derive(Clone, Copy, Debug)]
-pub struct FillSettings {
-    pub primary: BrushPrimaryMode,
-    pub paint_char: char,
-    pub colorize_fg: bool,
-    pub colorize_bg: bool,
-    pub exact: bool,
-}
-
-impl Default for FillSettings {
-    fn default() -> Self {
-        Self {
-            primary: BrushPrimaryMode::HalfBlock,
-            paint_char: '\u{00B0}', // Light shade block (░)
-            colorize_fg: true,
-            colorize_bg: true,
-            exact: false,
-        }
-    }
-}
 
 /// Fill tool state
 pub struct FillTool {
     /// Last fill position (for status display)
     last_fill_pos: Option<Position>,
 
-    settings: FillSettings,
+    /// Shared brush state (owned by the editor, cloned across tools and toolbar).
+    brush: SharedBrush,
 
     brush_mode_control: ShaderSegmentedControl,
     color_filter_control: ShaderSegmentedControl,
 }
 
-impl Default for FillTool {
-    fn default() -> Self {
+impl FillTool {
+    pub fn new(brush: SharedBrush) -> Self {
         Self {
             last_fill_pos: None,
-            settings: FillSettings::default(),
+            brush,
             brush_mode_control: ShaderSegmentedControl::new(),
             color_filter_control: ShaderSegmentedControl::new(),
         }
     }
-}
 
-impl FillTool {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn set_brush_settings(&mut self, settings: BrushSettings) {
+        *self.brush.write() = settings;
     }
 
-    pub fn set_settings(&mut self, settings: FillSettings) {
-        self.settings = settings;
-    }
-
-    pub fn settings(&self) -> FillSettings {
-        self.settings
+    pub fn brush_settings(&self) -> BrushSettings {
+        *self.brush.read()
     }
 
     pub(crate) fn paint_char(&self) -> char {
-        self.settings.paint_char
+        self.brush.read().paint_char
     }
 
     pub(crate) fn brush_primary(&self) -> BrushPrimaryMode {
-        self.settings.primary
+        self.brush.read().primary
     }
 }
 
@@ -93,24 +68,24 @@ impl ToolHandler for FillTool {
     fn handle_message(&mut self, _ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
         match *msg {
             ToolMessage::SetBrushPrimary(primary) => {
-                self.settings.primary = primary;
+                self.brush.write().primary = primary;
                 ToolResult::None
             }
             ToolMessage::BrushOpenCharSelector => ToolResult::Ui(UiAction::OpenCharSelectorForBrush),
             ToolMessage::SetBrushChar(ch) => {
-                self.settings.paint_char = ch;
+                self.brush.write().paint_char = ch;
                 ToolResult::None
             }
             ToolMessage::ToggleForeground(v) => {
-                self.settings.colorize_fg = v;
+                self.brush.write().colorize_fg = v;
                 ToolResult::None
             }
             ToolMessage::ToggleBackground(v) => {
-                self.settings.colorize_bg = v;
+                self.brush.write().colorize_bg = v;
                 ToolResult::None
             }
             ToolMessage::FillToggleExact(v) => {
-                self.settings.exact = v;
+                self.brush.write().exact = v;
                 ToolResult::None
             }
             _ => ToolResult::None,
@@ -125,14 +100,18 @@ impl ToolHandler for FillTool {
 
                 self.last_fill_pos = Some(pos);
 
+                // Snapshot brush settings for the duration of this fill operation
+                // (BrushSettings is Copy, so this releases the lock immediately).
+                let settings = *self.brush.read();
+
                 // Fill only supports HalfBlock / Char / Colorize.
-                let primary = match self.settings.primary {
-                    BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => self.settings.primary,
+                let primary = match settings.primary {
+                    BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => settings.primary,
                     _ => BrushPrimaryMode::Char,
                 };
 
                 // If Colorize mode is selected but no channels are enabled, do nothing.
-                if matches!(primary, BrushPrimaryMode::Colorize) && !self.settings.colorize_fg && !self.settings.colorize_bg {
+                if matches!(primary, BrushPrimaryMode::Colorize) && !settings.colorize_fg && !settings.colorize_bg {
                     return ToolResult::None;
                 }
 
@@ -304,12 +283,12 @@ impl ToolHandler for FillTool {
                     // Determine if this cell matches (like src_egui FillOperation).
                     match primary {
                         BrushPrimaryMode::Char => {
-                            if (self.settings.exact && cur != base_char) || (!self.settings.exact && cur.ch != base_char.ch) {
+                            if (settings.exact && cur != base_char) || (!settings.exact && cur.ch != base_char.ch) {
                                 continue;
                             }
                         }
                         BrushPrimaryMode::Colorize => {
-                            if (self.settings.exact && cur != base_char) || (!self.settings.exact && cur.attribute != base_char.attribute) {
+                            if (settings.exact && cur != base_char) || (!settings.exact && cur.attribute != base_char.attribute) {
                                 continue;
                             }
                         }
@@ -319,14 +298,14 @@ impl ToolHandler for FillTool {
                     let mut repl = cur;
 
                     if matches!(primary, BrushPrimaryMode::Char) {
-                        repl.ch = self.settings.paint_char;
+                        repl.ch = settings.paint_char;
                     }
 
-                    if self.settings.colorize_fg {
+                    if settings.colorize_fg {
                         repl.attribute.set_foreground(fg);
                         repl.attribute.set_is_bold(caret_attr.is_bold());
                     }
-                    if self.settings.colorize_bg {
+                    if settings.colorize_bg {
                         repl.attribute.set_background(bg);
                     }
 
@@ -357,14 +336,15 @@ impl ToolHandler for FillTool {
     }
 
     fn view_toolbar(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
-        let primary = match self.settings.primary {
-            BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => self.settings.primary,
+        let settings = *self.brush.read();
+        let primary = match settings.primary {
+            BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => settings.primary,
             _ => BrushPrimaryMode::Char,
         };
 
         let segments = vec![
             Segment::text("Half Block", BrushPrimaryMode::HalfBlock),
-            Segment::char(self.settings.paint_char, BrushPrimaryMode::Char),
+            Segment::char(settings.paint_char, BrushPrimaryMode::Char),
             Segment::text("Colorize", BrushPrimaryMode::Colorize),
         ];
 
@@ -379,22 +359,22 @@ impl ToolHandler for FillTool {
 
         let color_filter_segments = vec![Segment::text("FG", 0usize), Segment::text("BG", 1usize)];
         let mut selected_indices = Vec::new();
-        if self.settings.colorize_fg {
+        if settings.colorize_fg {
             selected_indices.push(0);
         }
-        if self.settings.colorize_bg {
+        if settings.colorize_bg {
             selected_indices.push(1);
         }
         let color_filter = self
             .color_filter_control
             .view_multi_select(color_filter_segments, &selected_indices, font_for_color_filter, &ctx.theme)
-            .map(|msg| match msg {
-                SegmentedControlMessage::Toggled(0) => ToolMessage::ToggleForeground(!self.settings.colorize_fg),
-                SegmentedControlMessage::Toggled(1) => ToolMessage::ToggleBackground(!self.settings.colorize_bg),
-                _ => ToolMessage::ToggleForeground(self.settings.colorize_fg),
+            .map(move |msg| match msg {
+                SegmentedControlMessage::Toggled(0) => ToolMessage::ToggleForeground(!settings.colorize_fg),
+                SegmentedControlMessage::Toggled(1) => ToolMessage::ToggleBackground(!settings.colorize_bg),
+                _ => ToolMessage::ToggleForeground(settings.colorize_fg),
             });
 
-        let exact_toggle: Element<'_, ToolMessage> = toggler(self.settings.exact)
+        let exact_toggle: Element<'_, ToolMessage> = toggler(settings.exact)
             .label("Exact")
             .on_toggle(ToolMessage::FillToggleExact)
             .text_size(11)

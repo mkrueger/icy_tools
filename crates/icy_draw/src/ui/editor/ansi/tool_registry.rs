@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use icy_engine_edit::tools::{Tool, ToolPair};
 
-use super::tools::{self, ToolHandler, ToolId};
+use super::tools::{self, SharedBrush, ToolHandler, ToolId};
 use crate::SharedFontLibrary;
 
 /// Standard tool slots for the ANSI editor (all tools including Tag)
@@ -60,17 +60,17 @@ pub struct ToolRegistry {
 
 impl ToolRegistry {
     /// Create a new ToolRegistry with the given tool slots
-    pub fn new(slots: &[ToolPair], font_library: SharedFontLibrary) -> Self {
-        Self::new_internal(slots, font_library, false)
+    pub fn new(slots: &[ToolPair], font_library: SharedFontLibrary, brush: SharedBrush) -> Self {
+        Self::new_internal(slots, font_library, brush, false)
     }
 
     /// Create a new ToolRegistry for outline font editing
     /// Uses OutlineClickTool instead of ClickTool
-    pub fn new_for_outline(slots: &[ToolPair], font_library: SharedFontLibrary) -> Self {
-        Self::new_internal(slots, font_library, true)
+    pub fn new_for_outline(slots: &[ToolPair], font_library: SharedFontLibrary, brush: SharedBrush) -> Self {
+        Self::new_internal(slots, font_library, brush, true)
     }
 
-    fn new_internal(slots: &[ToolPair], font_library: SharedFontLibrary, use_outline_click: bool) -> Self {
+    fn new_internal(slots: &[ToolPair], font_library: SharedFontLibrary, brush: SharedBrush, use_outline_click: bool) -> Self {
         let mut tools: HashMap<TypeId, Box<dyn ToolHandler>> = HashMap::new();
 
         // Collect which tools are needed based on the slots
@@ -114,17 +114,17 @@ impl ToolRegistry {
         }
 
         if needs_pencil {
-            let pencil = Box::new(tools::PencilTool::new()) as Box<dyn ToolHandler>;
+            let pencil = Box::new(tools::PencilTool::new(brush.clone())) as Box<dyn ToolHandler>;
             tools.insert(pencil.as_any().type_id(), pencil);
         }
 
         if needs_shape {
-            let shape = Box::new(tools::ShapeTool::new()) as Box<dyn ToolHandler>;
+            let shape = Box::new(tools::ShapeTool::new(brush.clone())) as Box<dyn ToolHandler>;
             tools.insert(shape.as_any().type_id(), shape);
         }
 
         if needs_fill {
-            let fill = Box::new(tools::FillTool::new()) as Box<dyn ToolHandler>;
+            let fill = Box::new(tools::FillTool::new(brush.clone())) as Box<dyn ToolHandler>;
             tools.insert(fill.as_any().type_id(), fill);
         }
 

@@ -12,7 +12,7 @@ use icy_ui::{
 };
 
 use crate::fl;
-use crate::ui::editor::ansi::tools::BrushSettings;
+use crate::ui::editor::ansi::tools::{BrushSettings, SharedBrush};
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use crate::ui::FKeySets;
 use icy_engine::{BitFont, BufferType, Palette};
@@ -229,8 +229,8 @@ pub struct PipettePanelInfo {
 
 /// Top toolbar state
 pub struct TopToolbar {
-    /// Brush options (shared type with `PencilTool` / `ShapeTool`)
-    pub brush_options: BrushSettings,
+    /// Shared brush state (owned by the editor, cloned across tools and toolbar).
+    pub brush: SharedBrush,
     /// Selection options
     pub select_options: SelectOptions,
     /// Shape filled toggle
@@ -246,22 +246,20 @@ pub struct TopToolbar {
     pub color_filter_control: ShaderSegmentedControl,
 }
 
-impl Default for TopToolbar {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl TopToolbar {
-    pub fn new() -> Self {
+    pub fn new(brush: SharedBrush) -> Self {
+        // Toolbar default differs from BrushSettings::default() in `primary`:
+        // the toolbar shows Char as the initial brush mode.
+        {
+            let mut b = brush.write();
+            b.primary = BrushPrimaryMode::Char;
+            b.paint_char = '\u{00B0}';
+            b.brush_size = 1;
+            b.colorize_fg = true;
+            b.colorize_bg = true;
+        }
         Self {
-            brush_options: BrushSettings {
-                primary: BrushPrimaryMode::Char,
-                paint_char: '\u{00B0}',
-                brush_size: 1,
-                colorize_fg: true,
-                colorize_bg: true,
-            },
+            brush,
             select_options: SelectOptions::default(),
             filled: false,
             fill_exact_matching: false,
@@ -271,29 +269,37 @@ impl TopToolbar {
         }
     }
 
+    /// Snapshot the current brush settings (BrushSettings is Copy, so the lock
+    /// is released immediately).
+    pub fn brush_settings(&self) -> BrushSettings {
+        *self.brush.read()
+    }
+
     /// Update the top toolbar state
     pub fn update(&mut self, message: TopToolbarMessage) -> Task<TopToolbarMessage> {
         match message {
-            TopToolbarMessage::SetBrushPrimary(mode) => self.brush_options.primary = mode,
+            TopToolbarMessage::SetBrushPrimary(mode) => self.brush.write().primary = mode,
             TopToolbarMessage::BrushCharButton => {
                 // If Char is already active, request opening the char table.
-                if self.brush_options.primary == BrushPrimaryMode::Char {
+                if self.brush.read().primary == BrushPrimaryMode::Char {
                     return Task::done(TopToolbarMessage::OpenBrushCharTable);
                 }
-                self.brush_options.primary = BrushPrimaryMode::Char;
+                self.brush.write().primary = BrushPrimaryMode::Char;
             }
             TopToolbarMessage::OpenBrushCharTable => {
                 // handled at a higher level (AnsiEditor)
             }
-            TopToolbarMessage::SetBrushChar(ch) => self.brush_options.paint_char = ch,
-            TopToolbarMessage::ToggleColorizeFg(v) => self.brush_options.colorize_fg = v,
-            TopToolbarMessage::ToggleColorizeBg(v) => self.brush_options.colorize_bg = v,
-            TopToolbarMessage::SetBrushSize(s) => self.brush_options.brush_size = (s as usize).clamp(1, 9),
+            TopToolbarMessage::SetBrushChar(ch) => self.brush.write().paint_char = ch,
+            TopToolbarMessage::ToggleColorizeFg(v) => self.brush.write().colorize_fg = v,
+            TopToolbarMessage::ToggleColorizeBg(v) => self.brush.write().colorize_bg = v,
+            TopToolbarMessage::SetBrushSize(s) => self.brush.write().brush_size = (s as u32).clamp(1, 9),
             TopToolbarMessage::IncrementBrushSize => {
-                self.brush_options.brush_size = (self.brush_options.brush_size + 1).min(9);
+                let mut b = self.brush.write();
+                b.brush_size = (b.brush_size + 1).min(9);
             }
             TopToolbarMessage::DecrementBrushSize => {
-                self.brush_options.brush_size = self.brush_options.brush_size.saturating_sub(1).max(1);
+                let mut b = self.brush.write();
+                b.brush_size = b.brush_size.saturating_sub(1).max(1);
             }
             TopToolbarMessage::ToggleFilled(v) => self.filled = v,
             TopToolbarMessage::ToggleFillExact(v) => self.fill_exact_matching = v,
@@ -542,13 +548,14 @@ impl TopToolbar {
         palette: &Palette,
         _show_filled_toggle: bool,
     ) -> Element<'_, TopToolbarMessage> {
-        let primary = self.brush_options.primary;
+        let brush_options = *self.brush.read();
+        let primary = brush_options.primary;
 
         // Build segments for the brush mode segmented control
         // First segment shows the current paint char - clicking when selected opens char picker
         let segments = vec![
             Segment::text("Half Block", BrushPrimaryMode::HalfBlock),
-            Segment::char(self.brush_options.paint_char, BrushPrimaryMode::Char),
+            Segment::char(brush_options.paint_char, BrushPrimaryMode::Char),
             Segment::text("Shade", BrushPrimaryMode::Shading),
             Segment::text("Replace", BrushPrimaryMode::Replace),
             Segment::text("Blink", BrushPrimaryMode::Blink),
@@ -571,19 +578,19 @@ impl TopToolbar {
         // Index 0 = FG, Index 1 = BG
         let color_filter_segments = vec![Segment::text("FG", 0usize), Segment::text("BG", 1usize)];
         let mut selected_indices = Vec::new();
-        if self.brush_options.colorize_fg {
+        if brush_options.colorize_fg {
             selected_indices.push(0);
         }
-        if self.brush_options.colorize_bg {
+        if brush_options.colorize_bg {
             selected_indices.push(1);
         }
         let color_filter = self
             .color_filter_control
             .view_multi_select(color_filter_segments, &selected_indices, font_for_color_filter, theme)
-            .map(|msg| match msg {
-                SegmentedControlMessage::Toggled(0) => TopToolbarMessage::ToggleColorizeFg(!self.brush_options.colorize_fg),
-                SegmentedControlMessage::Toggled(1) => TopToolbarMessage::ToggleColorizeBg(!self.brush_options.colorize_bg),
-                _ => TopToolbarMessage::ToggleColorizeFg(self.brush_options.colorize_fg), // no-op fallback
+            .map(move |msg| match msg {
+                SegmentedControlMessage::Toggled(0) => TopToolbarMessage::ToggleColorizeFg(!brush_options.colorize_fg),
+                SegmentedControlMessage::Toggled(1) => TopToolbarMessage::ToggleColorizeBg(!brush_options.colorize_bg),
+                _ => TopToolbarMessage::ToggleColorizeFg(brush_options.colorize_fg), // no-op fallback
             });
 
         // Brush size selector with SVG arrow icons
@@ -611,7 +618,7 @@ impl TopToolbar {
             });
 
         // Size number in secondary color, monospace 14pt
-        let size_text = text(format!("{}", self.brush_options.brush_size))
+        let size_text = text(format!("{}", brush_options.brush_size))
             .size(14)
             .font(icy_ui::Font::MONOSPACE)
             .style(|theme: &Theme| text::Style { color: Some(theme.button.on) });
@@ -677,14 +684,15 @@ impl TopToolbar {
     fn view_fill_panel(&self, font: Option<BitFont>, theme: &Theme, caret_fg: u32, caret_bg: u32, palette: &Palette) -> Element<'_, TopToolbarMessage> {
         // Fill UI matches src_egui: HalfBlock / Colorize / Char + exact matching + FG/BG selectors.
         // If current brush mode is unsupported for Fill, treat it as Char.
-        let primary = match self.brush_options.primary {
-            BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => self.brush_options.primary,
+        let brush_options = *self.brush.read();
+        let primary = match brush_options.primary {
+            BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Char | BrushPrimaryMode::Colorize => brush_options.primary,
             _ => BrushPrimaryMode::Char,
         };
 
         let segments = vec![
             Segment::text("Half Block", BrushPrimaryMode::HalfBlock),
-            Segment::char(self.brush_options.paint_char, BrushPrimaryMode::Char),
+            Segment::char(brush_options.paint_char, BrushPrimaryMode::Char),
             Segment::text("Colorize", BrushPrimaryMode::Colorize),
         ];
 
@@ -700,19 +708,19 @@ impl TopToolbar {
         // FG/BG toggles (which colors to affect)
         let color_filter_segments = vec![Segment::text("FG", 0usize), Segment::text("BG", 1usize)];
         let mut selected_indices = Vec::new();
-        if self.brush_options.colorize_fg {
+        if brush_options.colorize_fg {
             selected_indices.push(0);
         }
-        if self.brush_options.colorize_bg {
+        if brush_options.colorize_bg {
             selected_indices.push(1);
         }
         let color_filter = self
             .color_filter_control
             .view_multi_select(color_filter_segments, &selected_indices, font, theme)
-            .map(|msg| match msg {
-                SegmentedControlMessage::Toggled(0) => TopToolbarMessage::ToggleColorizeFg(!self.brush_options.colorize_fg),
-                SegmentedControlMessage::Toggled(1) => TopToolbarMessage::ToggleColorizeBg(!self.brush_options.colorize_bg),
-                _ => TopToolbarMessage::ToggleColorizeFg(self.brush_options.colorize_fg),
+            .map(move |msg| match msg {
+                SegmentedControlMessage::Toggled(0) => TopToolbarMessage::ToggleColorizeFg(!brush_options.colorize_fg),
+                SegmentedControlMessage::Toggled(1) => TopToolbarMessage::ToggleColorizeBg(!brush_options.colorize_bg),
+                _ => TopToolbarMessage::ToggleColorizeFg(brush_options.colorize_fg),
             });
 
         let exact_toggle: Element<'_, TopToolbarMessage> = toggler(self.fill_exact_matching)

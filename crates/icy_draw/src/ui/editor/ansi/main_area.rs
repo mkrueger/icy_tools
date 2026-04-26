@@ -98,7 +98,11 @@ impl AnsiEditorMainArea {
     }
 
     pub fn with_buffer(buffer: icy_engine::TextBuffer, file_path: Option<PathBuf>, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
-        let mut tool_registry = tool_registry::ToolRegistry::new(tool_registry::ANSI_TOOL_SLOTS, font_library);
+        // Single shared brush state for the editor: tools and top toolbar all
+        // hold an `Arc<RwLock<BrushSettings>>` clone of this.
+        let brush = tools::new_shared_brush();
+
+        let mut tool_registry = tool_registry::ToolRegistry::new(tool_registry::ANSI_TOOL_SLOTS, font_library, brush.clone());
 
         // Default tool is Click. Take it from the registry so it becomes the active boxed tool.
         let mut current_tool = tool_registry.take_for(tools::ToolId::Tool(Tool::Click));
@@ -106,7 +110,7 @@ impl AnsiEditorMainArea {
             click.sync_fkey_set_from_options(&options);
         }
 
-        let (mut core, palette, _format_mode) = AnsiEditorCore::from_buffer_inner(buffer, options, current_tool);
+        let (mut core, palette, _format_mode) = AnsiEditorCore::from_buffer_inner(buffer, options, current_tool, brush);
 
         let mut tool_panel = ToolPanel::new(tool_registry);
         tool_panel.set_tool(core.current_tool_for_panel());
@@ -265,7 +269,7 @@ impl AnsiEditorMainArea {
     /// Collect per-tool settings from both the registry (inactive tools) and
     /// the currently active tool.
     fn collect_tool_session_state(&self) -> tool_session::AnsiToolSessionState {
-        use tool_session::{AnsiToolSessionState, BrushSessionState, FillSessionState, ShapeSessionState};
+        use tool_session::{AnsiToolSessionState, BrushSessionState, ShapeSessionState};
 
         let mut out = AnsiToolSessionState::default();
 
@@ -275,31 +279,15 @@ impl AnsiEditorMainArea {
             tools::ToolId::Paste => Tool::Click,
         };
 
-        // Pencil
-        if let Some(p) = self.tool_panel.registry.get_ref::<tools::PencilTool>() {
-            out.pencil = BrushSessionState::from(p.brush_settings());
-        } else if let Some(p) = self.core.current_tool_any().downcast_ref::<tools::PencilTool>() {
-            out.pencil = BrushSessionState::from(p.brush_settings());
-        }
+        // Single shared brush state — read once from the editor.
+        out.brush = BrushSessionState::from(*self.core.brush().read());
 
-        // Shape
+        // Shape variant — depends on whether ShapeTool sits in the registry or
+        // is currently the active tool.
         if let Some(s) = self.tool_panel.registry.get_ref::<tools::ShapeTool>() {
-            out.shape = ShapeSessionState {
-                brush: BrushSessionState::from(s.brush_settings()),
-                shape: s.tool(),
-            };
+            out.shape = ShapeSessionState { shape: s.tool() };
         } else if let Some(s) = self.core.current_tool_any().downcast_ref::<tools::ShapeTool>() {
-            out.shape = ShapeSessionState {
-                brush: BrushSessionState::from(s.brush_settings()),
-                shape: s.tool(),
-            };
-        }
-
-        // Fill
-        if let Some(f) = self.tool_panel.registry.get_ref::<tools::FillTool>() {
-            out.fill = FillSessionState::from(f.settings());
-        } else if let Some(f) = self.core.current_tool_any().downcast_ref::<tools::FillTool>() {
-            out.fill = FillSessionState::from(f.settings());
+            out.shape = ShapeSessionState { shape: s.tool() };
         }
 
         // Select
@@ -322,47 +310,20 @@ impl AnsiEditorMainArea {
     /// Apply per-tool settings loaded from a session blob to both the registry
     /// and the currently active tool (whichever holds each tool instance).
     fn apply_tool_session_state(&mut self, state: &tool_session::AnsiToolSessionState) {
-        // Pencil
-        let pencil_brush: tools::BrushSettings = state.pencil.into();
-        if self
-            .tool_panel
-            .registry
-            .with_mut::<tools::PencilTool, _>(|p| p.set_brush(pencil_brush))
-            .is_none()
-        {
-            if let Some(p) = self.core.current_tool_any_mut().downcast_mut::<tools::PencilTool>() {
-                p.set_brush(pencil_brush);
-            }
-        }
+        // Restore the single shared brush state.
+        let brush_settings: tools::BrushSettings = state.brush.into();
+        *self.core.brush().write() = brush_settings;
 
-        // Shape
-        let shape_brush: tools::BrushSettings = state.shape.brush.into();
+        // Shape variant
         let shape_variant = state.shape.shape;
         if self
             .tool_panel
             .registry
-            .with_mut::<tools::ShapeTool, _>(|s| {
-                s.set_brush(shape_brush);
-                s.set_tool(shape_variant);
-            })
+            .with_mut::<tools::ShapeTool, _>(|s| s.set_tool(shape_variant))
             .is_none()
         {
             if let Some(s) = self.core.current_tool_any_mut().downcast_mut::<tools::ShapeTool>() {
-                s.set_brush(shape_brush);
                 s.set_tool(shape_variant);
-            }
-        }
-
-        // Fill
-        let fill_settings: tools::FillSettings = state.fill.into();
-        if self
-            .tool_panel
-            .registry
-            .with_mut::<tools::FillTool, _>(|f| f.set_settings(fill_settings))
-            .is_none()
-        {
-            if let Some(f) = self.core.current_tool_any_mut().downcast_mut::<tools::FillTool>() {
-                f.set_settings(fill_settings);
             }
         }
 

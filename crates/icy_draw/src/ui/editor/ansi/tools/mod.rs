@@ -48,10 +48,10 @@ mod shape;
 mod tag;
 
 pub use click::ClickTool;
-pub use fill::{FillSettings, FillTool};
+pub use fill::FillTool;
 pub use font::FontTool;
 pub use outline_click::OutlineClickTool;
-pub use paint::BrushSettings;
+pub use paint::{new_shared_brush, BrushSettings, SharedBrush};
 pub use paste::{PasteAction, PasteTool};
 pub use pencil::PencilTool;
 pub use pipette::PipetteTool;

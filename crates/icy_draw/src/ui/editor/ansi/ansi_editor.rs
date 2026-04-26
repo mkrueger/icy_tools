@@ -744,6 +744,7 @@ impl AnsiEditorCore {
         buffer: TextBuffer,
         options: Arc<RwLock<Settings>>,
         current_tool: Box<dyn tools::ToolHandler>,
+        brush: tools::SharedBrush,
     ) -> (Self, icy_engine::Palette, icy_engine_edit::FormatMode) {
         // Clone the palette before moving buffer into EditState
         let palette = buffer.palette.clone();
@@ -772,7 +773,7 @@ impl AnsiEditorCore {
         // Enable caret blinking by default (Click tool is the default)
         canvas.set_has_focus(true);
 
-        let top_toolbar = TopToolbar::new();
+        let top_toolbar = TopToolbar::new(brush);
 
         // Read display settings before moving options
         let (show_line_numbers, show_layer_borders) = {
@@ -3142,6 +3143,12 @@ impl AnsiEditorCore {
             tools::ToolId::Tool(t) => t,
             tools::ToolId::Paste => Tool::Click,
         }
+    }
+
+    /// Clone the editor's shared brush state. Used by wrappers that need to
+    /// rebuild the tool registry while keeping the brush state stable.
+    pub(crate) fn brush(&self) -> tools::SharedBrush {
+        self.top_toolbar.brush.clone()
     }
 
     /// Access the currently active tool as `&dyn Any` for downcasting.

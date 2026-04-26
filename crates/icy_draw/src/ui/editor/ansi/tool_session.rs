@@ -11,10 +11,10 @@
 use icy_engine_edit::tools::Tool;
 use serde::{Deserialize, Serialize};
 
-use super::tools::{BrushSettings, FillSettings};
+use super::tools::BrushSettings;
 use super::widget::toolbar::top::{BrushPrimaryMode, SelectionMode};
 
-/// Brush-style tool settings (used by Pencil and Shape tools).
+/// Brush-style tool settings shared by Pencil, Shape and Fill tools.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct BrushSessionState {
     pub primary: BrushPrimaryMode,
@@ -22,6 +22,10 @@ pub struct BrushSessionState {
     pub brush_size: u32,
     pub colorize_fg: bool,
     pub colorize_bg: bool,
+    /// Fill tool: only fill cells whose character/colors exactly match
+    /// (ignored by Pencil/Shape).
+    #[serde(default)]
+    pub exact: bool,
 }
 
 impl Default for BrushSessionState {
@@ -36,9 +40,10 @@ impl From<BrushSettings> for BrushSessionState {
         Self {
             primary: b.primary,
             paint_char: b.paint_char,
-            brush_size: b.brush_size as u32,
+            brush_size: b.brush_size,
             colorize_fg: b.colorize_fg,
             colorize_bg: b.colorize_bg,
+            exact: b.exact,
         }
     }
 }
@@ -48,9 +53,10 @@ impl From<BrushSessionState> for BrushSettings {
         Self {
             primary: s.primary,
             paint_char: s.paint_char,
-            brush_size: s.brush_size.max(1) as usize,
+            brush_size: s.brush_size.max(1),
             colorize_fg: s.colorize_fg,
             colorize_bg: s.colorize_bg,
+            exact: s.exact,
         }
     }
 }
@@ -58,7 +64,6 @@ impl From<BrushSessionState> for BrushSettings {
 /// Shape tool extends brush with the chosen shape variant.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct ShapeSessionState {
-    pub brush: BrushSessionState,
     /// Currently selected shape (Line, RectangleOutline, RectangleFilled,
     /// EllipseOutline, EllipseFilled).
     #[serde(default = "default_shape_tool")]
@@ -69,46 +74,6 @@ fn default_shape_tool() -> Tool {
     Tool::RectangleOutline
 }
 
-/// Fill tool settings.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct FillSessionState {
-    pub primary: BrushPrimaryMode,
-    pub paint_char: char,
-    pub colorize_fg: bool,
-    pub colorize_bg: bool,
-    pub exact: bool,
-}
-
-impl Default for FillSessionState {
-    fn default() -> Self {
-        Self::from(FillSettings::default())
-    }
-}
-
-impl From<FillSettings> for FillSessionState {
-    fn from(f: FillSettings) -> Self {
-        Self {
-            primary: f.primary,
-            paint_char: f.paint_char,
-            colorize_fg: f.colorize_fg,
-            colorize_bg: f.colorize_bg,
-            exact: f.exact,
-        }
-    }
-}
-
-impl From<FillSessionState> for FillSettings {
-    fn from(s: FillSessionState) -> Self {
-        Self {
-            primary: s.primary,
-            paint_char: s.paint_char,
-            colorize_fg: s.colorize_fg,
-            colorize_bg: s.colorize_bg,
-            exact: s.exact,
-        }
-    }
-}
-
 /// Aggregate tool session state serialized into the editor session blob.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AnsiToolSessionState {
@@ -116,14 +81,12 @@ pub struct AnsiToolSessionState {
     #[serde(default)]
     pub selected_tool: Tool,
 
+    /// Single shared brush state covering Pencil/Shape/Fill.
     #[serde(default)]
-    pub pencil: BrushSessionState,
+    pub brush: BrushSessionState,
 
     #[serde(default)]
     pub shape: ShapeSessionState,
-
-    #[serde(default)]
-    pub fill: FillSessionState,
 
     #[serde(default)]
     pub selection_mode: SelectionMode,

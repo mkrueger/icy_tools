@@ -12,7 +12,7 @@ use icy_ui::keyboard::key::Physical;
 use icy_ui::widget::{button, row, svg, text, toggler, Space};
 use icy_ui::{Element, Length, Theme};
 
-use super::paint::{apply_stamp_at_doc_pos, begin_paint_undo, BrushSettings};
+use super::paint::{apply_stamp_at_doc_pos, begin_paint_undo, BrushSettings, SharedBrush};
 use super::{ToolContext, ToolHandler, ToolId, ToolMessage, ToolResult, ToolViewContext, UiAction};
 use crate::ui::editor::ansi::shape_points::shape_points;
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
@@ -39,7 +39,8 @@ pub struct ShapeTool {
     clear_mode: bool,
 
     tool: Tool,
-    brush: BrushSettings,
+    /// Shared brush state (owned by the editor, cloned across tools and toolbar).
+    brush: SharedBrush,
 
     brush_mode_control: ShaderSegmentedControl,
     color_filter_control: ShaderSegmentedControl,
@@ -47,8 +48,8 @@ pub struct ShapeTool {
     undo: Option<icy_engine_edit::AtomicUndoGuard>,
 }
 
-impl Default for ShapeTool {
-    fn default() -> Self {
+impl ShapeTool {
+    pub fn new(brush: SharedBrush) -> Self {
         Self {
             start_pos: None,
             current_pos: None,
@@ -58,18 +59,12 @@ impl Default for ShapeTool {
             draw_button: MouseButton::Left,
             clear_mode: false,
             tool: Tool::RectangleOutline,
-            brush: BrushSettings::default(),
+            brush,
 
             brush_mode_control: ShaderSegmentedControl::new(),
             color_filter_control: ShaderSegmentedControl::new(),
             undo: None,
         }
-    }
-}
-
-impl ShapeTool {
-    pub fn new() -> Self {
-        Self::default()
     }
 
     pub fn cancel_drag(&mut self) {
@@ -88,19 +83,19 @@ impl ShapeTool {
     }
 
     pub fn brush_settings(&self) -> BrushSettings {
-        self.brush
+        *self.brush.read()
     }
 
     pub(crate) fn paint_char(&self) -> char {
-        self.brush.paint_char
+        self.brush.read().paint_char
     }
 
     pub(crate) fn brush_primary(&self) -> BrushPrimaryMode {
-        self.brush.primary
+        self.brush.read().primary
     }
 
-    pub(crate) fn brush_size(&self) -> usize {
-        self.brush.brush_size
+    pub(crate) fn brush_size(&self) -> u32 {
+        self.brush.read().brush_size
     }
 
     pub fn tool(&self) -> Tool {
@@ -112,7 +107,7 @@ impl ShapeTool {
     }
 
     pub fn set_brush(&mut self, brush: BrushSettings) {
-        self.brush = brush;
+        *self.brush.write() = brush;
     }
 
     pub fn drag_snapshot(&self) -> Option<ShapeDragSnapshot> {
@@ -299,24 +294,24 @@ impl ToolHandler for ShapeTool {
     fn handle_message(&mut self, _ctx: &mut ToolContext<'_>, msg: &ToolMessage) -> ToolResult {
         match *msg {
             ToolMessage::SetBrushPrimary(primary) => {
-                self.brush.primary = primary;
+                self.brush.write().primary = primary;
                 ToolResult::None
             }
             ToolMessage::BrushOpenCharSelector => ToolResult::Ui(UiAction::OpenCharSelectorForBrush),
             ToolMessage::SetBrushChar(ch) => {
-                self.brush.paint_char = ch;
+                self.brush.write().paint_char = ch;
                 ToolResult::None
             }
             ToolMessage::SetBrushSize(size) => {
-                self.brush.brush_size = (size.max(1).min(9)) as usize;
+                self.brush.write().brush_size = (size.max(1).min(9)) as u32;
                 ToolResult::None
             }
             ToolMessage::ToggleForeground(v) => {
-                self.brush.colorize_fg = v;
+                self.brush.write().colorize_fg = v;
                 ToolResult::None
             }
             ToolMessage::ToggleBackground(v) => {
-                self.brush.colorize_bg = v;
+                self.brush.write().colorize_bg = v;
                 ToolResult::None
             }
             ToolMessage::ToggleFilled(v) => {
@@ -349,10 +344,11 @@ impl ToolHandler for ShapeTool {
     }
 
     fn view_toolbar(&self, ctx: &ToolViewContext) -> Element<'_, ToolMessage> {
-        let primary = self.brush.primary;
+        let settings = *self.brush.read();
+        let primary = settings.primary;
         let segments = vec![
             Segment::text("Half Block", BrushPrimaryMode::HalfBlock),
-            Segment::char(self.brush.paint_char, BrushPrimaryMode::Char),
+            Segment::char(settings.paint_char, BrushPrimaryMode::Char),
             Segment::text("Shade", BrushPrimaryMode::Shading),
             Segment::text("Replace", BrushPrimaryMode::Replace),
             Segment::text("Blink", BrushPrimaryMode::Blink),
@@ -370,19 +366,19 @@ impl ToolHandler for ShapeTool {
 
         let color_filter_segments = vec![Segment::text("FG", 0usize), Segment::text("BG", 1usize)];
         let mut selected_indices = Vec::new();
-        if self.brush.colorize_fg {
+        if settings.colorize_fg {
             selected_indices.push(0);
         }
-        if self.brush.colorize_bg {
+        if settings.colorize_bg {
             selected_indices.push(1);
         }
         let color_filter = self
             .color_filter_control
             .view_multi_select(color_filter_segments, &selected_indices, font_for_color_filter, &ctx.theme)
-            .map(|msg| match msg {
-                SegmentedControlMessage::Toggled(0) => ToolMessage::ToggleForeground(!self.brush.colorize_fg),
-                SegmentedControlMessage::Toggled(1) => ToolMessage::ToggleBackground(!self.brush.colorize_bg),
-                _ => ToolMessage::ToggleForeground(self.brush.colorize_fg),
+            .map(move |msg| match msg {
+                SegmentedControlMessage::Toggled(0) => ToolMessage::ToggleForeground(!settings.colorize_fg),
+                SegmentedControlMessage::Toggled(1) => ToolMessage::ToggleBackground(!settings.colorize_bg),
+                _ => ToolMessage::ToggleForeground(settings.colorize_fg),
             });
 
         let _show_filled_toggle = matches!(
@@ -414,13 +410,13 @@ impl ToolHandler for ShapeTool {
                 svg::Style { color: Some(color) }
             });
 
-        let size_text = text(format!("{}", self.brush.brush_size))
+        let size_text = text(format!("{}", settings.brush_size))
             .size(14)
             .font(icy_ui::Font::MONOSPACE)
             .style(|theme: &Theme| text::Style { color: Some(theme.button.on) });
 
-        let dec_size = self.brush.brush_size.saturating_sub(1).max(1);
-        let inc_size = (self.brush.brush_size + 1).min(9);
+        let dec_size = settings.brush_size.saturating_sub(1).max(1);
+        let inc_size = (settings.brush_size + 1).min(9);
 
         row![
             Space::new().width(Length::Fill),
@@ -537,7 +533,8 @@ impl ToolHandler for ShapeTool {
                         return ToolResult::EndCapture;
                     };
 
-                    let primary = self.brush.primary;
+                    let settings = *self.brush.read();
+                    let primary = settings.primary;
                     let is_half_block_mode = matches!(primary, BrushPrimaryMode::HalfBlock);
 
                     if is_half_block_mode {
@@ -566,7 +563,7 @@ impl ToolHandler for ShapeTool {
                                 }
                                 let _ = _ctx.state.set_char_in_atomic(cell_layer, AttributedChar::invisible());
                             } else {
-                                apply_stamp_at_doc_pos(_ctx.state, self.brush, cell_doc, is_top, self.draw_button);
+                                apply_stamp_at_doc_pos(_ctx.state, settings, cell_doc, is_top, self.draw_button);
                             }
                         }
                     } else {
@@ -590,7 +587,7 @@ impl ToolHandler for ShapeTool {
                                 }
                                 let _ = _ctx.state.set_char_in_atomic(layer_pos, AttributedChar::invisible());
                             } else {
-                                apply_stamp_at_doc_pos(_ctx.state, self.brush, p, true, self.draw_button);
+                                apply_stamp_at_doc_pos(_ctx.state, settings, p, true, self.draw_button);
                             }
                         }
                     }
@@ -629,29 +626,31 @@ impl ToolHandler for ShapeTool {
                 // - Alt+] reset to 1
                 if modifiers.alt() && !modifiers.control() {
                     let mut changed = false;
+                    let mut b = self.brush.write();
                     match physical_key {
                         Physical::Code(icy_ui::keyboard::key::Code::Equal) => {
-                            let new_size: usize = (self.brush.brush_size + 1).min(9);
-                            if new_size != self.brush.brush_size {
-                                self.brush.brush_size = new_size;
+                            let new_size: u32 = (b.brush_size + 1).min(9);
+                            if new_size != b.brush_size {
+                                b.brush_size = new_size;
                                 changed = true;
                             }
                         }
                         Physical::Code(icy_ui::keyboard::key::Code::Minus) => {
-                            let new_size = self.brush.brush_size.saturating_sub(1).max(1);
-                            if new_size != self.brush.brush_size {
-                                self.brush.brush_size = new_size;
+                            let new_size = b.brush_size.saturating_sub(1).max(1);
+                            if new_size != b.brush_size {
+                                b.brush_size = new_size;
                                 changed = true;
                             }
                         }
                         Physical::Code(icy_ui::keyboard::key::Code::BracketRight) => {
-                            if self.brush.brush_size != 1 {
-                                self.brush.brush_size = 1;
+                            if b.brush_size != 1 {
+                                b.brush_size = 1;
                                 changed = true;
                             }
                         }
                         _ => {}
                     }
+                    drop(b);
 
                     if changed {
                         return ToolResult::Redraw;

@@ -1,8 +1,11 @@
 //! Shared paint helpers for tool handlers.
 
+use std::sync::Arc;
+
 use icy_engine::{MouseButton, Palette, Position, TextPane};
 use icy_engine_edit::brushes::{BrushMode as EngineBrushMode, ColorMode as EngineColorMode, DrawContext, PointRole};
 use icy_engine_edit::{AtomicUndoGuard, AttributedChar, EditState};
+use parking_lot::RwLock;
 
 use crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode;
 
@@ -11,13 +14,22 @@ pub const DEFAULT_FG: u32 = 7;
 /// Default BG color index when filter is disabled (black)
 pub const DEFAULT_BG: u32 = 0;
 
-#[derive(Clone, Copy, Debug)]
+/// Unified brush settings shared by Pencil / Shape / Fill / TopToolbar.
+///
+/// Every brush-style tool reads from and writes to a single `SharedBrush`
+/// owned by the editor (`AnsiEditorCore`/`CharFontEditor`), so the toolbar UI
+/// and the tool views can no longer disagree about brush mode, paint char,
+/// brush size, color filters or the Fill-specific exact-match flag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BrushSettings {
     pub primary: BrushPrimaryMode,
     pub paint_char: char,
-    pub brush_size: usize,
+    pub brush_size: u32,
     pub colorize_fg: bool,
     pub colorize_bg: bool,
+    /// Fill-tool: only fill cells whose character/colors exactly match the
+    /// hovered cell. Ignored by Pencil/Shape.
+    pub exact: bool,
 }
 
 impl Default for BrushSettings {
@@ -28,8 +40,17 @@ impl Default for BrushSettings {
             brush_size: 1,
             colorize_fg: true,
             colorize_bg: true,
+            exact: false,
         }
     }
+}
+
+/// Editor-owned brush state shared between the toolbar and every brush tool.
+pub type SharedBrush = Arc<RwLock<BrushSettings>>;
+
+/// Construct a fresh shared brush state with default settings.
+pub fn new_shared_brush() -> SharedBrush {
+    Arc::new(RwLock::new(BrushSettings::default()))
 }
 
 pub fn begin_paint_undo(state: &mut EditState, desc: String) -> AtomicUndoGuard {

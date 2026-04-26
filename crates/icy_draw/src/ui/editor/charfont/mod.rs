@@ -288,15 +288,16 @@ impl CharFontEditor {
 
         // Create tool registry for managing tool instances with correct slots
         // Use OutlineClickTool for outline fonts
+        let brush = tools::new_shared_brush();
         let mut tool_registry = if is_outline {
-            tool_registry::ToolRegistry::new_for_outline(initial_slots, font_library.clone())
+            tool_registry::ToolRegistry::new_for_outline(initial_slots, font_library.clone(), brush.clone())
         } else {
-            tool_registry::ToolRegistry::new(initial_slots, font_library.clone())
+            tool_registry::ToolRegistry::new(initial_slots, font_library.clone(), brush.clone())
         };
 
         // Create AnsiEditorCore with a ClickTool from the registry
         let current_tool = tool_registry.take_for(tools::ToolId::Tool(icy_engine_edit::tools::Tool::Click));
-        let (ansi_core, _, _) = AnsiEditorCore::from_buffer_inner(buffer, options.clone(), current_tool);
+        let (ansi_core, _, _) = AnsiEditorCore::from_buffer_inner(buffer, options.clone(), current_tool, brush.clone());
 
         // Create separate outline preview buffer/screen/canvas
         let mut preview_buffer = TextBuffer::create((30, 12));
@@ -524,10 +525,11 @@ impl CharFontEditor {
         }
 
         // Create new tool registry with the appropriate slots and tool type
+        let brush = self.ansi_core.brush();
         let mut new_registry = if is_outline {
-            tool_registry::ToolRegistry::new_for_outline(needed_slots, self.font_library.clone())
+            tool_registry::ToolRegistry::new_for_outline(needed_slots, self.font_library.clone(), brush)
         } else {
-            tool_registry::ToolRegistry::new(needed_slots, self.font_library.clone())
+            tool_registry::ToolRegistry::new(needed_slots, self.font_library.clone(), brush)
         };
 
         // Switch to click tool from the new registry (force because tool ID might be same but implementation differs)
