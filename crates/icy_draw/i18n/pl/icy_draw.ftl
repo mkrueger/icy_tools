@@ -593,3 +593,24 @@ animation-export-encoding=Kodowanie wideo…
 animation-export-cancelled=Eksport anulowany
 animation-export-no-frames=Brak klatek do eksportu
 animation-export-failed=Błąd eksportu: { $error }
+
+# Tool / brush discoverability hints (status bar)
+tool-hint-click=Klik  •  Wpisuj znaki lub przeciągnij prostokątne zaznaczenie
+tool-hint-select=Zaznaczenie  •  Przeciągnij, Shift dodaje, Alt odejmuje
+tool-hint-pencil=Ołówek  •  { $brush }
+tool-hint-line=Linia  •  { $brush }
+tool-hint-rectangle=Prostokąt  •  { $brush }
+tool-hint-filled_rectangle=Wypełniony prostokąt  •  { $brush }
+tool-hint-ellipse=Elipsa  •  { $brush }
+tool-hint-filled_ellipse=Wypełniona elipsa  •  { $brush }
+tool-hint-pipette=Pipeta  •  Kliknij, aby pobrać fg/bg/znak
+tool-hint-fill=Wypełnienie  •  { $brush }
+tool-hint-font=Czcionka  •  Umieść kursor TDF/Figlet i pisz
+tool-hint-tag=Tag  •  Kliknij, aby umieścić rozwijany tag
+tool-hint-paste=Wklej  •  Kliknij, aby zatwierdzić, Esc anuluje
+brush-hint-char=Tryb znak — maluje '{ $ch }'
+brush-hint-half_block=Tryb półbloku (2× rozdzielczość pionowa)
+brush-hint-shading=Tryb cieniowania (LPM rozjaśnia, PPM przyciemnia)
+brush-hint-replace=Tryb zamiany (zmienia kolor istniejących znaków)
+brush-hint-blink=Tryb migotania (przełącza atrybut migotania)
+brush-hint-colorize=Tryb koloryzacji (zmienia tylko kolory)

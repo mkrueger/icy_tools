@@ -590,3 +590,24 @@ animation-export-encoding=Videó kódolása…
 animation-export-cancelled=Exportálás megszakítva
 animation-export-no-frames=Nincs exportálandó képkocka
 animation-export-failed=Exportálási hiba: { $error }
+
+# Tool / brush discoverability hints (status bar)
+tool-hint-click=Kattintás  •  Karakterek beírása vagy téglalap-kijelölés húzása
+tool-hint-select=Kijelölés  •  Húzással jelölj, Shift hozzáad, Alt kivon
+tool-hint-pencil=Ceruza  •  { $brush }
+tool-hint-line=Vonal  •  { $brush }
+tool-hint-rectangle=Téglalap  •  { $brush }
+tool-hint-filled_rectangle=Kitöltött téglalap  •  { $brush }
+tool-hint-ellipse=Ellipszis  •  { $brush }
+tool-hint-filled_ellipse=Kitöltött ellipszis  •  { $brush }
+tool-hint-pipette=Színpipetta  •  Kattintással mintavételez (fg/bg/karakter)
+tool-hint-fill=Kitöltés  •  { $brush }
+tool-hint-font=Betűtípus  •  Helyezz el egy TDF/Figlet kurzort, majd gépelj
+tool-hint-tag=Címke  •  Kattintással helyezz el egy bővíthető címkét
+tool-hint-paste=Beillesztés  •  Kattintás megerősíti, Esc megszakítja
+brush-hint-char=Karakter mód — '{ $ch }' karaktert fest
+brush-hint-half_block=Félblokk mód (2× függőleges felbontás)
+brush-hint-shading=Árnyékolás mód (bal vil., jobb söt.)
+brush-hint-replace=Csere mód (átszínezi a meglévő karaktereket)
+brush-hint-blink=Villogás mód (villogás attribútumot kapcsol)
+brush-hint-colorize=Színezés mód (csak a színeket változtatja)

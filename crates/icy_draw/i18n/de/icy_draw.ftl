@@ -975,3 +975,24 @@ tag-edit-preview=Vorschau
 tag-edit-replacement=Ersetzung
 tag-edit-position=Position
 tag-edit-filter=Filter…
+
+# Tool / brush discoverability hints (status bar)
+tool-hint-click=Klick  •  Zeichen tippen oder rechteckige Auswahl ziehen
+tool-hint-select=Auswählen  •  Ziehen zum Auswählen, Shift = hinzufügen, Alt = abziehen
+tool-hint-pencil=Stift  •  { $brush }
+tool-hint-line=Linie  •  { $brush }
+tool-hint-rectangle=Rechteck  •  { $brush }
+tool-hint-filled_rectangle=Gefülltes Rechteck  •  { $brush }
+tool-hint-ellipse=Ellipse  •  { $brush }
+tool-hint-filled_ellipse=Gefüllte Ellipse  •  { $brush }
+tool-hint-pipette=Farbpipette  •  Klicken um Vorder-/Hintergrund/Zeichen zu übernehmen
+tool-hint-fill=Füllen  •  { $brush }
+tool-hint-font=Schrift  •  TDF/Figlet-Cursor setzen, dann tippen
+tool-hint-tag=Tag  •  Klicken um einen expandierenden Tag zu setzen
+tool-hint-paste=Einfügen  •  Klicken zum Übernehmen, Esc zum Abbrechen
+brush-hint-char=Zeichenmodus — malt '{ $ch }'
+brush-hint-half_block=Halbblock-Modus (2× vertikale Auflösung)
+brush-hint-shading=Schattier-Modus (LMT heller, RMT dunkler)
+brush-hint-replace=Ersetzen-Modus (färbt vorhandene Zeichen um)
+brush-hint-blink=Blink-Modus (schaltet Blink-Attribut um)
+brush-hint-colorize=Einfärben-Modus (ändert nur Farben)

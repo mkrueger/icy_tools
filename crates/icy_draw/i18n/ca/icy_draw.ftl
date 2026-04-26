@@ -593,3 +593,24 @@ animation-export-encoding=Codificant vídeo…
 animation-export-cancelled=Exportació cancel·lada
 animation-export-no-frames=No hi ha fotogrames per exportar
 animation-export-failed=Error d'exportació: { $error }
+
+# Tool / brush discoverability hints (status bar)
+tool-hint-click=Clic  •  Escriviu caràcters o arrossegueu una selecció rectangular
+tool-hint-select=Selecciona  •  Arrossegueu per seleccionar, Maj afegeix, Alt resta
+tool-hint-pencil=Llapis  •  { $brush }
+tool-hint-line=Línia  •  { $brush }
+tool-hint-rectangle=Rectangle  •  { $brush }
+tool-hint-filled_rectangle=Rectangle ple  •  { $brush }
+tool-hint-ellipse=El·lipse  •  { $brush }
+tool-hint-filled_ellipse=El·lipse plena  •  { $brush }
+tool-hint-pipette=Comptagotes  •  Clic per agafar fg/bg/caràcter
+tool-hint-fill=Omple  •  { $brush }
+tool-hint-font=Tipus de lletra  •  Col·loqueu un cursor TDF/Figlet i escriviu
+tool-hint-tag=Etiqueta  •  Clic per col·locar una etiqueta expandible
+tool-hint-paste=Enganxa  •  Clic per confirmar, Esc per cancel·lar
+brush-hint-char=Mode caràcter — pinta '{ $ch }'
+brush-hint-half_block=Mode mig bloc (resolució vertical 2×)
+brush-hint-shading=Mode ombrejat (esq. aclareix, dr. enfosqueix)
+brush-hint-replace=Mode reemplaça (recolora caràcters existents)
+brush-hint-blink=Mode parpelleig (commuta l'atribut de parpelleig)
+brush-hint-colorize=Mode acolorir (canvia només els colors)

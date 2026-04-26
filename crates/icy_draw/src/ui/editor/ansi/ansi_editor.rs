@@ -25,12 +25,12 @@ use super::widget::toolbar::top::BrushPrimaryMode;
 /// solid blocks).
 fn brush_mode_label(mode: BrushPrimaryMode, paint_char: char) -> String {
     match mode {
-        BrushPrimaryMode::Char => format!("Char mode — paints '{}'", paint_char),
-        BrushPrimaryMode::HalfBlock => "Half-block mode (2× vertical resolution)".to_string(),
-        BrushPrimaryMode::Shading => "Shading mode (LMB lighter, RMB darker)".to_string(),
-        BrushPrimaryMode::Replace => "Replace mode (recolors existing characters)".to_string(),
-        BrushPrimaryMode::Blink => "Blink mode (toggles blink attribute)".to_string(),
-        BrushPrimaryMode::Colorize => "Colorize mode (changes only colors)".to_string(),
+        BrushPrimaryMode::Char => crate::fl!("brush-hint-char", ch = paint_char.to_string()),
+        BrushPrimaryMode::HalfBlock => crate::fl!("brush-hint-half_block"),
+        BrushPrimaryMode::Shading => crate::fl!("brush-hint-shading"),
+        BrushPrimaryMode::Replace => crate::fl!("brush-hint-replace"),
+        BrushPrimaryMode::Blink => crate::fl!("brush-hint-blink"),
+        BrushPrimaryMode::Colorize => crate::fl!("brush-hint-colorize"),
     }
 }
 
@@ -2370,13 +2370,7 @@ impl AnsiEditorCore {
         use tools::ToolId;
         let shows_preview = matches!(
             self.current_tool.id(),
-            ToolId::Pencil
-                | ToolId::Line
-                | ToolId::RectangleOutline
-                | ToolId::RectangleFilled
-                | ToolId::EllipseOutline
-                | ToolId::EllipseFilled
-                | ToolId::Fill
+            ToolId::Pencil | ToolId::Line | ToolId::RectangleOutline | ToolId::RectangleFilled | ToolId::EllipseOutline | ToolId::EllipseFilled | ToolId::Fill
         );
         if !shows_preview {
             self.canvas.set_brush_preview(None);
@@ -2545,19 +2539,19 @@ impl AnsiEditorCore {
         let brush = *self.top_toolbar.brush.read();
         let mode = brush_mode_label(brush.primary, brush.paint_char);
         let hint = match self.current_tool.id() {
-            ToolId::Click => "Click  •  Type characters or drag a rectangular selection".to_string(),
-            ToolId::Select => "Select  •  Drag to select, Shift to add, Alt to subtract".to_string(),
-            ToolId::Pencil => format!("Pencil  •  {mode}"),
-            ToolId::Line => format!("Line  •  {mode}"),
-            ToolId::RectangleOutline => format!("Rectangle  •  {mode}"),
-            ToolId::RectangleFilled => format!("Filled rectangle  •  {mode}"),
-            ToolId::EllipseOutline => format!("Ellipse  •  {mode}"),
-            ToolId::EllipseFilled => format!("Filled ellipse  •  {mode}"),
-            ToolId::Pipette => "Color picker  •  Click to sample fg/bg/char".to_string(),
-            ToolId::Fill => format!("Fill  •  {mode}"),
-            ToolId::Font => "Font  •  Place a TDF/Figlet caret, then type".to_string(),
-            ToolId::Tag => "Tag  •  Click to place an expandable tag".to_string(),
-            ToolId::Paste => "Paste  •  Click to commit, Esc to cancel".to_string(),
+            ToolId::Click => crate::fl!("tool-hint-click"),
+            ToolId::Select => crate::fl!("tool-hint-select"),
+            ToolId::Pencil => crate::fl!("tool-hint-pencil", brush = mode),
+            ToolId::Line => crate::fl!("tool-hint-line", brush = mode),
+            ToolId::RectangleOutline => crate::fl!("tool-hint-rectangle", brush = mode),
+            ToolId::RectangleFilled => crate::fl!("tool-hint-filled_rectangle", brush = mode),
+            ToolId::EllipseOutline => crate::fl!("tool-hint-ellipse", brush = mode),
+            ToolId::EllipseFilled => crate::fl!("tool-hint-filled_ellipse", brush = mode),
+            ToolId::Pipette => crate::fl!("tool-hint-pipette"),
+            ToolId::Fill => crate::fl!("tool-hint-fill", brush = mode),
+            ToolId::Font => crate::fl!("tool-hint-font"),
+            ToolId::Tag => crate::fl!("tool-hint-tag"),
+            ToolId::Paste => crate::fl!("tool-hint-paste"),
         };
         Some(hint)
     }

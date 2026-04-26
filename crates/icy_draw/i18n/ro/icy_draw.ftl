@@ -593,3 +593,24 @@ animation-export-encoding=Se codifică videoclipul…
 animation-export-cancelled=Export anulat
 animation-export-no-frames=Nu există cadre de exportat
 animation-export-failed=Exportul a eșuat: { $error }
+
+# Tool / brush discoverability hints (status bar)
+tool-hint-click=Clic  •  Tastați caractere sau trageți o selecție dreptunghiulară
+tool-hint-select=Selectare  •  Tragere pentru selecție, Shift adaugă, Alt scade
+tool-hint-pencil=Creion  •  { $brush }
+tool-hint-line=Linie  •  { $brush }
+tool-hint-rectangle=Dreptunghi  •  { $brush }
+tool-hint-filled_rectangle=Dreptunghi umplut  •  { $brush }
+tool-hint-ellipse=Elipsă  •  { $brush }
+tool-hint-filled_ellipse=Elipsă umplută  •  { $brush }
+tool-hint-pipette=Pipetă de culoare  •  Clic pentru a prelua fg/bg/caracter
+tool-hint-fill=Umplere  •  { $brush }
+tool-hint-font=Font  •  Plasați un cursor TDF/Figlet și tastați
+tool-hint-tag=Etichetă  •  Clic pentru a plasa o etichetă extensibilă
+tool-hint-paste=Lipire  •  Clic pentru confirmare, Esc pentru anulare
+brush-hint-char=Mod caracter — desenează '{ $ch }'
+brush-hint-half_block=Mod semi-bloc (rezoluție verticală 2×)
+brush-hint-shading=Mod umbrire (clic stâng deschide, drept închide)
+brush-hint-replace=Mod înlocuire (recolorează caracterele existente)
+brush-hint-blink=Mod clipire (comută atributul de clipire)
+brush-hint-colorize=Mod colorare (modifică doar culorile)

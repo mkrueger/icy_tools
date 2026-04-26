@@ -995,3 +995,24 @@ tag-edit-preview=Preview
 tag-edit-replacement=Replacement
 tag-edit-position=Position
 tag-edit-filter=Filter…
+
+# Tool / brush discoverability hints (status bar)
+tool-hint-click=Click  •  Type characters or drag a rectangular selection
+tool-hint-select=Select  •  Drag to select, Shift to add, Alt to subtract
+tool-hint-pencil=Pencil  •  { $brush }
+tool-hint-line=Line  •  { $brush }
+tool-hint-rectangle=Rectangle  •  { $brush }
+tool-hint-filled_rectangle=Filled rectangle  •  { $brush }
+tool-hint-ellipse=Ellipse  •  { $brush }
+tool-hint-filled_ellipse=Filled ellipse  •  { $brush }
+tool-hint-pipette=Color picker  •  Click to sample fg/bg/char
+tool-hint-fill=Fill  •  { $brush }
+tool-hint-font=Font  •  Place a TDF/Figlet caret, then type
+tool-hint-tag=Tag  •  Click to place an expandable tag
+tool-hint-paste=Paste  •  Click to commit, Esc to cancel
+brush-hint-char=Char mode — paints '{ $ch }'
+brush-hint-half_block=Half-block mode (2× vertical resolution)
+brush-hint-shading=Shading mode (LMB lighter, RMB darker)
+brush-hint-replace=Replace mode (recolors existing characters)
+brush-hint-blink=Blink mode (toggles blink attribute)
+brush-hint-colorize=Colorize mode (changes only colors)

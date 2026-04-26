@@ -594,3 +594,24 @@ animation-export-encoding=Encodage de la vidéo…
 animation-export-cancelled=Exportation annulée
 animation-export-no-frames=Aucune image à exporter
 animation-export-failed=Échec de l'exportation: { $error }
+
+# Tool / brush discoverability hints (status bar)
+tool-hint-click=Clic  •  Tapez des caractères ou tracez une sélection rectangulaire
+tool-hint-select=Sélection  •  Glisser pour sélectionner, Shift ajoute, Alt retire
+tool-hint-pencil=Crayon  •  { $brush }
+tool-hint-line=Ligne  •  { $brush }
+tool-hint-rectangle=Rectangle  •  { $brush }
+tool-hint-filled_rectangle=Rectangle plein  •  { $brush }
+tool-hint-ellipse=Ellipse  •  { $brush }
+tool-hint-filled_ellipse=Ellipse pleine  •  { $brush }
+tool-hint-pipette=Pipette  •  Cliquer pour prélever fg/bg/caractère
+tool-hint-fill=Remplissage  •  { $brush }
+tool-hint-font=Police  •  Placez un curseur TDF/Figlet puis tapez
+tool-hint-tag=Tag  •  Cliquer pour placer un tag extensible
+tool-hint-paste=Coller  •  Cliquer pour valider, Échap pour annuler
+brush-hint-char=Mode caractère — peint '{ $ch }'
+brush-hint-half_block=Mode demi-bloc (résolution verticale 2×)
+brush-hint-shading=Mode dégradé (clic gauche éclaircit, droit assombrit)
+brush-hint-replace=Mode remplacement (recolorise les caractères existants)
+brush-hint-blink=Mode clignotant (bascule l'attribut clignotant)
+brush-hint-colorize=Mode coloration (modifie uniquement les couleurs)

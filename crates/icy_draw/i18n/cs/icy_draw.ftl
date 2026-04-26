@@ -593,3 +593,24 @@ animation-export-encoding=Kódování videa…
 animation-export-cancelled=Export zrušen
 animation-export-no-frames=Žádné snímky k exportu
 animation-export-failed=Export se nezdařil: { $error }
+
+# Tool / brush discoverability hints (status bar)
+tool-hint-click=Klik  •  Pište znaky nebo táhněte obdélníkový výběr
+tool-hint-select=Výběr  •  Tažením vyberte, Shift přidává, Alt odebírá
+tool-hint-pencil=Tužka  •  { $brush }
+tool-hint-line=Čára  •  { $brush }
+tool-hint-rectangle=Obdélník  •  { $brush }
+tool-hint-filled_rectangle=Vyplněný obdélník  •  { $brush }
+tool-hint-ellipse=Elipsa  •  { $brush }
+tool-hint-filled_ellipse=Vyplněná elipsa  •  { $brush }
+tool-hint-pipette=Kapátko  •  Klikněte pro odebrání fg/bg/znaku
+tool-hint-fill=Výplň  •  { $brush }
+tool-hint-font=Písmo  •  Umístěte kurzor TDF/Figlet a pište
+tool-hint-tag=Štítek  •  Kliknutím umístíte rozbalovací štítek
+tool-hint-paste=Vložit  •  Klik potvrdí, Esc zruší
+brush-hint-char=Režim znak — kreslí '{ $ch }'
+brush-hint-half_block=Režim polovičního bloku (2× svislé rozlišení)
+brush-hint-shading=Režim stínování (LTM zesvětluje, PTM ztmavuje)
+brush-hint-replace=Režim náhrada (přebarvuje existující znaky)
+brush-hint-blink=Režim blikání (přepíná atribut blikání)
+brush-hint-colorize=Režim obarvení (mění pouze barvy)
