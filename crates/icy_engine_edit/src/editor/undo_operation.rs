@@ -723,14 +723,12 @@ impl EditorUndoOp {
             EditorUndoOp::SwitchPalette {
                 old_palette,
                 old_layers,
-                new_palette,
-                new_layers,
+                new_palette: _,
+                new_layers: _,
             } => {
-                std::mem::swap(old_palette, new_palette);
-                std::mem::swap(old_layers, new_layers);
                 let buf = edit_state.get_buffer_mut();
-                buf.palette = new_palette.clone();
-                buf.layers = new_layers.clone();
+                buf.palette = old_palette.clone();
+                buf.layers = old_layers.clone();
                 buf.mark_dirty();
                 Ok(())
             }
@@ -1191,18 +1189,18 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::SwitchPalette {
-                old_palette,
-                old_layers,
+                old_palette: _,
+                old_layers: _,
                 new_palette,
                 new_layers,
             } => {
-                // Set values first, then swap for undo symmetry
+                if new_layers.is_empty() {
+                    *new_layers = edit_state.get_buffer().layers.clone();
+                }
                 let buf = edit_state.get_buffer_mut();
                 buf.palette = new_palette.clone();
                 buf.layers = new_layers.clone();
                 buf.mark_dirty();
-                std::mem::swap(old_palette, new_palette);
-                std::mem::swap(old_layers, new_layers);
                 Ok(())
             }
             EditorUndoOp::SetIceMode {

@@ -418,7 +418,7 @@ impl EditState {
             old_palette,
             old_layers,
             new_palette: pal,
-            new_layers: Vec::new(), // Will be populated on redo
+            new_layers: Vec::new(), // Populated on redo from the current layers.
         })
     }
 

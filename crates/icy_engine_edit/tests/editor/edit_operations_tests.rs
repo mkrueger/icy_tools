@@ -1,7 +1,7 @@
 //! Tests for edit operations (set_char, swap_char, paste, resize, rows, columns)
 
 use icy_engine::{AttributedChar, Position, Size, TextAttribute, TextPane};
-use icy_engine_edit::EditState;
+use icy_engine_edit::{EditState, UndoState};
 
 /// Helper to create an EditState with a given size
 fn create_test_state(width: i32, height: i32) -> EditState {
@@ -125,6 +125,40 @@ fn test_resize_buffer_with_layer_resize() {
     // Content should be preserved in the resized area
     assert_eq!(char_at(&state, 0, 0), 'X');
     assert_eq!(state.undo_stack_len(), initial_undo_len + 1);
+}
+
+#[test]
+fn test_switch_to_palette_preserves_layers() {
+    let mut state = create_test_state(20, 10);
+    state.add_new_layer(0).unwrap();
+
+    state.get_buffer_mut().layers[0].set_char(Position::new(1, 1), AttributedChar::new('B', TextAttribute::default()));
+    state.get_buffer_mut().layers[1].set_char(Position::new(2, 2), AttributedChar::new('T', TextAttribute::default()));
+
+    let old_palette_title = state.get_buffer().palette.title.clone();
+    let mut new_palette = state.get_buffer().palette.clone();
+    new_palette.title = "Test palette".to_string();
+
+    let initial_undo_len = state.undo_stack_len();
+    state.switch_to_palette(new_palette).unwrap();
+
+    assert_eq!(state.get_buffer().palette.title, "Test palette");
+    assert_eq!(state.get_buffer().layers.len(), 2);
+    assert_eq!(state.get_buffer().layers[0].char_at(Position::new(1, 1)).ch, 'B');
+    assert_eq!(state.get_buffer().layers[1].char_at(Position::new(2, 2)).ch, 'T');
+    assert_eq!(state.undo_stack_len(), initial_undo_len + 1);
+
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().palette.title, old_palette_title);
+    assert_eq!(state.get_buffer().layers.len(), 2);
+    assert_eq!(state.get_buffer().layers[0].char_at(Position::new(1, 1)).ch, 'B');
+    assert_eq!(state.get_buffer().layers[1].char_at(Position::new(2, 2)).ch, 'T');
+
+    state.redo().unwrap();
+    assert_eq!(state.get_buffer().palette.title, "Test palette");
+    assert_eq!(state.get_buffer().layers.len(), 2);
+    assert_eq!(state.get_buffer().layers[0].char_at(Position::new(1, 1)).ch, 'B');
+    assert_eq!(state.get_buffer().layers[1].char_at(Position::new(2, 2)).ch, 'T');
 }
 
 // ============================================================================
