@@ -724,20 +724,18 @@ pub struct FKeyOnePassRenderer {
 impl FKeyOnePassRenderer {
     fn update_atlas(&mut self, device: &icy_ui::wgpu::Device, queue: &icy_ui::wgpu::Queue, key: u64, w: u32, h: u32, rgba: &[u8]) {
         if self.atlas_w != w || self.atlas_h != h {
-            self.atlas_texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
-                label: Some("FKey OnePass Glyph Atlas"),
-                size: icy_ui::wgpu::Extent3d {
+            self.atlas_texture = crate::ui::widget::gpu_util::create_clamped_texture(
+                device,
+                crate::ui::widget::gpu_util::ClampedTextureDescriptor {
+                    label: "FKey OnePass Glyph Atlas",
                     width: w,
                     height: h,
                     depth_or_array_layers: 1,
+                    format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
+                    usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
                 },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: icy_ui::wgpu::TextureDimension::D2,
-                format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
+            )
+            .texture;
             self.atlas_view = self.atlas_texture.create_view(&icy_ui::wgpu::TextureViewDescriptor::default());
             self.atlas_w = w;
             self.atlas_h = h;
@@ -812,20 +810,18 @@ impl shader::Pipeline for FKeyOnePassRenderer {
             mapped_at_creation: false,
         });
 
-        let atlas_texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
-            label: Some("FKey OnePass Glyph Atlas (init)"),
-            size: icy_ui::wgpu::Extent3d {
+        let atlas_texture = crate::ui::widget::gpu_util::create_clamped_texture(
+            device,
+            crate::ui::widget::gpu_util::ClampedTextureDescriptor {
+                label: "FKey OnePass Glyph Atlas (init)",
                 width: 1,
                 height: 1,
                 depth_or_array_layers: 1,
+                format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
             },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: icy_ui::wgpu::TextureDimension::D2,
-            format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
+        )
+        .texture;
         queue.write_texture(
             icy_ui::wgpu::TexelCopyTextureInfo {
                 texture: &atlas_texture,

@@ -400,20 +400,18 @@ fn create_swap_icon_texture(device: &icy_ui::wgpu::Device, queue: &icy_ui::wgpu:
     let svg_data = include_bytes!("../../../../../../data/icons/swap.svg");
     let icon_rgba = render_svg_to_rgba(svg_data, ICON_SIZE, ICON_SIZE);
 
-    let texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
-        label: Some("Swap Icon Texture"),
-        size: icy_ui::wgpu::Extent3d {
+    let texture = crate::ui::widget::gpu_util::create_clamped_texture(
+        device,
+        crate::ui::widget::gpu_util::ClampedTextureDescriptor {
+            label: "Swap Icon Texture",
             width: ICON_SIZE,
             height: ICON_SIZE,
             depth_or_array_layers: 1,
+            format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
         },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: icy_ui::wgpu::TextureDimension::D2,
-        format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
-        usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
+    )
+    .texture;
 
     queue.write_texture(
         icy_ui::wgpu::TexelCopyTextureInfo {

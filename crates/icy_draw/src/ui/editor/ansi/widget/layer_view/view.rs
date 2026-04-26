@@ -1526,20 +1526,18 @@ impl icy_ui::widget::shader::Pipeline for LayerListBackgroundRenderer {
             mapped_at_creation: false,
         });
 
-        let atlas_texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
-            label: Some("Layer List Preview Atlas"),
-            size: icy_ui::wgpu::Extent3d {
+        let atlas_texture = crate::ui::widget::gpu_util::create_clamped_texture(
+            device,
+            crate::ui::widget::gpu_util::ClampedTextureDescriptor {
+                label: "Layer List Preview Atlas",
                 width: PREVIEW_ATLAS_W,
                 height: PREVIEW_ATLAS_H,
                 depth_or_array_layers: 1,
+                format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
             },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: icy_ui::wgpu::TextureDimension::D2,
-            format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
+        )
+        .texture;
 
         let atlas_view = atlas_texture.create_view(&icy_ui::wgpu::TextureViewDescriptor {
             // Be explicit about the view dimension - the wgpu GLES path is

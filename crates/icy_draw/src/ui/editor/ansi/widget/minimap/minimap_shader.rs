@@ -647,34 +647,21 @@ impl shader::Primitive for MinimapPrimitive {
             let max_slice_h = self.slices.iter().take(num_slices).map(|s| s.height.max(1)).max().unwrap_or(1);
             let layer_count = (num_slices as u32).max(1);
 
-            // Defensively clamp to the device's reported limits. The GLES
-            // backend can report `max_texture_dimension_2d` as low as 2048 and
-            // `max_texture_array_layers` as low as 256; allocating beyond that
-            // panics inside wgpu. Clamping keeps the minimap usable on
-            // downlevel/GLES paths even if the rendered tile happens to be
-            // larger.
-            let limits = device.limits();
-            let max_dim = limits.max_texture_dimension_2d.max(1);
-            let max_layers = limits.max_texture_array_layers.max(1);
-            let max_slice_w = max_slice_w.min(max_dim);
-            let max_slice_h = max_slice_h.min(max_dim);
-            let layer_count = layer_count.min(max_layers);
-
-            // Create texture array with uniform layer dimensions
-            let texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
-                label: Some(&format!("Minimap Texture Array {}", id)),
-                size: icy_ui::wgpu::Extent3d {
+            // Clamp to device limits via the shared helper. The GLES backend
+            // can report `max_texture_dimension_2d` as low as 2048 and
+            // `max_texture_array_layers` as low as 256.
+            let clamped = crate::ui::widget::gpu_util::create_clamped_texture(
+                device,
+                crate::ui::widget::gpu_util::ClampedTextureDescriptor {
+                    label: &format!("Minimap Texture Array {}", id),
                     width: max_slice_w,
                     height: max_slice_h,
                     depth_or_array_layers: layer_count,
+                    format: icy_ui::wgpu::TextureFormat::Rgba8Unorm,
+                    usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
                 },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: icy_ui::wgpu::TextureDimension::D2,
-                format: icy_ui::wgpu::TextureFormat::Rgba8Unorm,
-                usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
+            );
+            let texture = clamped.texture;
 
             let texture_view = texture.create_view(&icy_ui::wgpu::TextureViewDescriptor {
                 dimension: Some(icy_ui::wgpu::TextureViewDimension::D2Array),

@@ -108,3 +108,141 @@ pub fn build_uniform_texture_sampler_layout(device: &wgpu::Device, opts: Uniform
         ],
     })
 }
+
+/// Description of a 2D / 2D-array texture that should be clamped to the
+/// device's reported limits before allocation.
+///
+/// All shader-backed widgets in icy_draw used to allocate textures using
+/// hard-coded sizes. On the wgpu GLES downlevel path
+/// `max_texture_dimension_2d` can be as low as 2048 and
+/// `max_texture_array_layers` as low as 256; allocating beyond that panics
+/// inside wgpu. Routing every texture creation through
+/// [`create_clamped_texture`] makes the widgets degrade gracefully on
+/// constrained backends instead of crashing.
+pub struct ClampedTextureDescriptor<'a> {
+    pub label: &'a str,
+    pub width: u32,
+    pub height: u32,
+    /// 1 for plain 2D textures, >1 for 2D arrays.
+    pub depth_or_array_layers: u32,
+    pub format: wgpu::TextureFormat,
+    pub usage: wgpu::TextureUsages,
+}
+
+/// Outcome of a clamped texture allocation. The `width`, `height` and
+/// `layers` fields reflect the **actual** dimensions used after clamping;
+/// callers that index into the texture should respect them.
+#[allow(dead_code)]
+pub struct ClampedTexture {
+    pub texture: wgpu::Texture,
+    pub width: u32,
+    pub height: u32,
+    pub layers: u32,
+}
+
+/// Create a 2D / 2D-array texture, clamping each dimension to the device
+/// limits reported by `device.limits()`. A clamp event is logged at
+/// `warn` level so it shows up in user-supplied diagnostics.
+///
+/// All values are clamped to at least 1 to avoid zero-sized texture
+/// descriptors.
+pub fn create_clamped_texture(device: &wgpu::Device, desc: ClampedTextureDescriptor<'_>) -> ClampedTexture {
+    let limits = device.limits();
+    let (width, height, layers) = clamp_texture_size(
+        desc.label,
+        desc.width,
+        desc.height,
+        desc.depth_or_array_layers,
+        limits.max_texture_dimension_2d,
+        limits.max_texture_array_layers,
+    );
+
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(desc.label),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: layers,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: desc.format,
+        usage: desc.usage,
+        view_formats: &[],
+    });
+
+    ClampedTexture {
+        texture,
+        width,
+        height,
+        layers,
+    }
+}
+
+/// Pure clamp logic. Returns `(width, height, layers)` after clamping each
+/// dimension to at least 1 and at most the supplied device limits, and
+/// emits a single `warn` log line when any clamp actually fired.
+///
+/// Extracted so the clamp policy can be unit-tested without spinning up a
+/// real `wgpu::Device`.
+fn clamp_texture_size(label: &str, width: u32, height: u32, layers: u32, max_dim: u32, max_layers: u32) -> (u32, u32, u32) {
+    let max_dim = max_dim.max(1);
+    let max_layers = max_layers.max(1);
+
+    let req_w = width.max(1);
+    let req_h = height.max(1);
+    let req_layers = layers.max(1);
+
+    let w = req_w.min(max_dim);
+    let h = req_h.min(max_dim);
+    let l = req_layers.min(max_layers);
+
+    if w != req_w || h != req_h || l != req_layers {
+        log::warn!(
+            "{}: texture clamped to device limits ({}x{}x{} -> {}x{}x{}; max_dim={}, max_layers={})",
+            label,
+            req_w,
+            req_h,
+            req_layers,
+            w,
+            h,
+            l,
+            max_dim,
+            max_layers,
+        );
+    }
+
+    (w, h, l)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clamp_texture_size;
+
+    #[test]
+    fn no_clamp_when_within_limits() {
+        assert_eq!(clamp_texture_size("t", 1024, 512, 4, 4096, 256), (1024, 512, 4));
+    }
+
+    #[test]
+    fn clamps_width_height_to_max_dim() {
+        assert_eq!(clamp_texture_size("t", 8192, 4096, 1, 2048, 256), (2048, 2048, 1));
+    }
+
+    #[test]
+    fn clamps_layers_to_max_layers() {
+        assert_eq!(clamp_texture_size("t", 256, 256, 1024, 8192, 256), (256, 256, 256));
+    }
+
+    #[test]
+    fn promotes_zero_to_one() {
+        assert_eq!(clamp_texture_size("t", 0, 0, 0, 4096, 256), (1, 1, 1));
+    }
+
+    #[test]
+    fn promotes_zero_limits_to_one() {
+        // A backend reporting `0` for a limit shouldn't crash us either.
+        assert_eq!(clamp_texture_size("t", 100, 100, 4, 0, 0), (1, 1, 1));
+    }
+}

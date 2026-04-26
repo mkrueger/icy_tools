@@ -381,20 +381,18 @@ fn create_icon_atlas(device: &icy_ui::wgpu::Device, queue: &icy_ui::wgpu::Queue,
     let atlas_height = icon_size;
 
     // Create texture
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("Paste Controls Icon Atlas"),
-        size: wgpu::Extent3d {
+    let texture = crate::ui::widget::gpu_util::create_clamped_texture(
+        device,
+        crate::ui::widget::gpu_util::ClampedTextureDescriptor {
+            label: "Paste Controls Icon Atlas",
             width: atlas_width,
             height: atlas_height,
             depth_or_array_layers: 1,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
+    )
+    .texture;
 
     // Render icons to atlas
     let mut atlas_data = vec![0u8; (atlas_width * atlas_height * 4) as usize];

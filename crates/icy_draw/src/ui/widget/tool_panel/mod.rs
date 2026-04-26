@@ -618,20 +618,18 @@ pub fn create_icon_atlas(
         }
     }
 
-    let texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
-        label: Some("Tool Icon Atlas"),
-        size: icy_ui::wgpu::Extent3d {
+    let texture = crate::ui::widget::gpu_util::create_clamped_texture(
+        device,
+        crate::ui::widget::gpu_util::ClampedTextureDescriptor {
+            label: "Tool Icon Atlas",
             width: atlas_width,
             height: atlas_height,
             depth_or_array_layers: 1,
+            format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
         },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: icy_ui::wgpu::TextureDimension::D2,
-        format: icy_ui::wgpu::TextureFormat::Rgba8UnormSrgb,
-        usage: icy_ui::wgpu::TextureUsages::TEXTURE_BINDING | icy_ui::wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
+    )
+    .texture;
 
     queue.write_texture(
         icy_ui::wgpu::TexelCopyTextureInfo {

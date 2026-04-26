@@ -82,6 +82,29 @@ Available for:
 
 > **Note**: If IcyDraw doesn't start, ensure your graphics drivers are up to date.
 
+### Backend selection (advanced)
+
+IcyDraw renders through `wgpu`, which by default picks the best graphics
+backend available (Vulkan / Metal / DX12 / GL). On systems where the primary
+backend is unstable (older Intel iGPU, remote-desktop sessions, Wayland +
+proprietary NVIDIA, …) you can force a different backend with the
+`WGPU_BACKEND` environment variable:
+
+```bash
+# Force the OpenGL ES path (most compatible, slowest):
+WGPU_BACKEND=gl   icy_draw
+
+# Other valid values: vulkan, metal, dx12, primary, secondary, all
+WGPU_BACKEND=vulkan icy_draw
+```
+
+If IcyDraw starts but a particular widget (minimap, layer preview, F-key
+toolbar, …) renders blank or crashes the process, please file a bug with the
+output of running with `RUST_LOG=icy_draw=warn,wgpu_core=warn` — the widget
+GPU helpers log a single `texture clamped to device limits` line when they
+fall back to a smaller texture, which makes diagnosing constrained-backend
+behaviour straightforward.
+
 ### Build from Source
 
 ```bash
