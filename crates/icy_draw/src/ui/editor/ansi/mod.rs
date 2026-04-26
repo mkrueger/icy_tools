@@ -284,4 +284,7 @@ pub struct AnsiStatusInfo {
     pub current_font_slot: usize,
     /// Font names for slots (only set for XBinExtended)
     pub slot_fonts: Option<[Option<String>; 2]>,
+    /// One-line discoverability hint for the current tool/brush mode,
+    /// e.g. `"Pencil  •  Char mode — paints '█'"`. Rendered in the status bar.
+    pub tool_hint: Option<String>,
 }

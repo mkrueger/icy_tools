@@ -459,6 +459,8 @@ pub struct AnsiStatusBarInfo {
     pub use_aspect_ratio: bool,
     /// For XBinExtended: slot font info
     pub slot_fonts: Option<SlotFontsInfo>,
+    /// One-line discoverability hint for the active tool / brush mode.
+    pub tool_hint: Option<String>,
 }
 
 /// Font slot information for XBinExtended mode
@@ -492,6 +494,7 @@ impl From<AnsiStatusInfo> for AnsiStatusBarInfo {
             letter_spacing: info.letter_spacing,
             use_aspect_ratio: info.use_aspect_ratio,
             slot_fonts,
+            tool_hint: info.tool_hint,
         }
     }
 }
@@ -2430,8 +2433,15 @@ impl MainWindow {
         ]
         .align_y(Alignment::Center);
 
-        // Center section: Buffer dimensions (secondary color)
-        let center_text = format!("{}×{}", info.buffer_size.0, info.buffer_size.1);
+        // Center section: tool hint when available, falling back to buffer dimensions.
+        // The hint is the discoverability surface for tool / brush modes (see #153
+        // — users could not tell that Pencil/Char + `█` paints solid blocks).
+        let dims_text = format!("{}×{}", info.buffer_size.0, info.buffer_size.1);
+        let center_text = if let Some(hint) = info.tool_hint.as_deref() {
+            format!("{}    {}", hint, dims_text)
+        } else {
+            dims_text
+        };
 
         // Right section: Position/Selection + Font
         let position_text: Element<'_, Message> = if let Some(((min_x, min_y), (max_x, max_y))) = info.selection_range {

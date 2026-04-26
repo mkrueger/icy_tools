@@ -16,6 +16,23 @@ use parking_lot::{Mutex, RwLock};
 
 use super::scroll::compute_scroll_to_keep_caret_visible;
 use super::widget::outline_selector::{outline_selector_width, OutlineSelector};
+use super::widget::toolbar::top::BrushPrimaryMode;
+
+/// Human-readable label for the current brush primary mode.
+///
+/// Used by the status-bar tool hint so users can discover what each mode
+/// actually paints (see #153 — users didn't realize `Char` mode + `█` paint
+/// solid blocks).
+fn brush_mode_label(mode: BrushPrimaryMode, paint_char: char) -> String {
+    match mode {
+        BrushPrimaryMode::Char => format!("Char mode — paints '{}'", paint_char),
+        BrushPrimaryMode::HalfBlock => "Half-block mode (2× vertical resolution)".to_string(),
+        BrushPrimaryMode::Shading => "Shading mode (LMB lighter, RMB darker)".to_string(),
+        BrushPrimaryMode::Replace => "Replace mode (recolors existing characters)".to_string(),
+        BrushPrimaryMode::Blink => "Blink mode (toggles blink attribute)".to_string(),
+        BrushPrimaryMode::Colorize => "Colorize mode (changes only colors)".to_string(),
+    }
+}
 
 /// Core ANSI editor logic/state (tools, dispatching, canvas, etc).
 ///
@@ -2346,17 +2363,37 @@ impl AnsiEditorCore {
     }
 
     fn update_brush_preview(&mut self, pos: icy_engine::Position, pixel_position: (f32, f32)) {
-        if self.current_tool.id() != tools::ToolId::Pencil {
+        // Show the live brush preview rectangle for any tool that paints with
+        // the shared `BrushSettings` (Pencil, Shape, Fill). Read brush state
+        // straight off the shared lock — a tool downcast isn't necessary
+        // because every brush tool reflects the same `SharedBrush`.
+        use tools::ToolId;
+        let shows_preview = matches!(
+            self.current_tool.id(),
+            ToolId::Pencil
+                | ToolId::Line
+                | ToolId::RectangleOutline
+                | ToolId::RectangleFilled
+                | ToolId::EllipseOutline
+                | ToolId::EllipseFilled
+                | ToolId::Fill
+        );
+        if !shows_preview {
             self.canvas.set_brush_preview(None);
             return;
         }
 
-        let Some(pencil) = self.current_tool.as_any().downcast_ref::<tools::PencilTool>() else {
-            self.canvas.set_brush_preview(None);
-            return;
-        };
+        // Hide the hover preview while a Shape drag is active — the shape
+        // overlay already shows what will be drawn.
+        if let Some(shape) = self.current_tool.as_any().downcast_ref::<tools::ShapeTool>() {
+            if shape.is_dragging() {
+                self.canvas.set_brush_preview(None);
+                return;
+            }
+        }
 
-        let brush_size = pencil.brush_size().max(1) as i32;
+        let brush = *self.top_toolbar.brush.read();
+        let brush_size = brush.brush_size.max(1) as i32;
         let half = brush_size / 2;
 
         // Get font dimensions for pixel conversion
@@ -2366,7 +2403,7 @@ impl AnsiEditorCore {
             (size.width as f32, size.height as f32)
         };
 
-        let is_half_block_mode = matches!(pencil.brush_primary(), BrushPrimaryMode::HalfBlock);
+        let is_half_block_mode = matches!(brush.primary, BrushPrimaryMode::HalfBlock);
 
         let rect = if is_half_block_mode {
             // Compute doc-space half-block coordinate (Y doubled)
@@ -2436,6 +2473,7 @@ impl AnsiEditorCore {
 
     /// Get status bar information for this editor
     pub fn status_info(&self) -> AnsiStatusInfo {
+        let tool_hint = self.compute_tool_hint();
         let mut screen = self.screen.lock();
         let state = screen
             .as_any_mut()
@@ -2492,7 +2530,36 @@ impl AnsiEditorCore {
             format_mode,
             current_font_slot: current_font_slot as usize,
             slot_fonts,
+            tool_hint,
         }
+    }
+
+    /// Build a one-line discoverability hint for the active tool / brush mode.
+    ///
+    /// Surfaced in the status bar so users discover (e.g.) that the Pencil tool
+    /// in `Char` mode is what paints the full block (`█`) — see issue #153.
+    /// Reads only `current_tool` + the shared `BrushSettings`; never touches
+    /// `EditState`, so it's safe to call without holding the screen lock.
+    fn compute_tool_hint(&self) -> Option<String> {
+        use tools::ToolId;
+        let brush = *self.top_toolbar.brush.read();
+        let mode = brush_mode_label(brush.primary, brush.paint_char);
+        let hint = match self.current_tool.id() {
+            ToolId::Click => "Click  •  Type characters or drag a rectangular selection".to_string(),
+            ToolId::Select => "Select  •  Drag to select, Shift to add, Alt to subtract".to_string(),
+            ToolId::Pencil => format!("Pencil  •  {mode}"),
+            ToolId::Line => format!("Line  •  {mode}"),
+            ToolId::RectangleOutline => format!("Rectangle  •  {mode}"),
+            ToolId::RectangleFilled => format!("Filled rectangle  •  {mode}"),
+            ToolId::EllipseOutline => format!("Ellipse  •  {mode}"),
+            ToolId::EllipseFilled => format!("Filled ellipse  •  {mode}"),
+            ToolId::Pipette => "Color picker  •  Click to sample fg/bg/char".to_string(),
+            ToolId::Fill => format!("Fill  •  {mode}"),
+            ToolId::Font => "Font  •  Place a TDF/Figlet caret, then type".to_string(),
+            ToolId::Tag => "Tag  •  Click to place an expandable tag".to_string(),
+            ToolId::Paste => "Paste  •  Click to commit, Esc to cancel".to_string(),
+        };
+        Some(hint)
     }
 
     pub(crate) fn current_tool_for_panel(&self) -> Tool {
