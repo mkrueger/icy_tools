@@ -313,37 +313,15 @@ impl shader::Pipeline for PasteControlsRenderer {
         });
 
         // Create bind group layout
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Paste Controls Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+        let bind_group_layout = crate::ui::widget::gpu_util::build_uniform_texture_sampler_layout(
+            device,
+            crate::ui::widget::gpu_util::UniformTextureSamplerLayout {
+                label: "Paste Controls Bind Group Layout",
+                uniform_visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                uniform_dynamic_offset: false,
+                uniform_min_binding_size: None,
+            },
+        );
 
         // Create bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -379,14 +357,8 @@ impl shader::Pipeline for PasteControlsRenderer {
         });
 
         // Create render pipeline
-        let render_pipeline = crate::ui::widget::gpu_util::build_alpha_blended_pipeline(
-            device,
-            "Paste Controls Render Pipeline",
-            &pipeline_layout,
-            &shader,
-            format,
-            &[],
-        );
+        let render_pipeline =
+            crate::ui::widget::gpu_util::build_alpha_blended_pipeline(device, "Paste Controls Render Pipeline", &pipeline_layout, &shader, format, &[]);
 
         Self {
             render_pipeline,

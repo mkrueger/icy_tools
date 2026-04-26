@@ -342,37 +342,15 @@ impl shader::Pipeline for ColorSwitcherRenderer {
         });
 
         // Create bind group layout with uniform + texture + sampler
-        let bind_group_layout = device.create_bind_group_layout(&icy_ui::wgpu::BindGroupLayoutDescriptor {
-            label: Some("Color Switcher Bind Group Layout"),
-            entries: &[
-                icy_ui::wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
-                    ty: icy_ui::wgpu::BindingType::Buffer {
-                        ty: icy_ui::wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                icy_ui::wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
-                    ty: icy_ui::wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: icy_ui::wgpu::TextureViewDimension::D2,
-                        sample_type: icy_ui::wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                icy_ui::wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
-                    ty: icy_ui::wgpu::BindingType::Sampler(icy_ui::wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+        let bind_group_layout = crate::ui::widget::gpu_util::build_uniform_texture_sampler_layout(
+            device,
+            crate::ui::widget::gpu_util::UniformTextureSamplerLayout {
+                label: "Color Switcher Bind Group Layout",
+                uniform_visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
+                uniform_dynamic_offset: false,
+                uniform_min_binding_size: None,
+            },
+        );
 
         // Create bind group
         let bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
@@ -402,14 +380,7 @@ impl shader::Pipeline for ColorSwitcherRenderer {
         });
 
         // Create render pipeline
-        let pipeline = crate::ui::widget::gpu_util::build_alpha_blended_pipeline(
-            device,
-            "Color Switcher Pipeline",
-            &pipeline_layout,
-            &shader,
-            format,
-            &[],
-        );
+        let pipeline = crate::ui::widget::gpu_util::build_alpha_blended_pipeline(device, "Color Switcher Pipeline", &pipeline_layout, &shader, format, &[]);
 
         Self {
             pipeline,

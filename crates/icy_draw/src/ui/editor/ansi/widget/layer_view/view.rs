@@ -1559,37 +1559,15 @@ impl icy_ui::widget::shader::Pipeline for LayerListBackgroundRenderer {
             ..Default::default()
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&icy_ui::wgpu::BindGroupLayoutDescriptor {
-            label: Some("Layer List Background Bind Group Layout"),
-            entries: &[
-                icy_ui::wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: icy_ui::wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: icy_ui::wgpu::BindingType::Buffer {
-                        ty: icy_ui::wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: NonZeroU64::new(uniform_size),
-                    },
-                    count: None,
-                },
-                icy_ui::wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
-                    ty: icy_ui::wgpu::BindingType::Texture {
-                        sample_type: icy_ui::wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: icy_ui::wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                icy_ui::wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: icy_ui::wgpu::ShaderStages::FRAGMENT,
-                    ty: icy_ui::wgpu::BindingType::Sampler(icy_ui::wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+        let bind_group_layout = crate::ui::widget::gpu_util::build_uniform_texture_sampler_layout(
+            device,
+            crate::ui::widget::gpu_util::UniformTextureSamplerLayout {
+                label: "Layer List Background Bind Group Layout",
+                uniform_visibility: icy_ui::wgpu::ShaderStages::VERTEX_FRAGMENT,
+                uniform_dynamic_offset: true,
+                uniform_min_binding_size: NonZeroU64::new(uniform_size),
+            },
+        );
 
         let bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
             label: Some("Layer List Background Bind Group"),
