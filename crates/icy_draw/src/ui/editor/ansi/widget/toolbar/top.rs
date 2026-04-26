@@ -12,6 +12,7 @@ use icy_ui::{
 };
 
 use crate::fl;
+use crate::ui::editor::ansi::tools::BrushSettings;
 use crate::ui::editor::ansi::widget::segmented_control::gpu::{Segment, SegmentedControlMessage, ShaderSegmentedControl};
 use crate::ui::FKeySets;
 use icy_engine::{BitFont, BufferType, Palette};
@@ -184,16 +185,11 @@ pub enum BrushPrimaryMode {
 }
 
 /// Brush mode options
-#[derive(Clone, Debug, Default)]
-pub struct BrushOptions {
-    /// Primary brush mode (exclusive)
-    pub primary: BrushPrimaryMode,
-    /// Character used when `primary == BrushPrimaryMode::Char`
-    pub paint_char: char,
-    pub colorize_fg: bool,
-    pub colorize_bg: bool,
-    pub brush_size: u32,
-}
+///
+/// `BrushSettings` (defined in `tools::paint`) is the single source-of-truth
+/// for brush state. Pencil/Shape tools own one each, and the toolbar caches a
+/// copy so it can render the current options without dipping into tool state
+/// during view rendering.
 
 /// Selection mode options
 #[derive(Clone, Debug, Default)]
@@ -233,8 +229,8 @@ pub struct PipettePanelInfo {
 
 /// Top toolbar state
 pub struct TopToolbar {
-    /// Brush options
-    pub brush_options: BrushOptions,
+    /// Brush options (shared type with `PencilTool` / `ShapeTool`)
+    pub brush_options: BrushSettings,
     /// Selection options
     pub select_options: SelectOptions,
     /// Shape filled toggle
@@ -259,13 +255,12 @@ impl Default for TopToolbar {
 impl TopToolbar {
     pub fn new() -> Self {
         Self {
-            brush_options: BrushOptions {
+            brush_options: BrushSettings {
                 primary: BrushPrimaryMode::Char,
                 paint_char: '\u{00B0}',
                 brush_size: 1,
                 colorize_fg: true,
                 colorize_bg: true,
-                ..Default::default()
             },
             select_options: SelectOptions::default(),
             filled: false,
@@ -293,7 +288,7 @@ impl TopToolbar {
             TopToolbarMessage::SetBrushChar(ch) => self.brush_options.paint_char = ch,
             TopToolbarMessage::ToggleColorizeFg(v) => self.brush_options.colorize_fg = v,
             TopToolbarMessage::ToggleColorizeBg(v) => self.brush_options.colorize_bg = v,
-            TopToolbarMessage::SetBrushSize(s) => self.brush_options.brush_size = s.max(1).min(9),
+            TopToolbarMessage::SetBrushSize(s) => self.brush_options.brush_size = (s as usize).clamp(1, 9),
             TopToolbarMessage::IncrementBrushSize => {
                 self.brush_options.brush_size = (self.brush_options.brush_size + 1).min(9);
             }
