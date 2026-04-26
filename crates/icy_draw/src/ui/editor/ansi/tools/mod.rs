@@ -51,7 +51,7 @@ pub use click::ClickTool;
 pub use fill::FillTool;
 pub use font::FontTool;
 pub use outline_click::OutlineClickTool;
-pub use paint::{new_shared_brush, BrushSettings, SharedBrush};
+pub use paint::{new_shared_brush, new_shared_recent_chars, BrushSettings, RecentChars, SharedBrush, SharedRecentChars, RECENT_CHARS_CAPACITY};
 pub use paste::{PasteAction, PasteTool};
 pub use pencil::PencilTool;
 pub use pipette::PipetteTool;

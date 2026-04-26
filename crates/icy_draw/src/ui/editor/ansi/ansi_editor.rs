@@ -49,6 +49,10 @@ pub(crate) struct AnsiEditorCore {
     pub top_toolbar: TopToolbar,
     /// Color switcher (FG/BG display)
     pub color_switcher: ColorSwitcher,
+    /// Recently-used paint characters (MRU, capped at 8). Updated whenever
+    /// the brush `paint_char` changes; surfaced to the UI strip and to the
+    /// `color.cycle_paint_char_*` keyboard shortcuts (#9).
+    pub(super) recent_chars: tools::SharedRecentChars,
     /// Canvas view state
     pub canvas: CanvasView,
     /// Shared options
@@ -729,6 +733,7 @@ impl AnsiEditorCore {
             current_tool,
             top_toolbar,
             color_switcher,
+            recent_chars: tools::new_shared_recent_chars(),
             canvas,
             options,
             is_modified: false,
@@ -1241,9 +1246,11 @@ impl AnsiEditorCore {
                         self.char_selector_target = Some(CharSelectorTarget::BrushChar);
                         Task::none()
                     }
-                    TopToolbarMessage::SetBrushChar(_) => {
+                    TopToolbarMessage::SetBrushChar(ch) => {
                         // Selecting a character implicitly closes the overlay.
                         self.char_selector_target = None;
+                        // Track in MRU history for the cycle hotkeys + UI strip (#9).
+                        self.recent_chars.write().push(ch);
                         let task = self.top_toolbar.update(msg).map(AnsiEditorCoreMessage::TopToolbar);
                         task
                     }
@@ -1374,6 +1381,12 @@ impl AnsiEditorCore {
             }
             AnsiEditorCoreMessage::ToolMessage(msg) => {
                 use tools::ToolHandler;
+
+                // Track paint-char selections in the MRU history (#9). Pencil/Shape/Fill
+                // all funnel char picks through this single message variant.
+                if let tools::ToolMessage::SetBrushChar(ch) = msg {
+                    self.recent_chars.write().push(ch);
+                }
 
                 let paste_mode = self.is_paste_mode();
                 let _current_tool_id = self.current_tool.id();
@@ -1865,6 +1878,27 @@ impl AnsiEditorCore {
                     state.set_caret_background(new_bg as u32);
                 });
                 self.sync_ui();
+                Task::none()
+            }
+            AnsiEditorCoreMessage::CyclePaintChar(delta) => {
+                // Pick the next/previous char from the MRU history (#9).
+                // No-op if history is empty (no chars have been chosen yet).
+                let next = {
+                    let history = self.recent_chars.read();
+                    let current = self.top_toolbar.brush.read().paint_char;
+                    history.cycle_from(current, delta)
+                };
+                if let Some(ch) = next {
+                    // Switch to Char mode so the new pick is actually visible
+                    // (otherwise the user just sees the half-block / shading mode).
+                    {
+                        let mut b = self.top_toolbar.brush.write();
+                        b.primary = BrushPrimaryMode::Char;
+                        b.paint_char = ch;
+                    }
+                    // Re-promote so cycling settles the chosen char as MRU.
+                    self.recent_chars.write().push(ch);
+                }
                 Task::none()
             }
             AnsiEditorCoreMessage::PickAttributeUnderCaret => {
@@ -2564,6 +2598,12 @@ impl AnsiEditorCore {
     /// rebuild the tool registry while keeping the brush state stable.
     pub(crate) fn brush(&self) -> tools::SharedBrush {
         self.top_toolbar.brush.clone()
+    }
+
+    /// Clone the editor's shared recent-chars MRU state. Used by the session
+    /// save/restore path and the recent-chars UI strip.
+    pub(crate) fn recent_chars(&self) -> tools::SharedRecentChars {
+        self.recent_chars.clone()
     }
 
     /// Access the currently active tool as `&dyn Any` for downcasting.

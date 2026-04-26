@@ -53,6 +53,75 @@ pub fn new_shared_brush() -> SharedBrush {
     Arc::new(RwLock::new(BrushSettings::default()))
 }
 
+/// Maximum number of recently-used paint characters tracked for the cycle
+/// keyboard shortcut (#9: "quick keyboard cycle through the last 8 chars").
+pub const RECENT_CHARS_CAPACITY: usize = 8;
+
+/// Most-recently-used paint characters, newest first.
+///
+/// Maintained as a simple LRU `Vec<char>` capped at [`RECENT_CHARS_CAPACITY`]:
+/// inserting an existing char promotes it to the front rather than duplicating
+/// it, so the list always reflects distinct chars in MRU order.
+#[derive(Clone, Debug, Default)]
+pub struct RecentChars {
+    items: Vec<char>,
+}
+
+impl RecentChars {
+    pub fn new() -> Self {
+        Self { items: Vec::new() }
+    }
+
+    /// Snapshot the current MRU list (newest first).
+    pub fn as_slice(&self) -> &[char] {
+        &self.items
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    /// Promote `ch` to the front. Removes any existing copy first so the list
+    /// stays distinct, then trims to [`RECENT_CHARS_CAPACITY`].
+    pub fn push(&mut self, ch: char) {
+        self.items.retain(|c| *c != ch);
+        self.items.insert(0, ch);
+        if self.items.len() > RECENT_CHARS_CAPACITY {
+            self.items.truncate(RECENT_CHARS_CAPACITY);
+        }
+    }
+
+    /// Replace the entire list (used when restoring from a saved session).
+    pub fn restore(&mut self, items: Vec<char>) {
+        self.items = items;
+        if self.items.len() > RECENT_CHARS_CAPACITY {
+            self.items.truncate(RECENT_CHARS_CAPACITY);
+        }
+    }
+
+    /// Cycle relative to `current`. `delta = 1` returns the next-older entry,
+    /// `delta = -1` the more-recent one. If `current` is not in the list,
+    /// the first (most-recent) entry is returned. Returns `None` only when
+    /// the list is empty.
+    pub fn cycle_from(&self, current: char, delta: i32) -> Option<char> {
+        if self.items.is_empty() {
+            return None;
+        }
+        let len = self.items.len() as i32;
+        let idx = self.items.iter().position(|c| *c == current).map(|i| i as i32).unwrap_or(-1);
+        let next = ((idx + delta).rem_euclid(len)) as usize;
+        Some(self.items[next])
+    }
+}
+
+/// Editor-owned recent-paint-chars history, shared with the UI strip / hotkeys.
+pub type SharedRecentChars = Arc<RwLock<RecentChars>>;
+
+/// Construct a fresh shared recent-chars history.
+pub fn new_shared_recent_chars() -> SharedRecentChars {
+    Arc::new(RwLock::new(RecentChars::new()))
+}
+
 pub fn begin_paint_undo(state: &mut EditState, desc: String) -> AtomicUndoGuard {
     state.begin_atomic_undo(desc)
 }
@@ -222,4 +291,58 @@ pub fn compute_preview_color(settings: &BrushSettings, caret_fg: u32, caret_bg: 
     let preview_idx = if !settings.colorize_fg && settings.colorize_bg { bg_idx } else { fg_idx };
 
     palette.rgb(preview_idx)
+}
+
+#[cfg(test)]
+mod recent_chars_tests {
+    use super::{RecentChars, RECENT_CHARS_CAPACITY};
+
+    #[test]
+    fn push_promotes_existing_to_front() {
+        let mut r = RecentChars::new();
+        r.push('a');
+        r.push('b');
+        r.push('c');
+        assert_eq!(r.as_slice(), &['c', 'b', 'a']);
+        r.push('a');
+        assert_eq!(r.as_slice(), &['a', 'c', 'b']);
+    }
+
+    #[test]
+    fn push_caps_at_capacity() {
+        let mut r = RecentChars::new();
+        for ch in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'] {
+            r.push(ch);
+        }
+        assert_eq!(r.as_slice().len(), RECENT_CHARS_CAPACITY);
+        assert_eq!(r.as_slice()[0], 'j');
+    }
+
+    #[test]
+    fn cycle_steps_forward_and_back() {
+        let mut r = RecentChars::new();
+        for ch in ['a', 'b', 'c'] {
+            r.push(ch);
+        }
+        // List is [c, b, a]
+        assert_eq!(r.cycle_from('c', 1), Some('b'));
+        assert_eq!(r.cycle_from('b', 1), Some('a'));
+        assert_eq!(r.cycle_from('a', 1), Some('c'));
+        assert_eq!(r.cycle_from('c', -1), Some('a'));
+    }
+
+    #[test]
+    fn cycle_with_unknown_current_returns_first() {
+        let mut r = RecentChars::new();
+        r.push('a');
+        r.push('b');
+        // current 'z' is not in list -> should wrap to first (most-recent) on +1.
+        assert_eq!(r.cycle_from('z', 1), Some('b'));
+    }
+
+    #[test]
+    fn cycle_on_empty_returns_none() {
+        let r = RecentChars::new();
+        assert_eq!(r.cycle_from('a', 1), None);
+    }
 }

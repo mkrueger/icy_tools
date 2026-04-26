@@ -93,6 +93,12 @@ pub struct AnsiToolSessionState {
 
     #[serde(default)]
     pub font_slot: usize,
+
+    /// MRU paint-char history (newest first), capped at 8 entries by the
+    /// editor on push. Restored on session reopen so the cycle hotkeys (#9)
+    /// keep working across runs.
+    #[serde(default)]
+    pub recent_chars: Vec<char>,
 }
 
 impl AnsiToolSessionState {

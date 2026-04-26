@@ -301,6 +301,9 @@ impl AnsiEditorMainArea {
             out.font_slot = f.font_slot();
         }
 
+        // Recent paint-char MRU history (#9).
+        out.recent_chars = self.core.recent_chars().read().as_slice().to_vec();
+
         out
     }
 
@@ -349,6 +352,9 @@ impl AnsiEditorMainArea {
                 f.set_font_slot(font_slot);
             }
         }
+
+        // Recent paint-char MRU history (#9).
+        self.core.recent_chars().write().restore(state.recent_chars.clone());
     }
 
     pub fn save(&mut self, path: &Path) -> Result<(), String> {

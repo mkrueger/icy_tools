@@ -171,6 +171,9 @@ pub enum AnsiEditorCoreMessage {
     PrevBgColor,
     PickAttributeUnderCaret,
     SwitchToDefaultColor,
+    /// Cycle the brush paint-char through the recent-chars MRU list.
+    /// `delta = 1` selects the next-older entry, `delta = -1` the more-recent one.
+    CyclePaintChar(i32),
 
     // --- Display Mode Operations ---
     ToggleIceColors,

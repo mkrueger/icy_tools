@@ -39,6 +39,8 @@ pub mod color_cmd {
         PREV_BG = "color.prev_bg",
         PICK_ATTRIBUTE_UNDER_CARET = "color.pick_attribute_under_caret",
         SWAP = "color.swap",
+        CYCLE_PAINT_CHAR_NEXT = "color.cycle_paint_char_next",
+        CYCLE_PAINT_CHAR_PREV = "color.cycle_paint_char_prev",
     }
 }
 

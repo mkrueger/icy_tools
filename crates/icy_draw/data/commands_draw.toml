@@ -213,6 +213,17 @@ id = "color.swap"
 hotkey = ["Alt+X"]
 category = "colors"
 
+# Cycle the brush paint-char through the most-recently-used 8 chars (#9).
+[[commands]]
+id = "color.cycle_paint_char_next"
+hotkey = ["Alt+]"]
+category = "colors"
+
+[[commands]]
+id = "color.cycle_paint_char_prev"
+hotkey = ["Alt+["]
+category = "colors"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # View
 # ═══════════════════════════════════════════════════════════════════════════════

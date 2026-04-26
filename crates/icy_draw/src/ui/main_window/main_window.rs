@@ -103,6 +103,8 @@ command_handler!(MainWindowCommands, create_draw_commands(), => Message {
     color_cmd::PREV_BG => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PrevBgColor)),
     color_cmd::PICK_ATTRIBUTE_UNDER_CARET => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::PickAttributeUnderCaret)),
     color_cmd::SWAP => Message::AnsiEditor(AnsiEditorMessage::ColorSwitcher(crate::ui::ColorSwitcherMessage::SwapColors)),
+    color_cmd::CYCLE_PAINT_CHAR_NEXT => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::CyclePaintChar(1))),
+    color_cmd::CYCLE_PAINT_CHAR_PREV => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::CyclePaintChar(-1))),
     // Selection
     selection_cmd::SELECT_NONE => Message::Deselect,
     selection_cmd::SELECT_INVERSE => Message::AnsiEditor(AnsiEditorMessage::InverseSelection),
