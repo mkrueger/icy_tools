@@ -21,6 +21,41 @@ use icy_engine_gui::TerminalMessage;
 use icy_engine_gui::{EditorMarkers, MonitorSettings, Terminal, TerminalView, ZoomMessage};
 use parking_lot::{Mutex, RwLock};
 
+/// Maximum mask dimension we are willing to upload to the GPU.
+///
+/// Kept conservative so the texture also fits within the wgpu GLES downlevel
+/// limit (`max_texture_dimension_2d` is as low as 2048 there). On modern
+/// Vulkan/Metal/DX12 backends this still leaves plenty of headroom for any
+/// realistic editor selection or tool overlay.
+const MAX_MASK_DIMENSION: u32 = 4096;
+
+/// Validate an optional mask payload before it is handed to the GPU pipeline.
+///
+/// The shader-level texture creation (in `icy_engine_gui`) clamps oversized
+/// dimensions, but on the GLES fallback path it can still panic on degenerate
+/// inputs (zero-sized, missing bytes, mismatched dimensions). This helper drops
+/// the mask entirely in those cases so the editor keeps rendering instead of
+/// taking down the renderer.
+fn sanitize_mask(mask: Option<(Vec<u8>, u32, u32)>) -> Option<(Vec<u8>, u32, u32)> {
+    let (data, width, height) = mask?;
+    if width == 0 || height == 0 {
+        return None;
+    }
+    if width > MAX_MASK_DIMENSION || height > MAX_MASK_DIMENSION {
+        log::warn!("Dropping mask of {width}x{height} pixels (exceeds {MAX_MASK_DIMENSION}px GPU safety limit)");
+        return None;
+    }
+    let expected = (width as usize).checked_mul(height as usize).and_then(|p| p.checked_mul(4))?;
+    if data.len() < expected {
+        log::warn!(
+            "Dropping malformed mask: expected at least {expected} bytes for {width}x{height}, got {}",
+            data.len()
+        );
+        return None;
+    }
+    Some((data, width, height))
+}
+
 /// Canvas view state for the ANSI editor
 pub struct CanvasView {
     /// Terminal widget for rendering
@@ -163,16 +198,19 @@ impl CanvasView {
     /// mask_data: (RGBA texture data, width in cells, height in cells)
     pub fn set_selection_mask(&mut self, mask_data: Option<(Vec<u8>, u32, u32)>) {
         let mut markers = self.terminal.markers.write();
-        markers.selection_mask_data = mask_data;
+        markers.selection_mask_data = sanitize_mask(mask_data);
     }
 
     /// Set the tool overlay for Moebius-style translucent tool previews.
     /// mask_data: (RGBA texture data, width in pixels, height in pixels)
     /// rect_px: (x, y, width, height) in document pixels
     pub fn set_tool_overlay_mask(&mut self, mask_data: Option<(Vec<u8>, u32, u32)>, rect_px: Option<(f32, f32, f32, f32)>) {
+        let sanitized = sanitize_mask(mask_data);
         let mut markers = self.terminal.markers.write();
-        markers.tool_overlay_mask_data = mask_data;
-        markers.tool_overlay_rect = rect_px;
+        // Drop the rect too if the mask was rejected, otherwise the shader would
+        // sample whatever stale texture is bound.
+        markers.tool_overlay_mask_data = sanitized.clone();
+        markers.tool_overlay_rect = if sanitized.is_some() { rect_px } else { None };
     }
 
     /// Set or update the reference image

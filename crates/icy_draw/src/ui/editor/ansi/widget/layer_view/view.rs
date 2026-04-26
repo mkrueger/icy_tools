@@ -59,8 +59,13 @@ const LAYER_ROW_HEIGHT: f32 = PREVIEW_HEIGHT + 2.0 * (LAYER_ROW_PADDING as f32) 
 const PREVIEW_TEX_W: u32 = PREVIEW_WIDTH as u32;
 const PREVIEW_TEX_H: u32 = PREVIEW_HEIGHT as u32;
 
+// Atlas layout. The total atlas must stay within `max_texture_dimension_2d`
+// for every backend we run on - notably the wgpu GLES downlevel path which
+// can advertise as little as 2048. With PREVIEW_TEX_W=128 / PREVIEW_TEX_H=80
+// this gives an atlas of 1024x1920 and 192 preview slots, which fits both
+// downlevel GLES and modern Vulkan/Metal/DX12.
 const PREVIEW_ATLAS_COLS: u32 = 8;
-const PREVIEW_ATLAS_ROWS: u32 = 32;
+const PREVIEW_ATLAS_ROWS: u32 = 24;
 const PREVIEW_ATLAS_SLOTS: u32 = PREVIEW_ATLAS_COLS * PREVIEW_ATLAS_ROWS;
 const PREVIEW_ATLAS_W: u32 = PREVIEW_TEX_W * PREVIEW_ATLAS_COLS;
 const PREVIEW_ATLAS_H: u32 = PREVIEW_TEX_H * PREVIEW_ATLAS_ROWS;
@@ -1536,7 +1541,13 @@ impl icy_ui::widget::shader::Pipeline for LayerListBackgroundRenderer {
             view_formats: &[],
         });
 
-        let atlas_view = atlas_texture.create_view(&icy_ui::wgpu::TextureViewDescriptor::default());
+        let atlas_view = atlas_texture.create_view(&icy_ui::wgpu::TextureViewDescriptor {
+            // Be explicit about the view dimension - the wgpu GLES path is
+            // sensitive to the heuristic that picks D2 vs D2Array based on
+            // `depth_or_array_layers` (see issue #164 logs).
+            dimension: Some(icy_ui::wgpu::TextureViewDimension::D2),
+            ..Default::default()
+        });
         let atlas_sampler = device.create_sampler(&icy_ui::wgpu::SamplerDescriptor {
             label: Some("Layer List Preview Atlas Sampler"),
             address_mode_u: icy_ui::wgpu::AddressMode::ClampToEdge,

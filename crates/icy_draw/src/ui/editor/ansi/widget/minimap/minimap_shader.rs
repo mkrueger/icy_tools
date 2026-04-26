@@ -679,6 +679,19 @@ impl shader::Primitive for MinimapPrimitive {
             let max_slice_h = self.slices.iter().take(num_slices).map(|s| s.height.max(1)).max().unwrap_or(1);
             let layer_count = (num_slices as u32).max(1);
 
+            // Defensively clamp to the device's reported limits. The GLES
+            // backend can report `max_texture_dimension_2d` as low as 2048 and
+            // `max_texture_array_layers` as low as 256; allocating beyond that
+            // panics inside wgpu. Clamping keeps the minimap usable on
+            // downlevel/GLES paths even if the rendered tile happens to be
+            // larger.
+            let limits = device.limits();
+            let max_dim = limits.max_texture_dimension_2d.max(1);
+            let max_layers = limits.max_texture_array_layers.max(1);
+            let max_slice_w = max_slice_w.min(max_dim);
+            let max_slice_h = max_slice_h.min(max_dim);
+            let layer_count = layer_count.min(max_layers);
+
             // Create texture array with uniform layer dimensions
             let texture = device.create_texture(&icy_ui::wgpu::TextureDescriptor {
                 label: Some(&format!("Minimap Texture Array {}", id)),
@@ -759,7 +772,24 @@ impl shader::Primitive for MinimapPrimitive {
 
         // Upload texture data only if changed
         if needs_texture_upload {
+            let (atlas_w, atlas_h) = (resources.texture_array.texture.width(), resources.texture_array.texture.height());
+            let max_layers = resources.texture_array.texture.depth_or_array_layers();
             for (i, slice_data) in self.slices.iter().enumerate().take(num_slices) {
+                if i as u32 >= max_layers {
+                    break;
+                }
+                // Clamp the upload to the actual atlas extent - the texture may
+                // be smaller than the slice if device limits forced a clamp.
+                let upload_w = slice_data.width.min(atlas_w);
+                let upload_h = slice_data.height.min(atlas_h);
+                if upload_w == 0 || upload_h == 0 {
+                    continue;
+                }
+                let expected = (slice_data.width as usize).saturating_mul(slice_data.height as usize).saturating_mul(4);
+                if slice_data.rgba_data.len() < expected {
+                    // Malformed slice - skip rather than feeding the GPU bad data.
+                    continue;
+                }
                 if !slice_data.rgba_data.is_empty() {
                     let bytes_per_row = 4 * slice_data.width;
 
@@ -777,8 +807,8 @@ impl shader::Primitive for MinimapPrimitive {
                             rows_per_image: Some(slice_data.height),
                         },
                         icy_ui::wgpu::Extent3d {
-                            width: slice_data.width,
-                            height: slice_data.height,
+                            width: upload_w,
+                            height: upload_h,
                             depth_or_array_layers: 1,
                         },
                     );
