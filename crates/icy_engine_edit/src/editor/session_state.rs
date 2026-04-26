@@ -52,11 +52,12 @@ pub struct AnsiEditorSessionState {
     #[serde(default)]
     pub selected_tool: String,
 
-    /// Opaque tool-specific session state (serialized by the editor frontend).
+    /// Versioned tool-specific session state (serialized by the editor frontend).
     ///
-    /// This is a bitcode-encoded blob owned by `icy_draw`'s tool session state
-    /// types. Stored here so the autosave mechanism can persist per-tool
-    /// settings (brush mode, paint char, fg/bg flags, selection mode, etc.).
+    /// This is a bitcode-encoded `icy_draw` tool-session version enum. Stored
+    /// here so the autosave mechanism can persist per-tool settings (brush
+    /// mode, paint char, fg/bg flags, selection mode, etc.) while allowing the
+    /// frontend to migrate old tool-state payloads explicitly.
     #[serde(default)]
     pub tool_state_blob: Vec<u8>,
 
