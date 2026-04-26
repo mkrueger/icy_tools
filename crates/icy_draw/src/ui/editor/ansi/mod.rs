@@ -23,9 +23,12 @@
 //! inconsistent state when users try to undo/redo.
 
 pub mod ansi_editor;
+mod clipboard;
 pub mod constants;
 pub mod dialog;
 pub mod main_area;
+mod markers;
+mod scroll;
 pub mod selection_drag;
 mod shape_points;
 pub mod tool_registry;
