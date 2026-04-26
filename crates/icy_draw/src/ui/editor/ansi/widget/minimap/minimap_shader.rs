@@ -496,17 +496,11 @@ pub struct MinimapPrimitive {
 }
 
 impl MinimapPrimitive {
-    /// Compute a hash of the texture data pointers to detect changes
-    fn compute_data_hash(&self) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        for slice in &self.slices {
-            // Use the Arc pointer address as a unique identifier
-            let ptr = Arc::as_ptr(&slice.rgba_data) as usize;
-            ptr.hash(&mut hasher);
-        }
-        hasher.finish()
+    /// Per-slice Arc pointer fingerprint. Each slot returns the address of
+    /// its `Arc<Vec<u8>>` payload; the shader compares this against the
+    /// previously uploaded fingerprint to skip unchanged uploads.
+    fn slice_ptrs(&self) -> Vec<usize> {
+        self.slices.iter().map(|s| Arc::as_ptr(&s.rgba_data) as usize).collect()
     }
 }
 
@@ -531,8 +525,10 @@ struct InstanceResources {
     num_slices: usize,
     /// Individual slice sizes (width, height) for cache validation
     slice_sizes: Vec<(u32, u32)>,
-    /// Hash of texture data pointers to detect when data changed
-    texture_data_hash: u64,
+    /// Per-slice Arc pointer fingerprint. `slice_ptrs[i]` records the
+    /// `Arc::as_ptr` of the data uploaded to texture slot `i` last time;
+    /// only slots whose pointer has changed are re-uploaded.
+    slice_ptrs: Vec<usize>,
 }
 
 /// The minimap shader renderer (GPU pipeline) with multi-texture support
@@ -712,7 +708,8 @@ impl shader::Primitive for MinimapPrimitive {
                     texture_size: (tex_w, tex_h),
                     num_slices,
                     slice_sizes: current_slice_sizes.clone(),
-                    texture_data_hash: 0, // Will be updated below
+                    // Empty fingerprint: every slot will be uploaded fresh below.
+                    slice_ptrs: Vec::new(),
                 },
             );
         }
@@ -721,55 +718,69 @@ impl shader::Primitive for MinimapPrimitive {
             return;
         };
 
-        // Check if texture data has changed using pointer-based hash
-        let current_hash = self.compute_data_hash();
-        let needs_texture_upload = resources.texture_data_hash != current_hash;
+        // Per-slice pointer fingerprint. We only upload slots whose Arc
+        // pointer has changed since the last frame. This keeps the GPU
+        // upload cost proportional to how many tiles actually changed
+        // (typically one or two on a layer edit) instead of always
+        // re-uploading the entire texture array.
+        let current_ptrs = self.slice_ptrs();
 
-        // Upload texture data only if changed
-        if needs_texture_upload {
-            let (atlas_w, atlas_h) = (resources.texture_array.texture.width(), resources.texture_array.texture.height());
-            let max_layers = resources.texture_array.texture.depth_or_array_layers();
-            for (i, slice_data) in self.slices.iter().enumerate().take(num_slices) {
-                if i as u32 >= max_layers {
-                    break;
-                }
-                // Clamp the upload to the actual atlas extent - the texture may
-                // be smaller than the slice if device limits forced a clamp.
-                let upload_w = slice_data.width.min(atlas_w);
-                let upload_h = slice_data.height.min(atlas_h);
-                if upload_w == 0 || upload_h == 0 {
-                    continue;
-                }
-                let expected = (slice_data.width as usize).saturating_mul(slice_data.height as usize).saturating_mul(4);
-                if slice_data.rgba_data.len() < expected {
-                    // Malformed slice - skip rather than feeding the GPU bad data.
-                    continue;
-                }
-                if !slice_data.rgba_data.is_empty() {
-                    let bytes_per_row = 4 * slice_data.width;
+        // Resize the fingerprint cache to match the current slice count;
+        // freshly added slots get a sentinel that guarantees an upload.
+        if resources.slice_ptrs.len() != current_ptrs.len() {
+            resources.slice_ptrs.resize(current_ptrs.len(), 0);
+        }
 
-                    queue.write_texture(
-                        icy_ui::wgpu::TexelCopyTextureInfo {
-                            texture: &resources.texture_array.texture,
-                            mip_level: 0,
-                            origin: icy_ui::wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
-                            aspect: icy_ui::wgpu::TextureAspect::All,
-                        },
-                        &slice_data.rgba_data,
-                        icy_ui::wgpu::TexelCopyBufferLayout {
-                            offset: 0,
-                            bytes_per_row: Some(bytes_per_row),
-                            rows_per_image: Some(slice_data.height),
-                        },
-                        icy_ui::wgpu::Extent3d {
-                            width: upload_w,
-                            height: upload_h,
-                            depth_or_array_layers: 1,
-                        },
-                    );
-                }
+        let (atlas_w, atlas_h) = (resources.texture_array.texture.width(), resources.texture_array.texture.height());
+        let max_layers = resources.texture_array.texture.depth_or_array_layers();
+        for (i, slice_data) in self.slices.iter().enumerate().take(num_slices) {
+            if i as u32 >= max_layers {
+                break;
             }
-            resources.texture_data_hash = current_hash;
+
+            // Skip slots whose pointer didn't change.
+            if current_ptrs[i] == resources.slice_ptrs[i] {
+                continue;
+            }
+
+            // Clamp the upload to the actual atlas extent - the texture may
+            // be smaller than the slice if device limits forced a clamp.
+            let upload_w = slice_data.width.min(atlas_w);
+            let upload_h = slice_data.height.min(atlas_h);
+            if upload_w == 0 || upload_h == 0 {
+                continue;
+            }
+            let expected = (slice_data.width as usize).saturating_mul(slice_data.height as usize).saturating_mul(4);
+            if slice_data.rgba_data.len() < expected {
+                // Malformed slice - skip rather than feeding the GPU bad data.
+                continue;
+            }
+            if !slice_data.rgba_data.is_empty() {
+                let bytes_per_row = 4 * slice_data.width;
+
+                queue.write_texture(
+                    icy_ui::wgpu::TexelCopyTextureInfo {
+                        texture: &resources.texture_array.texture,
+                        mip_level: 0,
+                        origin: icy_ui::wgpu::Origin3d { x: 0, y: 0, z: i as u32 },
+                        aspect: icy_ui::wgpu::TextureAspect::All,
+                    },
+                    &slice_data.rgba_data,
+                    icy_ui::wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(bytes_per_row),
+                        rows_per_image: Some(slice_data.height),
+                    },
+                    icy_ui::wgpu::Extent3d {
+                        width: upload_w,
+                        height: upload_h,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                // Record the freshly uploaded pointer so the next frame's
+                // comparison can detect future changes.
+                resources.slice_ptrs[i] = current_ptrs[i];
+            }
         }
 
         // Update uniforms

@@ -95,6 +95,14 @@ pub struct MinimapView {
     last_first_tile_idx: RefCell<i32>,
     /// Last computed tile count (for change detection)
     last_tile_count: RefCell<i32>,
+    /// Stable placeholder Arc reused for every missing tile slot.
+    ///
+    /// Allocating a fresh `Arc<Vec<u8>>` per missing slot per frame would
+    /// invalidate the shader's per-slice pointer fingerprint and force a
+    /// re-upload even though the placeholder bytes never change. Sharing
+    /// a single Arc per `MinimapView` keeps the fingerprint stable until
+    /// real tile data arrives.
+    placeholder_rgba: Arc<Vec<u8>>,
 }
 
 impl Default for MinimapView {
@@ -113,6 +121,7 @@ impl MinimapView {
             cache_state: RefCell::new(None),
             last_first_tile_idx: RefCell::new(-1),
             last_tile_count: RefCell::new(0),
+            placeholder_rgba: Arc::new(vec![0, 0, 0, 0]),
         }
     }
 
@@ -328,8 +337,10 @@ impl MinimapView {
                     let first_slice_start_y = first_tile_idx as f32 * tile_height;
 
                     // Small placeholder (1x1) for missing tiles. Height is defined by `heights`.
+                    // Reuse the per-instance Arc so the shader's pointer-based fingerprint
+                    // stays stable across frames while a tile is still pending.
                     let placeholder_slice = TextureSliceData {
-                        rgba_data: Arc::new(vec![0, 0, 0, 0]),
+                        rgba_data: Arc::clone(&self.placeholder_rgba),
                         width: 1,
                         height: 1,
                     };
