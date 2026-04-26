@@ -1620,34 +1620,8 @@ impl icy_ui::widget::shader::Pipeline for LayerListBackgroundRenderer {
             push_constant_ranges: &[],
         });
 
-        let pipeline = device.create_render_pipeline(&icy_ui::wgpu::RenderPipelineDescriptor {
-            label: Some("Layer List Background Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: icy_ui::wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(icy_ui::wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(icy_ui::wgpu::ColorTargetState {
-                    format,
-                    blend: Some(icy_ui::wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: icy_ui::wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: icy_ui::wgpu::PrimitiveState {
-                topology: icy_ui::wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: icy_ui::wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        let pipeline =
+            crate::ui::widget::gpu_util::build_alpha_blended_pipeline(device, "Layer List Background Pipeline", &pipeline_layout, &shader, format, &[]);
 
         Self {
             pipeline,

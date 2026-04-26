@@ -594,39 +594,7 @@ impl shader::Pipeline for MinimapShaderRenderer {
             push_constant_ranges: &[],
         });
 
-        let pipeline = device.create_render_pipeline(&icy_ui::wgpu::RenderPipelineDescriptor {
-            label: Some("Minimap Pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: icy_ui::wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(icy_ui::wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(icy_ui::wgpu::ColorTargetState {
-                    format,
-                    blend: Some(icy_ui::wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: icy_ui::wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: icy_ui::wgpu::PrimitiveState {
-                topology: icy_ui::wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: icy_ui::wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: icy_ui::wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: icy_ui::wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        let pipeline = crate::ui::widget::gpu_util::build_alpha_blended_pipeline(device, "Minimap Pipeline", &pipeline_layout, &shader, format, &[]);
 
         // Use linear filtering for smooth minimap scaling
         let sampler = device.create_sampler(&icy_ui::wgpu::SamplerDescriptor {

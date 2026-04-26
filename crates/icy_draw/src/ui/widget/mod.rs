@@ -4,5 +4,6 @@
 //! - `tool_panel` - Tool selection panel
 //! - `paste_controls` - Paste mode anchor/cancel controls
 
+pub mod gpu_util;
 pub mod paste_controls;
 pub mod tool_panel;
