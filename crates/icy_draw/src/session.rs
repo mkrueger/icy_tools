@@ -84,9 +84,99 @@ pub enum EditorSessionData {
     Animation(AnimationSessionState),
 }
 
+/// Legacy editor-session payload used before the explicit session-data envelope
+/// existed.
+///
+/// Kept separate from [`EditorSessionData`] so future breaking changes can add
+/// fields/variants to the current payload and still keep an intentional V1
+/// migration path for old autosave/session files.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+enum EditorSessionDataV1 {
+    Ansi(AnsiEditorSessionState),
+    BitFont(BitFontSessionState),
+    CharFont(CharFontSessionState),
+    Animation(AnimationSessionState),
+}
+
+impl From<EditorSessionDataV1> for EditorSessionData {
+    fn from(v1: EditorSessionDataV1) -> Self {
+        match v1 {
+            EditorSessionDataV1::Ansi(state) => EditorSessionData::Ansi(state),
+            EditorSessionDataV1::BitFont(state) => EditorSessionData::BitFont(state),
+            EditorSessionDataV1::CharFont(state) => EditorSessionData::CharFont(state),
+            EditorSessionDataV1::Animation(state) => EditorSessionData::Animation(state),
+        }
+    }
+}
+
+/// Versioned envelope for the per-editor session-data file (`*.session`).
+///
+/// `session.json` only points at this binary file; the detailed editor state
+/// lives here. New writes always use the newest variant. Reads accept both the
+/// versioned envelope and historical bare `EditorSessionData` blobs so users do
+/// not lose autosave/tool/window state after format changes.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+enum EditorSessionDataVersion {
+    V1(EditorSessionDataV1),
+    V2(EditorSessionData),
+}
+
+const EDITOR_SESSION_DATA_MAGIC: [u8; 4] = *b"ICYS";
+
+/// Binary session-data envelope.
+///
+/// The magic prefix makes the new format unambiguous from historical bare
+/// `EditorSessionData` enum blobs, which is important because both are bitcode
+/// enums and can otherwise be difficult to distinguish safely.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct EditorSessionDataEnvelope {
+    magic: [u8; 4],
+    payload: EditorSessionDataVersion,
+}
+
+impl EditorSessionDataVersion {
+    fn into_current(self) -> EditorSessionData {
+        match self {
+            EditorSessionDataVersion::V1(v1) => v1.into(),
+            EditorSessionDataVersion::V2(v2) => v2,
+        }
+    }
+}
+
 impl Default for EditorSessionData {
     fn default() -> Self {
         Self::Ansi(AnsiEditorSessionState::default())
+    }
+}
+
+impl EditorSessionData {
+    /// Encode using an explicit versioned envelope.
+    fn encode_versioned(&self) -> Result<Vec<u8>, bitcode::Error> {
+        bitcode::serialize(&EditorSessionDataEnvelope {
+            magic: EDITOR_SESSION_DATA_MAGIC,
+            payload: EditorSessionDataVersion::V2(self.clone()),
+        })
+    }
+
+    /// Decode current or legacy editor-session data.
+    ///
+    /// Accepted input shapes:
+    /// - `EditorSessionDataVersion::V2(current)` (current writer)
+    /// - `EditorSessionDataVersion::V1(legacy)` (explicit legacy envelope)
+    /// - bare `EditorSessionData` (pre-#1 session files)
+    /// - bare `EditorSessionDataV1` (pre-#1 legacy alias)
+    fn decode_versioned(bytes: &[u8]) -> Result<Self, bitcode::Error> {
+        if let Ok(envelope) = bitcode::deserialize::<EditorSessionDataEnvelope>(bytes) {
+            if envelope.magic == EDITOR_SESSION_DATA_MAGIC {
+                return Ok(envelope.payload.into_current());
+            }
+        }
+
+        if let Ok(current) = bitcode::deserialize::<EditorSessionData>(bytes) {
+            return Ok(current);
+        }
+
+        bitcode::deserialize::<EditorSessionDataV1>(bytes).map(Into::into)
     }
 }
 
@@ -374,9 +464,9 @@ impl SessionManager {
         self.session_dir.join(format!("untitled_{}.session", untitled_index))
     }
 
-    /// Save editor session data using bitcode
+    /// Save editor session data using a versioned bitcode envelope.
     pub fn save_session_data(&self, path: &PathBuf, data: &EditorSessionData) -> Result<(), String> {
-        let bytes = bitcode::serialize(data).map_err(|e| format!("Failed to serialize session data: {}", e))?;
+        let bytes = data.encode_versioned().map_err(|e| format!("Failed to serialize session data: {}", e))?;
 
         // Atomic write
         let temp_path = path.with_extension("tmp");
@@ -387,14 +477,15 @@ impl SessionManager {
         Ok(())
     }
 
-    /// Load editor session data using bitcode
+    /// Load editor session data using bitcode, accepting both current versioned
+    /// envelopes and legacy bare payloads.
     pub fn load_session_data(&self, path: &PathBuf) -> Option<EditorSessionData> {
         if !path.exists() {
             return None;
         }
 
         match fs::read(path) {
-            Ok(bytes) => match bitcode::deserialize(&bytes) {
+            Ok(bytes) => match EditorSessionData::decode_versioned(&bytes) {
                 Ok(data) => {
                     log::debug!("Session data loaded from {:?}", path);
                     Some(data)
@@ -424,6 +515,180 @@ impl SessionManager {
 impl Default for SessionManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn sample_ansi_data() -> EditorSessionData {
+        let mut state = AnsiEditorSessionState::default();
+        state.selected_tool = "Pencil".to_string();
+        state.zoom_level = 2.0;
+        state.scroll_offset = (12.0, 34.0);
+        EditorSessionData::Ansi(state)
+    }
+
+    fn sample_bitfont_data() -> EditorSessionData {
+        let mut state = BitFontSessionState::default();
+        state.selected_glyph = 42;
+        state.edit_zoom = 3.0;
+        state.selected_tool = "Pencil".to_string();
+        EditorSessionData::BitFont(state)
+    }
+
+    fn sample_charfont_data() -> EditorSessionData {
+        let mut state = CharFontSessionState::default();
+        state.selected_slot = 65;
+        state.preview_text = "ICE".to_string();
+        state.ansi_state.selected_tool = "Font".to_string();
+        EditorSessionData::CharFont(state)
+    }
+
+    fn sample_animation_data() -> EditorSessionData {
+        let state = AnimationSessionState {
+            current_frame: 7,
+            playback_position: 1.25,
+            is_playing: true,
+            script_scroll_offset: 99.0,
+            ..AnimationSessionState::default()
+        };
+        EditorSessionData::Animation(state)
+    }
+
+    fn assert_same_session_data(actual: &EditorSessionData, expected: &EditorSessionData) {
+        match (actual, expected) {
+            (EditorSessionData::Ansi(actual), EditorSessionData::Ansi(expected)) => {
+                assert_eq!(actual.selected_tool, expected.selected_tool);
+                assert_eq!(actual.zoom_level, expected.zoom_level);
+                assert_eq!(actual.scroll_offset, expected.scroll_offset);
+            }
+            (EditorSessionData::BitFont(actual), EditorSessionData::BitFont(expected)) => {
+                assert_eq!(actual.selected_glyph, expected.selected_glyph);
+                assert_eq!(actual.edit_zoom, expected.edit_zoom);
+                assert_eq!(actual.selected_tool, expected.selected_tool);
+            }
+            (EditorSessionData::CharFont(actual), EditorSessionData::CharFont(expected)) => {
+                assert_eq!(actual.selected_slot, expected.selected_slot);
+                assert_eq!(actual.preview_text, expected.preview_text);
+                assert_eq!(actual.ansi_state.selected_tool, expected.ansi_state.selected_tool);
+            }
+            (EditorSessionData::Animation(actual), EditorSessionData::Animation(expected)) => {
+                assert_eq!(actual.current_frame, expected.current_frame);
+                assert_eq!(actual.playback_position, expected.playback_position);
+                assert_eq!(actual.is_playing, expected.is_playing);
+                assert_eq!(actual.script_scroll_offset, expected.script_scroll_offset);
+            }
+            _ => panic!("session data variants differ: actual={actual:?}, expected={expected:?}"),
+        }
+    }
+
+    fn explicit_v1_from_current(data: EditorSessionData) -> EditorSessionDataV1 {
+        match data {
+            EditorSessionData::Ansi(state) => EditorSessionDataV1::Ansi(state),
+            EditorSessionData::BitFont(state) => EditorSessionDataV1::BitFont(state),
+            EditorSessionData::CharFont(state) => EditorSessionDataV1::CharFont(state),
+            EditorSessionData::Animation(state) => EditorSessionDataV1::Animation(state),
+        }
+    }
+
+    fn temp_session_manager() -> (SessionManager, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("icy_draw_session_test_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("create temp session dir");
+        let manager = SessionManager {
+            session_dir: dir.clone(),
+            autosave_delay_secs: 5,
+            autosave_status: HashMap::new(),
+        };
+        (manager, dir)
+    }
+
+    #[test]
+    fn encode_writes_magic_v2_envelope() {
+        let data = sample_ansi_data();
+        let bytes = data.encode_versioned().expect("encode versioned session data");
+
+        let envelope = bitcode::deserialize::<EditorSessionDataEnvelope>(&bytes).expect("decode envelope");
+        assert_eq!(envelope.magic, EDITOR_SESSION_DATA_MAGIC);
+        match envelope.payload {
+            EditorSessionDataVersion::V2(decoded) => assert_same_session_data(&decoded, &data),
+            EditorSessionDataVersion::V1(_) => panic!("new encoder must not write V1"),
+        }
+    }
+
+    #[test]
+    fn decode_current_v2_round_trips_all_editor_variants() {
+        for data in [sample_ansi_data(), sample_bitfont_data(), sample_charfont_data(), sample_animation_data()] {
+            let bytes = data.encode_versioned().expect("encode current session data");
+            let decoded = EditorSessionData::decode_versioned(&bytes).expect("decode current session data");
+            assert_same_session_data(&decoded, &data);
+        }
+    }
+
+    #[test]
+    fn decode_explicit_v1_envelope_migrates_to_current() {
+        let current = sample_charfont_data();
+        let legacy = explicit_v1_from_current(current.clone());
+        let bytes = bitcode::serialize(&EditorSessionDataEnvelope {
+            magic: EDITOR_SESSION_DATA_MAGIC,
+            payload: EditorSessionDataVersion::V1(legacy),
+        })
+        .expect("serialize explicit v1 envelope");
+
+        let decoded = EditorSessionData::decode_versioned(&bytes).expect("decode migrated v1 envelope");
+        assert_same_session_data(&decoded, &current);
+    }
+
+    #[test]
+    fn decode_legacy_bare_editor_session_data() {
+        let current = sample_bitfont_data();
+        let bytes = bitcode::serialize(&current).expect("serialize legacy bare current data");
+
+        let decoded = EditorSessionData::decode_versioned(&bytes).expect("decode bare current data");
+        assert_same_session_data(&decoded, &current);
+    }
+
+    #[test]
+    fn decode_legacy_bare_v1_data() {
+        let current = sample_animation_data();
+        let legacy = explicit_v1_from_current(current.clone());
+        let bytes = bitcode::serialize(&legacy).expect("serialize legacy bare v1 data");
+
+        let decoded = EditorSessionData::decode_versioned(&bytes).expect("decode bare v1 data");
+        assert_same_session_data(&decoded, &current);
+    }
+
+    #[test]
+    fn decode_rejects_invalid_envelope_magic() {
+        let data = sample_ansi_data();
+        let bytes = bitcode::serialize(&EditorSessionDataEnvelope {
+            magic: *b"BAD!",
+            payload: EditorSessionDataVersion::V2(data),
+        })
+        .expect("serialize invalid envelope");
+
+        assert!(EditorSessionData::decode_versioned(&bytes).is_err());
+    }
+
+    #[test]
+    fn session_manager_saves_and_loads_versioned_data() {
+        let (manager, dir) = temp_session_manager();
+        let path = dir.join("editor.session");
+        let data = sample_ansi_data();
+
+        manager.save_session_data(&path, &data).expect("save session data");
+
+        let bytes = fs::read(&path).expect("read session data file");
+        let envelope = bitcode::deserialize::<EditorSessionDataEnvelope>(&bytes).expect("saved file should be versioned envelope");
+        assert_eq!(envelope.magic, EDITOR_SESSION_DATA_MAGIC);
+
+        let loaded = manager.load_session_data(&path).expect("load session data");
+        assert_same_session_data(&loaded, &data);
+
+        let _ = fs::remove_dir_all(dir);
     }
 }
 
