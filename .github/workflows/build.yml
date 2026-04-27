@@ -1,116 +1,138 @@
 name: Build
+
 on:
-  workflow_run:
-    workflows: ["Run Tests"]
-    branches: [master]
-    types: 
-      - completed
   push:
+    branches: ["master"]
     tags:
-      - 'v*'
+      - "v*"
+  pull_request:
+    branches: ["master"]
+
 env:
   CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
+  run_checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check formatting
+        run: |
+          cargo fmt --all -- --check
+      - run: rustup component add clippy
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install build-essential libgtk-3-dev libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev nasm
+          git submodule update --init
+      - name: Run tests
+        run: |
+          cargo test --all-features
+
   build_linux:
-   if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
-   strategy:
-     matrix:
-       app: [icy_term, icy_view, icy_draw]
-   runs-on: ubuntu-latest
-   steps:
-   - uses: actions/checkout@v4
-   - name: Install required libraries
-     run: |
-       sudo apt-get update
-       sudo apt-get install -y build-essential libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev nasm
-       git submodule update --init
-   - name: Build deb
-     id: build-deb
-     run: |
-       cargo install cargo-deb
-       export version=$(python3 tools/prep_diz.py "${{ matrix.app }}" "file_id.diz")
-       echo "VERSION=$version" >> $GITHUB_ENV
-       echo "Version: $version"
-       cd crates/${{ matrix.app }}
-       if [ "${{ matrix.app }}" = "icy_draw" ]; then
-         cargo deb --features rav1e-asm
-       else
-         cargo deb
-       fi
+    needs: run_checks
+    if: github.event_name == 'push'
+    strategy:
+      matrix:
+        app: [icy_term, icy_view, icy_draw]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install required libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev nasm
+          git submodule update --init
+      - name: Build deb
+        id: build-deb
+        run: |
+          cargo install cargo-deb
+          export version=$(python3 tools/prep_diz.py "${{ matrix.app }}" "file_id.diz")
+          echo "VERSION=$version" >> $GITHUB_ENV
+          echo "Version: $version"
+          cd crates/${{ matrix.app }}
+          if [ "${{ matrix.app }}" = "icy_draw" ]; then
+            cargo deb --features rav1e-asm
+          else
+            cargo deb
+          fi
 
-       # cargo-deb may convert underscores to hyphens in package names
-       DEB=$(ls -1 ../../target/debian/*.deb | grep -E "$(echo ${{ matrix.app }} | tr '_' '-')" | tail -n 1)
-       echo "Copy $DEB to ${{ matrix.app }}.deb"
-       mv "$DEB" "../../${{ matrix.app }}.deb"
-       cd ../..
-   - name: 'Upload deb'
-     uses: actions/upload-artifact@v4
-     with:
-       name: ${{ matrix.app }}_linux_${{ env.VERSION }}
-       path: |
-         ${{ matrix.app }}.deb
-         file_id.diz
-   - name: Build AppImage
-     id: build-appimage
-     run: |
-       wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-       chmod +x appimagetool-x86_64.AppImage
-       mkdir -p ${{ matrix.app }}-appimage/usr/bin
-       cp crates/${{ matrix.app }}/build/linux/256x256.png ${{ matrix.app }}-appimage/${{ matrix.app }}.png
-       cp crates/${{ matrix.app }}/build/linux/${{ matrix.app }}.desktop ${{ matrix.app }}-appimage/
-       cp target/release/${{ matrix.app }} ${{ matrix.app }}-appimage/usr/bin/
-       echo "#!/bin/bash" > ${{ matrix.app }}-appimage/AppRun
-       echo "exec \"\$(dirname \"\$0\")/usr/bin/${{ matrix.app }}\" \"\$@\"" >> ${{ matrix.app }}-appimage/AppRun
-       chmod a+x ${{ matrix.app }}-appimage/AppRun
+          # cargo-deb may convert underscores to hyphens in package names
+          DEB=$(ls -1 ../../target/debian/*.deb | grep -E "$(echo ${{ matrix.app }} | tr '_' '-')" | tail -n 1)
+          echo "Copy $DEB to ${{ matrix.app }}.deb"
+          mv "$DEB" "../../${{ matrix.app }}.deb"
+          cd ../..
+      - name: Upload deb
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.app }}_linux_${{ env.VERSION }}
+          path: |
+            ${{ matrix.app }}.deb
+            file_id.diz
+      - name: Build AppImage
+        id: build-appimage
+        run: |
+          wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          mkdir -p ${{ matrix.app }}-appimage/usr/bin
+          cp crates/${{ matrix.app }}/build/linux/256x256.png ${{ matrix.app }}-appimage/${{ matrix.app }}.png
+          cp crates/${{ matrix.app }}/build/linux/${{ matrix.app }}.desktop ${{ matrix.app }}-appimage/
+          cp target/release/${{ matrix.app }} ${{ matrix.app }}-appimage/usr/bin/
+          echo "#!/bin/bash" > ${{ matrix.app }}-appimage/AppRun
+          echo "exec \"\$(dirname \"\$0\")/usr/bin/${{ matrix.app }}\" \"\$@\"" >> ${{ matrix.app }}-appimage/AppRun
+          chmod a+x ${{ matrix.app }}-appimage/AppRun
 
-       export app_img=$(python3 tools/get_app_img.py "${{ matrix.app }}" "${{ env.VERSION }}" x86_64)
-       echo "APP_IMG=$app_img" >> $GITHUB_ENV
+          export app_img=$(python3 tools/get_app_img.py "${{ matrix.app }}" "${{ env.VERSION }}" x86_64)
+          echo "APP_IMG=$app_img" >> $GITHUB_ENV
 
-       ./appimagetool-x86_64.AppImage "${{ matrix.app }}-appimage" "$app_img"
-   - name: 'Upload AppImage'
-     uses: actions/upload-artifact@v4
-     with:
-      name: ${{ env.APP_IMG }}
-      path: |
-        ${{ env.APP_IMG }}
-        file_id.diz
+          ./appimagetool-x86_64.AppImage "${{ matrix.app }}-appimage" "$app_img"
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.APP_IMG }}
+          path: |
+            ${{ env.APP_IMG }}
+            file_id.diz
 
   build_windows:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    needs: run_checks
+    if: github.event_name == 'push'
     strategy:
       matrix:
         app: [icy_term, icy_view, icy_play, icy_draw]
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Prepare FILE_ID.DIZ
-      run: |
-        $VERSION=$(python tools\prep_diz.py "${{ matrix.app }}" "file_id.diz")
-        Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$VERSION"
-        echo "Version: $VERSION"
-    - name: Build exe
-      run: |
-        git submodule update --init
-        cd .\crates\${{ matrix.app }}
-        cargo build --release
-        cd ..\..
-        move .\target\release\${{ matrix.app }}.exe .
-    - name: 'Upload executable'
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.app }}_windows_${{ env.VERSION }}
-        path: |
-          ${{ matrix.app }}.exe
-          file_id.diz
-  
+      - uses: actions/checkout@v6
+      - name: Prepare FILE_ID.DIZ
+        run: |
+          $VERSION=$(python tools\prep_diz.py "${{ matrix.app }}" "file_id.diz")
+          Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$VERSION"
+          echo "Version: $VERSION"
+      - name: Build exe
+        run: |
+          git submodule update --init
+          cd .\crates\${{ matrix.app }}
+          cargo build --release
+          cd ..\..
+          move .\target\release\${{ matrix.app }}.exe .
+      - name: Upload executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.app }}_windows_${{ env.VERSION }}
+          path: |
+            ${{ matrix.app }}.exe
+            file_id.diz
+
   build_mac:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    needs: run_checks
+    if: github.event_name == 'push'
     strategy:
       matrix:
         app: [icy_term, icy_view, icy_draw]
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install cargo bundle & get
         run: |
           rustup target add aarch64-apple-darwin
@@ -145,7 +167,7 @@ jobs:
           cp crates/${{ matrix.app }}/build/mac/128x128@2x.png AppIcon.iconset/icon_128x128@2x.png
           iconutil -c icns AppIcon.iconset
           cp AppIcon.icns "$app.app/Contents/Resources"
-          
+
           export version=$(python3 tools/prep_diz.py "${{ matrix.app }}" "file_id.diz")
           echo "VERSION=$version" >> $GITHUB_ENV
           echo "Version: $version"
@@ -154,7 +176,6 @@ jobs:
           lipo "target/x86_64-apple-darwin/release/${{ matrix.app }}" \
                "target/aarch64-apple-darwin/release/${{ matrix.app }}" \
                -create -output "$app.app/Contents/MacOS/${{ matrix.app }}"
-
       - name: Sign dmg
         id: sign-bundle
         run: |
@@ -168,10 +189,10 @@ jobs:
             --app-drop-link 600 185 \
             "${{ matrix.app }}-${{ env.VERSION }}-universal.dmg" \
             "${{ env.APP }}.app"
-      - name: 'Upload dmg'
-        uses: actions/upload-artifact@v4
+      - name: Upload dmg
+        uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.app }}_osx_${{ env.VERSION }}${{ matrix.target }}
+          name: ${{ matrix.app }}_osx_${{ env.VERSION }}
           path: |
             ${{ matrix.app }}-${{ env.VERSION }}-universal.dmg
             file_id.diz
@@ -183,34 +204,34 @@ jobs:
     permissions:
       contents: write
     steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-    - name: Prepare release assets
-      run: |
-        mkdir -p release
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
 
-        # Create zip archives (with file_id.diz for BBS redistribution)
-        cd artifacts
-        for dir in */; do
-          dir_name="${dir%/}"
-          cd "$dir_name"
-          zip -r "../../release/${dir_name}.zip" .
+          # Create zip archives (with file_id.diz for BBS redistribution)
+          cd artifacts
+          for dir in */; do
+            dir_name="${dir%/}"
+            cd "$dir_name"
+            zip -r "../../release/${dir_name}.zip" .
+            cd ..
+          done
           cd ..
-        done
-        cd ..
 
-        # Copy individual files for direct download
-        find artifacts -name "*.deb" -exec cp {} release/ \;
-        find artifacts -name "*.AppImage" -exec cp {} release/ \;
-        find artifacts -name "*.exe" -exec cp {} release/ \;
-        find artifacts -name "*.dmg" -exec cp {} release/ \;
+          # Copy individual files for direct download
+          find artifacts -name "*.deb" -exec cp {} release/ \;
+          find artifacts -name "*.AppImage" -exec cp {} release/ \;
+          find artifacts -name "*.exe" -exec cp {} release/ \;
+          find artifacts -name "*.dmg" -exec cp {} release/ \;
 
-        echo "Release assets:"
-        ls -la release/
-    - name: Create Release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: release/*
-        generate_release_notes: true
+          echo "Release assets:"
+          ls -la release/
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
