@@ -1245,6 +1245,7 @@ impl TileGridView {
         scroll_area()
             .width(Length::Fill)
             .height(Length::Fill)
+            .auto_scroll(true)
             .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(8).scroller_width(6)))
             .show_viewport(Size::new(content_width, content_height), move |viewport| {
                 // Note: scroll position from this viewport is reported back

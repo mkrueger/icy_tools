@@ -983,6 +983,7 @@ impl PreviewView {
                     .id(self.terminal.scroll_area_id())
                     .width(Length::Fill)
                     .height(Length::Fill)
+                    .auto_scroll(true)
                     .direction(if is_fit_width {
                         scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(8).scroller_width(6))
                     } else {
