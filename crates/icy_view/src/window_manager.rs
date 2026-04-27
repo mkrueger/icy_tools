@@ -236,12 +236,14 @@ impl WindowManager {
                 match &event {
                     // Window focus events
                     Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => Some(WindowManagerMessage::Event(window_id, event)),
-                    // Mouse events - only pass through button and wheel events
-                    // CursorMoved is handled by the widget system directly (shader update methods)
+                    // Mouse events used by custom view event handlers.
+                    // CursorMoved keeps TileGridView::last_cursor_position in sync so
+                    // button events can resolve the clicked tile reliably.
                     Event::Mouse(icy_ui::mouse::Event::WheelScrolled { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Mouse(icy_ui::mouse::Event::CursorMoved { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Mouse(icy_ui::mouse::Event::CursorLeft) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Mouse(icy_ui::mouse::Event::ButtonPressed { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
-                    // Skip cursor move and other mouse events - hover is handled by widget update()
+                    // Skip other mouse events.
                     Event::Mouse(_) => None,
 
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {

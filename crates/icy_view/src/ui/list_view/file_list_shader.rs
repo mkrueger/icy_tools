@@ -239,6 +239,7 @@ pub const SAUCE_NAME_WIDTH: u32 = 286;
 pub const SAUCE_TITLE_WIDTH: u32 = 280; // 35 chars * 8px
 pub const SAUCE_AUTHOR_WIDTH: u32 = 160; // 20 chars * 8px
 pub const SAUCE_GROUP_WIDTH: u32 = 160; // 20 chars * 8px
+pub const SAUCE_TOTAL_WIDTH: u32 = SAUCE_NAME_WIDTH + SAUCE_TITLE_WIDTH + SAUCE_AUTHOR_WIDTH + SAUCE_GROUP_WIDTH;
 
 /// Font size for SAUCE columns (smaller than icon size)
 const SAUCE_FONT_SIZE: f32 = 14.0;

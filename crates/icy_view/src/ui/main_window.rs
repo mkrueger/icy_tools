@@ -815,17 +815,15 @@ impl MainWindow {
                                     let point = self.current_history_point();
                                     self.history.navigate_to(point);
                                 } else {
-                                    // For files, switch to list view and select the item
+                                    // For files, switch to list view and load the selected
+                                    // item's actual path. TileGridView stores full item paths,
+                                    // so do not prefix the current browser path here.
                                     self.set_view_mode(ViewMode::List);
-                                    // Build full path for the file
-                                    let current_path = self.file_browser.get_display_path();
-                                    let item_path_str = item_path.replace('\\', "/");
-                                    let full_path = format!("{}/{}", current_path.replace('\\', "/"), item_path_str);
-                                    // Select the item in the file browser
-                                    self.file_browser.select_by_path(&PathBuf::from(&item_path));
+                                    let full_path = item_path.replace('\\', "/");
+                                    self.file_browser.select_by_path(&PathBuf::from(&full_path));
                                     // Load preview
                                     self.current_file = Some(full_path.clone());
-                                    self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
+                                    self.title = full_path.split('/').last().unwrap_or(&full_path).to_string();
                                     // Read data asynchronously - prefer using Item for virtual files
                                     if let Some(item) = self.tile_grid.get_selected_item() {
                                         return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
@@ -2167,9 +2165,9 @@ impl MainWindow {
                 // File browser on left
                 let file_browser = self.file_browser.view(&theme).map(Message::FileBrowser);
 
-                // Combine toolbar and file browser in a column with fixed width
-                // Width is larger in SAUCE mode to show additional columns (286+280+160+160=886)
-                let list_width = if self.sauce_mode() { 886.0 } else { 286.0 };
+                // Combine toolbar and file browser in a column with fixed width.
+                // Width is larger in SAUCE mode to show all columns plus the native scrollbar.
+                let list_width = if self.sauce_mode() { super::SAUCE_TOTAL_WIDTH as f32 + 12.0 } else { 286.0 };
                 let file_list_column = column![toolbar, file_browser].width(Length::Fixed(list_width));
 
                 // Preview area on right - show folder preview if folder selected, file preview if file selected

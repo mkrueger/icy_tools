@@ -809,7 +809,7 @@ impl TileGridView {
     /// Ensure the selected tile is visible, scrolling immediately if not
     fn ensure_visible(&mut self, index: usize) {
         let layout = self.layout.borrow();
-        let Some(tile) = layout.get(index) else { return };
+        let Some(tile) = layout.iter().find(|tile| tile.index == index) else { return };
 
         let tile_top = tile.y;
         let tile_bottom = tile.y + tile.height;
@@ -839,7 +839,7 @@ impl TileGridView {
     /// Find the tile visually above the current tile
     fn find_tile_above(&self, current: usize) -> Option<usize> {
         let layout = self.layout.borrow();
-        let current_tile = layout.get(current)?;
+        let current_tile = layout.iter().find(|tile| tile.index == current)?;
         let current_center_x = current_tile.x + current_tile.width / 2.0;
         let current_top = current_tile.y;
 
@@ -847,7 +847,7 @@ impl TileGridView {
         let mut best_y = f32::MIN;
         let mut best_x_dist = f32::MAX;
 
-        for (i, tile) in layout.iter().enumerate() {
+        for tile in layout.iter() {
             // Must be above current tile (tile bottom should be above current top)
             let tile_bottom = tile.y + tile.height;
             if tile_bottom > current_top - 1.0 {
@@ -863,7 +863,7 @@ impl TileGridView {
             if tile.y > best_y || (tile.y == best_y && x_dist < best_x_dist) {
                 best_y = tile.y;
                 best_x_dist = x_dist;
-                best_index = Some(i);
+                best_index = Some(tile.index);
             }
         }
 
@@ -873,7 +873,7 @@ impl TileGridView {
     /// Find the tile visually below the current tile
     fn find_tile_below(&self, current: usize) -> Option<usize> {
         let layout = self.layout.borrow();
-        let current_tile = layout.get(current)?;
+        let current_tile = layout.iter().find(|tile| tile.index == current)?;
         let current_center_x = current_tile.x + current_tile.width / 2.0;
         let current_bottom = current_tile.y + current_tile.height;
 
@@ -881,7 +881,7 @@ impl TileGridView {
         let mut best_y = f32::MAX;
         let mut best_x_dist = f32::MAX;
 
-        for (i, tile) in layout.iter().enumerate() {
+        for tile in layout.iter() {
             // Must be below current tile (tile top should be below current bottom)
             if tile.y < current_bottom + 1.0 {
                 continue;
@@ -896,7 +896,7 @@ impl TileGridView {
             if tile.y < best_y || (tile.y == best_y && x_dist < best_x_dist) {
                 best_y = tile.y;
                 best_x_dist = x_dist;
-                best_index = Some(i);
+                best_index = Some(tile.index);
             }
         }
 
@@ -906,14 +906,14 @@ impl TileGridView {
     /// Find the tile immediately to the left (no wrapping)
     fn find_tile_left(&self, current: usize) -> Option<usize> {
         let layout = self.layout.borrow();
-        let current_tile = layout.get(current)?;
+        let current_tile = layout.iter().find(|tile| tile.index == current)?;
         let current_center_y = current_tile.y + current_tile.height / 2.0;
         let current_left = current_tile.x;
 
         let mut best_index = None;
         let mut best_x = f32::MIN;
 
-        for (i, tile) in layout.iter().enumerate() {
+        for tile in layout.iter() {
             // Must be to the left
             let tile_right = tile.x + tile.width;
             if tile_right > current_left - 1.0 {
@@ -931,7 +931,7 @@ impl TileGridView {
             // Prefer the rightmost tile that's still to our left
             if tile.x > best_x {
                 best_x = tile.x;
-                best_index = Some(i);
+                best_index = Some(tile.index);
             }
         }
 
@@ -941,14 +941,14 @@ impl TileGridView {
     /// Find the tile immediately to the right (no wrapping)
     fn find_tile_right(&self, current: usize) -> Option<usize> {
         let layout = self.layout.borrow();
-        let current_tile = layout.get(current)?;
+        let current_tile = layout.iter().find(|tile| tile.index == current)?;
         let current_center_y = current_tile.y + current_tile.height / 2.0;
         let current_right = current_tile.x + current_tile.width;
 
         let mut best_index = None;
         let mut best_x = f32::MAX;
 
-        for (i, tile) in layout.iter().enumerate() {
+        for tile in layout.iter() {
             // Must be to the right
             if tile.x < current_right + 1.0 {
                 continue;
@@ -965,7 +965,7 @@ impl TileGridView {
             // Prefer the leftmost tile that's still to our right
             if tile.x < best_x {
                 best_x = tile.x;
-                best_index = Some(i);
+                best_index = Some(tile.index);
             }
         }
 
@@ -1255,7 +1255,7 @@ impl TileGridView {
                 // Build tile textures from thumbnails - only process visible tiles
                 let mut tiles = Vec::with_capacity(layout.len().min(50));
 
-                for (layout_idx, layout_tile) in layout.iter().enumerate() {
+                for layout_tile in layout.iter() {
                     let actual_index = layout_tile.index;
                     let Some(thumb) = thumbnails.get(actual_index) else { continue };
                     let Some(&tile_id) = tile_ids.get(actual_index) else { continue };
@@ -1279,7 +1279,7 @@ impl TileGridView {
                         ThumbnailState::Error { placeholder, .. } => placeholder.as_ref().unwrap_or(&*ERROR_PLACEHOLDER),
                     };
 
-                    let is_selected = selected_index == Some(layout_idx);
+                    let is_selected = selected_index == Some(actual_index);
                     let is_hovered = *shared_hovered_tile.lock() == Some(tile_id);
 
                     let (label_rgba, label_raw_size) = if let Some(ref label) = thumb.label_rgba {
@@ -1521,13 +1521,13 @@ impl TileGridView {
                         // Find which tile is under the cursor
                         let mut found_tile = None;
                         let layout = self.layout.borrow();
-                        for (i, layout_tile) in layout.iter().enumerate() {
+                        for layout_tile in layout.iter() {
                             if rel_x >= layout_tile.x
                                 && rel_x < layout_tile.x + layout_tile.width
                                 && rel_y >= layout_tile.y
                                 && rel_y < layout_tile.y + layout_tile.height
                             {
-                                if let Some(&tile_id) = self.tile_ids.get(i) {
+                                if let Some(&tile_id) = self.tile_ids.get(layout_tile.index) {
                                     found_tile = Some(tile_id);
                                     break;
                                 }
@@ -1561,41 +1561,48 @@ impl TileGridView {
                 ..
             }) => {
                 let pos = cursor_position.or(self.last_cursor_position);
-                if let Some(pos) = pos {
-                    if bounds.contains(pos) {
-                        // Calculate position relative to widget
-                        let rel_x = pos.x - bounds.x;
-                        let rel_y = pos.y - bounds.y + self.viewport.borrow().scroll_y();
+                let clicked_index = if let Some(pos) = pos.filter(|pos| bounds.contains(*pos)) {
+                    // Calculate position relative to widget
+                    let rel_x = pos.x - bounds.x;
+                    let rel_y = pos.y - bounds.y + self.viewport.borrow().scroll_y();
 
-                        // Find which tile is under the cursor
-                        let layout = self.layout.borrow();
-                        for (i, layout_tile) in layout.iter().enumerate() {
-                            if rel_x >= layout_tile.x
+                    // Find which tile is under the cursor
+                    let layout = self.layout.borrow();
+                    layout
+                        .iter()
+                        .find(|layout_tile| {
+                            rel_x >= layout_tile.x
                                 && rel_x < layout_tile.x + layout_tile.width
                                 && rel_y >= layout_tile.y
                                 && rel_y < layout_tile.y + layout_tile.height
-                            {
-                                // Found clicked tile
-                                let now = Instant::now();
+                        })
+                        .map(|layout_tile| layout_tile.index)
+                } else {
+                    // The global event subscription does not forward cursor
+                    // movement events. The shader still tracks hover state, so
+                    // fall back to the hovered tile for click/double-click
+                    // detection when the button event has no cursor position.
+                    self.get_hovered_index()
+                };
 
-                                // Check for double-click
-                                if let Some((last_time, last_index)) = self.last_click {
-                                    if last_index == i && now.duration_since(last_time).as_millis() < DOUBLE_CLICK_MS {
-                                        // Double-click detected
-                                        self.last_click = None;
-                                        self.selected_index = Some(i);
-                                        self.pending_double_click = true;
-                                        return true;
-                                    }
-                                }
+                if let Some(index) = clicked_index {
+                    let now = Instant::now();
 
-                                // Single click - update selection and record click time
-                                self.selected_index = Some(i);
-                                self.last_click = Some((now, i));
-                                return true;
-                            }
+                    // Check for double-click
+                    if let Some((last_time, last_index)) = self.last_click {
+                        if last_index == index && now.duration_since(last_time).as_millis() < DOUBLE_CLICK_MS {
+                            // Double-click detected
+                            self.last_click = None;
+                            self.selected_index = Some(index);
+                            self.pending_double_click = true;
+                            return true;
                         }
                     }
+
+                    // Single click - update selection and record click time
+                    self.selected_index = Some(index);
+                    self.last_click = Some((now, index));
+                    return true;
                 }
             }
             _ => {}

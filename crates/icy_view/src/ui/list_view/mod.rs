@@ -12,5 +12,6 @@ mod file_list_view;
 mod sauce_loader;
 
 pub use file_browser::{FileBrowser, FileBrowserMessage};
+pub use file_list_shader::SAUCE_TOTAL_WIDTH;
 pub use file_list_view::{FileListViewMessage, ITEM_HEIGHT};
 pub use sauce_loader::{SauceLoader, SauceRequest, SauceResult};

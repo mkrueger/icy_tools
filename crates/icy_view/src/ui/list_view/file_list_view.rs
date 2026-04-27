@@ -430,11 +430,17 @@ impl FileListView {
     ) -> Element<'a, Message> {
         let on_message = Arc::new(on_message);
 
-        let current_width = *self.current_width.borrow();
-        let width = current_width.max(100.0) as u32;
+        let stored_width = *self.current_width.borrow();
+        let minimum_width = if self.sauce_mode {
+            super::file_list_shader::SAUCE_TOTAL_WIDTH as f32
+        } else {
+            100.0
+        };
+        let current_width = stored_width.max(minimum_width);
         let item_count = visible_indices.len();
         let content_height = item_count as f32 * ITEM_HEIGHT;
-        let content_width = current_width - 12.0; // Account for scrollbar
+        let content_width = current_width.max(1.0);
+        let render_width = content_width as u32;
 
         // Clone data for the closure - extract all needed data upfront.
         // Render through the item cache here so the viewport closure only clones
@@ -454,9 +460,9 @@ impl FileListView {
                         None
                     };
                     let (rgba_data, width, height) = if self.sauce_mode {
-                        self.get_or_render_item_with_sauce(&label, file_icon, is_folder, width, &theme_colors, filter, sauce_info.as_ref())
+                        self.get_or_render_item_with_sauce(&label, file_icon, is_folder, render_width, &theme_colors, filter, sauce_info.as_ref())
                     } else {
-                        self.get_or_render_item(&label, file_icon, is_folder, width, &theme_colors, filter)
+                        self.get_or_render_item(&label, file_icon, is_folder, render_width, &theme_colors, filter)
                     };
                     (rgba_data, width, height)
                 })
@@ -508,7 +514,8 @@ impl FileListView {
                     items,
                     scroll_y,
                     content_height,
-                    _viewport_width: content_width,
+                    viewport_width: content_width,
+                    viewport_height: *self.current_height.borrow(),
                     selected_index,
                     shared_hovered_index: shared_hovered_index.clone(),
                     on_message: Arc::new(move |msg| on_message_shader(msg)),
@@ -593,7 +600,8 @@ struct FileListShaderWrapper<Message> {
     items: Vec<ListItemRenderData>,
     scroll_y: f32,
     content_height: f32,
-    _viewport_width: f32,
+    viewport_width: f32,
+    viewport_height: f32,
     selected_index: Option<usize>,
     shared_hovered_index: Arc<Mutex<Option<usize>>>,
     on_message: Arc<dyn Fn(FileListViewMessage) -> Message>,
@@ -649,7 +657,7 @@ where
         let current_bounds = (bounds.width, bounds.height);
         let size_changed_significantly = match state.last_bounds {
             Some((last_w, last_h)) => (bounds.width - last_w).abs() > 2.0 || (bounds.height - last_h).abs() > 2.0,
-            None => false, // Don't trigger on first call - just record the initial size
+            None => (bounds.width - self.viewport_width).abs() > 2.0 || (bounds.height - self.viewport_height).abs() > 2.0,
         };
 
         // Always update last_bounds to track the current size

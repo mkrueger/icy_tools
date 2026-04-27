@@ -5,7 +5,8 @@
 //! - Shows SAUCE comments with fade-in effect
 //! - Displays title/author/group info overlay
 //! - Auto-advances after scroll completes
-//! - Exits on Escape/Enter/Mouse click
+//! - Advances on Space/Enter
+//! - Exits on Escape/Mouse click
 //! - Preloads next item in background for smooth transitions
 
 use std::path::PathBuf;
