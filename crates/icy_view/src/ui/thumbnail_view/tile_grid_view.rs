@@ -796,12 +796,43 @@ impl TileGridView {
         self.thumbnails.iter().any(|t| t.state.is_animated())
     }
 
+    fn has_pending_visible_loads(&self) -> bool {
+        if self.visible_indices.is_empty() {
+            return false;
+        }
+
+        let layout = self.layout.borrow();
+        if layout.is_empty() {
+            return true;
+        }
+
+        let (viewport_top, viewport_height) = {
+            let vp = self.viewport.borrow();
+            let height = self.last_bounds.borrow().height.max(vp.visible_height_px());
+            (vp.scroll_y(), height)
+        };
+
+        if viewport_height <= 0.0 {
+            return true;
+        }
+
+        let load_top = viewport_top - PRELOAD_BUFFER_PX;
+        let load_bottom = viewport_top + viewport_height + PRELOAD_BUFFER_PX;
+
+        layout.iter().any(|tile| {
+            tile.y + tile.height >= load_top
+                && tile.y <= load_bottom
+                && self
+                    .thumbnails
+                    .get(tile.index)
+                    .map_or(false, |thumbnail| matches!(thumbnail.state, ThumbnailState::Pending { .. }))
+        })
+    }
+
     /// Check if animation/polling is needed (animated content, smooth scroll,
-    /// or auto-scroll). Thumbnail loading is event-driven via the streaming
-    /// task returned by [`Self::take_result_stream`] and the scroll widget's
-    /// `on_scroll` callback, so it does not require animation ticks.
+    /// auto-scroll, or an initial visible-range thumbnail load).
     pub fn needs_animation(&self) -> bool {
-        self.has_animated() || self.auto_scroll_active || self.viewport.borrow().is_animating()
+        self.has_animated() || self.auto_scroll_active || self.viewport.borrow().is_animating() || self.has_pending_visible_loads()
     }
 
     // ==================== Keyboard Navigation ====================
