@@ -153,6 +153,13 @@ pub enum Message {
     ShuffleMinimumShowElapsed { generation: u64, index: usize },
     /// The post-scroll delay one-shot task completed for a shuffle item.
     ShufflePostScrollDelayElapsed { generation: u64, index: usize },
+    /// Preloading the next shuffle item completed. Carries the current item
+    /// generation so stale preloads from skipped/exited items can be ignored.
+    ShufflePreloadCompleted {
+        generation: u64,
+        index: usize,
+        item: Option<super::PreloadedItem>,
+    },
     /// Show help dialog
     ShowHelp,
     /// Help dialog messages
@@ -1780,6 +1787,27 @@ impl MainWindow {
                 self.shuffle_mode.mark_post_scroll_elapsed();
                 self.advance_shuffle_if_ready()
             }
+            Message::ShufflePreloadCompleted { generation, index, item } => {
+                if !self.shuffle_mode.is_active || generation != self.shuffle_load_generation {
+                    log::debug!(
+                        "Ignoring stale shuffle preload result for index {} (generation {}, current generation {})",
+                        index,
+                        generation,
+                        self.shuffle_load_generation
+                    );
+                    return Task::none();
+                }
+
+                if let Some(ref item) = item {
+                    if item.index != index {
+                        log::debug!("Ignoring shuffle preload result with mismatched index {} != {}", item.index, index);
+                        return Task::none();
+                    }
+                }
+
+                self.shuffle_mode.complete_preload(item);
+                Task::none()
+            }
         }
     }
 
@@ -1927,7 +1955,7 @@ impl MainWindow {
             }
 
             // Start preloading the next item
-            self.start_shuffle_preload();
+            let preload_task = self.start_shuffle_preload();
 
             // If we have a pre-decoded image, use it directly (skip re-decoding)
             if let Some(decoded) = preloaded.decoded_image {
@@ -1935,11 +1963,12 @@ impl MainWindow {
                 let path_buf = PathBuf::from(&path_str);
                 let task = self.preview.load_decoded_image(path_buf, decoded.rgba, decoded.width, decoded.height);
                 let post_scroll_delay_task = self.schedule_shuffle_post_scroll_delay_if_ready();
-                return Task::batch(vec![minimum_show_task, task.map(Message::Preview), post_scroll_delay_task]);
+                return Task::batch(vec![minimum_show_task, task.map(Message::Preview), post_scroll_delay_task, preload_task]);
             }
 
             return Task::batch(vec![
                 minimum_show_task,
+                preload_task,
                 Task::done(Message::ShuffleDataLoaded {
                     generation,
                     index,
@@ -1964,7 +1993,7 @@ impl MainWindow {
         self.current_file = Some(path.clone());
 
         // Start preloading the next item (do this before async load to maximize parallelism)
-        self.start_shuffle_preload();
+        let preload_task = self.start_shuffle_preload();
 
         // Load data asynchronously. Keep a cancellation token for the active
         // shuffle item load so exiting shuffle mode or skipping to the next
@@ -1991,23 +2020,23 @@ impl MainWindow {
             },
         );
 
-        Task::batch(vec![minimum_show_task, load_task])
+        Task::batch(vec![minimum_show_task, preload_task, load_task])
     }
 
     /// Start preloading the next shuffle item in background
-    fn start_shuffle_preload(&mut self) {
-        // Only preload if shuffle mode is active and not already preloading
-        if !self.shuffle_mode.is_active || self.shuffle_mode.is_preloading() {
-            return;
+    fn start_shuffle_preload(&mut self) -> Task<Message> {
+        // Only preload if shuffle mode is active.
+        if !self.shuffle_mode.is_active {
+            return Task::none();
         }
 
         // Get the next item index
         let Some(next_index) = self.shuffle_mode.peek_next_index() else {
-            return;
+            return Task::none();
         };
 
         if next_index >= self.file_browser.files.len() {
-            return;
+            return Task::none();
         }
 
         // Get item info for the background task
@@ -2018,83 +2047,90 @@ impl MainWindow {
             item.get_file_path().replace('\\', "/")
         };
 
-        // Create channel and cancellation token
-        let (tx, rx) = tokio::sync::oneshot::channel();
         let cancel_token = CancellationToken::new();
         let cancel_clone = cancel_token.clone();
 
         // Register with shuffle mode
-        self.shuffle_mode.start_preload(rx, cancel_token);
+        self.shuffle_mode.start_preload(cancel_token);
 
-        // Spawn background task
+        // Run preload as a Task and deliver completion as a message. This
+        // avoids the old polling path where `take_preloaded_if_matches()` had
+        // to check a oneshot receiver.
+        let generation = self.shuffle_load_generation;
         let preload_index = next_index;
         let path_buf = PathBuf::from(&path);
         let is_image = is_image_file(&path_buf);
         let is_sixel = is_sixel_file(&path_buf);
 
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = cancel_clone.cancelled() => {
-                    log::debug!("Shuffle preload cancelled for index {}", preload_index);
-                    let _ = tx.send(None);
-                }
-                data_result = item.read_data() => {
-                    let preloaded = match data_result {
-                        Ok(data) => {
-                            // If it's an image, also decode it (store rgba data, handle created on use)
-                            let decoded_image = if is_image {
-                                let stripped_data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
+        log::debug!("Started preloading shuffle item index {}", next_index);
+        Task::perform(
+            async move {
+                tokio::select! {
+                    _ = cancel_clone.cancelled() => {
+                        log::debug!("Shuffle preload cancelled for index {}", preload_index);
+                        None
+                    }
+                    data_result = item.read_data() => {
+                        let preloaded = match data_result {
+                            Ok(data) => {
+                                // If it's an image, also decode it (store rgba data, handle created on use)
+                                let decoded_image = if is_image {
+                                    let stripped_data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
 
-                                if is_sixel {
-                                    // Use icy_sixel for Sixel files
-                                    match icy_sixel::SixelImage::decode(&stripped_data) {
-                                        Ok(image) => {
-                                            let w = image.width as u32;
-                                            let h = image.height as u32;
-                                            Some(super::DecodedImage { rgba: image.pixels, width: w, height: h })
+                                    if is_sixel {
+                                        // Use icy_sixel for Sixel files
+                                        match icy_sixel::SixelImage::decode(&stripped_data) {
+                                            Ok(image) => {
+                                                let w = image.width as u32;
+                                                let h = image.height as u32;
+                                                Some(super::DecodedImage { rgba: image.pixels, width: w, height: h })
+                                            }
+                                            Err(e) => {
+                                                log::warn!("Failed to decode Sixel during preload: {}", e);
+                                                None
+                                            }
                                         }
-                                        Err(e) => {
-                                            log::warn!("Failed to decode Sixel during preload: {}", e);
-                                            None
+                                    } else {
+                                        // Use image crate for other formats
+                                        match image::load_from_memory(&stripped_data) {
+                                            Ok(img) => {
+                                                let rgba = img.to_rgba8();
+                                                let (width, height) = rgba.dimensions();
+                                                Some(super::DecodedImage { rgba: rgba.into_raw(), width, height })
+                                            }
+                                            Err(e) => {
+                                                log::warn!("Failed to decode image during preload: {}", e);
+                                                None
+                                            }
                                         }
                                     }
                                 } else {
-                                    // Use image crate for other formats
-                                    match image::load_from_memory(&stripped_data) {
-                                        Ok(img) => {
-                                            let rgba = img.to_rgba8();
-                                            let (width, height) = rgba.dimensions();
-                                            Some(super::DecodedImage { rgba: rgba.into_raw(), width, height })
-                                        }
-                                        Err(e) => {
-                                            log::warn!("Failed to decode image during preload: {}", e);
-                                            None
-                                        }
-                                    }
-                                }
-                            } else {
+                                    None
+                                };
+
+                                Some(super::PreloadedItem {
+                                    index: preload_index,
+                                    path: PathBuf::from(&path),
+                                    data,
+                                    decoded_image,
+                                })
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to read data during shuffle preload: {}", e);
                                 None
-                            };
-
-                            Some(super::PreloadedItem {
-                                index: preload_index,
-                                path: PathBuf::from(&path),
-                                data,
-                                decoded_image,
-                            })
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to read data during shuffle preload: {}", e);
-                            None
-                        }
-                    };
-                    log::debug!("Shuffle preload completed for index {}", preload_index);
-                    let _ = tx.send(preloaded);
+                            }
+                        };
+                        log::debug!("Shuffle preload completed for index {}", preload_index);
+                        preloaded
+                    }
                 }
-            }
-        });
-
-        log::debug!("Started preloading shuffle item index {}", next_index);
+            },
+            move |item| Message::ShufflePreloadCompleted {
+                generation,
+                index: preload_index,
+                item,
+            },
+        )
     }
 
     pub fn view(&self) -> Element<'_, Message> {
