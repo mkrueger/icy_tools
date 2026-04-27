@@ -1,7 +1,8 @@
 /// Drawing mode for pixel operations
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DrawingMode {
     /// Replace (normal drawing)
+    #[default]
     Replace = 1,
     /// Transparent (skip background pixels)
     Transparent = 2,
@@ -9,12 +10,6 @@ pub enum DrawingMode {
     Xor = 3,
     /// Reverse transparent
     ReverseTransparent = 4,
-}
-
-impl Default for DrawingMode {
-    fn default() -> Self {
-        Self::Replace
-    }
 }
 
 impl TryFrom<i32> for DrawingMode {

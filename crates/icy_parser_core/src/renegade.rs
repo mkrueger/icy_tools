@@ -53,7 +53,7 @@ impl CommandParser for RenegadeParser {
                     }
                 }
                 State::Pipe => {
-                    if byte >= b'0' && byte <= b'3' {
+                    if (b'0'..=b'3').contains(&byte) {
                         // Valid first digit (0-3)
                         self.first_digit = byte - b'0';
                         self.state = State::FirstDigit(self.first_digit);

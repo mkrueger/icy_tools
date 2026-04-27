@@ -185,7 +185,7 @@ pub fn apply_sauce_to_buffer(buf: &mut TextBuffer, sauce: &SauceRecord) {
 
 /// Apply SAUCE settings to a `TextBuffer` without changing its size.
 ///
-/// IcyDraw (`.icy`) files store the authoritative buffer dimensions in the ICED header.
+/// `IcyDraw` (`.icy`) files store the authoritative buffer dimensions in the ICED header.
 /// Some legacy files carry SAUCE `columns/lines` that don't match the document and would
 /// otherwise inflate the scrollable area (e.g. 120x110 art with SAUCE lines=200).
 pub fn apply_sauce_to_buffer_without_resize(buf: &mut TextBuffer, sauce: &SauceRecord) {

@@ -293,7 +293,7 @@ pub enum DecMode {
     /// When set: Cursor addressing is relative to the scroll region.
     ///   - Row 1 refers to the first line of the scroll region
     ///   - Cursor cannot move outside the scroll region
-    /// When reset: Cursor addressing is absolute (relative to screen origin 1,1).
+    ///     When reset: Cursor addressing is absolute (relative to screen origin 1,1).
     ///   - Row 1 refers to the first line of the screen
     ///   - Cursor can move anywhere on screen
     OriginMode = 6,
@@ -304,7 +304,7 @@ pub enum DecMode {
     ///
     /// When set: Cursor wraps to the first column of the next line.
     ///   - At bottom-right, causes scroll before wrap
-    /// When reset: Cursor stays at the right margin.
+    ///     When reset: Cursor stays at the right margin.
     ///   - Characters overwrite the last column
     AutoWrap = 7,
 

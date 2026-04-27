@@ -1,7 +1,8 @@
 /// Pen type for ColorSet command
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PenType {
     /// Polymarker color (for PolymarkerPlot)
+    #[default]
     Polymarker = 0,
     /// Line color
     Line = 1,
@@ -9,12 +10,6 @@ pub enum PenType {
     Fill = 2,
     /// Text color (for WriteText)
     Text = 3,
-}
-
-impl Default for PenType {
-    fn default() -> Self {
-        Self::Polymarker
-    }
 }
 
 impl TryFrom<i32> for PenType {

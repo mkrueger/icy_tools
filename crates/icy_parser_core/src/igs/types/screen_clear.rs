@@ -2,9 +2,10 @@ use std::fmt;
 
 /// Screen clear mode for the ScreenClear command
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScreenClearMode {
     /// Clear screen and home cursor
+    #[default]
     ClearAndHome = 0,
     /// Clear from home to cursor
     ClearHomeToToCursor = 1,
@@ -17,12 +18,6 @@ pub enum ScreenClearMode {
     /// Clear, Home, ReverseOff, Text Background to reg 0, Text Color to register 3
     /// All done with VT52, a VT52 quick reset of sorts
     QuickVt52Reset = 5,
-}
-
-impl Default for ScreenClearMode {
-    fn default() -> Self {
-        Self::ClearAndHome
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

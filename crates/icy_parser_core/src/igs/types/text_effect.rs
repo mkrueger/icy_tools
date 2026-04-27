@@ -34,9 +34,10 @@ pub enum TextEffect {
 }
 
 /// Text rotation angle
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TextRotation {
     /// 0 degrees (normal)
+    #[default]
     Degrees0 = 0,
     /// 90 degrees
     Degrees90 = 1,
@@ -44,12 +45,6 @@ pub enum TextRotation {
     Degrees180 = 2,
     /// 270 degrees
     Degrees270 = 3,
-}
-
-impl Default for TextRotation {
-    fn default() -> Self {
-        Self::Degrees0
-    }
 }
 
 impl TryFrom<i32> for TextRotation {

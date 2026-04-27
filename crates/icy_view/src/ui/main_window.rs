@@ -196,6 +196,10 @@ pub struct MainWindow {
     status_bar: StatusBar,
     /// Navigation history
     pub history: NavigationHistory,
+    /// True while applying a back/forward history point. This prevents async
+    /// restore messages from being recorded as fresh navigation and clearing
+    /// the forward stack.
+    restoring_history: bool,
     /// File list toolbar
     pub file_list_toolbar: FileListToolbar,
     /// Filter popup
@@ -351,6 +355,7 @@ impl MainWindow {
                 navigation_bar,
                 status_bar: StatusBar::new(),
                 history,
+                restoring_history: false,
                 file_list_toolbar,
                 filter_popup: FilterPopup::new(),
                 options,
@@ -381,6 +386,7 @@ impl MainWindow {
         match message {
             Message::FileBrowser(msg) => {
                 let web_items_loaded = matches!(&msg, FileBrowserMessage::WebItemsLoaded { .. });
+                let restoring_history = self.restoring_history;
                 // Check if this will change the directory - use display_path for accurate comparison
                 let old_display_path = self.file_browser.get_display_path();
                 let old_selection = self.file_browser.selected_item().map(|i| i.get_file_path());
@@ -393,8 +399,10 @@ impl MainWindow {
                     // Reset SAUCE loader for new directory
                     self.reset_sauce_loader_for_navigation();
                     // Record the navigation as a new history point
-                    let point = self.current_history_point();
-                    self.history.navigate_to(point);
+                    if !restoring_history {
+                        let point = self.current_history_point();
+                        self.history.navigate_to(point);
+                    }
                     // Update path input to show current display path
                     self.navigation_bar.set_path_input(new_display_path.clone());
                     // Update can_go_up state for toolbar
@@ -403,6 +411,9 @@ impl MainWindow {
                     if self.view_mode() == ViewMode::Tiles {
                         let items = self.file_browser.get_items();
                         self.tile_grid.set_items_from_items(items);
+                        if let Some(item) = self.file_browser.selected_item() {
+                            self.tile_grid.select_by_label(&item.get_label());
+                        }
                     }
                 }
 
@@ -443,7 +454,7 @@ impl MainWindow {
                     );
 
                     // Record selection change as new history point
-                    if selection_changed && old_display_path == new_display_path {
+                    if !restoring_history && selection_changed && old_display_path == new_display_path {
                         let point = self.current_history_point();
                         self.history.navigate_to(point);
                     }
@@ -452,12 +463,7 @@ impl MainWindow {
                         if is_container {
                             // For folders (including zip files), show thumbnail preview of contents
                             self.current_file = None;
-                            // Build full path by combining browser's current path with the relative item path
-                            let full_path = if let Some(current) = self.file_browser.current_path() {
-                                format!("{}/{}", current.to_string_lossy().replace('\\', "/"), new_selection.replace('\\', "/"))
-                            } else {
-                                new_selection.clone()
-                            };
+                            let full_path = self.full_path_for_browser_item(item.as_ref());
                             self.folder_preview_path = Some(full_path.clone());
                             // Load folder contents asynchronously in background thread
                             // This works for both regular folders and zip files
@@ -468,17 +474,16 @@ impl MainWindow {
                                     path,
                                     result,
                                 });
-                                return Task::batch([scroll_task.map(Message::FileBrowser), preview_task]);
+                                let task = Task::batch([scroll_task.map(Message::FileBrowser), preview_task]);
+                                if web_items_loaded && restoring_history {
+                                    self.restoring_history = false;
+                                }
+                                return task;
                             }
                         } else {
                             // For files, show file preview
                             self.folder_preview_path = None;
-                            // Build full path by combining browser's current path with the relative item path
-                            let full_path = if let Some(current) = self.file_browser.current_path() {
-                                format!("{}/{}", current.to_string_lossy().replace('\\', "/"), new_selection.replace('\\', "/"))
-                            } else {
-                                new_selection.clone()
-                            };
+                            let full_path = self.full_path_for_browser_item(item.as_ref());
                             self.current_file = Some(full_path.clone());
                             // Extract filename from path
                             self.title = new_selection.split('/').last().map(|s| s.to_string()).unwrap_or_else(|| DEFAULT_TITLE.clone());
@@ -486,10 +491,17 @@ impl MainWindow {
                             // Read the data from the item asynchronously (works for both local and virtual files)
                             if let Some(item) = self.file_browser.selected_item() {
                                 let load_task = crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
-                                return Task::batch([scroll_task.map(Message::FileBrowser), load_task]);
+                                let task = Task::batch([scroll_task.map(Message::FileBrowser), load_task]);
+                                if web_items_loaded && restoring_history {
+                                    self.restoring_history = false;
+                                }
+                                return task;
                             }
                         }
                     }
+                }
+                if web_items_loaded && restoring_history {
+                    self.restoring_history = false;
                 }
                 scroll_task.map(Message::FileBrowser)
             }
@@ -585,6 +597,8 @@ impl MainWindow {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
                         }
+                        let point = self.current_history_point();
+                        self.history.navigate_to(point);
                     }
                     NavigationBarMessage::PathChanged(path) => {
                         self.navigation_bar.path_input = path;
@@ -710,6 +724,10 @@ impl MainWindow {
                         if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
+                        }
+                        if !self.restoring_history {
+                            let point = self.current_history_point();
+                            self.history.navigate_to(point);
                         }
                     }
                     NavigationBarMessage::OpenSettings => {
@@ -1291,7 +1309,11 @@ impl MainWindow {
                             }
                             // Reset toolbar for slide-in behavior
                             self.file_list_toolbar.reset_for_tiles_mode();
+                        } else if let Some((_, label, _)) = self.tile_grid.get_selected_info() {
+                            self.file_browser.select_by_label(&label);
                         }
+                        let point = self.current_history_point();
+                        self.history.navigate_to(point);
                     }
                     FileListToolbarMessage::CycleSortOrder => {
                         let new_order = self.sort_order().next();
@@ -1523,6 +1545,10 @@ impl MainWindow {
                         if self.view_mode() == ViewMode::Tiles {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
+                        }
+                        if !self.restoring_history {
+                            let point = self.current_history_point();
+                            self.history.navigate_to(point);
                         }
                     }
                     Err(err) => {
@@ -2587,20 +2613,23 @@ impl MainWindow {
 
     /// Create a HistoryPoint for the current state
     fn current_history_point(&self) -> HistoryPoint {
-        let provider = if self.navigation_bar.is_16colors_mode {
-            ProviderType::Web
+        let nav_point = self.file_browser.nav_point();
+        let provider = nav_point.provider_type;
+
+        let path = nav_point.path.clone();
+
+        let selected_item = if self.view_mode() == ViewMode::Tiles {
+            self.tile_grid.get_selected_info().map(|(_, label, _)| label)
         } else {
-            ProviderType::File
+            self.file_browser.selected_item().map(|item| item.get_label())
         };
-
-        let path = self.file_browser.get_display_path();
-
-        let selected_item = self.file_browser.selected_item().map(|item| item.get_label());
         HistoryPoint::new(provider, self.view_mode(), path, selected_item)
     }
 
     /// Navigate to a history point - restores provider, path, mode, and selection
     fn navigate_to_history_point(&mut self, point: &HistoryPoint) -> Task<Message> {
+        self.restoring_history = true;
+
         // Cancel any ongoing loading operation
         self.preview.cancel_loading();
         self.current_file = None;
@@ -2658,7 +2687,64 @@ impl MainWindow {
             return task.map(Message::FileBrowser);
         }
 
-        Task::none()
+        let task = if self.view_mode() == ViewMode::Tiles {
+            Task::none()
+        } else {
+            self.restore_selected_browser_preview()
+        };
+        self.restoring_history = false;
+        task
+    }
+
+    fn full_path_for_browser_item(&self, item: &dyn Item) -> String {
+        if let Some(path) = item.get_full_path() {
+            return path.replace('\\', "/");
+        }
+
+        let item_path = item.get_file_path().replace('\\', "/");
+        if item.is_virtual_file() || item_path.starts_with('/') || item_path.as_bytes().get(1) == Some(&b':') {
+            return item_path;
+        }
+
+        if let Some(current) = self.file_browser.current_path() {
+            let current = current.to_string_lossy().replace('\\', "/");
+            if current.is_empty() {
+                item_path
+            } else if item_path.starts_with(&format!("{current}/")) {
+                item_path
+            } else {
+                format!("{current}/{item_path}")
+            }
+        } else {
+            item_path
+        }
+    }
+
+    fn restore_selected_browser_preview(&mut self) -> Task<Message> {
+        let Some(item) = self.file_browser.selected_item() else {
+            self.current_file = None;
+            self.folder_preview_path = None;
+            self.title = DEFAULT_TITLE.clone();
+            return Task::none();
+        };
+
+        let full_path = self.full_path_for_browser_item(item.as_ref());
+        let label = item.get_label();
+
+        if item.is_container() {
+            self.current_file = None;
+            self.folder_preview_path = Some(full_path.clone());
+            let item = item.clone_box();
+            load_subitems(item, CancellationToken::new(), move |result| Message::FolderPreviewSubitemsLoaded {
+                path: full_path,
+                result,
+            })
+        } else {
+            self.folder_preview_path = None;
+            self.current_file = Some(full_path.clone());
+            self.title = label;
+            load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError)
+        }
     }
 
     /// View for shuffle mode - fullscreen preview with SAUCE info overlay

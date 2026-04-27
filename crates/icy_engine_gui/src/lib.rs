@@ -1,3 +1,30 @@
+#![allow(
+    clippy::byte_char_slices,
+    clippy::unnecessary_map_or,
+    clippy::manual_clamp,
+    clippy::unnecessary_cast,
+    clippy::needless_late_init,
+    clippy::let_underscore_lock,
+    clippy::needless_borrow,
+    clippy::manual_div_ceil,
+    clippy::explicit_auto_deref,
+    clippy::should_implement_trait,
+    clippy::wrong_self_convention,
+    clippy::redundant_closure,
+    clippy::large_enum_variant,
+    clippy::implicit_saturating_sub,
+    clippy::needless_range_loop,
+    clippy::len_zero,
+    clippy::nonminimal_bool,
+    clippy::too_many_arguments,
+    clippy::useless_conversion,
+    clippy::question_mark,
+    clippy::needless_update,
+    clippy::new_without_default,
+    clippy::module_inception,
+    clippy::from_over_into
+)]
+
 // Self-reference for proc macros to work within this crate
 extern crate self as icy_engine_gui;
 

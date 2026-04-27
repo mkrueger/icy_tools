@@ -336,7 +336,7 @@ impl LoopCommandData {
                 LoopTarget::ChainGang { commands } => {
                     // Use first parameter to index into chain
                     if !all_params.is_empty() {
-                        let index: usize = (all_params[0].abs() as usize) % commands.len();
+                        let index: usize = (all_params[0].unsigned_abs() as usize) % commands.len();
                         let cmd_type = commands[index];
 
                         // For chain gang, skip the index parameter and use remaining params

@@ -638,12 +638,12 @@ pub enum SkypixCommand {
     ///
     /// Controller types (c):
     /// - 1 = LEFT MOUSE-BUTTON CLICK: X and Y are current mouse coordinates.
-    ///       Only triggers on the DOWNWARD part of the click; the button
-    ///       release message must be filtered out.
+    ///   Only triggers on the DOWNWARD part of the click; the button
+    ///   release message must be filtered out.
     /// - 2 = MENU SELECTION: X ranges from 0 (first item) through highest
-    ///       menu number minus 1. Y is ignored.
+    ///   menu number minus 1. Y is ignored.
     /// - 3 = JOYSTICK 1: X is 1-4 for up/down/right/left (0 = no direction).
-    ///       Y is 1 if fire button held, 0 otherwise.
+    ///   Y is 1 if fire button held, 0 otherwise.
     /// - 4 = JOYSTICK 2: Same as joystick 1.
     ControllerReturn { c: i32, x: i32, y: i32 },
 

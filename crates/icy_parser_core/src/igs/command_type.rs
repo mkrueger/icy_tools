@@ -153,8 +153,8 @@ impl IgsCommandType {
             // Parse 16 pattern characters into u16
             let mut word: u16 = 0;
 
-            for bit_idx in 0..16 {
-                let is_set = matches!(line[bit_idx], b'X' | b'x');
+            for (bit_idx, byte) in line.iter().enumerate().take(16) {
+                let is_set = matches!(byte, b'X' | b'x');
                 if is_set {
                     word |= 1 << (15 - bit_idx);
                 }
@@ -369,11 +369,7 @@ impl IgsCommandType {
 
     /// Get minimum parameter count (when first param is not known)
     pub fn min_parameter_count(&self) -> usize {
-        if self.has_variable_parameters() {
-            self.get_parameter_count(0)
-        } else {
-            self.get_parameter_count(0)
-        }
+        self.get_parameter_count(0)
     }
 
     pub fn create_command(self, sink: &mut dyn CommandSink, params: &[IgsParameter], text_buffer: &[u8]) -> Option<IgsCommand> {
@@ -436,11 +432,11 @@ impl IgsCommandType {
                 })
             }),
             IgsCommandType::ColorSet => {
-                let pen = PenType::try_from(params.get(0).map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
+                let pen = PenType::try_from(params.first().map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
                     sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "ColorSet",
-                            value: format!("{}", params.get(0).map(|p| p.value()).unwrap_or(0)),
+                            value: format!("{}", params.first().map(|p| p.value()).unwrap_or(0)),
                             expected: Some("valid PenType (0-3)".to_string()),
                         },
                         crate::ErrorLevel::Warning,
@@ -556,11 +552,11 @@ impl IgsCommandType {
                 })
             }),
             IgsCommandType::DrawingMode => {
-                let mode = DrawingMode::try_from(params.get(0).map(|p| p.value()).unwrap_or(1)).unwrap_or_else(|_| {
+                let mode = DrawingMode::try_from(params.first().map(|p| p.value()).unwrap_or(1)).unwrap_or_else(|_| {
                     sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "DrawingMode",
-                            value: format!("{}", params.get(0).map(|p| p.value()).unwrap_or(1)),
+                            value: format!("{}", params.first().map(|p| p.value()).unwrap_or(1)),
                             expected: Some("valid DrawingMode (1-4)".to_string()),
                         },
                         crate::ErrorLevel::Warning,
@@ -575,11 +571,11 @@ impl IgsCommandType {
                 })
             }),
             IgsCommandType::Initialize => {
-                let mode = InitializationType::try_from(params.get(0).map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
+                let mode = InitializationType::try_from(params.first().map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
                     sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "Initialize",
-                            value: format!("{}", params.get(0).map(|p| p.value()).unwrap_or(0)),
+                            value: format!("{}", params.first().map(|p| p.value()).unwrap_or(0)),
                             expected: Some("valid InitializationType (0-5)".to_string()),
                         },
                         crate::ErrorLevel::Warning,
@@ -599,11 +595,11 @@ impl IgsCommandType {
                 })
             }),
             IgsCommandType::Cursor => {
-                let mode = CursorMode::try_from(params.get(0).map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
+                let mode = CursorMode::try_from(params.first().map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
                     sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "Cursor",
-                            value: format!("{}", params.get(0).map(|p| p.value()).unwrap_or(0)),
+                            value: format!("{}", params.first().map(|p| p.value()).unwrap_or(0)),
                             expected: Some("valid CursorMode (0-3)".to_string()),
                         },
                         crate::ErrorLevel::Warning,
@@ -613,11 +609,11 @@ impl IgsCommandType {
                 Self::check_parameters(params, sink, "Cursor", 1, |_sink| Some(IgsCommand::Cursor { mode }))
             }
             IgsCommandType::ChipMusic => {
-                let sound_effect = SoundEffect::try_from(params.get(0).map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
+                let sound_effect = SoundEffect::try_from(params.first().map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
                     sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "ChipMusic",
-                            value: format!("{}", params.get(0).map(|p| p.value()).unwrap_or(0)),
+                            value: format!("{}", params.first().map(|p| p.value()).unwrap_or(0)),
                             expected: Some("valid SoundEffect (0-19)".to_string()),
                         },
                         crate::ErrorLevel::Warning,
@@ -648,7 +644,7 @@ impl IgsCommandType {
                 })
             }
             IgsCommandType::ScreenClear => {
-                let mode_val = params.get(0).map(|p| p.value()).unwrap_or(0);
+                let mode_val = params.first().map(|p| p.value()).unwrap_or(0);
                 let mode = ScreenClearMode::try_from(mode_val as u8).unwrap_or_else(|_| {
                     sink.report_error(
                         crate::ParseError::InvalidParameter {
@@ -663,11 +659,11 @@ impl IgsCommandType {
                 Self::check_parameters(params, sink, "ScreenClear", 1, |_sink| Some(IgsCommand::ScreenClear { mode }))
             }
             IgsCommandType::SetResolution => {
-                let resolution = TerminalResolution::try_from(params.get(0).map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
+                let resolution = TerminalResolution::try_from(params.first().map(|p| p.value()).unwrap_or(0)).unwrap_or_else(|_| {
                     sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "SetResolution",
-                            value: format!("{}", params.get(0).map(|p| p.value()).unwrap_or(0)),
+                            value: format!("{}", params.first().map(|p| p.value()).unwrap_or(0)),
                             expected: Some("resolution (0=Low, 1=Medium, 2=High)".to_string()),
                         },
                         crate::ErrorLevel::Error,
@@ -695,10 +691,10 @@ impl IgsCommandType {
                 // p2 = style (1-6 for polymarker, 1-7 for line)
                 // p3 = size/thickness/endpoints
 
-                let p1 = params.get(0).map(|p| p.value()).unwrap_or(0);
+                let p1 = params.first().map(|p| p.value()).unwrap_or(0);
                 let p2 = params.get(1).map(|p| p.value()).unwrap_or(1);
                 let p3 = params.get(2).map(|p| p.value()).unwrap_or(1);
-                if p1 < 1 || p1 > 2 {
+                if !(1..=2).contains(&p1) {
                     sink.report_error(
                         crate::ParseError::InvalidParameter {
                             command: "LineType",
@@ -713,7 +709,7 @@ impl IgsCommandType {
                 let style = if p1 == 1 {
                     // Polymarker: p2=type(1-6), p3=size(1-8)
                     let mut poly_kind = p2;
-                    if poly_kind < 1 || poly_kind > 6 {
+                    if !(1..=6).contains(&poly_kind) {
                         sink.report_error(
                             crate::ParseError::InvalidParameter {
                                 command: "LineType",
@@ -726,7 +722,7 @@ impl IgsCommandType {
                     }
 
                     let mut poly_size = p3;
-                    if poly_size < 1 || poly_size > 8 {
+                    if !(1..=8).contains(&poly_size) {
                         sink.report_error(
                             crate::ParseError::InvalidParameter {
                                 command: "LineType",
@@ -743,7 +739,7 @@ impl IgsCommandType {
                 } else {
                     // Line: p2=type(1-7), p3=thickness(1-41) or endpoints(0,50-54,60-64)
                     let mut line_kind = p2;
-                    if line_kind < 1 || line_kind > 7 {
+                    if !(1..=7).contains(&line_kind) {
                         sink.report_error(
                             crate::ParseError::InvalidParameter {
                                 command: "LineType",
@@ -1529,12 +1525,12 @@ impl IgsCommandType {
             }
             IgsCommandType::ClearLine => {
                 // G#l>mode: - mode defaults to 0 if not provided
-                let mode = params.get(0).map(|p| p.value() as u8).unwrap_or(0);
+                let mode = params.first().map(|p| p.value() as u8).unwrap_or(0);
                 Some(IgsCommand::ClearLine { mode })
             }
             IgsCommandType::RememberCursor => {
                 // G#r>value: - value defaults to 0 if not provided
-                let value = params.get(0).map(|p| p.value() as u8).unwrap_or(0);
+                let value = params.first().map(|p| p.value() as u8).unwrap_or(0);
                 Some(IgsCommand::RememberCursor { value })
             }
             IgsCommandType::LoopCommand => {

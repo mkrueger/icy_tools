@@ -1,7 +1,8 @@
 /// Polymarker type for LineStyle command
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PolymarkerKind {
     /// Point marker
+    #[default]
     Point = 1,
     /// Plus marker
     Plus = 2,
@@ -27,12 +28,6 @@ impl PolymarkerKind {
             PolymarkerKind::DiagonalCross => &[2, 2, -4, -3, 4, 3, 2, -4, 3, 4, -3],
             PolymarkerKind::Diamond => &[1, 5, -4, 0, 0, -3, 4, 0, 0, 3, -4, 0],
         }
-    }
-}
-
-impl Default for PolymarkerKind {
-    fn default() -> Self {
-        Self::Point
     }
 }
 

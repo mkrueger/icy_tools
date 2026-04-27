@@ -3,8 +3,6 @@
 //! Parses ANSI/VT100 escape sequences into structured commands.
 //! Supports CSI (Control Sequence Introducer), ESC, and OSC sequences.
 
-use std::u16;
-
 use base64::{Engine as _, engine::general_purpose};
 pub mod music;
 pub mod sgr;
@@ -52,7 +50,9 @@ impl Default for AnsiParser {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[derive(Default)]
 enum ParserState {
+    #[default]
     Default = 0,
     Escape = 1,
     CsiEntry = 2,
@@ -73,12 +73,6 @@ enum ParserState {
     ApsString = 8,
     ApsEscape = 9,
     AnsiMusic = 11, // ANSI Music parsing
-}
-
-impl Default for ParserState {
-    fn default() -> Self {
-        ParserState::Default
-    }
 }
 
 impl AnsiParser {
@@ -108,26 +102,26 @@ impl AnsiParser {
             if let Some(colon_pos) = self.parse_buffer[start_index..].iter().position(|&b| b == b':') {
                 let slot_end: usize = start_index + colon_pos;
                 // Parse slot number
-                if let Ok(slot_str) = std::str::from_utf8(&self.parse_buffer[start_index..slot_end]) {
-                    if let Ok(slot) = slot_str.parse::<usize>() {
-                        // Decode base64 font data (after second colon)
-                        let data_start = slot_end + 1;
-                        match general_purpose::STANDARD.decode(&self.parse_buffer[data_start..]) {
-                            Ok(decoded_data) => {
-                                sink.device_control(DeviceControlString::LoadFont(slot, decoded_data));
-                                return;
-                            }
-                            Err(_) => {
-                                sink.report_error(
-                                    ParseError::MalformedSequence {
-                                        description: "Invalid base64 in DCS font data",
-                                        sequence: Some(format!("ESC P CTerm:Font:{}:...", slot)),
-                                        context: Some(format!("Font slot {}", slot)),
-                                    },
-                                    crate::ErrorLevel::Error,
-                                );
-                                return;
-                            }
+                if let Ok(slot_str) = std::str::from_utf8(&self.parse_buffer[start_index..slot_end])
+                    && let Ok(slot) = slot_str.parse::<usize>()
+                {
+                    // Decode base64 font data (after second colon)
+                    let data_start = slot_end + 1;
+                    match general_purpose::STANDARD.decode(&self.parse_buffer[data_start..]) {
+                        Ok(decoded_data) => {
+                            sink.device_control(DeviceControlString::LoadFont(slot, decoded_data));
+                            return;
+                        }
+                        Err(_) => {
+                            sink.report_error(
+                                ParseError::MalformedSequence {
+                                    description: "Invalid base64 in DCS font data",
+                                    sequence: Some(format!("ESC P CTerm:Font:{}:...", slot)),
+                                    context: Some(format!("Font slot {}", slot)),
+                                },
+                                crate::ErrorLevel::Error,
+                            );
+                            return;
                         }
                     }
                 }
@@ -175,7 +169,7 @@ impl AnsiParser {
 
         // Check for Sixel graphics: ESC P {params} q {data} ESC \
         if i < self.parse_buffer.len() && self.parse_buffer[i] == b'q' {
-            let aspect_ratio = self.params.get(0).copied();
+            let aspect_ratio = self.params.first().copied();
             let zero_color = self.params.get(1).copied();
             let grid_size = self.params.get(2).copied();
 
@@ -703,7 +697,7 @@ impl CommandParser for AnsiParser {
                         // Ps2 = baud rate
                         let ps1 = self.params.first().copied().unwrap_or(0);
                         let ps2 = self.params.get(1).copied().unwrap_or(0);
-                        let comm_line = CommunicationLine::from_u16(ps1 as u16);
+                        let comm_line = CommunicationLine::from_u16(ps1);
                         let baud_option = *ANSI_BAUD_OPTIONS.get(ps2 as usize).unwrap_or(&BaudEmulation::Off);
 
                         sink.emit(TerminalCommand::CsiSelectCommunicationSpeed(comm_line, baud_option));
@@ -715,10 +709,10 @@ impl CommandParser for AnsiParser {
                         // Request Checksum of Rectangular Area: ESC[{Pid};{Ppage};{Pt};{Pl};{Pb};{Pr}*y
                         let id = self.params.first().copied().unwrap_or(0) as u8;
                         let page = self.params.get(1).copied().unwrap_or(0) as u8;
-                        let top = self.params.get(2).copied().unwrap_or(0) as u16;
-                        let left = self.params.get(3).copied().unwrap_or(0) as u16;
-                        let bottom = self.params.get(4).copied().unwrap_or(0) as u16;
-                        let right = self.params.get(5).copied().unwrap_or(0) as u16;
+                        let top = self.params.get(2).copied().unwrap_or(0);
+                        let left = self.params.get(3).copied().unwrap_or(0);
+                        let bottom = self.params.get(4).copied().unwrap_or(0);
+                        let right = self.params.get(5).copied().unwrap_or(0);
                         sink.request(TerminalRequest::RequestChecksumRectangularArea {
                             id,
                             page,
@@ -800,10 +794,10 @@ impl CommandParser for AnsiParser {
                         let pr = self.params.get(4).copied().unwrap_or(1);
                         sink.emit(TerminalCommand::CsiFillRectangularArea {
                             char: pchar,
-                            top: pt as u16,
-                            left: pl as u16,
-                            bottom: pb as u16,
-                            right: pr as u16,
+                            top: pt,
+                            left: pl,
+                            bottom: pb,
+                            right: pr,
                         });
                         self.reset();
                         i += 1;
@@ -816,10 +810,10 @@ impl CommandParser for AnsiParser {
                         let pb = self.params.get(2).copied().unwrap_or(1);
                         let pr = self.params.get(3).copied().unwrap_or(1);
                         sink.emit(TerminalCommand::CsiEraseRectangularArea {
-                            top: pt as u16,
-                            left: pl as u16,
-                            bottom: pb as u16,
-                            right: pr as u16,
+                            top: pt,
+                            left: pl,
+                            bottom: pb,
+                            right: pr,
                         });
                         self.reset();
                         i += 1;
@@ -832,10 +826,10 @@ impl CommandParser for AnsiParser {
                         let pb = self.params.get(2).copied().unwrap_or(1);
                         let pr = self.params.get(3).copied().unwrap_or(1);
                         sink.emit(TerminalCommand::CsiSelectiveEraseRectangularArea {
-                            top: pt as u16,
-                            left: pl as u16,
-                            bottom: pb as u16,
-                            right: pr as u16,
+                            top: pt,
+                            left: pl,
+                            bottom: pb,
+                            right: pr,
                         });
                         self.reset();
                         i += 1;
@@ -915,10 +909,7 @@ impl CommandParser for AnsiParser {
                         // Font Selection
                         let ps1 = self.params.first().copied().unwrap_or(0);
                         let ps2 = self.params.get(1).copied().unwrap_or(0);
-                        sink.emit(TerminalCommand::CsiFontSelection {
-                            slot: ps1 as u16,
-                            font_number: ps2 as u16,
-                        });
+                        sink.emit(TerminalCommand::CsiFontSelection { slot: ps1, font_number: ps2 });
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -926,7 +917,7 @@ impl CommandParser for AnsiParser {
                     b'A' => {
                         // Scroll Right
                         let n = self.params.first().copied().unwrap_or(1);
-                        sink.emit(TerminalCommand::CsiScroll(Direction::Right, n as u16));
+                        sink.emit(TerminalCommand::CsiScroll(Direction::Right, n));
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -934,7 +925,7 @@ impl CommandParser for AnsiParser {
                     b'@' => {
                         // Scroll Left
                         let n = self.params.first().copied().unwrap_or(1);
-                        sink.emit(TerminalCommand::CsiScroll(Direction::Left, n as u16));
+                        sink.emit(TerminalCommand::CsiScroll(Direction::Left, n));
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -1430,48 +1421,48 @@ impl AnsiParser {
             let pt_bytes = &self.parse_buffer[semicolon_pos + 1..];
 
             // Parse command number
-            if let Ok(ps_str) = std::str::from_utf8(ps_bytes) {
-                if let Ok(ps) = ps_str.parse::<u32>() {
-                    match ps {
-                        0 => {
-                            // Set icon name and window title
-                            sink.operating_system_command(OperatingSystemCommand::SetTitle(pt_bytes.to_vec()));
-                        }
-                        1 => {
-                            // Set icon name
-                            sink.operating_system_command(OperatingSystemCommand::SetIconName(pt_bytes.to_vec()));
-                        }
-                        2 => {
-                            // Set window title
-                            sink.operating_system_command(OperatingSystemCommand::SetWindowTitle(pt_bytes.to_vec()));
-                        }
-                        4 => {
-                            // Set Palette Color: OSC 4 ; index ; rgb:rr/gg/bb BEL
-                            // Format: "4;0;rgb:00/00/00" or just "0;rgb:00/00/00" after the first semicolon
-                            self.parse_osc_palette(pt_bytes, sink);
-                        }
-                        8 => {
-                            // Hyperlink: OSC 8 ; params ; URI BEL
-                            if let Some(uri_pos) = pt_bytes.iter().position(|&b| b == b';') {
-                                let params = pt_bytes[..uri_pos].to_vec();
-                                let uri = pt_bytes[uri_pos + 1..].to_vec();
-                                sink.operating_system_command(OperatingSystemCommand::Hyperlink { params, uri });
-                            }
-                        }
-                        _ => {
-                            // Unknown OSC command
-                            sink.report_error(
-                                ParseError::MalformedSequence {
-                                    description: "Unknown or malformed escape sequence",
-                                    sequence: Some(format!("OSC {}", ps)),
-                                    context: Some("Unknown OSC command number".to_string()),
-                                },
-                                crate::ErrorLevel::Error,
-                            );
+            if let Ok(ps_str) = std::str::from_utf8(ps_bytes)
+                && let Ok(ps) = ps_str.parse::<u32>()
+            {
+                match ps {
+                    0 => {
+                        // Set icon name and window title
+                        sink.operating_system_command(OperatingSystemCommand::SetTitle(pt_bytes.to_vec()));
+                    }
+                    1 => {
+                        // Set icon name
+                        sink.operating_system_command(OperatingSystemCommand::SetIconName(pt_bytes.to_vec()));
+                    }
+                    2 => {
+                        // Set window title
+                        sink.operating_system_command(OperatingSystemCommand::SetWindowTitle(pt_bytes.to_vec()));
+                    }
+                    4 => {
+                        // Set Palette Color: OSC 4 ; index ; rgb:rr/gg/bb BEL
+                        // Format: "4;0;rgb:00/00/00" or just "0;rgb:00/00/00" after the first semicolon
+                        self.parse_osc_palette(pt_bytes, sink);
+                    }
+                    8 => {
+                        // Hyperlink: OSC 8 ; params ; URI BEL
+                        if let Some(uri_pos) = pt_bytes.iter().position(|&b| b == b';') {
+                            let params = pt_bytes[..uri_pos].to_vec();
+                            let uri = pt_bytes[uri_pos + 1..].to_vec();
+                            sink.operating_system_command(OperatingSystemCommand::Hyperlink { params, uri });
                         }
                     }
-                    return;
+                    _ => {
+                        // Unknown OSC command
+                        sink.report_error(
+                            ParseError::MalformedSequence {
+                                description: "Unknown or malformed escape sequence",
+                                sequence: Some(format!("OSC {}", ps)),
+                                context: Some("Unknown OSC command number".to_string()),
+                            },
+                            crate::ErrorLevel::Error,
+                        );
+                    }
                 }
+                return;
             }
         }
 
@@ -1601,53 +1592,53 @@ impl AnsiParser {
         match final_byte {
             b'A' | b'k' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, n as u16, Wrapping::Never));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, n, Wrapping::Never));
             }
 
             b'B' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, n as u16, Wrapping::Never));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, n, Wrapping::Never));
             }
             b'C' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, n as u16, Wrapping::Never));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, n, Wrapping::Never));
             }
             b'D' | b'j' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, n as u16, Wrapping::Never));
+                sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, n, Wrapping::Never));
             }
             b'E' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCursorNextLine(n as u16));
+                sink.emit(TerminalCommand::CsiCursorNextLine(n));
             }
             b'F' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCursorPreviousLine(n as u16));
+                sink.emit(TerminalCommand::CsiCursorPreviousLine(n));
             }
             b'G' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCursorHorizontalAbsolute(n as u16));
+                sink.emit(TerminalCommand::CsiCursorHorizontalAbsolute(n));
             }
             b'H' | b'f' => {
                 let row = self.params.first().copied().unwrap_or(1);
                 let col = self.params.get(1).copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCursorPosition(row as u16, col as u16));
+                sink.emit(TerminalCommand::CsiCursorPosition(row, col));
             }
             b'd' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiLinePositionAbsolute(n as u16));
+                sink.emit(TerminalCommand::CsiLinePositionAbsolute(n));
             }
             b'e' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiLinePositionForward(n as u16));
+                sink.emit(TerminalCommand::CsiLinePositionForward(n));
             }
             b'a' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCharacterPositionForward(n as u16));
+                sink.emit(TerminalCommand::CsiCharacterPositionForward(n));
             }
             b'\'' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiHorizontalPositionAbsolute(n as u16));
+                sink.emit(TerminalCommand::CsiHorizontalPositionAbsolute(n));
             }
             b'J' => {
                 let n = self.params.first().copied().unwrap_or(0);
@@ -1685,11 +1676,11 @@ impl AnsiParser {
             }
             b'S' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiScroll(Direction::Up, n as u16));
+                sink.emit(TerminalCommand::CsiScroll(Direction::Up, n));
             }
             b'T' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiScroll(Direction::Down, n as u16));
+                sink.emit(TerminalCommand::CsiScroll(Direction::Down, n));
             }
             b'm' => {
                 let params: &[u16] = if self.params.is_empty() { &[0u16] } else { &self.params };
@@ -1736,35 +1727,33 @@ impl AnsiParser {
             },
             b'@' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiInsertCharacter(n as u16));
+                sink.emit(TerminalCommand::CsiInsertCharacter(n));
             }
             b'P' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiDeleteCharacter(n as u16));
+                sink.emit(TerminalCommand::CsiDeleteCharacter(n));
             }
             b'X' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiEraseCharacter(n as u16));
+                sink.emit(TerminalCommand::CsiEraseCharacter(n));
             }
             b'L' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiInsertLine(n as u16));
+                sink.emit(TerminalCommand::CsiInsertLine(n));
             }
             b'M' => {
                 // CSI M can be either Delete Line or ANSI Music (conflicting)
-                if self.music_option == music::MusicOption::Conflicting || self.music_option == music::MusicOption::Both {
-                    if self.params.is_empty() {
-                        // Start ANSI music parsing — M-style parses one leading
-                        // style character (F/B/N/L/S) before the command loop.
-                        self.state = ParserState::AnsiMusic;
-                        self.cur_music = Some(music::AnsiMusic::default());
-                        self.music_state = MusicState::ParseMusicStyle;
-                        return; // Don't reset - stay in AnsiMusic state
-                    }
+                if (self.music_option == music::MusicOption::Conflicting || self.music_option == music::MusicOption::Both) && self.params.is_empty() {
+                    // Start ANSI music parsing — M-style parses one leading
+                    // style character (F/B/N/L/S) before the command loop.
+                    self.state = ParserState::AnsiMusic;
+                    self.cur_music = Some(music::AnsiMusic::default());
+                    self.music_state = MusicState::ParseMusicStyle;
+                    return; // Don't reset - stay in AnsiMusic state
                 }
                 // Normal Delete Line
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiDeleteLine(n as u16));
+                sink.emit(TerminalCommand::CsiDeleteLine(n));
             }
             b'N' => {
                 // CSI N for ANSI Music (Banana style)
@@ -1812,18 +1801,18 @@ impl AnsiParser {
             }
             b'Y' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCursorLineTabulationForward(n as u16));
+                sink.emit(TerminalCommand::CsiCursorLineTabulationForward(n));
             }
             b'Z' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.emit(TerminalCommand::CsiCursorBackwardTabulation(n as u16));
+                sink.emit(TerminalCommand::CsiCursorBackwardTabulation(n));
             }
             b't' => match self.params.len() {
                 3 => {
                     let cmd = self.params.first().copied().unwrap_or(0);
                     if cmd == 8 {
-                        let height = self.params.get(1).copied().unwrap_or(1).max(1).min(60) as u16;
-                        let width = self.params.get(2).copied().unwrap_or(1).max(1).min(132) as u16;
+                        let height = self.params.get(1).copied().unwrap_or(1).clamp(1, 60);
+                        let width = self.params.get(2).copied().unwrap_or(1).clamp(1, 132);
                         sink.emit(TerminalCommand::CsiResizeTerminal(height, width));
                     } else {
                         sink.report_error(
@@ -1947,14 +1936,11 @@ impl AnsiParser {
             }
 
             b'|' => {
-                if self.music_option != music::MusicOption::Off {
-                    if self.params.is_empty() {
-                        self.state = ParserState::AnsiMusic;
-                        self.dotted_note = false;
-                        self.cur_music = Some(music::AnsiMusic::default());
-                        self.music_state = MusicState::ParseMusicStyle;
-                        return;
-                    }
+                if self.music_option != music::MusicOption::Off && self.params.is_empty() {
+                    self.state = ParserState::AnsiMusic;
+                    self.dotted_note = false;
+                    self.cur_music = Some(music::AnsiMusic::default());
+                    self.music_state = MusicState::ParseMusicStyle;
                 }
             }
             _ => {

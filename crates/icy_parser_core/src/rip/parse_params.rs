@@ -15,13 +15,11 @@ impl RipParser {
         }
         if self.builder.got_escape {
             self.builder.got_escape = false;
-        } else {
-            if ch == b'|' {
-                self.emit_command(sink);
-                self.builder.reset();
-                self.state = State::GotPipe;
-                return true;
-            }
+        } else if ch == b'|' {
+            self.emit_command(sink);
+            self.builder.reset();
+            self.state = State::GotPipe;
+            return true;
         }
 
         // Parse parameters based on command
@@ -325,7 +323,7 @@ impl RipParser {
             // Q - Set Palette (32 digits for 16 colors)
             (0, b'Q') => {
                 if let Some(digit) = BASE36_LUT[ch as usize] {
-                    if self.builder.param_state % 2 == 0 {
+                    if self.builder.param_state.is_multiple_of(2) {
                         self.builder.u16_params.push(digit);
                     } else {
                         let idx = self.builder.u16_params.len() - 1;
@@ -354,7 +352,7 @@ impl RipParser {
             }
             (0, b'P') | (0, b'p') | (0, b'l') => {
                 if let Some(digit) = BASE36_LUT[ch as usize] {
-                    if self.builder.param_state % 2 == 0 {
+                    if self.builder.param_state.is_multiple_of(2) {
                         self.builder.u16_params.push(digit);
                     } else {
                         let idx = self.builder.u16_params.len() - 1;
@@ -400,7 +398,7 @@ impl RipParser {
                         if self.builder.u16_params.len() <= idx {
                             self.builder.u16_params.resize(idx + 1, 0);
                         }
-                        if state % 2 == 0 {
+                        if state.is_multiple_of(2) {
                             self.builder.u16_params[idx] = digit;
                         } else {
                             self.builder.u16_params[idx] = self.builder.u16_params[idx].wrapping_mul(36).wrapping_add(digit);
@@ -420,7 +418,7 @@ impl RipParser {
                         if self.builder.u16_params.len() <= idx {
                             self.builder.u16_params.resize(idx + 1, 0);
                         }
-                        if (state - 10) % 2 == 0 {
+                        if (state - 10).is_multiple_of(2) {
                             self.builder.u16_params[idx] = digit;
                         } else {
                             self.builder.u16_params[idx] = self.builder.u16_params[idx].wrapping_mul(36).wrapping_add(digit);
@@ -449,7 +447,7 @@ impl RipParser {
                 // states 0..=2: flags (3 digits)
                 if self.builder.param_state <= 2 {
                     if let Some(digit) = BASE36_LUT[ch as usize] {
-                        if self.builder.u16_params.len() == 0 {
+                        if self.builder.u16_params.is_empty() {
                             self.builder.u16_params.push(0);
                         }
                         self.builder.u16_params[0] = self.builder.u16_params[0].wrapping_mul(36).wrapping_add(digit);
@@ -511,9 +509,9 @@ impl RipParser {
             (9, 0x1B) if self.builder.param_state < 8 => {
                 if let Some(digit) = BASE36_LUT[ch as usize] {
                     let idx = match self.builder.param_state {
-                        0..=1 => self.builder.param_state as usize, // mode, proto
-                        2..=3 => 2,                                 // file_type
-                        _ => 3,                                     // res
+                        0..=1 => self.builder.param_state, // mode, proto
+                        2..=3 => 2,                        // file_type
+                        _ => 3,                            // res
                     };
                     if self.builder.u16_params.len() <= idx {
                         self.builder.u16_params.resize(idx + 1, 0);

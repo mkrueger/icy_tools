@@ -230,7 +230,7 @@ impl AnsiParser {
                     // QBASIC N notation: N0 starts at C0, but FREQ table starts at C1 (index 0)
                     // So there's an offset of 16 semitones: index = note_number - 16
                     // N49 = A4 (440Hz) = index 33
-                    let note_index = if x >= 16 { x - 16 } else { 0 };
+                    let note_index = x.saturating_sub(16);
                     let note_index = note_index.clamp(0, FREQ.len() - 1);
                     self.cur_music
                         .as_mut()

@@ -271,7 +271,7 @@ impl SkypixParser {
             }
             SET_PEN_A => {
                 // If no parameter provided, default to color 7 (white/default foreground)
-                let color = self.builder.params.get(0).copied().unwrap_or(2);
+                let color = self.builder.params.first().copied().unwrap_or(2);
                 Some(SkypixCommand::SetPenA { color })
             }
             CRC_TRANSFER => {
@@ -321,7 +321,7 @@ impl SkypixParser {
             }
             SET_PEN_B => {
                 // If no parameter provided, default to color 0 (black/default background)
-                let color = self.builder.params.get(0).copied().unwrap_or(0);
+                let color = self.builder.params.first().copied().unwrap_or(0);
                 Some(SkypixCommand::SetPenB { color })
             }
             POSITION_CURSOR => {
@@ -388,33 +388,33 @@ impl SkypixParser {
         match terminator {
             b'A' => {
                 // Cursor Up
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiMoveCursor(Direction::Up, n as u16, Wrapping::Never));
             }
             b'B' => {
                 // Cursor Down
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiMoveCursor(Direction::Down, n as u16, Wrapping::Never));
             }
             b'C' => {
                 // Cursor Forward
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiMoveCursor(Direction::Right, n as u16, Wrapping::Never));
             }
             b'D' => {
                 // Cursor Backward
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiMoveCursor(Direction::Left, n as u16, Wrapping::Never));
             }
             b'H' | b'f' => {
                 // Cursor Position
-                let row = self.builder.params.get(0).copied().unwrap_or(1).max(1) as u16;
+                let row = self.builder.params.first().copied().unwrap_or(1).max(1) as u16;
                 let col = self.builder.params.get(1).copied().unwrap_or(1).max(1) as u16;
                 sink.emit(TerminalCommand::CsiCursorPosition(row - 1, col - 1));
             }
             b'J' => {
                 // Erase Display
-                let n = self.builder.params.get(0).copied().unwrap_or(0);
+                let n = self.builder.params.first().copied().unwrap_or(0);
                 match n {
                     0 => sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::CursorToEnd)),
                     1 => sink.emit(TerminalCommand::CsiEraseInDisplay(EraseInDisplayMode::StartToCursor)),
@@ -435,7 +435,7 @@ impl SkypixParser {
             }
             b'K' => {
                 // Erase Line
-                let n = self.builder.params.get(0).copied().unwrap_or(0);
+                let n = self.builder.params.first().copied().unwrap_or(0);
                 match n {
                     0 => sink.emit(TerminalCommand::CsiEraseInLine(EraseInLineMode::CursorToEnd)),
                     1 => sink.emit(TerminalCommand::CsiEraseInLine(EraseInLineMode::StartToCursor)),
@@ -501,47 +501,47 @@ impl SkypixParser {
             }
             b'E' => {
                 // CNL - Cursor Next Line: Move cursor down n lines and to column 1
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiCursorNextLine(n as u16));
             }
             b'F' => {
                 // CPL - Cursor Previous Line: Move cursor up n lines and to column 1
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiCursorPreviousLine(n as u16));
             }
             b'G' => {
                 // CHA - Cursor Horizontal Absolute: Move cursor to column n
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiCursorHorizontalAbsolute(n as u16 - 1));
             }
             b'L' => {
                 // IL - Insert Line: Insert n blank lines at cursor position
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiInsertLine(n as u16));
             }
             b'M' => {
                 // DL - Delete Line: Delete n lines at cursor position
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiDeleteLine(n as u16));
             }
             b'P' => {
                 // DCH - Delete Character: Delete n characters at cursor position
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiDeleteCharacter(n as u16));
             }
             b'S' => {
                 // SU - Scroll Up: Scroll display up n lines
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiScroll(Direction::Up, n as u16));
             }
             b'T' => {
                 // SD - Scroll Down: Scroll display down n lines
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiScroll(Direction::Down, n as u16));
             }
             b'@' => {
                 // ICH - Insert Character: Insert n blank characters at cursor position
-                let n = self.builder.params.get(0).copied().unwrap_or(1).max(1);
+                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
                 sink.emit(TerminalCommand::CsiInsertCharacter(n as u16));
             }
             _ => {}

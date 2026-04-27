@@ -1,7 +1,8 @@
 /// Initialization type for Initialize command
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InitializationType {
     /// Set desktop palette and attributes
+    #[default]
     DesktopPaletteAndAttributes = 0,
     /// Set desktop palette only
     DesktopPaletteOnly = 1,
@@ -13,12 +14,6 @@ pub enum InitializationType {
     VdiDefaultPalette = 4,
     /// Set desktop resolution and VDI clipping (should be used FIRST)
     DesktopResolutionAndClipping = 5,
-}
-
-impl Default for InitializationType {
-    fn default() -> Self {
-        Self::DesktopPaletteAndAttributes
-    }
 }
 
 impl TryFrom<i32> for InitializationType {
@@ -38,9 +33,10 @@ impl TryFrom<i32> for InitializationType {
 }
 
 /// Palette mode for SetResolution command
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PaletteMode {
     /// No palette change
+    #[default]
     NoChange = 0,
     /// Desktop colors
     Desktop = 1,
@@ -48,12 +44,6 @@ pub enum PaletteMode {
     IgDefault = 2,
     /// VDI default palette
     VdiDefault = 3,
-}
-
-impl Default for PaletteMode {
-    fn default() -> Self {
-        Self::NoChange
-    }
 }
 
 impl TryFrom<i32> for PaletteMode {

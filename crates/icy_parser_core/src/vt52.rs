@@ -207,15 +207,15 @@ impl Vt52Parser {
         if let Some(color) = Self::parse_vt52_color_standard(byte) {
             return Some(color);
         }
-        if byte >= b'0' && byte <= b'9' + 15 {
+        if (b'0'..=b'9' + 15).contains(&byte) {
             let index = byte.wrapping_sub(b'0');
-            Some(Color::Base(index as u8))
-        } else if byte >= b'a' && byte <= b'f' {
+            Some(Color::Base(index))
+        } else if (b'a'..=b'f').contains(&byte) {
             let index = byte.wrapping_sub(b'a') + 10;
-            return Some(Color::Base(index as u8));
-        } else if byte >= b'A' && byte <= b'F' {
+            Some(Color::Base(index))
+        } else if (b'A'..=b'F').contains(&byte) {
             let index = byte.wrapping_sub(b'A') + 10;
-            return Some(Color::Base(index as u8));
+            Some(Color::Base(index))
         } else {
             // Try ATARI ST direct byte values last
             Self::parse_vt52_color_atari(byte)
@@ -225,10 +225,10 @@ impl Vt52Parser {
     /// Parse VT52 color code from ASCII byte for Standard mode (space-based)
     #[inline]
     fn parse_vt52_color_standard(byte: u8) -> Option<Color> {
-        if byte >= b' ' && byte < b' ' + 16 {
+        if (b' '..b' ' + 16).contains(&byte) {
             // Standard VT52: space-based encoding (0x20-0x2F)
             let index = byte.wrapping_sub(b' ');
-            Some(Color::Base(index as u8))
+            Some(Color::Base(index))
         } else {
             None
         }
@@ -239,7 +239,7 @@ impl Vt52Parser {
     fn parse_vt52_color_atari(byte: u8) -> Option<Color> {
         if byte <= 0x0F {
             // ATARI ST extension: direct byte values
-            Some(Color::Base(byte as u8))
+            Some(Color::Base(byte))
         } else {
             None
         }
@@ -251,7 +251,7 @@ impl Vt52Parser {
     fn read_cursor_position_mixed(line_byte: u8, row_byte: u8) -> Option<(u16, u16)> {
         // Auto-detect format: if line_byte >= b' ' it's standard space-based format
         if let Some(pos) = Self::read_cursor_position_standard(line_byte, row_byte) {
-            return Some(pos);
+            Some(pos)
         } else {
             // Atari format: direct byte values (0-25 for line, 0-132 for row)
             Self::read_cursor_position_atari(line_byte, row_byte)
@@ -263,7 +263,7 @@ impl Vt52Parser {
     #[inline]
     fn read_cursor_position_standard(line_byte: u8, row_byte: u8) -> Option<(u16, u16)> {
         // Original VT-52: space-based encoding
-        if line_byte >= b' ' && line_byte <= b'8' && row_byte >= b' ' && row_byte <= b'p' {
+        if (b' '..=b'8').contains(&line_byte) && (b' '..=b'p').contains(&row_byte) {
             let line = (line_byte - b' ') as u16 + 1;
             let row = (row_byte - b' ') as u16 + 1;
             Some((line, row))
@@ -376,7 +376,7 @@ impl CommandParser for Vt52Parser {
                 State::Escape => {
                     match unsafe { ESCAPE_LUT.get_unchecked(byte as usize) } {
                         EscAction::Command(cmd) => {
-                            sink.emit((**cmd).clone());
+                            sink.emit(**cmd);
                             self.state = State::Default;
                         }
                         EscAction::PositionCursor => {

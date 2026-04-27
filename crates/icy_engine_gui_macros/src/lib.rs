@@ -97,7 +97,12 @@ fn generate_wrapper(config: &DialogWrapperConfig, state_struct: &ItemStruct) -> 
                     icy_engine_gui::ui::DialogStyle::Fullscreen
                 }
             },
-            "Modal" | _ => quote! {
+            "Modal" => quote! {
+                fn style(&self) -> icy_engine_gui::ui::DialogStyle {
+                    icy_engine_gui::ui::DialogStyle::Modal
+                }
+            },
+            _ => quote! {
                 fn style(&self) -> icy_engine_gui::ui::DialogStyle {
                     icy_engine_gui::ui::DialogStyle::Modal
                 }

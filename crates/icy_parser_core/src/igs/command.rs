@@ -683,18 +683,6 @@ pub enum IgsCommand {
     /// * `resolution` - Target resolution:
     ///   - 0: Low resolution (320x200, 16 colors)
     ///   - 1: Medium resolution (640x200, 4 colors)
-    /// * `palette` - Palette to load:
-    /// Set resolution and palette (R)
-    ///
-    /// IGS: `G#R>resolution,palette:`
-    ///
-    /// Changes terminal resolution and optionally loads a palette.
-    ///
-    /// # Parameters
-    /// * `resolution` - Terminal resolution mode:
-    ///   - Low: 320×200, 16 colors
-    ///   - Medium: 640×200, 4 colors
-    ///   - High: 640×400, 2 colors
     /// * `palette` - Palette mode:
     ///   - NoChange: No palette change
     ///   - Desktop: Desktop colors
@@ -790,8 +778,8 @@ pub enum IgsCommand {
     /// # Parameters
     /// * `params` - Operation and data:
     ///   - [0]: Deactivate macro
-    ///   - [1, cr]: Reactivate (cr: 0=no CR, 1=add CR)
-    ///   - [2, on, cr, len, ...]: Load and configure macro
+    ///   - `1, cr`: Reactivate (cr: 0=no CR, 1=add CR)
+    ///   - `2, on, cr, len, ...`: Load and configure macro
     RightMouseMacro { params: Vec<IgsParameter> },
 
     /// Define mouse click zones (X 4)
@@ -1511,19 +1499,19 @@ impl fmt::Display for IgsCommand {
                     TextColorLayer::Foreground => 'b',
                     TextColorLayer::Background => 'c',
                 };
-                write!(f, "\x1b{}{}", escape_char, *color as u8 as char)
+                write!(f, "\x1b{}{}", escape_char, *color as char)
             }
-            IgsCommand::DeleteLine { count } => write!(f, "\x1bd{}", *count as u8 as char),
+            IgsCommand::DeleteLine { count } => write!(f, "\x1bd{}", *count as char),
             IgsCommand::InsertLine { mode: _, count } => {
                 // Emit VT52 ESC form to match input format
-                write!(f, "\x1bi{}", *count as u8 as char)
+                write!(f, "\x1bi{}", *count as char)
             }
             IgsCommand::ClearLine { mode } => {
                 // Emit VT52 ESC form; parameter only if non-zero
                 if *mode == 0 {
                     write!(f, "\x1bl")
                 } else {
-                    write!(f, "\x1bl{}", *mode as u8 as char)
+                    write!(f, "\x1bl{}", *mode as char)
                 }
             }
             IgsCommand::CursorMotion { direction, count } => {
@@ -1542,7 +1530,7 @@ impl fmt::Display for IgsCommand {
                 if *value == 0 {
                     write!(f, "\x1br")
                 } else {
-                    write!(f, "\x1br{}", *value as u8 as char)
+                    write!(f, "\x1br{}", *value as char)
                 }
             }
             IgsCommand::InverseVideo { enabled } => {

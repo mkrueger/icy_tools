@@ -211,7 +211,7 @@ impl IgsParser {
         let mut base_ident: &[u8] = original_ident.as_slice();
 
         // Check if this is a chain-gang command (>...@)
-        let is_chain_gang = base_ident.starts_with(&[b'>']) && base_ident.contains(&b'@');
+        let is_chain_gang = base_ident.starts_with(b">") && base_ident.contains(&b'@');
 
         let target = if is_chain_gang {
             // For chain-gangs, find the closing @ of the chain
@@ -556,7 +556,7 @@ impl CommandParser for IgsParser {
                                     let mut target = LoopTarget::Single(IgsCommandType::WriteText);
 
                                     // Check if this is a chain-gang command (>...@)
-                                    let is_chain_gang = base_ident.starts_with(&[b'>']) && base_ident.contains(&b'@');
+                                    let is_chain_gang = base_ident.starts_with(b">") && base_ident.contains(&b'@');
 
                                     if is_chain_gang {
                                         // For chain-gangs, find the closing @ of the chain
@@ -593,7 +593,7 @@ impl CommandParser for IgsParser {
                                     }
 
                                     if matches!(target, LoopTarget::Single(IgsCommandType::WriteText)) {
-                                        target = if base_ident.starts_with(&[b'>']) && original_ident.contains(&b'@') {
+                                        target = if base_ident.starts_with(b">") && original_ident.contains(&b'@') {
                                             let inner = &base_ident[1..];
                                             let commands: Vec<IgsCommandType> = inner.iter().filter_map(|&ch| IgsCommandType::try_from(ch).ok()).collect();
                                             LoopTarget::ChainGang { commands }
@@ -666,7 +666,7 @@ impl CommandParser for IgsParser {
                             // Check if this might be a W@ loop that's still reading text
                             let is_w_at_loop = self.loop_tokens.len() >= 5 && {
                                 let ident = &self.loop_tokens[4];
-                                ident.starts_with(&[b'W']) && ident.contains(&b'@')
+                                ident.starts_with(b"W") && ident.contains(&b'@')
                             };
 
                             // Process tokens even if incomplete on newline
@@ -722,7 +722,7 @@ impl CommandParser for IgsParser {
                                     }
                                 });
 
-                                let target = if base_ident.starts_with(&[b'>']) && original_ident.contains(&b'@') {
+                                let target = if base_ident.starts_with(b">") && original_ident.contains(&b'@') {
                                     let inner = &base_ident[1..];
                                     let commands: Vec<IgsCommandType> = inner.iter().filter_map(|&ch| IgsCommandType::try_from(ch).ok()).collect();
                                     LoopTarget::ChainGang { commands }
@@ -978,7 +978,7 @@ impl CommandParser for IgsParser {
                 }
                 State::ReadFillPattern(pattern) => match byte {
                     b':' => {
-                        if pattern < 0 || pattern > 7 {
+                        if !(0..=7).contains(&pattern) {
                             sink.report_error(
                                 crate::ParseError::InvalidParameter {
                                     command: "ExtendedCommand:LoadFillPattern",
@@ -1006,7 +1006,7 @@ impl CommandParser for IgsParser {
                         if self.text_buffer.len() >= 16 * 17 {
                             // 16 lines × 17 chars (16 pattern + '@')
                             // Validate pattern slot first
-                            if pattern < 0 || pattern > 7 {
+                            if !(0..=7).contains(&pattern) {
                                 sink.report_error(
                                     crate::ParseError::InvalidParameter {
                                         command: "ExtendedCommand:LoadFillPattern",

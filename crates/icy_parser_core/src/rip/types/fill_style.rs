@@ -114,7 +114,7 @@ impl TryFrom<i32> for FillStyle {
     type Error = String;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
-        if value < 0 || value > 255 {
+        if !(0..=255).contains(&value) {
             return Err(format!("FillStyle value out of range: {}", value));
         }
         FillStyle::try_from(value as u8)

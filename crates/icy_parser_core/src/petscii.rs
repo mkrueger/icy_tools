@@ -136,7 +136,7 @@ impl PetsciiParser {
             0x9E => "Set foreground YELLOW",
             0x9F => "Set foreground CYAN",
             0xFF => "Printable PI character",
-            b if matches!(b, 0x20..=0x7F | 0xA0..=0xBF | 0xC0..=0xFE) => {
+            0x20..=0x7F | 0xA0..=0xBF | 0xC0..=0xFE => {
                 // Attempt mapping to internal code to show transformed character
                 match self.petscii_to_internal(byte) {
                     Some(mapped) => {
@@ -601,7 +601,7 @@ impl CommandParser for PetsciiParser {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.print(&[b' ']);
+                    sink.print(b" ");
                     start = i + 1;
                 }
 

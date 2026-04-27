@@ -1,7 +1,8 @@
 /// Cursor mode for Cursor command
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CursorMode {
     /// Cursor off
+    #[default]
     Off = 0,
     /// Cursor on
     On = 1,
@@ -9,12 +10,6 @@ pub enum CursorMode {
     DestructiveBackspace = 2,
     /// Non-destructive backspace
     NonDestructiveBackspace = 3,
-}
-
-impl Default for CursorMode {
-    fn default() -> Self {
-        Self::Off
-    }
 }
 
 impl TryFrom<i32> for CursorMode {

@@ -105,7 +105,7 @@ impl ViewdataParser {
 
         let mut print_ch = ch;
         if self.got_esc || ch < 0x20 {
-            print_ch = if self.hold_graphics { self.held_graphics_character as u8 } else { b' ' };
+            print_ch = if self.hold_graphics { self.held_graphics_character } else { b' ' };
         } else if self.is_in_graphic_mode {
             if (0x20..0x40).contains(&ch) || (0x60..0x80).contains(&ch) {
                 if print_ch < 0x40 {
@@ -134,7 +134,7 @@ impl ViewdataParser {
                     self.is_in_graphic_mode = false;
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Concealed(false)));
                     self.held_graphics_character = b' ';
-                    let color = 1 + (ch - b'A') as u8;
+                    let color = 1 + (ch - b'A');
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(color))));
                     sink.emit_view_data(ViewDataCommand::FillToEol);
                 }
@@ -145,7 +145,7 @@ impl ViewdataParser {
                         self.held_graphics_character = b' ';
                     }
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Concealed(false)));
-                    let color = 1 + (ch - b'Q') as u8;
+                    let color = 1 + (ch - b'Q');
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(color))));
                     sink.emit_view_data(ViewDataCommand::FillToEol);
                 }

@@ -1,7 +1,8 @@
 /// Mouse pointer type for AskIG queries
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MousePointerType {
     /// No pointer change (immediate response)
+    #[default]
     Immediate = 0,
     /// Polymarker pointer (selected with T command)
     Polymarker = 1,
@@ -23,12 +24,6 @@ pub enum MousePointerType {
     ThickCrossHair = 9,
     /// GEM Outlined Cross Hair pointer
     OutlinedCrossHair = 10,
-}
-
-impl Default for MousePointerType {
-    fn default() -> Self {
-        Self::Immediate
-    }
 }
 
 impl TryFrom<i32> for MousePointerType {

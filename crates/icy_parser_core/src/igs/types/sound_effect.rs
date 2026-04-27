@@ -1,7 +1,8 @@
 /// Sound effects for BellsAndWhistles command
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SoundEffect {
     /// Alien Invasion
+    #[default]
     AlienInvasion = 0,
     /// Red Alert
     RedAlert = 1,
@@ -41,12 +42,6 @@ pub enum SoundEffect {
     PassingPlane = 18,
     /// Landing
     Landing = 19,
-}
-
-impl Default for SoundEffect {
-    fn default() -> Self {
-        Self::AlienInvasion
-    }
 }
 
 impl TryFrom<i32> for SoundEffect {

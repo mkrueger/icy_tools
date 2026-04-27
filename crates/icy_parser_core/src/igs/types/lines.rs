@@ -1,9 +1,10 @@
 use super::PolymarkerKind;
 
 /// Line style type for LineStyle command
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LineKind {
     /// Solid line
+    #[default]
     Solid = 1,
     /// Long dash line
     LongDash = 2,
@@ -17,12 +18,6 @@ pub enum LineKind {
     DashDotDot = 6,
     /// User defined line
     UserDefined = 7,
-}
-
-impl Default for LineKind {
-    fn default() -> Self {
-        Self::Solid
-    }
 }
 
 impl LineKind {
@@ -58,20 +53,15 @@ impl TryFrom<i32> for LineKind {
 }
 
 /// Arrow end style for line endpoints
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ArrowEnd {
     /// Square end
+    #[default]
     Square = 0,
     /// Arrow end
     Arrow = 1,
     /// Rounded end
     Rounded = 2,
-}
-
-impl Default for ArrowEnd {
-    fn default() -> Self {
-        Self::Square
-    }
 }
 
 /// Line and marker style for LineStyle command (T command)
