@@ -26,8 +26,12 @@ use tokio_util::sync::CancellationToken;
 /// If scrolling/comments finish earlier, this ensures a minimum display time
 const MIN_SHOW_TIME_SECS: f32 = 7.0;
 
-/// How long to wait after scroll completes before advancing to next file (seconds)
-const POST_SCROLL_DELAY_SECS: f32 = 3.0;
+/// How long to wait after scroll completes before advancing to next file (seconds).
+/// This is intentionally shorter than the minimum visible time: the minimum
+/// timer prevents tiny/non-scrolling files from flashing by too quickly, while
+/// this delay gives users a short pause after long files have actually reached
+/// the bottom.
+const POST_SCROLL_DELAY_SECS: f32 = MIN_SHOW_TIME_SECS * 0.5;
 
 /// Delay before comments start appearing after file loads (seconds)
 const COMMENT_START_DELAY_SECS: f32 = 0.0;
@@ -394,28 +398,25 @@ impl ShuffleMode {
         }
     }
 
-    /// Check if we should advance to the next file
-    /// Priority:
-    /// 1. If scroll + comments finished → wait post-scroll delay (3s) → advance
-    /// 2. If minimum show time (7s) elapsed and scroll NOT finished → advance (fallback)
+    /// Check if we should advance to the next file.
+    ///
+    /// The minimum show timer is a lower bound, not a fallback/max timer:
+    /// - Short/non-scrolling files stay visible for at least
+    ///   [`MIN_SHOW_TIME_SECS`].
+    /// - Long files stay visible until the preview reaches the bottom and any
+    ///   comments finish scrolling, then wait [`POST_SCROLL_DELAY_SECS`].
+    ///
+    /// Advancement requires all three conditions:
+    /// 1. scroll + comments are complete
+    /// 2. the minimum visible time has elapsed
+    /// 3. the post-scroll delay has elapsed
     pub fn should_advance(&self) -> bool {
         if !self.is_active {
             return false;
         }
 
-        // Check if scrolling and comments are both finished
         let scroll_complete = !self.waiting_for_scroll && self.comments_finished;
-
-        if scroll_complete {
-            // Normal case: scroll finished; the task-driven post-scroll delay
-            // decides when advancing is allowed.
-            return self.post_scroll_elapsed;
-        }
-
-        // Fallback: if scroll is NOT complete but minimum time has passed,
-        // advance anyway. The elapsed flag is set by a one-shot Task instead
-        // of checking wall-clock time every animation tick.
-        self.min_show_elapsed
+        scroll_complete && self.min_show_elapsed && self.post_scroll_elapsed
     }
 
     /// Mark the current item's minimum show-time task as completed.
