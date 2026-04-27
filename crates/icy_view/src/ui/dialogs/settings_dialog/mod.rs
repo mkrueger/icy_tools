@@ -42,7 +42,7 @@ impl SettingsCategory {
 #[derive(Debug, Clone)]
 pub enum SettingsDialogMessage {
     SwitchCategory(SettingsCategory),
-    MonitorSettings(MonitorSettingsMessage),
+    MonitorSettings(Box<MonitorSettingsMessage>),
     ResetMonitorSettings,
     ExternalCommandChanged(usize, String),
     UpdateExportPath(String),
@@ -117,7 +117,7 @@ impl SettingsDialogState {
                 StateResult::Close
             }
             SettingsDialogMessage::MonitorSettings(settings) => {
-                update_monitor_settings(&mut self.temp_options.lock().monitor_settings, settings);
+                update_monitor_settings(&mut self.temp_options.lock().monitor_settings, *settings);
                 StateResult::None
             }
             SettingsDialogMessage::ResetMonitorSettings => {
@@ -202,7 +202,7 @@ impl SettingsDialogState {
         let settings_content = match self.current_category {
             SettingsCategory::Monitor => {
                 let monitor_settings = self.temp_options.lock().monitor_settings.clone();
-                show_monitor_settings(monitor_settings).map(move |msg| on_msg(SettingsDialogMessage::MonitorSettings(msg)))
+                show_monitor_settings(monitor_settings).map(move |msg| on_msg(SettingsDialogMessage::MonitorSettings(Box::new(msg))))
             }
             SettingsCategory::Commands => {
                 let commands = self.temp_options.lock().external_commands.clone();

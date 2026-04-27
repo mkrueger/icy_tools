@@ -138,15 +138,14 @@ impl ExternalCommand {
         }
         let file_str = file_path.to_string_lossy();
 
-        // Replace %F placeholder in the entire command first
-        let expanded_command = self.command.replace("%F", &file_str);
-
-        let parts: Vec<&str> = expanded_command.split_whitespace().collect();
+        // Parse the command before replacing `%F` so an unquoted placeholder
+        // still expands to a single argument when the file path contains spaces.
+        let parts = split_command_line(&self.command)?;
         if parts.is_empty() {
             return None;
         }
-        let program = parts[0].to_string();
-        let args: Vec<String> = parts[1..].iter().map(|s| s.to_string()).collect();
+        let program = parts[0].replace("%F", &file_str);
+        let args: Vec<String> = parts[1..].iter().map(|s| s.replace("%F", &file_str)).collect();
 
         // If no %F placeholder was in original command, append file as last argument
         if !self.command.contains("%F") {
@@ -156,6 +155,78 @@ impl ExternalCommand {
         }
         Some((program, args))
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CommandQuote {
+    Single,
+    Double,
+}
+
+fn split_command_line(command: &str) -> Option<Vec<String>> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut quote = None;
+    let mut token_started = false;
+    let mut chars = command.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match (ch, quote) {
+            ('\'', None) => {
+                quote = Some(CommandQuote::Single);
+                token_started = true;
+            }
+            ('\'', Some(CommandQuote::Single)) => {
+                quote = None;
+            }
+            ('"', None) => {
+                quote = Some(CommandQuote::Double);
+                token_started = true;
+            }
+            ('"', Some(CommandQuote::Double)) => {
+                quote = None;
+            }
+            (ch, None) if ch.is_whitespace() => {
+                if token_started {
+                    parts.push(std::mem::take(&mut current));
+                    token_started = false;
+                }
+            }
+            ('\\', Some(CommandQuote::Single)) => {
+                current.push('\\');
+                token_started = true;
+            }
+            ('\\', _) => {
+                if let Some(next) = chars.peek().copied() {
+                    if should_unescape(next) {
+                        current.push(chars.next()?);
+                    } else {
+                        current.push('\\');
+                    }
+                } else {
+                    current.push('\\');
+                }
+                token_started = true;
+            }
+            _ => {
+                current.push(ch);
+                token_started = true;
+            }
+        }
+    }
+
+    if quote.is_some() {
+        return None;
+    }
+    if token_started {
+        parts.push(current);
+    }
+
+    Some(parts)
+}
+
+fn should_unescape(ch: char) -> bool {
+    ch == '\\' || ch == '\'' || ch == '"' || ch.is_whitespace()
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -193,6 +264,57 @@ impl Default for Options {
             external_commands: Default::default(),
             export_path: String::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ExternalCommand;
+    use std::path::Path;
+
+    #[test]
+    fn external_command_keeps_unquoted_placeholder_path_as_single_arg() {
+        let command = ExternalCommand {
+            command: "viewer --open %F".to_string(),
+        };
+
+        let (program, args) = command.build_command(Path::new("/tmp/art files/demo file.ans")).unwrap();
+
+        assert_eq!(program, "viewer");
+        assert_eq!(args, vec!["--open", "/tmp/art files/demo file.ans"]);
+    }
+
+    #[test]
+    fn external_command_parses_quoted_program_and_arguments() {
+        let command = ExternalCommand {
+            command: "'my viewer' --title \"ANSI Art\" '--file=%F'".to_string(),
+        };
+
+        let (program, args) = command.build_command(Path::new("/tmp/art files/demo file.ans")).unwrap();
+
+        assert_eq!(program, "my viewer");
+        assert_eq!(args, vec!["--title", "ANSI Art", "--file=/tmp/art files/demo file.ans"]);
+    }
+
+    #[test]
+    fn external_command_appends_file_when_placeholder_is_missing() {
+        let command = ExternalCommand {
+            command: "viewer --fullscreen".to_string(),
+        };
+
+        let (program, args) = command.build_command(Path::new("/tmp/art files/demo file.ans")).unwrap();
+
+        assert_eq!(program, "viewer");
+        assert_eq!(args, vec!["--fullscreen", "/tmp/art files/demo file.ans"]);
+    }
+
+    #[test]
+    fn external_command_rejects_unclosed_quotes() {
+        let command = ExternalCommand {
+            command: "viewer \"unterminated".to_string(),
+        };
+
+        assert!(command.build_command(Path::new("/tmp/file.ans")).is_none());
     }
 }
 

@@ -123,6 +123,12 @@ pub struct ShuffleMode {
     file_started_at: Option<Instant>,
     /// When the current file finished scrolling (for post-scroll delay)
     scroll_finished_at: Option<Instant>,
+    /// Whether the minimum show-time task has completed for the current file.
+    min_show_elapsed: bool,
+    /// Whether the post-scroll delay task has been scheduled for the current file.
+    post_scroll_delay_started: bool,
+    /// Whether the post-scroll delay task has completed for the current file.
+    post_scroll_elapsed: bool,
     /// Whether we're waiting for scroll to complete
     waiting_for_scroll: bool,
     /// Current SAUCE info for overlay display
@@ -161,6 +167,9 @@ impl ShuffleMode {
             is_active: false,
             file_started_at: None,
             scroll_finished_at: None,
+            min_show_elapsed: false,
+            post_scroll_delay_started: false,
+            post_scroll_elapsed: false,
             waiting_for_scroll: true,
             current_title: None,
             current_author: None,
@@ -196,6 +205,9 @@ impl ShuffleMode {
         self.is_active = true;
         self.file_started_at = Some(Instant::now());
         self.scroll_finished_at = None;
+        self.min_show_elapsed = false;
+        self.post_scroll_delay_started = false;
+        self.post_scroll_elapsed = false;
         self.waiting_for_scroll = true;
         self.clear_sauce_info();
     }
@@ -250,6 +262,9 @@ impl ShuffleMode {
 
         self.file_started_at = Some(Instant::now());
         self.scroll_finished_at = None;
+        self.min_show_elapsed = false;
+        self.post_scroll_delay_started = false;
+        self.post_scroll_elapsed = false;
         self.waiting_for_scroll = true;
         self.clear_sauce_info();
 
@@ -383,7 +398,7 @@ impl ShuffleMode {
     /// Priority:
     /// 1. If scroll + comments finished → wait post-scroll delay (3s) → advance
     /// 2. If minimum show time (7s) elapsed and scroll NOT finished → advance (fallback)
-    pub fn should_advance(&mut self) -> bool {
+    pub fn should_advance(&self) -> bool {
         if !self.is_active {
             return false;
         }
@@ -392,33 +407,37 @@ impl ShuffleMode {
         let scroll_complete = !self.waiting_for_scroll && self.comments_finished;
 
         if scroll_complete {
-            // Normal case: scroll finished, check post-scroll delay
-            if let Some(finished_at) = self.scroll_finished_at {
-                return finished_at.elapsed().as_secs_f32() >= POST_SCROLL_DELAY_SECS;
-            }
-        } else {
-            // little hack: if file has started scrolling remove the file start timer, so it scrolled.
-            // end timer gives some delay after scrolling is done.
-            // start timer is only for small files.
-            let should_remove_file_start_timer = if let Some(started_at) = self.file_started_at {
-                started_at.elapsed().as_secs_f32() >= 0.1
-            } else {
-                false
-            };
-
-            if should_remove_file_start_timer {
-                self.file_started_at = None;
-            }
+            // Normal case: scroll finished; the task-driven post-scroll delay
+            // decides when advancing is allowed.
+            return self.post_scroll_elapsed;
         }
 
-        // Fallback: if scroll is NOT complete but minimum time has passed, advance anyway
-        if let Some(started_at) = self.file_started_at {
-            if started_at.elapsed().as_secs_f32() >= MIN_SHOW_TIME_SECS {
-                return true;
-            }
+        // Fallback: if scroll is NOT complete but minimum time has passed,
+        // advance anyway. The elapsed flag is set by a one-shot Task instead
+        // of checking wall-clock time every animation tick.
+        self.min_show_elapsed
+    }
+
+    /// Mark the current item's minimum show-time task as completed.
+    pub fn mark_min_show_elapsed(&mut self) {
+        self.min_show_elapsed = true;
+    }
+
+    /// Mark the current item's post-scroll delay task as completed.
+    pub fn mark_post_scroll_elapsed(&mut self) {
+        self.post_scroll_elapsed = true;
+    }
+
+    /// Start the post-scroll delay exactly once after scrolling and comments
+    /// have both completed. Returns true if the caller should schedule the
+    /// one-shot post-scroll delay Task now.
+    pub fn begin_post_scroll_delay_if_ready(&mut self) -> bool {
+        if !self.is_active || self.post_scroll_delay_started || self.waiting_for_scroll || !self.comments_finished {
+            return false;
         }
 
-        false
+        self.post_scroll_delay_started = true;
+        true
     }
 
     /// Check if all comments have scrolled off the top of the screen
@@ -563,22 +582,35 @@ impl ShuffleMode {
         let fade_out_start = screen_height * FADE_OUT_START_RATIO;
         let fade_out_end = screen_height * FADE_OUT_END_RATIO;
 
-        // Build comments with opacity based on their scroll position
+        // Build comments with opacity based on their absolute screen position.
+        // Do not clamp the top spacer to zero for every line: once the first
+        // comment scrolls above the visible area, the old code kept the whole
+        // column pinned at y=0 and only changed opacity. Instead, compute each
+        // line's real y position (`start_offset + line_offset - scroll_offset`)
+        // and only insert positive spacers before lines that are still visible.
+        // Lines above the fade-out zone are skipped, so following lines can
+        // continue moving upward and eventually leave the screen as well.
         let mut elements: Vec<Element<'a, Message>> = Vec::new();
-
-        // Add initial spacer to push content below the screen (starts at bottom)
-        // When scroll_offset = 0, spacer = screen_height * ratio (content at/below screen bottom)
-        // As scroll_offset increases, spacer shrinks (content scrolls up into view)
         let start_offset = screen_height * COMMENT_START_OFFSET_RATIO;
-        let initial_spacer = (start_offset - self.scroll_offset).max(0.0);
-        if initial_spacer > 0.0 {
-            elements.push(Space::new().height(initial_spacer).into());
-        }
+        let mut next_layout_y = 0.0;
 
         for (i, state) in self.comment_states.iter().enumerate() {
             // Calculate this line's screen position for opacity
             let line_offset = i as f32 * total_line_height;
-            let screen_y = initial_spacer + line_offset;
+            let screen_y = start_offset + line_offset - self.scroll_offset;
+
+            // The remaining lines are even further below the viewport.
+            if screen_y > screen_bottom {
+                break;
+            }
+
+            // This line has already moved completely above the useful visible
+            // region. It may still occupy logical time for
+            // check_comments_finished(), but it should not pin the rendered
+            // column in place.
+            if screen_y + total_line_height < 0.0 {
+                continue;
+            }
 
             // Calculate opacity based on screen position
             let opacity = if screen_y > screen_bottom {
@@ -604,6 +636,19 @@ impl ShuffleMode {
 
             let final_opacity = self.comment_block_opacity * opacity;
 
+            // Fully transparent lines should not reserve layout space. This is
+            // what lets old lines truly disappear off-screen instead of
+            // leaving an invisible row that prevents later lines from moving
+            // up to their absolute positions.
+            if final_opacity <= 0.01 {
+                continue;
+            }
+
+            if screen_y > next_layout_y {
+                elements.push(Space::new().height(screen_y - next_layout_y).into());
+                next_layout_y = screen_y;
+            }
+
             // Create text element with calculated opacity
             let shadow_color = Color::from_rgba(0.0, 0.0, 0.0, final_opacity * 0.8);
             let text_color = Color::from_rgba(1.0, 1.0, 1.0, final_opacity);
@@ -623,6 +668,11 @@ impl ShuffleMode {
             ];
 
             elements.push(container(comment_with_shadow).height(total_line_height).into());
+            next_layout_y += total_line_height;
+        }
+
+        if elements.is_empty() {
+            return Space::new().into();
         }
 
         let comments_column = column(elements).padding(COMMENT_PADDING).align_x(icy_ui::alignment::Horizontal::Center);
@@ -663,34 +713,18 @@ impl ShuffleMode {
         self.last_screen_height = height;
     }
 
-    /// Check if shuffle mode needs animation ticks
+    /// Check if shuffle mode needs animation ticks for visual comment effects.
+    /// Minimum show-time and post-scroll delays are handled by one-shot Tasks,
+    /// so they do not keep the animation subscription alive by themselves.
     pub fn needs_animation(&self) -> bool {
-        // Need animation while active:
-        // - While minimum show time hasn't elapsed
-        // - While comments are still scrolling
-        // - During the post-scroll delay (waiting to advance to next file)
-        if !self.is_active {
-            return false;
-        }
-
-        // During minimum show time, always need ticks
-        if let Some(started_at) = self.file_started_at {
-            if started_at.elapsed().as_secs_f32() < MIN_SHOW_TIME_SECS + 0.2 {
-                return true;
-            }
-        }
-
-        // Still scrolling comments
-        if !self.comments_finished {
-            return true;
-        }
-
-        // During post-scroll delay, need ticks to check should_advance()
-        if let Some(finished_at) = self.scroll_finished_at {
-            if finished_at.elapsed().as_secs_f32() < POST_SCROLL_DELAY_SECS + 0.2 {
-                return true;
-            }
-        }
-        false
+        self.is_active && !self.comment_lines.is_empty() && !self.comments_finished
     }
+}
+
+pub(crate) fn minimum_show_duration() -> std::time::Duration {
+    std::time::Duration::from_secs_f32(MIN_SHOW_TIME_SECS)
+}
+
+pub(crate) fn post_scroll_delay_duration() -> std::time::Duration {
+    std::time::Duration::from_secs_f32(POST_SCROLL_DELAY_SECS)
 }

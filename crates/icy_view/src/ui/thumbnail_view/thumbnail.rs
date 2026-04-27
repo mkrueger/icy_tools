@@ -242,6 +242,7 @@ impl Thumbnail {
 }
 
 /// Result from the thumbnail loader thread
+#[derive(Clone)]
 pub struct ThumbnailResult {
     /// Path of the loaded file
     pub path: String,
@@ -253,4 +254,16 @@ pub struct ThumbnailResult {
     pub width_multiplier: u32,
     /// Label RGBA data (rendered separately for GPU)
     pub label_rgba: Option<RgbaData>,
+}
+
+impl std::fmt::Debug for ThumbnailResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ThumbnailResult")
+            .field("path", &self.path)
+            .field("state", &self.state)
+            .field("sauce_info", &self.sauce_info.is_some())
+            .field("width_multiplier", &self.width_multiplier)
+            .field("label_rgba", &self.label_rgba.is_some())
+            .finish()
+    }
 }

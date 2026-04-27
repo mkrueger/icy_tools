@@ -436,27 +436,35 @@ impl FileListView {
         let content_height = item_count as f32 * ITEM_HEIGHT;
         let content_width = current_width - 12.0; // Account for scrollbar
 
-        // Clone data for the closure - extract all needed data upfront
+        // Clone data for the closure - extract all needed data upfront.
+        // Render through the item cache here so the viewport closure only clones
+        // cached RGBA data and filter highlighting is included in cache keys.
         let files_data: Vec<_> = visible_indices
             .iter()
             .filter_map(|&idx| {
                 files.get(idx).map(|item| {
                     let item_path = item.get_full_path().unwrap_or_else(|| item.get_file_path());
+                    let label = item.get_label();
+                    let file_icon = item.get_file_icon();
+                    let is_folder = item.is_container();
                     // Get SAUCE info if in sauce mode
                     let sauce_info = if self.sauce_mode {
                         sauce_cache.and_then(|c| c.read().get(&item_path).and_then(|opt| opt.clone()))
                     } else {
                         None
                     };
-                    (item.get_label(), item.get_file_icon(), item.is_container(), sauce_info)
+                    let (rgba_data, width, height) = if self.sauce_mode {
+                        self.get_or_render_item_with_sauce(&label, file_icon, is_folder, width, &theme_colors, filter, sauce_info.as_ref())
+                    } else {
+                        self.get_or_render_item(&label, file_icon, is_folder, width, &theme_colors, filter)
+                    };
+                    (rgba_data, width, height)
                 })
             })
             .collect();
 
         let selected_index = self.selected_index;
         let shared_hovered_index = self.shared_hovered_index.clone();
-        let sauce_mode = self.sauce_mode;
-
         let on_message_click = on_message.clone();
 
         // Use scroll_area with show_viewport
@@ -479,32 +487,14 @@ impl FileListView {
                 let mut items: Vec<ListItemRenderData> = Vec::with_capacity(visible_count);
 
                 for visible_index in first_visible..last_visible {
-                    if let Some((label, file_icon, is_folder, sauce_info)) = files_data.get(visible_index) {
+                    if let Some((rgba_data, width, height)) = files_data.get(visible_index) {
                         let is_selected = selected_index == Some(visible_index);
-
-                        // Render item (simplified - no caching in closure for now)
-                        let (rgba_data, w, h) = if sauce_mode && sauce_info.is_some() {
-                            let si = sauce_info.as_ref().unwrap();
-                            render_list_item_with_sauce(
-                                *file_icon,
-                                label,
-                                *is_folder,
-                                width,
-                                &theme_colors,
-                                "",
-                                Some(&si.title),
-                                Some(&si.author),
-                                Some(&si.group),
-                            )
-                        } else {
-                            render_list_item(*file_icon, label, *is_folder, width, &theme_colors, "")
-                        };
 
                         items.push(ListItemRenderData {
                             id: visible_index as u64,
-                            rgba_data: Arc::new(rgba_data),
-                            width: w,
-                            height: h,
+                            rgba_data: rgba_data.clone(),
+                            width: *width,
+                            height: *height,
                             is_selected,
                             is_hovered: false,
                             y_position: visible_index as f32 * ITEM_HEIGHT,

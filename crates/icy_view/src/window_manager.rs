@@ -8,6 +8,7 @@ use crate::ui::{MainWindow, Message};
 use crate::Options;
 use icy_engine_gui::command_handler;
 use icy_engine_gui::commands::{cmd, create_common_commands};
+use icy_engine_gui::scroll_viewport::ANIMATION_TICK_MS;
 use icy_engine_gui::{find_next_window_id, focus_window_by_id, format_window_title, handle_window_closed};
 
 fn load_window_icon(png_bytes: &[u8]) -> Result<icy_ui::window::Icon, Box<dyn std::error::Error>> {
@@ -46,7 +47,7 @@ pub enum WindowManagerMessage {
     FocusNext,
     FocusPrevious,
     WindowClosed(window::Id),
-    WindowMessage(window::Id, Message),
+    WindowMessage(window::Id, Box<Message>),
     _TitleChanged(window::Id, String),
     Event(window::Id, icy_ui::Event),
     AnimationTick,
@@ -142,7 +143,7 @@ impl WindowManager {
             WindowManagerMessage::FocusPrevious => icy_ui::widget::operation::focus_previous(),
 
             WindowManagerMessage::WindowOpened(id) => {
-                let (window, initial_message) = MainWindow::new(
+                let (window, initial_message, stream_task) = MainWindow::new(
                     find_next_window_id(&self.windows),
                     self.initial_path.take(),
                     self.options.clone(),
@@ -152,11 +153,13 @@ impl WindowManager {
 
                 self.windows.insert(id, window);
 
+                let stream_task = stream_task.map(move |m| WindowManagerMessage::WindowMessage(id, Box::new(m)));
+
                 // If there's an initial message (e.g., to load a file preview), send it
                 if let Some(msg) = initial_message {
-                    Task::done(WindowManagerMessage::WindowMessage(id, msg))
+                    Task::batch([Task::done(WindowManagerMessage::WindowMessage(id, Box::new(msg))), stream_task])
                 } else {
-                    Task::none()
+                    stream_task
                 }
             }
 
@@ -164,7 +167,7 @@ impl WindowManager {
 
             WindowManagerMessage::WindowMessage(id, msg) => {
                 if let Some(window) = self.windows.get_mut(&id) {
-                    return window.update(msg).map(move |msg| WindowManagerMessage::WindowMessage(id, msg));
+                    return window.update(*msg).map(move |msg| WindowManagerMessage::WindowMessage(id, Box::new(msg)));
                 }
                 Task::none()
             }
@@ -178,9 +181,9 @@ impl WindowManager {
                 // Pass event to window for other handling
                 if let Some(window) = self.windows.get_mut(&window_id) {
                     let (msg_opt, task) = window.handle_event(&event);
-                    let mut tasks = vec![task.map(move |m| WindowManagerMessage::WindowMessage(window_id, m))];
+                    let mut tasks = vec![task.map(move |m| WindowManagerMessage::WindowMessage(window_id, Box::new(m)))];
                     if let Some(msg) = msg_opt {
-                        tasks.push(Task::done(WindowManagerMessage::WindowMessage(window_id, msg)));
+                        tasks.push(Task::done(WindowManagerMessage::WindowMessage(window_id, Box::new(msg))));
                     }
                     return Task::batch(tasks);
                 }
@@ -202,7 +205,7 @@ impl WindowManager {
                 for (window_id, window) in self.windows.iter_mut() {
                     if window.needs_animation() {
                         let id = *window_id;
-                        tasks.push(Task::done(WindowManagerMessage::WindowMessage(id, Message::AnimationTick)));
+                        tasks.push(Task::done(WindowManagerMessage::WindowMessage(id, Box::new(Message::AnimationTick))));
                     }
                 }
                 Task::batch(tasks)
@@ -213,7 +216,7 @@ impl WindowManager {
     pub fn view(&self, window_id: window::Id) -> Element<'_, WindowManagerMessage> {
         let id = window_id;
         if let Some(window) = self.windows.get(&window_id) {
-            window.view().map(move |msg| WindowManagerMessage::WindowMessage(id, msg))
+            window.view().map(move |msg| WindowManagerMessage::WindowMessage(id, Box::new(msg)))
         } else {
             space().into()
         }
@@ -266,11 +269,7 @@ impl WindowManager {
         // Only include animation tick subscription when needed - this prevents
         // continuous view rebuilds when no animation is active
         if needs_animation {
-            /*
-            subs.push(
-                icy_ui::time::every(std::time::Duration::from_millis(icy_engine_gui::ANIMATION_TICK_MS))
-                    .map(|_| WindowManagerMessage::AnimationTick),
-            );*/
+            subs.push(icy_ui::time::every(std::time::Duration::from_millis(ANIMATION_TICK_MS)).map(|_| WindowManagerMessage::AnimationTick));
         }
 
         Subscription::batch(subs)

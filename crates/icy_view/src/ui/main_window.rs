@@ -109,6 +109,14 @@ pub enum Message {
     Escape,
     /// Data was loaded for preview (path for display, data for content)
     DataLoaded(String, Vec<u8>),
+    /// Data was loaded for shuffle mode. Carries a generation so stale
+    /// async loads from previously skipped/exited shuffle items can be ignored.
+    ShuffleDataLoaded {
+        generation: u64,
+        index: usize,
+        path: String,
+        data: Vec<u8>,
+    },
     /// Data loading failed for preview
     DataLoadError(String, String),
     /// Animation tick for smooth scrolling
@@ -141,6 +149,10 @@ pub enum Message {
     CopyCompleted(Result<(), icy_engine_gui::ClipboardError>),
     /// Skip to next file in shuffle mode
     ShuffleNext,
+    /// The minimum show-time one-shot task completed for a shuffle item.
+    ShuffleMinimumShowElapsed { generation: u64, index: usize },
+    /// The post-scroll delay one-shot task completed for a shuffle item.
+    ShufflePostScrollDelayElapsed { generation: u64, index: usize },
     /// Show help dialog
     ShowHelp,
     /// Help dialog messages
@@ -149,10 +161,16 @@ pub enum Message {
     ShowAbout,
     /// About dialog messages
     AboutDialog(AboutDialogMessage),
-    /// Shuffle item load error - try next item
-    ShuffleLoadError(usize),
+    /// Shuffle item load error - try next item if this error belongs to the
+    /// currently expected shuffle load generation.
+    ShuffleLoadError { generation: u64, index: usize },
     /// 16colors subitems loaded (Result<items, error>)
     SixteenColorsSubitemsLoaded(Result<Vec<Box<dyn Item>>, ItemError>),
+    /// Folder-preview subitems loaded for the selected folder path
+    FolderPreviewSubitemsLoaded {
+        path: String,
+        result: Result<Vec<Box<dyn Item>>, ItemError>,
+    },
     /// No-op message (for ignored events)
     None,
 }
@@ -205,14 +223,32 @@ pub struct MainWindow {
     sauce_loading_initialized: bool,
     /// Shuffle mode state
     shuffle_mode: super::ShuffleMode,
+    /// Monotonic token for shuffle item loads. Incremented whenever a new
+    /// shuffle item load starts or shuffle mode exits so old async results are
+    /// ignored instead of overwriting the current preview.
+    shuffle_load_generation: u64,
+    /// Cancellation token for the currently active shuffle item data load.
+    /// This is separate from the shuffle preload token and is cancelled when
+    /// shuffle mode exits or when the user skips to another item.
+    active_shuffle_load_cancel: Option<CancellationToken>,
     /// Cached monitor settings for efficient rendering
     cached_monitor_settings: Arc<MonitorSettings>,
 }
 impl MainWindow {
     /// Creates a new MainWindow.
-    /// Returns (Self, Option<Message>) where the second value is an initial message to process
-    /// (e.g., to load a file preview when started with a file path)
-    pub fn new(id: usize, initial_path: Option<PathBuf>, options: Arc<Mutex<Options>>, auto_scroll: bool, bps: Option<u32>) -> (Self, Option<Message>) {
+    /// Returns `(Self, Option<Message>, Task<Message>)`:
+    /// - `Option<Message>` is an initial message to process (e.g., to load a
+    ///   file preview when started with a file path).
+    /// - `Task<Message>` is a long-running streaming task that delivers
+    ///   thumbnail results from the background loaders as messages, so loading
+    ///   does not depend on animation ticks.
+    pub fn new(
+        id: usize,
+        initial_path: Option<PathBuf>,
+        options: Arc<Mutex<Options>>,
+        auto_scroll: bool,
+        bps: Option<u32>,
+    ) -> (Self, Option<Message>, Task<Message>) {
         let mut opts = Options::default();
         let view_mode;
         let sort_order;
@@ -266,6 +302,11 @@ impl MainWindow {
         file_browser.set_sauce_mode(opts.sauce_mode);
 
         let mut tile_grid = TileGridView::new();
+        // Stream thumbnail results as messages so loading is event-driven and
+        // not gated on animation ticks.
+        let tile_grid_stream = tile_grid.take_result_stream().map(|t| t.map(Message::TileGrid));
+        let mut folder_preview = TileGridView::new();
+        let folder_preview_stream = folder_preview.take_result_stream().map(|t| t.map(Message::FolderPreview));
         // If starting in tile mode, populate the tiles immediately
         if view_mode == ViewMode::Tiles {
             let items = file_browser.get_items();
@@ -311,7 +352,7 @@ impl MainWindow {
                 current_file,
                 preview,
                 tile_grid,
-                folder_preview: TileGridView::new(),
+                folder_preview,
                 folder_preview_path: None,
                 last_tick: Instant::now(),
                 dialogs: DialogStack::new(),
@@ -320,15 +361,19 @@ impl MainWindow {
                 sauce_rx: Some(sauce_rx),
                 sauce_loading_initialized: false,
                 shuffle_mode: super::ShuffleMode::new(),
+                shuffle_load_generation: 0,
+                active_shuffle_load_cancel: None,
                 cached_monitor_settings,
             },
             initial_message,
+            Task::batch([tile_grid_stream, folder_preview_stream].into_iter().flatten()),
         )
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::FileBrowser(msg) => {
+                let web_items_loaded = matches!(&msg, FileBrowserMessage::WebItemsLoaded { .. });
                 // Check if this will change the directory - use display_path for accurate comparison
                 let old_display_path = self.file_browser.get_display_path();
                 let old_selection = self.file_browser.selected_item().map(|i| i.get_file_path());
@@ -348,6 +393,15 @@ impl MainWindow {
                     // Update can_go_up state for toolbar
                     self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
                     // Also update tile grid when directory changes
+                    if self.view_mode() == ViewMode::Tiles {
+                        let items = self.file_browser.get_items();
+                        self.tile_grid.set_items_from_items(items);
+                    }
+                }
+
+                if web_items_loaded {
+                    self.reset_sauce_loader_for_navigation();
+                    self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
                     if self.view_mode() == ViewMode::Tiles {
                         let items = self.file_browser.get_items();
                         self.tile_grid.set_items_from_items(items);
@@ -401,7 +455,13 @@ impl MainWindow {
                             // Load folder contents asynchronously in background thread
                             // This works for both regular folders and zip files
                             if let Some(item) = self.file_browser.selected_item() {
-                                self.folder_preview.load_subitems_async(item.clone_box());
+                                let item = item.clone_box();
+                                let path = full_path.clone();
+                                let preview_task = load_subitems(item, CancellationToken::new(), move |result| Message::FolderPreviewSubitemsLoaded {
+                                    path,
+                                    result,
+                                });
+                                return Task::batch([scroll_task.map(Message::FileBrowser), preview_task]);
                             }
                         } else {
                             // For files, show file preview
@@ -448,7 +508,7 @@ impl MainWindow {
                         let current_point = self.current_history_point();
                         self.history.navigate_to(current_point);
 
-                        let _ = self.file_browser.update(FileBrowserMessage::ParentFolder);
+                        let (_, task) = self.file_browser.update(FileBrowserMessage::ParentFolder);
                         // Reset SAUCE loader after navigation (so new files are available)
                         self.reset_sauce_loader_for_navigation();
                         // Update path input with the new display path
@@ -460,12 +520,13 @@ impl MainWindow {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
                         }
+                        return task.map(Message::FileBrowser);
                     }
                     NavigationBarMessage::Refresh => {
                         // Cancel any ongoing loading operation on refresh
                         self.preview.cancel_loading();
 
-                        let _ = self.file_browser.update(FileBrowserMessage::Refresh);
+                        let (_, task) = self.file_browser.update(FileBrowserMessage::Refresh);
                         // Reset SAUCE loader after refresh (directory contents may have changed)
                         self.reset_sauce_loader_for_navigation();
                         // Update can_go_up state for toolbar
@@ -474,6 +535,7 @@ impl MainWindow {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
                         }
+                        return task.map(Message::FileBrowser);
                     }
                     NavigationBarMessage::OpenFilter => {
                         // Toggle filter popup
@@ -556,12 +618,18 @@ impl MainWindow {
                             if SixteenColorsProvider::validate_path(web_path) {
                                 // Navigate to 16colors
                                 self.navigation_bar.set_16colors_mode(true);
-                                self.file_browser.navigate_to_web_path(web_path);
+                                let task = self.file_browser.navigate_to_web_path(web_path);
                                 // Reset SAUCE loader after navigation
                                 self.reset_sauce_loader_for_navigation();
                                 // Update path input to reflect the navigated path
                                 let display = self.file_browser.get_display_path();
                                 self.navigation_bar.set_path_input(display);
+                                self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
+                                if self.view_mode() == ViewMode::Tiles {
+                                    let items = self.file_browser.get_items();
+                                    self.tile_grid.set_items_from_items(items);
+                                }
+                                return task.map(Message::FileBrowser);
                             } else {
                                 // Invalid path - show red border
                                 self.navigation_bar.set_path_valid(false);
@@ -710,9 +778,18 @@ impl MainWindow {
                                         } else {
                                             format!("{}/{}", current_path, item_path)
                                         };
-                                        self.file_browser.navigate_to_web_path(&new_path);
+                                        let task = self.file_browser.navigate_to_web_path(&new_path);
                                         // Update navigation bar with display path (includes leading /)
                                         self.navigation_bar.set_path_input(self.file_browser.get_display_path());
+                                        // Refresh tile grid with the temporary loading state; async result will repopulate it.
+                                        let items = self.file_browser.get_items();
+                                        self.tile_grid.set_items_from_items(items);
+                                        // Update can_go_up state for toolbar
+                                        self.file_list_toolbar.set_can_go_up(self.file_browser.can_go_parent());
+                                        // Record navigation
+                                        let point = self.current_history_point();
+                                        self.history.navigate_to(point);
+                                        return task.map(Message::FileBrowser);
                                     } else {
                                         // Build full path from current browser path + item name
                                         let current_path = self.file_browser.get_display_path();
@@ -780,7 +857,11 @@ impl MainWindow {
             Message::Escape => {
                 // First check if shuffle mode is active - exit it
                 if self.shuffle_mode.is_active {
+                    if let Some(cancel) = self.active_shuffle_load_cancel.take() {
+                        cancel.cancel();
+                    }
                     self.shuffle_mode.stop();
+                    self.shuffle_load_generation = self.shuffle_load_generation.wrapping_add(1);
                     return Task::none();
                 }
                 // Close dialogs from the stack (handled by DialogStack::handle_event)
@@ -812,6 +893,37 @@ impl MainWindow {
                 }
 
                 // Load data in preview (convert String path to PathBuf for preview API)
+                self.preview.load_data(PathBuf::from(path), data).map(Message::Preview)
+            }
+            Message::ShuffleDataLoaded { generation, index, path, data } => {
+                if !self.shuffle_mode.is_active
+                    || generation != self.shuffle_load_generation
+                    || self.shuffle_mode.current_item_index() != Some(index)
+                    || self.current_file.as_deref() != Some(path.as_str())
+                {
+                    log::debug!(
+                        "Ignoring stale shuffle load result for index {}, path {:?} (generation {}, current generation {})",
+                        index,
+                        path,
+                        generation,
+                        self.shuffle_load_generation
+                    );
+                    return Task::none();
+                }
+
+                self.active_shuffle_load_cancel = None;
+                self.last_tick = Instant::now();
+
+                if let Some(sauce) = icy_sauce::SauceRecord::from_bytes(&data).ok().flatten() {
+                    let comments: Vec<String> = sauce.comments().iter().map(|s| s.to_string()).collect();
+                    self.shuffle_mode.set_sauce_info(
+                        Some(sauce.title().to_string()),
+                        Some(sauce.author().to_string()),
+                        Some(sauce.group().to_string()),
+                        comments,
+                    );
+                }
+
                 self.preview.load_data(PathBuf::from(path), data).map(Message::Preview)
             }
             Message::DataLoadError(path, message) => {
@@ -1050,30 +1162,33 @@ impl MainWindow {
                                     let preview_path_str = preview_folder;
                                     let item_path_str = item_path.clone();
 
-                                    self.file_browser.navigate_to_web_path(&preview_path_str);
-                                    self.navigation_bar.set_path_input(self.file_browser.get_display_path());
-
                                     // Construct path for item
                                     let full_path_str = format!("{}/{}", preview_path_str, item_path_str);
 
                                     if is_container {
                                         // Navigate into the subfolder
-                                        self.file_browser.navigate_to_web_path(&full_path_str);
+                                        let task = self.file_browser.navigate_to_web_path(&full_path_str);
                                         self.navigation_bar.set_path_input(self.file_browser.get_display_path());
                                         self.file_browser.list_view.selected_index = Some(0);
                                         // Record navigation
                                         let point = self.current_history_point();
                                         self.history.navigate_to(point);
+                                        return task.map(Message::FileBrowser);
                                     } else {
-                                        // Select the file in the browser and preview it
-                                        self.file_browser.select_by_path(&PathBuf::from(&item_path));
+                                        // Select the file in the browser after the async web folder load finishes and preview it now.
+                                        let task = self.file_browser.navigate_to_web_path(&preview_path_str);
+                                        self.navigation_bar.set_path_input(self.file_browser.get_display_path());
+                                        self.file_browser.select_by_label_after_load(item_path_str.clone());
                                         let full_path = format!("{}/{}", preview_path_str, item_path_str);
                                         self.current_file = Some(full_path.clone());
                                         self.title = item_path_str.split('/').last().unwrap_or(&item_path_str).to_string();
                                         // Read data asynchronously from the item we captured before navigation
                                         if let Some(item) = item_for_data {
-                                            return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
+                                            let load_task =
+                                                crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
+                                            return Task::batch(vec![task.map(Message::FileBrowser), load_task]);
                                         }
+                                        return task.map(Message::FileBrowser);
                                     }
                                 } else {
                                     // File mode - use PathBuf operations
@@ -1135,7 +1250,7 @@ impl MainWindow {
                         let current_point = self.current_history_point();
                         self.history.navigate_to(current_point);
 
-                        let _ = self.file_browser.update(FileBrowserMessage::ParentFolder);
+                        let (_, task) = self.file_browser.update(FileBrowserMessage::ParentFolder);
                         // Update path input with the new display path
                         let display_path = self.file_browser.get_display_path();
                         self.navigation_bar.set_path_input(display_path);
@@ -1147,6 +1262,7 @@ impl MainWindow {
                             let items = self.file_browser.get_items();
                             self.tile_grid.set_items_from_items(items);
                         }
+                        return task.map(Message::FileBrowser);
                     }
                     FileListToolbarMessage::ToggleViewMode => {
                         // Cancel any ongoing loading operation when switching modes
@@ -1269,8 +1385,12 @@ impl MainWindow {
                                 } else {
                                     item_path.clone()
                                 };
-                                self.folder_preview_path = Some(full_path);
-                                self.folder_preview.load_subitems_async(item.clone_box());
+                                self.folder_preview_path = Some(full_path.clone());
+                                let item = item.clone_box();
+                                return load_subitems(item, CancellationToken::new(), move |result| Message::FolderPreviewSubitemsLoaded {
+                                    path: full_path,
+                                    result,
+                                });
                             } else {
                                 // For files, show file preview
                                 self.folder_preview_path = None;
@@ -1362,8 +1482,22 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            Message::ShuffleLoadError(failed_index) => {
+            Message::ShuffleLoadError {
+                generation,
+                index: failed_index,
+            } => {
+                if !self.shuffle_mode.is_active || generation != self.shuffle_load_generation || self.shuffle_mode.current_item_index() != Some(failed_index) {
+                    log::debug!(
+                        "Ignoring stale shuffle load error for index {} (generation {}, current generation {})",
+                        failed_index,
+                        generation,
+                        self.shuffle_load_generation
+                    );
+                    return Task::none();
+                }
+
                 log::debug!("Shuffle load failed for index {}, trying next item", failed_index);
+                self.active_shuffle_load_cancel = None;
                 // Try next item in shuffle sequence
                 if let Some(next_index) = self.shuffle_mode.next_item() {
                     return self.load_shuffle_item(next_index);
@@ -1395,6 +1529,23 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            Message::FolderPreviewSubitemsLoaded { path, result } => {
+                if self.folder_preview_path.as_deref() != Some(path.as_str()) {
+                    log::debug!("Ignoring stale folder preview result for {path:?}");
+                    return Task::none();
+                }
+
+                match result {
+                    Ok(items) => {
+                        self.folder_preview.set_items_from_items(items);
+                    }
+                    Err(err) => {
+                        log::error!("Failed to load folder preview for {path:?}: {err}");
+                        self.folder_preview.set_items_from_items(Vec::new());
+                    }
+                }
+                Task::none()
+            }
             Message::None => Task::none(),
             Message::AnimationTick => {
                 // Calculate delta time since last tick
@@ -1402,6 +1553,12 @@ impl MainWindow {
                 let delta = now.duration_since(self.last_tick);
                 self.last_tick = now;
                 let delta_seconds = delta.as_secs_f32();
+
+                // Forward tick to preview first so shuffle mode observes the
+                // current scroll state in this same update. Minimum show-time
+                // and post-scroll waits are task-driven; ticks are only needed
+                // for visual animation/scrolling work.
+                let mut tasks = vec![self.preview.update(PreviewMessage::AnimationTick(delta_seconds)).map(Message::Preview)];
 
                 // Shuffle mode handling
                 if self.shuffle_mode.is_active {
@@ -1413,18 +1570,10 @@ impl MainWindow {
                     self.shuffle_mode.tick(delta_seconds);
 
                     // Check if scroll is complete (preview reached bottom)
-                    if self.preview.is_scroll_complete() {
-                        self.shuffle_mode.notify_scroll_complete();
-                    }
+                    tasks.push(self.schedule_shuffle_post_scroll_delay_if_ready());
 
                     // Check if we should advance to next item
-                    if self.shuffle_mode.should_advance() {
-                        if let Some(index) = self.shuffle_mode.next_item() {
-                            // Reset preview for new file and enable auto-scroll
-                            let auto_scroll = self.preview.enable_auto_scroll().map(Message::Preview);
-                            return Task::batch(vec![auto_scroll, self.load_shuffle_item(index)]);
-                        }
-                    }
+                    tasks.push(self.advance_shuffle_if_ready());
                 }
 
                 // Forward tick to file browser's list view
@@ -1465,8 +1614,7 @@ impl MainWindow {
                     }
                 }
 
-                // Forward tick to preview with delta time
-                self.preview.update(PreviewMessage::AnimationTick(delta_seconds)).map(Message::Preview)
+                Task::batch(tasks)
             }
             Message::ExecuteExternalCommand(index) => {
                 let cmd = self.options.lock().external_commands.get(index).cloned();
@@ -1616,7 +1764,72 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            Message::ShuffleMinimumShowElapsed { generation, index } => {
+                if !self.is_current_shuffle_item(generation, index) {
+                    return Task::none();
+                }
+
+                self.shuffle_mode.mark_min_show_elapsed();
+                Task::batch(vec![self.schedule_shuffle_post_scroll_delay_if_ready(), self.advance_shuffle_if_ready()])
+            }
+            Message::ShufflePostScrollDelayElapsed { generation, index } => {
+                if !self.is_current_shuffle_item(generation, index) {
+                    return Task::none();
+                }
+
+                self.shuffle_mode.mark_post_scroll_elapsed();
+                self.advance_shuffle_if_ready()
+            }
         }
+    }
+
+    fn is_current_shuffle_item(&self, generation: u64, index: usize) -> bool {
+        self.shuffle_mode.is_active && self.shuffle_load_generation == generation && self.shuffle_mode.current_item_index() == Some(index)
+    }
+
+    fn shuffle_minimum_show_task(generation: u64, index: usize) -> Task<Message> {
+        Task::perform(tokio::time::sleep(super::minimum_show_duration()), move |_| {
+            Message::ShuffleMinimumShowElapsed { generation, index }
+        })
+    }
+
+    fn shuffle_post_scroll_delay_task(generation: u64, index: usize) -> Task<Message> {
+        Task::perform(tokio::time::sleep(super::post_scroll_delay_duration()), move |_| {
+            Message::ShufflePostScrollDelayElapsed { generation, index }
+        })
+    }
+
+    fn schedule_shuffle_post_scroll_delay_if_ready(&mut self) -> Task<Message> {
+        if !self.shuffle_mode.is_active {
+            return Task::none();
+        }
+
+        if self.preview.is_scroll_complete() {
+            self.shuffle_mode.notify_scroll_complete();
+        }
+
+        if !self.shuffle_mode.begin_post_scroll_delay_if_ready() {
+            return Task::none();
+        }
+
+        let Some(index) = self.shuffle_mode.current_item_index() else {
+            return Task::none();
+        };
+
+        Self::shuffle_post_scroll_delay_task(self.shuffle_load_generation, index)
+    }
+
+    fn advance_shuffle_if_ready(&mut self) -> Task<Message> {
+        if !self.shuffle_mode.should_advance() {
+            return Task::none();
+        }
+
+        if let Some(index) = self.shuffle_mode.next_item() {
+            let auto_scroll = self.preview.enable_auto_scroll().map(Message::Preview);
+            return Task::batch(vec![auto_scroll, self.load_shuffle_item(index)]);
+        }
+
+        Task::none()
     }
 
     fn close_filter_popup(&mut self) {
@@ -1687,6 +1900,14 @@ impl MainWindow {
             return Task::none();
         }
 
+        self.shuffle_load_generation = self.shuffle_load_generation.wrapping_add(1);
+        let generation = self.shuffle_load_generation;
+        let minimum_show_task = Self::shuffle_minimum_show_task(generation, index);
+
+        if let Some(cancel) = self.active_shuffle_load_cancel.take() {
+            cancel.cancel();
+        }
+
         // Check if we have preloaded data for this index
         if let Some(preloaded) = self.shuffle_mode.take_preloaded_if_matches(index) {
             log::debug!("Using preloaded data for shuffle item {}", index);
@@ -1713,10 +1934,19 @@ impl MainWindow {
                 log::debug!("Using pre-decoded image for shuffle item {}", index);
                 let path_buf = PathBuf::from(&path_str);
                 let task = self.preview.load_decoded_image(path_buf, decoded.rgba, decoded.width, decoded.height);
-                return task.map(Message::Preview);
+                let post_scroll_delay_task = self.schedule_shuffle_post_scroll_delay_if_ready();
+                return Task::batch(vec![minimum_show_task, task.map(Message::Preview), post_scroll_delay_task]);
             }
 
-            return Task::done(Message::DataLoaded(path_str, preloaded.data));
+            return Task::batch(vec![
+                minimum_show_task,
+                Task::done(Message::ShuffleDataLoaded {
+                    generation,
+                    index,
+                    path: path_str,
+                    data: preloaded.data,
+                }),
+            ]);
         }
 
         // Get the item info we need before borrowing self mutably
@@ -1736,13 +1966,32 @@ impl MainWindow {
         // Start preloading the next item (do this before async load to maximize parallelism)
         self.start_shuffle_preload();
 
-        // Load data asynchronously - SAUCE extraction happens in Message::DataLoaded handler
-        load_item_data(
-            item_clone,
-            path,
-            |path, data| Message::DataLoaded(path, data),
-            move |_path, _err| Message::ShuffleLoadError(index),
-        )
+        // Load data asynchronously. Keep a cancellation token for the active
+        // shuffle item load so exiting shuffle mode or skipping to the next
+        // item stops unnecessary I/O and prevents late results.
+        let cancel_token = CancellationToken::new();
+        self.active_shuffle_load_cancel = Some(cancel_token.clone());
+        let load_task = Task::perform(
+            async move {
+                let error_path = path.clone();
+                tokio::select! {
+                    _ = cancel_token.cancelled() => None,
+                    result = item_clone.read_data() => {
+                        Some(match result {
+                            Ok(data) => Ok((path, data)),
+                            Err(err) => Err((error_path, err.to_string())),
+                        })
+                    }
+                }
+            },
+            move |result| match result {
+                Some(Ok((path, data))) => Message::ShuffleDataLoaded { generation, index, path, data },
+                Some(Err((_path, _err))) => Message::ShuffleLoadError { generation, index },
+                None => Message::None,
+            },
+        );
+
+        Task::batch(vec![minimum_show_task, load_task])
     }
 
     /// Start preloading the next shuffle item in background
@@ -2315,17 +2564,17 @@ impl MainWindow {
 
         // 1. Switch provider if needed
         let is_web = point.provider == ProviderType::Web;
-        let need_16colors_load = self.navigation_bar.is_16colors_mode != is_web && is_web;
-
         if self.navigation_bar.is_16colors_mode != is_web {
             self.navigation_bar.set_16colors_mode(is_web);
         }
 
         // 2. Navigate to the path
-        if is_web {
-            // For web, use the path as web path
-            self.file_browser.navigate_to_web_path(&point.path);
+        let web_task = if is_web {
+            Some(self.file_browser.navigate_to_web_path(&point.path))
         } else {
+            None
+        };
+        if !is_web {
             // For file, navigate to filesystem path
             self.file_browser.navigate_to(PathBuf::from(&point.path));
         }
@@ -2349,18 +2598,17 @@ impl MainWindow {
 
         // 7. Select the item if specified
         if let Some(ref item_name) = point.selected_item {
-            if self.view_mode() == ViewMode::Tiles {
+            if is_web {
+                self.file_browser.select_by_label_after_load(item_name.clone());
+            } else if self.view_mode() == ViewMode::Tiles {
                 self.tile_grid.select_by_label(item_name);
             } else {
                 self.file_browser.select_by_label(item_name);
             }
         }
 
-        // If switching to 16colors mode, we need to load root items async
-        if need_16colors_load {
-            let root: Box<dyn crate::items::Item> = Box::new(SixteenColorsRoot::new());
-            let cancel_token = CancellationToken::new();
-            return load_subitems(root, cancel_token, Message::SixteenColorsSubitemsLoaded);
+        if let Some(task) = web_task {
+            return task.map(Message::FileBrowser);
         }
 
         Task::none()

@@ -11,7 +11,7 @@ pub fn get_drives() -> Vec<PathBuf> {
     let mut drive_names = Vec::new();
     let mut drives = unsafe { GetLogicalDrives() };
     let mut letter = b'A';
-    while drives > 0 {
+    while drives > 0 && letter <= b'Z' {
         if drives & 1 != 0 {
             drive_names.push(format!("{}:\\", letter as char).into());
         }
@@ -23,10 +23,11 @@ pub fn get_drives() -> Vec<PathBuf> {
 
 #[cfg(windows)]
 pub fn is_drive_root(path: &Path) -> bool {
-    path.to_str()
-        .filter(|path| &path[1..] == ":\\")
-        .and_then(|path| path.chars().next())
-        .map_or(false, |ch| ch.is_ascii_uppercase())
+    let Some(path) = path.to_str() else {
+        return false;
+    };
+    let bytes = path.as_bytes();
+    bytes.len() == 3 && bytes[1] == b':' && bytes[2] == b'\\' && bytes[0].is_ascii_uppercase()
 }
 
 pub fn get_file_name(path: &Path) -> &str {

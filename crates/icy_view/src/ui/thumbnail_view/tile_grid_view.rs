@@ -3,12 +3,11 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use parking_lot::Mutex;
-use tokio_util::sync::CancellationToken;
 
 use icy_ui::mouse;
 use icy_ui::widget::canvas::Cache;
 use icy_ui::widget::{container, scroll_area, scrollable, shader, text};
-use icy_ui::{Color, Element, Length, Point, Rectangle, Shadow, Size};
+use icy_ui::{Color, Element, Length, Point, Rectangle, Shadow, Size, Task};
 use tokio::sync::mpsc;
 
 use icy_engine_gui::ScrollViewport;
@@ -17,7 +16,7 @@ use super::masonry_layout::{self, ItemSize, MasonryConfig};
 use super::thumbnail::{Thumbnail, ThumbnailResult, ThumbnailState, ERROR_PLACEHOLDER, LOADING_PLACEHOLDER};
 use super::thumbnail_loader::{create_labeled_placeholder, render_label_tag, ThumbnailLoader, ThumbnailRequest};
 use super::tile_shader::{new_tile_id, TileGridShader, TileTexture, TILE_PADDING, TILE_SPACING, TILE_WIDTH};
-use crate::items::{Item, ItemError};
+use crate::items::Item;
 use crate::ScrollSpeed;
 
 /// Base tile width for layout calculations (full tile including borders)
@@ -129,6 +128,13 @@ pub enum TileGridMessage {
     AnimationTick,
     /// Thumbnail loading completed
     ThumbnailReady,
+    /// A thumbnail result arrived from the background loader. Delivered via a
+    /// streaming Task so loading progresses independently of animation ticks.
+    ThumbnailResultReceived(Box<ThumbnailResult>),
+    /// The underlying scrollable widget reported a new scroll position.
+    /// We use this to keep the internal viewport state in sync with the
+    /// widget so lazy-loading can target the actually visible range.
+    ScrollUpdated { scroll_y: f32, viewport_height: f32, viewport_width: f32 },
     /// Keyboard: select previous item (up arrow)
     SelectPrevious,
     /// Keyboard: select next item (down arrow)
@@ -170,7 +176,9 @@ pub struct TileGridView {
     /// Thumbnail loader
     loader: ThumbnailLoader,
     /// Receiver for completed thumbnails
-    result_rx: mpsc::UnboundedReceiver<ThumbnailResult>,
+    /// Receiver for completed thumbnails. `None` after [`Self::take_result_stream`]
+    /// has converted the receiver into a streaming Task.
+    result_rx: Option<mpsc::UnboundedReceiver<ThumbnailResult>>,
     /// Cache for canvas rendering
     cache: Cache,
     /// Blink state for animated thumbnails
@@ -195,10 +203,6 @@ pub struct TileGridView {
     filter: String,
     /// Indices of visible items after filtering (maps visible index to thumbnail index)
     visible_indices: Vec<usize>,
-    /// Cancellation token for async subitem loading
-    subitems_cancel_token: CancellationToken,
-    /// Receiver for async subitem loading results
-    subitems_rx: Option<tokio::sync::oneshot::Receiver<Result<Vec<Box<dyn Item>>, ItemError>>>,
     /// LRU order for loaded thumbnails (front = oldest, back = newest)
     /// Contains indices of thumbnails that are currently loaded (Ready state)
     loaded_lru: Vec<usize>,
@@ -223,7 +227,7 @@ impl TileGridView {
             last_layout_width: RefCell::new(0.0),
             selected_index: None,
             loader,
-            result_rx,
+            result_rx: Some(result_rx),
             cache: Cache::new(),
             blink_on: true,
             blink_timer: 0.0,
@@ -236,8 +240,6 @@ impl TileGridView {
             pending_double_click: false,
             filter: String::new(),
             visible_indices: Vec::new(),
-            subitems_cancel_token: CancellationToken::new(),
-            subitems_rx: None,
             loaded_lru: Vec::new(),
             last_viewport_top: 0.0,
         }
@@ -409,56 +411,6 @@ impl TileGridView {
         self.cache.clear();
     }
 
-    /// Load subitems from an item asynchronously in the background
-    /// This is used for loading folder contents without blocking the UI
-    pub fn load_subitems_async(&mut self, item: Box<dyn Item>) {
-        log::info!("[TileGridView] load_subitems_async called for: {:?}", item.get_file_path());
-
-        // Cancel any previous loading operation
-        self.subitems_cancel_token.cancel();
-        self.subitems_cancel_token = CancellationToken::new();
-
-        // Clear current items while loading
-        self.loader.cancel_loading();
-        self.thumbnails.clear();
-        self.tile_ids.clear();
-        self.items.clear();
-        self.is_container.clear();
-        self.layout.borrow_mut().clear();
-        self.selected_index = None;
-        self.loader.clear_pending();
-        self.filter.clear();
-        self.loaded_lru.clear();
-        self.last_viewport_top = 0.0;
-        {
-            let mut vp = self.viewport.borrow_mut();
-            vp.scroll_x_to(0.0);
-            vp.scroll_y_to(0.0);
-        }
-        *self.last_layout_width.borrow_mut() = 0.0;
-        self.cache.clear();
-
-        // Create oneshot channel for result
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.subitems_rx = Some(rx);
-
-        // Clone what we need for the async task
-        let cancel_token = self.subitems_cancel_token.clone();
-
-        // Use the loader's runtime to spawn the async task
-        // This ensures we're running in a proper Tokio context
-        let runtime = self.loader.runtime();
-        let item_path = item.get_file_path();
-        runtime.spawn(async move {
-            log::info!("[TileGridView] async task started for: {:?}", item_path);
-            let result = item.get_subitems(&cancel_token).await;
-            let count = result.as_ref().map(|v| v.len()).unwrap_or(0);
-            log::info!("[TileGridView] async task completed for: {:?}, got {} items", item_path, count);
-            // Send result (ignore error if receiver dropped)
-            let _ = tx.send(result);
-        });
-    }
-
     /// Evict oldest thumbnails from memory when we exceed the limit
     /// This frees up memory by resetting old thumbnails back to Pending state
     fn evict_old_thumbnails(&mut self, keep_visible_top: f32, keep_visible_bottom: f32) {
@@ -612,12 +564,6 @@ impl TileGridView {
         }
     }
 
-    /// Queue thumbnail loading for items in the visible range (for scroll events)
-    /// DEPRECATED: Use queue_visible_range_loads instead
-    fn queue_visible_loads(&mut self, viewport_top: f32, viewport_height: f32) {
-        self.queue_visible_range_loads(viewport_top, viewport_height);
-    }
-
     /// Recalculate layout based on available width
     /// Uses a masonry/bin-packing algorithm - each tile goes to the shortest column
     /// Only includes visible (non-filtered) items
@@ -699,102 +645,95 @@ impl TileGridView {
 
     /// Process pending thumbnail results
     pub fn poll_results(&mut self) -> Vec<TileGridMessage> {
-        // Check for completed subitem loading first
-        let has_rx = self.subitems_rx.is_some();
-        if has_rx {
-            log::info!("[TileGridView] poll_results: checking subitems_rx");
-        }
-        if let Some(mut rx) = self.subitems_rx.take() {
-            match rx.try_recv() {
-                Ok(result) => {
-                    match result {
-                        Ok(items) => {
-                            log::info!("[TileGridView] poll_results: received {} subitems", items.len());
-                            // Subitems loaded - set them directly
-                            self.set_items_from_items(items);
-                        }
-                        Err(err) => {
-                            log::error!("[TileGridView] poll_results: error loading subitems: {}", err);
-                            // Error loading - could return a message to show error dialog
-                            // For now, just clear items
-                            self.set_items_from_items(Vec::new());
-                        }
-                    }
-                }
-                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
-                    // Still loading - put receiver back
-                    log::info!("[TileGridView] poll_results: still loading, putting rx back");
-                    self.subitems_rx = Some(rx);
-                }
-                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                    log::warn!("[TileGridView] poll_results: channel closed unexpectedly");
-                    // Channel closed (cancelled or error) - do nothing
-                }
-            }
-        }
-
         let mut messages = Vec::new();
-        while let Ok(result) = self.result_rx.try_recv() {
-            log::debug!("[TileGridView] Received thumbnail result for: {:?}", result.path);
-
-            // Find the thumbnail by path - try exact match first, then filename match
-            let found = self.thumbnails.iter_mut().enumerate().find(|(_, t)| t.path == result.path);
-
-            let thumb_opt = if found.is_some() {
-                log::debug!("[TileGridView] Found exact path match for: {:?}", result.path);
-                found
-            } else {
-                // Fallback: match by filename only (in case paths differ slightly)
-                let result_filename = &result.path;
-                log::debug!("[TileGridView] No exact match, trying fallback for: {:?}", result_filename);
-                let fallback = self
-                    .thumbnails
-                    .iter_mut()
-                    .enumerate()
-                    .find(|(_, t)| &t.path == result_filename && matches!(t.state, ThumbnailState::Loading { .. } | ThumbnailState::Pending { .. }));
-                fallback
-            };
-
-            if thumb_opt.is_none() {
-                log::warn!("[TileGridView] No thumbnail found for result path: {:?}", result.path);
-                // Debug: log first few thumbnail paths
-                let debug_paths: Vec<_> = self.thumbnails.iter().take(5).map(|t| (&t.path, std::mem::discriminant(&t.state))).collect();
-                for (i, (path, state)) in debug_paths.iter().enumerate() {
-                    log::debug!("[TileGridView]   thumbnail[{}].path = {:?}, state = {:?}", i, path, state);
-                }
-                continue;
+        // Drain any results that haven't been streamed yet (e.g. before the
+        // streaming task is connected, or as a safety net).
+        let mut drained: Vec<ThumbnailResult> = Vec::new();
+        if let Some(rx) = self.result_rx.as_mut() {
+            while let Ok(result) = rx.try_recv() {
+                drained.push(result);
             }
-
-            let (idx, thumb) = thumb_opt.unwrap();
-            // For Error state without placeholder, create one with the label
-            let new_state = match &result.state {
-                ThumbnailState::Error { message, placeholder: None } => {
-                    let placeholder = create_labeled_placeholder(&ERROR_PLACEHOLDER, &thumb.label);
-                    ThumbnailState::Error {
-                        message: message.clone(),
-                        placeholder: Some(placeholder),
-                    }
-                }
-                other => other.clone(),
-            };
-            thumb.state = new_state;
-            thumb.sauce_info = result.sauce_info.clone();
-            thumb.width_multiplier = result.width_multiplier;
-            thumb.label_rgba = result.label_rgba.clone();
-            // Track this thumbnail in LRU (it's now loaded)
-            self.mark_as_loaded(idx);
-            messages.push(TileGridMessage::ThumbnailReady);
         }
-
+        for result in drained {
+            if self.apply_thumbnail_result(result) {
+                messages.push(TileGridMessage::ThumbnailReady);
+            }
+        }
         if !messages.is_empty() {
-            self.cache.clear();
-            // Recalculate layout since heights may have changed
-            let width = *self.last_layout_width.borrow();
-            *self.last_layout_width.borrow_mut() = 0.0; // Force recalc
-            self.recalculate_layout(width);
+            self.relayout_after_results();
         }
-
         messages
+    }
+
+    /// Take ownership of the result receiver and convert it into a streaming
+    /// [`Task`] that emits a [`TileGridMessage::ThumbnailResultReceived`] for
+    /// every thumbnail produced by the background loader.
+    ///
+    /// This decouples thumbnail loading from animation ticks: the application
+    /// receives results as messages whether or not [`Self::needs_animation`]
+    /// is true. May be called at most once.
+    pub fn take_result_stream(&mut self) -> Option<Task<TileGridMessage>> {
+        let rx = self.result_rx.take()?;
+        let stream = futures::stream::unfold(rx, |mut rx| async move {
+            rx.recv().await.map(|item| (TileGridMessage::ThumbnailResultReceived(Box::new(item)), rx))
+        });
+        Some(Task::stream(stream))
+    }
+
+    /// Apply a single thumbnail result to the matching thumbnail entry.
+    /// Returns true if a matching thumbnail was found and updated.
+    fn apply_thumbnail_result(&mut self, result: ThumbnailResult) -> bool {
+        log::debug!("[TileGridView] Received thumbnail result for: {:?}", result.path);
+
+        // Find the thumbnail by path - try exact match first, then filename match
+        let found = self.thumbnails.iter_mut().enumerate().find(|(_, t)| t.path == result.path);
+
+        let thumb_opt = if found.is_some() {
+            log::debug!("[TileGridView] Found exact path match for: {:?}", result.path);
+            found
+        } else {
+            // Fallback: match by filename only (in case paths differ slightly)
+            let result_filename = &result.path;
+            log::debug!("[TileGridView] No exact match, trying fallback for: {:?}", result_filename);
+            self.thumbnails
+                .iter_mut()
+                .enumerate()
+                .find(|(_, t)| &t.path == result_filename && matches!(t.state, ThumbnailState::Loading { .. } | ThumbnailState::Pending { .. }))
+        };
+
+        let Some((idx, thumb)) = thumb_opt else {
+            log::warn!("[TileGridView] No thumbnail found for result path: {:?}", result.path);
+            let debug_paths: Vec<_> = self.thumbnails.iter().take(5).map(|t| (&t.path, std::mem::discriminant(&t.state))).collect();
+            for (i, (path, state)) in debug_paths.iter().enumerate() {
+                log::debug!("[TileGridView]   thumbnail[{}].path = {:?}, state = {:?}", i, path, state);
+            }
+            return false;
+        };
+
+        // For Error state without placeholder, create one with the label
+        let new_state = match result.state {
+            ThumbnailState::Error { message, placeholder: None } => {
+                let placeholder = create_labeled_placeholder(&ERROR_PLACEHOLDER, &thumb.label);
+                ThumbnailState::Error {
+                    message,
+                    placeholder: Some(placeholder),
+                }
+            }
+            other => other,
+        };
+        thumb.state = new_state;
+        thumb.sauce_info = result.sauce_info;
+        thumb.width_multiplier = result.width_multiplier;
+        thumb.label_rgba = result.label_rgba;
+        self.mark_as_loaded(idx);
+        true
+    }
+
+    fn relayout_after_results(&mut self) {
+        self.cache.clear();
+        let width = *self.last_layout_width.borrow();
+        *self.last_layout_width.borrow_mut() = 0.0; // Force recalc
+        self.recalculate_layout(width);
     }
 
     /// Handle animation tick
@@ -808,7 +747,11 @@ impl TileGridView {
         // This ensures thumbnails get loaded even when view() is called with &self
         let (viewport_top, viewport_height) = {
             let vp = self.viewport.borrow();
-            (vp.scroll_y(), vp.visible_height_px())
+            // last_bounds.height is more reliably updated than
+            // viewport.visible_height_px() (the widget reports back via
+            // on_scroll, which doesn't fire if the user never scrolls).
+            let height = self.last_bounds.borrow().height.max(vp.visible_height_px());
+            (vp.scroll_y(), height)
         };
         if viewport_height > 0.0 {
             self.queue_visible_range_loads(viewport_top, viewport_height);
@@ -853,22 +796,12 @@ impl TileGridView {
         self.thumbnails.iter().any(|t| t.state.is_animated())
     }
 
-    /// Check if animation/polling is needed (loading thumbnails or animated content)
+    /// Check if animation/polling is needed (animated content, smooth scroll,
+    /// or auto-scroll). Thumbnail loading is event-driven via the streaming
+    /// task returned by [`Self::take_result_stream`] and the scroll widget's
+    /// `on_scroll` callback, so it does not require animation ticks.
     pub fn needs_animation(&self) -> bool {
-        // Check if any visible (filtered) thumbnails are actively loading
-        // Note: Only check Loading state, not Pending - pending ones will be queued during tick()
-        // This prevents continuous animation when there are many unloaded thumbnails
-        let has_loading = self
-            .visible_indices
-            .iter()
-            .take(100)
-            .any(|&idx| self.thumbnails.get(idx).map_or(false, |t| matches!(t.state, ThumbnailState::Loading { .. })));
-
-        // Or if any thumbnails have blinking/animated content
-        // Or if viewport needs animation (includes scroll and scrollbar)
-        // Or if auto-scroll is active
-        // Or if we're waiting for async subitems to load
-        has_loading || self.has_animated() || self.auto_scroll_active || self.subitems_rx.is_some()
+        self.has_animated() || self.auto_scroll_active || self.viewport.borrow().is_animating()
     }
 
     // ==================== Keyboard Navigation ====================
@@ -1314,6 +1247,8 @@ impl TileGridView {
             .height(Length::Fill)
             .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(8).scroller_width(6)))
             .show_viewport(Size::new(content_width, content_height), move |viewport| {
+                // Note: scroll position from this viewport is reported back
+                // to the application via the on_scroll callback below.
                 let scroll_offset = viewport.y;
                 let viewport_height = viewport.height;
 
@@ -1389,6 +1324,15 @@ impl TileGridView {
                     .height(Length::Fill)
                     .into()
             })
+            .on_scroll(|vp| {
+                let offset = vp.absolute_offset();
+                let bounds = vp.bounds();
+                TileGridMessage::ScrollUpdated {
+                    scroll_y: offset.y,
+                    viewport_height: bounds.height,
+                    viewport_width: bounds.width,
+                }
+            })
             .into()
     }
 
@@ -1405,6 +1349,41 @@ impl TileGridView {
             }
             TileGridMessage::ThumbnailReady => {
                 // Already handled in poll_results
+                false
+            }
+            TileGridMessage::ThumbnailResultReceived(result) => {
+                if self.apply_thumbnail_result(*result) {
+                    self.relayout_after_results();
+                }
+                false
+            }
+            TileGridMessage::ScrollUpdated {
+                scroll_y,
+                viewport_height,
+                viewport_width,
+            } => {
+                {
+                    let mut vp = self.viewport.borrow_mut();
+                    if viewport_width > 0.0 && viewport_height > 0.0 {
+                        vp.set_visible_size(viewport_width, viewport_height);
+                    }
+                    vp.scroll_y_to(scroll_y.max(0.0));
+                }
+                {
+                    let mut bounds = self.last_bounds.borrow_mut();
+                    if viewport_width > 0.0 {
+                        bounds.width = viewport_width;
+                    }
+                    if viewport_height > 0.0 {
+                        bounds.height = viewport_height;
+                    }
+                }
+                // Queue loads for the new visible range immediately so the
+                // widget keeps up with scrolling without depending on the
+                // animation tick subscription.
+                if viewport_height > 0.0 {
+                    self.queue_visible_range_loads(scroll_y.max(0.0), viewport_height);
+                }
                 false
             }
             TileGridMessage::SelectPrevious => {

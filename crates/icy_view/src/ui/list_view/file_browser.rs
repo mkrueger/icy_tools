@@ -11,12 +11,12 @@ use icy_ui::{
 use super::file_list_view::{FileListView, FileListViewMessage};
 use super::sauce_loader::SharedSauceCache;
 use crate::items::Item;
-use crate::items::{get_items_at_path, is_directory, path_exists, sort_items, NavPoint, ProviderType, SixteenColorsProvider};
+use crate::items::{get_items_at_path, is_directory, path_exists, sort_items, ItemError, NavPoint, ProviderType, SixteenColorsProvider};
 use crate::sort_order::SortOrder;
 use icy_engine_gui::{focus, list_focus_style};
 
 /// Messages for the file browser
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum FileBrowserMessage {
     /// Messages from the file list view
     ListView(FileListViewMessage),
@@ -24,8 +24,29 @@ pub enum FileBrowserMessage {
     ParentFolder,
     /// Refresh the current folder
     Refresh,
+    /// Web folder items finished loading
+    WebItemsLoaded {
+        path: String,
+        result: Result<Vec<Box<dyn Item>>, ItemError>,
+    },
     /// Filter text changed
     FilterChanged(String),
+}
+
+impl std::fmt::Debug for FileBrowserMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ListView(msg) => f.debug_tuple("ListView").field(msg).finish(),
+            Self::ParentFolder => write!(f, "ParentFolder"),
+            Self::Refresh => write!(f, "Refresh"),
+            Self::WebItemsLoaded { path, result } => f
+                .debug_struct("WebItemsLoaded")
+                .field("path", path)
+                .field("result", &result.as_ref().map(|items| items.len()))
+                .finish(),
+            Self::FilterChanged(filter) => f.debug_tuple("FilterChanged").field(filter).finish(),
+        }
+    }
 }
 
 /// File browser widget with simple path-based navigation
@@ -44,6 +65,10 @@ pub struct FileBrowser {
     sort_order: SortOrder,
     /// Shared SAUCE cache for displaying SAUCE info
     sauce_cache: Option<SharedSauceCache>,
+    /// Whether a web folder is currently loading
+    is_loading: bool,
+    /// Item label to select after async web navigation completes
+    pending_select_label: Option<String>,
 }
 
 impl FileBrowser {
@@ -112,6 +137,8 @@ impl FileBrowser {
             list_view,
             sort_order: SortOrder::default(),
             sauce_cache: None,
+            is_loading: false,
+            pending_select_label: None,
         };
 
         // If we have a file to select, find and select it
@@ -132,16 +159,21 @@ impl FileBrowser {
                 let (should_open, scroll_task) = self.list_view.update(list_msg, item_count);
 
                 if should_open {
-                    return (self.open_selected_item(), scroll_task);
+                    let (file_opened, open_task) = self.open_selected_item();
+                    return (file_opened, Task::batch(vec![scroll_task, open_task]));
                 }
                 (false, scroll_task)
             }
             FileBrowserMessage::ParentFolder => {
-                self.navigate_parent();
-                (false, Task::none())
+                let task = self.navigate_parent();
+                (false, task)
             }
             FileBrowserMessage::Refresh => {
-                self.refresh();
+                let task = self.refresh();
+                (false, task)
+            }
+            FileBrowserMessage::WebItemsLoaded { path, result } => {
+                self.apply_web_items(path, result);
                 (false, Task::none())
             }
             FileBrowserMessage::FilterChanged(filter) => {
@@ -155,22 +187,23 @@ impl FileBrowser {
     }
 
     /// Navigate to parent
-    fn navigate_parent(&mut self) {
+    fn navigate_parent(&mut self) -> Task<FileBrowserMessage> {
         if self.nav_point.navigate_up() {
-            self.refresh();
+            return self.refresh();
         }
+        Task::none()
     }
 
     /// Open the currently selected item - returns true if it's a file (for preview)
-    fn open_selected_item(&mut self) -> bool {
+    fn open_selected_item(&mut self) -> (bool, Task<FileBrowserMessage>) {
         let Some(visible_index) = self.list_view.selected_index else {
-            return false;
+            return (false, Task::none());
         };
         let Some(&file_index) = self.visible_indices.get(visible_index) else {
-            return false;
+            return (false, Task::none());
         };
         if file_index >= self.files.len() {
-            return false;
+            return (false, Task::none());
         }
 
         let is_container = self.files[file_index].is_container();
@@ -186,44 +219,82 @@ impl FileBrowser {
                 format!("{}/{}", self.nav_point.path, file_path)
             };
             self.nav_point.navigate_to(new_path);
-            self.refresh();
-            false
+            let task = self.refresh();
+            (false, task)
         } else {
             // It's a file - signal that we want to open/preview it
-            true
+            (true, Task::none())
         }
     }
 
-    fn refresh(&mut self) {
+    fn refresh(&mut self) -> Task<FileBrowserMessage> {
         self.files.clear();
         self.filter.clear();
+        self.is_loading = false;
+        self.pending_select_label = None;
 
         // Get items based on provider type (no parent item - use toolbar for navigation)
-        let items: Option<Vec<Box<dyn Item>>> = match self.nav_point.provider_type {
-            ProviderType::File => get_items_at_path(&self.nav_point.path),
-            ProviderType::Web => {
-                // Use 16colors provider for web mode
-                let provider = SixteenColorsProvider::new();
-                let path = self.nav_point.path.clone();
-                // Create a new runtime to block on async call
-                // (Iced doesn't use tokio runtime, so we need our own)
-                std::thread::spawn(move || {
-                    let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-                    rt.block_on(provider.get_items(&path))
-                })
-                .join()
-                .unwrap_or(Err(crate::items::ItemError::Other("Thread panicked".to_string())))
-                .ok()
+        match self.nav_point.provider_type {
+            ProviderType::File => {
+                if let Some(mut items) = get_items_at_path(&self.nav_point.path) {
+                    self.files.append(&mut items);
+                }
             }
-        };
-
-        if let Some(mut items) = items {
-            self.files.append(&mut items);
+            ProviderType::Web => {
+                let path = self.nav_point.path.clone();
+                self.is_loading = true;
+                self.update_visible_indices();
+                self.list_view.selected_index = None;
+                self.list_view.invalidate();
+                return Self::load_web_items(path);
+            }
         }
 
         self.update_visible_indices();
         self.list_view.selected_index = if self.visible_indices.is_empty() { None } else { Some(0) };
         // Always invalidate after refresh to ensure cache is cleared
+        self.list_view.invalidate();
+        Task::none()
+    }
+
+    fn load_web_items(path: String) -> Task<FileBrowserMessage> {
+        Task::perform(
+            {
+                let path = path.clone();
+                async move {
+                    let provider = SixteenColorsProvider::new();
+                    provider.get_items(&path).await
+                }
+            },
+            move |result| FileBrowserMessage::WebItemsLoaded { path, result },
+        )
+    }
+
+    fn apply_web_items(&mut self, path: String, result: Result<Vec<Box<dyn Item>>, ItemError>) {
+        if self.nav_point.provider_type != ProviderType::Web || self.nav_point.path != path {
+            log::debug!("Ignoring stale 16colors folder result for {:?}", path);
+            return;
+        }
+
+        self.is_loading = false;
+        self.files.clear();
+        match result {
+            Ok(mut items) => {
+                self.files.append(&mut items);
+            }
+            Err(err) => {
+                log::error!("Failed to load 16colors folder {:?}: {}", path, err);
+            }
+        }
+
+        self.update_visible_indices();
+        if let Some(label) = self.pending_select_label.take() {
+            if !self.select_by_label(&label) {
+                self.list_view.selected_index = if self.visible_indices.is_empty() { None } else { Some(0) };
+            }
+        } else {
+            self.list_view.selected_index = if self.visible_indices.is_empty() { None } else { Some(0) };
+        }
         self.list_view.invalidate();
     }
 
@@ -253,6 +324,18 @@ impl FileBrowser {
         use icy_ui::widget::text;
 
         // If folder is empty (no files at all), show "Folder is empty" message
+        if self.is_loading {
+            let loading_text = text("Loading…").size(14).style(|theme: &icy_ui::Theme| text::Style {
+                color: Some(theme.background.on.scale_alpha(0.5)),
+            });
+            return container(loading_text)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .padding(20)
+                .into();
+        }
+
         if self.files.is_empty() {
             let empty_text = text(fl!(crate::LANGUAGE_LOADER, "folder-empty"))
                 .size(14)
@@ -334,13 +417,14 @@ impl FileBrowser {
     /// Navigate to a specific filesystem path
     pub fn navigate_to(&mut self, path: PathBuf) {
         self.nav_point = NavPoint::file(path.to_string_lossy().replace('\\', "/"));
-        self.refresh();
+        let _ = self.refresh();
     }
 
     /// Set 16colors mode
     pub fn set_16colors_mode(&mut self, items: Vec<Box<dyn Item>>) {
         self.nav_point = NavPoint::web(String::new());
         self.files = items;
+        self.is_loading = false;
         self.update_visible_indices();
         self.list_view.selected_index = if self.visible_indices.is_empty() { None } else { Some(0) };
         self.list_view.invalidate();
@@ -404,11 +488,16 @@ impl FileBrowser {
     }
 
     /// Navigate to a web path (16colors)
-    pub fn navigate_to_web_path(&mut self, path: &str) {
+    pub fn navigate_to_web_path(&mut self, path: &str) -> Task<FileBrowserMessage> {
         // Remove leading slash if present - internal paths don't have leading /
         let clean_path = path.trim_start_matches('/');
         self.nav_point = NavPoint::web(clean_path.to_string());
-        self.refresh();
+        self.refresh()
+    }
+
+    /// Select an item by label when the next async web navigation completes.
+    pub fn select_by_label_after_load(&mut self, label: String) {
+        self.pending_select_label = Some(label);
     }
 
     /// Check if we're in web mode

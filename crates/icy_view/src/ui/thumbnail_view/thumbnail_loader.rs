@@ -201,11 +201,6 @@ impl ThumbnailLoader {
         // Create new cancellation token for new generation
         self.cancel_token = CancellationToken::new();
     }
-
-    /// Get a handle to the runtime for spawning tasks
-    pub fn runtime(&self) -> Arc<tokio::runtime::Runtime> {
-        self.runtime.clone()
-    }
 }
 
 /// Input for the rendering step - either pre-rendered data or raw file data
