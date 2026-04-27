@@ -534,8 +534,7 @@ impl CharFontEditor {
 
         // Switch to click tool from the new registry (force because tool ID might be same but implementation differs)
         {
-            self.ansi_core
-                .force_change_tool(&mut new_registry, tools::ToolId::Click);
+            self.ansi_core.force_change_tool(&mut new_registry, tools::ToolId::Click);
         }
 
         // Create new tool panel with the new registry

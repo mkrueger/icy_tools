@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use icy_engine::{formats::FileFormat, limits, LoadData, Screen, ScreenMode, ScreenSink, Size, TextBuffer, TextPane};
+use icy_engine::{formats::FileFormat, limits, EditableScreen, LoadData, Screen, ScreenMode, ScreenSink, Size, TextBuffer, TextPane, TextScreen};
 use icy_engine_gui::music::SoundThread;
 use icy_engine_gui::util::{BaudEmulator, QueuedCommand, QueueingSink};
 use icy_net::telnet::TerminalEmulation;
@@ -268,6 +268,17 @@ impl ViewThread {
         self.current_load = Some(LoadOperation::new(path, self.auto_scroll_enabled));
     }
 
+    /// Replace the shared screen with a clean text screen while a new file is loading.
+    /// This prevents pixel-oriented modes such as RIP from remaining visible behind the
+    /// next text/ANSI/XBin document while background loading is still in progress.
+    fn clear_screen_for_new_load(&mut self) {
+        let mut new_screen = TextScreen::new(Size::new(80, 25));
+        new_screen.terminal_state_mut().is_terminal_buffer = false;
+
+        let mut screen = self.screen.lock();
+        *screen = Box::new(new_screen);
+    }
+
     /// Check if current load is playing
     fn is_playing(&self) -> bool {
         self.current_load.as_ref().map_or(false, |l| l.is_playing)
@@ -361,66 +372,23 @@ impl ViewThread {
         parser
     }
 
-    /// Copy a TextBuffer to the screen
-    fn copy_buffer_to_screen(&mut self, buffer: &TextBuffer) {
+    /// Replace the current screen with a text screen built from a loaded buffer.
+    ///
+    /// Format loaders can run after a RIP/graphics preview. Reusing the existing
+    /// `PaletteScreenBuffer` would leave its pixel layer intact behind the text buffer,
+    /// so replace the whole screen instead of copying into the current one.
+    fn replace_screen_with_buffer(&mut self, buffer: TextBuffer) {
+        let mut new_screen = TextScreen::from_buffer(buffer);
+        new_screen.terminal_state_mut().is_terminal_buffer = false;
+
         let mut screen = self.screen.lock();
-        if let Some(editable) = screen.as_editable() {
-            // Validate buffer dimensions to prevent overflow
-            let width = buffer.width();
-            let height = buffer.height();
-
-            if width == 0 || height == 0 {
-                log::warn!("Invalid buffer dimensions: {}x{}, skipping copy", width, height);
-                return;
-            }
-
-            // Clamp to limits to prevent huge allocations
-            let width = width.min(limits::MAX_BUFFER_WIDTH);
-            let height = height.min(limits::MAX_BUFFER_HEIGHT);
-
-            // Set the size to match the buffer (clamped)
-            let size = Size::new(width, height);
-            editable.set_size(size);
-            editable.terminal_state_mut().set_width(width);
-
-            // Also update layer sizes to match
-            for layer_idx in 0..editable.layer_count() {
-                if let Some(layer) = editable.get_layer_mut(layer_idx) {
-                    layer.set_size(size);
-                }
-            }
-
-            // Copy fonts
-            editable.clear_font_table();
-            for (i, font) in buffer.font_iter() {
-                editable.set_font(*i as usize, font.clone());
-            }
-
-            // Copy palette
-            *editable.palette_mut() = buffer.palette.clone();
-
-            // Copy buffer type
-            *editable.buffer_type_mut() = buffer.buffer_type;
-
-            // Copy all characters from layer 0
-            if !buffer.layers.is_empty() {
-                let layer = &buffer.layers[0];
-                for y in 0..buffer.height() {
-                    for x in 0..buffer.width() {
-                        let ch: icy_engine::AttributedChar = layer.char_at((x, y).into());
-                        editable.set_char((x, y).into(), ch);
-                    }
-                }
-            }
-
-            editable.caret_default_colors();
-        }
+        *screen = Box::new(new_screen);
     }
 
     /// Apply the result of a background format load
     fn apply_format_load_result(&mut self, result: FormatLoadResult) {
-        // Copy the loaded buffer to the screen
-        self.copy_buffer_to_screen(&result.buffer);
+        // Replace the screen with the loaded buffer.
+        self.replace_screen_with_buffer(result.buffer);
 
         // Update the current load with the result data
         if let Some(load) = &mut self.current_load {
@@ -437,6 +405,10 @@ impl ViewThread {
     async fn load_data(&mut self, path: PathBuf, data: Vec<u8>) {
         // Start a new load operation (cancels any existing one via Drop)
         self.start_new_load(path.clone());
+
+        // Clear the visible screen immediately. In particular, RIP graphics are pixel-based
+        // and can otherwise remain visible while the next file is loaded asynchronously.
+        self.clear_screen_for_new_load();
 
         // Increment load generation to invalidate any pending background loads
         let generation = self.load_generation.fetch_add(1, Ordering::SeqCst) + 1;
