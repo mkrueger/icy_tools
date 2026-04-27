@@ -1122,8 +1122,7 @@ impl MainWindow {
                         // Only update preview for non-container items (files)
                         if !is_container {
                             if let Some(ref preview_folder) = self.folder_preview_path {
-                                let item_path_str = item_path.replace('\\', "/");
-                                let full_path = format!("{}/{}", preview_folder.replace('\\', "/"), item_path_str);
+                                let full_path = Self::resolve_preview_item_path(preview_folder, &item_path);
                                 self.current_file = Some(full_path.clone());
                                 self.title = label;
 
@@ -1153,7 +1152,7 @@ impl MainWindow {
                 // Handle Enter to navigate/open
                 match &msg {
                     TileGridMessage::OpenSelected if should_open => {
-                        if let Some((item_path, _label, is_container)) = self.folder_preview.get_selected_info() {
+                        if let Some((item_path, label, is_container)) = self.folder_preview.get_selected_info() {
                             // Get the item BEFORE navigating (items will change after navigation)
                             let item_for_data = self.folder_preview.get_selected_item();
 
@@ -1183,10 +1182,13 @@ impl MainWindow {
                                         // Select the file in the browser after the async web folder load finishes and preview it now.
                                         let task = self.file_browser.navigate_to_web_path(&preview_path_str);
                                         self.navigation_bar.set_path_input(self.file_browser.get_display_path());
-                                        self.file_browser.select_by_label_after_load(item_path_str.clone());
-                                        let full_path = format!("{}/{}", preview_path_str, item_path_str);
+                                        self.file_browser.select_by_label_after_load(label.clone());
+                                        let full_path = item_for_data
+                                            .as_ref()
+                                            .and_then(|item| item.get_full_path())
+                                            .unwrap_or_else(|| item_path_str.replace('\\', "/"));
                                         self.current_file = Some(full_path.clone());
-                                        self.title = item_path_str.split('/').last().unwrap_or(&item_path_str).to_string();
+                                        self.title = label;
                                         // Read data asynchronously from the item we captured before navigation
                                         if let Some(item) = item_for_data {
                                             let load_task =
@@ -1201,7 +1203,7 @@ impl MainWindow {
                                     self.navigation_bar.set_path_input(preview_folder.clone());
 
                                     // Now construct full path for the item inside the previewed folder
-                                    let full_path = format!("{}/{}", preview_folder, &item_path);
+                                    let full_path = Self::resolve_preview_item_path(&preview_folder, &item_path);
 
                                     if is_container {
                                         // Navigate into the subfolder and select first item
@@ -1213,9 +1215,9 @@ impl MainWindow {
                                         self.history.navigate_to(point);
                                     } else {
                                         // Select the file in the browser and preview it
-                                        self.file_browser.select_by_path(&PathBuf::from(&item_path));
+                                        self.file_browser.select_by_label(&label);
                                         self.current_file = Some(full_path.clone());
-                                        self.title = item_path.split('/').last().unwrap_or(&item_path).to_string();
+                                        self.title = label;
                                         // Read data asynchronously from the item we captured before navigation
                                         if let Some(item) = item_for_data {
                                             return crate::items::load_item_data(item.clone_box(), full_path, Message::DataLoaded, Message::DataLoadError);
@@ -1811,6 +1813,17 @@ impl MainWindow {
 
     fn is_current_shuffle_item(&self, generation: u64, index: usize) -> bool {
         self.shuffle_mode.is_active && self.shuffle_load_generation == generation && self.shuffle_mode.current_item_index() == Some(index)
+    }
+
+    fn resolve_preview_item_path(preview_folder: &str, item_path: &str) -> String {
+        let preview_folder = preview_folder.replace('\\', "/");
+        let item_path = item_path.replace('\\', "/");
+
+        if item_path.starts_with('/') || item_path.as_bytes().get(1) == Some(&b':') || item_path.starts_with(&format!("{preview_folder}/")) {
+            item_path
+        } else {
+            format!("{preview_folder}/{item_path}")
+        }
     }
 
     fn shuffle_minimum_show_task(generation: u64, index: usize) -> Task<Message> {

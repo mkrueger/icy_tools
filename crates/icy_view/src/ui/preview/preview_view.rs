@@ -656,19 +656,19 @@ impl PreviewView {
                     }
                     ScrollMode::AutoScroll => {
                         // Animated scrolling after loading completes
-                        let scroll_speed = self.scroll_speed.get_speed();
-                        let scroll_delta = scroll_speed * delta_seconds;
                         let max_scroll_y = self.get_max_scroll_y();
                         let current_y = self.get_current_scroll_y();
-                        let new_y = (current_y + scroll_delta).min(max_scroll_y);
 
-                        if self.image_viewer.is_none() {
-                            extra_tasks.push(self.terminal.scroll_to_content(None, Some(new_y)));
-                        }
-
-                        // Stop auto-scroll when we reach the bottom
-                        if new_y >= max_scroll_y {
+                        if max_scroll_y <= 0.0 || current_y >= max_scroll_y - 1.0 {
                             self.scroll_mode = ScrollMode::Off;
+                        } else {
+                            let scroll_speed = self.scroll_speed.get_speed();
+                            let scroll_delta = scroll_speed * delta_seconds;
+                            let new_y = (current_y + scroll_delta).min(max_scroll_y);
+
+                            if self.image_viewer.is_none() {
+                                extra_tasks.push(self.terminal.scroll_to_content(None, Some(new_y)));
+                            }
                         }
                     }
                     ScrollMode::Off => {
