@@ -53,8 +53,6 @@ fn test_dcs_hex_macro_repeat_capped() {
         b"\x1bP0;0;1!z!18446744073709551615;41;\x1b\\",
         &mut sink,
     );
-    // Should complete without panicking. The macro is stored internally;
-    // no DeviceControlString is emitted for macro definitions.
 }
 
 #[test]
