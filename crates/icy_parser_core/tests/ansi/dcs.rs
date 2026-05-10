@@ -43,6 +43,21 @@ fn test_dcs_sixel() {
 }
 
 #[test]
+fn test_dcs_hex_macro_repeat_capped() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // Macro definition (!z) with usize::MAX repeat in hex encoding.
+    // Without the cap this would allocate ~18 exabytes and OOM.
+    parser.parse(
+        b"\x1bP0;0;1!z!18446744073709551615;41;\x1b\\",
+        &mut sink,
+    );
+    // Should complete without panicking. The macro is stored internally;
+    // no DeviceControlString is emitted for macro definitions.
+}
+
+#[test]
 fn test_dcs_font_loading() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();
