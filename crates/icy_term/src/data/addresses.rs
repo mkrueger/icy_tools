@@ -332,6 +332,11 @@ pub struct Address {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub proxy_command: String,
 
+    /// Optional per-connection proxy (e.g. SOCKS5 for Tor/I2P). Applies to the
+    /// TCP-based connection types (Telnet, Raw, Rlogin, SSH).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<icy_net::proxy::ProxyConfig>,
+
     #[serde(default, skip_serializing_if = "is_default_bool")]
     pub ice_mode: bool,
 
@@ -430,6 +435,7 @@ impl From<ConnectionInformation> for Address {
             auto_login: String::new(),
             address,
             proxy_command: String::new(),
+            proxy: None,
             protocol: info.protocol(),
             ansi_music: MusicOption::default(),
             ice_mode: true,
@@ -534,6 +540,7 @@ impl Address {
             auto_login: String::new(),
             address: String::new(),
             proxy_command: String::new(),
+            proxy: None,
             protocol: ConnectionType::Telnet,
             ansi_music: MusicOption::default(),
             ice_mode: true,

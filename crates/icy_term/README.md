@@ -9,8 +9,19 @@ Visit [Telnet BBS Guide](https://www.telnetbbsguide.com/) to explore active BBSe
 ### 🌐 Connectivity
 
 - **Protocols**: Telnet, SSH, RLogin, Raw TCP, WebSocket (including secure)
+- **Proxy (Tor / I2P)**: Per-connection SOCKS5 proxy with remote DNS, so `.onion` / `.i2p` BBSes work
 - **Modems** still supported :).
 - **Baud emulation**: Authentic modem speeds for nostalgia
+
+#### Proxy / Tor / I2P
+
+Each entry in the dialing directory can route its connection through a SOCKS5
+proxy (Telnet, Raw, RLogin and SSH). The target hostname is resolved by the
+proxy (remote DNS), which is what makes `.onion` and `.i2p` addresses reachable.
+
+- Pick a proxy in the entry's options: **Tor** (`127.0.0.1:9050`),
+  **I2P** (`127.0.0.1:4447`), or **Custom SOCKS5** (host/port + optional auth).
+- WebSocket is not proxied yet.
 
 ### 🖥️ Terminal Emulations
 

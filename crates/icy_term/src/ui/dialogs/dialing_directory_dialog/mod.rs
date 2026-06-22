@@ -38,6 +38,11 @@ pub struct DialingDirectoryState {
     pub quick_connect_address: Address,
     pub scroll_id: widget::Id,
 
+    /// Scratch buffer for the proxy password being typed. `icy_net` stores it as
+    /// a `SecretString`, which cannot be read back, so the field is write-only:
+    /// this echoes what the user types and is cleared when the selection changes.
+    proxy_password_input: String,
+
     // Scroll viewport tracking
     scroll_offset_y: f32,
     visible_height: f32,
@@ -58,6 +63,7 @@ impl DialingDirectoryState {
             pending_delete: None,
             quick_connect_address: Address::default(),
             scroll_id: widget::Id::unique(),
+            proxy_password_input: String::new(),
             scroll_offset_y: 0.0,
             visible_height: 0.0,
             last_click_time: None,
@@ -151,6 +157,9 @@ impl DialingDirectoryState {
                     false
                 };
 
+                if self.selected_bbs != idx {
+                    self.proxy_password_input.clear();
+                }
                 self.last_click_time = Some(now);
                 self.last_clicked_index = idx;
                 self.selected_bbs = idx;
@@ -246,6 +255,9 @@ impl DialingDirectoryState {
             }
 
             DialingDirectoryMsg::AddressFieldChanged { id, field } => {
+                // `addr` below may borrow `self` (quick-connect), so the scratch
+                // buffer is written after the borrow ends.
+                let mut new_proxy_password = None;
                 let mut lock = self.addresses.lock();
                 let addr = if let Some(id) = id {
                     let Some(address) = lock.addresses.get_mut(id) else {
@@ -343,6 +355,49 @@ impl DialingDirectoryState {
                             }
                         }
                     }
+                    AddressFieldChange::ProxySelect(preset) => {
+                        addr.proxy = match preset {
+                            ProxyPreset::None => None,
+                            ProxyPreset::Tor => Some(icy_net::proxy::ProxyConfig::socks5("127.0.0.1", 9050)),
+                            ProxyPreset::I2p => Some(icy_net::proxy::ProxyConfig::socks5("127.0.0.1", 4447)),
+                            // Keep any existing settings when switching to custom.
+                            ProxyPreset::Custom => Some(addr.proxy.clone().unwrap_or_else(|| icy_net::proxy::ProxyConfig::socks5("127.0.0.1", 1080))),
+                        };
+                    }
+                    AddressFieldChange::ProxyHost(host) => {
+                        if let Some(proxy) = addr.proxy.as_mut() {
+                            proxy.host = host;
+                        }
+                    }
+                    AddressFieldChange::ProxyPort(port) => {
+                        if let Some(proxy) = addr.proxy.as_mut() {
+                            if port.is_empty() {
+                                proxy.port = 0;
+                            } else if let Ok(value) = port.parse::<u16>() {
+                                proxy.port = value;
+                            }
+                        }
+                    }
+                    AddressFieldChange::ProxyUser(user) => {
+                        if let Some(proxy) = addr.proxy.as_mut() {
+                            proxy.username = if user.is_empty() { None } else { Some(user) };
+                        }
+                    }
+                    AddressFieldChange::ProxyPassword(password) => {
+                        if let Some(proxy) = addr.proxy.as_mut() {
+                            proxy.password = if password.is_empty() {
+                                None
+                            } else {
+                                Some(icy_net::ssh::SecretString::new(password.clone()))
+                            };
+                        }
+                        new_proxy_password = Some(password);
+                    }
+                }
+
+                drop(lock);
+                if let Some(password) = new_proxy_password {
+                    self.proxy_password_input = password;
                 }
 
                 Task::none()
@@ -610,6 +665,46 @@ pub enum AddressFieldChange {
     LfExpand(bool),
     ToggleCustomPalette(bool),
     PaletteColor(usize, String),
+    ProxySelect(ProxyPreset),
+    ProxyHost(String),
+    ProxyPort(String),
+    ProxyUser(String),
+    ProxyPassword(String),
+}
+
+/// Proxy presets shown in the dialing-directory picker. Tor and I2P fill in
+/// their well-known local SOCKS5 ports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProxyPreset {
+    None,
+    Tor,
+    I2p,
+    Custom,
+}
+
+impl ProxyPreset {
+    pub const OPTIONS: [ProxyPreset; 4] = [ProxyPreset::None, ProxyPreset::Tor, ProxyPreset::I2p, ProxyPreset::Custom];
+
+    /// Derive the preset currently represented by an address' proxy config.
+    pub fn from_config(proxy: Option<&icy_net::proxy::ProxyConfig>) -> ProxyPreset {
+        match proxy {
+            None => ProxyPreset::None,
+            Some(p) if p.host == "127.0.0.1" && p.port == 9050 => ProxyPreset::Tor,
+            Some(p) if p.host == "127.0.0.1" && p.port == 4447 => ProxyPreset::I2p,
+            Some(_) => ProxyPreset::Custom,
+        }
+    }
+}
+
+impl std::fmt::Display for ProxyPreset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProxyPreset::None => write!(f, "No proxy"),
+            ProxyPreset::Tor => write!(f, "Tor (SOCKS5 127.0.0.1:9050)"),
+            ProxyPreset::I2p => write!(f, "I2P (SOCKS5 127.0.0.1:4447)"),
+            ProxyPreset::Custom => write!(f, "Custom SOCKS5"),
+        }
+    }
 }
 
 impl From<DialingDirectoryMsg> for Message {

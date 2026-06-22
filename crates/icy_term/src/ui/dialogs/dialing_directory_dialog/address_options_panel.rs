@@ -1,4 +1,4 @@
-use crate::ui::dialing_directory_dialog::{AddressFieldChange, DialingDirectoryMsg};
+use crate::ui::dialing_directory_dialog::{AddressFieldChange, DialingDirectoryMsg, ProxyPreset};
 use crate::ui::Message;
 use crate::{ConnectionInformation, SshAuthenticationMode};
 use i18n_embed_fl::fl;
@@ -231,6 +231,90 @@ impl super::DialingDirectoryState {
                         .spacing(DIALOG_SPACING)
                         .align_y(Alignment::Center),
                 );
+            }
+
+            // Proxy (SOCKS5 for Tor/I2P) — only for the TCP-based connection types.
+            if matches!(
+                addr.protocol,
+                ConnectionType::Telnet | ConnectionType::Raw | ConnectionType::Rlogin | ConnectionType::RloginSwapped | ConnectionType::SSH
+            ) {
+                let preset = ProxyPreset::from_config(addr.proxy.as_ref());
+                let proxy_pick = pick_list(ProxyPreset::OPTIONS.to_vec(), Some(preset), move |p: ProxyPreset| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::ProxySelect(p),
+                    })
+                })
+                .width(Length::Fixed(220.0))
+                .text_size(TEXT_SIZE_NORMAL);
+
+                server_content = server_content.push(
+                    row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-proxy")), proxy_pick]
+                        .spacing(DIALOG_SPACING)
+                        .align_y(Alignment::Center),
+                );
+
+                if let Some(proxy) = addr.proxy.as_ref() {
+                    let host_input = text_input("127.0.0.1", &proxy.host)
+                        .on_input(move |s| {
+                            Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                                id,
+                                field: AddressFieldChange::ProxyHost(s),
+                            })
+                        })
+                        .padding(6)
+                        .size(TEXT_SIZE_NORMAL)
+                        .width(Length::Fixed(160.0));
+                    let port_input = text_input("1080", &proxy.port.to_string())
+                        .on_input(move |s| {
+                            Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                                id,
+                                field: AddressFieldChange::ProxyPort(s),
+                            })
+                        })
+                        .padding(6)
+                        .size(TEXT_SIZE_NORMAL)
+                        .width(Length::Fixed(70.0));
+                    server_content = server_content.push(
+                        row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-proxy-host")), host_input, port_input]
+                            .spacing(DIALOG_SPACING)
+                            .align_y(Alignment::Center),
+                    );
+
+                    let user_input = text_input("", proxy.username.as_deref().unwrap_or(""))
+                        .on_input(move |s| {
+                            Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                                id,
+                                field: AddressFieldChange::ProxyUser(s),
+                            })
+                        })
+                        .padding(6)
+                        .size(TEXT_SIZE_NORMAL)
+                        .width(Length::Fixed(160.0));
+                    // Write-only: `SecretString` cannot be read back, so a stored
+                    // password is shown as a placeholder and typing replaces it.
+                    let pass_placeholder = if proxy.password.is_some() && self.proxy_password_input.is_empty() {
+                        fl!(crate::LANGUAGE_LOADER, "dialing_directory-proxy-password-stored")
+                    } else {
+                        String::new()
+                    };
+                    let pass_input = text_input(&pass_placeholder, &self.proxy_password_input)
+                        .on_input(move |s| {
+                            Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                                id,
+                                field: AddressFieldChange::ProxyPassword(s),
+                            })
+                        })
+                        .secure(!self.show_passwords)
+                        .padding(6)
+                        .size(TEXT_SIZE_NORMAL)
+                        .width(Length::Fixed(160.0));
+                    server_content = server_content.push(
+                        row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-proxy-auth")), user_input, pass_input]
+                            .spacing(DIALOG_SPACING)
+                            .align_y(Alignment::Center),
+                    );
+                }
             }
 
             // Modem picker (only for modem protocol, placed after protocol picker)

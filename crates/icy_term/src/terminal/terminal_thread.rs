@@ -20,7 +20,7 @@ use icy_net::{
     protocol::{Protocol, TransferState},
     raw::RawConnection,
     serial::{Serial, SerialConnection},
-    ssh::{Credentials, PrivateKeyCredential, SSHConnection, SecretString, SshAuthentication},
+    ssh::{Credentials, PrivateKeyCredential, SSHConnection, SecretString, SshAuthentication, SshConnectionOptions},
     telnet::{TelnetConnection, TermCaps, TerminalEmulation},
     Connection, ConnectionState, ConnectionType,
 };
@@ -462,6 +462,8 @@ pub struct ConnectionConfig {
     pub ssh_key_passphrase: Option<String>,
 
     pub proxy_command: Option<String>,
+    /// Optional SOCKS5 proxy for TCP-based connections (Tor/I2P).
+    pub proxy: Option<icy_net::proxy::ProxyConfig>,
     pub modem: Option<ModemConfiguration>,
 
     pub ansi_music: MusicOption,
@@ -905,9 +907,9 @@ impl TerminalThread {
                     terminal: config.terminal_type,
                     window_size: config.window_size,
                 };
-                Box::new(TelnetConnection::open(&config.connection_info.endpoint(), term_caps, config.timeout).await?)
+                Box::new(TelnetConnection::open_with_proxy(&config.connection_info.endpoint(), term_caps, config.timeout, config.proxy.as_ref()).await?)
             }
-            ConnectionType::Raw => Box::new(RawConnection::open(&config.connection_info.endpoint(), config.timeout).await?),
+            ConnectionType::Raw => Box::new(RawConnection::open_with_proxy(&config.connection_info.endpoint(), config.timeout, config.proxy.as_ref()).await?),
             ConnectionType::SSH => {
                 let term_caps = TermCaps {
                     terminal: config.terminal_type,
@@ -945,7 +947,9 @@ impl TerminalThread {
                     authentication,
                     proxy_command: config.proxy_command.clone(),
                 };
-                Box::new(SSHConnection::open(&config.connection_info.endpoint(), term_caps, creds).await?)
+                let mut options = SshConnectionOptions::insecure_compatibility(creds);
+                options.proxy = config.proxy.clone();
+                Box::new(SSHConnection::open_with_options(&config.connection_info.endpoint(), term_caps, options).await?)
             }
             ConnectionType::Modem => {
                 let Some(m) = &config.modem else {
@@ -1022,7 +1026,7 @@ impl TerminalThread {
                     swapped: false,
                     escape_sequence: None,
                 };
-                Box::new(icy_net::rlogin::RloginConnection::open(&config.connection_info.endpoint(), rlogin_config, config.timeout).await?)
+                Box::new(icy_net::rlogin::RloginConnection::open_with_proxy(&config.connection_info.endpoint(), rlogin_config, config.timeout, config.proxy.as_ref()).await?)
             }
             ConnectionType::RloginSwapped => {
                 let rlogin_config = RloginConfig {
@@ -1032,7 +1036,7 @@ impl TerminalThread {
                     swapped: true,
                     escape_sequence: None,
                 };
-                Box::new(icy_net::rlogin::RloginConnection::open(&config.connection_info.endpoint(), rlogin_config, config.timeout).await?)
+                Box::new(icy_net::rlogin::RloginConnection::open_with_proxy(&config.connection_info.endpoint(), rlogin_config, config.timeout, config.proxy.as_ref()).await?)
             }
             other => {
                 return Err(format!("Unsupported connection type: {other:?}").into());

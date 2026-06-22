@@ -369,6 +369,7 @@ impl MainWindow {
                     ssh_key_passphrase: (!address.ssh_key_passphrase.is_empty()).then(|| address.ssh_key_passphrase.clone()),
 
                     proxy_command: None, // fill from settings if needed
+                    proxy: address.proxy.clone(),
                     modem,
                     ansi_music: address.ansi_music,
                     screen_mode,
