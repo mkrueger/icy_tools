@@ -31,6 +31,10 @@ source $HOME/.cargo/env
 
 # Install dependencies (for Debian/Ubuntu)  
 sudo apt-get install build-essential libssl-dev libasound2-dev
+
+# Install dependencies (for Nobara/Fedora)  
+sudo dnf install @development-tools pkgconf-pkg-config openssl-devel alsa-lib-devel
+
 # If you don't have apt-get, installing these libraries is similar.  
 # The next step will tell you what's missing exactly.  
 

@@ -1240,7 +1240,7 @@ impl AnsiEditorMainArea {
 
     pub fn resize_buffer(&mut self, width: i32, height: i32) -> Result<(), String> {
         self.with_edit_state(|state| {
-            if let Err(e) = state.resize_buffer(false, (width, height)) {
+            if let Err(e) = state.resize_buffer(true, (width, height)) {
                 log::error!("MCP resize_buffer failed: {}", e);
             }
         });

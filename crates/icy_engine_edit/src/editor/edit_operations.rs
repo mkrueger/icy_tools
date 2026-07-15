@@ -229,8 +229,10 @@ impl EditState {
                 }
                 self.get_buffer_mut().layers.push(new_layer);
             }
-            if self.get_buffer_mut().layers[0].size() == old_size {
-                self.get_buffer_mut().layers[0].set_size(size);
+            if old_layers.first().is_some_and(|layer| layer.offset() == Position::default() && layer.size() == old_size) {
+                if let Some(layer) = self.get_buffer_mut().layers.first_mut() {
+                    layer.set_size(size);
+                }
             }
 
             return self.push_plain_undo(EditorUndoOp::Crop {

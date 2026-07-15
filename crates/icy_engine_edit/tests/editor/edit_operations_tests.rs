@@ -128,6 +128,16 @@ fn test_resize_buffer_with_layer_resize() {
 }
 
 #[test]
+fn test_resize_buffer_with_layer_resize_expands_width_while_shrinking_height() {
+    let mut state = create_test_state(80, 25);
+
+    state.resize_buffer(true, Size::new(96, 18)).unwrap();
+
+    assert_eq!(state.get_buffer().size(), Size::new(96, 18));
+    assert_eq!(state.get_buffer().layers[0].size(), Size::new(96, 18));
+}
+
+#[test]
 fn test_switch_to_palette_preserves_layers() {
     let mut state = create_test_state(20, 10);
     state.add_new_layer(0).unwrap();

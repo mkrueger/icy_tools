@@ -78,7 +78,7 @@ pub struct WindowManager {
     session_save_counter: u64,
     commands: WindowCommands,
     /// MCP command receiver (optional)
-    _mcp_rx: Option<tokio_mpsc::UnboundedReceiver<McpCommand>>,
+    mcp_rx: Option<tokio_mpsc::UnboundedReceiver<McpCommand>>,
     /// Current keyboard modifiers state (for DnD with modifiers)
     current_modifiers: keyboard::Modifiers,
 }
@@ -321,7 +321,7 @@ impl WindowManager {
             restoring_session: true,
             session_save_counter: 0,
             commands,
-            _mcp_rx: mcp_rx,
+            mcp_rx,
             current_modifiers: keyboard::Modifiers::default(),
         };
 
@@ -379,7 +379,7 @@ impl WindowManager {
             restoring_session: false,
             session_save_counter: 0,
             commands,
-            _mcp_rx: mcp_rx,
+            mcp_rx,
             current_modifiers: keyboard::Modifiers::default(),
         };
 
@@ -1050,7 +1050,7 @@ impl WindowManager {
 
     /// Poll MCP commands from the receiver (called from update)
     pub fn poll_mcp_commands(&mut self) -> Task<WindowManagerMessage> {
-        /*if let Some(ref mut rx) = self.mcp_rx {
+        if let Some(ref mut rx) = self.mcp_rx {
             // Try to receive without blocking
             match rx.try_recv() {
                 Ok(cmd) => {
@@ -1062,7 +1062,7 @@ impl WindowManager {
                     self.mcp_rx = None;
                 }
             }
-        }*/
+        }
         Task::none()
     }
 
