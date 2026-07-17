@@ -1,6 +1,6 @@
 [package]
 name = "icy_draw"
-version = "0.5.2"
+version = "0.5.1"
 edition = "2021"
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
 description = "A drawing program for ANSI & ASCII art and other text-based art forms."
