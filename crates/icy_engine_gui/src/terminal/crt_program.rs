@@ -386,8 +386,12 @@ impl<'a> CRTShaderProgram<'a> {
             {
                 let mut cache: parking_lot::lock_api::RwLockWriteGuard<'_, parking_lot::RawRwLock, crate::SharedRenderCache> = self.term.render_cache.write();
 
-                // Full invalidation when screen type changes (e.g. TextScreen → PaletteScreenBuffer on connect)
-                if screen_type_changed {
+                // Tiles contain width-dependent RGBA rows. A buffer resize must
+                // invalidate them before lookup, even if no dirty range was reported.
+                let texture_width_changed = cache.content_width != 0 && cache.content_width != texture_width;
+
+                // Full invalidation when screen type or rendered width changes.
+                if screen_type_changed || texture_width_changed {
                     cache.invalidate();
                 }
 

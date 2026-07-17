@@ -1745,6 +1745,7 @@ impl MainWindow {
                         let _ = state.set_use_letter_spacing(result.use_9px_font);
                         let _ = state.set_use_aspect_ratio(result.legacy_aspect);
                     });
+                    editor.update_viewport_size();
                 }
                 Task::none()
             }

@@ -159,7 +159,9 @@ impl Terminal {
 
     /// Update viewport when screen size changes
     pub fn update_viewport_size(&mut self) {
-        // No-op: content size is derived from `Screen::virtual_size()` during rendering.
+        // Content size is derived from `Screen::virtual_size()` during rendering,
+        // but cached tiles contain width-dependent RGBA textures.
+        self.render_cache.write().invalidate();
     }
 
     /// Update viewport visible size based on available widget dimensions

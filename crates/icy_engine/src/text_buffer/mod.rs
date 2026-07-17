@@ -846,6 +846,12 @@ impl TextBuffer {
     pub fn set_size(&mut self, size: impl Into<Size>) {
         let size = size.into();
         self.size = size;
+        // For non-terminal (editor/art) buffers the terminal window equals the whole
+        // buffer, so `resolution()` (which reads `terminal_state.size`) must track resizes.
+        // Terminal buffers keep an independent viewport size (scrollback), so leave them.
+        if !self.terminal_state.is_terminal_buffer {
+            self.terminal_state.set_size(size);
+        }
     }
 
     pub fn set_default_size(&mut self, size: impl Into<Size>) {
@@ -855,10 +861,16 @@ impl TextBuffer {
 
     pub fn set_width(&mut self, width: i32) {
         self.size.width = width;
+        if !self.terminal_state.is_terminal_buffer {
+            self.terminal_state.set_width(width);
+        }
     }
 
     pub fn set_height(&mut self, height: i32) {
         self.size.height = height;
+        if !self.terminal_state.is_terminal_buffer {
+            self.terminal_state.set_height(height);
+        }
     }
 
     /// terminal buffers have a viewport on the bottom of the buffer

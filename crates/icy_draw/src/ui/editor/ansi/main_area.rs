@@ -776,6 +776,10 @@ impl AnsiEditorMainArea {
         }
     }
 
+    pub fn update_viewport_size(&mut self) {
+        self.core.update_viewport_size();
+    }
+
     pub fn refresh_selection_display(&mut self) {
         self.core.refresh_selection_display();
     }
@@ -1244,6 +1248,7 @@ impl AnsiEditorMainArea {
                 log::error!("MCP resize_buffer failed: {}", e);
             }
         });
+        self.core.update_viewport_size();
         self.sync_ui();
         Ok(())
     }
