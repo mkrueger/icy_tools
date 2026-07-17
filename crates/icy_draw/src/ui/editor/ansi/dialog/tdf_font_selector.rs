@@ -9,7 +9,6 @@
 
 #![allow(dead_code)]
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 use icy_engine_gui::{
@@ -17,7 +16,6 @@ use icy_engine_gui::{
         dialog_area, modal_container, primary_button, secondary_button, separator, ButtonType, Dialog, DialogAction, DIALOG_SPACING, DIALOG_WIDTH_XARGLE,
         TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
     },
-    ScrollViewport,
 };
 use icy_ui::{
     advanced::{
@@ -28,7 +26,7 @@ use icy_ui::{
         widget::{self, Widget},
     },
     mouse,
-    widget::{button, column, container, row, text, text_input, Space},
+    widget::{button, column, container, row, scroll_area, scrollable, text, text_input, Space},
     Alignment, Background, Border, Color, Element, Event, Length, Point, Rectangle, Size, Theme,
 };
 
@@ -167,8 +165,6 @@ pub struct TdfFontSelectorDialog {
     filtered_fonts: Vec<usize>,
     /// Cached font info (font_index -> info) - avoids locks during view
     font_info_cache: HashMap<usize, CachedFontInfo>,
-    /// Viewport for scrolling (smooth scrolling state)
-    viewport: RefCell<ScrollViewport>,
 }
 
 // ============================================================================
@@ -182,14 +178,14 @@ struct FontListWidget<'a> {
     selected_font: i32,
     keyboard_cursor: usize,
     has_filter: bool,
-    viewport: &'a RefCell<ScrollViewport>,
+    viewport: Rectangle,
 }
 
 impl<'a> FontListWidget<'a> {
     fn visible_range(&self, bounds: Rectangle) -> (usize, usize) {
-        let scroll_offset = self.viewport.borrow().scroll_y();
+        let scroll_offset = self.viewport.y;
         let first_visible = (scroll_offset / FONT_ITEM_HEIGHT).floor().max(0.0) as usize;
-        let visible_count = (bounds.height / FONT_ITEM_HEIGHT).ceil() as usize + 2;
+        let visible_count = (self.viewport.height.min(bounds.height) / FONT_ITEM_HEIGHT).ceil() as usize + 2;
         let last_visible = (first_visible + visible_count).min(self.filtered_fonts.len());
         (first_visible, last_visible)
     }
@@ -550,12 +546,6 @@ impl Widget<Message, Theme, icy_ui::Renderer> for FontListWidget<'_> {
     ) {
         let bounds = layout.bounds();
 
-        // Keep viewport aware of size
-        {
-            let mut vp = self.viewport.borrow_mut();
-            vp.set_visible_size(bounds.width, bounds.height);
-        }
-
         // Clip all list contents to the list bounds (scissor)
         renderer.with_layer(bounds, |r| {
             self.draw_background(r, theme, bounds);
@@ -565,7 +555,7 @@ impl Widget<Message, Theme, icy_ui::Renderer> for FontListWidget<'_> {
                 return;
             }
 
-            let scroll_offset = self.viewport.borrow().scroll_y();
+            let scroll_offset = self.viewport.y;
             let (first_visible, last_visible) = self.visible_range(bounds);
 
             // Only lock for visible items
@@ -612,7 +602,7 @@ impl Widget<Message, Theme, icy_ui::Renderer> for FontListWidget<'_> {
                 button: mouse::Button::Left, ..
             }) => {
                 if let Some(pos) = cursor.position_in(bounds) {
-                    let scroll_offset = self.viewport.borrow().scroll_y();
+                    let scroll_offset = self.viewport.y;
                     let clicked_y = pos.y + scroll_offset;
                     let list_idx = (clicked_y / FONT_ITEM_HEIGHT) as usize;
                     if list_idx < self.filtered_fonts.len() {
@@ -623,48 +613,6 @@ impl Widget<Message, Theme, icy_ui::Renderer> for FontListWidget<'_> {
                         } else {
                             shell.publish(tdf_msg(TdfFontSelectorMessage::SelectFont(font_idx)));
                         }
-                    }
-                }
-            }
-            Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
-                if cursor.is_over(bounds) {
-                    let mut vp = self.viewport.borrow_mut();
-                    match delta {
-                        mouse::ScrollDelta::Lines { y, .. } => {
-                            let scroll_delta = -y * FONT_ITEM_HEIGHT * 0.6;
-                            vp.scroll_y_by_smooth(scroll_delta);
-                        }
-                        mouse::ScrollDelta::Pixels { y, .. } => {
-                            vp.scroll_y_by(-y);
-                        }
-                    }
-                    shell.request_redraw();
-                }
-            }
-            // Prefetch previews when anything causes redraws (scrollbar drag/animation)
-            Event::Window(icy_ui::window::Event::RedrawRequested(_)) => {
-                let _changed = self.viewport.borrow().take_changed();
-
-                // Sync preview generation (fast) for visible items.
-                let (first, last) = self.visible_range(bounds);
-                if first < last {
-                    let mut missing: Vec<usize> = Vec::new();
-                    {
-                        let lib = self.font_library.read();
-                        for list_idx in first..last {
-                            let font_idx = self.filtered_fonts[list_idx];
-                            if !lib.has_preview(font_idx) {
-                                missing.push(font_idx);
-                            }
-                        }
-                    }
-
-                    if !missing.is_empty() {
-                        let mut lib = self.font_library.write();
-                        for font_idx in missing {
-                            lib.generate_preview(font_idx);
-                        }
-                        shell.request_redraw();
                     }
                 }
             }
@@ -696,10 +644,6 @@ impl<'a> From<FontListWidget<'a>> for Element<'a, Message> {
 
 impl TdfFontSelectorDialog {
     pub fn new(font_library: SharedFontLibrary, selected_font: i32) -> Self {
-        let mut viewport = ScrollViewport::default();
-        viewport.set_visible_size(DIALOG_WIDTH, LIST_HEIGHT);
-        viewport.set_content_size(DIALOG_WIDTH, 0.0); // Will be updated based on font count
-
         let mut dialog = Self {
             font_library,
             selected_font,
@@ -711,64 +655,11 @@ impl TdfFontSelectorDialog {
             keyboard_cursor: 0, // Will be set by update_filtered_fonts based on selected_font
             filtered_fonts: Vec::new(),
             font_info_cache: HashMap::new(),
-            viewport: RefCell::new(viewport),
         };
 
         dialog.cache_all_font_info();
         dialog.update_filtered_fonts();
-        dialog.scroll_to_cursor();
         dialog
-    }
-
-    /// Update viewport content size based on filtered fonts
-    fn update_viewport_content_size(&self) {
-        let total_height = self.filtered_fonts.len() as f32 * FONT_ITEM_HEIGHT;
-        let mut viewport = self.viewport.borrow_mut();
-        let content_width = viewport.content_width();
-        viewport.set_content_size(content_width, total_height);
-        viewport.mark_changed();
-    }
-
-    /// Ensure keyboard cursor is visible (immediate scroll, for arrow keys)
-    fn scroll_to_cursor(&self) {
-        self.scroll_to_cursor_impl(false);
-    }
-
-    /// Ensure keyboard cursor is visible (smooth scroll, for page/home/end)
-    fn scroll_to_cursor_smooth(&self) {
-        self.scroll_to_cursor_impl(true);
-    }
-
-    /// Implementation of scroll to cursor
-    fn scroll_to_cursor_impl(&self, smooth: bool) {
-        let cursor_y = self.keyboard_cursor as f32 * FONT_ITEM_HEIGHT;
-        let mut viewport = self.viewport.borrow_mut();
-        let visible_h = viewport.visible_content_height().max(0.0);
-
-        let current_scroll_y = viewport.scroll_y();
-        let mut new_scroll_y = current_scroll_y;
-
-        // If cursor is above visible area, scroll up
-        if cursor_y < current_scroll_y {
-            new_scroll_y = cursor_y;
-        }
-
-        // If cursor is below visible area, scroll down
-        if cursor_y + FONT_ITEM_HEIGHT > current_scroll_y + visible_h {
-            new_scroll_y = cursor_y + FONT_ITEM_HEIGHT - visible_h;
-        }
-
-        // Clamp to valid range
-        let max_scroll = viewport.max_scroll_y();
-        new_scroll_y = new_scroll_y.clamp(0.0, max_scroll);
-
-        if smooth {
-            viewport.scroll_y_to_smooth(new_scroll_y);
-        } else {
-            viewport.scroll_y_to(new_scroll_y);
-        }
-
-        viewport.mark_changed();
     }
 
     /// Cache info for all fonts (called once at dialog creation)
@@ -802,7 +693,6 @@ impl TdfFontSelectorDialog {
         if let Some(&idx) = self.filtered_fonts.get(self.keyboard_cursor) {
             self.selected_font = idx as i32;
         }
-        self.scroll_to_cursor();
     }
 
     fn set_cursor_and_selected_smooth(&mut self, cursor: usize) {
@@ -810,7 +700,6 @@ impl TdfFontSelectorDialog {
         if let Some(&idx) = self.filtered_fonts.get(self.keyboard_cursor) {
             self.selected_font = idx as i32;
         }
-        self.scroll_to_cursor_smooth();
     }
 
     /// Export the currently selected font to a file
@@ -927,17 +816,6 @@ impl TdfFontSelectorDialog {
             self.keyboard_cursor = 0;
         }
 
-        // Update viewport content size
-        self.update_viewport_content_size();
-
-        // Keep selection visible (or reset scroll for empty)
-        if !self.filtered_fonts.is_empty() {
-            self.scroll_to_cursor();
-        } else {
-            let mut viewport = self.viewport.borrow_mut();
-            viewport.scroll_y_to(0.0);
-            viewport.mark_changed();
-        }
     }
 
     /// Handle keyboard navigation
@@ -985,7 +863,27 @@ impl TdfFontSelectorDialog {
     }
 
     /// Create the canvas state for rendering
-    fn list_widget(&self) -> Element<'_, Message> {
+    fn list_widget(&self, viewport: Rectangle) -> Element<'_, Message> {
+        let first_visible = (viewport.y / FONT_ITEM_HEIGHT).floor().max(0.0) as usize;
+        let visible_count = (viewport.height / FONT_ITEM_HEIGHT).ceil() as usize + 2;
+        let last_visible = (first_visible + visible_count).min(self.filtered_fonts.len());
+
+        let missing: Vec<usize> = {
+            let lib = self.font_library.read();
+            self.filtered_fonts[first_visible..last_visible]
+                .iter()
+                .copied()
+                .filter(|&font_idx| !lib.has_preview(font_idx))
+                .collect()
+        };
+
+        if !missing.is_empty() {
+            let mut lib = self.font_library.write();
+            for font_idx in missing {
+                lib.generate_preview(font_idx);
+            }
+        }
+
         FontListWidget {
             font_library: &self.font_library,
             filtered_fonts: &self.filtered_fonts,
@@ -993,7 +891,7 @@ impl TdfFontSelectorDialog {
             selected_font: self.selected_font,
             keyboard_cursor: self.keyboard_cursor,
             has_filter: !self.filter.is_empty(),
-            viewport: &self.viewport,
+            viewport,
         }
         .into()
     }
@@ -1039,11 +937,12 @@ impl Dialog<Message> for TdfFontSelectorDialog {
 
         let header = row![filter_row, Space::new().width(Length::Fill), font_count_text,].align_y(Alignment::Center);
 
-        // Font list canvas (virtualized)
-        let font_list: Element<'_, Message> = self.list_widget();
-
-        // Font list canvas (scrollbars handled elsewhere if needed)
-        let canvas_with_scrollbar = font_list;
+        let content_height = (self.filtered_fonts.len() as f32 * FONT_ITEM_HEIGHT).max(LIST_HEIGHT);
+        let canvas_with_scrollbar = scroll_area()
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(8).scroller_width(6)))
+            .show_viewport(Size::new(DIALOG_WIDTH - 12.0, content_height), |viewport| self.list_widget(viewport));
 
         let list_container = container(canvas_with_scrollbar)
             .width(Length::Fill)
@@ -1089,12 +988,6 @@ impl Dialog<Message> for TdfFontSelectorDialog {
             TdfFontSelectorMessage::FilterChanged(s) => {
                 self.filter = s.clone();
                 self.update_filtered_fonts();
-                // Reset scroll when filter changes
-                {
-                    let mut vp = self.viewport.borrow_mut();
-                    vp.scroll_y_to(0.0);
-                    vp.mark_changed();
-                }
                 Some(DialogAction::None)
             }
             TdfFontSelectorMessage::ToggleOutline => {
