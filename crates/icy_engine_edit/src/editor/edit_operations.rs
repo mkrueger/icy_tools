@@ -235,6 +235,7 @@ impl EditState {
                 }
             }
 
+            self.clamp_caret_to_buffer();
             return self.push_plain_undo(EditorUndoOp::Crop {
                 orig_size: old_size,
                 size: rect.size(),
@@ -242,11 +243,25 @@ impl EditState {
             });
         }
 
-        self.push_undo_action(EditorUndoOp::ResizeBuffer {
-            orig_size: self.get_buffer().size(),
-            size: size.into(),
-        })
+        let size = size.into();
+        let orig_size = self.get_buffer().size();
+        self.clamp_caret_to_buffer_size(size);
+        self.push_undo_action(EditorUndoOp::ResizeBuffer { orig_size, size })
     }
+
+    /// Clamp the caret so it stays inside the current buffer bounds.
+    fn clamp_caret_to_buffer(&mut self) {
+        let size = self.get_buffer().size();
+        self.clamp_caret_to_buffer_size(size);
+    }
+
+    /// Clamp the caret so it stays inside the given buffer size.
+    fn clamp_caret_to_buffer_size(&mut self, size: Size) {
+        let caret = self.get_caret_mut();
+        caret.x = caret.x.clamp(0, (size.width - 1).max(0));
+        caret.y = caret.y.clamp(0, (size.height - 1).max(0));
+    }
+
 
     pub fn center_line(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() { layer.offset().y } else { 0 };
