@@ -49,10 +49,7 @@ fn test_dcs_hex_macro_repeat_capped() {
 
     // Macro definition (!z) with usize::MAX repeat in hex encoding.
     // Without the cap this would allocate ~18 exabytes and OOM.
-    parser.parse(
-        b"\x1bP0;0;1!z!18446744073709551615;41;\x1b\\",
-        &mut sink,
-    );
+    parser.parse(b"\x1bP0;0;1!z!18446744073709551615;41;\x1b\\", &mut sink);
 }
 
 #[test]

@@ -11,11 +11,9 @@
 
 use std::collections::HashMap;
 
-use icy_engine_gui::{
-    ui::{
-        dialog_area, modal_container, primary_button, secondary_button, separator, ButtonType, Dialog, DialogAction, DIALOG_SPACING, DIALOG_WIDTH_XARGLE,
-        TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
-    },
+use icy_engine_gui::ui::{
+    dialog_area, modal_container, primary_button, secondary_button, separator, ButtonType, Dialog, DialogAction, DIALOG_SPACING, DIALOG_WIDTH_XARGLE,
+    TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
 };
 use icy_ui::{
     advanced::{
@@ -815,7 +813,6 @@ impl TdfFontSelectorDialog {
         } else {
             self.keyboard_cursor = 0;
         }
-
     }
 
     /// Handle keyboard navigation

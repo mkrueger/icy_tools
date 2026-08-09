@@ -229,7 +229,10 @@ impl EditState {
                 }
                 self.get_buffer_mut().layers.push(new_layer);
             }
-            if old_layers.first().is_some_and(|layer| layer.offset() == Position::default() && layer.size() == old_size) {
+            if old_layers
+                .first()
+                .is_some_and(|layer| layer.offset() == Position::default() && layer.size() == old_size)
+            {
                 if let Some(layer) = self.get_buffer_mut().layers.first_mut() {
                     layer.set_size(size);
                 }
@@ -261,7 +264,6 @@ impl EditState {
         caret.x = caret.x.clamp(0, (size.width - 1).max(0));
         caret.y = caret.y.clamp(0, (size.height - 1).max(0));
     }
-
 
     pub fn center_line(&mut self) -> Result<()> {
         let offset = if let Some(layer) = self.get_cur_layer() { layer.offset().y } else { 0 };

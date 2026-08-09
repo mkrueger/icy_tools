@@ -5,7 +5,6 @@ use tools::ToolHandler;
 use crate::Settings;
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::EditState;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use icy_engine::formats::FileFormat;
