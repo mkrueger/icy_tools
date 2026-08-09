@@ -80,6 +80,8 @@ tokio-tungstenite = "0.30.0"
 futures-util = "0.3"
 anstream = "1.0.0"
 rodio = { version = "0.22.2" }
+# Atari ST GIST sound emulation (IGS)
+ym2149-gist-replayer = "0.9.1"
 anyhow = "1.0.104"
 webbrowser = "1.2.4"
 rayon = "1.12.0"

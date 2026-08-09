@@ -20,8 +20,9 @@ use rodio::{
     source::{Function, SignalGenerator, SineWave},
     Source,
 };
-use ym2149::{AudioDevice, RingBuffer, StreamConfig};
 use ym2149_gist_replayer::{GistPlayer, GistSound};
+
+use super::ym_audio::{self, RingBuffer};
 
 pub type SoundResult<T> = anyhow::Result<T>;
 
@@ -262,13 +263,11 @@ impl SoundThread {
                 stream,
                 mixer,
                 sample_rate,
-                ym_audio_device: None,
                 ym_ring_buffer: None,
-                gist_player: GistPlayer::with_sample_rate(sample_rate.get()),
+                gist_player: GistPlayer::with_sample_rate(ym_audio::SAMPLE_RATE),
                 gist_playing: false,
             };
 
-            // Initialize YM2149 audio device
             data.init_ym_audio();
 
             while data.thread_is_running {
@@ -319,38 +318,21 @@ pub struct SoundBackgroundThreadData {
     mixer: Option<rodio::mixer::Mixer>,
     sample_rate: NonZero<u32>,
 
-    // YM2149 audio device for GIST sounds (uses the real chip emulator)
-    #[allow(dead_code)]
-    ym_audio_device: Option<AudioDevice>,
+    // YM2149 sample queue for GIST sounds (uses the real chip emulator)
     ym_ring_buffer: Option<Arc<parking_lot::Mutex<RingBuffer>>>,
     gist_player: GistPlayer,
     gist_playing: bool,
 }
 
 impl SoundBackgroundThreadData {
-    /// Initialize YM2149 audio device for GIST sounds
+    /// Hook the YM2149 GIST replayer up to the shared mixer
     fn init_ym_audio(&mut self) {
-        let config = StreamConfig::default();
-        let buffer = Arc::new(parking_lot::Mutex::new(match RingBuffer::new(config.ring_buffer_size) {
-            Ok(buf) => buf,
-            Err(e) => {
-                log::error!("Failed to create YM2149 ring buffer: {}", e);
-                return;
-            }
-        }));
-
-        match AudioDevice::new(config.sample_rate, config.channels, Arc::clone(&buffer)) {
-            Ok(device) => {
-                self.ym_audio_device = Some(device);
-                self.ym_ring_buffer = Some(buffer);
-                self.gist_player = GistPlayer::with_sample_rate(config.sample_rate as u32);
-
-                log::info!("YM2149 audio device initialized at {}Hz", config.sample_rate);
-            }
-            Err(e) => {
-                log::error!("Failed to initialize YM2149 audio device: {}", e);
-            }
-        }
+        let Some(mixer) = &self.mixer else {
+            log::error!("No audio mixer available for YM2149 GIST sounds");
+            return;
+        };
+        self.ym_ring_buffer = Some(ym_audio::attach(mixer));
+        self.gist_player = GistPlayer::with_sample_rate(ym_audio::SAMPLE_RATE);
     }
 
     /// Process GIST samples and write to ring buffer
@@ -389,9 +371,7 @@ impl SoundBackgroundThreadData {
         };
 
         // 500ms tail like reference player
-        let config = StreamConfig::default();
-        let tail_samples = (config.sample_rate / 2) as usize;
-        let mut remaining = tail_samples;
+        let mut remaining = (ym_audio::SAMPLE_RATE / 2) as usize;
         let mut samples_buffer = [0.0f32; 512];
 
         while remaining > 0 {
@@ -414,6 +394,7 @@ impl SoundBackgroundThreadData {
         // Dropping the old stream stops all sounds
         self.stream = None;
         self.mixer = None;
+        self.ym_ring_buffer = None;
 
         // Create new stream
         match rodio::DeviceSinkBuilder::open_default_sink() {
@@ -430,6 +411,7 @@ impl SoundBackgroundThreadData {
         // Reset GIST state
         self.gist_playing = false;
         self.gist_player.reset();
+        self.init_ym_audio();
     }
 
     pub fn handle_receive(&mut self) -> bool {

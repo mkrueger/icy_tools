@@ -47,5 +47,4 @@ semver = { workspace = true }
 rfd = { workspace = true }
 
 # for Atari ST GIST sounds (IGS)
-ym2149 = { git ="https://github.com/mkrueger/ym2149-rs", branch="feature/gist_sound", features = ["streaming"] }
-ym2149-gist-replayer = { git ="https://github.com/mkrueger/ym2149-rs", branch="feature/gist_sound" }
+ym2149-gist-replayer = { workspace = true }
