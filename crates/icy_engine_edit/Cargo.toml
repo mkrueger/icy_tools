@@ -34,7 +34,7 @@ once_cell = { workspace = true }
 bstr = { workspace = true }
 rayon = { workspace = true }
 
-anyhow = "1.0.100"
+anyhow = "1.0.104"
 
 # Collaboration dependencies
 tokio = { workspace = true }
@@ -44,8 +44,8 @@ serde_json = { workspace = true }
 anstream = { workspace = true }
 
 [dev-dependencies]
-png = "0.18.0"
-criterion = { version = "0.7", features = ["html_reports"] }
+png = "0.18.1"
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]
 name = "flip_table"

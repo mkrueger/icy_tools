@@ -16,7 +16,7 @@ base64 =  { workspace = true }
 log = { workspace = true }
 rfind_url = "0.4.4"
 chrono = { workspace = true }
-png = "0.18.0"
+png = "0.18.1"
 regex = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
@@ -43,20 +43,20 @@ zstd = "0.13"
 
 # Image export support
 image = { workspace = true }
-lodepng = {version ="3.12.1", default-features = false, features = ["cfzlib"] }
+lodepng = {version ="3.12.2", default-features = false, features = ["cfzlib"] }
 
 # GIF encoding (replaces gifski)
 gif = { workspace = true }
 quantette = { workspace = true }
 
-imgref = "1.12.0"
-rgb = "0.8.52"
+imgref = "1.12.2"
+rgb = "0.8.53"
 
 [dev-dependencies]
 walkdir = { workspace = true }
 pretty_assertions = "1.4.1"
 env_logger = "0.11"
-criterion = { version = "0.7", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]
 name = "render_region"

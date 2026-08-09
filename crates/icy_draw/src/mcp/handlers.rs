@@ -16,8 +16,8 @@ use rmcp::{
         wrapper::Parameters,
     },
     model::{
-        CallToolRequestParams, CallToolResult, Content, Implementation, InitializeResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
-        ServerCapabilities,
+        CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock as Content, Implementation, InitializeResult, ListToolsResult,
+        PaginatedRequestParams, ProtocolVersion, ServerCapabilities,
     },
     tool, tool_router, ErrorData as McpError, ServerHandler,
 };
@@ -818,7 +818,7 @@ impl ServerHandler for IcyDrawMcpHandler {
         &self,
         request: CallToolRequestParams,
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> impl std::future::Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
+    ) -> impl std::future::Future<Output = Result<CallToolResponse, McpError>> + Send + '_ {
         let tool_ctx = ToolCallContext::new(self, request, context);
         async move {
             let result = self.tool_router.call(tool_ctx).await.map_err(Into::into);

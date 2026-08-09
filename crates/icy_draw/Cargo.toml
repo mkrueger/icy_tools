@@ -20,9 +20,9 @@ bytemuck = { workspace = true, features = ["derive"] }
 cascada = { workspace = true }
 
 # SVG rendering for icons
-resvg = "0.45.1"
-tiny-skia = "0.11"
-usvg = "0.45.1"
+resvg = "0.48.1"
+tiny-skia = "0.12"
+usvg = "0.48.1"
 
 # Logging
 log = { workspace = true }
@@ -86,7 +86,7 @@ quantette = { workspace = true, features = ["image"] }
 # AV1 video export (pure Rust, outputs IVF container)
 # NOTE: `rav1e/asm` requires `nasm` at build time on x86_64.
 rav1e = { version = "0.8", default-features = false }
-num_cpus = "1.16"
+num_cpus = "1.17"
 
 # Parallel iteration for performance
 rayon = { workspace = true }
@@ -103,7 +103,7 @@ open = { workspace = true }
 # MCP (rmcp + HTTP server)
 rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
 axum = "0.8"
-schemars = "1.0"
+schemars = "1.2"
 
 [features]
 default = []
@@ -113,7 +113,7 @@ rav1e-asm = ["rav1e/asm"]
 
 [build-dependencies]
 winres = "0.1"
-chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 
 [package.metadata.bundle]
 name = "Icy Draw"

@@ -29,7 +29,7 @@ fastrand = { workspace = true }
 clap = { workspace = true }
 serde_json = { workspace = true }
 base64 = { workspace = true }
-schemars = "1.0"
+schemars = "1.2"
 
 #sound
 rodio = { workspace = true }
@@ -50,7 +50,7 @@ i18n-embed = { workspace = true }
 i18n-embed-fl = { workspace = true }
 rust-embed = { workspace = true }
 once_cell = { workspace = true }
-url = "2.5.7"
+url = "2.5.8"
 
 log = { workspace = true }
 flexi_logger = { workspace = true }
@@ -73,7 +73,7 @@ rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
 axum = "0.8"
 
 [build-dependencies]
-chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 winres = "0.1"
 
 [package.metadata.bundle]

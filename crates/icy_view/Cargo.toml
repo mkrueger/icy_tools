@@ -56,12 +56,12 @@ anyhow = { workspace = true }
 open = { workspace = true }
 fastrand = { workspace = true }
 
-reqwest = { version = "0.12.12", features = ["json"] }
+reqwest = { version = "0.13.4", features = ["json"] }
 serde_json = { workspace = true }
 futures = "0.3"
 
 [build-dependencies]
-chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 winres = "0.1"
 
 [package.metadata.bundle]

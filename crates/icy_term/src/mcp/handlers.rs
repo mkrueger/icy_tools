@@ -9,8 +9,9 @@ use rmcp::{
         wrapper::Parameters,
     },
     model::{
-        Annotated, CallToolRequestParams, CallToolResult, Content, Implementation, InitializeResult, ListResourcesResult, ListToolsResult,
-        PaginatedRequestParams, ProtocolVersion, RawResource, ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents, ServerCapabilities,
+        CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock as Content, Implementation, InitializeResult, ListResourcesResult,
+        ListToolsResult, PaginatedRequestParams, ProtocolVersion, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
+        ResourceContents, ServerCapabilities,
     },
     tool, tool_router, ErrorData as McpError, ServerHandler,
 };
@@ -215,7 +216,7 @@ impl ServerHandler for IcyTermMcpHandler {
         &self,
         request: CallToolRequestParams,
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> impl std::future::Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
+    ) -> impl std::future::Future<Output = Result<CallToolResponse, McpError>> + Send + '_ {
         let tool_ctx = ToolCallContext::new(self, request, context);
         async move { self.tool_router.call(tool_ctx).await.map_err(Into::into) }
     }
@@ -225,10 +226,9 @@ impl ServerHandler for IcyTermMcpHandler {
         _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = Result<ListResourcesResult, McpError>> + Send + '_ {
-        let mut raw = RawResource::new("icy_term://scripting_api", "IcyTerm Scripting API");
-        raw.description = Some("Lua scripting API documentation for terminal automation".to_string());
-        raw.mime_type = Some("text/markdown".to_string());
-        let resource: Resource = Annotated::new(raw, None);
+        let resource = Resource::new("icy_term://scripting_api", "IcyTerm Scripting API")
+            .with_description("Lua scripting API documentation for terminal automation")
+            .with_mime_type("text/markdown");
         std::future::ready(Ok(ListResourcesResult::with_all_items(vec![resource])))
     }
 
@@ -236,7 +236,7 @@ impl ServerHandler for IcyTermMcpHandler {
         &self,
         request: ReadResourceRequestParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> impl std::future::Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
+    ) -> impl std::future::Future<Output = Result<ReadResourceResponse, McpError>> + Send + '_ {
         if request.uri != "icy_term://scripting_api" {
             return std::future::ready(Err(McpError::resource_not_found("Unknown resource", None)));
         }
@@ -248,7 +248,7 @@ impl ServerHandler for IcyTermMcpHandler {
             meta: None,
         };
 
-        std::future::ready(Ok(ReadResourceResult::new(vec![contents])))
+        std::future::ready(Ok(ReadResourceResult::new(vec![contents]).into()))
     }
 
     fn on_initialized(&self, _context: rmcp::service::NotificationContext<rmcp::RoleServer>) -> impl std::future::Future<Output = ()> + Send + '_ {

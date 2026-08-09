@@ -16,7 +16,7 @@ serde = { workspace = true }
 toml = { workspace = true }
 rustybuzz = "0.20.1"
 ttf-parser = "0.25.1"
-tiny-skia = "0.11"
+tiny-skia = "0.12"
 parking_lot = { workspace = true}
 bitflags = { workspace = true}
 

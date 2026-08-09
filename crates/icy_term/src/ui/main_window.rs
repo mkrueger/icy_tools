@@ -2011,10 +2011,17 @@ impl MainWindow {
                             }
                         }
 
-                        // When connected to a BBS, terminal key mapping takes priority
-                        // so that Ctrl+letter combos are sent as control characters
-                        // (e.g. Ctrl+W = 0x17) instead of being intercepted as app shortcuts.
+                        // When connected to a BBS, terminal key mapping takes priority for Ctrl
+                        // combos so control characters are sent (e.g. Ctrl+W = 0x17).
+                        // Alt shortcuts remain app-level (fullscreen, dialing directory, …)
+                        // because key maps ignore Alt and would otherwise treat Alt+Enter
+                        // as plain Enter.
                         if self.terminal_window.is_connected {
+                            if modifiers.alt() {
+                                if let Some(msg) = self.commands.handle(event) {
+                                    return (Some(msg), Task::none());
+                                }
+                            }
                             if let Some(bytes) = Self::map_key_event_to_bytes(self.terminal_emulation, key, physical_key, *modifiers) {
                                 return (Some(Message::SendData(bytes)), Task::none());
                             }

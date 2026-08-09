@@ -144,6 +144,24 @@ impl ToolHandler for FillTool {
                         (caret_attr.foreground_color(), caret_attr.background_color())
                     };
 
+                    // When a selection is active, "fill" acts as a solid area fill over the
+                    // entire selection at cell resolution (whole cells, no flood-fill, start
+                    // point ignored).
+                    if use_selection {
+                        for y in 0..height {
+                            for x in 0..width {
+                                let p = icy_engine::Position::new(x, y);
+                                if !ctx.state.is_selected(p + offset) {
+                                    continue;
+                                }
+                                let ch = AttributedChar::new(219 as char, TextAttribute::from_colors(fg, fg));
+                                let _ = ctx.state.set_char_in_atomic(p, ch);
+                            }
+                        }
+                        let _ = bg;
+                        return ToolResult::Commit("Bucket fill".to_string());
+                    }
+
                     // Determine the target color at the start position.
                     let start_cell = icy_engine::Position::new(start_hb.x, start_hb.y / 2);
                     if start_cell.x < 0 || start_hb.y < 0 || start_cell.x >= width || start_cell.y >= height {
@@ -247,6 +265,43 @@ impl ToolHandler for FillTool {
                     return ToolResult::None;
                 };
                 let use_selection = ctx.state.is_something_selected();
+
+                // When a selection is active, "fill" acts as a solid area fill over the entire
+                // selection (no flood-fill matching, start point ignored).
+                if use_selection {
+                    let caret_attr = ctx.state.get_caret().attribute;
+                    let (fg, bg) = if swap_colors || shift_swap {
+                        (caret_attr.background(), caret_attr.foreground())
+                    } else {
+                        (caret_attr.foreground(), caret_attr.background())
+                    };
+                    let caret_font_page = caret_attr.font_page();
+
+                    for y in 0..height {
+                        for x in 0..width {
+                            let p = icy_engine::Position::new(x, y);
+                            if !ctx.state.is_selected(p + offset) {
+                                continue;
+                            }
+                            let cur = { ctx.state.get_cur_layer().unwrap().char_at(p) };
+                            let mut repl = cur;
+                            if matches!(primary, BrushPrimaryMode::Char) {
+                                repl.ch = settings.paint_char;
+                            }
+                            if settings.colorize_fg {
+                                repl.attribute.set_foreground(fg);
+                                repl.attribute.set_is_bold(caret_attr.is_bold());
+                            }
+                            if settings.colorize_bg {
+                                repl.attribute.set_background(bg);
+                            }
+                            repl.set_font_page(caret_font_page);
+                            repl.attribute.attr &= !icy_engine::attribute::INVISIBLE;
+                            let _ = ctx.state.set_char_in_atomic(p, repl);
+                        }
+                    }
+                    return ToolResult::Commit("Bucket fill".to_string());
+                }
 
                 let start_cell_layer = pos - offset;
                 if start_cell_layer.x < 0 || start_cell_layer.y < 0 || start_cell_layer.x >= width || start_cell_layer.y >= height {
