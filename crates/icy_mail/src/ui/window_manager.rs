@@ -31,7 +31,8 @@ pub enum WindowManagerMessage {
     FocusPrevious,
     WindowClosed(window::Id),
     WindowMessage(window::Id, crate::ui::Message),
-    Event(window::Id, icy_ui::Event),
+    /// `captured` is true when a focused widget (e.g. the filter input) already used the event.
+    Event(window::Id, icy_ui::Event, bool),
     _UpdateBuffers,
 }
 
@@ -115,10 +116,10 @@ impl WindowManager {
                 Task::none()
             }
 
-            WindowManagerMessage::Event(window_id, event) => {
+            WindowManagerMessage::Event(window_id, event, captured) => {
                 // Handle the event for the specific window
                 if let Some(window) = self.windows.get(&window_id) {
-                    if let Some(msg) = window.handle_event(&event) {
+                    if let Some(msg) = window.handle_event(&event, captured) {
                         return Task::done(WindowManagerMessage::WindowMessage(window_id, msg));
                     }
                 }
@@ -164,16 +165,22 @@ impl WindowManager {
     pub fn subscription(&self) -> Subscription<WindowManagerMessage> {
         let subs = vec![
             window::close_events().map(WindowManagerMessage::WindowClosed),
-            icy_ui::event::listen_with(|event, _status, window_id| {
+            icy_ui::event::listen_with(|event, status, window_id| {
+                let captured = matches!(status, icy_ui::event::Status::Captured);
                 match &event {
                     Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                        // Tab cycles our own panes unless a text widget has focus and used it.
+                        let tab_owned_by_window = matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab)) && !captured;
+
                         // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
-                        if let Some(action) = handle_window_manager_keyboard_press(key, modifiers) {
-                            return match action {
-                                KeyboardAction::FocusWindow(target_id) => Some(WindowManagerMessage::FocusWindow(target_id)),
-                                KeyboardAction::FocusNext => Some(WindowManagerMessage::FocusNext),
-                                KeyboardAction::FocusPrevious => Some(WindowManagerMessage::FocusPrevious),
-                            };
+                        if !tab_owned_by_window {
+                            if let Some(action) = handle_window_manager_keyboard_press(key, modifiers) {
+                                return match action {
+                                    KeyboardAction::FocusWindow(target_id) => Some(WindowManagerMessage::FocusWindow(target_id)),
+                                    KeyboardAction::FocusNext => Some(WindowManagerMessage::FocusNext),
+                                    KeyboardAction::FocusPrevious => Some(WindowManagerMessage::FocusPrevious),
+                                };
+                            }
                         }
 
                         if modifiers.shift() {
@@ -201,7 +208,7 @@ impl WindowManager {
                     _ => { /* Handle other events if necessary */ }
                 }
 
-                Some(WindowManagerMessage::Event(window_id, event))
+                Some(WindowManagerMessage::Event(window_id, event, captured))
             }),
         ];
         icy_ui::Subscription::batch(subs)
