@@ -8,7 +8,7 @@ description = "An offline QWK mail reader"
 repository = "https://github.com/mkrueger/icy_tools"
 
 [dependencies]
-jamjam = { git ="https://github.com/mkrueger/icy_board" }
+jamjam = { git = "https://github.com/mkrueger/icy_board", rev = "0c679e79bbd4a3a98c9352a124b512d7712609a5" }
 #jamjam = { path ="../../../icy_board/crates/jamjam" }
 
 icy_ui = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
