@@ -283,6 +283,8 @@ pub enum TerminalCommand {
     StartCapture(String),
     StopCapture,
     SetDownloadDirectory(PathBuf),
+    /// Feed a captured file through the receive path, as if the host had sent it
+    PlayFile(PathBuf),
     /// Run a Lua script file
     RunScript(PathBuf),
     /// Run Lua script code directly (from string)
@@ -467,6 +469,8 @@ pub struct TerminalThread {
     /// Modem configuration for hangup command
     modem_config: Option<ModemConfiguration>,
     cache_directory: Option<PathBuf>,
+    /// Bytes injected by `PlayFile`, drained into the receive path by the run loop.
+    injected_data: Vec<u8>,
     /// Channels armed by `SyncTERM:A;Update`, as a bitmask.
     audio_notify_armed: u32,
     /// Last observed audio channel activity, for edge-triggered notifications.
@@ -511,6 +515,7 @@ impl TerminalThread {
             igs_sound_data: Self::init_sound_data(),
             modem_config: None,
             cache_directory: None,
+            injected_data: Vec::new(),
             audio_notify_armed: 0,
             audio_last_active: 0,
         };
@@ -556,6 +561,10 @@ impl TerminalThread {
                     self.check_script_finished();
 
                     self.poll_audio_notifications().await;
+
+                    if !self.injected_data.is_empty() {
+                        pending_data.append(&mut self.injected_data);
+                    }
 
                     // Process pending data with baud emulation
                     if pending_offset < pending_data.len() {
@@ -757,6 +766,16 @@ impl TerminalThread {
                     let _ = writer.flush().await; // Ensure final flush
                 }
             }
+            TerminalCommand::PlayFile(path) => match tokio::fs::read(&path).await {
+                Ok(data) => {
+                    log::info!("Playing {} ({} bytes) into the terminal", path.display(), data.len());
+                    self.injected_data.extend_from_slice(&data);
+                }
+                Err(err) => {
+                    log::error!("Failed to read play file {}: {}", path.display(), err);
+                    self.send_event(TerminalEvent::Error(format!("Failed to read {}", path.display()), format!("{err}")));
+                }
+            },
             TerminalCommand::SetDownloadDirectory(dir) => {
                 self.download_directory = Some(dir);
             }

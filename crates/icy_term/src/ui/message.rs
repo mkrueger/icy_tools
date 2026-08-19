@@ -112,6 +112,8 @@ pub enum Message {
     // Scripting
     ShowRunScriptDialog,
     RunScript(PathBuf),
+    /// Feed a captured file through the receive path, as if the host had sent it
+    PlayFile(PathBuf),
     StopScript,
 
     // Terminal settings

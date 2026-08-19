@@ -95,6 +95,9 @@ struct Args {
 
     #[arg(long, value_name = "FILE", help = "Use an alternate phonebook file")]
     phonebook: Option<PathBuf>,
+
+    #[arg(long, value_name = "FILE", help = "Play a captured file into the terminal after startup")]
+    play: Option<PathBuf>,
 }
 
 pub type McpHandler = Option<tokio::sync::mpsc::UnboundedReceiver<mcp::McpCommand>>;
@@ -182,12 +185,13 @@ fn main() {
 
     let url_for_closure = args.url;
     let script_for_closure = args.run;
+    let play_for_closure = args.play;
     let mcp_rx = Arc::new(mcp_rx);
 
     icy_ui::daemon(
         move || {
             let mcp_receiver = if let Some(mutex) = mcp_rx.as_ref() { mutex.lock().take() } else { None };
-            if let Some(ref url) = url_for_closure {
+            let mut manager = if let Some(ref url) = url_for_closure {
                 let mut manager: (WindowManager, icy_ui::Task<ui::WindowManagerMessage>) = WindowManager::with_url(mcp_receiver, url.clone());
                 if let Some(ref script) = script_for_closure {
                     manager.0.script_to_run = Some(script.clone());
@@ -197,7 +201,9 @@ fn main() {
                 WindowManager::with_script(mcp_receiver, script.clone())
             } else {
                 WindowManager::new(mcp_receiver)
-            }
+            };
+            manager.0.file_to_play = play_for_closure.clone();
+            manager
         },
         WindowManager::update,
         WindowManager::view,

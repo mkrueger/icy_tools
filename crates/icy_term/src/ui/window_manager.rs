@@ -36,6 +36,8 @@ pub struct WindowManager {
     options: Arc<Mutex<Options>>,
     url: Option<String>,
     pub script_to_run: Option<PathBuf>,
+    /// Capture file played into the terminal after startup, for reproduction.
+    pub file_to_play: Option<PathBuf>,
     mcp_rx: McpHandler,
 
     // sound thread
@@ -118,6 +120,7 @@ impl WindowManager {
                 options,
                 url: None,
                 script_to_run: None,
+                file_to_play: None,
                 mcp_rx,
                 commands: WindowCommands::new(),
             },
@@ -216,14 +219,20 @@ impl WindowManager {
                     None
                 };
 
+                // Handle a capture played in for reproduction
+                let play_task = self
+                    .file_to_play
+                    .take()
+                    .map(|path| Task::done(WindowManagerMessage::WindowMessage(id, Message::PlayFile(path))));
+
                 // Combine tasks
                 let focus_task = focus_input.map(move |_: ()| WindowManagerMessage::WindowOpened(id));
-                match (url_task, script_task) {
-                    (Some(url), Some(script)) => Task::batch([url, script, focus_task]),
-                    (Some(url), None) => Task::batch([url, focus_task]),
-                    (None, Some(script)) => Task::batch([script, focus_task]),
-                    (None, None) => focus_task,
-                }
+                let mut tasks: Vec<Task<WindowManagerMessage>> = Vec::new();
+                tasks.extend(url_task);
+                tasks.extend(script_task);
+                tasks.extend(play_task);
+                tasks.push(focus_task);
+                Task::batch(tasks)
             }
             WindowManagerMessage::WindowClosed(id) => handle_window_closed(&mut self.windows, id),
 
