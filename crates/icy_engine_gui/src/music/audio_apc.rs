@@ -32,7 +32,12 @@ pub const FEATURE_SNDFILE_FORMAT: u16 = 101;
 /// Refuse absurd uploads before they reach the decoder.
 const MAX_BLOB_SIZE: usize = 32 * 1024 * 1024;
 /// Cap on decoded/synthesized frames per slot (~60s of stereo audio).
-const MAX_PATCH_FRAMES: usize = SAMPLE_RATE as usize * 60;
+/// Cap on decoded/synthesized frames per slot. Music tracks are minutes long,
+/// and SyncTERM materializes them whole rather than streaming.
+const MAX_PATCH_FRAMES: usize = SAMPLE_RATE as usize * 300;
+/// Ceiling on all resident patches together. SyncTERM has no such bound, but a
+/// terminal should not let a remote system decide how much memory it uses.
+const MAX_TOTAL_PATCH_BYTES: usize = 192 * 1024 * 1024;
 
 /// Base attenuation applied to APC channels, mirroring `AUDIO_APC_BASE_DB`.
 const BASE_DB: f32 = -12.0;
@@ -458,8 +463,8 @@ pub fn parse_feature_query(payload: &str) -> Option<AudioFeatureQuery> {
 
 /// libsndfile major format codes (`SF_FORMAT_TYPEMASK >> 16`) we can decode.
 ///
-/// The decoder is symphonia via rodio; it covers WAV/AIFF-style PCM, FLAC and
-/// Ogg Vorbis but has no Opus support, so `OGG;OPUS` must answer "no".
+/// Symphonia covers WAV/AIFF-style PCM, FLAC and Ogg Vorbis; Ogg-Opus is decoded
+/// through libopus and so depends on the `opus-audio` feature.
 pub fn supports_format(major: u32, subtype: u32) -> bool {
     const SF_FORMAT_WAV: u32 = 0x01;
     const SF_FORMAT_AIFF: u32 = 0x02;
@@ -470,9 +475,154 @@ pub fn supports_format(major: u32, subtype: u32) -> bool {
 
     match major {
         SF_FORMAT_WAV | SF_FORMAT_AIFF | SF_FORMAT_FLAC => true,
-        SF_FORMAT_OGG => subtype == SF_FORMAT_VORBIS && subtype != SF_FORMAT_OPUS,
+        SF_FORMAT_OGG => match subtype {
+            SF_FORMAT_VORBIS => true,
+            SF_FORMAT_OPUS => cfg!(feature = "opus-audio"),
+            _ => false,
+        },
         _ => false,
     }
+}
+
+/// Interleaves an arbitrary channel count into stereo, capped at [`MAX_PATCH_FRAMES`].
+fn to_stereo(samples: impl Iterator<Item = f32>, channels: u16) -> Vec<f32> {
+    let limit = MAX_PATCH_FRAMES * 2;
+    let mut frames = Vec::new();
+    match channels {
+        1 => {
+            for sample in samples {
+                if frames.len() >= limit {
+                    break;
+                }
+                frames.push(sample);
+                frames.push(sample);
+            }
+        }
+        2 => {
+            for sample in samples {
+                if frames.len() >= limit {
+                    break;
+                }
+                frames.push(sample);
+            }
+        }
+        other => {
+            // Downmix anything exotic to stereo by averaging each frame.
+            let mut buffer = Vec::with_capacity(other as usize);
+            for sample in samples {
+                buffer.push(sample);
+                if buffer.len() == other as usize {
+                    let average = buffer.iter().sum::<f32>() / other as f32;
+                    frames.push(average);
+                    frames.push(average);
+                    buffer.clear();
+                }
+                if frames.len() >= limit {
+                    break;
+                }
+            }
+        }
+    }
+    if frames.len() % 2 == 1 {
+        frames.push(0.0);
+    }
+    frames
+}
+
+/// An Ogg stream whose first logical page carries an Opus identification header.
+fn is_ogg_opus(data: &[u8]) -> bool {
+    if !data.starts_with(b"OggS") {
+        return false;
+    }
+    let head = &data[..data.len().min(512)];
+    head.windows(8).any(|window| window == b"OpusHead")
+}
+
+/// Decodes Ogg-Opus, the music codec of the SyncTERM audio APC.
+///
+/// Symphonia demuxes the Ogg container but has no Opus decoder, so the packets
+/// go through libopus and the result is resampled to [`SAMPLE_RATE`].
+#[cfg(feature = "opus-audio")]
+fn decode_ogg_opus(data: &[u8]) -> Option<Vec<f32>> {
+    use symphonia::core::codecs::CODEC_TYPE_OPUS;
+    use symphonia::core::formats::FormatReader;
+    use symphonia::core::io::MediaSourceStream;
+
+    /// Opus decodes at a fixed 48 kHz regardless of the source rate.
+    const OPUS_RATE: u32 = 48_000;
+    /// Longest Opus frame is 120 ms.
+    const MAX_FRAME_SAMPLES: usize = 5760;
+
+    let source = MediaSourceStream::new(Box::new(Cursor::new(data.to_vec())), Default::default());
+    let mut reader = match symphonia::default::formats::OggReader::try_new(source, &Default::default()) {
+        Ok(reader) => reader,
+        Err(err) => {
+            log::warn!("Audio APC: Ogg demux failed: {err}");
+            return None;
+        }
+    };
+    let Some(track) = reader.tracks().iter().find(|track| track.codec_params.codec == CODEC_TYPE_OPUS) else {
+        log::warn!("Audio APC: Ogg stream contains no Opus track");
+        return None;
+    };
+    let track_id = track.id;
+    let Some(track_channels) = track.codec_params.channels else {
+        log::warn!("Audio APC: Opus track has no channel layout");
+        return None;
+    };
+    let channels = track_channels.count().min(2) as u16;
+    let mut pre_skip = track.codec_params.delay.unwrap_or(0) as usize;
+
+    let mode = if channels >= 2 { opus::Channels::Stereo } else { opus::Channels::Mono };
+    let mut decoder = match opus::Decoder::new(OPUS_RATE, mode) {
+        Ok(decoder) => decoder,
+        Err(err) => {
+            log::warn!("Audio APC: libopus decoder creation failed: {err}");
+            return None;
+        }
+    };
+    let mut scratch = vec![0f32; MAX_FRAME_SAMPLES * channels as usize];
+
+    let mut decoded: Vec<f32> = Vec::new();
+    let limit = (MAX_PATCH_FRAMES as u64 * u64::from(OPUS_RATE) / u64::from(SAMPLE_RATE)) as usize * channels as usize;
+    while let Ok(packet) = reader.next_packet() {
+        if packet.track_id() != track_id {
+            continue;
+        }
+        let count = match decoder.decode_float(packet.buf(), &mut scratch, false) {
+            Ok(count) => count,
+            Err(err) => {
+                log::warn!("Audio APC: Opus packet dropped: {err}");
+                continue;
+            }
+        };
+        let mut produced = &scratch[..count * channels as usize];
+        if pre_skip > 0 {
+            // The encoder's priming samples are not part of the music.
+            let skip = pre_skip.min(count);
+            pre_skip -= skip;
+            produced = &produced[skip * channels as usize..];
+        }
+        decoded.extend_from_slice(produced);
+        if decoded.len() >= limit {
+            break;
+        }
+    }
+    if decoded.is_empty() {
+        log::warn!("Audio APC: Opus stream produced no samples");
+        return None;
+    }
+
+    let channel_count = NonZero::new(channels)?;
+    let resampled = rodio::conversions::SampleRateConverter::new(decoded.into_iter(), NonZero::new(OPUS_RATE)?, NonZero::new(SAMPLE_RATE)?, channel_count);
+    let frames = to_stereo(resampled, channels);
+    (!frames.is_empty()).then_some(frames)
+}
+
+#[cfg(not(feature = "opus-audio"))]
+fn decode_ogg_opus(_data: &[u8]) -> Option<Vec<f32>> {
+    log::warn!("Audio APC: built without Ogg-Opus support");
+    None
 }
 
 /// A decoded sample, stored stereo-interleaved at [`SAMPLE_RATE`].
@@ -529,13 +679,27 @@ impl AudioApcState {
             return None;
         }
         if self.players[index].is_none() {
-            self.players[index] = Some(Player::connect_new(mixer));
+            let player = Player::connect_new(mixer);
+            player.set_volume(db_to_gain(BASE_DB));
+            self.players[index] = Some(player);
         }
         self.players[index].as_ref()
     }
 
     fn store(&mut self, slot: u8, frames: Vec<f32>) {
         if frames.is_empty() {
+            return;
+        }
+        // Replacing the slot frees its old buffer, so only the others count.
+        let resident: usize = self
+            .patches
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != slot as usize)
+            .map(|(_, patch)| patch.frames.len() * std::mem::size_of::<f32>())
+            .sum();
+        if resident + frames.len() * std::mem::size_of::<f32>() > MAX_TOTAL_PATCH_BYTES {
+            log::warn!("Audio APC: patch memory budget exhausted, dropping slot {slot}");
             return;
         }
         self.patches[slot as usize] = Patch { frames };
@@ -545,6 +709,9 @@ impl AudioApcState {
     fn decode(data: Vec<u8>) -> Option<Vec<f32>> {
         if data.is_empty() || data.len() > MAX_BLOB_SIZE {
             return None;
+        }
+        if is_ogg_opus(&data) {
+            return decode_ogg_opus(&data);
         }
         let decoder = match rodio::Decoder::new(Cursor::new(data)) {
             Ok(decoder) => decoder,
@@ -556,48 +723,7 @@ impl AudioApcState {
         let channels = decoder.channels();
         let rate = decoder.sample_rate();
         let resampled = rodio::conversions::SampleRateConverter::new(decoder, rate, NonZero::new(SAMPLE_RATE)?, channels);
-
-        let mut frames = Vec::new();
-        let limit = MAX_PATCH_FRAMES * 2;
-        match channels.get() {
-            1 => {
-                for sample in resampled {
-                    if frames.len() >= limit {
-                        break;
-                    }
-                    frames.push(sample);
-                    frames.push(sample);
-                }
-            }
-            2 => {
-                for sample in resampled {
-                    if frames.len() >= limit {
-                        break;
-                    }
-                    frames.push(sample);
-                }
-            }
-            other => {
-                // Downmix anything exotic to stereo by averaging each frame.
-                let mut buffer = Vec::with_capacity(other as usize);
-                for sample in resampled {
-                    buffer.push(sample);
-                    if buffer.len() == other as usize {
-                        let average = buffer.iter().sum::<f32>() / other as f32;
-                        frames.push(average);
-                        frames.push(average);
-                        buffer.clear();
-                    }
-                    if frames.len() >= limit {
-                        break;
-                    }
-                }
-            }
-        }
-        if frames.len() % 2 == 1 {
-            frames.push(0.0);
-        }
-        (!frames.is_empty()).then_some(frames)
+        Some(to_stereo(resampled, channels.get()))
     }
 
     fn synth(shape: WaveShape, frequency: f32, frames: usize) -> Vec<f32> {
@@ -619,14 +745,25 @@ impl AudioApcState {
     pub fn handle(&mut self, mixer: Option<&Mixer>, cache_directory: Option<&std::path::Path>, command: AudioApcCommand) {
         match command {
             AudioApcCommand::Load { slot, file } => {
-                let Some(directory) = cache_directory else { return };
+                let Some(directory) = cache_directory else {
+                    log::warn!("Audio APC: cannot load {file:?}: no cache directory");
+                    return;
+                };
                 let Some(path) = safe_cache_path(directory, &file) else {
                     log::warn!("Audio APC: rejected cache path {file:?}");
                     return;
                 };
-                let Ok(data) = std::fs::read(path) else { return };
+                let data = match std::fs::read(&path) {
+                    Ok(data) => data,
+                    Err(err) => {
+                        log::warn!("Audio APC: cannot read {}: {err}", path.display());
+                        return;
+                    }
+                };
                 if let Some(frames) = Self::decode(data) {
                     self.store(slot, frames);
+                } else {
+                    log::warn!("Audio APC: cannot decode {}", path.display());
                 }
             }
             AudioApcCommand::LoadBlob { slot, data } => {
@@ -659,9 +796,12 @@ impl AudioApcState {
                 if frames.is_empty() {
                     return;
                 }
-                let Some(mixer) = mixer else { return };
-                let left = db_to_gain(left_db + BASE_DB);
-                let right = db_to_gain(right_db + BASE_DB);
+                let Some(mixer) = mixer else {
+                    log::warn!("Audio APC: cannot queue channel {channel}: no audio mixer");
+                    return;
+                };
+                let left = db_to_gain(left_db);
+                let right = db_to_gain(right_db);
                 let panned = apply_pan(frames, left, right);
                 let Some(player) = self.player(mixer, channel) else { return };
 
@@ -687,7 +827,7 @@ impl AudioApcState {
             AudioApcCommand::Volume { channel, left_db, right_db } => {
                 let Some(mixer) = mixer else { return };
                 self.volumes[channel as usize] = (left_db, right_db);
-                let gain = db_to_gain(left_db.max(right_db) + BASE_DB);
+                let gain = db_to_gain(left_db.max(right_db));
                 if let Some(player) = self.player(mixer, channel) {
                     player.set_volume(gain);
                 }
@@ -844,12 +984,143 @@ mod tests {
     }
 
     #[test]
-    fn reports_opus_as_unsupported_but_wav_as_supported() {
-        // Ogg/Opus - symphonia has no Opus decoder.
-        assert!(!supports_format(32, 100));
+    fn reports_formats_matching_the_build() {
+        // Ogg/Opus tracks the feature so the capability reply never overstates.
+        assert_eq!(supports_format(32, 100), cfg!(feature = "opus-audio"));
         // Ogg/Vorbis and plain WAV.
         assert!(supports_format(32, 0x60));
         assert!(supports_format(1, 2));
+        // Unknown container.
+        assert!(!supports_format(0x99, 2));
+    }
+
+    #[test]
+    fn detects_ogg_opus_streams() {
+        let mut stream = b"OggS".to_vec();
+        stream.extend_from_slice(&[0u8; 22]);
+        stream.extend_from_slice(b"OpusHead");
+        assert!(is_ogg_opus(&stream));
+
+        // Ogg Vorbis must keep going through the symphonia path.
+        let mut vorbis = b"OggS".to_vec();
+        vorbis.extend_from_slice(&[0u8; 22]);
+        vorbis.extend_from_slice(b"\x01vorbis");
+        assert!(!is_ogg_opus(&vorbis));
+
+        assert!(!is_ogg_opus(b"RIFFxxxxWAVE"));
+        assert!(!is_ogg_opus(b""));
+    }
+
+    #[test]
+    fn downmixes_and_caps_channel_layouts() {
+        assert_eq!(to_stereo([0.5f32, -0.5].into_iter(), 1), vec![0.5, 0.5, -0.5, -0.5]);
+        assert_eq!(to_stereo([0.25f32, 0.75].into_iter(), 2), vec![0.25, 0.75]);
+        // Four channels average down to one stereo frame.
+        assert_eq!(to_stereo([1.0f32, 0.0, 1.0, 0.0].into_iter(), 4), vec![0.5, 0.5]);
+        // A trailing half frame is padded rather than dropped.
+        assert_eq!(to_stereo([0.5f32].into_iter(), 2), vec![0.5, 0.0]);
+    }
+
+    #[cfg(feature = "opus-audio")]
+    #[test]
+    fn decodes_ogg_opus_round_trip() {
+        // Build a real Ogg-Opus stream so the demux, pre-skip and resample path
+        // are all exercised rather than mocked.
+        const RATE: u32 = 48_000;
+        const PRE_SKIP: u16 = 312;
+        const FRAME: usize = 960; // 20 ms
+        let serial: u32 = 0x1234_5678;
+
+        let mut head = b"OpusHead".to_vec();
+        head.push(1);
+        head.push(1);
+        head.extend_from_slice(&PRE_SKIP.to_le_bytes());
+        head.extend_from_slice(&RATE.to_le_bytes());
+        head.extend_from_slice(&0i16.to_le_bytes());
+        head.push(0);
+
+        let mut tags = b"OpusTags".to_vec();
+        tags.extend_from_slice(&4u32.to_le_bytes());
+        tags.extend_from_slice(b"icy0");
+        tags.extend_from_slice(&0u32.to_le_bytes());
+
+        let mut encoder = opus::Encoder::new(RATE, opus::Channels::Mono, opus::Application::Audio).unwrap();
+        let frames = 50; // one second
+        let mut packets = Vec::new();
+        for index in 0..frames {
+            let pcm: Vec<f32> = (0..FRAME)
+                .map(|n| {
+                    let t = (index * FRAME + n) as f32 / RATE as f32;
+                    (t * 440.0 * std::f32::consts::TAU).sin() * 0.5
+                })
+                .collect();
+            let mut encoded = vec![0u8; 4000];
+            let len = encoder.encode_float(&pcm, &mut encoded).unwrap();
+            encoded.truncate(len);
+            packets.push(encoded);
+        }
+
+        let mut stream = Vec::new();
+        stream.extend_from_slice(&ogg_page(serial, 0, 0x02, 0, &head));
+        stream.extend_from_slice(&ogg_page(serial, 1, 0x00, 0, &tags));
+        for (index, packet) in packets.iter().enumerate() {
+            let granule = ((index + 1) * FRAME) as u64;
+            let last = index + 1 == packets.len();
+            let header = if last { 0x04 } else { 0x00 };
+            stream.extend_from_slice(&ogg_page(serial, index as u32 + 2, header, granule, packet));
+        }
+
+        assert!(is_ogg_opus(&stream));
+        let decoded = decode_ogg_opus(&stream).expect("opus stream should decode");
+
+        // One second at 48 kHz, minus pre-skip, resampled to 44.1 kHz and stereo.
+        let expected = (FRAME * frames - PRE_SKIP as usize) as f32 / RATE as f32 * SAMPLE_RATE as f32;
+        let got = (decoded.len() / 2) as f32;
+        assert!((got - expected).abs() < 200.0, "expected about {expected} frames, got {got}");
+        assert_eq!(decoded.len() % 2, 0);
+        // A 440 Hz tone must not decode to silence.
+        let peak = decoded.iter().fold(0f32, |peak, sample| peak.max(sample.abs()));
+        assert!(peak > 0.1, "decoded tone was silent (peak {peak})");
+    }
+
+    #[cfg(feature = "opus-audio")]
+    fn ogg_page(serial: u32, sequence: u32, header_type: u8, granule: u64, packet: &[u8]) -> Vec<u8> {
+        let mut segments = Vec::new();
+        let mut remaining = packet.len();
+        while remaining >= 255 {
+            segments.push(255u8);
+            remaining -= 255;
+        }
+        segments.push(remaining as u8);
+
+        let mut page = Vec::new();
+        page.extend_from_slice(b"OggS");
+        page.push(0);
+        page.push(header_type);
+        page.extend_from_slice(&granule.to_le_bytes());
+        page.extend_from_slice(&serial.to_le_bytes());
+        page.extend_from_slice(&sequence.to_le_bytes());
+        page.extend_from_slice(&0u32.to_le_bytes()); // checksum placeholder
+        page.push(segments.len() as u8);
+        page.extend_from_slice(&segments);
+        page.extend_from_slice(packet);
+
+        let checksum = ogg_crc(&page);
+        page[22..26].copy_from_slice(&checksum.to_le_bytes());
+        page
+    }
+
+    #[cfg(feature = "opus-audio")]
+    fn ogg_crc(data: &[u8]) -> u32 {
+        // Ogg uses a non-reflected CRC-32 with polynomial 0x04c11db7.
+        let mut crc: u32 = 0;
+        for &byte in data {
+            crc ^= u32::from(byte) << 24;
+            for _ in 0..8 {
+                crc = if crc & 0x8000_0000 != 0 { (crc << 1) ^ 0x04c1_1db7 } else { crc << 1 };
+            }
+        }
+        crc
     }
 
     #[test]

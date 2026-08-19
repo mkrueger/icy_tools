@@ -32,7 +32,10 @@ i18n-embed = { workspace = true }
 i18n-embed-fl= { workspace = true }
 rust-embed = { workspace = true } 
 once_cell = { workspace = true }
-base64 = { workspace = true } 
+base64 = { workspace = true }
+# Ogg-Opus is the music codec of the SyncTERM audio APC; symphonia demuxes it but has no decoder.
+opus = { workspace = true, optional = true }
+symphonia = { workspace = true, optional = true } 
 regex = { workspace = true }
 
 bytemuck = { workspace = true, features = ["derive"] }
@@ -50,3 +53,9 @@ rfd = { workspace = true }
 # for Atari ST GIST sounds (IGS)
 ym2149-gist-replayer = { workspace = true }
 cpal = { workspace = true }
+
+[features]
+default = ["opus-audio"]
+# Ogg-Opus playback for the SyncTERM audio APC music tier. Links libopus,
+# so disabling it drops the C dependency; the capability reply follows suit.
+opus-audio = ["dep:opus", "dep:symphonia"]
