@@ -1298,3 +1298,38 @@ fn test_cpbug2_sequence() {
     let ch2 = screen.char_at(Position::new(0, 2));
     assert!(ch2.is_transparent() || ch2.ch == ' ' || ch2.ch == '\0', "Row 2 should be empty, got: {:?}", ch2);
 }
+
+#[test]
+fn test_repeated_full_frames_replace_instead_of_accumulating() {
+    // A door like SyncDoom redraws the same region every frame; keeping each one
+    // would grow both memory and per-render blit cost without bound.
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let font = screen.font_dimensions();
+    let (w, h) = (40 * font.width, 10 * font.height);
+
+    for _ in 0..32 {
+        let frame = icy_engine::Sixel::from_data((w, h), 1, 1, vec![0xFF; (w * h * 4) as usize]);
+        screen.add_sixel(Position::new(0, 0), frame);
+    }
+
+    assert_eq!(screen.buffer.layers[0].sixels.len(), 1);
+}
+
+#[test]
+fn test_smaller_frame_does_not_evict_larger_one() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let font = screen.font_dimensions();
+
+    let big = icy_engine::Sixel::from_data(
+        (8 * font.width, 4 * font.height),
+        1,
+        1,
+        vec![0xFF; (8 * font.width * 4 * font.height * 4) as usize],
+    );
+    screen.add_sixel(Position::new(0, 0), big);
+
+    let small = icy_engine::Sixel::from_data((font.width, font.height), 1, 1, vec![0xFF; (font.width * font.height * 4) as usize]);
+    screen.add_sixel(Position::new(20, 0), small);
+
+    assert_eq!(screen.buffer.layers[0].sixels.len(), 2);
+}

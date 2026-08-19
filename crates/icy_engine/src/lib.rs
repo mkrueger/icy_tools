@@ -285,8 +285,12 @@ impl Rectangle {
         self.start.x <= point.x && point.x < self.start.x + self.size.width && self.start.y <= point.y && point.y < self.start.y + self.size.height
     }
 
+    /// Half-open containment: an identical rectangle is contained.
     pub fn contains_rect(&self, other: &Rectangle) -> bool {
-        self.contains_pt(other.start) && self.contains_pt(other.bottom_right())
+        self.start.x <= other.start.x
+            && self.start.y <= other.start.y
+            && other.start.x + other.size.width <= self.start.x + self.size.width
+            && other.start.y + other.size.height <= self.start.y + self.size.height
     }
 
     pub fn width(&self) -> i32 {
