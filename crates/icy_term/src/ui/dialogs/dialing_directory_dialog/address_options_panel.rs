@@ -703,7 +703,7 @@ impl super::DialingDirectoryState {
                 .align_y(Alignment::Center),
             );
 
-            let lf_expand_checkbox = icy_ui::widget::checkbox(addr.lf_expand)
+            let lf_expand_checkbox = icy_ui::widget::checkbox(addr.lf_expand())
                 .on_toggle(move |checked| {
                     Message::from(DialingDirectoryMsg::AddressFieldChanged {
                         id,

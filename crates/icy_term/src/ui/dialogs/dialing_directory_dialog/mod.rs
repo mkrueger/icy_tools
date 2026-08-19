@@ -313,7 +313,7 @@ impl DialingDirectoryState {
                         addr.mouse_reporting_enabled = enabled;
                     }
                     AddressFieldChange::LfExpand(enabled) => {
-                        addr.lf_expand = enabled;
+                        addr.set_lf_expand(enabled);
                     }
                     AddressFieldChange::ToggleCustomPalette(enabled) => {
                         addr.custom_palette = if enabled {

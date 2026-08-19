@@ -326,7 +326,7 @@ impl MainWindow {
                     max_scrollback_lines: options.max_scrollback_lines,
                     transfer_protocols: options.transfer_protocols.clone(),
                     mouse_reporting_enabled: address.mouse_reporting_enabled,
-                    lf_expand: address.lf_expand,
+                    lf_expand: address.lf_expand(),
                     custom_palette: address.custom_palette.clone(),
                     default_cursor_shape: options.default_cursor_shape,
                     default_cursor_blinking: options.default_cursor_blinking,
@@ -632,6 +632,11 @@ impl MainWindow {
             Message::RunScript(path) => {
                 log::info!("Running script: {}", path.display());
                 let _ = self.terminal_tx.send(TerminalCommand::RunScript(path));
+                self.state.mode = MainWindowMode::ShowTerminal;
+                Task::none()
+            }
+            Message::PlayFile(path) => {
+                let _ = self.terminal_tx.send(TerminalCommand::PlayFile(path));
                 self.state.mode = MainWindowMode::ShowTerminal;
                 Task::none()
             }

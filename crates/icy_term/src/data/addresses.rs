@@ -344,9 +344,22 @@ pub struct Address {
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub mouse_reporting_enabled: bool,
 
+    /// Treat received LF as LF+CR. Stored inverted so the default stays enabled,
+    /// which is what every BBS expects.
+    #[serde(default, rename = "lf_expand_off", skip_serializing_if = "is_default_bool")]
+    pub(crate) lf_expand_off: bool,
+}
+
+impl Address {
     /// Treat received LF as LF+CR.
-    #[serde(default, skip_serializing_if = "is_default_bool")]
-    pub lf_expand: bool,
+    #[must_use]
+    pub fn lf_expand(&self) -> bool {
+        !self.lf_expand_off
+    }
+
+    pub fn set_lf_expand(&mut self, enabled: bool) {
+        self.lf_expand_off = !enabled;
+    }
 }
 
 impl From<ConnectionInformation> for Address {
@@ -637,6 +650,30 @@ lazy_static::lazy_static! {
 mod tests {
     #![allow(clippy::field_reassign_with_default)]
     use super::*;
+
+    #[test]
+    fn lf_expand_defaults_to_enabled() {
+        // A bare LF must return to column 1, as it did before the option existed.
+        assert!(Address::default().lf_expand());
+        assert!(Address::new("test").lf_expand());
+    }
+
+    #[test]
+    fn lf_expand_survives_a_save_load_round_trip() {
+        let mut address = Address::new("test");
+        assert!(address.lf_expand());
+
+        // Entries written before the option existed carry no key at all.
+        let legacy = toml::to_string(&address).unwrap();
+        assert!(!legacy.contains("lf_expand"), "the default must not be written out");
+        let restored: Address = toml::from_str(&legacy).unwrap();
+        assert!(restored.lf_expand(), "a phonebook without the key must keep LF expansion");
+
+        address.set_lf_expand(false);
+        let stored = toml::to_string(&address).unwrap();
+        let restored: Address = toml::from_str(&stored).unwrap();
+        assert!(!restored.lf_expand(), "an explicit opt-out must survive a round trip");
+    }
 
     #[test]
     fn test_load_default_template() {
