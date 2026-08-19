@@ -123,22 +123,7 @@ fn pill<Message: 'static>(content: &str) -> Element<'static, Message> {
 /// Create a key group from a key string like "Ctrl+Shift+N" or "Alt D"
 /// Use "++" to represent a literal "+" key (e.g., "Ctrl++" for Ctrl+Plus)
 fn key_group<Message: 'static + Clone>(keys: &str) -> Element<'static, Message> {
-    // Replace "++" with a placeholder, then split, then restore
-    const PLUS_PLACEHOLDER: &str = "\x00PLUS\x00";
-    let escaped = keys.replace("++", PLUS_PLACEHOLDER);
-
-    let parts: Vec<String> = escaped
-        .split(' ')
-        .flat_map(|chunk| {
-            if chunk.contains('+') {
-                chunk.split('+').map(|s| s.to_string()).collect::<Vec<_>>()
-            } else {
-                vec![chunk.to_string()]
-            }
-        })
-        .map(|s| s.replace(PLUS_PLACEHOLDER, "+"))
-        .filter(|s| !s.is_empty())
-        .collect();
+    let parts = key_group_parts(keys);
 
     let mut r = row![].spacing(DIALOG_SPACING).align_y(Alignment::Center);
     for (i, p) in parts.iter().enumerate() {
@@ -151,6 +136,43 @@ fn key_group<Message: 'static + Clone>(keys: &str) -> Element<'static, Message> 
         }
     }
     r.into()
+}
+
+fn key_group_parts(keys: &str) -> Vec<String> {
+    keys.split(' ')
+        .filter(|chunk| !chunk.is_empty())
+        .flat_map(|chunk| {
+            if chunk == "+" {
+                return vec!["+".to_string()];
+            }
+
+            let literal_plus = chunk.ends_with("++");
+            let modifiers = if literal_plus { &chunk[..chunk.len() - 1] } else { chunk };
+            let mut parts: Vec<String> = modifiers.split('+').filter(|part| !part.is_empty()).map(str::to_string).collect();
+            if literal_plus {
+                parts.push("+".to_string());
+            }
+            parts
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::key_group_parts;
+
+    #[test]
+    fn separates_literal_plus_key_from_modifiers() {
+        assert_eq!(key_group_parts("Ctrl++"), ["Ctrl", "+"]);
+        assert_eq!(key_group_parts("Ctrl+Shift++"), ["Ctrl", "Shift", "+"]);
+        assert_eq!(key_group_parts("+"), ["+"]);
+    }
+
+    #[test]
+    fn preserves_regular_shortcuts_and_space_groups() {
+        assert_eq!(key_group_parts("Ctrl+Shift+N"), ["Ctrl", "Shift", "N"]);
+        assert_eq!(key_group_parts("Alt D"), ["Alt", "D"]);
+    }
 }
 
 /// Create a category header
