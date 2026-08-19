@@ -1694,6 +1694,10 @@ impl MainWindow {
         icy_engine_gui::key_map::lookup_key(key, physical, modifiers, key_map)
     }
 
+    fn command_precedes_connected_terminal(message: &Message) -> bool {
+        matches!(message, Message::ShowHelpDialog)
+    }
+
     fn clear_selection(&mut self) {
         let mut edit_screen = self.terminal_window.terminal.screen.lock();
         let _ = edit_screen.clear_selection();
@@ -2085,6 +2089,11 @@ impl MainWindow {
                         // because key maps ignore Alt and would otherwise treat Alt+Enter
                         // as plain Enter.
                         if self.terminal_window.is_connected {
+                            if let Some(msg) = self.commands.handle(event) {
+                                if Self::command_precedes_connected_terminal(&msg) {
+                                    return (Some(msg), Task::none());
+                                }
+                            }
                             if modifiers.alt() {
                                 if let Some(msg) = self.commands.handle(event) {
                                     return (Some(msg), Task::none());
@@ -2164,7 +2173,14 @@ impl MainWindow {
 
 #[cfg(test)]
 mod alt_numeric_tests {
-    use super::MainWindow;
+    use super::{MainWindow, Message};
+
+    #[test]
+    fn help_precedes_connected_terminal_keys() {
+        assert!(MainWindow::command_precedes_connected_terminal(&Message::ShowHelpDialog));
+        assert!(!MainWindow::command_precedes_connected_terminal(&Message::Copy));
+        assert!(!MainWindow::command_precedes_connected_terminal(&Message::Paste));
+    }
 
     #[test]
     fn converts_legacy_alt_codes_to_raw_bytes() {
