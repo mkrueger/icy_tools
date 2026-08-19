@@ -9,6 +9,10 @@ Scripts can be run in two ways:
 1. **Command line**: `icy_term --run script.lua`
 2. **Shortcut**: `Alt+R` (or `Cmd+R` on macOS) to open the script file dialog
 
+Related CLI (not a Lua API): `icy_term --play capture.txt` replays a captured session into the terminal after startup.
+
+Lua currently automates connection, text input, and screen text. It does not expose SyncTERM door state such as Kitty flags, pixel mouse, JPEG XL cache, or Audio APC channels. Use Terminal Info in the UI for that handshake state.
+
 ## API Reference
 
 ### Connection Functions

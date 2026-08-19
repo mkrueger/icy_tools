@@ -21,7 +21,21 @@ Visit [Telnet BBS Guide](https://www.telnetbbsguide.com/) to explore active BBSe
 - **Atari 8Bit**: ATASCII + XEP80
 - **Graphics**: RIPscrip, SkyPix
 - **UTF8**: Experimental
-- **Modern**: Sixel graphics, OSC8 Hyperlinks, Loadable fonts, loadable Palettes & many more
+- **Modern**: Sixel graphics (DEC 80 / DEC 1070 palettes), OSC8 hyperlinks, loadable fonts and palettes
+
+### 🕹️ SyncTERM Door Compatibility
+
+IcyTERM follows current SyncTERM/CTerm behavior for common door games (SyncDoom, SyncMOO, SyncSCUMM):
+
+- **Cached JPEG XL**: SyncTERM APC cache store/draw (`SyncTERM:C;S` / `DrawJXL`)
+- **Audio APC**: PCM plus Ogg Opus music (requires `libopus`; enabled by default)
+- **Kitty keyboard**: Progressive enhancement (`CSI > u` / `CSI ? u`)
+- **Pixel mouse**: SGR and DECSET 1016 pixel coordinates
+- **Sixel**: Shared vs private palettes (`DECSET 1070`) and scrolling (`DECSET 80`)
+- **LF handling**: Received LF expands to CR+LF by default (SyncTERM 0.8.3)
+- **Diagnostics**: Terminal Info dialog and clipboard dump for handshake/debug
+
+RIP file APCs (`QueryFile`, `ReadFile`, …) are parsed but not answered yet.
 
 ### 📁 File Transfers
 
@@ -45,6 +59,7 @@ Visit [Telnet BBS Guide](https://www.telnetbbsguide.com/) to explore active BBSe
 ### 🎵 Multimedia
 
 - **ANSI Music**: PlayMod, MIDI support
+- **SyncTERM Audio APC**: Multi-channel playback with live stereo gain
 - **Sound effects**: Beep patterns, system sounds
 
 ### 🌍 International
@@ -88,6 +103,9 @@ icy_term bbs.example.com:2323
 icy_term ssh://username:password@bbs.example.com
 
 # RLogin
+
+# Replay a captured session into the terminal
+icy_term --play capture.txt
 icy_term rlogin://retrobbs.org
 ```
 
@@ -111,14 +129,17 @@ icy_term --mcp-port 3000
 Available tools:
 
 - `connect` / `disconnect` - Session management
-- `send_text` / `send_key` - Input control
+- `send_text` / `send_key` - Input c
+- `clear_screen` / `run_script` / `get_scripting_api` - Screen and Lua automationontrol
 - `capture_screen` - Screen capture (text/ANSI)
 - `list_addresses` - Address book access
 - `get_state` - Terminal state query
 
 ## Configuration
+`
+- **Windows**: `%APPDATA%\icy_term\`
 
-Settings are stored in platform-specific locations:
+Optional CLI overrides: `--config FILE`, `--phonebook FILE`.ific locations:
 
 - **Linux**: `~/.config/icy_term/`
 - **macOS**: `~/Library/Application Support/com.GitHub.icy_term'`

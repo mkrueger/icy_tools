@@ -4,7 +4,7 @@ version = "0.8.3"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "A terminal program supporting CP437, PetScii and ViewData"
+description = "A BBS terminal with CP437, PETSCII, Viewdata, RIP, SkyPix, and SyncTERM door graphics/audio"
 repository = "https://github.com/mkrueger/icy_tools"
 
 [dependencies]

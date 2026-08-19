@@ -8,8 +8,10 @@ A modern terminal program for BBS systems.
 - 3D accelerated
 - Copy & Paste
 - IEMSI support
-- Supports CP437, PETSCII, ATASCII, 
+- Supports CP437, PETSCII, ATASCII,
   VIEWDATA, RIPSCRIPT and SkyPix
+- SyncTERM doors: cached JXL, Audio
+  APC/Opus, Kitty keys, pixel mouse
 
 For latest builds/development visit:
 GitHub https://github.com/mkrueger/icy_tools
