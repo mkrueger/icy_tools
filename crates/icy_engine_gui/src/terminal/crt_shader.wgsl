@@ -304,8 +304,9 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
             let local_y = (window_y - cumulative_height) / slice_height;
             let slice_uv = vec2<f32>(tex_uv_x, clamp(local_y, 0.0, 1.0));
             
-            // Sample from the appropriate texture (up to 10 slices)
-            return sample_slice(i, slice_uv, slice_height);
+            let text_color = sample_slice(i, slice_uv, slice_height);
+            let overlay_color = sample_slice(i + num_slices, slice_uv, slice_height);
+            return overlay_color + text_color * (1.0 - overlay_color.a);
         }
         cumulative_height = next_cumulative;
     }

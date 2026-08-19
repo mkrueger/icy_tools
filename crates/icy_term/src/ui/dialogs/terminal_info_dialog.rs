@@ -19,6 +19,14 @@ use super::terminal_settings_ui::{self, TerminalSettings, TerminalSettingsChange
 const LABEL_WIDTH: f32 = 130.0;
 const VALUE_WIDTH: f32 = 120.0;
 
+fn yes_no(value: bool) -> &'static str {
+    if value {
+        "Yes"
+    } else {
+        "No"
+    }
+}
+
 /// Result from the terminal info dialog when applying settings
 #[derive(Debug, Clone)]
 pub struct TerminalSettingsResult {
@@ -51,6 +59,18 @@ pub struct TerminalInfo {
     pub margins_top_bottom: Option<(i32, i32)>,
     pub margins_left_right: Option<(i32, i32)>,
     pub mouse_mode: String,
+    pub mouse_reporting_enabled: bool,
+    pub mouse_encoding: String,
+    pub mouse_focus_events: bool,
+    pub alternate_scroll: bool,
+    pub kitty_flags: u8,
+    pub sixel_at_cursor: bool,
+    pub sixel_shared_palette: bool,
+    pub jxl_supported: bool,
+    pub audio_apc_supported: bool,
+    pub opus_supported: bool,
+    pub audio_active_channels: u32,
+    pub lf_expand: bool,
     pub inverse_mode: bool,
     pub ice_colors: bool,
     pub baud_emulation: BaudEmulation,
@@ -76,6 +96,18 @@ impl Default for TerminalInfo {
             margins_top_bottom: None,
             margins_left_right: None,
             mouse_mode: "Off".to_string(),
+            mouse_reporting_enabled: true,
+            mouse_encoding: "None".to_string(),
+            mouse_focus_events: false,
+            alternate_scroll: false,
+            kitty_flags: 0,
+            sixel_at_cursor: true,
+            sixel_shared_palette: false,
+            jxl_supported: true,
+            audio_apc_supported: true,
+            opus_supported: true,
+            audio_active_channels: 0,
+            lf_expand: true,
             inverse_mode: false,
             ice_colors: false,
             baud_emulation: BaudEmulation::Off,
@@ -174,8 +206,22 @@ impl TerminalInfoDialog {
              - Scroll Mode: {}\n\
              - Margins: {}\n\
              - Mouse Tracking: {}\n\
+             - Mouse Reporting: {}\n\
+             - Mouse Encoding: {}\n\
+             - Mouse Focus Events: {}\n\
+             - Alternate Scroll: {}\n\
              - Inverse Colors: {}\n\
              - ICE Colors: {}\n\
+             - LF Handling: {}\n\
+             \n\
+             Protocols:\n\
+             - Kitty Flags: {}\n\
+             - Sixel Position: {}\n\
+             - Sixel Palette: {}\n\
+             - JPEG XL: {}\n\
+             - Audio APC: {}\n\
+             - Ogg Opus: {}\n\
+             - Active Audio Channels: 0x{:04X}\n\
              \n\
              Caret:\n\
              - Position: X: {}, Y: {}\n\
@@ -193,8 +239,20 @@ impl TerminalInfoDialog {
             scroll_mode_str,
             margins_str,
             self.info.mouse_mode,
+            if self.info.mouse_reporting_enabled { "Enabled" } else { "Disabled" },
+            self.info.mouse_encoding,
+            if self.info.mouse_focus_events { "Yes" } else { "No" },
+            if self.info.alternate_scroll { "Yes" } else { "No" },
             if self.info.inverse_mode { "Yes" } else { "No" },
             if self.info.ice_colors { "Yes" } else { "No" },
+            if self.info.lf_expand { "CR+LF" } else { "LF only" },
+            self.info.kitty_flags,
+            if self.info.sixel_at_cursor { "Cursor" } else { "Origin" },
+            if self.info.sixel_shared_palette { "Shared" } else { "Private" },
+            if self.info.jxl_supported { "Yes" } else { "No" },
+            if self.info.audio_apc_supported { "Yes" } else { "No" },
+            if self.info.opus_supported { "Yes" } else { "No" },
+            self.info.audio_active_channels,
             self.info.caret_position.x,
             self.info.caret_position.y,
             caret_shape_str,
@@ -487,6 +545,44 @@ impl TerminalInfoDialog {
         ]
         .spacing(SPACE_4);
 
+        let protocols = column![
+            section_header("Protocols".to_string()),
+            Space::new().height(SPACE_4),
+            row![
+                column![
+                    Self::create_row::<M>(
+                        "Mouse reports".to_string(),
+                        if self.info.mouse_reporting_enabled { "Enabled" } else { "Disabled" }.to_string()
+                    ),
+                    Self::create_row::<M>("Mouse encoding".to_string(), self.info.mouse_encoding.clone()),
+                    Self::create_row::<M>("Kitty flags".to_string(), self.info.kitty_flags.to_string()),
+                    Self::create_row::<M>("LF handling".to_string(), if self.info.lf_expand { "CR+LF" } else { "LF only" }.to_string()),
+                ]
+                .spacing(SPACE_4),
+                Space::new().width(DIALOG_SPACING),
+                Self::vertical_separator::<M>(),
+                Space::new().width(DIALOG_SPACING),
+                column![
+                    Self::create_row::<M>(
+                        "Sixel position".to_string(),
+                        if self.info.sixel_at_cursor { "Cursor" } else { "Origin" }.to_string()
+                    ),
+                    Self::create_row::<M>(
+                        "Sixel palette".to_string(),
+                        if self.info.sixel_shared_palette { "Shared" } else { "Private" }.to_string()
+                    ),
+                    Self::create_row::<M>(
+                        "JPEG XL / Opus".to_string(),
+                        format!("{} / {}", yes_no(self.info.jxl_supported), yes_no(self.info.opus_supported))
+                    ),
+                    Self::create_row::<M>("Audio channels".to_string(), format!("0x{:04X}", self.info.audio_active_channels)),
+                ]
+                .spacing(SPACE_4),
+            ]
+            .align_y(Alignment::Start),
+        ]
+        .spacing(SPACE_4);
+
         // Two columns layout with vertical separator
         let info_content = row![
             left_col,
@@ -515,7 +611,13 @@ impl TerminalInfoDialog {
         .spacing(SPACE_4);
 
         // Main content with info and settings sections
-        let content = column![info_content, Space::new().height(SECTION_SPACING), settings_content,];
+        let content = column![
+            info_content,
+            Space::new().height(SECTION_SPACING),
+            protocols,
+            Space::new().height(SECTION_SPACING),
+            settings_content,
+        ];
 
         // Footer with buttons
         let on_msg = on_message.clone();

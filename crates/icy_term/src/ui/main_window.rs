@@ -136,6 +136,48 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
+    fn terminal_info_snapshot(&self) -> terminal_info_dialog::TerminalInfo {
+        let screen = self.terminal_window.terminal.screen.lock();
+        let caret = screen.caret();
+        let state = screen.terminal_state();
+        let mouse = &state.mouse_state;
+        let audio = icy_engine_gui::music::audio_apc::status();
+
+        terminal_info_dialog::TerminalInfo {
+            buffer_size: state.size(),
+            screen_resolution: screen.resolution(),
+            font_size: screen.font(caret.font_page() as usize).map(|font| font.size()).unwrap_or_default(),
+            caret_position: caret.position(),
+            caret_visible: caret.visible,
+            caret_blinking: caret.blinking,
+            caret_shape: caret.shape,
+            insert_mode: caret.insert_mode,
+            auto_wrap: state.auto_wrap_mode == icy_engine::AutoWrapMode::AutoWrap,
+            scroll_mode: state.scroll_state,
+            margins_top_bottom: state.margins_top_bottom(),
+            margins_left_right: state.margins_left_right(),
+            mouse_mode: format!("{:?}", mouse.mouse_mode),
+            mouse_reporting_enabled: mouse.mouse_tracking_enabled,
+            mouse_encoding: format!("{:?}", mouse.extended_mode),
+            mouse_focus_events: mouse.focus_out_event_enabled,
+            alternate_scroll: mouse.alternate_scroll_enabled,
+            kitty_flags: state.kitty_keyboard.flags(),
+            sixel_at_cursor: state.sixel_at_cursor,
+            sixel_shared_palette: state.sixel_shared_palette,
+            jxl_supported: true,
+            audio_apc_supported: true,
+            opus_supported: icy_engine_gui::music::audio_apc::supports_format(32, 100),
+            audio_active_channels: audio.active_mask(),
+            lf_expand: state.lf_expand,
+            inverse_mode: state.inverse_video,
+            ice_colors: screen.ice_mode() == icy_engine::IceMode::Ice,
+            baud_emulation: self.terminal_window.baud_emulation,
+            terminal_type: self.terminal_window.terminal_emulation,
+            screen_mode: self.terminal_window.screen_mode,
+            ansi_music: self.terminal_window.ansi_music,
+        }
+    }
+
     pub fn new(
         id: usize,
         mode: MainWindowMode,
@@ -760,33 +802,7 @@ impl MainWindow {
             Message::TerminalInfo(ref msg) => {
                 // Handle CopyToClipboard specially - needs async clipboard API
                 if matches!(msg, terminal_info_dialog::TerminalInfoDialogMessage::CopyToClipboard) {
-                    // Gather current terminal info for the text
-                    let screen = self.terminal_window.terminal.screen.lock();
-                    let caret = screen.caret();
-                    let terminal_state = screen.terminal_state();
-
-                    let info = terminal_info_dialog::TerminalInfo {
-                        buffer_size: terminal_state.size(),
-                        screen_resolution: screen.resolution(),
-                        font_size: screen.font(caret.font_page() as usize).map(|f| f.size()).unwrap_or_default(),
-                        caret_position: caret.position(),
-                        caret_visible: caret.visible,
-                        caret_blinking: caret.blinking,
-                        caret_shape: caret.shape,
-                        insert_mode: caret.insert_mode,
-                        auto_wrap: terminal_state.auto_wrap_mode == icy_engine::AutoWrapMode::AutoWrap,
-                        scroll_mode: terminal_state.scroll_state,
-                        margins_top_bottom: terminal_state.margins_top_bottom(),
-                        margins_left_right: terminal_state.margins_left_right(),
-                        mouse_mode: format!("{:?}", terminal_state.mouse_state.mouse_mode),
-                        inverse_mode: terminal_state.inverse_video,
-                        ice_colors: screen.ice_mode() == icy_engine::IceMode::Ice,
-                        baud_emulation: self.terminal_window.baud_emulation,
-                        terminal_type: self.terminal_window.terminal_emulation,
-                        screen_mode: self.terminal_window.screen_mode,
-                        ansi_music: self.terminal_window.ansi_music,
-                    };
-                    drop(screen);
+                    let info = self.terminal_info_snapshot();
 
                     // Create a temporary dialog state just to format the text
                     let dialog = terminal_info_dialog::TerminalInfoDialog::new(info);
@@ -804,38 +820,7 @@ impl MainWindow {
             }
             Message::ShowTerminalInfoDialog => {
                 self.switch_to_terminal_screen();
-                // Gather terminal info
-                let screen = self.terminal_window.terminal.screen.lock();
-                let caret = screen.caret();
-                let terminal_state = screen.terminal_state();
-
-                // Get current terminal settings - use actual current state
-                let terminal_type = self.terminal_window.terminal_emulation;
-                let screen_mode = self.terminal_window.screen_mode;
-                let ansi_music = self.terminal_window.ansi_music;
-
-                let info = terminal_info_dialog::TerminalInfo {
-                    buffer_size: terminal_state.size(),
-                    screen_resolution: screen.resolution(),
-                    font_size: screen.font(caret.font_page() as usize).map(|f| f.size()).unwrap_or_default(),
-                    caret_position: caret.position(),
-                    caret_visible: caret.visible,
-                    caret_blinking: caret.blinking,
-                    caret_shape: caret.shape,
-                    insert_mode: caret.insert_mode,
-                    auto_wrap: terminal_state.auto_wrap_mode == icy_engine::AutoWrapMode::AutoWrap,
-                    scroll_mode: terminal_state.scroll_state,
-                    margins_top_bottom: terminal_state.margins_top_bottom(),
-                    margins_left_right: terminal_state.margins_left_right(),
-                    mouse_mode: format!("{:?}", terminal_state.mouse_state.mouse_mode),
-                    inverse_mode: terminal_state.inverse_video,
-                    ice_colors: screen.ice_mode() == icy_engine::IceMode::Ice,
-                    baud_emulation: self.terminal_window.baud_emulation,
-                    terminal_type,
-                    screen_mode,
-                    ansi_music,
-                };
-                drop(screen);
+                let info = self.terminal_info_snapshot();
 
                 self.dialogs.push(
                     terminal_info_dialog::terminal_info_dialog_from_msg(info, icy_engine_gui::dialog_msg!(Message::TerminalInfo)).on_confirm(|result| {

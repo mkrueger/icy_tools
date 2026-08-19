@@ -87,6 +87,10 @@ impl TextPane for TextScreen {
 }
 
 impl Screen for TextScreen {
+    fn render_snapshot(&self) -> Option<Box<dyn Screen>> {
+        Some(Box::new(self.clone()))
+    }
+
     fn buffer_type(&self) -> crate::BufferType {
         self.buffer.buffer_type
     }
@@ -141,6 +145,14 @@ impl Screen for TextScreen {
 
     fn render_region_to_rgba_raw(&self, px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
         self.buffer.render_region_to_rgba_raw(px_region, options, self.scan_lines)
+    }
+
+    fn render_text_region_to_rgba_raw(&self, px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.buffer.render_text_region_to_rgba_raw(px_region, options, self.scan_lines)
+    }
+
+    fn render_graphics_region_to_rgba_raw(&self, px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.buffer.render_graphics_region_to_rgba_raw(px_region, options, self.scan_lines)
     }
 
     fn font(&self, font_number: usize) -> Option<&BitFont> {

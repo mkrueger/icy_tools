@@ -480,23 +480,23 @@ pub struct TerminalThread {
 }
 
 impl TerminalThread {
-    pub fn spawn(
+    fn new(
         edit_screen: Arc<Mutex<Box<dyn Screen>>>,
         parser: Box<dyn CommandParser + Send>,
         address_book: Arc<Mutex<crate::data::AddressBook>>,
-    ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
-
-        let mut thread = Self {
+        command_tx: mpsc::UnboundedSender<TerminalCommand>,
+        command_rx: mpsc::UnboundedReceiver<TerminalCommand>,
+        event_tx: mpsc::UnboundedSender<TerminalEvent>,
+    ) -> Self {
+        Self {
             edit_screen,
             connection: None,
             parser,
             current_transfer: None,
             connection_time: None,
             command_rx,
-            command_tx: command_tx.clone(),
-            event_tx: event_tx.clone(),
+            command_tx,
+            event_tx,
             use_utf8: false,
             utf8_buffer: Vec::new(),
             auto_transfer_scanner: AutoTransferScanner::default(),
@@ -520,7 +520,18 @@ impl TerminalThread {
             injected_data: Vec::new(),
             audio_notify_armed: 0,
             audio_last_active: 0,
-        };
+        }
+    }
+
+    pub fn spawn(
+        edit_screen: Arc<Mutex<Box<dyn Screen>>>,
+        parser: Box<dyn CommandParser + Send>,
+        address_book: Arc<Mutex<crate::data::AddressBook>>,
+    ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
+        let (command_tx, command_rx) = mpsc::unbounded_channel();
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+
+        let mut thread = Self::new(edit_screen, parser, address_book, command_tx.clone(), command_rx, event_tx.clone());
 
         // Spawn the async runtime for the terminal thread
         std::thread::spawn(move || {
@@ -2349,9 +2360,178 @@ mod tests {
         ansi_mode_report_status, dec_mode_report_status, decrqss_status, parse_cached_media_command, read_cached_media, store_cached_media,
         valid_cache_filename, CachedMediaCommand, TerminalThread,
     };
+    use async_trait::async_trait;
     use base64::{engine::general_purpose, Engine as _};
-    use icy_engine::{EditableScreen, Size, TextScreen};
-    use icy_net::telnet::TerminalEmulation;
+    use icy_engine::{EditableScreen, Screen, Size, TextScreen};
+    use icy_net::{telnet::TerminalEmulation, Connection, ConnectionType};
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+    use tokio::sync::mpsc;
+
+    #[derive(Clone, Default)]
+    struct FakeConnection {
+        sent: Arc<Mutex<Vec<u8>>>,
+    }
+
+    #[async_trait]
+    impl Connection for FakeConnection {
+        fn get_connection_type(&self) -> ConnectionType {
+            ConnectionType::Raw
+        }
+
+        async fn read(&mut self, _buf: &mut [u8]) -> icy_net::Result<usize> {
+            Ok(0)
+        }
+
+        async fn try_read(&mut self, _buf: &mut [u8]) -> icy_net::Result<usize> {
+            Ok(0)
+        }
+
+        async fn send(&mut self, buf: &[u8]) -> icy_net::Result<()> {
+            self.sent.lock().extend_from_slice(buf);
+            Ok(())
+        }
+    }
+
+    fn test_terminal() -> (TerminalThread, Arc<Mutex<Vec<u8>>>, Arc<Mutex<Box<dyn Screen>>>) {
+        let screen: Arc<Mutex<Box<dyn Screen>>> = Arc::new(Mutex::new(Box::new(TextScreen::new(Size::new(80, 25)))));
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let connection = FakeConnection { sent: sent.clone() };
+        let (command_tx, command_rx) = mpsc::unbounded_channel();
+        let (event_tx, _event_rx) = mpsc::unbounded_channel();
+        let mut terminal = TerminalThread::new(
+            screen.clone(),
+            Box::new(icy_parser_core::AnsiParser::new()),
+            Arc::new(Mutex::new(crate::data::AddressBook::default())),
+            command_tx,
+            command_rx,
+            event_tx,
+        );
+        terminal.connection = Some(Box::new(connection));
+        (terminal, sent, screen)
+    }
+
+    async fn process_chunks(terminal: &mut TerminalThread, chunks: &[&[u8]]) {
+        for chunk in chunks {
+            terminal.process_data(chunk).await;
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct SessionConfig {
+        lf_expand: bool,
+    }
+
+    enum ChunkPlan {
+        Whole,
+        SplitAt(Vec<usize>),
+        Bytewise,
+    }
+
+    struct CapturedSession<'a> {
+        input: &'a [u8],
+        config: SessionConfig,
+        plans: Vec<ChunkPlan>,
+        expected_replies: &'a [u8],
+        expected_state: SessionStateDigest,
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct SessionStateDigest {
+        size: Size,
+        kitty_flags: u8,
+        mouse_mode: String,
+        mouse_encoding: String,
+        sixel_at_cursor: bool,
+        sixel_shared_palette: bool,
+        lf_expand: bool,
+    }
+
+    fn state_digest(screen: &dyn Screen) -> SessionStateDigest {
+        let state = screen.terminal_state();
+        SessionStateDigest {
+            size: state.size(),
+            kitty_flags: state.kitty_keyboard.flags(),
+            mouse_mode: format!("{:?}", state.mouse_state.mouse_mode),
+            mouse_encoding: format!("{:?}", state.mouse_state.extended_mode),
+            sixel_at_cursor: state.sixel_at_cursor,
+            sixel_shared_palette: state.sixel_shared_palette,
+            lf_expand: state.lf_expand,
+        }
+    }
+
+    async fn run_captured_session(session: &CapturedSession<'_>) {
+        for plan in &session.plans {
+            let (mut terminal, sent, screen) = test_terminal();
+            if let Some(editable) = screen.lock().as_editable() {
+                editable.terminal_state_mut().lf_expand = session.config.lf_expand;
+            }
+
+            match plan {
+                ChunkPlan::Whole => terminal.process_data(session.input).await,
+                ChunkPlan::Bytewise => {
+                    for byte in session.input {
+                        terminal.process_data(std::slice::from_ref(byte)).await;
+                    }
+                }
+                ChunkPlan::SplitAt(boundaries) => {
+                    let mut start = 0;
+                    for end in boundaries.iter().copied().chain(std::iter::once(session.input.len())) {
+                        terminal.process_data(&session.input[start..end]).await;
+                        start = end;
+                    }
+                }
+            }
+
+            assert_eq!(&*sent.lock(), session.expected_replies);
+            assert_eq!(state_digest(&**screen.lock()), session.expected_state);
+        }
+    }
+
+    #[tokio::test]
+    async fn captured_syncdoor_negotiation_is_chunk_invariant() {
+        let input = b"\x1b[?1003;1016h\x1b[?80h\x1b[?1070l\x1b[>5u\x1b[?u\x1b[255n\x1b_SyncTERM:Q;JXL\x1b\\\x1b_SyncTERM:Q;libsndfile\x1b\\";
+        let session = CapturedSession {
+            input,
+            config: SessionConfig { lf_expand: true },
+            plans: vec![ChunkPlan::Whole, ChunkPlan::SplitAt(vec![1, 7, 22, 43, 67]), ChunkPlan::Bytewise],
+            expected_replies: b"\x1b[?5u\x1B[25;80R\x1B[=1;1-n\x1b[=7;100;1n",
+            expected_state: SessionStateDigest {
+                size: Size::new(80, 25),
+                kitty_flags: 5,
+                mouse_mode: "AnyEvents".to_string(),
+                mouse_encoding: "PixelPosition".to_string(),
+                sixel_at_cursor: false,
+                sixel_shared_palette: true,
+                lf_expand: true,
+            },
+        };
+
+        run_captured_session(&session).await;
+    }
+
+    #[tokio::test]
+    async fn remote_queries_report_geometry_across_chunk_boundaries() {
+        let (mut terminal, sent, _) = test_terminal();
+
+        process_chunks(&mut terminal, &[b"\x1b[25", b"5n\x1b[14", b"t\x1b[16t"]).await;
+
+        assert_eq!(&*sent.lock(), b"\x1B[25;80R\x1B[4;400;640t\x1B[6;16;8t");
+    }
+
+    #[tokio::test]
+    async fn remote_mode_negotiation_updates_state_and_exact_replies() {
+        let (mut terminal, sent, screen) = test_terminal();
+        let input = b"\x1b[?1003;1006;1016h\x1b[?80h\x1b[?1070l\x1b[>5u\x1b[?u\x1b[?1003$p\x1b[?1006$p\x1b[?1016$p\x1b[?80$p\x1b[?1070$p";
+
+        process_chunks(&mut terminal, &[&input[..17], &input[17..41], &input[41..]]).await;
+
+        let state = screen.lock();
+        assert_eq!(state.terminal_state().kitty_keyboard.flags(), 5);
+        assert!(!state.terminal_state().sixel_at_cursor);
+        assert!(state.terminal_state().sixel_shared_palette);
+        assert_eq!(&*sent.lock(), b"\x1b[?5u\x1B[?1003;1$y\x1B[?1006;2$y\x1B[?1016;1$y\x1B[?80;1$y\x1B[?1070;2$y");
+    }
 
     #[test]
     fn auto_login_enter_uses_active_terminal_mapping() {

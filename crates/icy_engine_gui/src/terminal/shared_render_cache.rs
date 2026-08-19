@@ -46,6 +46,7 @@ pub struct SharedCachedTile {
 pub struct SharedRenderCache {
     /// Cached tiles keyed by (tile_index, blink_state)
     tiles: HashMap<TileCacheKey, SharedCachedTile>,
+    overlay_tiles: HashMap<i32, SharedCachedTile>,
     /// Total content height in pixels
     pub content_height: f32,
     /// Content width in pixels
@@ -67,6 +68,7 @@ impl SharedRenderCache {
     pub fn new() -> Self {
         Self {
             tiles: HashMap::new(),
+            overlay_tiles: HashMap::new(),
             content_height: 0.0,
             content_width: 0,
             visible_width: 0.0,
@@ -80,11 +82,13 @@ impl SharedRenderCache {
     /// Clear all cached tiles
     pub fn clear(&mut self) {
         self.tiles.clear();
+        self.overlay_tiles.clear();
     }
 
     /// Invalidate cache due to content change (clears all tiles)
     pub fn invalidate(&mut self) {
         self.tiles.clear();
+        self.overlay_tiles.clear();
     }
 
     /// Invalidate only specific tiles based on dirty line range.
@@ -104,6 +108,9 @@ impl SharedRenderCache {
             if self.tiles.remove(&TileCacheKey::new(tile_idx, false)).is_some() {
                 removed_any = true;
             }
+            if self.overlay_tiles.remove(&tile_idx).is_some() {
+                removed_any = true;
+            }
         }
         removed_any
     }
@@ -111,6 +118,14 @@ impl SharedRenderCache {
     /// Invalidate cache due to selection change
     pub fn invalidate_selection(&mut self) {
         self.tiles.clear();
+    }
+
+    pub fn get_overlay(&self, tile_index: i32) -> Option<&SharedCachedTile> {
+        self.overlay_tiles.get(&tile_index)
+    }
+
+    pub fn insert_overlay(&mut self, tile_index: i32, tile: SharedCachedTile) {
+        self.overlay_tiles.insert(tile_index, tile);
     }
 
     /// Get a cached tile if available

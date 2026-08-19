@@ -587,6 +587,8 @@ impl<'a> CRTShaderProgram<'a> {
             };
         }
 
+        let render_snapshot = self.term.screen.lock().render_snapshot();
+
         // Helper to get or render tiles for a specific blink state
         let mut get_or_render_tiles = |blink_state: bool, slices: &mut Vec<TextureSliceData>, heights: &mut Vec<u32>| {
             for &tile_idx in &tile_indices {
@@ -631,7 +633,11 @@ impl<'a> CRTShaderProgram<'a> {
                         selection_bg: selection_bg.clone(),
                         override_scan_lines: None,
                     };
-                    let (render_size, rgba_data) = self.term.screen.lock().render_region_to_rgba_raw(tile_region, &render_options);
+                    let (render_size, rgba_data) = if let Some(snapshot) = render_snapshot.as_ref() {
+                        snapshot.render_text_region_to_rgba_raw(tile_region, &render_options)
+                    } else {
+                        self.term.screen.lock().render_text_region_to_rgba_raw(tile_region, &render_options)
+                    };
                     let width = render_size.width as u32;
                     let height = render_size.height as u32;
 
@@ -667,7 +673,7 @@ impl<'a> CRTShaderProgram<'a> {
             slices_blink_on = slices_blink_off.clone();
         }
 
-        // Ensure we have at least one slice for both states
+        // Ensure we have at least one text slice for both states.
         if slices_blink_off.is_empty() {
             let empty_slice = TextureSliceData {
                 rgba_data: Arc::new(vec![0u8; 4]),
@@ -679,6 +685,54 @@ impl<'a> CRTShaderProgram<'a> {
             slice_heights.push(1);
             first_slice_start_y = 0.0;
         }
+
+        let text_slice_count = slices_blink_off.len();
+        let mut graphics_slices = Vec::with_capacity(tile_indices.len());
+        for (&tile_idx, &height) in tile_indices.iter().zip(slice_heights.iter()) {
+            let tile_start_y = tile_idx as f32 * tile_height;
+            if let Some(cached) = self.term.render_cache.read().get_overlay(tile_idx).cloned() {
+                graphics_slices.push(cached.texture);
+                continue;
+            }
+            let tile_region = icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, height as i32);
+            let render_options = icy_engine::RenderOptions {
+                rect: tile_region.into(),
+                blink_on: false,
+                selection: None,
+                selection_fg: None,
+                selection_bg: None,
+                override_scan_lines: None,
+            };
+            let (render_size, rgba_data) = if let Some(snapshot) = render_snapshot.as_ref() {
+                snapshot.render_graphics_region_to_rgba_raw(tile_region, &render_options)
+            } else {
+                self.term.screen.lock().render_graphics_region_to_rgba_raw(tile_region, &render_options)
+            };
+            let slice = TextureSliceData {
+                rgba_data: Arc::new(rgba_data),
+                width: render_size.width as u32,
+                height: render_size.height as u32,
+            };
+            self.term.render_cache.write().insert_overlay(
+                tile_idx,
+                SharedCachedTile {
+                    texture: slice.clone(),
+                    height,
+                    start_y: tile_start_y,
+                },
+            );
+            graphics_slices.push(slice);
+            tiles_rendered = true;
+        }
+        if graphics_slices.is_empty() {
+            graphics_slices.extend(slices_blink_off.iter().take(text_slice_count).map(|slice| TextureSliceData {
+                rgba_data: Arc::new(vec![0; slice.width as usize * slice.height as usize * 4]),
+                width: slice.width,
+                height: slice.height,
+            }));
+        }
+        slices_blink_off.extend(graphics_slices.iter().cloned());
+        slices_blink_on.extend(graphics_slices);
 
         // Read marker settings from editor_markers parameter (passed by caller)
         // This replaces the old approach of reading from term.markers
@@ -757,6 +811,7 @@ impl<'a> CRTShaderProgram<'a> {
         TerminalShader {
             slices_blink_off,
             slices_blink_on,
+            text_slice_count,
             slice_heights,
             texture_width,
             total_content_height: full_content_height,

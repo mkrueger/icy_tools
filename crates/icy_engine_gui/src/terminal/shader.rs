@@ -210,6 +210,8 @@ pub struct TerminalShader {
     pub slices_blink_off: Vec<TextureSliceData>,
     /// Texture slices for blink_on state
     pub slices_blink_on: Vec<TextureSliceData>,
+    /// Number of text layers; graphics layers follow at the same indices.
+    pub text_slice_count: usize,
     /// Heights of each slice in pixels (same for both blink states)
     pub slice_heights: Vec<u32>,
     /// Width of the texture (same for all slices)
@@ -863,7 +865,7 @@ impl shader::Primitive for TerminalShader {
 
         let id = self.instance_id;
         let render_generation = self.render_generation;
-        let num_slices = self.slices_blink_off.len(); // Both should have same count
+        let num_slices = self.text_slice_count;
         let texture_width = self.texture_width.min(MAX_TEXTURE_DIMENSION);
         let total_height = self.total_content_height as u32;
 
@@ -1480,7 +1482,7 @@ impl shader::Primitive for TerminalShader {
             enable_bloom: if self.monitor_settings.use_bloom { 1.0 } else { 0.0 },
             _padding: [0.0; 2],
             background_color: self.background_color,
-            num_slices: self.slices_blink_off.len() as f32, // Both have same count
+            num_slices: self.text_slice_count as f32,
             total_image_height: self.total_content_height,
             scroll_offset_y: self.scroll_offset_y,
             visible_height: self.visible_height,

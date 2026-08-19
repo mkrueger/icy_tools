@@ -78,6 +78,10 @@ impl TextPane for SharedTextScreen {
 
 // Implement Screen by delegating to inner
 impl Screen for SharedTextScreen {
+    fn render_snapshot(&self) -> Option<Box<dyn Screen>> {
+        Some(Box::new(self.inner.lock().clone()))
+    }
+
     fn buffer_type(&self) -> crate::BufferType {
         self.inner.lock().buffer_type()
     }

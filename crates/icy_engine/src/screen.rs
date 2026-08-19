@@ -40,6 +40,11 @@ impl GraphicsType {
 /// Core trait for anything that can be displayed
 /// Viewing interface - all screens must implement this
 pub trait Screen: TextPane + Send + Sync {
+    /// Clone the immutable state required for rendering outside the caller's screen lock.
+    fn render_snapshot(&self) -> Option<Box<dyn Screen>> {
+        None
+    }
+
     // Core identity
     fn buffer_type(&self) -> crate::BufferType;
 
@@ -83,6 +88,14 @@ pub trait Screen: TextPane + Send + Sync {
     /// Default implementation falls back to `render_region_to_rgba`.
     fn render_region_to_rgba_raw(&self, region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
         self.render_region_to_rgba(region, options)
+    }
+
+    fn render_text_region_to_rgba_raw(&self, region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
+        self.render_region_to_rgba_raw(region, options)
+    }
+
+    fn render_graphics_region_to_rgba_raw(&self, region: Rectangle, _options: &RenderOptions) -> (Size, Vec<u8>) {
+        (region.size, vec![0; region.size.width.max(0) as usize * region.size.height.max(0) as usize * 4])
     }
 
     // Visual state

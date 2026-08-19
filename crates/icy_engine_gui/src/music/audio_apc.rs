@@ -10,6 +10,7 @@ use std::{
     num::NonZero,
     sync::{
         atomic::{AtomicU32, Ordering},
+        mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
         Arc,
     },
     time::Duration,
@@ -631,12 +632,127 @@ struct Patch {
     frames: Vec<f32>,
 }
 
+enum DecodeInput {
+    File(std::path::PathBuf),
+    Blob(Vec<u8>),
+}
+
+struct DecodeJob {
+    slot: u8,
+    generation: u64,
+    input: DecodeInput,
+}
+
+struct DecodeResult {
+    slot: u8,
+    generation: u64,
+    frames: Option<Vec<f32>>,
+}
+
+fn start_decode_worker() -> (SyncSender<DecodeJob>, Receiver<DecodeResult>) {
+    let (job_tx, job_rx) = mpsc::sync_channel::<DecodeJob>(8);
+    let (result_tx, result_rx) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("audio-apc-decoder".to_string())
+        .spawn(move || {
+            while let Ok(job) = job_rx.recv() {
+                let data = match job.input {
+                    DecodeInput::File(path) => std::fs::read(path).ok(),
+                    DecodeInput::Blob(data) => Some(data),
+                };
+                let frames = data.and_then(AudioApcState::decode);
+                if result_tx
+                    .send(DecodeResult {
+                        slot: job.slot,
+                        generation: job.generation,
+                        frames,
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .expect("failed to start Audio APC decoder");
+    (job_tx, result_rx)
+}
+
+#[derive(Default)]
+struct StereoGainControl {
+    left: AtomicU32,
+    right: AtomicU32,
+}
+
+impl StereoGainControl {
+    fn new(left: f32, right: f32) -> Self {
+        Self {
+            left: AtomicU32::new(left.to_bits()),
+            right: AtomicU32::new(right.to_bits()),
+        }
+    }
+
+    fn set(&self, left: f32, right: f32) {
+        self.left.store(left.to_bits(), Ordering::Relaxed);
+        self.right.store(right.to_bits(), Ordering::Relaxed);
+    }
+}
+
+struct StereoGain<S> {
+    input: S,
+    control: Arc<StereoGainControl>,
+    channel: usize,
+}
+
+impl<S> StereoGain<S> {
+    fn new(input: S, control: Arc<StereoGainControl>) -> Self {
+        Self { input, control, channel: 0 }
+    }
+}
+
+impl<S: Source> Iterator for StereoGain<S> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let sample = self.input.next()?;
+        let gain = if self.channel == 0 {
+            f32::from_bits(self.control.left.load(Ordering::Relaxed))
+        } else {
+            f32::from_bits(self.control.right.load(Ordering::Relaxed))
+        };
+        self.channel = (self.channel + 1) % self.input.channels().get() as usize;
+        Some(sample * gain)
+    }
+}
+
+impl<S: Source> Source for StereoGain<S> {
+    fn current_span_len(&self) -> Option<usize> {
+        self.input.current_span_len()
+    }
+
+    fn channels(&self) -> rodio::ChannelCount {
+        self.input.channels()
+    }
+
+    fn sample_rate(&self) -> rodio::SampleRate {
+        self.input.sample_rate()
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        self.input.total_duration()
+    }
+}
+
 /// Patch slots plus the per-channel players, owned by the sound thread.
 pub struct AudioApcState {
     patches: Vec<Patch>,
     players: Vec<Option<Player>>,
-    volumes: Vec<(f32, f32)>,
+    volumes: Vec<Arc<StereoGainControl>>,
     status: Arc<AudioApcStatus>,
+    generations: Vec<u64>,
+    pending: Vec<bool>,
+    deferred: Vec<Vec<AudioApcCommand>>,
+    decode_tx: SyncSender<DecodeJob>,
+    decode_rx: Receiver<DecodeResult>,
 }
 
 impl Default for AudioApcState {
@@ -647,11 +763,17 @@ impl Default for AudioApcState {
 
 impl AudioApcState {
     pub fn new() -> Self {
+        let (decode_tx, decode_rx) = start_decode_worker();
         AudioApcState {
             patches: vec![Patch::default(); PATCH_SLOTS],
             players: (0..CHANNELS).map(|_| None).collect(),
-            volumes: vec![(0.0, 0.0); CHANNELS],
+            volumes: (0..CHANNELS).map(|_| Arc::new(StereoGainControl::new(1.0, 1.0))).collect(),
             status: status(),
+            generations: vec![0; PATCH_SLOTS],
+            pending: vec![false; PATCH_SLOTS],
+            deferred: vec![Vec::new(); PATCH_SLOTS],
+            decode_tx,
+            decode_rx,
         }
     }
 
@@ -670,6 +792,50 @@ impl AudioApcState {
         for (index, player) in self.players.iter().enumerate() {
             let active = player.as_ref().is_some_and(|player| !player.empty());
             self.status.set_active(index as u8, active);
+        }
+    }
+
+    pub fn poll(&mut self, mixer: Option<&Mixer>) {
+        loop {
+            match self.decode_rx.try_recv() {
+                Ok(result) => {
+                    let slot = result.slot as usize;
+                    if self.generations[slot] != result.generation {
+                        continue;
+                    }
+                    self.pending[slot] = false;
+                    if let Some(frames) = result.frames {
+                        self.store(result.slot, frames);
+                    }
+                    let commands = std::mem::take(&mut self.deferred[slot]);
+                    for command in commands {
+                        self.handle(mixer, None, command);
+                    }
+                }
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+            }
+        }
+        self.refresh_status();
+    }
+
+    fn submit_decode(&mut self, slot: u8, input: DecodeInput) {
+        let index = slot as usize;
+        self.generations[index] = self.generations[index].wrapping_add(1);
+        self.pending[index] = true;
+        self.patches[index].frames.clear();
+        self.deferred[index].clear();
+        let job = DecodeJob {
+            slot,
+            generation: self.generations[index],
+            input,
+        };
+        if let Err(error) = self.decode_tx.try_send(job) {
+            self.pending[index] = false;
+            self.deferred[index].clear();
+            match error {
+                TrySendError::Full(_) => log::warn!("Audio APC: decoder queue full, dropping slot {slot}"),
+                TrySendError::Disconnected(_) => log::warn!("Audio APC: decoder unavailable, dropping slot {slot}"),
+            }
         }
     }
 
@@ -743,6 +909,7 @@ impl AudioApcState {
 
     /// Applies a command. `cache_directory` resolves `Load` file names.
     pub fn handle(&mut self, mixer: Option<&Mixer>, cache_directory: Option<&std::path::Path>, command: AudioApcCommand) {
+        self.poll(mixer);
         match command {
             AudioApcCommand::Load { slot, file } => {
                 let Some(directory) = cache_directory else {
@@ -753,23 +920,10 @@ impl AudioApcState {
                     log::warn!("Audio APC: rejected cache path {file:?}");
                     return;
                 };
-                let data = match std::fs::read(&path) {
-                    Ok(data) => data,
-                    Err(err) => {
-                        log::warn!("Audio APC: cannot read {}: {err}", path.display());
-                        return;
-                    }
-                };
-                if let Some(frames) = Self::decode(data) {
-                    self.store(slot, frames);
-                } else {
-                    log::warn!("Audio APC: cannot decode {}", path.display());
-                }
+                self.submit_decode(slot, DecodeInput::File(path));
             }
             AudioApcCommand::LoadBlob { slot, data } => {
-                if let Some(frames) = Self::decode(data) {
-                    self.store(slot, frames);
-                }
+                self.submit_decode(slot, DecodeInput::Blob(data));
             }
             AudioApcCommand::Synth {
                 slot,
@@ -777,10 +931,22 @@ impl AudioApcState {
                 frequency,
                 frames,
             } => {
+                let index = slot as usize;
+                self.generations[index] = self.generations[index].wrapping_add(1);
+                self.pending[index] = false;
+                self.deferred[index].clear();
                 let samples = Self::synth(shape, frequency, frames);
                 self.store(slot, samples);
             }
             AudioApcCommand::Copy { source, destination } => {
+                if self.pending[source as usize] {
+                    self.deferred[source as usize].push(AudioApcCommand::Copy { source, destination });
+                    return;
+                }
+                let destination_index = destination as usize;
+                self.generations[destination_index] = self.generations[destination_index].wrapping_add(1);
+                self.pending[destination_index] = false;
+                self.deferred[destination_index].clear();
                 let frames = self.patches[source as usize].frames.clone();
                 self.store(destination, frames);
             }
@@ -792,6 +958,17 @@ impl AudioApcState {
                 left_db,
                 right_db,
             } => {
+                if self.pending[slot as usize] {
+                    self.deferred[slot as usize].push(AudioApcCommand::Queue {
+                        channel,
+                        slot,
+                        fade_in,
+                        looping,
+                        left_db,
+                        right_db,
+                    });
+                    return;
+                }
                 let frames = std::mem::take(&mut self.patches[slot as usize].frames);
                 if frames.is_empty() {
                     return;
@@ -803,15 +980,16 @@ impl AudioApcState {
                 let left = db_to_gain(left_db);
                 let right = db_to_gain(right_db);
                 let panned = apply_pan(frames, left, right);
+                let volume = self.volumes[channel as usize].clone();
                 let Some(player) = self.player(mixer, channel) else { return };
 
                 let buffer = SamplesBuffer::new(stereo(), sample_rate(), panned);
                 let fade = Duration::from_secs_f32(fade_in as f32 / SAMPLE_RATE as f32);
                 match (looping, fade_in > 0) {
-                    (true, true) => player.append(buffer.repeat_infinite().fade_in(fade)),
-                    (true, false) => player.append(buffer.repeat_infinite()),
-                    (false, true) => player.append(buffer.fade_in(fade)),
-                    (false, false) => player.append(buffer),
+                    (true, true) => player.append(StereoGain::new(buffer.repeat_infinite().fade_in(fade), volume)),
+                    (true, false) => player.append(StereoGain::new(buffer.repeat_infinite(), volume)),
+                    (false, true) => player.append(StereoGain::new(buffer.fade_in(fade), volume)),
+                    (false, false) => player.append(StereoGain::new(buffer, volume)),
                 }
                 self.status.set_active(channel, true);
             }
@@ -825,12 +1003,7 @@ impl AudioApcState {
                 self.status.set_active(channel, false);
             }
             AudioApcCommand::Volume { channel, left_db, right_db } => {
-                let Some(mixer) = mixer else { return };
-                self.volumes[channel as usize] = (left_db, right_db);
-                let gain = db_to_gain(left_db.max(right_db));
-                if let Some(player) = self.player(mixer, channel) {
-                    player.set_volume(gain);
-                }
+                self.volumes[channel as usize].set(db_to_gain(left_db), db_to_gain(right_db));
             }
             AudioApcCommand::Update { .. } => {}
         }
@@ -882,6 +1055,27 @@ fn safe_cache_path(directory: &std::path::Path, file: &str) -> Option<std::path:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stereo_gain_preserves_channels_and_live_updates() {
+        let control = Arc::new(StereoGainControl::new(1.0, 0.25));
+        let buffer = SamplesBuffer::new(stereo(), sample_rate(), vec![1.0, 1.0, 0.5, 0.5]);
+        let mut source = StereoGain::new(buffer, control.clone());
+
+        assert_eq!(source.next(), Some(1.0));
+        assert_eq!(source.next(), Some(0.25));
+        control.set(0.0, 0.5);
+        assert_eq!(source.next(), Some(0.0));
+        assert_eq!(source.next(), Some(0.25));
+    }
+
+    #[test]
+    fn decibel_floor_mutes_without_affecting_other_channel() {
+        let frames = apply_pan(vec![1.0, 1.0], db_to_gain(MIN_DB), db_to_gain(-6.0206));
+        assert_eq!(frames[0], 0.0);
+        assert!((frames[1] - 0.5).abs() < 0.0001);
+        assert!((db_to_gain(BASE_DB) - 0.25118864).abs() < 0.0001);
+    }
 
     #[test]
     fn parses_syncdoom_sfx_sequence() {

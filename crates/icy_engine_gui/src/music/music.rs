@@ -312,6 +312,7 @@ impl SoundThread {
             while data.thread_is_running {
                 data.handle_queue();
                 data.handle_receive();
+                data.audio_apc.poll(data.mixer.as_ref());
                 // Process GIST samples if playing
                 if data.gist_playing {
                     data.process_gist_samples();
@@ -319,7 +320,6 @@ impl SoundThread {
                 if data.music.is_empty() && !data.gist_playing {
                     // Short idle poll: graphics doors fire sound effects per frame,
                     // and this interval is their playback latency.
-                    data.audio_apc.refresh_status();
                     thread::sleep(Duration::from_millis(10));
                 }
             }

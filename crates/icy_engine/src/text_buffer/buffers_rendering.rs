@@ -2,6 +2,13 @@ use crate::{Position, Rectangle, RenderOptions, TextBuffer, TextPane, XTERM_256_
 
 use super::Size;
 
+#[derive(Clone, Copy)]
+enum RenderLayer {
+    Combined,
+    Text,
+    Graphics,
+}
+
 impl TextBuffer {
     pub fn render_to_rgba(&self, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
         self.render_to_rgba_raw(options, scan_lines)
@@ -12,6 +19,18 @@ impl TextBuffer {
     /// This is useful for GPU/display-layer aspect ratio correction (e.g. CRT shader),
     /// and for callers that want a stable pixel coordinate system.
     pub fn render_to_rgba_raw(&self, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
+        self.render_layer_to_rgba_raw(options, scan_lines, RenderLayer::Combined)
+    }
+
+    pub fn render_text_to_rgba_raw(&self, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
+        self.render_layer_to_rgba_raw(options, scan_lines, RenderLayer::Text)
+    }
+
+    pub fn render_graphics_to_rgba_raw(&self, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
+        self.render_layer_to_rgba_raw(options, scan_lines, RenderLayer::Graphics)
+    }
+
+    fn render_layer_to_rgba_raw(&self, options: &RenderOptions, scan_lines: bool, layer: RenderLayer) -> (Size, Vec<u8>) {
         // Use get_font_for_render to get the correct font (9px if letter spacing is enabled)
         let Some(font) = self.font_for_render(0) else {
             log::error!("render_to_rgba: no font available");
@@ -53,7 +72,7 @@ impl TextBuffer {
         let mut pixels_u32 = if scan_lines {
             let normal_size = (px_width * px_height) as usize;
             let mut pixels = vec![0u32; normal_size * 2];
-            self.render_to_rgba_into(options, &mut pixels[..normal_size], font_size, rect, px_width, px_height);
+            self.render_to_rgba_into(options, &mut pixels[..normal_size], font_size, rect, px_width, px_height, layer);
 
             // Expand backward so source rows are not overwritten before they are copied.
             for y in (0..px_height as usize).rev() {
@@ -67,7 +86,7 @@ impl TextBuffer {
         } else {
             // Render directly with u32
             let mut pixels_u32 = vec![0u32; (px_width * px_height) as usize];
-            self.render_to_rgba_into(options, &mut pixels_u32, font_size, rect, px_width, px_height);
+            self.render_to_rgba_into(options, &mut pixels_u32, font_size, rect, px_width, px_height, layer);
             pixels_u32
         };
 
@@ -91,6 +110,18 @@ impl TextBuffer {
     ///
     /// NOTE: `px_region` is in *raw* pixel coordinates (no aspect-ratio correction applied).
     pub fn render_region_to_rgba_raw(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
+        self.render_layer_region_to_rgba_raw(px_region, options, scan_lines, RenderLayer::Combined)
+    }
+
+    pub fn render_text_region_to_rgba_raw(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
+        self.render_layer_region_to_rgba_raw(px_region, options, scan_lines, RenderLayer::Text)
+    }
+
+    pub fn render_graphics_region_to_rgba_raw(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool) -> (Size, Vec<u8>) {
+        self.render_layer_region_to_rgba_raw(px_region, options, scan_lines, RenderLayer::Graphics)
+    }
+
+    fn render_layer_region_to_rgba_raw(&self, px_region: Rectangle, options: &RenderOptions, scan_lines: bool, layer: RenderLayer) -> (Size, Vec<u8>) {
         let Some(font) = self.font_for_render(0) else {
             log::error!("render_region_to_rgba_raw: no font available");
             return (Size::new(0, 0), Vec::new());
@@ -148,7 +179,7 @@ impl TextBuffer {
         };
 
         // Render the character region (raw, without aspect ratio)
-        let (full_size, mut full_pixels) = self.render_to_rgba_raw(&region_options, scan_lines);
+        let (full_size, mut full_pixels) = self.render_layer_to_rgba_raw(&region_options, scan_lines, layer);
 
         // Check if render produced valid output
         if full_size.width <= 0 || full_size.height <= 0 || full_pixels.is_empty() {
@@ -221,7 +252,16 @@ impl TextBuffer {
         self.render_region_to_rgba_raw(px_region, options, scan_lines)
     }
 
-    fn render_to_rgba_into(&self, options: &RenderOptions, pixels: &mut [u32], font_size: Size, rect: Rectangle, px_width: i32, px_height: i32) {
+    fn render_to_rgba_into(
+        &self,
+        options: &RenderOptions,
+        pixels: &mut [u32],
+        font_size: Size,
+        rect: Rectangle,
+        px_width: i32,
+        px_height: i32,
+        layer: RenderLayer,
+    ) {
         // Bail out early if buffer mismatched
         if pixels.len() != (px_width * px_height) as usize {
             log::error!(
@@ -234,18 +274,21 @@ impl TextBuffer {
 
         let line_width = px_width;
 
-        match self.buffer_type {
-            super::BufferType::Viewdata => self.render_viewdata_u32(options, pixels, font_size, rect, line_width),
-            _ => {
-                if self.use_letter_spacing {
-                    self.render_optimized_9px_u32(options, pixels, font_size, rect, line_width);
-                } else {
-                    self.render_optimized_u32(options, pixels, font_size, rect, line_width);
+        if !matches!(layer, RenderLayer::Graphics) {
+            match self.buffer_type {
+                super::BufferType::Viewdata => self.render_viewdata_u32(options, pixels, font_size, rect, line_width),
+                _ => {
+                    if self.use_letter_spacing {
+                        self.render_optimized_9px_u32(options, pixels, font_size, rect, line_width);
+                    } else {
+                        self.render_optimized_u32(options, pixels, font_size, rect, line_width);
+                    }
                 }
             }
         }
-        // Sixel overlay now works on u32 directly
-        self.render_sixel_overlay(pixels, font_size, rect, px_width, px_height);
+        if !matches!(layer, RenderLayer::Text) {
+            self.render_sixel_overlay(pixels, font_size, rect, px_width, px_height);
+        }
     }
 
     fn render_optimized_u32(&self, options: &RenderOptions, pixels: &mut [u32], font_size: Size, rect: Rectangle, line_width: i32) {
