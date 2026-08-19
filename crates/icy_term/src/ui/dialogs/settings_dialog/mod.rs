@@ -22,6 +22,7 @@ mod modem_settings;
 mod paths_settings;
 mod protocol_settings;
 mod terminal_settings;
+mod web_directory_settings;
 
 pub use modem_command_input::*;
 
@@ -37,6 +38,7 @@ pub enum SettingsCategory {
     Modem,
     Protocols,
     Paths,
+    WebDirectories,
 }
 
 impl SettingsCategory {
@@ -49,6 +51,7 @@ impl SettingsCategory {
             Self::Modem => fl!(crate::LANGUAGE_LOADER, "settings-modem-category"),
             Self::Protocols => fl!(crate::LANGUAGE_LOADER, "settings-protocol-category"),
             Self::Paths => fl!(crate::LANGUAGE_LOADER, "settings-paths-category"),
+            Self::WebDirectories => fl!(crate::LANGUAGE_LOADER, "settings-web-directory-category"),
         }
     }
 
@@ -60,6 +63,7 @@ impl SettingsCategory {
             /*Self::Keybinds,*/ Self::Modem,
             Self::Protocols,
             Self::Paths,
+            Self::WebDirectories,
         ]
     }
 }
@@ -92,6 +96,12 @@ pub enum SettingsDialogMessage {
     BrowseDownloadPath,
     BrowseCapturePath,
     ResetPaths,
+    SelectWebDirectory(usize),
+    AddWebDirectory,
+    RemoveWebDirectory(usize),
+    UpdateWebDirectoryName(usize, String),
+    UpdateWebDirectoryUrl(usize, String),
+    ToggleWebDirectory(usize, bool),
     Save,
     Cancel,
     Noop,
@@ -104,6 +114,7 @@ pub struct SettingsDialogState {
     pub original_options: Arc<Mutex<Options>>,
     pub selected_modem_index: usize,
     pub selected_protocol_index: usize,
+    pub selected_web_directory_index: usize,
 }
 
 impl SettingsDialogState {
@@ -116,6 +127,7 @@ impl SettingsDialogState {
             original_options,
             selected_modem_index: 0,
             selected_protocol_index: 0,
+            selected_web_directory_index: 0,
         }
     }
 
@@ -139,6 +151,10 @@ impl SettingsDialogState {
                         let default_options = crate::data::Options::default();
                         options.console_beep = default_options.console_beep;
                         options.dial_tone = default_options.dial_tone;
+                        options.audio_enabled = default_options.audio_enabled;
+                        options.master_volume = default_options.master_volume;
+                        options.audio_device = default_options.audio_device;
+                        options.invert_mouse_wheel = default_options.invert_mouse_wheel;
                     }
                     SettingsCategory::IEMSI => {
                         let mut options = self.temp_options.lock();
@@ -157,6 +173,10 @@ impl SettingsDialogState {
                         options.transfer_protocols = crate::data::default_protocols();
                         drop(options);
                         self.selected_protocol_index = 0;
+                    }
+                    SettingsCategory::WebDirectories => {
+                        self.temp_options.lock().web_directories.clear();
+                        self.selected_web_directory_index = 0;
                     }
                     _ => {}
                 }
@@ -360,6 +380,47 @@ impl SettingsDialogState {
                 }
                 StateResult::None
             }
+            SettingsDialogMessage::SelectWebDirectory(index) => {
+                self.selected_web_directory_index = index;
+                StateResult::None
+            }
+            SettingsDialogMessage::AddWebDirectory => {
+                let mut options = self.temp_options.lock();
+                let index = options.web_directories.len();
+                options.web_directories.push(crate::data::WebDirectorySource {
+                    name: format!("Directory {}", index + 1),
+                    url: "https://".to_string(),
+                    enabled: true,
+                });
+                self.selected_web_directory_index = index;
+                StateResult::None
+            }
+            SettingsDialogMessage::RemoveWebDirectory(index) => {
+                let mut options = self.temp_options.lock();
+                if index < options.web_directories.len() {
+                    options.web_directories.remove(index);
+                    self.selected_web_directory_index = index.min(options.web_directories.len().saturating_sub(1));
+                }
+                StateResult::None
+            }
+            SettingsDialogMessage::UpdateWebDirectoryName(index, name) => {
+                if let Some(source) = self.temp_options.lock().web_directories.get_mut(index) {
+                    source.name = name;
+                }
+                StateResult::None
+            }
+            SettingsDialogMessage::UpdateWebDirectoryUrl(index, url) => {
+                if let Some(source) = self.temp_options.lock().web_directories.get_mut(index) {
+                    source.url = url;
+                }
+                StateResult::None
+            }
+            SettingsDialogMessage::ToggleWebDirectory(index, enabled) => {
+                if let Some(source) = self.temp_options.lock().web_directories.get_mut(index) {
+                    source.enabled = enabled;
+                }
+                StateResult::None
+            }
             SettingsDialogMessage::Noop => StateResult::None,
         }
     }
@@ -438,6 +499,7 @@ impl SettingsDialogState {
                 drop(options);
                 paths_settings::paths_settings_content_generic(download_path, capture_path, on_message.clone())
             }
+            SettingsCategory::WebDirectories => self.web_directory_settings_content_generic(on_message.clone()),
         };
 
         // Buttons
@@ -483,6 +545,7 @@ impl SettingsDialogState {
                         .into(),
                 )
             }
+            SettingsCategory::WebDirectories => None,
             _ => None,
         };
 
@@ -496,7 +559,10 @@ impl SettingsDialogState {
         let button_area_row = button_row_with_left(buttons_left, buttons_right);
 
         // For modem and protocol settings, don't wrap in scrollable since they have their own layout
-        let content_container = if matches!(self.current_category, SettingsCategory::Modem | SettingsCategory::Protocols) {
+        let content_container = if matches!(
+            self.current_category,
+            SettingsCategory::Modem | SettingsCategory::Protocols | SettingsCategory::WebDirectories
+        ) {
             container(settings_content).height(Length::Fixed(SETTINGS_CONTENT_HEIGHT)).width(Length::Fill)
         } else {
             container(scrollable(settings_content).direction(scrollable::Direction::Vertical(scrollable::Scrollbar::default())))
@@ -660,6 +726,29 @@ struct ThemeOption(icy_ui::Theme);
 impl ThemeOption {
     fn all() -> Vec<ThemeOption> {
         icy_ui::Theme::all().into_iter().map(ThemeOption).collect()
+    }
+}
+
+#[cfg(test)]
+mod web_directory_tests {
+    use super::{SettingsDialogMessage, SettingsDialogState};
+    use crate::Options;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+
+    #[test]
+    fn adding_web_directory_creates_editable_source() {
+        let options = Arc::new(Mutex::new(Options::default()));
+        let mut state = SettingsDialogState::new(options);
+
+        let _ = state.handle_message(SettingsDialogMessage::AddWebDirectory);
+
+        let sources = state.temp_options.lock().web_directories.clone();
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].name, "Directory 1");
+        assert_eq!(sources[0].url, "https://");
+        assert!(sources[0].enabled);
+        assert_eq!(state.selected_web_directory_index, 0);
     }
 }
 

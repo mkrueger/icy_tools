@@ -173,7 +173,9 @@ impl ViewdataParser {
 
 impl CommandParser for ViewdataParser {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink) {
-        for &byte in input {
+        for &input_byte in input {
+            // Prestel permits C1 controls in their 8-bit form (0x80..0x9F).
+            let byte = if (0x80..=0x9F).contains(&input_byte) { input_byte & 0x1F } else { input_byte };
             match byte {
                 // control codes 0
                 0b000_0000 => {}                                           // ignore

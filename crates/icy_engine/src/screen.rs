@@ -404,6 +404,10 @@ pub trait EditableScreen: Screen {
     fn set_char(&mut self, pos: Position, ch: AttributedChar);
 
     fn print_char(&mut self, ch: AttributedChar) {
+        if self.terminal_state().wrap_pending {
+            self.terminal_state_mut().wrap_pending = false;
+            self.lf();
+        }
         if self.caret().insert_mode {
             self.ins();
         }
@@ -437,7 +441,12 @@ pub trait EditableScreen: Screen {
             // lf needs to be in margins, if there are some.
             caret_pos.x = last_col;
             if self.terminal_state_mut().auto_wrap_mode == crate::AutoWrapMode::AutoWrap {
-                self.lf();
+                if self.terminal_state().last_column_flag_mode {
+                    self.terminal_state_mut().wrap_pending = true;
+                    self.set_caret_position(caret_pos);
+                } else {
+                    self.lf();
+                }
                 return;
             }
         }
@@ -524,11 +533,14 @@ pub trait EditableScreen: Screen {
 
     // Terminal control sequences
     fn lf(&mut self) {
+        self.terminal_state_mut().wrap_pending = false;
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
         let mut pos = self.caret().position();
 
-        pos.x = self.first_editable_column();
+        if self.terminal_state().lf_expand {
+            pos.x = self.first_editable_column();
+        }
         pos.y += 1;
 
         if self.terminal_state().is_terminal_buffer {
@@ -556,6 +568,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn cr(&mut self) {
+        self.terminal_state_mut().wrap_pending = false;
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         self.caret_mut().x = 0;
         self.limit_caret_pos(in_margin);
@@ -567,6 +580,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn home(&mut self) {
+        self.terminal_state_mut().wrap_pending = false;
         let pos = self.upper_left_position();
         self.set_caret_position(pos);
     }
@@ -618,6 +632,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn bs(&mut self) {
+        self.terminal_state_mut().wrap_pending = false;
         // BS (0x08): Non-destructive backspace
         let min_x = if self.terminal_state().in_margin(self.caret().position()) {
             self.first_editable_column()
@@ -629,6 +644,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn left(&mut self, num: i32, scroll: bool, auto_wrap: bool) {
+        self.terminal_state_mut().wrap_pending = false;
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
 
@@ -656,6 +672,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn right(&mut self, num: i32, scroll: bool, auto_wrap: bool) {
+        self.terminal_state_mut().wrap_pending = false;
         let last_col = (self.width() - 1).max(0);
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
@@ -675,6 +692,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn up(&mut self, num: i32, scroll: bool, _auto_wrap: bool) {
+        self.terminal_state_mut().wrap_pending = false;
         let y = self.caret().y.saturating_sub(num);
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
@@ -686,6 +704,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn down(&mut self, num: i32, scroll: bool, _auto_wrap: bool) {
+        self.terminal_state_mut().wrap_pending = false;
         let y = self.caret().y + num;
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
@@ -697,6 +716,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn index(&mut self) {
+        self.terminal_state_mut().wrap_pending = false;
         let mut pos = self.caret_position();
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
@@ -707,6 +727,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn next_line(&mut self, scroll: bool) {
+        self.terminal_state_mut().wrap_pending = false;
         let mut pos = self.caret_position();
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
@@ -742,6 +763,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn tab_forward(&mut self) {
+        self.terminal_state_mut().wrap_pending = false;
         let mut pos = self.caret_position();
         let x = self.terminal_state().next_tab_stop(pos.x);
         let w = self.width() - 1;

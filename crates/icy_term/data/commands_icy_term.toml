@@ -106,6 +106,12 @@ hotkey = ["Alt+F"]
 hotkey_mac = ["Cmd+F"]
 category = "terminal"
 
+[[commands]]
+id = "terminal.toggle_mouse"
+hotkey = ["Alt+M"]
+hotkey_mac = ["Option+M"]
+category = "terminal"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Capture & Export
 # ═══════════════════════════════════════════════════════════════════════════════

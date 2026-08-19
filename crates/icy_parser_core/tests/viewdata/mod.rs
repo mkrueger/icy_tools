@@ -70,6 +70,9 @@ impl CommandSink for TestSink {
             ViewDataCommand::MoveCaret(Direction::Right) => {
                 self.commands.push("CursorForward: 1".to_string());
             }
+            ViewDataCommand::DoubleHeight(enabled) => {
+                self.commands.push(format!("DoubleHeight: {}", enabled));
+            }
             ViewDataCommand::CheckAndResetOnRowChange | ViewDataCommand::ResetRowColors => {
                 self.commands.push("SGR: Reset".to_string());
             }
@@ -183,6 +186,17 @@ fn test_viewdata_blink() {
 }
 
 #[test]
+fn test_viewdata_double_height_blinking_combination() {
+    let mut parser = ViewdataParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1BM\x1BH", &mut sink);
+
+    assert!(sink.commands.iter().any(|command| command == "DoubleHeight: true"));
+    assert!(sink.commands.iter().any(|command| command.contains("Blink(Slow)")));
+}
+
+#[test]
 fn test_viewdata_concealed() {
     let mut parser = ViewdataParser::new();
     let mut sink = TestSink::new();
@@ -191,6 +205,27 @@ fn test_viewdata_concealed() {
     parser.parse(b"\x1BA\x1BX", &mut sink);
 
     assert!(sink.commands.iter().any(|c| c.contains("Concealed(true)")));
+}
+
+#[test]
+fn test_viewdata_8bit_c1_controls() {
+    let mut parser = ViewdataParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(&[0x91, 0x94], &mut sink);
+
+    assert!(sink.commands.iter().any(|command| command.contains("CursorVisible, true")));
+    assert!(sink.commands.iter().any(|command| command.contains("CursorVisible, false")));
+}
+
+#[test]
+fn test_viewdata_8bit_escape_sequence() {
+    let mut parser = ViewdataParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(&[0x9B, b'A'], &mut sink);
+
+    assert!(sink.commands.iter().any(|command| command.contains("Foreground(Base(1))")));
 }
 
 #[test]
@@ -229,6 +264,49 @@ fn test_viewdata_contiguous_separated() {
     // These affect internal state but don't emit specific commands
     // Just verify it doesn't crash
     assert!(!sink.commands.is_empty());
+}
+
+#[test]
+fn test_viewdata_del_replacement_character() {
+    let mut parser = ViewdataParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(&[0x7F], &mut sink);
+
+    assert!(sink.commands.iter().any(|command| command.contains("\\u{7f}")));
+}
+
+#[test]
+fn test_viewdata_invalid_escape_recovers_for_following_text() {
+    let mut parser = ViewdataParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1B?A", &mut sink);
+
+    assert!(sink.commands.iter().any(|command| command == "Text: \"A\""));
+}
+
+#[test]
+fn test_viewdata_reveal_clears_concealment() {
+    let mut parser = ViewdataParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1BA\x1BX\x1B\\", &mut sink);
+
+    let concealed: Vec<_> = sink.commands.iter().filter(|command| command.contains("Concealed(")).collect();
+    assert!(concealed.iter().any(|command| command.contains("true")));
+    assert!(concealed.last().is_some_and(|command| command.contains("false")));
+}
+
+#[test]
+fn test_viewdata_double_height_toggle() {
+    let mut parser = ViewdataParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1BM\x1BL", &mut sink);
+
+    assert!(sink.commands.iter().any(|command| command == "DoubleHeight: true"));
+    assert!(sink.commands.iter().any(|command| command == "DoubleHeight: false"));
 }
 
 #[test]

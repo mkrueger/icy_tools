@@ -44,6 +44,23 @@ fn test_csi_dollar_sequences() {
 }
 
 #[test]
+fn test_decrqm_standard_and_private_modes() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B[4$p\x1B[?2004$p\x1B[?9999$p", &mut sink);
+
+    assert_eq!(
+        sink.requests,
+        [
+            TerminalRequest::AnsiModeReport(4),
+            TerminalRequest::DecPrivateModeReport(2004),
+            TerminalRequest::DecPrivateModeReport(9999),
+        ]
+    );
+}
+
+#[test]
 fn test_rect_checksum_decrqcra() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();
@@ -155,4 +172,22 @@ fn test_extended_device_attributes() {
     } else {
         panic!("Expected ExtendedDeviceAttributes");
     }
+}
+
+#[test]
+fn test_graphics_size_report() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B[?2;1S", &mut sink);
+    assert_eq!(sink.requests, [TerminalRequest::GraphicsSizeReport]);
+}
+
+#[test]
+fn test_decrqss_request() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1BP$q1;24r\x1B\\", &mut sink);
+    assert_eq!(sink.requests, [TerminalRequest::RequestStatusString(b"1;24r".to_vec())]);
 }

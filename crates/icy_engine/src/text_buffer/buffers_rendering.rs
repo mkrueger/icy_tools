@@ -1011,30 +1011,16 @@ impl TextBuffer {
                 let sx_char = layer.offset().x + sixel.position.x;
                 let sy_char = layer.offset().y + sixel.position.y;
 
-                // Calculate sixel dimensions in character coordinates
-                let sixel_width_chars = (sixel.width() + font_dims.width - 1) / font_dims.width;
-                let sixel_height_chars = (sixel.height() + font_dims.height - 1) / font_dims.height;
-
-                // Skip if sixel is completely outside the rect
-                if sy_char + sixel_height_chars <= rect.start.y
-                    || sy_char > rect.bottom()
-                    || sx_char + sixel_width_chars <= rect.start.x
-                    || sx_char > rect.right()
-                {
+                let sx_px = (sx_char - rect.start.x) * font_dims.width + sixel.pixel_offset.x;
+                let sy_px = (sy_char - rect.start.y) * font_dims.height + sixel.pixel_offset.y;
+                if sx_px >= line_width || sy_px >= px_height || sx_px + sixel.width() <= 0 || sy_px + sixel.height() <= 0 {
                     continue;
                 }
 
-                // Calculate which part of the sixel is visible
-                let sx = sx_char - rect.start.x;
-                let sy = sy_char - rect.start.y;
-
-                // Calculate pixel offsets for clipping
-                let skip_x_px = if sx < 0 { -sx * font_dims.width } else { 0 };
-                let skip_y_px = if sy < 0 { -sy * font_dims.height } else { 0 };
-
-                // Calculate destination position (clamped to 0)
-                let dest_x_px = sx.max(0) * font_dims.width;
-                let dest_y_px = sy.max(0) * font_dims.height;
+                let skip_x_px = (-sx_px).max(0);
+                let skip_y_px = (-sy_px).max(0);
+                let dest_x_px = sx_px.max(0);
+                let dest_y_px = sy_px.max(0);
 
                 // Calculate how many pixels to copy
                 let max_y = (dest_y_px + sixel.height() - skip_y_px).min(px_height);

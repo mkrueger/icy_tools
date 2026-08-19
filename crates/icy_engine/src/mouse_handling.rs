@@ -120,6 +120,9 @@ impl MouseEvent {
             }
 
             MouseMode::ButtonEvents => {
+                if self.button == MouseButton::None && matches!(self.event_type, MouseEventType::Motion) {
+                    return None;
+                }
                 let mut cb = encode_vt200_button(self.button, self.event_type, &self.modifiers);
                 if matches!(self.event_type, MouseEventType::Motion) {
                     cb += 32; // Add motion indicator
@@ -204,7 +207,8 @@ fn encode_vt200_button(button: MouseButton, event_type: MouseEventType, modifier
     let mut cb = match event_type {
         MouseEventType::Release => 3,
         _ => match button {
-            MouseButton::None | MouseButton::Left => 0,
+            MouseButton::None => 3,
+            MouseButton::Left => 0,
             MouseButton::Middle => 1,
             MouseButton::Right => 2,
             MouseButton::WheelUp => 64,
@@ -286,5 +290,39 @@ fn generate_focus_event(focused: bool) -> String {
         "\x1B[I".to_string()
     } else {
         "\x1B[O".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn motion_event(mode: MouseMode, button: MouseButton) -> MouseEvent {
+        let mut mouse_state = MouseState::default();
+        mouse_state.mouse_mode = mode;
+        MouseEvent {
+            mouse_state,
+            event_type: MouseEventType::Motion,
+            position: Position::new(0, 0),
+            button,
+            modifiers: KeyModifiers::default(),
+        }
+    }
+
+    #[test]
+    fn any_event_motion_distinguishes_unpressed_and_dragged() {
+        assert_eq!(
+            motion_event(MouseMode::AnyEvents, MouseButton::None).generate_mouse_report(),
+            Some("\x1B[MC!!".to_string())
+        );
+        assert_eq!(
+            motion_event(MouseMode::AnyEvents, MouseButton::Left).generate_mouse_report(),
+            Some("\x1B[M@!!".to_string())
+        );
+    }
+
+    #[test]
+    fn button_event_mode_ignores_unpressed_motion() {
+        assert_eq!(motion_event(MouseMode::ButtonEvents, MouseButton::None).generate_mouse_report(), None);
     }
 }

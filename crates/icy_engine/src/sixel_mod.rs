@@ -11,6 +11,7 @@ pub enum SixelState {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Sixel {
     pub position: Position,
+    pub pixel_offset: Position,
 
     pub vertical_scale: i32,
     pub horizontal_scale: i32,
@@ -24,6 +25,7 @@ impl Sixel {
     pub fn new(position: Position) -> Self {
         Self {
             position,
+            pixel_offset: Position::default(),
             vertical_scale: 1,
             horizontal_scale: 1,
             picture_data: Vec::new(),
@@ -34,6 +36,7 @@ impl Sixel {
     pub fn from_data(size: impl Into<Size>, vertical_scale: i32, horizontal_scale: i32, data: Vec<u8>) -> Self {
         Self {
             position: Position::default(),
+            pixel_offset: Position::default(),
             vertical_scale,
             horizontal_scale,
             picture_data: data,
@@ -43,8 +46,8 @@ impl Sixel {
 
     /// Coordinates are points
     pub fn screen_rect(&self, font_dims: Size) -> Rectangle {
-        let x = self.position.x * font_dims.width;
-        let y = self.position.y * font_dims.height;
+        let x = self.position.x * font_dims.width + self.pixel_offset.x;
+        let y = self.position.y * font_dims.height + self.pixel_offset.y;
         Rectangle {
             start: Position::new(x, y),
             size: self.size,
@@ -58,8 +61,8 @@ impl Sixel {
         Rectangle {
             start: Position::new(x, y),
             size: Size::new(
-                (self.size.width as f32 / font_dims.width as f32).ceil() as i32,
-                (self.size.height as f32 / font_dims.height as f32).ceil() as i32,
+                ((self.pixel_offset.x + self.size.width) as f32 / font_dims.width as f32).ceil() as i32,
+                ((self.pixel_offset.y + self.size.height) as f32 / font_dims.height as f32).ceil() as i32,
             ),
         }
     }
@@ -76,6 +79,7 @@ impl Sixel {
 
         Ok(Sixel {
             position: Position::default(),
+            pixel_offset: Position::default(),
             vertical_scale: 1,
             horizontal_scale: 1,
             picture_data: image.pixels,

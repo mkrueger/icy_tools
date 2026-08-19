@@ -82,6 +82,19 @@ fn test_osc_palette() {
 }
 
 #[test]
+fn test_osc_palette_reset() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B]104\x07", &mut sink);
+    assert_eq!(sink.osc_commands, [OperatingSystemCommand::ResetPaletteColors(Vec::new())]);
+
+    sink.osc_commands.clear();
+    parser.parse(b"\x1B]104;1;15;255\x1B\\", &mut sink);
+    assert_eq!(sink.osc_commands, [OperatingSystemCommand::ResetPaletteColors(vec![1, 15, 255])]);
+}
+
+#[test]
 fn test_osc8_hyperlinks() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();
@@ -119,4 +132,47 @@ fn test_osc8_hyperlinks() {
     } else {
         panic!("Expected Hyperlink");
     }
+}
+
+#[test]
+fn test_unknown_osc_is_ignored() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"Before\x1B]999;unsupported payload\x07After", &mut sink);
+
+    assert_eq!(sink.text, b"BeforeAfter");
+    assert!(sink.osc_commands.is_empty());
+}
+
+#[test]
+fn test_osc_default_color_queries() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B]10;?\x1B\\\x1B]11;?\x07", &mut sink);
+
+    assert_eq!(
+        sink.requests,
+        [
+            TerminalRequest::OscColorReport { foreground: true },
+            TerminalRequest::OscColorReport { foreground: false },
+        ]
+    );
+}
+
+#[test]
+fn test_osc_palette_color_queries() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B]4;1;?;15;?\x1B\\", &mut sink);
+
+    assert_eq!(
+        sink.requests,
+        [
+            TerminalRequest::OscPaletteColorReport { index: 1 },
+            TerminalRequest::OscPaletteColorReport { index: 15 }
+        ]
+    );
 }

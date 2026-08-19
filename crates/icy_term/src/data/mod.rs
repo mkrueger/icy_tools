@@ -9,3 +9,6 @@ pub use connection_info::*;
 
 pub mod transfer_protocol;
 pub use transfer_protocol::*;
+
+mod web_directory;
+pub use web_directory::*;

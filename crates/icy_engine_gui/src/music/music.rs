@@ -15,6 +15,7 @@ use std::thread;
 #[cfg(target_arch = "wasm32")]
 use wasm_thread as thread;
 
+use cpal::traits::{DeviceTrait, HostTrait};
 use icy_parser_core::{AnsiMusic, MusicAction, MusicStyle};
 use rodio::{
     source::{Function, SignalGenerator, SineWave},
@@ -69,6 +70,11 @@ static DTMF_FREQUENCIES: Lazy<HashMap<char, (f32, f32)>> = Lazy::new(|| {
 /// Data that is sent to the connection thread
 #[derive(Debug)]
 pub enum SoundData {
+    Configure {
+        enabled: bool,
+        volume: f32,
+        device: Option<String>,
+    },
     PlayMusic(AnsiMusic),
     Beep,
     Clear,
@@ -127,6 +133,25 @@ impl SoundThread {
 
     pub fn clear(&self) {
         let _ = self.tx.send(SoundData::Clear);
+    }
+
+    pub fn output_devices() -> Vec<String> {
+        cpal::default_host()
+            .output_devices()
+            .map(|devices| {
+                devices
+                    .filter_map(|device| device.description().ok().map(|description| description.name().to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn configure(&mut self, enabled: bool, volume: f32, device: Option<String>) -> SoundResult<()> {
+        self.send_data(SoundData::Configure {
+            enabled,
+            volume: volume.clamp(0.0, 1.0),
+            device,
+        })
     }
 
     pub fn is_playing(&self) -> bool {
@@ -244,7 +269,8 @@ impl SoundThread {
             let (stream, mixer, sample_rate) = match rodio::DeviceSinkBuilder::open_default_sink() {
                 Ok(handle) => {
                     let rate = handle.config().sample_rate();
-                    let mixer = handle.mixer().clone();
+                    let (mixer, source) = rodio::mixer::mixer(handle.config().channel_count(), rate);
+                    handle.mixer().add(source.amplify(0.25));
                     (Some(handle), Some(mixer), rate)
                 }
                 Err(e) => {
@@ -266,6 +292,9 @@ impl SoundThread {
                 ym_ring_buffer: None,
                 gist_player: GistPlayer::with_sample_rate(ym_audio::SAMPLE_RATE),
                 gist_playing: false,
+                audio_enabled: true,
+                master_volume: 0.25,
+                audio_device: None,
             };
 
             data.init_ym_audio();
@@ -322,6 +351,9 @@ pub struct SoundBackgroundThreadData {
     ym_ring_buffer: Option<Arc<parking_lot::Mutex<RingBuffer>>>,
     gist_player: GistPlayer,
     gist_playing: bool,
+    audio_enabled: bool,
+    master_volume: f32,
+    audio_device: Option<String>,
 }
 
 impl SoundBackgroundThreadData {
@@ -396,15 +428,32 @@ impl SoundBackgroundThreadData {
         self.mixer = None;
         self.ym_ring_buffer = None;
 
-        // Create new stream
-        match rodio::DeviceSinkBuilder::open_default_sink() {
-            Ok(handle) => {
+        if !self.audio_enabled {
+            self.gist_playing = false;
+            self.gist_player.reset();
+            return;
+        }
+
+        let selected = self.audio_device.as_ref().and_then(|selected_name| {
+            cpal::default_host()
+                .output_devices()
+                .ok()?
+                .find(|device| device.description().ok().is_some_and(|description| description.name() == selected_name))
+        });
+        let opened = selected
+            .and_then(|device| rodio::DeviceSinkBuilder::from_device(device).ok()?.open_stream().ok())
+            .or_else(|| rodio::DeviceSinkBuilder::open_default_sink().ok());
+
+        match opened {
+            Some(handle) => {
                 self.sample_rate = handle.config().sample_rate();
-                self.mixer = Some(handle.mixer().clone());
+                let (mixer, source) = rodio::mixer::mixer(handle.config().channel_count(), self.sample_rate);
+                handle.mixer().add(source.amplify(self.master_volume));
+                self.mixer = Some(mixer);
                 self.stream = Some(handle);
             }
-            Err(e) => {
-                log::error!("Failed to recreate audio stream: {}", e);
+            None => {
+                log::error!("Failed to recreate audio stream");
             }
         }
 
@@ -419,6 +468,13 @@ impl SoundBackgroundThreadData {
         loop {
             match self.rx.try_recv() {
                 Ok(data) => match data {
+                    SoundData::Configure { enabled, volume, device } => {
+                        self.audio_enabled = enabled;
+                        self.master_volume = volume;
+                        self.audio_device = device;
+                        self.music.clear();
+                        self.reset_audio_stream();
+                    }
                     SoundData::PlayMusic(m) => {
                         self.line_sound_playing = false;
                         self.music.push_back(SoundData::PlayMusic(m));

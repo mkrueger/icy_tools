@@ -427,6 +427,7 @@ impl EditableScreen for TextScreen {
 
         let start_column = self.first_editable_column();
         let end_column = self.last_editable_column();
+        let blank = AttributedChar::new(' ', self.caret.attribute);
 
         {
             let layer_ref = &mut self.buffer.layers[self.current_layer];
@@ -435,7 +436,7 @@ impl EditableScreen for TextScreen {
                     let ch = layer_ref.char_at((x, y + 1).into());
                     layer_ref.set_char((x, y), ch);
                 });
-                layer_ref.set_char((x, end_line), AttributedChar::default());
+                layer_ref.set_char((x, end_line), blank);
             }
         }
         let layer_ref = &mut self.buffer.layers[self.current_layer];
@@ -470,6 +471,7 @@ impl EditableScreen for TextScreen {
 
         let start_column = self.first_editable_column();
         let end_column = self.last_editable_column();
+        let blank = AttributedChar::new(' ', self.caret.attribute);
 
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data downward
@@ -478,7 +480,7 @@ impl EditableScreen for TextScreen {
                 let ch = layer_ref.char_at((x, y - 1).into());
                 layer_ref.set_char((x, y), ch);
             });
-            layer_ref.set_char((x, start_line), AttributedChar::default());
+            layer_ref.set_char((x, start_line), blank);
         }
 
         // === NEW: vertical sixel scroll (down) ===
@@ -510,13 +512,14 @@ impl EditableScreen for TextScreen {
 
         let start_column = self.first_editable_column() as usize;
         let end_column = self.last_editable_column() + 1;
+        let blank = AttributedChar::new(' ', self.caret.attribute);
 
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data left
         for y in start_line..=end_line {
             let line = &mut layer_ref.lines[y as usize];
             if line.chars.len() > start_column {
-                line.chars.insert(end_column as usize, AttributedChar::default());
+                line.chars.insert(end_column as usize, blank);
                 line.chars.remove(start_column);
             }
         }
@@ -552,12 +555,13 @@ impl EditableScreen for TextScreen {
 
         let start_column = self.first_editable_column() as usize;
         let end_column = self.last_editable_column() as usize;
+        let blank = AttributedChar::new(' ', self.caret.attribute);
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data right
         for y in start_line..=end_line {
             let line: &mut Line = &mut layer_ref.lines[y as usize];
             if line.chars.len() > start_column {
-                line.chars.insert(start_column, AttributedChar::default());
+                line.chars.insert(start_column, blank);
                 line.chars.remove(end_column + 1);
             }
         }

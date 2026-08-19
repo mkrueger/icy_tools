@@ -43,6 +43,7 @@ zstd = "0.13"
 
 # Image export support
 image = { workspace = true }
+jxl-oxide = { workspace = true }
 lodepng = {version ="3.12.2", default-features = false, features = ["cfzlib"] }
 
 # GIF encoding (replaces gifski)

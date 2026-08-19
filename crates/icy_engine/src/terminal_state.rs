@@ -70,8 +70,15 @@ pub struct TerminalState {
     pub origin_mode: OriginMode,
     pub scroll_state: TerminalScrolling,
     pub auto_wrap_mode: AutoWrapMode,
+    pub bracketed_paste_mode: bool,
+    pub lf_expand: bool,
+    pub last_column_flag_mode: bool,
+    pub last_column_flag_forced: bool,
+    pub wrap_pending: bool,
     margins_top_bottom: Option<(i32, i32)>,
     margins_left_right: Option<(i32, i32)>,
+    saved_text_window: Option<(OriginMode, Option<(i32, i32)>, Option<(i32, i32)>, bool)>,
+    pub(crate) active_hyperlink: Option<(String, Position)>,
     pub mouse_state: MouseState,
 
     pub font_selection_state: FontSelectionState,
@@ -149,9 +156,16 @@ impl TerminalState {
             scroll_state: TerminalScrolling::Smooth,
             origin_mode: OriginMode::UpperLeftCorner,
             auto_wrap_mode: AutoWrapMode::AutoWrap,
+            bracketed_paste_mode: false,
+            lf_expand: true,
+            last_column_flag_mode: false,
+            last_column_flag_forced: false,
+            wrap_pending: false,
             mouse_state: MouseState::default(),
             margins_top_bottom: None,
             margins_left_right: None,
+            saved_text_window: None,
+            active_hyperlink: None,
             baud_rate: BaudEmulation::Off,
             tab_stops: vec![],
             font_selection_state: FontSelectionState::NoRequest,
@@ -332,6 +346,21 @@ impl TerminalState {
         self.margins_left_right = None;
     }
 
+    pub fn save_text_window(&mut self) {
+        self.saved_text_window = Some((self.origin_mode, self.margins_top_bottom, self.margins_left_right, self.dec_left_right_margins));
+    }
+
+    pub fn restore_text_window(&mut self) -> bool {
+        let Some((origin_mode, top_bottom, left_right, enabled)) = self.saved_text_window else {
+            return false;
+        };
+        self.origin_mode = origin_mode;
+        self.margins_top_bottom = top_bottom;
+        self.margins_left_right = left_right;
+        self.dec_left_right_margins = enabled;
+        true
+    }
+
     /// Returns true if the given position is within the scroll region (top/bottom margins).
     /// This is used for scrolling operations which should respect margins regardless of origin mode.
     pub fn in_scroll_region(&self, pos: Position) -> bool {
@@ -386,11 +415,17 @@ impl TerminalState {
         self.origin_mode = OriginMode::UpperLeftCorner;
         self.scroll_state = TerminalScrolling::Smooth;
         self.auto_wrap_mode = AutoWrapMode::AutoWrap;
+        self.bracketed_paste_mode = false;
+        self.wrap_pending = false;
+        if !self.last_column_flag_forced {
+            self.last_column_flag_mode = false;
+        }
 
         // Margins & text window
         self.margins_top_bottom = None;
         self.margins_left_right = None;
         self.dec_left_right_margins = false;
+        self.active_hyperlink = None;
 
         // Mouse state remains...
 

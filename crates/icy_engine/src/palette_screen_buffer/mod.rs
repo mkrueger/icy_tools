@@ -641,12 +641,13 @@ impl EditableScreen for PaletteScreenBuffer {
 
         let row_len = screen_width; // bytes per pixel row (1 byte per pixel)
         let movable_rows = screen_height - line_height;
+        let background = self.caret.attribute.background() as u8;
 
         // Shift all rows up using memmove semantics (copy_within handles overlap)
         self.screen.copy_within(line_height * row_len..screen_height * row_len, 0);
 
         // Clear the freed bottom region
-        self.screen[movable_rows * row_len..screen_height * row_len].fill(0);
+        self.screen[movable_rows * row_len..screen_height * row_len].fill(background);
     }
 
     /// Scroll the screen down by one line (move content down, clear top line)
@@ -662,12 +663,13 @@ impl EditableScreen for PaletteScreenBuffer {
 
         let row_len = screen_width;
         let movable_rows = screen_height - line_height;
+        let background = self.caret.attribute.background() as u8;
 
         // Shift rows down using memmove semantics
         self.screen.copy_within(0..movable_rows * row_len, line_height * row_len);
 
         // Clear the freed top region
-        self.screen[0..line_height * row_len].fill(0);
+        self.screen[0..line_height * row_len].fill(background);
     }
 
     /// Scroll the screen left by one column (move content left, clear right column)
@@ -680,13 +682,14 @@ impl EditableScreen for PaletteScreenBuffer {
         if char_width == 0 || char_width >= screen_width {
             return;
         }
+        let background = self.caret.attribute.background() as u8;
 
         for y in 0..screen_height {
             let row_start = y * screen_width;
             // Shift row content left
             self.screen.copy_within(row_start + char_width..row_start + screen_width, row_start);
             // Clear vacated right area
-            self.screen[row_start + screen_width - char_width..row_start + screen_width].fill(0);
+            self.screen[row_start + screen_width - char_width..row_start + screen_width].fill(background);
         }
     }
 
@@ -700,6 +703,7 @@ impl EditableScreen for PaletteScreenBuffer {
         if char_width == 0 || char_width >= screen_width {
             return;
         }
+        let background = self.caret.attribute.background() as u8;
 
         for y in 0..screen_height {
             let row_start = y * screen_width;
@@ -707,7 +711,7 @@ impl EditableScreen for PaletteScreenBuffer {
             self.screen
                 .copy_within(row_start..row_start + screen_width - char_width, row_start + char_width);
             // Clear vacated left area
-            self.screen[row_start..row_start + char_width].fill(0);
+            self.screen[row_start..row_start + char_width].fill(background);
         }
     }
 

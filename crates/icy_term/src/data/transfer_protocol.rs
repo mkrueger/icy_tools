@@ -3,6 +3,7 @@ use icy_net::modem::ModemCommand;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::protocol::CetProtocol;
 use crate::protocol::ExternalProtocol;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -99,6 +100,11 @@ impl TransferProtocol {
                 id: "@text".to_string(),
                 ..Default::default()
             }),
+            "@cet" => Some(Self {
+                enabled: true,
+                id: "@cet".to_string(),
+                ..Default::default()
+            }),
             _ => None,
         }
     }
@@ -121,6 +127,7 @@ impl TransferProtocol {
                 "@ymodem" => "Ymodem".to_string(),
                 "@ymodemg" => "Ymodem-G".to_string(),
                 "@text" => "Text".to_string(),
+                "@cet" => "CET Telesoftware".to_string(),
                 _ => self.name.clone(),
             }
         } else {
@@ -141,6 +148,7 @@ impl TransferProtocol {
                 "@ymodem" => fl!(crate::LANGUAGE_LOADER, "protocol-ymodem-description"),
                 "@ymodemg" => fl!(crate::LANGUAGE_LOADER, "protocol-ymodemg-description"),
                 "@text" => fl!(crate::LANGUAGE_LOADER, "protocol-text-description"),
+                "@cet" => fl!(crate::LANGUAGE_LOADER, "protocol-cet-description"),
                 _ => self.description.clone(),
             }
         } else {
@@ -158,6 +166,9 @@ impl TransferProtocol {
 
         // Internal protocols start with @
         if self.id.starts_with('@') {
+            if self.id == "@cet" {
+                return Some(Box::new(CetProtocol::new(download_dir)));
+            }
             let protocol_type = match self.id.as_str() {
                 "@zmodem" => TransferProtocolType::ZModem,
                 "@zmodem8k" => TransferProtocolType::ZModem8k,
@@ -282,6 +293,19 @@ pub fn default_protocols() -> Vec<TransferProtocol> {
         TransferProtocol {
             enabled: true,
             id: "@text".to_string(),
+            name: String::new(),
+            description: String::new(),
+            ask_for_download_location: false,
+            batch: false,
+            send_command: String::new(),
+            recv_command: String::new(),
+            auto_transfer: false,
+            download_signature: ModemCommand::default(),
+            upload_signature: ModemCommand::default(),
+        },
+        TransferProtocol {
+            enabled: true,
+            id: "@cet".to_string(),
             name: String::new(),
             description: String::new(),
             ask_for_download_location: false,

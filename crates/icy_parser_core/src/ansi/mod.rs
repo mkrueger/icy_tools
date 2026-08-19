@@ -61,11 +61,12 @@ enum ParserState {
     CsiDecPrivate = 10, // CSI ? ... (or CSI ... ?)
     CsiAsterisk = 12,   // CSI ... *
     CsiDollar = 14,     // CSI ... $
-    CsiSpace = 16,      // CSI ... SP
-    CsiGreater = 18,    // CSI > ...
-    CsiExclaim = 20,    // CSI ! ...
-    CsiEquals = 22,     // CSI = ...
-    CsiLess = 24,       // CSI < ...
+    CsiDecPrivateDollar = 17,
+    CsiSpace = 16,   // CSI ... SP
+    CsiGreater = 18, // CSI > ...
+    CsiExclaim = 20, // CSI ! ...
+    CsiEquals = 22,  // CSI = ...
+    CsiLess = 24,    // CSI < ...
     // Other states
     OscString = 5,
     DcsString = 6,
@@ -73,6 +74,8 @@ enum ParserState {
     ApsString = 8,
     ApsEscape = 9,
     AnsiMusic = 11, // ANSI Music parsing
+    IgnoredString = 13,
+    IgnoredStringEscape = 15,
 }
 
 impl AnsiParser {
@@ -96,6 +99,11 @@ impl AnsiParser {
     }
 
     fn parse_dcs(&mut self, sink: &mut dyn CommandSink) {
+        if let Some(selector) = self.parse_buffer.strip_prefix(b"$q") {
+            sink.request(TerminalRequest::RequestStatusString(selector.to_vec()));
+            return;
+        }
+
         // Check for CTerm custom font: "CTerm:Font:{slot}:{base64_data}"
         if self.parse_buffer.starts_with(b"CTerm:Font:") {
             let start_index = b"CTerm:Font:".len();
@@ -182,16 +190,7 @@ impl AnsiParser {
             return;
         }
 
-        // Unknown DCS - emit as Unknown
-        let seq_preview = String::from_utf8_lossy(&self.parse_buffer[..self.parse_buffer.len().min(30)]).to_string();
-        sink.report_error(
-            ParseError::MalformedSequence {
-                description: "Unknown or malformed escape sequence",
-                sequence: Some(format!("ESC P {}...", seq_preview)),
-                context: Some("DCS command not recognized".to_string()),
-            },
-            crate::ErrorLevel::Error,
-        );
+        // Unknown DCS commands are intentionally ignored.
     }
 
     fn parse_macro_definition(&mut self, start_index: usize) {
@@ -393,6 +392,12 @@ impl CommandParser for AnsiParser {
                             // APS - Application Program String
                             self.parse_buffer.clear();
                             self.state = ParserState::ApsString;
+                            i += 1;
+                            printable_start = i;
+                        }
+                        b'^' | b'X' => {
+                            // PM and SOS strings are unsupported; consume them through ST.
+                            self.state = ParserState::IgnoredString;
                             i += 1;
                             printable_start = i;
                         }
@@ -642,6 +647,10 @@ impl CommandParser for AnsiParser {
                         self.params.push(0);
                         i += 1;
                     }
+                    b'$' => {
+                        self.state = ParserState::CsiDecPrivateDollar;
+                        i += 1;
+                    }
                     b'@'..=b'~' => {
                         // TODO: inline DEC private mode CSI handling here
                         self.handle_dec_private_csi_final(byte, sink);
@@ -659,6 +668,26 @@ impl CommandParser for AnsiParser {
                             },
                             crate::ErrorLevel::Warning,
                         );
+                        self.reset();
+                        self.state = ParserState::Escape;
+                        i += 1;
+                        printable_start = i;
+                    }
+                    _ => {
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                },
+
+                ParserState::CsiDecPrivateDollar => match byte {
+                    b'p' => {
+                        sink.request(TerminalRequest::DecPrivateModeReport(self.params.first().copied().unwrap_or(0)));
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                    ESC => {
                         self.reset();
                         self.state = ParserState::Escape;
                         i += 1;
@@ -785,6 +814,12 @@ impl CommandParser for AnsiParser {
                     b'w' => {
                         // DECRQTSR - Request Tab Stop Report
                         sink.request(TerminalRequest::RequestTabStopReport);
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                    b'p' => {
+                        sink.request(TerminalRequest::AnsiModeReport(self.params.first().copied().unwrap_or(0)));
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -1184,6 +1219,17 @@ impl CommandParser for AnsiParser {
                         i += 1;
                         printable_start = i;
                     }
+                    b'h' | b'l' => {
+                        let enabled = byte == b'h';
+                        match self.params.first().copied() {
+                            Some(4) => sink.emit(TerminalCommand::CsiSetLastColumnFlag { enabled, forced: false }),
+                            Some(5) if enabled => sink.emit(TerminalCommand::CsiSetLastColumnFlag { enabled: true, forced: true }),
+                            _ => {}
+                        }
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
                     b'r' => {
                         sink.emit(TerminalCommand::ResetMargins);
                         self.reset();
@@ -1379,7 +1425,11 @@ impl CommandParser for AnsiParser {
                 ParserState::ApsEscape => {
                     if byte == b'\\' {
                         // ST - String Terminator (ESC \)
-                        sink.aps(&self.parse_buffer);
+                        if self.parse_buffer == b"SyncTERM:Q;JXL" {
+                            sink.request(TerminalRequest::JxlSupportReport);
+                        } else {
+                            sink.aps(&self.parse_buffer);
+                        }
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -1389,6 +1439,25 @@ impl CommandParser for AnsiParser {
                         self.parse_buffer.push(byte);
                         self.state = ParserState::ApsString;
                         i += 1;
+                    }
+                }
+
+                ParserState::IgnoredString => {
+                    if let Some(esc_pos) = memchr::memchr(ESC, &input[i..]) {
+                        i += esc_pos + 1;
+                        self.state = ParserState::IgnoredStringEscape;
+                    } else {
+                        i = input.len();
+                    }
+                }
+
+                ParserState::IgnoredStringEscape => {
+                    if byte == b'\\' {
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    } else {
+                        self.state = ParserState::IgnoredString;
                     }
                 }
 
@@ -1416,6 +1485,11 @@ impl AnsiParser {
         // Ps is the command number, Pt is the text
 
         if self.parse_buffer.is_empty() {
+            return;
+        }
+
+        if self.parse_buffer == b"104" {
+            sink.operating_system_command(OperatingSystemCommand::ResetPaletteColors(Vec::new()));
             return;
         }
 
@@ -1454,17 +1528,17 @@ impl AnsiParser {
                             sink.operating_system_command(OperatingSystemCommand::Hyperlink { params, uri });
                         }
                     }
-                    _ => {
-                        // Unknown OSC command
-                        sink.report_error(
-                            ParseError::MalformedSequence {
-                                description: "Unknown or malformed escape sequence",
-                                sequence: Some(format!("OSC {}", ps)),
-                                context: Some("Unknown OSC command number".to_string()),
-                            },
-                            crate::ErrorLevel::Error,
-                        );
+                    10 | 11 if pt_bytes == b"?" => {
+                        sink.request(TerminalRequest::OscColorReport { foreground: ps == 10 });
                     }
+                    104 => {
+                        let indices = pt_bytes
+                            .split(|byte| *byte == b';')
+                            .filter_map(|part| std::str::from_utf8(part).ok()?.parse::<u8>().ok())
+                            .collect();
+                        sink.operating_system_command(OperatingSystemCommand::ResetPaletteColors(indices));
+                    }
+                    _ => {} // Unknown OSC commands are intentionally ignored.
                 }
                 return;
             }
@@ -1526,6 +1600,11 @@ impl AnsiParser {
 
             // Parse rgb:rr/gg/bb format
             let color_spec = parts[i + 1];
+            if color_spec == "?" {
+                sink.request(TerminalRequest::OscPaletteColorReport { index });
+                i += 2;
+                continue;
+            }
             if let Some(rgb_part) = color_spec.strip_prefix("rgb:").or_else(|| color_spec.strip_prefix("RGB:")) {
                 let rgb_parts: Vec<&str> = rgb_part.split('/').collect();
                 if rgb_parts.len() == 3 {
@@ -1619,7 +1698,7 @@ impl AnsiParser {
                 let n = self.params.first().copied().unwrap_or(1);
                 sink.emit(TerminalCommand::CsiCursorPreviousLine(n));
             }
-            b'G' => {
+            b'G' | b'`' => {
                 let n = self.params.first().copied().unwrap_or(1);
                 sink.emit(TerminalCommand::CsiCursorHorizontalAbsolute(n));
             }
@@ -1971,6 +2050,7 @@ impl AnsiParser {
     #[inline(always)]
     fn handle_dec_private_csi_final(&mut self, final_byte: u8, sink: &mut dyn CommandSink) {
         match final_byte {
+            b'S' if self.params == [2, 1] => sink.request(TerminalRequest::GraphicsSizeReport),
             b'h' | b'l' => {
                 let enabled = final_byte == b'h';
                 for &param in &self.params {

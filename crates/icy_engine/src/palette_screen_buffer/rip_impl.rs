@@ -519,9 +519,16 @@ fn execute_rip_command(buf: &mut dyn EditableScreen, bgi: &mut Bgi, cmd: RipComm
             // Block mode - not implemented
         }
 
-        RipCommand::TextVariable { text: _ } => {
-            // Text variable - not implemented
-        }
+        RipCommand::TextVariable { text } => match text.trim_matches('$').to_ascii_uppercase().as_str() {
+            "STW" => buf.terminal_state_mut().save_text_window(),
+            "RTW" => {
+                if buf.terminal_state_mut().restore_text_window() {
+                    let position = buf.upper_left_position();
+                    buf.set_caret_position(position);
+                }
+            }
+            _ => {}
+        },
 
         RipCommand::NoMore => {
             // End of RIP commands

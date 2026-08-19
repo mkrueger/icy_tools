@@ -53,6 +53,7 @@ pub mod cmd {
         TERMINAL_CLEAR = "terminal.clear",
         TERMINAL_SCROLLBACK = "terminal.scrollback",
         TERMINAL_FIND = "terminal.find",
+        TERMINAL_TOGGLE_MOUSE = "terminal.toggle_mouse",
 
         // Capture & Export
         CAPTURE_START = "capture.start",

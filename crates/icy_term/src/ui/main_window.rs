@@ -62,6 +62,7 @@ command_handler!(MainWindowCommands, create_icy_term_commands(), => Message {
     cmd::TERMINAL_CLEAR => Message::ClearScreen,
     cmd::TERMINAL_SCROLLBACK => Message::ShowScrollback,
     cmd::TERMINAL_FIND => Message::ShowFindDialog,
+    cmd::TERMINAL_TOGGLE_MOUSE => Message::ToggleMouseReporting,
     // Capture & Export
     cmd::CAPTURE_START => Message::ShowCaptureDialog,
     cmd::CAPTURE_EXPORT => Message::ShowExportScreenDialog,
@@ -116,6 +117,7 @@ pub struct MainWindow {
     _is_fullscreen_mode: bool,
     _last_pos: Position,
     shift_pressed_during_selection: bool,
+    alt_numeric_input: String,
     _use_rip: bool,
 
     pub initial_upload_directory: Option<PathBuf>,
@@ -187,6 +189,7 @@ impl MainWindow {
             _is_fullscreen_mode: false,
             _last_pos: Position::default(),
             shift_pressed_during_selection: false,
+            alt_numeric_input: String::new(),
             _use_rip: false,
             initial_upload_directory: None,
             show_find_dialog: false,
@@ -198,6 +201,60 @@ impl MainWindow {
             cached_monitor_settings,
             toasts: toaster::Toasts::new(Message::CloseToast),
         }
+    }
+
+    fn numpad_digit(physical: &keyboard::key::Physical) -> Option<char> {
+        use keyboard::key::Code;
+        let keyboard::key::Physical::Code(code) = physical else { return None };
+        Some(match code {
+            Code::Numpad0 => '0',
+            Code::Numpad1 => '1',
+            Code::Numpad2 => '2',
+            Code::Numpad3 => '3',
+            Code::Numpad4 => '4',
+            Code::Numpad5 => '5',
+            Code::Numpad6 => '6',
+            Code::Numpad7 => '7',
+            Code::Numpad8 => '8',
+            Code::Numpad9 => '9',
+            _ => return None,
+        })
+    }
+
+    fn finish_alt_numeric_input(input: &str) -> Option<Vec<u8>> {
+        if input.is_empty() {
+            return None;
+        }
+        let value = input.parse::<u32>().ok()?;
+        if input.starts_with('0') {
+            let character = char::from_u32(value)?;
+            let mut bytes = [0; 4];
+            Some(character.encode_utf8(&mut bytes).as_bytes().to_vec())
+        } else {
+            u8::try_from(value).ok().map(|byte| vec![byte])
+        }
+    }
+
+    fn build_login_data(address: &Address, terminal_emulation: TerminalEmulation, send_user: bool, send_password: bool) -> Vec<u8> {
+        let enter = parse_key_string(terminal_emulation, "enter").unwrap_or_else(|| vec![b'\r']);
+        let mut data = Vec::new();
+        if send_user && !address.user_name.is_empty() {
+            data.extend_from_slice(address.user_name.as_bytes());
+            data.extend_from_slice(&enter);
+        }
+        if send_password && !address.password.is_empty() {
+            data.extend_from_slice(address.password.as_bytes());
+            data.extend_from_slice(&enter);
+        }
+        data
+    }
+
+    fn apply_audio_options(&self) {
+        let options = self.options.lock();
+        let _ = self
+            .sound_thread
+            .lock()
+            .configure(options.audio_enabled, options.master_volume, options.audio_device.clone());
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -269,6 +326,10 @@ impl MainWindow {
                     max_scrollback_lines: options.max_scrollback_lines,
                     transfer_protocols: options.transfer_protocols.clone(),
                     mouse_reporting_enabled: address.mouse_reporting_enabled,
+                    lf_expand: address.lf_expand,
+                    custom_palette: address.custom_palette.clone(),
+                    default_cursor_shape: options.default_cursor_shape,
+                    default_cursor_blinking: options.default_cursor_blinking,
                 };
 
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
@@ -447,30 +508,9 @@ impl MainWindow {
                 self.clear_selection();
                 if self.is_connected {
                     if let Some(address) = &self.current_address {
-                        if !address.user_name.is_empty() && login {
-                            let username_data = address.user_name.as_bytes().to_vec();
-                            let mut username_with_cr = username_data;
-                            let enter_bytes = parse_key_string(self.terminal_emulation, "enter").unwrap_or(vec![b'\r']);
-                            username_with_cr.extend(&enter_bytes);
-
-                            let _ = self.terminal_tx.send(TerminalCommand::SendData(username_with_cr));
-
-                            if pw && !address.password.is_empty() {
-                                // Schedule password send after delay instead of blocking
-                                let password = address.password.clone();
-                                let tx = self.terminal_tx.clone();
-                                tokio::spawn(async move {
-                                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                                    let mut password_with_cr = password.as_bytes().to_vec();
-                                    password_with_cr.extend(enter_bytes);
-                                    let _ = tx.send(TerminalCommand::SendData(password_with_cr));
-                                });
-                            }
-                        } else if pw && !address.password.is_empty() {
-                            let mut password_with_cr = address.password.as_bytes().to_vec();
-                            let enter_bytes = parse_key_string(self.terminal_emulation, "enter").unwrap_or(vec![b'\r']);
-                            password_with_cr.extend(enter_bytes);
-                            let _ = self.terminal_tx.send(TerminalCommand::SendData(password_with_cr));
+                        let data = Self::build_login_data(address, self.terminal_emulation, login, pw);
+                        if !data.is_empty() {
+                            let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
                         }
                     }
                 }
@@ -866,7 +906,12 @@ impl MainWindow {
 
             Message::ClipboardText(text_opt) => {
                 if let Some(text) = text_opt {
-                    let data = self.convert_clipboard_text(text);
+                    let mut data = self.convert_clipboard_text(text);
+                    let bracketed = self.terminal_window.terminal.screen.lock().terminal_state().bracketed_paste_mode;
+                    if bracketed && !data.is_empty() {
+                        data.splice(..0, b"\x1B[200~".iter().copied());
+                        data.extend_from_slice(b"\x1B[201~");
+                    }
                     // Send the data to the terminal
                     if !data.is_empty() {
                         let _ = self.terminal_tx.send(TerminalCommand::SendData(data));
@@ -878,6 +923,15 @@ impl MainWindow {
             Message::ClipboardTextCopied(result) => {
                 if let Err(err) = result {
                     log::error!("Failed to copy text to clipboard: {err}");
+                }
+                Task::none()
+            }
+
+            Message::ToggleMouseReporting => {
+                let mut screen = self.terminal_window.terminal.screen.lock();
+                let enabled = !screen.terminal_state().mouse_state.mouse_tracking_enabled;
+                if let Some(editable) = screen.as_editable() {
+                    editable.terminal_state_mut().mouse_state.mouse_tracking_enabled = enabled;
                 }
                 Task::none()
             }
@@ -1003,11 +1057,13 @@ impl MainWindow {
                 }
                 // Also refresh monitor settings cache after settings dialog
                 self.cached_monitor_settings = Arc::new(self.options.lock().monitor_settings.clone());
+                self.apply_audio_options();
                 Task::none()
             }
 
             Message::RefreshMonitorSettingsCache => {
                 self.cached_monitor_settings = Arc::new(self.options.lock().monitor_settings.clone());
+                self.apply_audio_options();
                 Task::none()
             }
 
@@ -1849,6 +1905,8 @@ impl MainWindow {
             icy_engine_gui::WheelDelta::Lines { x, y } => (x, y),
             icy_engine_gui::WheelDelta::Pixels { x, y } => (x / 20.0, y / 20.0),
         };
+        let direction = if self.options.lock().invert_mouse_wheel { -1.0 } else { 1.0 };
+        let (scroll_x, scroll_y) = (scroll_x * direction, scroll_y * direction);
 
         let screen = self.terminal_window.terminal.screen.lock();
         let mouse_state = screen.terminal_state().mouse_state.clone();
@@ -1904,14 +1962,15 @@ impl MainWindow {
                 // Only handle mouse wheel in scrollback mode
                 if self.terminal_window.terminal.is_in_scrollback_mode() {
                     let line_height = self.terminal_window.terminal.char_height;
+                    let direction = if self.options.lock().invert_mouse_wheel { -1.0 } else { 1.0 };
                     let scroll_amount = match delta {
                         icy_ui::mouse::ScrollDelta::Lines { y, .. } => {
                             // Each line of scroll = one character line
-                            -y * line_height
+                            -y * line_height * direction
                         }
                         icy_ui::mouse::ScrollDelta::Pixels { y, .. } => {
                             // Direct pixel scrolling
-                            -y
+                            -y * direction
                         }
                     };
                     return (Some(Message::ScrollViewport(0.0, scroll_amount)), Task::none());
@@ -1948,6 +2007,14 @@ impl MainWindow {
                         location,
                         ..
                     }) => {
+                        if modifiers.alt() {
+                            if let Some(digit) = Self::numpad_digit(physical_key) {
+                                if self.alt_numeric_input.len() < 6 {
+                                    self.alt_numeric_input.push(digit);
+                                }
+                                return (None, Task::none());
+                            }
+                        }
                         // Handle scrollback mode navigation (context-specific, not in command handler)
                         if self.terminal_window.terminal.is_in_scrollback_mode() {
                             // Get font height for line-based scrolling
@@ -2043,6 +2110,13 @@ impl MainWindow {
                             None
                         }
                     }
+                    Event::Keyboard(keyboard::Event::KeyReleased {
+                        key: keyboard::Key::Named(keyboard::key::Named::Alt),
+                        ..
+                    }) => {
+                        let input = std::mem::take(&mut self.alt_numeric_input);
+                        Self::finish_alt_numeric_input(&input).map(Message::SendData)
+                    }
                     _ => None,
                 }
             }
@@ -2084,6 +2158,44 @@ impl MainWindow {
             }
         };
         (msg, Task::none())
+    }
+}
+
+#[cfg(test)]
+mod alt_numeric_tests {
+    use super::MainWindow;
+
+    #[test]
+    fn converts_legacy_alt_codes_to_raw_bytes() {
+        assert_eq!(MainWindow::finish_alt_numeric_input("65"), Some(vec![65]));
+        assert_eq!(MainWindow::finish_alt_numeric_input("233"), Some(vec![233]));
+        assert_eq!(MainWindow::finish_alt_numeric_input("256"), None);
+    }
+
+    #[test]
+    fn converts_leading_zero_alt_codes_to_utf8() {
+        assert_eq!(MainWindow::finish_alt_numeric_input("08364"), Some("€".as_bytes().to_vec()));
+        assert_eq!(MainWindow::finish_alt_numeric_input("055296"), None);
+    }
+
+    #[test]
+    fn composes_login_data_in_one_payload() {
+        let mut address = crate::Address::default();
+        address.user_name = "user".to_string();
+        address.password = "secret".to_string();
+
+        assert_eq!(
+            MainWindow::build_login_data(&address, icy_net::telnet::TerminalEmulation::Ansi, true, true),
+            b"user\rsecret\r"
+        );
+        assert_eq!(
+            MainWindow::build_login_data(&address, icy_net::telnet::TerminalEmulation::Ansi, true, false),
+            b"user\r"
+        );
+        assert_eq!(
+            MainWindow::build_login_data(&address, icy_net::telnet::TerminalEmulation::Ansi, false, true),
+            b"secret\r"
+        );
     }
 }
 

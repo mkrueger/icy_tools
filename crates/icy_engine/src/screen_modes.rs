@@ -290,6 +290,9 @@ impl ScreenMode {
                 screen.set_font_dimensions(Size::new(6, 10)); // Viewdata SAA5050 uses 6x10 fonts
                 *screen.palette_mut() = Palette::from_slice(&VIEWDATA_PALETTE);
                 *screen.buffer_type_mut() = BufferType::Viewdata;
+                if matches!(self, ScreenMode::Mode7) {
+                    screen.caret_mut().visible = true;
+                }
             }
             ScreenMode::Rip => {
                 // Done by creation

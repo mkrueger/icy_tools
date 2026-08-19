@@ -142,6 +142,7 @@ fn get_protocol_description(protocol: &TransferProtocol) -> String {
         "@ymodem" => fl!(crate::LANGUAGE_LOADER, "protocol-ymodem-description"),
         "@ymodemg" => fl!(crate::LANGUAGE_LOADER, "protocol-ymodemg-description"),
         "@text" => fl!(crate::LANGUAGE_LOADER, "protocol-text-description"),
+        "@cet" => fl!(crate::LANGUAGE_LOADER, "protocol-cet-description"),
         // For external protocols, use their description field
         _ => protocol.description.clone(),
     }

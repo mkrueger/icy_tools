@@ -11,9 +11,25 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::{
+    collections::HashSet,
     fs::{self},
     path::PathBuf,
+    sync::OnceLock,
 };
+
+#[cfg(unix)]
+fn secure_phonebook_file(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn secure_phonebook_file(_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
+static PHONEBOOK_FILE_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
 
 pub const ALL_TERMINALS: [TerminalEmulation; 11] = [
     TerminalEmulation::Ansi,
@@ -127,6 +143,29 @@ impl Default for AddressBook {
 pub static mut PHONE_LOCK: bool = false;
 
 impl AddressBook {
+    fn prune_orphaned_cache_dirs(&self, cache_root: &Path) -> std::io::Result<()> {
+        if !cache_root.is_dir() {
+            return Ok(());
+        }
+        let active: HashSet<String> = self
+            .addresses
+            .iter()
+            .filter(|address| !address.address.is_empty())
+            .map(|address| Address::cache_key(&address.address))
+            .collect();
+        for entry in fs::read_dir(cache_root)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() || active.contains(&entry.file_name().to_string_lossy().into_owned()) {
+                continue;
+            }
+            let path = entry.path();
+            if path.join("rip").is_dir() {
+                fs::remove_dir_all(path)?;
+            }
+        }
+        Ok(())
+    }
+
     fn load_string(&mut self, input_text: &str) -> TerminalResult<()> {
         // Parse the TOML using serde
         let loaded: AddressBook = toml::from_str(input_text)?;
@@ -148,6 +187,7 @@ impl AddressBook {
         let mut res = AddressBook::new();
 
         if let Some(dialing_directory) = Address::get_dialing_directory_file() {
+            secure_phonebook_file(&dialing_directory)?;
             if !dialing_directory.exists() {
                 log::error!("Dialing directory file does not exist: {:?}, creating deafult", dialing_directory);
                 return Ok(AddressBook::default());
@@ -177,6 +217,7 @@ impl AddressBook {
         if let Some(file_name) = Address::get_dialing_directory_file() {
             // Create a copy for serialization (skip the first empty address)
             let mut save_book = self.clone();
+            save_book.addresses.retain(|address| address.web_source.is_none());
             save_book.version = Version::new(1, 1, 0);
 
             // Remove the first empty address if it exists
@@ -191,6 +232,7 @@ impl AddressBook {
             let mut write_name: PathBuf = file_name.clone();
             write_name.set_extension("new");
             fs::write(&write_name, toml_string)?;
+            secure_phonebook_file(&write_name)?;
 
             let mut backup_file: PathBuf = file_name.clone();
             backup_file.set_extension("bak");
@@ -202,12 +244,19 @@ impl AddressBook {
                 if let Ok(data) = fs::metadata(&file_name) {
                     if data.len() > 0 {
                         std::fs::rename(&file_name, &backup_file)?;
+                        secure_phonebook_file(&backup_file)?;
                     }
                 }
             }
 
             // Move temp file to the real file
             std::fs::rename(&write_name, &file_name)?;
+            secure_phonebook_file(&file_name)?;
+            if let Some(cache_root) = Address::cache_root() {
+                if let Err(err) = self.prune_orphaned_cache_dirs(&cache_root) {
+                    log::warn!("Unable to prune orphaned BBS caches: {err}");
+                }
+            }
         }
         Ok(())
     }
@@ -215,6 +264,9 @@ impl AddressBook {
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Address {
+    #[serde(skip)]
+    pub web_source: Option<String>,
+
     pub system_name: String,
 
     #[serde(default, skip_serializing_if = "is_default_bool")]
@@ -258,6 +310,9 @@ pub struct Address {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font_name: Option<String>,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_palette: Option<Vec<[u8; 3]>>,
+
     #[serde(default, skip_serializing_if = "is_default_screen_mode")]
     pub screen_mode: ScreenMode,
 
@@ -288,6 +343,10 @@ pub struct Address {
     /// Enable mouse reporting to the remote system (default: true)
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub mouse_reporting_enabled: bool,
+
+    /// Treat received LF as LF+CR.
+    #[serde(default, skip_serializing_if = "is_default_bool")]
+    pub lf_expand: bool,
 }
 
 impl From<ConnectionInformation> for Address {
@@ -319,6 +378,7 @@ impl From<ConnectionInformation> for Address {
             comment: String::new(),
             terminal_type: TerminalEmulation::default(),
             font_name: None,
+            custom_palette: None,
             screen_mode: ScreenMode::default(),
             auto_login: String::new(),
             address,
@@ -393,6 +453,18 @@ const TEMPLATE: &str = include_str!("default_phonebook.toml");
 static mut current_id: usize = 0;
 
 impl Address {
+    fn cache_key(address: &str) -> String {
+        address.chars().map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' }).collect()
+    }
+
+    fn cache_root() -> Option<PathBuf> {
+        directories::ProjectDirs::from("com", "GitHub", "icy_term").map(|dirs| dirs.config_dir().join("cache"))
+    }
+
+    pub fn set_dialing_directory_file(path: PathBuf) {
+        let _ = PHONEBOOK_FILE_OVERRIDE.set(path);
+    }
+
     pub fn new(system_name: impl Into<String>) -> Self {
         let time = Utc::now();
         unsafe {
@@ -400,6 +472,7 @@ impl Address {
         }
 
         Self {
+            web_source: None,
             system_name: system_name.into(),
             user_name: String::new(),
             password: String::new(),
@@ -429,6 +502,21 @@ impl Address {
 
     #[must_use]
     pub fn get_dialing_directory_file() -> Option<PathBuf> {
+        if let Some(path) = PHONEBOOK_FILE_OVERRIDE.get() {
+            if let Some(parent) = path.parent() {
+                if fs::create_dir_all(parent).is_err() {
+                    return None;
+                }
+            }
+            if !path.exists() && fs::write(path, TEMPLATE).is_err() {
+                return None;
+            }
+            if let Err(err) = secure_phonebook_file(path) {
+                log::error!("Can't secure dialing directory {path:?}: {err}");
+                return None;
+            }
+            return Some(path.clone());
+        }
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
             if !proj_dirs.config_dir().exists() && fs::create_dir_all(proj_dirs.config_dir()).is_err() {
@@ -442,6 +530,10 @@ impl Address {
                     return None;
                 }
             }
+            if let Err(err) = secure_phonebook_file(&dialing_directory) {
+                log::error!("Can't secure dialing directory {dialing_directory:?}: {err}");
+                return None;
+            }
             return Some(dialing_directory);
         }
         None
@@ -449,21 +541,12 @@ impl Address {
 
     #[must_use]
     pub fn get_rip_cache(&self) -> Option<PathBuf> {
-        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
-            let mut cache_directory = proj_dirs.config_dir().join("cache");
+        if let Some(mut cache_directory) = Self::cache_root() {
             if !cache_directory.exists() && fs::create_dir_all(&cache_directory).is_err() {
                 log::error!("Can't create cache directory {:?}", &cache_directory);
                 return None;
             }
-            let mut address = String::new();
-            for c in self.address.chars() {
-                if c.is_ascii_alphanumeric() {
-                    address.push(c);
-                } else {
-                    address.push('_');
-                }
-            }
-            cache_directory.push(address);
+            cache_directory.push(Self::cache_key(&self.address));
             if !cache_directory.exists() && fs::create_dir_all(&cache_directory).is_err() {
                 log::error!("Can't create cache directory {:?}", &cache_directory);
                 return None;
@@ -555,5 +638,41 @@ mod tests {
             addresses: Vec::new(),
         };
         res.load_string(TEMPLATE).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn phonebook_permissions_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = std::env::temp_dir().join(format!("icy_term_phonebook_permissions_{}", std::process::id()));
+        fs::write(&path, TEMPLATE).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        secure_phonebook_file(&path).unwrap();
+
+        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn prune_orphaned_cache_dirs_keeps_active_and_unrelated_dirs() {
+        let root = std::env::temp_dir().join(format!("icy_term_cache_prune_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let active = root.join(Address::cache_key("bbs.example:23"));
+        let orphan = root.join("old_bbs_23");
+        let unrelated = root.join("other");
+        fs::create_dir_all(active.join("rip")).unwrap();
+        fs::create_dir_all(orphan.join("rip")).unwrap();
+        fs::create_dir_all(&unrelated).unwrap();
+
+        let mut book = AddressBook::new();
+        book.addresses[0].address = "bbs.example:23".to_string();
+        book.prune_orphaned_cache_dirs(&root).unwrap();
+
+        assert!(active.is_dir());
+        assert!(!orphan.exists());
+        assert!(unrelated.is_dir());
+        fs::remove_dir_all(root).unwrap();
     }
 }

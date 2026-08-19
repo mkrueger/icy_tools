@@ -45,10 +45,23 @@ impl TextBuffer {
     }
 
     pub fn update_hyperlinks(&mut self) {
-        let links = self.parse_hyperlinks();
+        let explicit_links: Vec<HyperLink> = self.layers[0].hyperlinks.iter().filter(|link| link.url.is_some()).cloned().collect();
+        let links: Vec<HyperLink> = self
+            .parse_hyperlinks()
+            .into_iter()
+            .filter(|link| {
+                let start = link.position.y * self.width() + link.position.x;
+                let end = start + link.length;
+                !explicit_links.iter().any(|explicit| {
+                    let explicit_start = explicit.position.y * self.width() + explicit.position.x;
+                    let explicit_end = explicit_start + explicit.length;
+                    start < explicit_end && explicit_start < end
+                })
+            })
+            .collect();
         for hl in &links {
             self.underline(hl.position, hl.length);
         }
-        self.layers[0].hyperlinks = links;
+        self.layers[0].hyperlinks = explicit_links.into_iter().chain(links).collect();
     }
 }

@@ -1,15 +1,27 @@
 use std::{
     fs::{self},
     path::PathBuf,
+    sync::OnceLock,
     time::Duration,
 };
+
+static OPTIONS_FILE_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
 
 use directories::UserDirs;
 use icy_engine_gui::{music::music::DialTone, MonitorSettings};
 use icy_net::{modem::ModemConfiguration, serial::Serial};
+use icy_parser_core::CaretShape;
 use serde::{Deserialize, Serialize};
 
 use crate::{default_protocols, TerminalResult, TransferProtocol};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebDirectorySource {
+    pub name: String,
+    pub url: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Scaling {
@@ -72,6 +84,27 @@ pub struct Options {
     #[serde(default = "default_true")]
     pub console_beep: bool,
 
+    #[serde(default = "default_true")]
+    pub audio_enabled: bool,
+
+    #[serde(default = "default_master_volume")]
+    pub master_volume: f32,
+
+    #[serde(default)]
+    pub audio_device: Option<String>,
+
+    #[serde(default)]
+    pub invert_mouse_wheel: bool,
+
+    #[serde(default)]
+    pub default_cursor_shape: CaretShape,
+
+    #[serde(default = "default_true")]
+    pub default_cursor_blinking: bool,
+
+    #[serde(default)]
+    pub web_directories: Vec<WebDirectorySource>,
+
     #[serde(default)]
     pub is_dark_mode: Option<bool>,
 
@@ -116,6 +149,10 @@ fn default_connect_timeout() -> Duration {
     Duration::from_secs(1000)
 }
 
+fn default_master_volume() -> f32 {
+    0.25
+}
+
 // Custom serialization for Duration as seconds
 mod duration_secs {
     use serde::{Deserialize, Deserializer, Serializer};
@@ -145,6 +182,13 @@ impl Default for Options {
             monitor_settings: MonitorSettings::default(),
             iemsi: IEMSISettings::default(),
             console_beep: true,
+            audio_enabled: true,
+            master_volume: default_master_volume(),
+            audio_device: None,
+            invert_mouse_wheel: false,
+            default_cursor_shape: CaretShape::default(),
+            default_cursor_blinking: true,
+            web_directories: Vec::new(),
             //            bind: KeyBindings::default(),
             is_dark_mode: None,
             //            window_rect: None,
@@ -160,6 +204,17 @@ impl Default for Options {
 }
 
 impl Options {
+    pub fn set_options_file(path: PathBuf) {
+        let _ = OPTIONS_FILE_OVERRIDE.set(path);
+    }
+
+    fn options_file() -> Option<PathBuf> {
+        OPTIONS_FILE_OVERRIDE
+            .get()
+            .cloned()
+            .or_else(|| directories::ProjectDirs::from("com", "GitHub", "icy_term").map(|dirs| dirs.config_dir().join("options.toml")))
+    }
+
     /// Returns the log directory path (for flexi_logger configuration).
     pub fn get_log_dir() -> Option<PathBuf> {
         directories::ProjectDirs::from("com", "GitHub", "icy_term").map(|proj_dirs| proj_dirs.config_dir().to_path_buf())
@@ -185,11 +240,15 @@ impl Options {
     ///
     /// This function will return an error if .
     pub fn load_options() -> TerminalResult<Self> {
-        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
-            let options_file = proj_dirs.config_dir().join("options.toml");
+        if let Some(options_file) = Self::options_file() {
             if options_file.exists() {
                 let content = fs::read_to_string(&options_file)?;
-                let options: Options = toml::from_str(&content)?;
+                let mut options: Options = toml::from_str(&content)?;
+                for protocol in default_protocols() {
+                    if !options.transfer_protocols.iter().any(|existing| existing.id == protocol.id) {
+                        options.transfer_protocols.push(protocol);
+                    }
+                }
                 return Ok(options);
             }
         }
@@ -246,13 +305,14 @@ impl Options {
     ///
     /// This function will return an error if .
     pub fn store_options(&self) -> TerminalResult<()> {
-        if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
-            let file_name = proj_dirs.config_dir().join("options.toml");
+        if let Some(file_name) = Self::options_file() {
             let mut write_name = file_name.clone();
             write_name.set_extension("new");
 
             // Create config directory if it doesn't exist
-            fs::create_dir_all(proj_dirs.config_dir())?;
+            if let Some(parent) = file_name.parent() {
+                fs::create_dir_all(parent)?;
+            }
 
             // Serialize to TOML
             let toml_string = toml::to_string_pretty(self)?;
@@ -273,4 +333,37 @@ impl Options {
     pub(crate) fn reset_keybindings(&mut self) {
         self.bind = KeyBindings::default();
     }*/
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Options;
+
+    #[test]
+    fn audio_settings_roundtrip() {
+        let mut options = Options::default();
+        options.audio_enabled = false;
+        options.master_volume = 0.42;
+        options.audio_device = Some("Test Device".to_string());
+
+        let encoded = toml::to_string(&options).unwrap();
+        let decoded: Options = toml::from_str(&encoded).unwrap();
+
+        assert!(!decoded.audio_enabled);
+        assert_eq!(decoded.master_volume, 0.42);
+        assert_eq!(decoded.audio_device.as_deref(), Some("Test Device"));
+    }
+
+    #[test]
+    fn cursor_settings_roundtrip() {
+        let mut options = Options::default();
+        options.default_cursor_shape = icy_parser_core::CaretShape::Bar;
+        options.default_cursor_blinking = false;
+
+        let encoded = toml::to_string(&options).unwrap();
+        let decoded: Options = toml::from_str(&encoded).unwrap();
+
+        assert_eq!(decoded.default_cursor_shape, icy_parser_core::CaretShape::Bar);
+        assert!(!decoded.default_cursor_blinking);
+    }
 }

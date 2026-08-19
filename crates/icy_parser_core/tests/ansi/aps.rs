@@ -20,3 +20,28 @@ fn test_aps_sequences() {
     assert_eq!(sink.aps_data.len(), 1);
     assert_eq!(sink.aps_data[0], b"Test\x1BData");
 }
+
+#[test]
+fn test_unsupported_control_strings_are_ignored() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"Before\x1B^private message\x1B\\After", &mut sink);
+    assert_eq!(sink.text, b"BeforeAfter");
+
+    sink.text.clear();
+    parser.parse(b"Before\x1BXsplit", &mut sink);
+    parser.parse(b" string\x1B\\After", &mut sink);
+    assert_eq!(sink.text, b"BeforeAfter");
+}
+
+#[test]
+fn test_jxl_support_query() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B_SyncTERM:Q;JXL\x1B\\", &mut sink);
+
+    assert_eq!(sink.requests, [icy_parser_core::TerminalRequest::JxlSupportReport]);
+    assert!(sink.aps_data.is_empty());
+}

@@ -703,6 +703,58 @@ impl super::DialingDirectoryState {
                 .align_y(Alignment::Center),
             );
 
+            let lf_expand_checkbox = icy_ui::widget::checkbox(addr.lf_expand)
+                .on_toggle(move |checked| {
+                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                        id,
+                        field: AddressFieldChange::LfExpand(checked),
+                    })
+                })
+                .text_size(TEXT_SIZE_NORMAL);
+
+            options_content = options_content.push(
+                row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-lf-expand")), lf_expand_checkbox]
+                    .spacing(DIALOG_SPACING)
+                    .align_y(Alignment::Center),
+            );
+
+            let palette_enabled = addr.custom_palette.is_some();
+            let palette_toggle = icy_ui::widget::checkbox(palette_enabled).on_toggle(move |checked| {
+                Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                    id,
+                    field: AddressFieldChange::ToggleCustomPalette(checked),
+                })
+            });
+            options_content = options_content.push(
+                row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-custom-palette")), palette_toggle]
+                    .spacing(DIALOG_SPACING)
+                    .align_y(Alignment::Center),
+            );
+
+            if let Some(colors) = &addr.custom_palette {
+                let mut palette_grid = column![].spacing(4);
+                for row_index in 0..4 {
+                    let mut palette_row = row![].spacing(4);
+                    for column_index in 0..4 {
+                        let index = row_index * 4 + column_index;
+                        let [r, g, b] = colors[index];
+                        palette_row = palette_row.push(
+                            text_input("#RRGGBB", &format!("#{r:02X}{g:02X}{b:02X}"))
+                                .on_input(move |value| {
+                                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                                        id,
+                                        field: AddressFieldChange::PaletteColor(index, value),
+                                    })
+                                })
+                                .width(Length::Fixed(88.0))
+                                .size(TEXT_SIZE_SMALL),
+                        );
+                    }
+                    palette_grid = palette_grid.push(palette_row);
+                }
+                options_content = options_content.push(palette_grid);
+            }
+
             Some(effect_box(options_content.into()).into())
         } else {
             None

@@ -79,6 +79,7 @@ pub enum Message {
     SelectBps(BaudEmulation),
     QuitIcyTerm,
     ClearScreen,
+    ToggleMouseReporting,
     ShowScrollback,
     SetFocus(bool),
     SendMouseEvent(MouseEvent),

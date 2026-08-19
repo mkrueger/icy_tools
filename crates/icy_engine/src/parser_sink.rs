@@ -17,10 +17,12 @@
 //! parser.parse(b"\x1b[1;32mHello, World!\x1b[0m", &mut sink);
 //! ```
 
+use base64::{engine::general_purpose, Engine as _};
 use icy_parser_core::{
     AnsiMode, AnsiMusic, Blink, Color, CommandSink, DecMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode, ErrorLevel, IgsCommand,
     Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand, Wrapping,
 };
+use image::imageops::FilterType;
 
 use crate::{AttributedChar, BitFont, BufferType, EditableScreen, FontSelectionState, MouseMode, Position, SavedCaretState, Sixel};
 /// Adapter that implements `CommandSink` for any type implementing `EditableScreen`.
@@ -62,6 +64,34 @@ impl<'a> ScreenSink<'a> {
             attr.set_background(attr.background() + 8);
         }
         attr
+    }
+
+    fn dec_rectangle(&self, top: u16, left: u16, bottom: u16, right: u16) -> Option<(Position, Position)> {
+        let (origin_x, origin_y, max_x, max_y) = match self.screen.terminal_state().origin_mode {
+            crate::OriginMode::UpperLeftCorner => (0, self.screen.first_visible_line(), self.screen.width() - 1, self.screen.last_visible_line()),
+            crate::OriginMode::WithinMargins => (
+                self.screen.first_editable_column(),
+                self.screen.first_editable_line(),
+                self.screen.last_editable_column(),
+                self.screen.last_editable_line(),
+            ),
+        };
+        let start = Position::new(origin_x + i32::from(left.saturating_sub(1)), origin_y + i32::from(top.saturating_sub(1)));
+        let end = Position::new(origin_x + i32::from(right.saturating_sub(1)), origin_y + i32::from(bottom.saturating_sub(1)));
+        let start = Position::new(start.x.clamp(origin_x, max_x), start.y.clamp(origin_y, max_y));
+        let end = Position::new(end.x.clamp(origin_x, max_x), end.y.clamp(origin_y, max_y));
+        (start.x <= end.x && start.y <= end.y).then_some((start, end))
+    }
+
+    fn fill_dec_rectangle(&mut self, top: u16, left: u16, bottom: u16, right: u16, ch: AttributedChar) {
+        let Some((start, end)) = self.dec_rectangle(top, left, bottom, right) else {
+            return;
+        };
+        for y in start.y..=end.y {
+            for x in start.x..=end.x {
+                self.screen.set_char(Position::new(x, y), ch);
+            }
+        }
     }
 
     fn set_font_selection_success(&mut self, slot: u8) {
@@ -188,6 +218,7 @@ impl<'a> ScreenSink<'a> {
     fn set_dec_private_mode(&mut self, mode: DecMode, enabled: bool) {
         match mode {
             DecMode::OriginMode => {
+                self.screen.terminal_state_mut().wrap_pending = false;
                 self.screen.terminal_state_mut().origin_mode = if enabled {
                     crate::OriginMode::WithinMargins
                 } else {
@@ -195,6 +226,7 @@ impl<'a> ScreenSink<'a> {
                 };
             }
             DecMode::AutoWrap => {
+                self.screen.terminal_state_mut().wrap_pending = false;
                 self.screen.terminal_state_mut().auto_wrap_mode = if enabled {
                     crate::AutoWrapMode::AutoWrap
                 } else {
@@ -252,6 +284,9 @@ impl<'a> ScreenSink<'a> {
             }
             DecMode::AlternateScroll => {
                 self.screen.terminal_state_mut().mouse_state.alternate_scroll_enabled = enabled;
+            }
+            DecMode::BracketedPaste => {
+                self.screen.terminal_state_mut().bracketed_paste_mode = enabled;
             }
             DecMode::ExtendedMouseUTF8 => {
                 self.screen.terminal_state_mut().mouse_state.extended_mode = crate::ExtMouseMode::ExtendedUTF8;
@@ -523,6 +558,16 @@ impl CommandSink for ScreenSink<'_> {
                 self.screen.set_caret_position(pos);
                 self.screen.limit_caret_pos(false);
             }
+            TerminalCommand::CsiSetLastColumnFlag { enabled, forced } => {
+                let state = self.screen.terminal_state_mut();
+                if forced {
+                    state.last_column_flag_forced = true;
+                    state.last_column_flag_mode = true;
+                } else if !state.last_column_flag_forced {
+                    state.last_column_flag_mode = enabled;
+                }
+                state.wrap_pending = false;
+            }
 
             // Tab operations
             TerminalCommand::CsiClearTabulation => {
@@ -637,9 +682,19 @@ impl CommandSink for ScreenSink<'_> {
                 }
             }
             TerminalCommand::CsiSelectCommunicationSpeed(_, _) => {}
-            TerminalCommand::CsiFillRectangularArea { .. } => {}
-            TerminalCommand::CsiEraseRectangularArea { .. } => {}
-            TerminalCommand::CsiSelectiveEraseRectangularArea { .. } => {}
+            TerminalCommand::CsiFillRectangularArea {
+                char,
+                top,
+                left,
+                bottom,
+                right,
+            } => {
+                self.fill_dec_rectangle(top, left, bottom, right, AttributedChar::new(char as char, self.display_attribute()));
+            }
+            TerminalCommand::CsiEraseRectangularArea { top, left, bottom, right }
+            | TerminalCommand::CsiSelectiveEraseRectangularArea { top, left, bottom, right } => {
+                self.fill_dec_rectangle(top, left, bottom, right, AttributedChar::new(' ', crate::TextAttribute::default()));
+            }
             TerminalCommand::CsiSetScrollingRegion { top, bottom, left, right } => {
                 let top = (top as i32).saturating_sub(1).max(0);
                 let bottom = (bottom as i32).saturating_sub(1).max(0);
@@ -912,32 +967,190 @@ impl CommandSink for ScreenSink<'_> {
                 self.screen.palette_mut().set_color_rgb(index as u32, r, g, b);
                 log::debug!("OSC: Set palette color {index} to RGB({r}, {g}, {b})");
             }
+            OperatingSystemCommand::ResetPaletteColors(indices) => {
+                if indices.is_empty() {
+                    for (index, (_, color)) in crate::XTERM_256_PALETTE.iter().enumerate() {
+                        self.screen.palette_mut().set_color(index as u32, color.clone());
+                    }
+                } else {
+                    for index in indices {
+                        let color = crate::XTERM_256_PALETTE[index as usize].1.clone();
+                        self.screen.palette_mut().set_color(index as u32, color);
+                    }
+                }
+            }
             OperatingSystemCommand::Hyperlink { params, uri } => {
                 if let (Ok(_params_str), Ok(uri_str)) = (std::str::from_utf8(&params), std::str::from_utf8(&uri)) {
-                    /*
                     if uri_str.is_empty() {
                         self.screen.caret_mut().attribute.set_is_underlined(false);
-                        let cp = self.screen.caret_position();
-                        if cp.y == p.position.y {
-                            p.length = cp.x - p.position.x;
-                        } else {
-                            p.length = self.screen.terminal_state().width() - p.position.x + (cp.y - p.position.y) * self.screen.terminal_state().width() + p.position.x;
+                        if let Some((url, position)) = self.screen.terminal_state_mut().active_hyperlink.take() {
+                            let end = self.screen.caret_position();
+                            let length = (end.y - position.y) * self.screen.width() + end.x - position.x;
+                            if length > 0 {
+                                self.screen.add_hyperlink(crate::HyperLink {
+                                    url: Some(url),
+                                    position,
+                                    length,
+                                });
+                            }
                         }
-                        self.screen.add_hyperlink(p);
-                    } else {*/
-                    self.screen.caret_mut().attribute.set_is_underlined(true);
-                    self.screen.add_hyperlink(crate::HyperLink {
-                        url: Some(uri_str.to_string()),
-                        position: self.screen.caret_position(),
-                        length: 0,
-                    });
+                    } else {
+                        self.screen.caret_mut().attribute.set_is_underlined(true);
+                        self.screen.terminal_state_mut().active_hyperlink = Some((uri_str.to_string(), self.screen.caret_position()));
+                    }
                 }
             }
         }
     }
 
-    fn aps(&mut self, _data: &[u8]) {
-        // APS sequences not commonly used
+    fn aps(&mut self, data: &[u8]) {
+        const PPM_PREFIX: &str = "SyncTERM:C;DrawPPMBlob";
+        const JXL_PREFIX: &str = "SyncTERM:C;DrawJXLBlob";
+        const MAX_ENCODED_SIZE: usize = 16 * 1024 * 1024;
+        const MAX_PIXELS: u64 = 16_000_000;
+
+        let Ok(command) = std::str::from_utf8(data) else { return };
+        let (arguments, is_jxl) = if let Some(arguments) = command.strip_prefix(PPM_PREFIX) {
+            (arguments, false)
+        } else if let Some(arguments) = command.strip_prefix(JXL_PREFIX) {
+            (arguments, true)
+        } else {
+            return;
+        };
+        let parts: Vec<&str> = arguments
+            .trim_start_matches([';', ' '])
+            .split([';', ' '])
+            .filter(|part| !part.is_empty())
+            .collect();
+        let Some(encoded) = parts.last() else { return };
+        if encoded.len() > MAX_ENCODED_SIZE {
+            log::warn!("Ignoring oversized DrawPPMBlob payload");
+            return;
+        }
+
+        let mut sx = 0u32;
+        let mut sy = 0u32;
+        let mut sw = None;
+        let mut sh = None;
+        let mut dx = 0i32;
+        let mut dy = 0i32;
+        let mut dw = None;
+        let mut dh = None;
+        let mut flip_x = false;
+        let mut flip_y = false;
+        let mut zoom_x = 1u32;
+        let mut zoom_y = 1u32;
+        for part in &parts[..parts.len().saturating_sub(1)] {
+            if part.eq_ignore_ascii_case("FX") {
+                flip_x = true;
+                continue;
+            }
+            if part.eq_ignore_ascii_case("FY") {
+                flip_y = true;
+                continue;
+            }
+            let Some((key, value)) = part.split_once('=') else { continue };
+            match key.to_ascii_uppercase().as_str() {
+                "SX" => sx = value.parse().unwrap_or(0),
+                "SY" => sy = value.parse().unwrap_or(0),
+                "SW" => sw = value.parse().ok(),
+                "SH" => sh = value.parse().ok(),
+                "DX" => dx = value.parse().unwrap_or(0),
+                "DY" => dy = value.parse().unwrap_or(0),
+                "DW" => dw = value.parse().ok(),
+                "DH" => dh = value.parse().ok(),
+                "ZX" => zoom_x = value.parse().unwrap_or(0),
+                "ZY" => zoom_y = value.parse().unwrap_or(0),
+                _ => {}
+            }
+        }
+
+        let Ok(bytes) = general_purpose::STANDARD.decode(encoded) else { return };
+        let mut image = if is_jxl {
+            let Ok(decoder) = jxl_oxide::integration::JxlDecoder::new(std::io::Cursor::new(bytes)) else {
+                return;
+            };
+            let Ok(image) = image::DynamicImage::from_decoder(decoder) else { return };
+            image
+        } else {
+            let Ok(image) = image::load_from_memory_with_format(&bytes, image::ImageFormat::Pnm) else {
+                return;
+            };
+            image
+        };
+        if u64::from(image.width()) * u64::from(image.height()) > MAX_PIXELS {
+            log::warn!("Ignoring oversized DrawPPMBlob image");
+            return;
+        }
+
+        if sx < image.width() && sy < image.height() {
+            let width = sw.unwrap_or(image.width() - sx).min(image.width() - sx);
+            let height = sh.unwrap_or(image.height() - sy).min(image.height() - sy);
+            if width == 0 || height == 0 {
+                return;
+            }
+            image = image.crop_imm(sx, sy, width, height);
+        } else {
+            return;
+        }
+        if flip_x {
+            image = image.fliph();
+        }
+        if flip_y {
+            image = image.flipv();
+        }
+        if let (Some(width), Some(height)) = (dw, dh) {
+            if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_PIXELS {
+                return;
+            }
+            image = image.resize_exact(width, height, FilterType::Nearest);
+        } else {
+            if zoom_x == 0 || zoom_y == 0 {
+                return;
+            }
+            let Some(width) = image.width().checked_mul(zoom_x) else { return };
+            let Some(height) = image.height().checked_mul(zoom_y) else { return };
+            if u64::from(width) * u64::from(height) > MAX_PIXELS {
+                return;
+            }
+            if zoom_x != 1 || zoom_y != 1 {
+                image = image.resize_exact(width, height, FilterType::Nearest);
+            }
+        }
+
+        let font = self.screen.font_dimensions();
+        let screen_width = self.screen.width() * font.width;
+        let screen_height = self.screen.height() * font.height;
+        if dx < 0 {
+            let skip = dx.unsigned_abs().min(image.width());
+            if skip >= image.width() {
+                return;
+            }
+            image = image.crop_imm(skip, 0, image.width() - skip, image.height());
+            dx = 0;
+        }
+        if dy < 0 {
+            let skip = dy.unsigned_abs().min(image.height());
+            if skip >= image.height() {
+                return;
+            }
+            image = image.crop_imm(0, skip, image.width(), image.height() - skip);
+            dy = 0;
+        }
+        if image.width() == 0 || image.height() == 0 || dx >= screen_width || dy >= screen_height {
+            return;
+        }
+        let visible_width = image.width().min((screen_width - dx) as u32);
+        let visible_height = image.height().min((screen_height - dy) as u32);
+        if visible_width != image.width() || visible_height != image.height() {
+            image = image.crop_imm(0, 0, visible_width, visible_height);
+        }
+
+        let rgba = image.to_rgba8();
+        let position = Position::new(dx / font.width.max(1), dy / font.height.max(1));
+        let mut sixel = Sixel::from_data((rgba.width() as i32, rgba.height() as i32), 1, 1, rgba.into_raw());
+        sixel.pixel_offset = Position::new(dx % font.width.max(1), dy % font.height.max(1));
+        self.screen.add_sixel(position, sixel);
     }
 
     fn play_music(&mut self, _music: AnsiMusic) {
@@ -946,5 +1159,56 @@ impl CommandSink for ScreenSink<'_> {
 
     fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
         log::error!("Parser error: {error:?}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use icy_parser_core::{AnsiParser, CommandParser};
+
+    #[test]
+    fn draws_inline_ppm_apc() {
+        let ppm = b"P3\n2 1\n255\n255 0 0  0 255 0\n";
+        let encoded = general_purpose::STANDARD.encode(ppm);
+        let sequence = format!("\x1B_SyncTERM:C;DrawPPMBlob;DW=4;DH=2;{}\x1B\\", encoded);
+        let mut screen = crate::TextScreen::new((80, 25));
+        let mut parser = AnsiParser::new();
+
+        parser.parse(sequence.as_bytes(), &mut ScreenSink::new(&mut screen));
+
+        assert_eq!(screen.buffer.layers[0].sixels.len(), 1);
+        assert_eq!(screen.buffer.layers[0].sixels[0].size(), crate::Size::new(4, 2));
+        assert_eq!(screen.buffer.layers[0].sixels[0].picture_data.len(), 4 * 2 * 4);
+    }
+
+    #[test]
+    fn transforms_and_positions_inline_ppm_apc() {
+        let ppm = b"P3\n2 1\n255\n255 0 0  0 255 0\n";
+        let encoded = general_purpose::STANDARD.encode(ppm);
+        let sequence = format!("\x1B_SyncTERM:C;DrawPPMBlob;FX;ZX=2;ZY=2;DX=3;DY=5;{}\x1B\\", encoded);
+        let mut screen = crate::TextScreen::new((80, 25));
+        let mut parser = AnsiParser::new();
+        parser.parse(sequence.as_bytes(), &mut ScreenSink::new(&mut screen));
+
+        let sixel = &screen.buffer.layers[0].sixels[0];
+        assert_eq!(sixel.size(), crate::Size::new(4, 2));
+        assert_eq!(sixel.pixel_offset, Position::new(3, 5));
+        assert_eq!(&sixel.picture_data[..4], &[0, 255, 0, 255]);
+    }
+
+    #[test]
+    fn clips_negative_inline_ppm_destination() {
+        let ppm = b"P3\n2 1\n255\n255 0 0  0 255 0\n";
+        let encoded = general_purpose::STANDARD.encode(ppm);
+        let sequence = format!("\x1B_SyncTERM:C;DrawPPMBlob;DX=-1;{}\x1B\\", encoded);
+        let mut screen = crate::TextScreen::new((80, 25));
+        let mut parser = AnsiParser::new();
+        parser.parse(sequence.as_bytes(), &mut ScreenSink::new(&mut screen));
+
+        let sixel = &screen.buffer.layers[0].sixels[0];
+        assert_eq!(sixel.size(), crate::Size::new(1, 1));
+        assert_eq!(sixel.pixel_offset, Position::default());
+        assert_eq!(&sixel.picture_data[..4], &[0, 255, 0, 255]);
     }
 }

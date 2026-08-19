@@ -20,6 +20,18 @@ fn test_rip_query_version() {
 }
 
 #[test]
+fn test_rip_query_version_split_across_packets() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1B", &mut sink);
+    parser.parse(b"[", &mut sink);
+    parser.parse(b"!", &mut sink);
+
+    assert_eq!(sink.terminal_requests, [TerminalRequest::RipRequestTerminalId]);
+}
+
+#[test]
 fn test_rip_query_version_with_zero() {
     let mut parser = RipParser::new();
     let mut sink = TestSink::new();

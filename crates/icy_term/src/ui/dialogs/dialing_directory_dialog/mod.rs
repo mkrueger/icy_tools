@@ -92,7 +92,10 @@ impl DialingDirectoryState {
         use icy_ui::widget::tooltip;
         let delete_label = fl!(crate::LANGUAGE_LOADER, "dialing_directory-delete");
         let delete_icon = svg(svg::Handle::from_memory(DELETE_SVG)).width(Length::Fixed(20.0)).height(Length::Fixed(20.0));
-        let can_delete = self.selected_bbs.is_some();
+        let can_delete = self
+            .selected_bbs
+            .and_then(|index| self.addresses.lock().addresses.get(index).map(|address| address.web_source.is_none()))
+            .unwrap_or(false);
 
         // Base delete button (icon only)
         let delete_button = if can_delete {
@@ -114,6 +117,11 @@ impl DialingDirectoryState {
         .style(container::rounded_box)
         .padding(8);
 
+        let duplicate_btn = secondary_button(
+            fl!(crate::LANGUAGE_LOADER, "dialing_directory-duplicate"),
+            self.selected_bbs.map(|idx| Message::from(DialingDirectoryMsg::DuplicateAddress(idx))),
+        );
+
         let close_btn = secondary_button(
             format!("{}", icy_engine_gui::ButtonType::Close),
             Some(Message::from(DialingDirectoryMsg::Close)),
@@ -127,7 +135,7 @@ impl DialingDirectoryState {
         let buttons = button_row(vec![close_btn.into(), connect_btn.into()]);
 
         container(
-            row![del_btn, Space::new().width(Length::Fill), buttons]
+            row![del_btn, duplicate_btn, Space::new().width(Length::Fill), buttons]
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center),
         )
@@ -164,9 +172,11 @@ impl DialingDirectoryState {
             }
 
             DialingDirectoryMsg::ToggleFavorite(idx) => {
-                if idx < self.addresses.lock().addresses.len() {
-                    let tmp = self.addresses.lock().addresses[idx].is_favored;
-                    self.addresses.lock().addresses[idx].is_favored = !tmp;
+                let mut addresses = self.addresses.lock();
+                if let Some(address) = addresses.addresses.get_mut(idx) {
+                    if address.web_source.is_none() {
+                        address.is_favored = !address.is_favored;
+                    }
                 }
                 Task::none()
             }
@@ -190,16 +200,41 @@ impl DialingDirectoryState {
                 Task::none()
             }
 
+            DialingDirectoryMsg::DuplicateAddress(idx) => {
+                let source = self.addresses.lock().addresses.get(idx).cloned();
+                if let Some(mut address) = source {
+                    let now = chrono::Utc::now();
+                    address.system_name = format!("{} Copy", address.system_name);
+                    address.is_favored = false;
+                    address.created = now;
+                    address.updated = now;
+                    address.overall_duration = chrono::Duration::zero();
+                    address.number_of_calls = 0;
+                    address.last_call = None;
+                    address.last_call_duration = chrono::Duration::zero();
+                    address.uploaded_bytes = 0;
+                    address.downloaded_bytes = 0;
+                    address.web_source = None;
+                    let mut addresses = self.addresses.lock();
+                    addresses.addresses.push(address);
+                    self.selected_bbs = Some(addresses.addresses.len() - 1);
+                }
+                Task::none()
+            }
+
             DialingDirectoryMsg::DeleteAddress(idx) => {
                 // Instead of deleting immediately, set pending_delete
-                self.pending_delete = Some(idx);
+                if self.addresses.lock().addresses.get(idx).is_some_and(|address| address.web_source.is_none()) {
+                    self.pending_delete = Some(idx);
+                }
                 Task::none()
             }
 
             DialingDirectoryMsg::ConfirmDelete(idx) => {
                 // Actually delete the address
-                if idx < self.addresses.lock().addresses.len() {
-                    self.addresses.lock().addresses.remove(idx);
+                let mut addresses = self.addresses.lock();
+                if idx < addresses.addresses.len() {
+                    addresses.addresses.remove(idx);
                     // Adjust selected index if needed
                     if let Some(selected) = self.selected_bbs {
                         if selected == idx {
@@ -210,7 +245,7 @@ impl DialingDirectoryState {
                     }
 
                     // Save the address book
-                    if let Err(e) = self.addresses.lock().store_phone_book() {
+                    if let Err(e) = addresses.store_phone_book() {
                         eprintln!("Failed to save address book: {}", e);
                     }
                 }
@@ -221,7 +256,13 @@ impl DialingDirectoryState {
             DialingDirectoryMsg::AddressFieldChanged { id, field } => {
                 let mut lock = self.addresses.lock();
                 let addr = if let Some(id) = id {
-                    &mut lock.addresses[id]
+                    let Some(address) = lock.addresses.get_mut(id) else {
+                        return Task::none();
+                    };
+                    if address.web_source.is_some() {
+                        return Task::none();
+                    }
+                    address
                 } else {
                     &mut self.quick_connect_address
                 };
@@ -271,6 +312,36 @@ impl DialingDirectoryState {
                     AddressFieldChange::MouseReporting(enabled) => {
                         addr.mouse_reporting_enabled = enabled;
                     }
+                    AddressFieldChange::LfExpand(enabled) => {
+                        addr.lf_expand = enabled;
+                    }
+                    AddressFieldChange::ToggleCustomPalette(enabled) => {
+                        addr.custom_palette = if enabled {
+                            Some(
+                                icy_engine::DOS_DEFAULT_PALETTE
+                                    .iter()
+                                    .map(|color| {
+                                        let (r, g, b) = color.rgb();
+                                        [r, g, b]
+                                    })
+                                    .collect(),
+                            )
+                        } else {
+                            None
+                        };
+                    }
+                    AddressFieldChange::PaletteColor(index, value) => {
+                        if let Some(colors) = &mut addr.custom_palette {
+                            if index < colors.len() {
+                                let value = value.trim().trim_start_matches('#');
+                                if value.len() == 6 {
+                                    if let Ok(rgb) = u32::from_str_radix(value, 16) {
+                                        colors[index] = [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8];
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Task::none()
@@ -295,8 +366,12 @@ impl DialingDirectoryState {
 
                 // Increment call counter for the selected address
                 if let Some(idx) = self.selected_bbs {
-                    self.addresses.lock().addresses[idx].number_of_calls += 1;
-                    self.addresses.lock().addresses[idx].last_call = Some(chrono::Utc::now());
+                    if let Some(address) = self.addresses.lock().addresses.get_mut(idx) {
+                        if address.web_source.is_none() {
+                            address.number_of_calls += 1;
+                            address.last_call = Some(chrono::Utc::now());
+                        }
+                    }
                 }
 
                 // Save the address book
@@ -332,7 +407,14 @@ impl DialingDirectoryState {
                 }
                 let mut lock = self.addresses.lock();
                 let addr = if let Some(id) = self.selected_bbs {
-                    &mut lock.addresses[id]
+                    let Some(address) = lock.addresses.get_mut(id) else {
+                        self.selected_bbs = None;
+                        return Task::none();
+                    };
+                    if address.web_source.is_some() {
+                        return Task::none();
+                    }
+                    address
                 } else {
                     &mut self.quick_connect_address
                 };
@@ -474,6 +556,7 @@ pub enum DialingDirectoryMsg {
     ChangeFilterMode(DialingDirectoryFilter),
     FilterTextChanged(String),
     AddAddress,
+    DuplicateAddress(usize),
     DeleteAddress(usize),
     AddressFieldChanged { id: Option<usize>, field: AddressFieldChange },
     ToggleShowPasswords,
@@ -502,6 +585,9 @@ pub enum AddressFieldChange {
     Comment(String),
     IsFavored(bool),
     MouseReporting(bool),
+    LfExpand(bool),
+    ToggleCustomPalette(bool),
+    PaletteColor(usize, String),
 }
 
 impl From<DialingDirectoryMsg> for Message {

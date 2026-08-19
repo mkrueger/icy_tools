@@ -29,6 +29,7 @@ fn get_help_commands() -> Vec<CommandDef> {
         // Terminal commands
         cmd::TERMINAL_CLEAR.clone(),
         cmd::TERMINAL_SCROLLBACK.clone(),
+        cmd::TERMINAL_TOGGLE_MOUSE.clone(),
         cmd::CAPTURE_EXPORT.clone(),
         cmd::CAPTURE_START.clone(),
         // Tools commands

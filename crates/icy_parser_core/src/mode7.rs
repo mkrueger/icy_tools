@@ -365,12 +365,12 @@ impl CommandParser for Mode7Parser {
                 }
                 140 => {
                     // Normal height (cancel double height)
-                    // Double height would be handled by consumer
+                    sink.emit_view_data(crate::ViewDataCommand::DoubleHeight(false));
                     self.display_control_char(sink);
                 }
                 141 => {
                     // Double height
-                    // Double height would be handled by consumer
+                    sink.emit_view_data(crate::ViewDataCommand::DoubleHeight(true));
                     self.display_control_char(sink);
                 }
                 145..=151 => {

@@ -17,6 +17,8 @@ use super::EditState;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct UndoSixel {
     position: Position,
+    #[serde(default)]
+    pixel_offset: Position,
     vertical_scale: i32,
     horizontal_scale: i32,
     picture_data: Vec<u8>,
@@ -27,6 +29,7 @@ impl From<&crate::Sixel> for UndoSixel {
     fn from(value: &crate::Sixel) -> Self {
         Self {
             position: value.position,
+            pixel_offset: value.pixel_offset,
             vertical_scale: value.vertical_scale,
             horizontal_scale: value.horizontal_scale,
             picture_data: value.picture_data.clone(),
@@ -39,6 +42,7 @@ impl From<UndoSixel> for crate::Sixel {
     fn from(value: UndoSixel) -> Self {
         let mut sixel = crate::Sixel::from_data(value.size, value.vertical_scale, value.horizontal_scale, value.picture_data);
         sixel.position = value.position;
+        sixel.pixel_offset = value.pixel_offset;
         sixel
     }
 }

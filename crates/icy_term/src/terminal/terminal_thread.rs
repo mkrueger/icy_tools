@@ -1,3 +1,4 @@
+use crate::auto_login::{AutoLoginCommand, AutoLoginParser};
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::AutoTransferScanner;
 use crate::scripting::ScriptRunner;
@@ -35,6 +36,148 @@ use tokio::sync::mpsc;
 
 /// Minimum pause duration in milliseconds to display in status bar
 const MIN_PAUSE_DISPLAY_MS: u64 = 500;
+
+fn mode_report_status(enabled: Option<bool>) -> u8 {
+    match enabled {
+        Some(true) => 1,
+        Some(false) => 2,
+        None => 0,
+    }
+}
+
+fn ansi_mode_report_status(screen: &dyn Screen, mode: u16) -> u8 {
+    mode_report_status(match mode {
+        4 => Some(screen.caret().insert_mode),
+        _ => None,
+    })
+}
+
+fn dec_mode_report_status(screen: &dyn Screen, mode: u16) -> u8 {
+    let state = screen.terminal_state();
+    mode_report_status(match mode {
+        4 => Some(matches!(state.scroll_state, icy_engine::TerminalScrolling::Smooth)),
+        5 => Some(state.inverse_video),
+        6 => Some(matches!(state.origin_mode, icy_engine::OriginMode::WithinMargins)),
+        7 => Some(matches!(state.auto_wrap_mode, icy_engine::AutoWrapMode::AutoWrap)),
+        9 => Some(matches!(state.mouse_mode(), icy_engine::MouseMode::X10)),
+        25 => Some(screen.caret().visible),
+        33 => Some(state.ice_colors),
+        35 => Some(screen.caret().blinking),
+        69 => Some(state.dec_left_right_margins()),
+        1000 => Some(matches!(state.mouse_mode(), icy_engine::MouseMode::VT200)),
+        1001 => Some(matches!(state.mouse_mode(), icy_engine::MouseMode::VT200_Highlight)),
+        1002 => Some(matches!(state.mouse_mode(), icy_engine::MouseMode::ButtonEvents)),
+        1003 => Some(matches!(state.mouse_mode(), icy_engine::MouseMode::AnyEvents)),
+        1004 => Some(state.mouse_state.focus_out_event_enabled),
+        1005 => Some(matches!(state.mouse_state.extended_mode, icy_engine::ExtMouseMode::ExtendedUTF8)),
+        1006 => Some(matches!(state.mouse_state.extended_mode, icy_engine::ExtMouseMode::SGR)),
+        1007 => Some(state.mouse_state.alternate_scroll_enabled),
+        1015 => Some(matches!(state.mouse_state.extended_mode, icy_engine::ExtMouseMode::URXVT)),
+        1016 => Some(matches!(state.mouse_state.extended_mode, icy_engine::ExtMouseMode::PixelPosition)),
+        2004 => Some(state.bracketed_paste_mode),
+        _ => None,
+    })
+}
+
+fn decrqss_status(screen: &dyn Screen, selector: &[u8]) -> Option<String> {
+    let state = screen.terminal_state();
+    match selector {
+        b"r" => {
+            let (top, bottom) = state.margins_top_bottom().unwrap_or((0, screen.height() - 1));
+            Some(format!("{};{}r", top + 1, bottom + 1))
+        }
+        b"s" => {
+            let (left, right) = state.margins_left_right().unwrap_or((0, screen.width() - 1));
+            Some(format!("{};{}s", left + 1, right + 1))
+        }
+        b"t" => Some(format!("{}t", screen.height())),
+        b"$|" => Some(format!("{}$|", screen.width())),
+        b"*|" => Some(format!("{}*|", screen.height())),
+        b" q" => {
+            let caret = screen.caret();
+            let style = match (caret.shape, caret.blinking) {
+                (CaretShape::Block, true) => 1,
+                (CaretShape::Block, false) => 2,
+                (CaretShape::Underline, true) => 3,
+                (CaretShape::Underline, false) => 4,
+                (CaretShape::Bar, true) => 5,
+                (CaretShape::Bar, false) => 6,
+            };
+            Some(format!("{} q", style))
+        }
+        b"*r" => {
+            let baud = match state.baud_emulation() {
+                BaudEmulation::Off => 0,
+                BaudEmulation::Rate(300) => 1,
+                BaudEmulation::Rate(600) => 2,
+                BaudEmulation::Rate(1200) => 3,
+                BaudEmulation::Rate(2400) => 4,
+                BaudEmulation::Rate(4800) => 5,
+                BaudEmulation::Rate(9600) => 6,
+                BaudEmulation::Rate(19200) => 7,
+                BaudEmulation::Rate(38400) => 8,
+                BaudEmulation::Rate(57600) => 9,
+                BaudEmulation::Rate(76800) => 10,
+                BaudEmulation::Rate(115_200) => 11,
+                BaudEmulation::Rate(_) => 0,
+            };
+            Some(format!("0;{}*r", baud))
+        }
+        b"m" => {
+            let attr = screen.caret().attribute;
+            let mut params = vec!["0".to_string()];
+            if attr.is_bold() {
+                params.push("1".to_string());
+            }
+            if attr.is_faint() {
+                params.push("2".to_string());
+            }
+            if attr.is_italic() {
+                params.push("3".to_string());
+            }
+            if attr.is_underlined() {
+                params.push("4".to_string());
+            }
+            if attr.is_blinking() {
+                params.push("5".to_string());
+            }
+            if state.inverse_video {
+                params.push("7".to_string());
+            }
+            if attr.is_concealed() {
+                params.push("8".to_string());
+            }
+            if attr.is_crossed_out() {
+                params.push("9".to_string());
+            }
+            append_sgr_color(&mut params, attr.foreground_color(), true);
+            append_sgr_color(&mut params, attr.background_color(), false);
+            Some(format!("{}m", params.join(";")))
+        }
+        _ => None,
+    }
+}
+
+fn append_sgr_color(params: &mut Vec<String>, color: icy_engine::AttributeColor, foreground: bool) {
+    let base = if foreground { 30 } else { 40 };
+    match color {
+        icy_engine::AttributeColor::Palette(index) if index < 8 => params.push((base + u32::from(index)).to_string()),
+        icy_engine::AttributeColor::Palette(index) if index < 16 => params.push((base + 60 + u32::from(index - 8)).to_string()),
+        icy_engine::AttributeColor::Palette(index) | icy_engine::AttributeColor::ExtendedPalette(index) => {
+            params.extend([if foreground { "38" } else { "48" }.to_string(), "5".to_string(), index.to_string()]);
+        }
+        icy_engine::AttributeColor::Rgb(r, g, b) => {
+            params.extend([
+                if foreground { "38" } else { "48" }.to_string(),
+                "2".to_string(),
+                r.to_string(),
+                g.to_string(),
+                b.to_string(),
+            ]);
+        }
+        icy_engine::AttributeColor::Transparent => params.push(if foreground { "39" } else { "49" }.to_string()),
+    }
+}
 
 /// Messages sent to the terminal thread
 #[derive(Debug, Clone)]
@@ -168,6 +311,10 @@ pub struct ConnectionConfig {
 
     /// Whether mouse reporting is enabled for this connection
     pub mouse_reporting_enabled: bool,
+    pub lf_expand: bool,
+    pub custom_palette: Option<Vec<[u8; 3]>>,
+    pub default_cursor_shape: CaretShape,
+    pub default_cursor_blinking: bool,
 }
 
 pub struct TerminalThread {
@@ -401,26 +548,33 @@ impl TerminalThread {
     async fn handle_command(&mut self, command: TerminalCommand) {
         match command {
             TerminalCommand::Connect(config) => {
-                // let auto_login = config.auto_login_exp.to_string();
-                // let user_name = config.user_name.clone();
-                // let password = config.password.clone();
-
-                if let Err(e) = self.connect(config).await {
-                    log::error!("{}", e);
-                    self.process_data(format!("NO CARRIER\r\n").as_bytes()).await;
-                    self.send_event(TerminalEvent::Disconnected(Some(e.to_string())));
-                }
-                /*
-                if !auto_login.is_empty() {
-                    match AutoLoginParser::parse(&auto_login) {
-                        Ok(commands) => {
-                            self.auto_login(&commands, user_name, password).await;
-                        }
-                        Err(err) => {
-                            log::error!("Failed to parse auto-login expression: {}", err);
+                let commands = if config.auto_login_exp.is_empty() {
+                    None
+                } else {
+                    match AutoLoginParser::parse(&config.auto_login_exp) {
+                        Ok(commands) => Some(commands),
+                        Err(error) => {
+                            log::error!("Failed to parse auto-login expression: {error}");
+                            None
                         }
                     }
-                }*/
+                };
+                let user_name = config.user_name.clone();
+                let password = config.password.clone();
+                let terminal_type = config.terminal_type;
+
+                match self.connect(config).await {
+                    Ok(()) => {
+                        if let Some(commands) = commands {
+                            self.auto_login(&commands, user_name, password, terminal_type).await;
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("{}", e);
+                        self.process_data(format!("NO CARRIER\r\n").as_bytes()).await;
+                        self.send_event(TerminalEvent::Disconnected(Some(e.to_string())));
+                    }
+                }
             }
 
             TerminalCommand::OpenSerial(serial) => {
@@ -662,8 +816,15 @@ impl TerminalThread {
         let (mut new_screen, parser) = screen_mode.create_screen(config.terminal_type, Some(CreationOptions { ansi_music: config.ansi_music }));
         {
             new_screen.set_scrollback_buffer_size(config.max_scrollback_lines);
+            new_screen.caret_mut().shape = config.default_cursor_shape;
+            new_screen.caret_mut().blinking = config.default_cursor_blinking;
+            if let Some(colors) = config.custom_palette.as_ref().filter(|colors| colors.len() == 16) {
+                let colors: Vec<icy_engine::Color> = colors.iter().map(|[r, g, b]| icy_engine::Color::new(*r, *g, *b)).collect();
+                *new_screen.palette_mut() = icy_engine::Palette::from_slice(&colors);
+            }
             // Set mouse tracking enabled based on connection config
             new_screen.terminal_state_mut().mouse_state.mouse_tracking_enabled = config.mouse_reporting_enabled;
+            new_screen.terminal_state_mut().lf_expand = config.lf_expand;
             let mut screen = self.edit_screen.lock();
             *screen = new_screen;
         }
@@ -1541,8 +1702,7 @@ impl TerminalThread {
                     2 - Bright Background (ie: DECSET 32) is supported
                     3 - Palette entries may be modified via an Operating System Command
                         string
-                    4 - Pixel operations are supported (currently, sixel and PPM
-                        graphics)
+                    4 - Pixel operations are supported (Sixel and inline PPM graphics)
                     5 - The current font may be selected via CSI Ps1 ; Ps2 sp D
                     6 - Extended palette is available
                     7 - Mouse is available
@@ -1564,6 +1724,59 @@ impl TerminalThread {
                 let width = screen.width();
                 Some(format!("\x1B[{};{}R", height, width).into_bytes())
             }
+            TerminalRequest::GraphicsSizeReport => {
+                let screen = self.edit_screen.lock();
+                let font = screen.font_dimensions();
+                let width = screen.width() * font.width;
+                let height = screen.height() * font.height;
+                Some(format!("\x1B[?2;0;{};{}S", width, height).into_bytes())
+            }
+            TerminalRequest::RequestStatusString(selector) => {
+                let screen = self.edit_screen.lock();
+                let status = decrqss_status(&**screen, selector);
+                let supported = u8::from(status.is_some());
+                let payload = status.unwrap_or_else(|| String::from_utf8_lossy(selector).into_owned());
+                Some(format!("\x1BP{}$r{}\x1B\\", supported, payload).into_bytes())
+            }
+            TerminalRequest::JxlSupportReport => Some(b"\x1B[=1;1-n".to_vec()),
+            TerminalRequest::OscColorReport { foreground } => {
+                let screen = self.edit_screen.lock();
+                let attribute = screen.caret().attribute;
+                let color = if *foreground {
+                    attribute.foreground_color()
+                } else {
+                    attribute.background_color()
+                };
+                let (r, g, b) = color.as_rgb().unwrap_or_else(|| {
+                    let index = if *foreground { attribute.foreground() } else { attribute.background() };
+                    screen.palette().rgb(index)
+                });
+                let command = if *foreground { 10 } else { 11 };
+                Some(
+                    format!(
+                        "\x1B]{};rgb:{:04x}/{:04x}/{:04x}\x1B\\",
+                        command,
+                        u16::from(r) * 257,
+                        u16::from(g) * 257,
+                        u16::from(b) * 257
+                    )
+                    .into_bytes(),
+                )
+            }
+            TerminalRequest::OscPaletteColorReport { index } => {
+                let screen = self.edit_screen.lock();
+                let (r, g, b) = screen.palette().rgb(u32::from(*index));
+                Some(
+                    format!(
+                        "\x1B]4;{};rgb:{:04x}/{:04x}/{:04x}\x1B\\",
+                        index,
+                        u16::from(r) * 257,
+                        u16::from(g) * 257,
+                        u16::from(b) * 257
+                    )
+                    .into_bytes(),
+                )
+            }
             TerminalRequest::RequestTabStopReport => {
                 let screen = self.edit_screen.lock();
                 let mut response = b"\x1BP2$u".to_vec();
@@ -1578,8 +1791,14 @@ impl TerminalThread {
                 response.extend_from_slice(b"\x1B\\");
                 Some(response)
             }
-            TerminalRequest::AnsiModeReport(_) => Some(b"\x1B[?0$y".to_vec()),
-            TerminalRequest::DecPrivateModeReport(_) => Some(b"\x1B[?0$y".to_vec()),
+            TerminalRequest::AnsiModeReport(mode) => {
+                let screen = self.edit_screen.lock();
+                Some(format!("\x1B[{};{}$y", mode, ansi_mode_report_status(&**screen, *mode)).into_bytes())
+            }
+            TerminalRequest::DecPrivateModeReport(mode) => {
+                let screen = self.edit_screen.lock();
+                Some(format!("\x1B[?{};{}$y", mode, dec_mode_report_status(&**screen, *mode)).into_bytes())
+            }
             TerminalRequest::RequestChecksumRectangularArea {
                 id,
                 page: _,
@@ -1721,137 +1940,148 @@ impl TerminalThread {
         }
     }
 
-    /*
-        async fn auto_login(&mut self, commands: &[AutoLoginCommand], user_name: Option<String>, password: Option<String>) {
-            // Extract user name parts
-            let full_name = user_name.clone().unwrap_or_default();
-            let parts: Vec<&str> = full_name.split_whitespace().collect();
-            let first_name = parts.first().unwrap_or(&"").to_string();
-            let last_name = parts.get(1..).map(|parts| parts.join(" ")).unwrap_or_default();
-            let password = password.unwrap_or_default();
-
-            for command in commands {
-                match command {
-                    AutoLoginCommand::Delay(seconds) => {
-                        tokio::time::sleep(tokio::time::Duration::from_secs(*seconds as u64)).await;
-                    }
-
-                    AutoLoginCommand::EmulateMailerAccess => {
-                        // Send CR+CR then ESC
-                        if let Some(conn) = &mut self.connection {
-                            tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
-                            let _ = conn.send(&[13, 13, 27]).await;
-                            // Wait briefly for response
-                            tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
-                        }
-                    }
-
-                    AutoLoginCommand::WaitForNamePrompt => {
-                        // Wait for name/login prompts like "name:", "login:", "user:", etc.
-                        // Timeout after 10 seconds
-                        let timeout = tokio::time::Duration::from_secs(10);
-                        let start = tokio::time::Instant::now();
-                        let mut buffer = vec![0u8; 4096];
-                        let mut accumulated_text = String::new();
-
-                        // Get buffer type for unicode conversion
-                        let buffer_type = {
-                            let screen = self.edit_screen.lock();
-                            screen.buffer_type()
-                        };
-
-                        loop {
-                            // Check timeout
-                            if start.elapsed() >= timeout {
-                                log::warn!("WaitForNamePrompt: Timeout waiting for prompt");
-                                break;
-                            }
-
-                            // Try to read data with a small timeout
-                            tokio::select! {
-                                _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
-                                    // Continue loop to check for timeout
-                                }
-                                data = self.read_connection(&mut buffer) => {
-                                    if data.is_empty() {
-                                        continue;
-                                    }
-
-                                    // Convert bytes to unicode string
-                                    for &byte in &data {
-                                        let ch = buffer_type.convert_to_unicode(byte as char);
-                                        accumulated_text.push(ch.to_ascii_lowercase());
-                                    }
-                                    // Check for name/login prompts (case-insensitive)
-                                    let prompt_patterns = [
-                                        "name",
-                                        "login",
-                                        "user",
-                                    ];
-                                    for pattern in &prompt_patterns {
-                                        if accumulated_text.contains(pattern) {
-                                            log::info!("WaitForNamePrompt: Detected prompt pattern '{}'", pattern);
-                                            return; // Exit the command - prompt detected
-                                        }
-                                    }
-
-                                    // Keep only last 512 characters to avoid unbounded growth
-                                    if accumulated_text.len() > 512 {
-                                        accumulated_text = accumulated_text.chars().skip(accumulated_text.len() - 512).collect();
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    AutoLoginCommand::SendFullName => {
-                        if let Some(conn) = &mut self.connection {
-                            let _ = conn.send(full_name.as_bytes()).await;
-                        }
-                    }
-
-                    AutoLoginCommand::SendFirstName => {
-                        if let Some(conn) = &mut self.connection {
-                            let _ = conn.send(first_name.as_bytes()).await;
-                        }
-                    }
-
-                    AutoLoginCommand::SendLastName => {
-                        if let Some(conn) = &mut self.connection {
-                            let _ = conn.send(last_name.as_bytes()).await;
-                        }
-                    }
-
-                    AutoLoginCommand::SendPassword => {
-                        if let Some(conn) = &mut self.connection {
-                            let _ = conn.send(password.as_bytes()).await;
-                        }
-                    }
-
-                    AutoLoginCommand::DisableIEMSI => {
-                        // Disable IEMSI for this session
-                        self.iemsi_auto_login = None;
-                    }
-
-                    AutoLoginCommand::SendControlCode(code) => {
-                        if let Some(conn) = &mut self.connection {
-                            let _ = conn.send(&[*code]).await;
-                        }
-                    }
-
-                    AutoLoginCommand::RunScript(_filename) => {
-                        // TODO: Implement script execution
-                    }
-
-                    AutoLoginCommand::SendText(text) => {
-                        if let Some(conn) = &mut self.connection {
-                            let _ = conn.send(text.as_bytes()).await;
-                        }
-                    }
-                }
+    async fn flush_auto_login(&mut self, pending: &mut Vec<u8>) {
+        if pending.is_empty() {
+            return;
+        }
+        if let Some(connection) = &mut self.connection {
+            if let Err(error) = connection.send(pending).await {
+                log::error!("Auto-login send failed: {error}");
             }
         }
-    */
+        pending.clear();
+    }
+
+    fn auto_login_control_code(terminal_type: TerminalEmulation, code: u8) -> Vec<u8> {
+        if code == b'\r' {
+            crate::scripting::parse_key_string(terminal_type, "enter").unwrap_or_else(|| vec![code])
+        } else {
+            vec![code]
+        }
+    }
+
+    async fn wait_for_name_prompt(&mut self) {
+        let timeout = tokio::time::Duration::from_secs(10);
+        let start = tokio::time::Instant::now();
+        let mut buffer = vec![0u8; 4096];
+        let mut accumulated = String::new();
+
+        while start.elapsed() < timeout {
+            if let Some(data) = self.read_connection_raw(&mut buffer).await {
+                accumulated.push_str(&String::from_utf8_lossy(&data).to_ascii_lowercase());
+                self.process_data(&data).await;
+                if ["name", "login", "user"].iter().any(|pattern| accumulated.contains(pattern)) {
+                    return;
+                }
+                if accumulated.len() > 512 {
+                    accumulated = accumulated.chars().rev().take(512).collect::<String>().chars().rev().collect();
+                }
+            } else {
+                tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+            }
+        }
+        log::warn!("Auto-login timed out waiting for a name prompt");
+    }
+
+    async fn auto_login(&mut self, commands: &[AutoLoginCommand], user_name: Option<String>, password: Option<String>, terminal_type: TerminalEmulation) {
+        // Extract user name parts
+        let full_name = user_name.clone().unwrap_or_default();
+        let parts: Vec<&str> = full_name.split_whitespace().collect();
+        let first_name = parts.first().unwrap_or(&"").to_string();
+        let last_name = parts.get(1..).map(|parts| parts.join(" ")).unwrap_or_default();
+        let password = password.unwrap_or_default();
+        let mut pending = Vec::new();
+
+        for command in commands {
+            match command {
+                AutoLoginCommand::Delay(seconds) => {
+                    self.flush_auto_login(&mut pending).await;
+                    tokio::time::sleep(tokio::time::Duration::from_secs(*seconds as u64)).await;
+                }
+
+                AutoLoginCommand::EmulateMailerAccess => {
+                    pending.extend(Self::auto_login_control_code(terminal_type, b'\r'));
+                    pending.extend(Self::auto_login_control_code(terminal_type, b'\r'));
+                    pending.push(0x1B);
+                }
+
+                AutoLoginCommand::WaitForNamePrompt => {
+                    self.flush_auto_login(&mut pending).await;
+                    self.wait_for_name_prompt().await;
+                }
+
+                AutoLoginCommand::SendFullName => pending.extend_from_slice(full_name.as_bytes()),
+                AutoLoginCommand::SendFirstName => pending.extend_from_slice(first_name.as_bytes()),
+                AutoLoginCommand::SendLastName => pending.extend_from_slice(last_name.as_bytes()),
+                AutoLoginCommand::SendPassword => pending.extend_from_slice(password.as_bytes()),
+
+                AutoLoginCommand::DisableIEMSI => {
+                    self.iemsi_scanner = None;
+                    self.iemsi_user_settings = None;
+                }
+
+                AutoLoginCommand::SendControlCode(code) => {
+                    pending.extend(Self::auto_login_control_code(terminal_type, *code));
+                }
+
+                AutoLoginCommand::RunScript(filename) => {
+                    log::warn!("Auto-login script files are not supported: {filename}");
+                }
+
+                AutoLoginCommand::SendText(text) => pending.extend_from_slice(text.as_bytes()),
+            }
+        }
+        self.flush_auto_login(&mut pending).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ansi_mode_report_status, dec_mode_report_status, decrqss_status, TerminalThread};
+    use icy_engine::{EditableScreen, Size, TextScreen};
+    use icy_net::telnet::TerminalEmulation;
+
+    #[test]
+    fn auto_login_enter_uses_active_terminal_mapping() {
+        assert_eq!(TerminalThread::auto_login_control_code(TerminalEmulation::ATAscii, b'\r'), vec![0x9B]);
+        assert_eq!(TerminalThread::auto_login_control_code(TerminalEmulation::AtariST, b'\r'), vec![b'\r']);
+        assert_eq!(TerminalThread::auto_login_control_code(TerminalEmulation::Ansi, b'\r'), vec![b'\r']);
+    }
+
+    #[test]
+    fn auto_login_non_enter_controls_remain_raw() {
+        assert_eq!(TerminalThread::auto_login_control_code(TerminalEmulation::ATAscii, 0x1B), vec![0x1B]);
+    }
+
+    #[test]
+    fn decrqm_reports_live_and_unknown_modes() {
+        let mut screen = TextScreen::new(Size::new(80, 25));
+        assert_eq!(ansi_mode_report_status(&screen, 4), 2);
+        assert_eq!(dec_mode_report_status(&screen, 25), 1);
+        assert_eq!(dec_mode_report_status(&screen, 2004), 2);
+        assert_eq!(dec_mode_report_status(&screen, 9999), 0);
+
+        screen.caret_mut().insert_mode = true;
+        screen.caret_mut().visible = false;
+        screen.terminal_state_mut().bracketed_paste_mode = true;
+        assert_eq!(ansi_mode_report_status(&screen, 4), 1);
+        assert_eq!(dec_mode_report_status(&screen, 25), 2);
+        assert_eq!(dec_mode_report_status(&screen, 2004), 1);
+    }
+
+    #[test]
+    fn decrqss_reports_cursor_sgr_and_speed() {
+        let mut screen = TextScreen::new(Size::new(80, 25));
+        screen.caret_mut().shape = icy_parser_core::CaretShape::Bar;
+        screen.caret_mut().blinking = false;
+        screen.caret_mut().attribute.set_is_bold(true);
+        screen.caret_mut().attribute.set_foreground_rgb(1, 2, 3);
+        screen.terminal_state_mut().set_baud_rate(icy_parser_core::BaudEmulation::Rate(9600));
+
+        assert_eq!(decrqss_status(&screen, b" q").as_deref(), Some("6 q"));
+        assert_eq!(decrqss_status(&screen, b"m").as_deref(), Some("0;1;38;2;1;2;3;40m"));
+        assert_eq!(decrqss_status(&screen, b"*r").as_deref(), Some("0;6*r"));
+    }
 }
 
 // Helper function to create a terminal thread for the UI
@@ -1994,9 +2224,11 @@ impl TerminalThread {
     async fn set_terminal_settings(&mut self, terminal_type: TerminalEmulation, screen_mode: ScreenMode, ansi_music: MusicOption) {
         self.use_utf8 = terminal_type == TerminalEmulation::Utf8Ansi;
         let screen_mode = normalize_screen_mode(terminal_type, screen_mode);
+        let lf_expand = self.edit_screen.lock().terminal_state().lf_expand;
 
         // Create new screen and parser for the new terminal type
         let (mut new_screen, parser) = screen_mode.create_screen(terminal_type, Some(CreationOptions { ansi_music }));
+        new_screen.terminal_state_mut().lf_expand = lf_expand;
 
         // Use a default scrollback buffer size
         new_screen.set_scrollback_buffer_size(10000);

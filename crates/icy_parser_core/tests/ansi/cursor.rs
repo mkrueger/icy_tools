@@ -146,6 +146,15 @@ fn test_csi_cursor_horizontal_absolute() {
 }
 
 #[test]
+fn test_horizontal_position_absolute_backtick_alias() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B[42`", &mut sink);
+    assert_eq!(sink.cmds, [TerminalCommand::CsiCursorHorizontalAbsolute(42)]);
+}
+
+#[test]
 fn test_csi_line_position_absolute() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();

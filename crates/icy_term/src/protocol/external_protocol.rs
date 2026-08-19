@@ -58,6 +58,43 @@ impl ExternalProtocol {
         command.replace("%D", &self.download_dir.to_string_lossy()).replace("%F", &files_str)
     }
 
+    fn parse_command(command: &str) -> Result<Vec<String>, String> {
+        let mut parts = Vec::new();
+        let mut current = String::new();
+        let mut chars = command.chars().peekable();
+        let mut quote = None;
+
+        while let Some(ch) = chars.next() {
+            match quote {
+                Some(delimiter) if ch == delimiter => quote = None,
+                Some(delimiter) if ch == '\\' => match chars.peek().copied() {
+                    Some(next) if next == delimiter || next == '\\' => current.push(chars.next().unwrap()),
+                    _ => current.push(ch),
+                },
+                Some(_) => current.push(ch),
+                None if ch == '\'' || ch == '"' => quote = Some(ch),
+                None if ch.is_whitespace() => {
+                    if !current.is_empty() {
+                        parts.push(std::mem::take(&mut current));
+                    }
+                }
+                None if ch == '\\' => match chars.peek().copied() {
+                    Some(next) if next.is_whitespace() || next == '\'' || next == '"' || next == '\\' => current.push(chars.next().unwrap()),
+                    _ => current.push(ch),
+                },
+                None => current.push(ch),
+            }
+        }
+
+        if let Some(delimiter) = quote {
+            return Err(format!("Unterminated {delimiter} quote in external protocol command"));
+        }
+        if !current.is_empty() {
+            parts.push(current);
+        }
+        Ok(parts)
+    }
+
     async fn run_command(&mut self, com: &mut dyn Connection, command: &str, working_dir: Option<&PathBuf>) -> icy_net::Result<()> {
         // Reset cancel flag at start
         self.cancel_requested.store(false, Ordering::SeqCst);
@@ -68,13 +105,13 @@ impl ExternalProtocol {
             log::info!("Working directory: {}", dir.display());
         }
 
-        // Parse command into program and args
-        let parts: Vec<&str> = command.split_whitespace().collect();
+        // Parse command into program and args without invoking a shell.
+        let parts = Self::parse_command(command).map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
         if parts.is_empty() {
             return Err("Empty command".into());
         }
 
-        let program = parts[0];
+        let program = &parts[0];
         let args = &parts[1..];
 
         let mut cmd = Command::new(program);
@@ -166,6 +203,32 @@ impl ExternalProtocol {
 
         self.child_pid.store(0, Ordering::SeqCst);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ExternalProtocol;
+
+    #[test]
+    fn parses_quoted_command_arguments() {
+        assert_eq!(
+            ExternalProtocol::parse_command(r#""C:\Program Files\transfer.exe" --send "C:\Users\Mike\Test File.zip""#).unwrap(),
+            [r#"C:\Program Files\transfer.exe"#, "--send", r#"C:\Users\Mike\Test File.zip"#]
+        );
+    }
+
+    #[test]
+    fn preserves_unquoted_windows_backslashes() {
+        assert_eq!(
+            ExternalProtocol::parse_command(r#"transfer.exe C:\Users\Mike\file.zip"#).unwrap(),
+            ["transfer.exe", r#"C:\Users\Mike\file.zip"#]
+        );
+    }
+
+    #[test]
+    fn rejects_unterminated_quotes() {
+        assert!(ExternalProtocol::parse_command(r#"transfer.exe "unfinished"#).is_err());
     }
 }
 

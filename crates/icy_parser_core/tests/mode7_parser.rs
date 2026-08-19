@@ -1,4 +1,4 @@
-use icy_parser_core::{CommandParser, CommandSink, Direction, Mode7Parser, TerminalCommand};
+use icy_parser_core::{CommandParser, CommandSink, Direction, Mode7Parser, TerminalCommand, ViewDataCommand};
 
 struct TestSink {
     commands: Vec<String>,
@@ -51,6 +51,11 @@ impl CommandSink for TestSink {
                 self.commands.push(format!("Other: {:?}", cmd));
             }
         }
+    }
+
+    fn emit_view_data(&mut self, command: ViewDataCommand) -> bool {
+        self.commands.push(format!("ViewData: {:?}", command));
+        false
     }
 }
 
@@ -175,6 +180,29 @@ fn test_mode7_flash_steady() {
 
     assert!(sink.commands.iter().any(|c| c.contains("Blink(Slow)")));
     assert!(sink.commands.iter().any(|c| c.contains("Blink(Off)")));
+}
+
+#[test]
+fn test_mode7_double_height_toggle() {
+    let mut parser = Mode7Parser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(&[141, 140], &mut sink);
+
+    assert!(sink.commands.iter().any(|command| command == "ViewData: DoubleHeight(true)"));
+    assert!(sink.commands.iter().any(|command| command == "ViewData: DoubleHeight(false)"));
+}
+
+#[test]
+fn test_mode7_does_not_use_prestel_enq_or_memory_semantics() {
+    let mut parser = Mode7Parser::new();
+    let mut sink = TestSink::new();
+
+    parser.parse(&[5], &mut sink);
+    assert!(sink.commands.is_empty());
+
+    parser.parse(&[23, 1, 2, 3, 4, 5, 6, 7, 8, 9], &mut sink);
+    assert!(sink.commands.is_empty());
 }
 
 #[test]

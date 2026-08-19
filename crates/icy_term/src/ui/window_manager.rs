@@ -87,6 +87,9 @@ impl WindowManager {
 
         // Create a single sound thread to be shared by all windows
         let sound_thread = Arc::new(Mutex::new(SoundThread::new()));
+        let _ = sound_thread
+            .lock()
+            .configure(options.audio_enabled, options.master_volume, options.audio_device.clone());
         let mode = MainWindowMode::ShowTerminal;
         let mut startup_error = None;
 
@@ -102,6 +105,8 @@ impl WindowManager {
                 AddressBook::default()
             }
         };
+        let mut addresses = addresses;
+        crate::merge_web_directories(&mut addresses, &options.web_directories);
         let options = Arc::new(Mutex::new(options));
         (
             Self {

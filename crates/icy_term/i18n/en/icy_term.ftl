@@ -33,6 +33,12 @@ settings-scaling-linear = Linear
 settings-terminal-category = Terminal
 settings-terminal-general-section = General
 settings-terminal-console-beep-checkbox = Console beep
+settings-terminal-audio-enabled = Audio output
+settings-terminal-master-volume = Master volume
+settings-terminal-audio-device = Output device
+settings-terminal-invert-mouse-wheel = Invert mouse wheel
+settings-terminal-cursor-shape = Cursor shape
+settings-terminal-cursor-blinking = Blinking cursor
 settings-terminal-open-settings-dir-button = Open settings directory
 settings-terminal-dial-tone = Dial Tone
 settings-terminal-scrollback-lines = Scrollback
@@ -55,6 +61,13 @@ settings-modem-category = Modem
 settings-modem-name = Name
 
 settings-paths-category = Paths
+settings-web-directory-category = Web Directories
+settings-web-directory-name = Name
+settings-web-directory-url = HTTPS URL
+settings-web-directory-enabled = Enabled
+settings-web-directory-add = Add source
+settings-web-directory-remove = Remove source
+settings-web-directory-restart = Changes are refreshed when IcyTERM restarts. Cached lists remain available offline.
 settings-paths-header = System Paths
 settings-paths-config-dir = Config directory
 settings-paths-config-file = Config file
@@ -130,6 +143,7 @@ dialing_directory-baud-emulation = Baud emulation
 dialing_directory-autologin = Autologin
 dialing_directory-comment = Comment
 dialing_directory-delete = Delete selected BBS
+dialing_directory-duplicate = Duplicate
 dialing_directory-add = Add new BBS
 dialing_directory-settings = { settings-heading }
 dialing_directory-connect-to-address = <Connect to Address>
@@ -157,6 +171,8 @@ dialing_directory-notes = Notes
 dialing_directory-xep80-module = XEP80 Module
 dialing_directory-options = Options
 dialing_directory-mouse-reporting = Enable mouse reporting
+dialing_directory-lf-expand = Expand received LF to LF+CR
+dialing_directory-custom-palette = Custom palette
 
 terminal-upload = Upload
 terminal-download = Download
@@ -185,6 +201,7 @@ protocol-xmodem1kG-description = Does that even exist?
 protocol-ymodem-description = Ok but Zmodem is better
 protocol-ymodemg-description = A fast Ymodem variant
 protocol-text-description = Upload a text file
+protocol-cet-description = Prestel CET Telesoftware download
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
@@ -454,6 +471,10 @@ cmd-terminal-scrollback-menu = Scrollback
 cmd-terminal-find-action = Find
 cmd-terminal-find-desc = Search in terminal content
 cmd-terminal-find-menu = Find
+
+cmd-terminal-toggle_mouse-action = Toggle Remote Mouse
+cmd-terminal-toggle_mouse-desc = Enable or disable remote mouse reporting
+cmd-terminal-toggle_mouse-menu = Remote Mouse
 
 # Capture commands
 cmd-capture-start-action = Capture Session

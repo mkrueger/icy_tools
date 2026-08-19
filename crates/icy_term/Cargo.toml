@@ -65,6 +65,7 @@ async-trait = "0.1"
 # MCP (rmcp + HTTP server)
 rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
 axum = "0.8"
+reqwest = { workspace = true }
 
 [build-dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }

@@ -89,6 +89,12 @@ struct Args {
 
     #[arg(long, value_name = "PORT", help = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "arg-mcp-port-help"))]
     mcp_port: Option<u16>,
+
+    #[arg(long, value_name = "FILE", help = "Use an alternate options file")]
+    config: Option<PathBuf>,
+
+    #[arg(long, value_name = "FILE", help = "Use an alternate phonebook file")]
+    phonebook: Option<PathBuf>,
 }
 
 pub type McpHandler = Option<tokio::sync::mpsc::UnboundedReceiver<mcp::McpCommand>>;
@@ -97,6 +103,13 @@ pub static MCP_PORT: AtomicU16 = AtomicU16::new(0);
 
 fn main() {
     let args = Args::parse_i18n_or_exit();
+
+    if let Some(path) = args.config.clone() {
+        Options::set_options_file(path);
+    }
+    if let Some(path) = args.phonebook.clone() {
+        Address::set_dialing_directory_file(path);
+    }
 
     if let Some(log_dir) = Options::get_log_dir() {
         let _logger = Logger::try_with_str("info, iced=error, wgpu_hal=error, wgpu_core=error, i18n_embed=error, zbus=error, zbus::connection=error")

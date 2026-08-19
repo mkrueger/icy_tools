@@ -10,6 +10,34 @@ fn parse_rip_commands(commands: Vec<RipCommand>) -> Box<dyn icy_engine::Editable
     screen
 }
 
+#[test]
+fn rip_stw_rtw_restores_text_window() {
+    let screen = parse_rip_commands(vec![
+        RipCommand::TextWindow {
+            x0: 2,
+            y0: 3,
+            x1: 30,
+            y1: 20,
+            wrap: true,
+            size: 0,
+        },
+        RipCommand::TextVariable { text: "STW".to_string() },
+        RipCommand::TextWindow {
+            x0: 8,
+            y0: 9,
+            x1: 40,
+            y1: 25,
+            wrap: true,
+            size: 0,
+        },
+        RipCommand::TextVariable { text: "RTW".to_string() },
+    ]);
+
+    assert_eq!(screen.terminal_state().margins_left_right(), Some((2, 30)));
+    assert_eq!(screen.terminal_state().margins_top_bottom(), Some((3, 20)));
+    assert_eq!(screen.caret_position(), screen.upper_left_position());
+}
+
 fn count_nonzero_pixels(screen: &PaletteScreenBuffer, left: i32, top: i32, right: i32, bottom: i32) -> usize {
     let resolution = screen.resolution();
     let left = left.clamp(0, resolution.width);

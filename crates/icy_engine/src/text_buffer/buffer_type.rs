@@ -102,6 +102,8 @@ impl BufferType {
                 }
             }
 
+            BufferType::Viewdata if ch as u32 == 0xA6 => '¦',
+            BufferType::Viewdata if ch == '|' => '|',
             BufferType::Viewdata => match VIEWDATA_TO_UNICODE.get(ch as usize) {
                 Some(out_ch) => *out_ch,
                 _ => ch,
@@ -141,6 +143,12 @@ impl BufferType {
                 if ch == ' ' {
                     return ' ';
                 }
+                if ch == '¦' {
+                    return '\u{00A6}';
+                }
+                if ch == '|' {
+                    return '|';
+                }
                 match UNICODE_TO_VIEWDATA.get(&ch) {
                     Some(out_ch) => *out_ch,
                     // For Viewdata/Mode7, unknown characters should be filtered
@@ -172,5 +180,18 @@ impl BufferType {
                 UNICODE_TO_VIEWDATA.get(&ch).copied()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BufferType;
+
+    #[test]
+    fn viewdata_distinguishes_broken_vertical_and_pipe() {
+        assert_eq!(BufferType::Viewdata.convert_to_unicode('\u{00A6}'), '¦');
+        assert_eq!(BufferType::Viewdata.convert_to_unicode('|'), '|');
+        assert_eq!(BufferType::Viewdata.convert_from_unicode('¦') as u32, 0xA6);
+        assert_eq!(BufferType::Viewdata.convert_from_unicode('|'), '|');
     }
 }

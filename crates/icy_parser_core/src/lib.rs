@@ -354,6 +354,9 @@ pub enum DecMode {
     /// When set: use alternate scroll mode
     AlternateScroll = 1007,
 
+    /// Bracketed Paste Mode (Mode 2004)
+    BracketedPaste = 2004,
+
     // Mouse Extended Modes
     /// UTF-8 Extended Mouse Mode (Mode 1005)
     ExtendedMouseUTF8 = 1005,
@@ -383,6 +386,7 @@ impl DecMode {
             1003 => Some(Self::AnyEventMouse),
             1004 => Some(Self::FocusEvent),
             1007 => Some(Self::AlternateScroll),
+            2004 => Some(Self::BracketedPaste),
             1005 => Some(Self::ExtendedMouseUTF8),
             1006 => Some(Self::ExtendedMouseSGR),
             1015 => Some(Self::ExtendedMouseURXVT),
@@ -523,7 +527,7 @@ pub enum SgrAttribute {
 
 /// Caret (cursor) shape for DECSCUSR
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum CaretShape {
     /// Block cursor (default)
     #[default]
@@ -564,6 +568,8 @@ pub enum OperatingSystemCommand {
     /// OSC 4 - Set Palette Color: ESC]4;{index};rgb:{rr}/{gg}/{bb}BEL
     /// Parameters: color_index, r, g, b
     SetPaletteColor(u8, u8, u8, u8),
+    /// OSC 104 - Reset selected palette colors, or all colors when empty.
+    ResetPaletteColors(Vec<u8>),
     /// OSC 8 - Hyperlink: ESC]8;{params};{uri}BEL
     Hyperlink { params: Vec<u8>, uri: Vec<u8> },
 }
@@ -709,6 +715,12 @@ pub enum TerminalCommand {
     CsiCharacterPositionForward(u16),
     /// HPA - Horizontal Position Absolute: ESC[{n}'
     CsiHorizontalPositionAbsolute(u16),
+
+    /// CTerm Last Column Flag mode: CSI = 4/5 h/l
+    CsiSetLastColumnFlag {
+        enabled: bool,
+        forced: bool,
+    },
 
     /// TBC - Tabulation Clear: ESC[0g (clear tab at current position)
     CsiClearTabulation,
@@ -1010,13 +1022,28 @@ pub enum TerminalRequest {
     /// Terminal should respond with "\x1b[{height};{width}R"
     ScreenSizeReport,
 
+    /// XTSRGA graphics canvas size request: CSI ? 2 ; 1 S
+    GraphicsSizeReport,
+
+    /// DECRQSS request: DCS $ q {selector} ST
+    RequestStatusString(Vec<u8>),
+
+    /// SyncTERM APC query for JPEG XL support.
+    JxlSupportReport,
+
+    /// OSC 10/11 query for the current default foreground/background color.
+    OscColorReport { foreground: bool },
+
+    /// OSC 4 query for a palette entry.
+    OscPaletteColorReport { index: u8 },
+
     /// ANSI Mode Report: ESC[{mode}$p
     /// Terminal should respond with current mode status
-    AnsiModeReport(AnsiMode),
+    AnsiModeReport(u16),
 
     /// DEC Private Mode Report: ESC[?{mode}$p
     /// Terminal should respond with current DEC mode status
-    DecPrivateModeReport(DecMode),
+    DecPrivateModeReport(u16),
 
     /// Request Checksum of Rectangular Area: ESC[{id};{page};{top};{left};{bottom};{right}*y
     /// Terminal should respond with checksum in DCS format

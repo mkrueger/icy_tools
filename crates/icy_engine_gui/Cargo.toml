@@ -48,3 +48,4 @@ rfd = { workspace = true }
 
 # for Atari ST GIST sounds (IGS)
 ym2149-gist-replayer = { workspace = true }
+cpal = { workspace = true }

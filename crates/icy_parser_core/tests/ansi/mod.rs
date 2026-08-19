@@ -193,6 +193,29 @@ fn test_dec_private_modes() {
 }
 
 #[test]
+fn test_bracketed_paste_mode() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B[?2004h\x1B[?2004l", &mut sink);
+
+    assert_eq!(sink.cmds[0], TerminalCommand::CsiDecSetMode(DecMode::BracketedPaste, true));
+    assert_eq!(sink.cmds[1], TerminalCommand::CsiDecSetMode(DecMode::BracketedPaste, false));
+}
+
+#[test]
+fn test_last_column_flag_modes() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B[=4h\x1B[=4l\x1B[=5h", &mut sink);
+
+    assert_eq!(sink.cmds[0], TerminalCommand::CsiSetLastColumnFlag { enabled: true, forced: false });
+    assert_eq!(sink.cmds[1], TerminalCommand::CsiSetLastColumnFlag { enabled: false, forced: false });
+    assert_eq!(sink.cmds[2], TerminalCommand::CsiSetLastColumnFlag { enabled: true, forced: true });
+}
+
+#[test]
 fn test_character_operations() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();

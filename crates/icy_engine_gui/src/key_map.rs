@@ -28,6 +28,10 @@ const fn char_key_ctrl(ch: char) -> KeyWithModifiers {
     KeyWithModifiers::Character(ch, false, true)
 }
 
+const fn char_key(ch: char) -> KeyWithModifiers {
+    KeyWithModifiers::Character(ch, false, false)
+}
+
 const fn key_code_key(code: Code) -> KeyWithModifiers {
     KeyWithModifiers::KeyCode(code, false, false)
 }
@@ -232,7 +236,12 @@ pub static ATASCII_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
 ];
 
 pub static VIDEOTERM_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
-    (named_key(keyboard::key::Named::Home), &[0x13]),
+    (char_key('#'), b"_"),
+    (char_key('_'), b"`"),
+    (char_key('`'), b"#"),
+    (char_key_ctrl('l'), &[0x0C]),
+    (char_key_ctrl('t'), &[0x18]),
+    (named_key(keyboard::key::Named::Home), &[0x1E]),
     (named_key(keyboard::key::Named::Enter), &[b'_']),
     (named_key(keyboard::key::Named::Insert), &[0x94]),
     (named_key(keyboard::key::Named::Backspace), &[0x7F]),
@@ -262,6 +271,32 @@ pub static MODE7_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
     (named_key(keyboard::key::Named::Delete), &[127]),    // Treat Delete same as destructive backspace
     (named_key(keyboard::key::Named::Tab), &[9]),         // TAB
     (named_key(keyboard::key::Named::Enter), &[13]),      // Enter -> CR
+    (char_key_ctrl('a'), &[0x01]),
+    (char_key_ctrl('b'), &[0x02]),
+    (char_key_ctrl('c'), &[0x03]),
+    (char_key_ctrl('d'), &[0x04]),
+    (char_key_ctrl('e'), &[0x05]),
+    (char_key_ctrl('f'), &[0x06]),
+    (char_key_ctrl('g'), &[0x07]),
+    (char_key_ctrl('h'), &[0x08]),
+    (char_key_ctrl('i'), &[0x09]),
+    (char_key_ctrl('j'), &[0x0A]),
+    (char_key_ctrl('k'), &[0x0B]),
+    (char_key_ctrl('l'), &[0x0C]),
+    (char_key_ctrl('m'), &[0x0D]),
+    (char_key_ctrl('n'), &[0x0E]),
+    (char_key_ctrl('o'), &[0x0F]),
+    (char_key_ctrl('p'), &[0x10]),
+    (char_key_ctrl('q'), &[0x11]),
+    (char_key_ctrl('r'), &[0x12]),
+    (char_key_ctrl('s'), &[0x13]),
+    (char_key_ctrl('t'), &[0x14]),
+    (char_key_ctrl('u'), &[0x15]),
+    (char_key_ctrl('v'), &[0x16]),
+    (char_key_ctrl('w'), &[0x17]),
+    (char_key_ctrl('x'), &[0x18]),
+    (char_key_ctrl('y'), &[0x19]),
+    (char_key_ctrl('z'), &[0x1A]),
     // Arrow keys (unmodified)
     (named_key(keyboard::key::Named::ArrowLeft), &[140]),
     (named_key(keyboard::key::Named::ArrowRight), &[141]),
@@ -389,6 +424,30 @@ pub static ATARI_ST_KEY_MAP: &[(KeyWithModifiers, &[u8])] = &[
     (char_key_ctrl('8'), &[0x7F]), // Ctrl+8 = DEL
 ];
 
+fn ansi_modified_function_key(key: keyboard::key::Named, modifiers: keyboard::Modifiers) -> Option<Vec<u8>> {
+    let modifier = 1 + u8::from(modifiers.shift()) + 2 * u8::from(modifiers.alt()) + 4 * u8::from(modifiers.control() || modifiers.command());
+    if modifier == 1 {
+        return None;
+    }
+
+    let sequence = match key {
+        keyboard::key::Named::F1 => format!("\x1b[1;{modifier}P"),
+        keyboard::key::Named::F2 => format!("\x1b[1;{modifier}Q"),
+        keyboard::key::Named::F3 => format!("\x1b[1;{modifier}R"),
+        keyboard::key::Named::F4 => format!("\x1b[1;{modifier}S"),
+        keyboard::key::Named::F5 => format!("\x1b[15;{modifier}~"),
+        keyboard::key::Named::F6 => format!("\x1b[17;{modifier}~"),
+        keyboard::key::Named::F7 => format!("\x1b[18;{modifier}~"),
+        keyboard::key::Named::F8 => format!("\x1b[19;{modifier}~"),
+        keyboard::key::Named::F9 => format!("\x1b[20;{modifier}~"),
+        keyboard::key::Named::F10 => format!("\x1b[21;{modifier}~"),
+        keyboard::key::Named::F11 => format!("\x1b[23;{modifier}~"),
+        keyboard::key::Named::F12 => format!("\x1b[24;{modifier}~"),
+        _ => return None,
+    };
+    Some(sequence.into_bytes())
+}
+
 pub fn lookup_key(
     key: &keyboard::Key,
     physical: &keyboard::key::Physical,
@@ -397,6 +456,14 @@ pub fn lookup_key(
 ) -> Option<Vec<u8>> {
     let shift = modifiers.shift();
     let ctrl = modifiers.control() || modifiers.command();
+
+    if std::ptr::eq(map, ANSI_KEY_MAP) {
+        if let keyboard::Key::Named(named) = key {
+            if let Some(sequence) = ansi_modified_function_key(*named, modifiers) {
+                return Some(sequence);
+            }
+        }
+    }
 
     // Always also check physical key code
     if let keyboard::key::Physical::Code(code) = physical {
@@ -445,4 +512,79 @@ pub fn lookup_key(
         _ => {}
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ansi_modified_function_key, lookup_key, MODE7_KEY_MAP, VIDEOTERM_KEY_MAP};
+    use icy_ui::keyboard::{
+        key::{Named, NativeCode, Physical},
+        Key, Modifiers,
+    };
+
+    #[test]
+    fn encodes_xterm_function_key_modifiers() {
+        assert_eq!(ansi_modified_function_key(Named::F1, Modifiers::SHIFT).unwrap(), b"\x1b[1;2P");
+        assert_eq!(ansi_modified_function_key(Named::F5, Modifiers::ALT).unwrap(), b"\x1b[15;3~");
+        assert_eq!(
+            ansi_modified_function_key(Named::F12, Modifiers::CTRL | Modifiers::SHIFT).unwrap(),
+            b"\x1b[24;6~"
+        );
+        assert_eq!(
+            ansi_modified_function_key(Named::F2, Modifiers::ALT | Modifiers::CTRL | Modifiers::SHIFT).unwrap(),
+            b"\x1b[1;8Q"
+        );
+    }
+
+    #[test]
+    fn leaves_unmodified_function_keys_to_static_maps() {
+        assert!(ansi_modified_function_key(Named::F1, Modifiers::empty()).is_none());
+    }
+
+    #[test]
+    fn maps_prestel_punctuation() {
+        let physical = Physical::Unidentified(NativeCode::Unidentified);
+        assert_eq!(
+            lookup_key(&Key::Character("#".into()), &physical, Modifiers::empty(), VIDEOTERM_KEY_MAP),
+            Some(b"_".to_vec())
+        );
+        assert_eq!(
+            lookup_key(&Key::Character("_".into()), &physical, Modifiers::empty(), VIDEOTERM_KEY_MAP),
+            Some(b"`".to_vec())
+        );
+        assert_eq!(
+            lookup_key(&Key::Character("`".into()), &physical, Modifiers::empty(), VIDEOTERM_KEY_MAP),
+            Some(b"#".to_vec())
+        );
+    }
+
+    #[test]
+    fn maps_prestel_editing_keys() {
+        let physical = Physical::Unidentified(NativeCode::Unidentified);
+        assert_eq!(
+            lookup_key(&Key::Named(Named::Home), &physical, Modifiers::empty(), VIDEOTERM_KEY_MAP),
+            Some(vec![0x1E])
+        );
+        assert_eq!(
+            lookup_key(&Key::Character("l".into()), &physical, Modifiers::CTRL, VIDEOTERM_KEY_MAP),
+            Some(vec![0x0C])
+        );
+        assert_eq!(
+            lookup_key(&Key::Character("t".into()), &physical, Modifiers::CTRL, VIDEOTERM_KEY_MAP),
+            Some(vec![0x18])
+        );
+    }
+
+    #[test]
+    fn passes_mode7_control_letters() {
+        let physical = Physical::Unidentified(NativeCode::Unidentified);
+        assert_eq!(
+            lookup_key(&Key::Character("a".into()), &physical, Modifiers::CTRL, MODE7_KEY_MAP),
+            Some(vec![0x01])
+        );
+        assert_eq!(
+            lookup_key(&Key::Character("z".into()), &physical, Modifiers::CTRL, MODE7_KEY_MAP),
+            Some(vec![0x1A])
+        );
+    }
 }

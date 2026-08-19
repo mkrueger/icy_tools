@@ -1,6 +1,7 @@
 //! Unit tests for TextScreen - testing Screen and EditableScreen trait implementations
 
-use icy_engine::{AttributedChar, EditableScreen, IceMode, Position, Screen, Selection, Size, TextAttribute, TextPane, TextScreen};
+use icy_engine::{AttributedChar, EditableScreen, IceMode, Position, Screen, ScreenSink, Selection, Size, TextAttribute, TextPane, TextScreen};
+use icy_parser_core::{CommandSink, OperatingSystemCommand};
 
 // ============================================================================
 // TextPane Tests
@@ -12,6 +13,170 @@ fn test_text_pane_get_size() {
     assert_eq!(screen.width(), 80);
     assert_eq!(screen.height(), 25);
     assert_eq!(screen.size(), Size::new(80, 25));
+}
+
+#[test]
+fn test_osc8_hyperlink_survives_sink_boundary_and_wraps() {
+    let mut screen = TextScreen::new(Size::new(3, 2));
+    ScreenSink::new(&mut screen).operating_system_command(OperatingSystemCommand::Hyperlink {
+        params: Vec::new(),
+        uri: b"https://example.com".to_vec(),
+    });
+
+    for ch in "ABCD".chars() {
+        screen.print_char(AttributedChar::new(ch, screen.caret().attribute));
+    }
+
+    ScreenSink::new(&mut screen).operating_system_command(OperatingSystemCommand::Hyperlink {
+        params: Vec::new(),
+        uri: Vec::new(),
+    });
+    screen.update_hyperlinks();
+
+    assert_eq!(screen.hyperlinks().len(), 1);
+    assert_eq!(screen.hyperlinks()[0].position, Position::new(0, 0));
+    assert_eq!(screen.hyperlinks()[0].length, 4);
+    assert_eq!(screen.hyperlinks()[0].url.as_deref(), Some("https://example.com"));
+    assert!(!screen.caret().attribute.is_underlined());
+}
+
+#[test]
+fn test_dec_rectangular_fill_and_erase_preserve_caret() {
+    let mut screen = TextScreen::new(Size::new(5, 4));
+    screen.set_caret_position(Position::new(4, 3));
+    screen.caret_mut().attribute.set_is_bold(true);
+
+    ScreenSink::new(&mut screen).emit(icy_parser_core::TerminalCommand::CsiFillRectangularArea {
+        char: b'X',
+        top: 2,
+        left: 2,
+        bottom: 3,
+        right: 4,
+    });
+
+    assert_eq!(screen.caret_position(), Position::new(4, 3));
+    assert_eq!(screen.char_at(Position::new(1, 1)).ch, 'X');
+    assert!(screen.char_at(Position::new(3, 2)).attribute.is_bold());
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, ' ');
+
+    ScreenSink::new(&mut screen).emit(icy_parser_core::TerminalCommand::CsiEraseRectangularArea {
+        top: 2,
+        left: 3,
+        bottom: 2,
+        right: 3,
+    });
+
+    assert_eq!(screen.char_at(Position::new(2, 1)).ch, ' ');
+    assert!(!screen.char_at(Position::new(2, 1)).attribute.is_bold());
+    assert_eq!(screen.char_at(Position::new(1, 1)).ch, 'X');
+}
+
+#[test]
+fn test_dec_rectangular_fill_uses_origin_margins() {
+    let mut screen = TextScreen::new(Size::new(6, 5));
+    screen.terminal_state_mut().set_margins_top_bottom(1, 3);
+    screen.terminal_state_mut().set_dec_left_right_margins(true);
+    screen.terminal_state_mut().set_margins_left_right(2, 4);
+    screen.terminal_state_mut().origin_mode = icy_engine::OriginMode::WithinMargins;
+
+    ScreenSink::new(&mut screen).emit(icy_parser_core::TerminalCommand::CsiFillRectangularArea {
+        char: b'X',
+        top: 1,
+        left: 1,
+        bottom: 1,
+        right: 1,
+    });
+
+    assert_eq!(screen.char_at(Position::new(2, 1)).ch, 'X');
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, ' ');
+}
+
+#[test]
+fn test_last_column_flag_delays_wrap_until_next_character() {
+    let mut screen = TextScreen::new(Size::new(3, 2));
+    screen.terminal_state_mut().last_column_flag_mode = true;
+
+    for ch in "ABC".chars() {
+        screen.print_char(AttributedChar::new(ch, TextAttribute::default()));
+    }
+    assert_eq!(screen.caret_position(), Position::new(2, 0));
+    assert!(screen.terminal_state().wrap_pending);
+
+    screen.print_char(AttributedChar::new('D', TextAttribute::default()));
+    assert_eq!(screen.char_at(Position::new(0, 1)).ch, 'D');
+    assert_eq!(screen.caret_position(), Position::new(1, 1));
+}
+
+#[test]
+fn test_carriage_return_cancels_pending_wrap() {
+    let mut screen = TextScreen::new(Size::new(3, 2));
+    screen.terminal_state_mut().last_column_flag_mode = true;
+    for ch in "ABC".chars() {
+        screen.print_char(AttributedChar::new(ch, TextAttribute::default()));
+    }
+
+    screen.cr();
+    screen.print_char(AttributedChar::new('D', TextAttribute::default()));
+
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, 'D');
+    assert_eq!(screen.caret_position(), Position::new(1, 0));
+}
+
+#[test]
+fn test_lf_expand_is_optional() {
+    let mut screen = TextScreen::new(Size::new(5, 3));
+    screen.terminal_state_mut().lf_expand = false;
+    screen.set_caret_position(Position::new(3, 0));
+
+    screen.lf();
+    assert_eq!(screen.caret_position(), Position::new(3, 1));
+
+    screen.terminal_state_mut().lf_expand = true;
+    screen.lf();
+    assert_eq!(screen.caret_position(), Position::new(0, 2));
+}
+
+#[test]
+fn test_terminal_reset_preserves_only_forced_lcf() {
+    let mut screen = TextScreen::new(Size::new(3, 2));
+    screen.terminal_state_mut().last_column_flag_mode = true;
+    screen.terminal_state_mut().bracketed_paste_mode = true;
+    screen.reset_terminal();
+    assert!(!screen.terminal_state().last_column_flag_mode);
+    assert!(!screen.terminal_state().bracketed_paste_mode);
+
+    screen.terminal_state_mut().last_column_flag_mode = true;
+    screen.terminal_state_mut().last_column_flag_forced = true;
+    screen.reset_terminal();
+    assert!(screen.terminal_state().last_column_flag_mode);
+}
+
+#[test]
+fn test_80x43_bottom_line_scrolls_without_corruption() {
+    let mut screen = TextScreen::new(Size::new(80, 43));
+    for row in 0..43 {
+        screen.set_char(
+            Position::new(0, row),
+            AttributedChar::new(char::from_u32(33 + row as u32).unwrap(), TextAttribute::default()),
+        );
+    }
+    screen.set_caret_position(Position::new(0, 42));
+
+    screen.lf();
+
+    for row in 0..42 {
+        assert_eq!(screen.char_at(Position::new(0, row)).ch, char::from_u32(34 + row as u32).unwrap());
+    }
+    assert_eq!(screen.char_at(Position::new(0, 42)).ch, ' ');
+    assert_eq!(screen.caret_position(), Position::new(0, 42));
+}
+
+#[test]
+fn test_mode7_screen_starts_with_visible_cursor() {
+    let (screen, _) = icy_engine::ScreenMode::Mode7.create_screen(icy_net::telnet::TerminalEmulation::Mode7, None);
+
+    assert!(screen.caret().visible);
+    assert_eq!(screen.size(), Size::new(40, 25));
 }
 
 #[test]
@@ -630,6 +795,24 @@ fn test_editable_scroll_right() {
     assert_eq!(screen.char_at(Position::new(0, 0)).ch, ' ');
     assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'A');
     assert_eq!(screen.char_at(Position::new(2, 0)).ch, 'B');
+}
+
+#[test]
+fn test_scrolling_clears_with_current_background() {
+    let mut screen = TextScreen::new(Size::new(3, 2));
+    screen.caret_mut().attribute.set_background(4);
+
+    screen.scroll_up();
+    assert_eq!(screen.char_at(Position::new(2, 1)).attribute.background(), 4);
+
+    screen.scroll_down();
+    assert_eq!(screen.char_at(Position::new(0, 0)).attribute.background(), 4);
+
+    screen.scroll_left();
+    assert_eq!(screen.char_at(Position::new(2, 0)).attribute.background(), 4);
+
+    screen.scroll_right();
+    assert_eq!(screen.char_at(Position::new(0, 0)).attribute.background(), 4);
 }
 
 #[test]
