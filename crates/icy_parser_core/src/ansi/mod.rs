@@ -874,6 +874,18 @@ impl CommandParser for AnsiParser {
                         i += 1;
                         printable_start = i;
                     }
+                    b'}' => {
+                        sink.emit(TerminalCommand::CsiSelectActiveStatusDisplay(self.params.first().copied().unwrap_or(0)));
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                    b'~' => {
+                        sink.emit(TerminalCommand::CsiSetStatusDisplayType(self.params.first().copied().unwrap_or(1)));
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
                     ESC => {
                         // Malformed sequence - report error and fall back to ESC state
                         sink.report_error(
@@ -1891,6 +1903,11 @@ impl AnsiParser {
                 sink.emit(TerminalCommand::CsiCursorBackwardTabulation(n));
             }
             b't' => match self.params.len() {
+                1 => match self.params[0] {
+                    14 => sink.request(TerminalRequest::TextAreaPixelSizeReport),
+                    16 => sink.request(TerminalRequest::CellPixelSizeReport),
+                    _ => {}
+                },
                 3 => {
                     let cmd = self.params.first().copied().unwrap_or(0);
                     if cmd == 8 {
@@ -2051,6 +2068,7 @@ impl AnsiParser {
     fn handle_dec_private_csi_final(&mut self, final_byte: u8, sink: &mut dyn CommandSink) {
         match final_byte {
             b'S' if self.params == [2, 1] => sink.request(TerminalRequest::GraphicsSizeReport),
+            b'u' if self.params.is_empty() => {}
             b'h' | b'l' => {
                 let enabled = final_byte == b'h';
                 for &param in &self.params {

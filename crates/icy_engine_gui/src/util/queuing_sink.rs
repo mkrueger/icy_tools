@@ -61,6 +61,7 @@ impl QueuedCommand {
                     | QueuedCommand::DeviceControl(DeviceControlString::Sixel { .. })
                     | QueuedCommand::TerminalRequest(_)
                     | QueuedCommand::ResizeTerminal(_, _)
+                    | QueuedCommand::Aps(_)
             )
     }
 

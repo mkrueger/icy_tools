@@ -739,6 +739,12 @@ pub enum TerminalCommand {
     /// Resize Terminal: ESC[8;{height};{width}t
     CsiResizeTerminal(u16, u16),
 
+    /// DECSSDT - Select Status Display Type: CSI Ps $ ~
+    CsiSetStatusDisplayType(u16),
+
+    /// DECSASD - Select Active Status Display: CSI Ps $ }
+    CsiSelectActiveStatusDisplay(u16),
+
     /// Special keys: ESC[{n}~
     CsiSpecialKey(SpecialKey),
 
@@ -1021,6 +1027,12 @@ pub enum TerminalRequest {
     /// Current Screen Size: ESC[255n
     /// Terminal should respond with "\x1b[{height};{width}R"
     ScreenSizeReport,
+
+    /// XTerm window operation 14: report text-area pixel size.
+    TextAreaPixelSizeReport,
+
+    /// XTerm window operation 16: report character-cell pixel size.
+    CellPixelSizeReport,
 
     /// XTSRGA graphics canvas size request: CSI ? 2 ; 1 S
     GraphicsSizeReport,

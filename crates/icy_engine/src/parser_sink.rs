@@ -695,6 +695,7 @@ impl CommandSink for ScreenSink<'_> {
             | TerminalCommand::CsiSelectiveEraseRectangularArea { top, left, bottom, right } => {
                 self.fill_dec_rectangle(top, left, bottom, right, AttributedChar::new(' ', crate::TextAttribute::default()));
             }
+            TerminalCommand::CsiSetStatusDisplayType(_) | TerminalCommand::CsiSelectActiveStatusDisplay(_) => {}
             TerminalCommand::CsiSetScrollingRegion { top, bottom, left, right } => {
                 let top = (top as i32).saturating_sub(1).max(0);
                 let bottom = (bottom as i32).saturating_sub(1).max(0);

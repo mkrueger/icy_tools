@@ -184,6 +184,17 @@ fn test_graphics_size_report() {
 }
 
 #[test]
+fn test_syncdoom_startup_queries() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B[0$~\x1B[14t\x1B[16t\x1B[?u", &mut sink);
+
+    assert_eq!(sink.requests, [TerminalRequest::TextAreaPixelSizeReport, TerminalRequest::CellPixelSizeReport]);
+    assert_eq!(sink.cmds, [icy_parser_core::TerminalCommand::CsiSetStatusDisplayType(0)]);
+}
+
+#[test]
 fn test_decrqss_request() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();

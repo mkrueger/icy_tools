@@ -540,7 +540,7 @@ impl Address {
     }
 
     #[must_use]
-    pub fn get_rip_cache(&self) -> Option<PathBuf> {
+    pub fn get_cache_directory(&self) -> Option<PathBuf> {
         if let Some(mut cache_directory) = Self::cache_root() {
             if !cache_directory.exists() && fs::create_dir_all(&cache_directory).is_err() {
                 log::error!("Can't create cache directory {:?}", &cache_directory);
@@ -551,6 +551,15 @@ impl Address {
                 log::error!("Can't create cache directory {:?}", &cache_directory);
                 return None;
             }
+            Some(cache_directory)
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    pub fn get_rip_cache(&self) -> Option<PathBuf> {
+        if let Some(mut cache_directory) = self.get_cache_directory() {
             cache_directory = cache_directory.join("rip");
             if !cache_directory.exists() && fs::create_dir_all(&cache_directory).is_err() {
                 log::error!("Can't create cache directory {:?}", &cache_directory);

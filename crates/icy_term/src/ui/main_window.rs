@@ -330,6 +330,7 @@ impl MainWindow {
                     custom_palette: address.custom_palette.clone(),
                     default_cursor_shape: options.default_cursor_shape,
                     default_cursor_blinking: options.default_cursor_blinking,
+                    cache_directory: address.get_cache_directory(),
                 };
 
                 let _ = self.terminal_tx.send(TerminalCommand::Connect(config));

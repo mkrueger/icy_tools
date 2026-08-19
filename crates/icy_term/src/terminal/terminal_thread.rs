@@ -5,6 +5,7 @@ use crate::scripting::ScriptRunner;
 use crate::ui::open_serial_dialog::BAUD_RATES;
 use crate::TransferProtocol;
 use crate::{normalize_screen_mode, ConnectionInformation};
+use base64::{engine::general_purpose, Engine as _};
 use directories::UserDirs;
 use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel};
 use icy_engine_gui::music::sound_effects::sound_data;
@@ -36,6 +37,90 @@ use tokio::sync::mpsc;
 
 /// Minimum pause duration in milliseconds to display in status bar
 const MIN_PAUSE_DISPLAY_MS: u64 = 500;
+const MAX_CACHED_MEDIA_SIZE: usize = 12 * 1024 * 1024;
+const MAX_CACHE_FILENAME_LEN: usize = 128;
+
+enum CachedMediaCommand<'a> {
+    Store { filename: &'a str, encoded: &'a str },
+    DrawJxl { filename: &'a str, options: &'a str },
+}
+
+fn valid_cache_filename(filename: &str) -> bool {
+    !filename.is_empty()
+        && filename.len() <= MAX_CACHE_FILENAME_LEN
+        && filename != "."
+        && filename != ".."
+        && filename.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+fn parse_cached_media_command(data: &[u8]) -> Option<CachedMediaCommand<'_>> {
+    let command = std::str::from_utf8(data).ok()?;
+    if let Some(arguments) = command.strip_prefix("SyncTERM:C;S;") {
+        let (filename, encoded) = arguments.split_once(';')?;
+        return valid_cache_filename(filename).then_some(CachedMediaCommand::Store { filename, encoded });
+    }
+    if let Some(arguments) = command.strip_prefix("SyncTERM:C;DrawJXL;") {
+        let (options, filename) = arguments.rsplit_once(';').map_or(("", arguments), |(options, filename)| (options, filename));
+        return valid_cache_filename(filename).then_some(CachedMediaCommand::DrawJxl { filename, options });
+    }
+    None
+}
+
+async fn store_cached_media(cache_directory: &std::path::Path, filename: &str, encoded: &str) -> Result<(), String> {
+    if encoded.len() > MAX_CACHED_MEDIA_SIZE * 4 / 3 + 4 {
+        return Err(format!("cached media file {filename} is too large"));
+    }
+    let bytes = general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|_| format!("cached media file {filename} has invalid base64"))?;
+    if bytes.len() > MAX_CACHED_MEDIA_SIZE {
+        return Err(format!("cached media file {filename} is too large"));
+    }
+    tokio::fs::create_dir_all(cache_directory)
+        .await
+        .map_err(|err| format!("unable to create media cache directory: {err}"))?;
+    let destination = cache_directory.join(filename);
+    let temporary = cache_directory.join(format!(".{filename}.new"));
+    let _ = tokio::fs::remove_file(&temporary).await;
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .await
+        .map_err(|err| format!("unable to create cached media file {filename}: {err}"))?;
+    if let Err(err) = file.write_all(&bytes).await {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(format!("unable to store cached media file {filename}: {err}"));
+    }
+    if let Err(err) = file.sync_all().await {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(format!("unable to sync cached media file {filename}: {err}"));
+    }
+    drop(file);
+    if cfg!(windows) && destination.exists() {
+        let _ = tokio::fs::remove_file(&destination).await;
+    }
+    if let Err(err) = tokio::fs::rename(&temporary, &destination).await {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(format!("unable to publish cached media file {filename}: {err}"));
+    }
+    Ok(())
+}
+
+async fn cached_jxl_blob_command(cache_directory: &std::path::Path, filename: &str, options: &str) -> Option<String> {
+    let source = cache_directory.join(filename);
+    let metadata = tokio::fs::metadata(&source).await.ok()?;
+    if metadata.len() > MAX_CACHED_MEDIA_SIZE as u64 {
+        return None;
+    }
+    let bytes = tokio::fs::read(source).await.ok()?;
+    let encoded = general_purpose::STANDARD.encode(bytes);
+    Some(if options.is_empty() {
+        format!("SyncTERM:C;DrawJXLBlob;{encoded}")
+    } else {
+        format!("SyncTERM:C;DrawJXLBlob;{options};{encoded}")
+    })
+}
 
 fn mode_report_status(enabled: Option<bool>) -> u8 {
     match enabled {
@@ -315,6 +400,7 @@ pub struct ConnectionConfig {
     pub custom_palette: Option<Vec<[u8; 3]>>,
     pub default_cursor_shape: CaretShape,
     pub default_cursor_blinking: bool,
+    pub cache_directory: Option<PathBuf>,
 }
 
 pub struct TerminalThread {
@@ -374,6 +460,7 @@ pub struct TerminalThread {
 
     /// Modem configuration for hangup command
     modem_config: Option<ModemConfiguration>,
+    cache_directory: Option<PathBuf>,
 }
 
 impl TerminalThread {
@@ -413,6 +500,7 @@ impl TerminalThread {
             igs_effect_loop: 5,
             igs_sound_data: Self::init_sound_data(),
             modem_config: None,
+            cache_directory: None,
         };
 
         // Spawn the async runtime for the terminal thread
@@ -684,6 +772,7 @@ impl TerminalThread {
 
         self.use_utf8 = config.terminal_type == TerminalEmulation::Utf8Ansi;
         self.baud_emulator.set_baud_rate(config.baud_emulation);
+        self.cache_directory = config.cache_directory.clone();
 
         if !matches!(config.connection_info.protocol(), ConnectionType::Modem) {
             self.process_data(format!("ATDT{}\r\n", config.connection_info).as_bytes()).await;
@@ -1211,6 +1300,27 @@ impl TerminalThread {
     /// Returns true if command was handled
     async fn try_process_async_command(&mut self, cmd: &QueuedCommand) -> bool {
         match cmd {
+            QueuedCommand::Aps(data) => {
+                let drew = match self.process_cached_media_apc(data).await {
+                    Some(drew) => drew,
+                    None => {
+                        let mut screen = self.edit_screen.lock();
+                        if let Some(editable) = screen.as_editable() {
+                            ScreenSink::new(editable).aps(data);
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                };
+                if drew {
+                    if let Some(editable) = self.edit_screen.lock().as_editable() {
+                        editable.mark_dirty();
+                    }
+                    self.send_event(TerminalEvent::RequestRedraw);
+                }
+                true
+            }
             QueuedCommand::Igs(IgsCommand::Pause { pause_type }) => {
                 if pause_type.is_double_step_config() {
                     self.double_step_vsyncs = pause_type.get_double_step_vsyncs();
@@ -1418,6 +1528,36 @@ impl TerminalThread {
             // These need screen lock
             _ => false,
         }
+    }
+
+    async fn process_cached_media_apc(&mut self, data: &[u8]) -> Option<bool> {
+        let Some(command) = parse_cached_media_command(data) else {
+            return None;
+        };
+        let Some(cache_directory) = self.cache_directory.as_ref() else {
+            return Some(false);
+        };
+        let drew = match command {
+            CachedMediaCommand::Store { filename, encoded } => {
+                if let Err(err) = store_cached_media(cache_directory, filename, encoded).await {
+                    log::warn!("{err}");
+                }
+                false
+            }
+            CachedMediaCommand::DrawJxl { filename, options } => {
+                let Some(blob) = cached_jxl_blob_command(cache_directory, filename, options).await else {
+                    return Some(false);
+                };
+                let mut screen = self.edit_screen.lock();
+                if let Some(editable) = screen.as_editable() {
+                    ScreenSink::new(editable).aps(blob.as_bytes());
+                    true
+                } else {
+                    false
+                }
+            }
+        };
+        Some(drew)
     }
 
     /// Process commands from queue with granular locking
@@ -1723,6 +1863,16 @@ impl TerminalThread {
                 let height = screen.height();
                 let width = screen.width();
                 Some(format!("\x1B[{};{}R", height, width).into_bytes())
+            }
+            TerminalRequest::TextAreaPixelSizeReport => {
+                let screen = self.edit_screen.lock();
+                let font = screen.font_dimensions();
+                Some(format!("\x1B[4;{};{}t", screen.height() * font.height, screen.width() * font.width).into_bytes())
+            }
+            TerminalRequest::CellPixelSizeReport => {
+                let screen = self.edit_screen.lock();
+                let font = screen.font_dimensions();
+                Some(format!("\x1B[6;{};{}t", font.height, font.width).into_bytes())
             }
             TerminalRequest::GraphicsSizeReport => {
                 let screen = self.edit_screen.lock();
@@ -2037,7 +2187,11 @@ impl TerminalThread {
 
 #[cfg(test)]
 mod tests {
-    use super::{ansi_mode_report_status, dec_mode_report_status, decrqss_status, TerminalThread};
+    use super::{
+        ansi_mode_report_status, cached_jxl_blob_command, dec_mode_report_status, decrqss_status, parse_cached_media_command, store_cached_media,
+        CachedMediaCommand, TerminalThread,
+    };
+    use base64::{engine::general_purpose, Engine as _};
     use icy_engine::{EditableScreen, Size, TextScreen};
     use icy_net::telnet::TerminalEmulation;
 
@@ -2081,6 +2235,42 @@ mod tests {
         assert_eq!(decrqss_status(&screen, b" q").as_deref(), Some("6 q"));
         assert_eq!(decrqss_status(&screen, b"m").as_deref(), Some("0;1;38;2;1;2;3;40m"));
         assert_eq!(decrqss_status(&screen, b"*r").as_deref(), Some("0;6*r"));
+    }
+
+    #[test]
+    fn parses_syncdoom_cached_jxl_commands_safely() {
+        assert!(matches!(
+            parse_cached_media_command(b"SyncTERM:C;S;syncdoom_1.jxl;YWJj"),
+            Some(CachedMediaCommand::Store {
+                filename: "syncdoom_1.jxl",
+                encoded: "YWJj"
+            })
+        ));
+        assert!(matches!(
+            parse_cached_media_command(b"SyncTERM:C;DrawJXL;DX=3;DY=4;ZX=2;syncdoom_1.jxl"),
+            Some(CachedMediaCommand::DrawJxl {
+                filename: "syncdoom_1.jxl",
+                options: "DX=3;DY=4;ZX=2"
+            })
+        ));
+        assert!(parse_cached_media_command(b"SyncTERM:C;S;../escape.jxl;YWJj").is_none());
+        assert!(parse_cached_media_command(b"SyncTERM:C;DrawJXL;/tmp/escape.jxl").is_none());
+    }
+
+    #[tokio::test]
+    async fn cached_jxl_store_and_draw_transport_roundtrip() {
+        let root = std::env::temp_dir().join(format!("icy_term_cached_jxl_{}", std::process::id()));
+        let _ = tokio::fs::remove_dir_all(&root).await;
+        let bytes = b"test-jxl-payload";
+        let encoded = general_purpose::STANDARD.encode(bytes);
+
+        store_cached_media(&root, "syncdoom.jxl", &encoded).await.unwrap();
+        assert_eq!(tokio::fs::read(root.join("syncdoom.jxl")).await.unwrap(), bytes);
+
+        let blob = cached_jxl_blob_command(&root, "syncdoom.jxl", "DX=3;DY=4;ZX=2").await.unwrap();
+        assert_eq!(blob, format!("SyncTERM:C;DrawJXLBlob;DX=3;DY=4;ZX=2;{encoded}"));
+
+        tokio::fs::remove_dir_all(root).await.unwrap();
     }
 }
 
