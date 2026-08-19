@@ -1457,6 +1457,13 @@ impl MainWindow {
                 }
                 Task::none()
             }
+            TerminalEvent::AudioApc(command, cache_directory) => {
+                let r = self.sound_thread.lock().audio_apc(command, cache_directory);
+                if let Err(r) = r {
+                    log::error!("TerminalEvent::AudioApc: {r}");
+                }
+                Task::none()
+            }
             TerminalEvent::PlayChipMusic {
                 sound_data,
                 voice,

@@ -45,3 +45,31 @@ fn test_jxl_support_query() {
     assert_eq!(sink.requests, [icy_parser_core::TerminalRequest::JxlSupportReport]);
     assert!(sink.aps_data.is_empty());
 }
+
+#[test]
+fn test_audio_channel_state_query() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B[?7n", &mut sink);
+    parser.parse(b"\x1B[?7;3n", &mut sink);
+
+    assert_eq!(
+        sink.requests,
+        [
+            icy_parser_core::TerminalRequest::AudioChannelStateReport(None),
+            icy_parser_core::TerminalRequest::AudioChannelStateReport(Some(3)),
+        ]
+    );
+}
+
+#[test]
+fn test_libsndfile_query_is_delivered_as_aps() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B_SyncTERM:Q;libsndfile\x1B\\", &mut sink);
+
+    assert!(sink.requests.is_empty());
+    assert_eq!(sink.aps_data, [b"SyncTERM:Q;libsndfile".to_vec()]);
+}

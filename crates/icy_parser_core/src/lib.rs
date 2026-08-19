@@ -1043,6 +1043,10 @@ pub enum TerminalRequest {
     /// SyncTERM APC query for JPEG XL support.
     JxlSupportReport,
 
+    /// SyncTERM audio channel state query: CSI ? 7 [ ; <channel> ] n
+    /// `None` asks for every active channel.
+    AudioChannelStateReport(Option<u16>),
+
     /// OSC 10/11 query for the current default foreground/background color.
     OscColorReport { foreground: bool },
 

@@ -2093,6 +2093,10 @@ impl AnsiParser {
                 // DEC Private Device Status Report
                 if self.params.len() == 1 {
                     match self.params.first() {
+                        Some(7) => {
+                            // SyncTERM audio channel state, all channels
+                            sink.request(TerminalRequest::AudioChannelStateReport(None));
+                        }
                         Some(62) => {
                             // DSR—Macro Space Report
                             sink.request(TerminalRequest::MacroSpaceReport);
@@ -2119,6 +2123,9 @@ impl AnsiParser {
                             );
                         }
                     }
+                } else if self.params.len() == 2 && self.params[0] == 7 {
+                    // SyncTERM audio channel state, single channel
+                    sink.request(TerminalRequest::AudioChannelStateReport(Some(self.params[1])));
                 } else if self.params.len() == 2 && self.params[0] == 63 {
                     // Memory Checksum Report (DECCKSR) with 2 params
                     // Calculate checksum from all macros (0-63)

@@ -8,6 +8,7 @@ use crate::{normalize_screen_mode, ConnectionInformation};
 use base64::{engine::general_purpose, Engine as _};
 use directories::UserDirs;
 use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel, Size};
+use icy_engine_gui::music::audio_apc::{self, AudioApcCommand, AudioFeatureQuery};
 use icy_engine_gui::music::sound_effects::sound_data;
 use icy_engine_gui::util::BaudEmulator;
 use icy_engine_gui::util::QueuedCommand;
@@ -45,12 +46,18 @@ enum CachedMediaCommand<'a> {
     DrawJxl { filename: &'a str, options: &'a str },
 }
 
+/// Validates a cache-relative name. Audio doors namespace their uploads
+/// (`sfx/12`), so `/`-separated segments are allowed but traversal is not.
 fn valid_cache_filename(filename: &str) -> bool {
-    !filename.is_empty()
-        && filename.len() <= MAX_CACHE_FILENAME_LEN
-        && filename != "."
-        && filename != ".."
-        && filename.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    if filename.is_empty() || filename.len() > MAX_CACHE_FILENAME_LEN {
+        return false;
+    }
+    filename.split('/').all(|segment| {
+        !segment.is_empty()
+            && segment != "."
+            && segment != ".."
+            && segment.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    })
 }
 
 fn parse_cached_media_command(data: &[u8]) -> Option<CachedMediaCommand<'_>> {
@@ -76,11 +83,13 @@ async fn store_cached_media(cache_directory: &std::path::Path, filename: &str, e
     if bytes.len() > MAX_CACHED_MEDIA_SIZE {
         return Err(format!("cached media file {filename} is too large"));
     }
-    tokio::fs::create_dir_all(cache_directory)
+    let destination = cache_directory.join(filename);
+    let parent = destination.parent().unwrap_or(cache_directory).to_path_buf();
+    tokio::fs::create_dir_all(&parent)
         .await
         .map_err(|err| format!("unable to create media cache directory: {err}"))?;
-    let destination = cache_directory.join(filename);
-    let temporary = cache_directory.join(format!(".{filename}.new"));
+    let leaf = destination.file_name().and_then(|name| name.to_str()).unwrap_or("media");
+    let temporary = parent.join(format!(".{leaf}.new"));
     let _ = tokio::fs::remove_file(&temporary).await;
     let mut file = tokio::fs::OpenOptions::new()
         .write(true)
@@ -336,6 +345,9 @@ pub enum TerminalEvent {
     /// Immediately stop all voices
     StopSndAll,
 
+    /// A `SyncTERM:A;` audio command, with the cache directory used by `Load`.
+    AudioApc(AudioApcCommand, Option<PathBuf>),
+
     /// Terminal settings have been changed
     TerminalSettingsChanged {
         terminal_type: TerminalEmulation,
@@ -455,6 +467,10 @@ pub struct TerminalThread {
     /// Modem configuration for hangup command
     modem_config: Option<ModemConfiguration>,
     cache_directory: Option<PathBuf>,
+    /// Channels armed by `SyncTERM:A;Update`, as a bitmask.
+    audio_notify_armed: u32,
+    /// Last observed audio channel activity, for edge-triggered notifications.
+    audio_last_active: u32,
 }
 
 impl TerminalThread {
@@ -495,6 +511,8 @@ impl TerminalThread {
             igs_sound_data: Self::init_sound_data(),
             modem_config: None,
             cache_directory: None,
+            audio_notify_armed: 0,
+            audio_last_active: 0,
         };
 
         // Spawn the async runtime for the terminal thread
@@ -536,6 +554,8 @@ impl TerminalThread {
                 _ = interval.tick() => {
                     // Check if script finished
                     self.check_script_finished();
+
+                    self.poll_audio_notifications().await;
 
                     // Process pending data with baud emulation
                     if pending_offset < pending_data.len() {
@@ -1295,6 +1315,9 @@ impl TerminalThread {
     async fn try_process_async_command(&mut self, cmd: &QueuedCommand) -> bool {
         match cmd {
             QueuedCommand::Aps(data) => {
+                if self.process_audio_apc(data).await {
+                    return true;
+                }
                 if self.process_image_apc(data).await {
                     if let Some(editable) = self.edit_screen.lock().as_editable() {
                         editable.mark_dirty();
@@ -1509,6 +1532,63 @@ impl TerminalThread {
 
             // These need screen lock
             _ => false,
+        }
+    }
+
+    /// Handles the `SyncTERM:A;` audio family and the `SyncTERM:Q;libsndfile*`
+    /// capability probes. Returns true when the APC was an audio command.
+    async fn process_audio_apc(&mut self, data: &[u8]) -> bool {
+        let Ok(payload) = std::str::from_utf8(data) else {
+            return false;
+        };
+
+        if let Some(query) = audio_apc::parse_feature_query(payload) {
+            let reply = match query {
+                AudioFeatureQuery::Sndfile => format!("\x1b[=7;{};1n", audio_apc::FEATURE_SNDFILE),
+                AudioFeatureQuery::SndfileFormat { major, subtype } => {
+                    let available = u8::from(audio_apc::supports_format(major, subtype));
+                    format!("\x1b[=7;{};{major};{subtype};{available}n", audio_apc::FEATURE_SNDFILE_FORMAT)
+                }
+            };
+            if let Some(conn) = &mut self.connection {
+                let _ = conn.send(reply.as_bytes()).await;
+            }
+            return true;
+        }
+
+        let Some(command) = audio_apc::parse_audio_apc(payload) else {
+            // Any other SyncTERM:A payload is still ours; swallow it rather than
+            // letting it fall through to the image decoder.
+            return payload.starts_with("SyncTERM:A;");
+        };
+
+        if let AudioApcCommand::Update { channel } = command {
+            self.audio_notify_armed |= 1 << channel;
+            return true;
+        }
+        self.send_event(TerminalEvent::AudioApc(command, self.cache_directory.clone()));
+        true
+    }
+
+    /// Emits `CSI = 7 ; <ch> ; 0 n` once for each armed channel that has drained.
+    async fn poll_audio_notifications(&mut self) {
+        if self.audio_notify_armed == 0 {
+            return;
+        }
+        let active = audio_apc::status().active_mask();
+        let stopped = self.audio_last_active & !active & self.audio_notify_armed;
+        self.audio_last_active = active;
+        if stopped == 0 {
+            return;
+        }
+        self.audio_notify_armed &= !stopped;
+        for channel in 0..audio_apc::CHANNELS as u32 {
+            if stopped & (1 << channel) == 0 {
+                continue;
+            }
+            if let Some(conn) = &mut self.connection {
+                let _ = conn.send(format!("\x1b[=7;{channel};0n").as_bytes()).await;
+            }
         }
     }
 
@@ -1889,6 +1969,25 @@ impl TerminalThread {
                 Some(format!("\x1BP{}$r{}\x1B\\", supported, payload).into_bytes())
             }
             TerminalRequest::JxlSupportReport => Some(b"\x1B[=1;1-n".to_vec()),
+            TerminalRequest::AudioChannelStateReport(channel) => {
+                let status = audio_apc::status();
+                let mut report = "\x1b[=7".to_string();
+                match channel {
+                    Some(channel) => {
+                        let state = u8::from(status.is_active(*channel as u8));
+                        report.push_str(&format!(";{channel};{state}"));
+                    }
+                    None => {
+                        for channel in 0..audio_apc::CHANNELS as u8 {
+                            if status.is_active(channel) {
+                                report.push_str(&format!(";{channel};1"));
+                            }
+                        }
+                    }
+                }
+                report.push('n');
+                Some(report.into_bytes())
+            }
             TerminalRequest::OscColorReport { foreground } => {
                 let screen = self.edit_screen.lock();
                 let attribute = screen.caret().attribute;
@@ -2188,8 +2287,8 @@ impl TerminalThread {
 #[cfg(test)]
 mod tests {
     use super::{
-        ansi_mode_report_status, dec_mode_report_status, decrqss_status, parse_cached_media_command, read_cached_media, store_cached_media, CachedMediaCommand,
-        TerminalThread,
+        ansi_mode_report_status, dec_mode_report_status, decrqss_status, parse_cached_media_command, read_cached_media, store_cached_media,
+        valid_cache_filename, CachedMediaCommand, TerminalThread,
     };
     use base64::{engine::general_purpose, Engine as _};
     use icy_engine::{EditableScreen, Size, TextScreen};
@@ -2205,6 +2304,32 @@ mod tests {
     #[test]
     fn auto_login_non_enter_controls_remain_raw() {
         assert_eq!(TerminalThread::auto_login_control_code(TerminalEmulation::ATAscii, 0x1B), vec![0x1B]);
+    }
+
+    #[test]
+    fn cache_names_allow_door_namespaces_but_not_traversal() {
+        // Audio doors store effects under "sfx/<id>".
+        assert!(valid_cache_filename("sfx/12"));
+        assert!(valid_cache_filename("syncdoom/music/e1m1.ogg"));
+        assert!(valid_cache_filename("syncdoom_1.jxl"));
+
+        assert!(!valid_cache_filename("../escape"));
+        assert!(!valid_cache_filename("sfx/../../etc/passwd"));
+        assert!(!valid_cache_filename("/etc/passwd"));
+        assert!(!valid_cache_filename("sfx//12"));
+        assert!(!valid_cache_filename(""));
+    }
+
+    #[tokio::test]
+    async fn cached_media_store_creates_namespaced_directories() {
+        let root = std::env::temp_dir().join(format!("icy_term_cache_ns_{}", std::process::id()));
+        let _ = tokio::fs::remove_dir_all(&root).await;
+        let encoded = general_purpose::STANDARD.encode(b"RIFFsound");
+
+        store_cached_media(&root, "sfx/12", &encoded).await.unwrap();
+        assert_eq!(read_cached_media(&root, "sfx/12").await.unwrap(), b"RIFFsound");
+
+        tokio::fs::remove_dir_all(root).await.unwrap();
     }
 
     #[test]

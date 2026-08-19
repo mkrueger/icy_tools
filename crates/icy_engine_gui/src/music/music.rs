@@ -23,6 +23,7 @@ use rodio::{
 };
 use ym2149_gist_replayer::{GistPlayer, GistSound};
 
+use super::audio_apc::{AudioApcCommand, AudioApcState};
 use super::ym_audio::{self, RingBuffer};
 
 pub type SoundResult<T> = anyhow::Result<T>;
@@ -103,6 +104,9 @@ pub enum SoundData {
     SndOffAll,
     /// Stop all voices (hard stop)
     StopSndAll,
+
+    /// A parsed `SyncTERM:A;` audio command, with the cache directory used by `Load`.
+    AudioApc(AudioApcCommand, Option<std::path::PathBuf>),
 }
 
 pub struct SoundThread {
@@ -242,6 +246,11 @@ impl SoundThread {
         self.send_data(SoundData::StopSndAll)
     }
 
+    /// Apply a `SyncTERM:A;` audio command.
+    pub fn audio_apc(&mut self, command: AudioApcCommand, cache_directory: Option<std::path::PathBuf>) -> SoundResult<()> {
+        self.send_data(SoundData::AudioApc(command, cache_directory))
+    }
+
     fn send_data(&mut self, data: SoundData) -> SoundResult<()> {
         if self.no_thread_running() {
             // prevent error spew.
@@ -295,6 +304,7 @@ impl SoundThread {
                 audio_enabled: true,
                 master_volume: 0.25,
                 audio_device: None,
+                audio_apc: AudioApcState::new(),
             };
 
             data.init_ym_audio();
@@ -307,7 +317,10 @@ impl SoundThread {
                     data.process_gist_samples();
                 }
                 if data.music.is_empty() && !data.gist_playing {
-                    thread::sleep(Duration::from_millis(100));
+                    // Short idle poll: graphics doors fire sound effects per frame,
+                    // and this interval is their playback latency.
+                    data.audio_apc.refresh_status();
+                    thread::sleep(Duration::from_millis(10));
                 }
             }
             log::error!("communication thread closed because it lost connection with the ui thread.");
@@ -354,6 +367,7 @@ pub struct SoundBackgroundThreadData {
     audio_enabled: bool,
     master_volume: f32,
     audio_device: Option<String>,
+    audio_apc: AudioApcState,
 }
 
 impl SoundBackgroundThreadData {
@@ -461,6 +475,7 @@ impl SoundBackgroundThreadData {
         self.gist_playing = false;
         self.gist_player.reset();
         self.init_ym_audio();
+        self.audio_apc.reset();
     }
 
     pub fn handle_receive(&mut self) -> bool {
@@ -548,6 +563,12 @@ impl SoundBackgroundThreadData {
                         self.gist_player.stop_all();
                         self.gist_player.reset();
                         self.gist_playing = false;
+                    }
+                    SoundData::AudioApc(command, cache_directory) => {
+                        // Played immediately so a door's per-frame effects are not queued behind music.
+                        self.line_sound_playing = false;
+                        self.audio_apc.handle(self.mixer.as_ref(), cache_directory.as_deref(), command);
+                        self.audio_apc.refresh_status();
                     }
                     _ => {}
                 },
