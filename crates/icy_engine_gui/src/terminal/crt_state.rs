@@ -91,6 +91,7 @@ pub struct CRTShaderState {
     pub drag_button: icy_engine::MouseButton,
     pub drag_anchor: Option<Position>,
     pub last_drag_position: Option<Position>,
+    pub last_drag_pixel_position: Option<Position>,
     pub shift_pressed_during_selection: bool,
 
     // Hover tracking
@@ -98,6 +99,7 @@ pub struct CRTShaderState {
 
     /// Last emitted mouse move position (for central Move dedup).
     pub last_move_position: Option<Position>,
+    pub last_move_pixel_position: Option<Position>,
 
     /// Cached mouse state from last draw (updated during internal_draw to avoid extra lock in internal_update)
     pub cached_mouse_state: parking_lot::Mutex<Option<MouseState>>,
@@ -106,6 +108,7 @@ pub struct CRTShaderState {
     pub cached_screen_info: parking_lot::Mutex<CachedScreenInfo>,
 
     pub instance_id: u64,
+    pub render_generation: AtomicU64,
 
     pub unicode_glyph_cache: Arc<parking_lot::Mutex<Option<UnicodeGlyphCache>>>,
 
@@ -129,12 +132,15 @@ impl CRTShaderState {
             drag_button: icy_engine::MouseButton::None,
             drag_anchor: None,
             last_drag_position: None,
+            last_drag_pixel_position: None,
             shift_pressed_during_selection: false,
             hovered_cell: None,
             last_move_position: None,
+            last_move_pixel_position: None,
             cached_mouse_state: parking_lot::Mutex::new(None),
             cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            render_generation: AtomicU64::new(0),
             unicode_glyph_cache: Arc::new(parking_lot::Mutex::new(None)),
             cached_slices_blink_on: parking_lot::Mutex::new(Vec::new()),
             cached_slices_blink_off: parking_lot::Mutex::new(Vec::new()),
@@ -205,14 +211,12 @@ impl CRTShaderState {
     }
 
     /// Map mouse coordinates to pixel position using shared RenderInfo from shader.
-    pub fn map_mouse_to_xy(&self, render_info: &crate::RenderInfo, mx: f32, my: f32) -> Option<Position> {
-        // RenderInfo is now in logical coordinates, matching mouse coordinates
-        // No need to scale - both are in logical coords
-
-        // Convert screen coords to terminal pixel coords using RenderInfo
-        let (term_x, term_y) = render_info.screen_to_terminal_pixels(mx, my)?;
-
-        Some(Position::new(term_x as i32, term_y as i32))
+    pub fn map_mouse_to_pixel(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, scroll_x: f32, scroll_y: f32) -> Option<Position> {
+        let (term_x, mut term_y) = render_info.screen_to_terminal_pixels(mx, my)?;
+        if render_info.scan_lines {
+            term_y /= 2.0;
+        }
+        Some(Position::new((term_x + scroll_x).floor() as i32, (term_y + scroll_y).floor() as i32))
     }
 
     /// Map mouse coordinates to cell position without bounds checking.
@@ -265,12 +269,15 @@ impl Default for CRTShaderState {
             drag_button: icy_engine::MouseButton::None,
             drag_anchor: None,
             last_drag_position: None,
+            last_drag_pixel_position: None,
             shift_pressed_during_selection: false,
             hovered_cell: None,
             last_move_position: None,
+            last_move_pixel_position: None,
             cached_mouse_state: parking_lot::Mutex::new(None),
             cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            render_generation: AtomicU64::new(0),
             unicode_glyph_cache: Arc::new(parking_lot::Mutex::new(None)),
 
             cached_slices_blink_on: parking_lot::Mutex::new(Vec::new()),

@@ -152,6 +152,11 @@ pub struct TerminalState {
     pub(crate) active_hyperlink: Option<(String, Position)>,
     pub mouse_state: MouseState,
     pub kitty_keyboard: KittyKeyboardState,
+    /// DECSDM reset draws sixels at the current text cursor.
+    pub sixel_at_cursor: bool,
+    /// DEC mode 1070 reset shares color registers between images.
+    pub sixel_shared_palette: bool,
+    pub sixel_decoder: icy_sixel::SixelDecoder,
 
     pub font_selection_state: FontSelectionState,
 
@@ -235,6 +240,9 @@ impl TerminalState {
             wrap_pending: false,
             mouse_state: MouseState::default(),
             kitty_keyboard: KittyKeyboardState::default(),
+            sixel_at_cursor: true,
+            sixel_shared_palette: false,
+            sixel_decoder: icy_sixel::SixelDecoder::new(),
             margins_top_bottom: None,
             margins_left_right: None,
             saved_text_window: None,
@@ -491,6 +499,9 @@ impl TerminalState {
         self.bracketed_paste_mode = false;
         self.wrap_pending = false;
         self.kitty_keyboard.reset();
+        self.sixel_at_cursor = true;
+        self.sixel_shared_palette = false;
+        self.sixel_decoder.reset_palette();
         if !self.last_column_flag_forced {
             self.last_column_flag_mode = false;
         }

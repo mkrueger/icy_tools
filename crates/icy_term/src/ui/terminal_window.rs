@@ -72,7 +72,7 @@ impl TerminalWindow {
                 icy_engine_gui::TerminalMessage::Release(evt) => Message::MouseRelease(evt),
                 icy_engine_gui::TerminalMessage::Move(evt) => Message::MouseMove(evt),
                 icy_engine_gui::TerminalMessage::Drag(evt) => Message::MouseDrag(evt),
-                icy_engine_gui::TerminalMessage::Scroll(delta) => Message::MouseScroll(delta),
+                icy_engine_gui::TerminalMessage::Scroll(delta, event) => Message::MouseScroll(delta, event),
                 icy_engine_gui::TerminalMessage::Zoom(zoom_msg) => Message::Zoom(zoom_msg),
             })
         };

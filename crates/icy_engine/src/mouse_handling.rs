@@ -1,4 +1,4 @@
-use crate::{MouseMode, MouseState, Position};
+use crate::{ExtMouseMode, MouseMode, MouseState, Position};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum MouseButton {
@@ -41,6 +41,8 @@ pub struct MouseEvent {
     pub mouse_state: MouseState,
     pub event_type: MouseEventType,
     pub position: Position,
+    /// Terminal-document pixel position for DEC mode 1016.
+    pub pixel_position: Option<Position>,
     pub button: MouseButton,
     pub modifiers: KeyModifiers,
 }
@@ -51,6 +53,7 @@ impl MouseEvent {
             mouse_state,
             event_type: MouseEventType::Press,
             position: Position::default(),
+            pixel_position: None,
             button: MouseButton::default(),
             modifiers: KeyModifiers::default(),
         }
@@ -89,6 +92,35 @@ impl MouseEvent {
             // If in the future you track application cursor mode (DECCKM), switch to ESC O A / ESC O B.
             let seq = if self.button == MouseButton::WheelUp { "\x1B[A" } else { "\x1B[B" };
             return Some(seq.to_string());
+        }
+
+        if self.mouse_state.mouse_mode == MouseMode::OFF {
+            return None;
+        }
+
+        let mut cb = if matches!(self.mouse_state.extended_mode, ExtMouseMode::SGR | ExtMouseMode::PixelPosition) {
+            encode_sgr_button(self.button, &self.modifiers)
+        } else {
+            encode_vt200_button(self.button, self.event_type, &self.modifiers)
+        };
+        if matches!(self.event_type, MouseEventType::Motion) {
+            cb |= 32;
+        }
+
+        match self.mouse_state.extended_mode {
+            ExtMouseMode::SGR | ExtMouseMode::PixelPosition => {
+                let (x, y) = if self.mouse_state.extended_mode == ExtMouseMode::PixelPosition {
+                    let pixel = self.pixel_position?;
+                    (pixel.x + 1, pixel.y + 1)
+                } else {
+                    (x, y)
+                };
+                let final_byte = if matches!(self.event_type, MouseEventType::Release) { 'm' } else { 'M' };
+                return Some(format!("\x1B[<{cb};{x};{y}{final_byte}"));
+            }
+            ExtMouseMode::URXVT => return Some(format!("\x1B[{};{x};{y}M", cb + 32)),
+            ExtMouseMode::ExtendedUTF8 => return Some(encode_utf8_mouse(cb, x, y)),
+            ExtMouseMode::None => {}
         }
 
         match self.mouse_state.mouse_mode {
@@ -147,39 +179,14 @@ impl MouseEvent {
                     char::from((x.min(223) + 32) as u8),
                     char::from((y.min(223) + 32) as u8)
                 ))
-            } /*
-              MouseMode::SGRExtendedMode => {
-                  // SGR format: CSI < Cb ; Cx ; Cy M (press) or m (release)
-                  let cb = encode_sgr_button(button, &modifiers);
-                  let end_char = if matches!(event_type, MouseEventType::Release) { 'm' } else { 'M' };
-                  Some(format!("\x1B[<{};{};{}{}", cb, x, y, end_char))
-              }
-
-              MouseMode::URXVTExtendedMode => {
-                  // URXVT format: CSI Cb ; Cx ; Cy M
-                  let cb = encode_vt200_button(button, event_type, &modifiers) + 32;
-                  Some(format!("\x1B[{};{};{}M", cb, x, y))
-              }
-
-              MouseMode::ExtendedMode => {
-                  // UTF-8 encoding for coordinates > 223
-                  let cb = encode_vt200_button(button, event_type, &modifiers);
-                  Some(encode_utf8_mouse(cb, x, y))
-              }
-
-              MouseMode::PixelPosition => {
-                  // Similar to SGR but reports pixel position
-                  // This would need pixel coordinates from the rendering layer
-                  None // TODO: Implement when pixel coordinates are available
-              }
-
-              MouseMode::FocusEvent | MouseMode::AlternateScroll |
-              MouseMode::VT200_Highlight => {
-                  // These have special handling
-                  None
-              }*/
+            }
         }
     }
+}
+
+fn encode_utf8_mouse(cb: u8, x: i32, y: i32) -> String {
+    let encode = |value: i32| char::from_u32((value.clamp(0, 2015) + 32) as u32).unwrap_or('\u{fffd}');
+    format!("\x1B[M{}{}{}", char::from(cb + 32), encode(x), encode(y))
 }
 
 fn encode_x10_button(button: MouseButton, modifiers: &KeyModifiers) -> u8 {
@@ -232,6 +239,33 @@ fn encode_vt200_button(button: MouseButton, event_type: MouseEventType, modifier
         cb |= 16;
     }
 
+    cb
+}
+
+fn encode_sgr_button(button: MouseButton, modifiers: &KeyModifiers) -> u8 {
+    let mut cb = match button {
+        MouseButton::Left => 0,
+        MouseButton::Middle => 1,
+        MouseButton::Right => 2,
+        MouseButton::WheelUp => 64,
+        MouseButton::WheelDown => 65,
+        MouseButton::Button6 => 66,
+        MouseButton::Button7 => 67,
+        MouseButton::Button8 => 128,
+        MouseButton::Button9 => 129,
+        MouseButton::Button10 => 130,
+        MouseButton::Button11 => 131,
+        MouseButton::None => 3,
+    };
+    if modifiers.shift {
+        cb |= 4;
+    }
+    if modifiers.alt || modifiers.meta {
+        cb |= 8;
+    }
+    if modifiers.ctrl {
+        cb |= 16;
+    }
     cb
 }
 /*
@@ -304,6 +338,7 @@ mod tests {
             mouse_state,
             event_type: MouseEventType::Motion,
             position: Position::new(0, 0),
+            pixel_position: None,
             button,
             modifiers: KeyModifiers::default(),
         }
@@ -324,5 +359,36 @@ mod tests {
     #[test]
     fn button_event_mode_ignores_unpressed_motion() {
         assert_eq!(motion_event(MouseMode::ButtonEvents, MouseButton::None).generate_mouse_report(), None);
+    }
+
+    #[test]
+    fn sgr_reports_press_release_motion_and_wheel() {
+        let mut event = motion_event(MouseMode::AnyEvents, MouseButton::None);
+        event.mouse_state.extended_mode = ExtMouseMode::SGR;
+        event.position = Position::new(9, 19);
+        assert_eq!(event.generate_mouse_report(), Some("\x1B[<35;10;20M".to_string()));
+
+        event.event_type = MouseEventType::Press;
+        event.button = MouseButton::Left;
+        assert_eq!(event.generate_mouse_report(), Some("\x1B[<0;10;20M".to_string()));
+
+        event.event_type = MouseEventType::Release;
+        assert_eq!(event.generate_mouse_report(), Some("\x1B[<0;10;20m".to_string()));
+
+        event.button = MouseButton::Right;
+        assert_eq!(event.generate_mouse_report(), Some("\x1B[<2;10;20m".to_string()));
+
+        event.event_type = MouseEventType::Press;
+        event.button = MouseButton::WheelDown;
+        assert_eq!(event.generate_mouse_report(), Some("\x1B[<65;10;20M".to_string()));
+    }
+
+    #[test]
+    fn pixel_mode_uses_terminal_pixels_not_cells() {
+        let mut event = motion_event(MouseMode::AnyEvents, MouseButton::None);
+        event.mouse_state.extended_mode = ExtMouseMode::PixelPosition;
+        event.position = Position::new(9, 19);
+        event.pixel_position = Some(Position::new(123, 77));
+        assert_eq!(event.generate_mouse_report(), Some("\x1B[<35;124;78M".to_string()));
     }
 }

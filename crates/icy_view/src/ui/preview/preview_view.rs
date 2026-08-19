@@ -762,7 +762,7 @@ impl PreviewView {
                             }
                         }
                     }
-                    icy_engine_gui::TerminalMessage::Scroll(delta) => {
+                    icy_engine_gui::TerminalMessage::Scroll(delta, _) => {
                         // User is scrolling manually, disable auto-scroll modes
                         self.scroll_mode = ScrollMode::Off;
                         self.drag_scroll.stop();

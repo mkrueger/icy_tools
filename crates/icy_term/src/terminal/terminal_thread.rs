@@ -152,6 +152,7 @@ fn dec_mode_report_status(screen: &dyn Screen, mode: u16) -> u8 {
         33 => Some(state.ice_colors),
         35 => Some(screen.caret().blinking),
         69 => Some(state.dec_left_right_margins()),
+        80 => Some(!state.sixel_at_cursor),
         1000 => Some(matches!(state.mouse_mode(), icy_engine::MouseMode::VT200)),
         1001 => Some(matches!(state.mouse_mode(), icy_engine::MouseMode::VT200_Highlight)),
         1002 => Some(matches!(state.mouse_mode(), icy_engine::MouseMode::ButtonEvents)),
@@ -162,6 +163,7 @@ fn dec_mode_report_status(screen: &dyn Screen, mode: u16) -> u8 {
         1007 => Some(state.mouse_state.alternate_scroll_enabled),
         1015 => Some(matches!(state.mouse_state.extended_mode, icy_engine::ExtMouseMode::URXVT)),
         1016 => Some(matches!(state.mouse_state.extended_mode, icy_engine::ExtMouseMode::PixelPosition)),
+        1070 => Some(!state.sixel_shared_palette),
         2004 => Some(state.bracketed_paste_mode),
         _ => None,
     })
@@ -1498,18 +1500,52 @@ impl TerminalThread {
                 grid_size,
                 sixel_data,
             }) => {
-                match Sixel::parse_from(aspect_ratio.clone(), zero_color.clone(), grid_size.clone(), sixel_data) {
-                    Ok(sixel) => {
+                let (shared, position, mut decoder) = {
+                    let mut screen = self.edit_screen.lock();
+                    let position = if screen.terminal_state().sixel_at_cursor {
+                        screen.caret_position()
+                    } else {
+                        icy_engine::Position::default()
+                    };
+                    let Some(editable) = screen.as_editable() else {
+                        return true;
+                    };
+                    let state = editable.terminal_state_mut();
+                    (state.sixel_shared_palette, position, std::mem::take(&mut state.sixel_decoder))
+                };
+                let decoded = if shared {
+                    Sixel::parse_from_with_decoder(&mut decoder, *aspect_ratio, *zero_color, *grid_size, sixel_data)
+                } else {
+                    Sixel::parse_from(*aspect_ratio, *zero_color, *grid_size, sixel_data)
+                };
+                match decoded {
+                    Ok(mut sixel) => {
+                        sixel.apply_raster_scale();
+                        let displayed_height = sixel.height();
                         {
                             let mut screen = self.edit_screen.lock();
-                            let pos = screen.caret_position();
+                            if shared {
+                                if let Some(editable) = screen.as_editable() {
+                                    editable.terminal_state_mut().sixel_decoder = decoder;
+                                }
+                            }
                             if let Some(editable) = screen.as_editable() {
-                                editable.add_sixel(pos, sixel);
+                                editable.add_sixel(position, sixel);
+                                if editable.terminal_state().sixel_at_cursor {
+                                    let font_height = editable.font_dimensions().height.max(1);
+                                    let rows = (displayed_height + font_height - 1) / font_height;
+                                    editable.set_caret_position(icy_engine::Position::new(position.x, position.y + rows));
+                                }
                             }
                         }
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
                     Err(err) => {
+                        if shared {
+                            if let Some(editable) = self.edit_screen.lock().as_editable() {
+                                editable.terminal_state_mut().sixel_decoder = decoder;
+                            }
+                        }
                         log::error!("Error loading sixel: {}", err);
                     }
                 }
@@ -2360,14 +2396,20 @@ mod tests {
         let mut screen = TextScreen::new(Size::new(80, 25));
         assert_eq!(ansi_mode_report_status(&screen, 4), 2);
         assert_eq!(dec_mode_report_status(&screen, 25), 1);
+        assert_eq!(dec_mode_report_status(&screen, 80), 2);
+        assert_eq!(dec_mode_report_status(&screen, 1070), 1);
         assert_eq!(dec_mode_report_status(&screen, 2004), 2);
         assert_eq!(dec_mode_report_status(&screen, 9999), 0);
 
         screen.caret_mut().insert_mode = true;
         screen.caret_mut().visible = false;
         screen.terminal_state_mut().bracketed_paste_mode = true;
+        screen.terminal_state_mut().sixel_at_cursor = false;
+        screen.terminal_state_mut().sixel_shared_palette = true;
         assert_eq!(ansi_mode_report_status(&screen, 4), 1);
         assert_eq!(dec_mode_report_status(&screen, 25), 2);
+        assert_eq!(dec_mode_report_status(&screen, 80), 1);
+        assert_eq!(dec_mode_report_status(&screen, 1070), 2);
         assert_eq!(dec_mode_report_status(&screen, 2004), 1);
     }
 

@@ -477,6 +477,35 @@ fn create_texture_array(device: &icy_ui::wgpu::Device, queue: &icy_ui::wgpu::Que
     TextureArray { texture, texture_view }
 }
 
+fn update_texture_array(queue: &icy_ui::wgpu::Queue, array: &TextureArray, slices: &[TextureSliceData], previous: &[Arc<Vec<u8>>]) {
+    for (layer, slice) in slices.iter().enumerate() {
+        if previous.get(layer).is_some_and(|data| Arc::ptr_eq(data, &slice.rgba_data)) || slice.rgba_data.is_empty() {
+            continue;
+        }
+        let width = slice.width.min(MAX_TEXTURE_DIMENSION);
+        let height = slice.height.min(MAX_TEXTURE_DIMENSION);
+        queue.write_texture(
+            icy_ui::wgpu::TexelCopyTextureInfo {
+                texture: &array.texture,
+                mip_level: 0,
+                origin: icy_ui::wgpu::Origin3d { x: 0, y: 0, z: layer as u32 },
+                aspect: icy_ui::wgpu::TextureAspect::All,
+            },
+            &slice.rgba_data,
+            icy_ui::wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            icy_ui::wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+}
+
 /// Texture slice for GPU
 #[allow(dead_code)]
 struct TextureSlice {
@@ -487,7 +516,6 @@ struct TextureSlice {
 
 /// Texture array for GPU (holds multiple layers in a single texture)
 struct TextureArray {
-    #[allow(dead_code)]
     texture: icy_ui::wgpu::Texture,
     texture_view: icy_ui::wgpu::TextureView,
 }
@@ -514,6 +542,8 @@ struct InstanceResources {
     num_slices: usize,
     /// Render generation counter for cache validation
     render_generation: u64,
+    blink_off_data: Vec<Arc<Vec<u8>>>,
+    blink_on_data: Vec<Arc<Vec<u8>>>,
     /// Reference image texture (optional)
     reference_image_texture: Option<TextureSlice>,
     /// Hash of reference image data for cache validation
@@ -841,13 +871,12 @@ impl shader::Primitive for TerminalShader {
         let needs_recreate = match pipeline.instances.get(&id) {
             None => true,
             Some(resources) => {
-                // Recreate if render_generation changed (tiles were re-rendered) or structural parameters changed
-                let generation_changed = resources.render_generation != render_generation;
+                // Content changes can update array layers in place; only structural changes recreate resources.
                 let slices_changed = resources.num_slices != num_slices;
                 let width_changed = resources.texture_width != texture_width;
                 let height_changed = resources.total_height != total_height;
 
-                generation_changed || slices_changed || width_changed || height_changed
+                slices_changed || width_changed || height_changed
             }
         };
 
@@ -952,6 +981,8 @@ impl shader::Primitive for TerminalShader {
                     total_height,
                     num_slices,
                     render_generation,
+                    blink_off_data: self.slices_blink_off.iter().map(|slice| slice.rgba_data.clone()).collect(),
+                    blink_on_data: self.slices_blink_on.iter().map(|slice| slice.rgba_data.clone()).collect(),
                     reference_image_texture: None,
                     reference_image_hash: 0,
                     selection_mask_texture: None,
@@ -961,6 +992,14 @@ impl shader::Primitive for TerminalShader {
                     viewport_px: [0.0, 0.0, 1.0, 1.0],
                 },
             );
+        } else if let Some(resources) = pipeline.instances.get_mut(&id) {
+            if resources.render_generation != render_generation {
+                update_texture_array(queue, &resources.texture_array_blink_off, &self.slices_blink_off, &resources.blink_off_data);
+                update_texture_array(queue, &resources.texture_array_blink_on, &self.slices_blink_on, &resources.blink_on_data);
+                resources.blink_off_data = self.slices_blink_off.iter().map(|slice| slice.rgba_data.clone()).collect();
+                resources.blink_on_data = self.slices_blink_on.iter().map(|slice| slice.rgba_data.clone()).collect();
+                resources.render_generation = render_generation;
+            }
         }
 
         // Check if reference image changed and needs update

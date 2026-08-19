@@ -251,7 +251,7 @@ impl CanvasView {
             | icy_engine_gui::TerminalMessage::Drag(evt) => {
                 self.handle_terminal_mouse_event(evt);
             }
-            icy_engine_gui::TerminalMessage::Scroll(delta) => {
+            icy_engine_gui::TerminalMessage::Scroll(delta, _) => {
                 let _ = delta;
                 // scroll_area handles wheel scrolling
             }

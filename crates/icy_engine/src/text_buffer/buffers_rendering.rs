@@ -51,26 +51,19 @@ impl TextBuffer {
 
         let scan_lines = options.override_scan_lines.unwrap_or(scan_lines);
         let mut pixels_u32 = if scan_lines {
-            // Render to temporary buffer first
-            let mut pixels_u32 = vec![0u32; (px_width * px_height) as usize];
-            self.render_to_rgba_into(options, &mut pixels_u32, font_size, rect, px_width, px_height);
+            let normal_size = (px_width * px_height) as usize;
+            let mut pixels = vec![0u32; normal_size * 2];
+            self.render_to_rgba_into(options, &mut pixels[..normal_size], font_size, rect, px_width, px_height);
 
-            // Double the height by copying each scanline (working with u32)
-            let doubled_size = pixels_u32.len() * 2;
-            let mut doubled_pixels = Vec::with_capacity(doubled_size);
-
-            // Process line by line
-            for y in 0..px_height as usize {
+            // Expand backward so source rows are not overwritten before they are copied.
+            for y in (0..px_height as usize).rev() {
                 let row_start = y * line_width;
                 let row_end = row_start + line_width;
-
-                // Copy the line once
-                doubled_pixels.extend_from_slice(&pixels_u32[row_start..row_end]);
-                // Duplicate the line for scanline effect
-                doubled_pixels.extend_from_slice(&pixels_u32[row_start..row_end]);
+                let first_dest = y * 2 * line_width;
+                pixels.copy_within(row_start..row_end, first_dest);
+                pixels.copy_within(first_dest..first_dest + line_width, first_dest + line_width);
             }
-
-            doubled_pixels
+            pixels
         } else {
             // Render directly with u32
             let mut pixels_u32 = vec![0u32; (px_width * px_height) as usize];
@@ -1030,8 +1023,6 @@ impl TextBuffer {
                     continue;
                 }
 
-                let mut sixel_line = skip_y_px as usize;
-
                 // Sixel data as u32 slice
                 let sixel_u32 = unsafe { std::slice::from_raw_parts(sixel.picture_data.as_ptr().cast::<u32>(), sixel.picture_data.len() / 4) };
                 let sixel_line_width = sixel.width() as usize;
@@ -1043,7 +1034,8 @@ impl TextBuffer {
 
                 for py in dest_y_px..max_y {
                     let dest_line_start = py as usize * line_width_usize;
-                    let src_line_start = sixel_line * sixel_line_width;
+                    let source_y = (skip_y_px + py - dest_y_px) as usize;
+                    let src_line_start = source_y * sixel_line_width;
 
                     // Bounds check before the inner loop
                     if src_line_start >= sixel_len {
@@ -1095,8 +1087,6 @@ impl TextBuffer {
                             }
                         }
                     }
-
-                    sixel_line += 1;
                 }
             }
         }

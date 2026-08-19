@@ -2383,7 +2383,7 @@ impl AnsiEditorCore {
                     }
                 };
             }
-            TerminalMessage::Scroll(delta) => match delta {
+            TerminalMessage::Scroll(delta, _) => match delta {
                 // Wheel scrolling is handled by `CanvasView::update`.
                 // Handling it here as well would apply the delta twice (and with opposite sign),
                 // effectively cancelling scrolling.

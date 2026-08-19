@@ -3662,8 +3662,7 @@ dependencies = [
 [[package]]
 name = "icy_sixel"
 version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4bfb5a63225620b59df34a235d1fb56ff7b766909c3212a8ff927511a22b181d"
+source = "git+https://github.com/mkrueger/icy_sixel?rev=a5fea41923fb86b50399356766523de1e6033fea#a5fea41923fb86b50399356766523de1e6033fea"
 dependencies = [
  "quantette",
  "thiserror 2.0.20",

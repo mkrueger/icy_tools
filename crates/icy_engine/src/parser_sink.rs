@@ -440,20 +440,33 @@ impl<'a> ScreenSink<'a> {
             DecMode::LeftRightMargin => {
                 self.screen.terminal_state_mut().set_dec_left_right_margins(enabled);
             }
+            DecMode::SixelDisplay => {
+                self.screen.terminal_state_mut().sixel_at_cursor = !enabled;
+            }
             DecMode::X10Mouse => {
-                self.screen.terminal_state_mut().set_mouse_mode(MouseMode::X10);
+                self.screen
+                    .terminal_state_mut()
+                    .set_mouse_mode(if enabled { MouseMode::X10 } else { MouseMode::OFF });
             }
             DecMode::VT200Mouse => {
-                self.screen.terminal_state_mut().set_mouse_mode(MouseMode::VT200);
+                self.screen
+                    .terminal_state_mut()
+                    .set_mouse_mode(if enabled { MouseMode::VT200 } else { MouseMode::OFF });
             }
             DecMode::VT200HighlightMouse => {
-                self.screen.terminal_state_mut().set_mouse_mode(MouseMode::VT200_Highlight);
+                self.screen
+                    .terminal_state_mut()
+                    .set_mouse_mode(if enabled { MouseMode::VT200_Highlight } else { MouseMode::OFF });
             }
             DecMode::ButtonEventMouse => {
-                self.screen.terminal_state_mut().set_mouse_mode(MouseMode::ButtonEvents);
+                self.screen
+                    .terminal_state_mut()
+                    .set_mouse_mode(if enabled { MouseMode::ButtonEvents } else { MouseMode::OFF });
             }
             DecMode::AnyEventMouse => {
-                self.screen.terminal_state_mut().set_mouse_mode(MouseMode::AnyEvents);
+                self.screen
+                    .terminal_state_mut()
+                    .set_mouse_mode(if enabled { MouseMode::AnyEvents } else { MouseMode::OFF });
             }
             DecMode::FocusEvent => {
                 self.screen.terminal_state_mut().mouse_state.focus_out_event_enabled = enabled;
@@ -465,16 +478,29 @@ impl<'a> ScreenSink<'a> {
                 self.screen.terminal_state_mut().bracketed_paste_mode = enabled;
             }
             DecMode::ExtendedMouseUTF8 => {
-                self.screen.terminal_state_mut().mouse_state.extended_mode = crate::ExtMouseMode::ExtendedUTF8;
+                self.screen.terminal_state_mut().mouse_state.extended_mode = if enabled {
+                    crate::ExtMouseMode::ExtendedUTF8
+                } else {
+                    crate::ExtMouseMode::None
+                };
             }
             DecMode::ExtendedMouseSGR => {
-                self.screen.terminal_state_mut().mouse_state.extended_mode = crate::ExtMouseMode::SGR;
+                self.screen.terminal_state_mut().mouse_state.extended_mode = if enabled { crate::ExtMouseMode::SGR } else { crate::ExtMouseMode::None };
             }
             DecMode::ExtendedMouseURXVT => {
-                self.screen.terminal_state_mut().mouse_state.extended_mode = crate::ExtMouseMode::URXVT;
+                self.screen.terminal_state_mut().mouse_state.extended_mode = if enabled { crate::ExtMouseMode::URXVT } else { crate::ExtMouseMode::None };
             }
             DecMode::ExtendedMousePixel => {
-                self.screen.terminal_state_mut().mouse_state.extended_mode = crate::ExtMouseMode::PixelPosition;
+                self.screen.terminal_state_mut().mouse_state.extended_mode = if enabled {
+                    crate::ExtMouseMode::PixelPosition
+                } else {
+                    crate::ExtMouseMode::None
+                };
+            }
+            DecMode::SixelPrivatePalette => {
+                let state = self.screen.terminal_state_mut();
+                state.sixel_shared_palette = !enabled;
+                state.sixel_decoder.reset_palette();
             }
         }
     }
@@ -1119,15 +1145,26 @@ impl CommandSink for ScreenSink<'_> {
                 zero_color,
                 grid_size,
                 sixel_data,
-            } => match Sixel::parse_from(aspect_ratio, zero_color, grid_size, &sixel_data) {
-                Ok(sixel) => {
-                    let pos = self.screen.caret_position();
-                    self.screen.add_sixel(pos, sixel);
+            } => {
+                let shared = self.screen.terminal_state().sixel_shared_palette;
+                let decoded = if shared {
+                    let decoder = &mut self.screen.terminal_state_mut().sixel_decoder;
+                    Sixel::parse_from_with_decoder(decoder, aspect_ratio, zero_color, grid_size, &sixel_data)
+                } else {
+                    Sixel::parse_from(aspect_ratio, zero_color, grid_size, &sixel_data)
+                };
+                match decoded {
+                    Ok(mut sixel) => {
+                        let at_cursor = self.screen.terminal_state().sixel_at_cursor;
+                        let pos = if at_cursor { self.screen.caret_position() } else { Position::default() };
+                        sixel.apply_raster_scale();
+                        self.screen.add_sixel(pos, sixel);
+                    }
+                    Err(err) => {
+                        log::error!("Error loading sixel: {err}");
+                    }
                 }
-                Err(err) => {
-                    log::error!("Error loading sixel: {err}");
-                }
-            },
+            }
         }
     }
 
@@ -1216,7 +1253,60 @@ impl CommandSink for ScreenSink<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Screen;
     use icy_parser_core::{AnsiParser, CommandParser};
+
+    #[test]
+    fn syncdoom_mouse_modes_enable_and_disable() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        let mut parser = AnsiParser::new();
+
+        parser.parse(b"\x1b[?1003h\x1b[?1006h\x1b[?1016h", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.terminal_state().mouse_state.mouse_mode, MouseMode::AnyEvents);
+        assert_eq!(screen.terminal_state().mouse_state.extended_mode, crate::ExtMouseMode::PixelPosition);
+
+        parser.parse(b"\x1b[?1003l\x1b[?1006l\x1b[?1016l", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.terminal_state().mouse_state.mouse_mode, MouseMode::OFF);
+        assert_eq!(screen.terminal_state().mouse_state.extended_mode, crate::ExtMouseMode::None);
+    }
+
+    #[test]
+    fn shared_sixel_palette_survives_between_images() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        let mut parser = AnsiParser::new();
+
+        // DECRST 1070 selects shared registers. The second image references
+        // register 42 without defining it again.
+        parser.parse(b"\x1b[?1070l\x1bPq#42;2;100;0;0#42~\x1b\\\x1bPq#42~\x1b\\", &mut ScreenSink::new(&mut screen));
+
+        let sixel = screen.buffer.layers[0].sixels.last().unwrap();
+        assert_eq!(&sixel.picture_data[..4], &[255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn decsdm_controls_sixel_origin() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        let mut parser = AnsiParser::new();
+
+        parser.parse(b"\x1b[5;7H\x1b[?80l\x1bPq~\x1b\\", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.buffer.layers[0].sixels.last().unwrap().position, Position::new(6, 4));
+
+        parser.parse(b"\x1b[?80h\x1bPq~\x1b\\", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.buffer.layers[0].sixels.last().unwrap().position, Position::default());
+    }
+
+    #[test]
+    fn sixel_raster_pan_pad_scale_display_and_cursor() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        let mut parser = AnsiParser::new();
+
+        parser.parse(b"\x1bPq\"2;3;1;6~\x1b\\", &mut ScreenSink::new(&mut screen));
+
+        let sixel = screen.buffer.layers[0].sixels.last().unwrap();
+        assert_eq!((sixel.vertical_scale, sixel.horizontal_scale), (1, 1));
+        assert_eq!(sixel.screen_rect(screen.font_dimensions()).size, Size::new(3, 12));
+        assert_eq!(screen.caret_position().y, 0);
+    }
 
     #[test]
     fn draws_inline_ppm_apc() {

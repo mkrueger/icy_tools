@@ -336,6 +336,10 @@ pub enum DecMode {
     /// When reset: left and right margins are disabled
     LeftRightMargin = 69,
 
+    /// DECSDM - Sixel Display Mode (Mode 80)
+    /// Set draws at the screen origin; reset draws at the text cursor.
+    SixelDisplay = 80,
+
     // Mouse Tracking Modes
     /// X10 Mouse (Mode 9)
     X10Mouse = 9,
@@ -366,6 +370,10 @@ pub enum DecMode {
     ExtendedMouseURXVT = 1015,
     /// Pixel Position Mouse Mode (Mode 1016)
     ExtendedMousePixel = 1016,
+
+    /// Private Sixel Color Registers (Mode 1070)
+    /// Set resets colors per image; reset shares registers between images.
+    SixelPrivatePalette = 1070,
 }
 
 impl DecMode {
@@ -379,6 +387,7 @@ impl DecMode {
             33 => Some(Self::IceColors),
             35 => Some(Self::CursorBlinking),
             69 => Some(Self::LeftRightMargin),
+            80 => Some(Self::SixelDisplay),
             9 => Some(Self::X10Mouse),
             1000 => Some(Self::VT200Mouse),
             1001 => Some(Self::VT200HighlightMouse),
@@ -391,6 +400,7 @@ impl DecMode {
             1006 => Some(Self::ExtendedMouseSGR),
             1015 => Some(Self::ExtendedMouseURXVT),
             1016 => Some(Self::ExtendedMousePixel),
+            1070 => Some(Self::SixelPrivatePalette),
             _ => None,
         }
     }

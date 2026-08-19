@@ -13,13 +13,12 @@ use crate::{
 use icy_engine::{CaretShape, EditableScreen, KeyModifiers, MouseButton};
 use icy_ui::widget::shader;
 use icy_ui::{mouse, window, Rectangle};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
 /// Global render generation counter - incremented each time tiles are re-rendered
 /// Used to detect content changes in the shader instead of Arc pointer hashing
-static RENDER_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Clamps the terminal height to fit within the viewport bounds.
 ///
@@ -109,6 +108,13 @@ impl<'a> CRTShaderProgram<'a> {
         let zoom: f32;
         let viewport_width: f32;
         let viewport_height: f32;
+        let tile_indices: Vec<i32>;
+        let selection: Option<icy_engine::Selection>;
+        let selection_fg: Option<icy_engine::Color>;
+        let selection_bg: Option<icy_engine::Color>;
+        let resolution: icy_engine::Size;
+        let tile_height: f32;
+        let full_content_height_raw: f32;
 
         let mut slices_blink_off: Vec<TextureSliceData> = Vec::new();
         let mut slices_blink_on: Vec<TextureSliceData> = Vec::new();
@@ -236,7 +242,7 @@ impl<'a> CRTShaderProgram<'a> {
             // not the full content_height which includes scrollback.
             // NOTE: We get resolution AFTER fit_terminal_height_to_bounds may have modified it,
             // but we use original_res_h (saved before) for centering in Manual zoom mode.
-            let resolution = screen.resolution();
+            resolution = screen.resolution();
             let res_w = resolution.width as f32;
             let res_h = resolution.height as f32;
 
@@ -528,13 +534,13 @@ impl<'a> CRTShaderProgram<'a> {
 
             // Calculate which tiles we need based on scroll position
             // Each tile is TILE_HEIGHT pixels tall
-            let tile_height = TILE_HEIGHT as f32;
+            tile_height = TILE_HEIGHT as f32;
 
             // Tile slicing/rendering happens in RAW texture pixel coordinates.
             // Viewport/scroll inputs are in aspect-corrected document pixels.
             let scroll_offset_y_raw = scroll_offset_y / aspect_ratio_y;
             let visible_height_raw = visible_height / aspect_ratio_y;
-            let full_content_height_raw = full_content_height / aspect_ratio_y;
+            full_content_height_raw = full_content_height / aspect_ratio_y;
 
             // Current tile index based on scroll position
             let current_tile_idx = (scroll_offset_y_raw / tile_height).floor() as i32;
@@ -553,22 +559,21 @@ impl<'a> CRTShaderProgram<'a> {
             window_slice_count = desired_count;
 
             // Calculate tile indices to render
-            let mut tile_indices: Vec<i32> = Vec::with_capacity(desired_count as usize);
+            let mut needed_tiles: Vec<i32> = Vec::with_capacity(desired_count as usize);
             for i in 0..desired_count {
                 let idx = first_tile_idx + i;
                 if idx <= max_tile_idx {
-                    tile_indices.push(idx);
+                    needed_tiles.push(idx);
                 }
             }
+            tile_indices = needed_tiles;
 
             first_slice_start_y = first_tile_idx as f32 * tile_height;
 
             // Get or render each tile using the shared cache for BOTH blink states
-            let resolution = screen.resolution();
-
             // For icy_term: get selection from screen and render it in the RGBA data
             // (icy_draw uses editor_markers for selection, so this only applies when editor_markers is None)
-            let (selection, selection_fg, selection_bg) = if self.editor_markers.is_none() {
+            (selection, selection_fg, selection_bg) = if self.editor_markers.is_none() {
                 let sel = screen.selection();
                 if sel.is_some() {
                     let (fg_sel, bg_sel) = screen.buffer_type().selection_colors();
@@ -580,82 +585,86 @@ impl<'a> CRTShaderProgram<'a> {
                 // icy_draw handles selection via shader/editor_markers
                 (None, None, None)
             };
-            let has_selection = selection.is_some();
+        }
 
-            // Helper to get or render tiles for a specific blink state
-            let mut get_or_render_tiles = |blink_state: bool, slices: &mut Vec<TextureSliceData>, heights: &mut Vec<u32>| {
-                for &tile_idx in &tile_indices {
-                    let tile_start_y = tile_idx as f32 * tile_height;
-                    let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(full_content_height_raw);
-                    let actual_tile_height = (tile_end_y - tile_start_y).ceil().max(1.0) as u32;
+        // Helper to get or render tiles for a specific blink state
+        let mut get_or_render_tiles = |blink_state: bool, slices: &mut Vec<TextureSliceData>, heights: &mut Vec<u32>| {
+            for &tile_idx in &tile_indices {
+                let tile_start_y = tile_idx as f32 * tile_height;
+                let tile_end_y = ((tile_idx + 1) as f32 * tile_height).min(full_content_height_raw);
+                let actual_tile_height = (tile_end_y - tile_start_y).ceil().max(1.0) as u32;
+                let selection_intersects = selection.is_some_and(|selection| {
+                    let first_line = selection.anchor.y.min(selection.lead.y);
+                    let last_line = selection.anchor.y.max(selection.lead.y);
+                    let tile_first_line = (tile_start_y / font_h.max(1) as f32).floor() as i32;
+                    let tile_last_line = ((tile_end_y - 1.0).max(tile_start_y) / font_h.max(1) as f32).floor() as i32;
+                    first_line <= tile_last_line && last_line >= tile_first_line
+                });
 
-                    let cache_key = TileCacheKey::new(tile_idx, blink_state);
-                    // Don't use cache when selection is active (selection changes frequently)
-                    let cached_tile = if has_selection {
-                        None
-                    } else {
-                        self.term.render_cache.read().get(&cache_key).cloned()
+                let cache_key = TileCacheKey::new(tile_idx, blink_state);
+                let cached_tile = if selection_intersects {
+                    None
+                } else {
+                    self.term.render_cache.read().get(&cache_key).cloned()
+                };
+
+                if let Some(cached) = cached_tile {
+                    slices.push(cached.texture);
+                    if heights.len() < tile_indices.len() {
+                        heights.push(cached.height);
+                    }
+                } else {
+                    tiles_rendered = true;
+                    // Render this tile
+                    let tile_region: icy_engine::Rectangle = icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
+
+                    // Include selection in render options (for icy_term)
+                    let render_options = icy_engine::RenderOptions {
+                        rect: icy_engine::Rectangle {
+                            start: icy_engine::Position::new(0, tile_start_y as i32),
+                            size: icy_engine::Size::new(resolution.width, actual_tile_height as i32),
+                        }
+                        .into(),
+                        blink_on: blink_state,
+                        selection,
+                        selection_fg: selection_fg.clone(),
+                        selection_bg: selection_bg.clone(),
+                        override_scan_lines: None,
+                    };
+                    let (render_size, rgba_data) = self.term.screen.lock().render_region_to_rgba_raw(tile_region, &render_options);
+                    let width = render_size.width as u32;
+                    let height = render_size.height as u32;
+
+                    let slice = TextureSliceData {
+                        rgba_data: Arc::new(rgba_data),
+                        width,
+                        height,
                     };
 
-                    if let Some(cached) = cached_tile {
-                        slices.push(cached.texture);
-                        if heights.len() < tile_indices.len() {
-                            heights.push(cached.height);
-                        }
-                    } else {
-                        tiles_rendered = true;
-                        // Render this tile
-                        let tile_region: icy_engine::Rectangle =
-                            icy_engine::Rectangle::from(0, tile_start_y as i32, resolution.width, actual_tile_height as i32);
-
-                        // Include selection in render options (for icy_term)
-                        let render_options = icy_engine::RenderOptions {
-                            rect: icy_engine::Rectangle {
-                                start: icy_engine::Position::new(0, tile_start_y as i32),
-                                size: icy_engine::Size::new(resolution.width, actual_tile_height as i32),
-                            }
-                            .into(),
-                            blink_on: blink_state,
-                            selection,
-                            selection_fg: selection_fg.clone(),
-                            selection_bg: selection_bg.clone(),
-                            override_scan_lines: None,
-                        };
-                        let (render_size, rgba_data) = screen.render_region_to_rgba_raw(tile_region, &render_options);
-                        let width = render_size.width as u32;
-                        let height = render_size.height as u32;
-
-                        let slice = TextureSliceData {
-                            rgba_data: Arc::new(rgba_data),
-                            width,
+                    // Selection changes independently of buffer dirtiness.
+                    if !selection_intersects {
+                        let cached_tile = SharedCachedTile {
+                            texture: slice.clone(),
                             height,
+                            start_y: tile_start_y,
                         };
+                        self.term.render_cache.write().insert(cache_key, cached_tile);
+                    }
 
-                        // Only cache if no selection is active
-                        if !has_selection {
-                            let cached_tile = SharedCachedTile {
-                                texture: slice.clone(),
-                                height,
-                                start_y: tile_start_y,
-                            };
-                            self.term.render_cache.write().insert(cache_key, cached_tile);
-                        }
-
-                        slices.push(slice);
-                        if heights.len() < tile_indices.len() {
-                            heights.push(height);
-                        }
+                    slices.push(slice);
+                    if heights.len() < tile_indices.len() {
+                        heights.push(height);
                     }
                 }
-            };
-
-            // Build blink-off tiles always. Only build blink-on tiles when character blinking is meaningful.
-            get_or_render_tiles(false, &mut slices_blink_off, &mut slice_heights);
-            if char_blink_supported {
-                get_or_render_tiles(true, &mut slices_blink_on, &mut slice_heights);
-            } else {
-                slices_blink_on = slices_blink_off.clone();
             }
+        };
+
+        // Build blink-off tiles always. Only build blink-on tiles when character blinking is meaningful.
+        get_or_render_tiles(false, &mut slices_blink_off, &mut slice_heights);
+        if char_blink_supported {
+            get_or_render_tiles(true, &mut slices_blink_on, &mut slice_heights);
+        } else {
+            slices_blink_on = slices_blink_off.clone();
         }
 
         // Ensure we have at least one slice for both states
@@ -738,9 +747,9 @@ impl<'a> CRTShaderProgram<'a> {
         // (all tiles served from cache => no generation bump), causing visible jumps and
         // desync between minimap and terminal.
         let base_generation = if tiles_rendered {
-            RENDER_GENERATION.fetch_add(1, Ordering::Relaxed) + 1
+            state.render_generation.fetch_add(1, Ordering::Relaxed) + 1
         } else {
-            RENDER_GENERATION.load(Ordering::Relaxed)
+            state.render_generation.load(Ordering::Relaxed)
         };
         let window_key = ((window_first_tile_idx as u32 as u64) << 32) ^ (window_slice_count as u32 as u64);
         let render_generation = base_generation ^ window_key;
@@ -931,6 +940,7 @@ impl<'a> CRTShaderProgram<'a> {
                     state.dragging = false;
                     state.drag_anchor = None;
                     state.last_drag_position = None;
+                    state.last_drag_pixel_position = None;
 
                     // Use unclamped for drag release to get position even outside viewport
                     let (pixel_pos, cell_pos) = if let Some(position) = local_pos_unclamped {
@@ -942,7 +952,8 @@ impl<'a> CRTShaderProgram<'a> {
                     };
 
                     let modifiers = Self::convert_modifiers(*modifiers);
-                    let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, state.drag_button, modifiers);
+                    let terminal_pixel = state.map_mouse_to_pixel(&render_info, pixel_pos.0, pixel_pos.1, scroll_state.scroll_x, scroll_state.scroll_y);
+                    let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, state.drag_button, modifiers).with_terminal_pixel_position(terminal_pixel);
                     state.drag_button = MouseButton::None;
                     return Some(icy_ui::widget::Action::publish(TerminalMessage::Release(evt)));
                 }
@@ -954,14 +965,25 @@ impl<'a> CRTShaderProgram<'a> {
                         let pixel_pos = (position.x, position.y);
                         // Use unclamped version during drag to allow operations beyond viewport
                         let cell_pos = state.map_mouse_to_cell_unclamped(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
+                        let terminal_pixel = state.map_mouse_to_pixel(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
+                        let pixel_mode = state
+                            .cached_mouse_state
+                            .lock()
+                            .as_ref()
+                            .is_some_and(|mouse| mouse.extended_mode == icy_engine::ExtMouseMode::PixelPosition);
 
-                        if state.last_drag_position == Some(cell_pos) {
+                        if if pixel_mode {
+                            state.last_drag_pixel_position == terminal_pixel
+                        } else {
+                            state.last_drag_position == Some(cell_pos)
+                        } {
                             return None;
                         }
                         state.last_drag_position = Some(cell_pos);
+                        state.last_drag_pixel_position = terminal_pixel;
 
                         let modifiers = Self::convert_modifiers(*modifiers);
-                        let evt = TerminalMouseEvent::new(pixel_pos, Some(cell_pos), state.drag_button, modifiers);
+                        let evt = TerminalMouseEvent::new(pixel_pos, Some(cell_pos), state.drag_button, modifiers).with_terminal_pixel_position(terminal_pixel);
                         return Some(icy_ui::widget::Action::publish(TerminalMessage::Drag(evt)));
                     }
                 }
@@ -976,11 +998,22 @@ impl<'a> CRTShaderProgram<'a> {
                     if let Some(position) = local_pos_in_bounds {
                         let pixel_pos = (position.x, position.y);
                         let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
+                        let terminal_pixel = state.map_mouse_to_pixel(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
+                        let pixel_mode = state
+                            .cached_mouse_state
+                            .lock()
+                            .as_ref()
+                            .is_some_and(|mouse| mouse.extended_mode == icy_engine::ExtMouseMode::PixelPosition);
 
-                        if state.last_move_position == cell_pos {
+                        if if pixel_mode {
+                            state.last_move_pixel_position == terminal_pixel
+                        } else {
+                            state.last_move_position == cell_pos
+                        } {
                             return None;
                         }
                         state.last_move_position = cell_pos;
+                        state.last_move_pixel_position = terminal_pixel;
 
                         if state.hovered_cell != cell_pos {
                             state.hovered_cell = cell_pos;
@@ -988,7 +1021,7 @@ impl<'a> CRTShaderProgram<'a> {
 
                         let modifiers = Self::convert_modifiers(*modifiers);
                         let button = if state.dragging { state.drag_button } else { MouseButton::None };
-                        let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, button, modifiers);
+                        let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, button, modifiers).with_terminal_pixel_position(terminal_pixel);
 
                         if state.dragging {
                             return Some(icy_ui::widget::Action::publish(TerminalMessage::Drag(evt)));
@@ -1002,48 +1035,6 @@ impl<'a> CRTShaderProgram<'a> {
                     if let Some(position) = local_pos_in_bounds {
                         let pixel_pos = (position.x, position.y);
                         let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
-
-                        if std::env::var_os("ICY_DEBUG_MOUSE_MAPPING").is_some() {
-                            let clamped_term = render_info.screen_to_terminal_pixels(position.x, position.y);
-                            let (term_x_u, term_y_u_raw) = render_info.screen_to_terminal_pixels_unclamped(position.x, position.y);
-                            let term_y_u = if render_info.scan_lines { term_y_u_raw / 2.0 } else { term_y_u_raw };
-                            let font_w = render_info.font_width.max(1.0);
-                            let font_h = render_info.font_height.max(1.0);
-                            let abs_px_x = term_x_u + scroll_state.scroll_x;
-                            let abs_px_y = term_y_u + scroll_state.scroll_y;
-                            let dbg_cell_x = (abs_px_x / font_w).floor() as i32;
-                            let dbg_cell_y = (abs_px_y / font_h).floor() as i32;
-
-                            eprintln!(
-                                "[mouse_map][press {:?}] pos=({:.3},{:.3}) cell={:?} term_clamped={:?} term_u=({:.3},{:.3}) abs_px=({:.3},{:.3}) dbg_cell=({},{}); vp(scroll=({:.3},{:.3}) vis=({:.3},{:.3}) zoom={:.3}); ri(scale={:.3} vp=({:.3},{:.3},{:.3},{:.3}) term=({:.3},{:.3}) font=({:.3},{:.3}) scanlines={})",
-                                button,
-                                position.x,
-                                position.y,
-                                cell_pos,
-                                clamped_term,
-                                term_x_u,
-                                term_y_u,
-                                abs_px_x,
-                                abs_px_y,
-                                dbg_cell_x,
-                                dbg_cell_y,
-                                scroll_state.scroll_x,
-                                scroll_state.scroll_y,
-                                scroll_state.viewport_width_px,
-                                scroll_state.viewport_height_px,
-                                self.term.get_zoom(),
-                                render_info.display_scale,
-                                render_info.viewport_x,
-                                render_info.viewport_y,
-                                render_info.viewport_width,
-                                render_info.viewport_height,
-                                render_info.terminal_width,
-                                render_info.terminal_height,
-                                render_info.font_width,
-                                render_info.font_height,
-                                render_info.scan_lines
-                            );
-                        }
 
                         let mouse_button = match button {
                             mouse::Button::Left => MouseButton::Left,
@@ -1059,6 +1050,7 @@ impl<'a> CRTShaderProgram<'a> {
                             if state.dragging {
                                 state.drag_anchor = None;
                                 state.last_drag_position = None;
+                                state.last_drag_pixel_position = None;
                                 state.drag_button = MouseButton::None;
                             }
                             state.dragging = true;
@@ -1068,7 +1060,8 @@ impl<'a> CRTShaderProgram<'a> {
                         }
 
                         let modifiers = Self::convert_modifiers(*modifiers);
-                        let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers);
+                        let terminal_pixel = state.map_mouse_to_pixel(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
+                        let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers).with_terminal_pixel_position(terminal_pixel);
 
                         return Some(icy_ui::widget::Action::publish(TerminalMessage::Press(evt)));
                     }
@@ -1082,7 +1075,8 @@ impl<'a> CRTShaderProgram<'a> {
                             let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
 
                             let modifiers = Self::convert_modifiers(*modifiers);
-                            let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Middle, modifiers);
+                            let terminal_pixel = state.map_mouse_to_pixel(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
+                            let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::Middle, modifiers).with_terminal_pixel_position(terminal_pixel);
 
                             return Some(icy_ui::widget::Action::publish(TerminalMessage::Release(evt)));
                         }
@@ -1095,7 +1089,9 @@ impl<'a> CRTShaderProgram<'a> {
                             state.dragging = false;
                             state.drag_anchor = None;
                             state.last_drag_position = None;
+                            state.last_drag_pixel_position = None;
                             state.last_move_position = None;
+                            state.last_move_pixel_position = None;
 
                             let mouse_button = match button {
                                 mouse::Button::Left => MouseButton::Left,
@@ -1104,7 +1100,8 @@ impl<'a> CRTShaderProgram<'a> {
                             };
 
                             let modifiers = Self::convert_modifiers(*modifiers);
-                            let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers);
+                            let terminal_pixel = state.map_mouse_to_pixel(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
+                            let evt = TerminalMouseEvent::new(pixel_pos, cell_pos, mouse_button, modifiers).with_terminal_pixel_position(terminal_pixel);
 
                             return Some(icy_ui::widget::Action::publish(TerminalMessage::Release(evt)));
                         }
@@ -1117,7 +1114,14 @@ impl<'a> CRTShaderProgram<'a> {
                         return Some(icy_ui::widget::Action::publish(TerminalMessage::Zoom(crate::ZoomMessage::Wheel(*delta))));
                     }
 
-                    return Some(icy_ui::widget::Action::publish(TerminalMessage::Scroll(*delta)));
+                    if let Some(position) = local_pos_in_bounds {
+                        let pixel_pos = (position.x, position.y);
+                        let cell_pos = state.map_mouse_to_cell(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
+                        let terminal_pixel = state.map_mouse_to_pixel(&render_info, position.x, position.y, scroll_state.scroll_x, scroll_state.scroll_y);
+                        let event = TerminalMouseEvent::new(pixel_pos, cell_pos, MouseButton::None, Self::convert_modifiers(*modifiers))
+                            .with_terminal_pixel_position(terminal_pixel);
+                        return Some(icy_ui::widget::Action::publish(TerminalMessage::Scroll(*delta, event)));
+                    }
                 }
 
                 _ => {}

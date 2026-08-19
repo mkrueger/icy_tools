@@ -97,7 +97,7 @@ pub enum Message {
     MouseRelease(icy_engine_gui::TerminalMouseEvent),
     MouseMove(icy_engine_gui::TerminalMouseEvent),
     MouseDrag(icy_engine_gui::TerminalMouseEvent),
-    MouseScroll(icy_engine_gui::WheelDelta),
+    MouseScroll(icy_engine_gui::WheelDelta, icy_engine_gui::TerminalMouseEvent),
 
     // Selection messages
     StartSelection(Selection),

@@ -1233,7 +1233,7 @@ impl MainWindow {
             Message::MouseRelease(evt) => self.handle_mouse_release(evt),
             Message::MouseMove(evt) => self.handle_mouse_move(evt),
             Message::MouseDrag(evt) => self.handle_mouse_drag(evt),
-            Message::MouseScroll(delta) => self.handle_mouse_scroll(delta),
+            Message::MouseScroll(delta, event) => self.handle_mouse_scroll(delta, event),
 
             Message::StartSelection(sel) => {
                 {
@@ -1765,6 +1765,7 @@ impl MainWindow {
                         mouse_state,
                         event_type: MouseEventType::Motion,
                         position: cell,
+                        pixel_position: evt.terminal_pixel_position,
                         button: MouseButton::None,
                         modifiers: evt.modifiers,
                     };
@@ -1777,7 +1778,7 @@ impl MainWindow {
 
     /// Handle mouse drag (button held while moving)
     fn handle_mouse_drag(&mut self, evt: icy_engine_gui::TerminalMouseEvent) -> Task<Message> {
-        use icy_engine::{MouseButton, MouseEvent, MouseEventType};
+        use icy_engine::{MouseEvent, MouseEventType};
         use icy_ui::mouse;
 
         // Set crosshair cursor during drag/selection
@@ -1796,7 +1797,8 @@ impl MainWindow {
                         mouse_state,
                         event_type: MouseEventType::Motion,
                         position: cell,
-                        button: MouseButton::Left,
+                        pixel_position: evt.terminal_pixel_position,
+                        button: evt.button,
                         modifiers: evt.modifiers,
                     };
                     return self.update(Message::SendMouseEvent(mouse_event));
@@ -1857,6 +1859,7 @@ impl MainWindow {
                     mouse_state,
                     event_type: MouseEventType::Press,
                     position: cell,
+                    pixel_position: evt.terminal_pixel_position,
                     button: evt.button,
                     modifiers: evt.modifiers,
                 };
@@ -1906,6 +1909,7 @@ impl MainWindow {
                     mouse_state,
                     event_type: MouseEventType::Release,
                     position: cell,
+                    pixel_position: evt.terminal_pixel_position,
                     button: evt.button,
                     modifiers: evt.modifiers,
                 };
@@ -1920,7 +1924,7 @@ impl MainWindow {
     }
 
     /// Handle mouse scroll
-    fn handle_mouse_scroll(&mut self, delta: icy_engine_gui::WheelDelta) -> Task<Message> {
+    fn handle_mouse_scroll(&mut self, delta: icy_engine_gui::WheelDelta, event: icy_engine_gui::TerminalMouseEvent) -> Task<Message> {
         use icy_engine::{MouseButton, MouseEvent, MouseEventType};
 
         let (scroll_x, scroll_y) = match delta {
@@ -1933,8 +1937,6 @@ impl MainWindow {
         let screen = self.terminal_window.terminal.screen.lock();
         let mouse_state = screen.terminal_state().mouse_state.clone();
         let mouse_tracking_enabled = mouse_state.tracking_enabled();
-        // For wheel events, we don't have text position in the delta, use center
-        // TODO: We might want to pass modifiers and position through the Scroll message
         drop(screen);
 
         // Note: We don't have modifiers in WheelDelta, so we can't check for Ctrl+Scroll zoom here
@@ -1946,9 +1948,10 @@ impl MainWindow {
                 let mouse_event = MouseEvent {
                     mouse_state,
                     event_type: MouseEventType::Press,
-                    position: icy_engine::Position::default(),
+                    position: event.text_position.unwrap_or_default(),
+                    pixel_position: event.terminal_pixel_position,
                     button,
-                    modifiers: Default::default(),
+                    modifiers: event.modifiers,
                 };
                 return self.update(Message::SendMouseEvent(mouse_event));
             }

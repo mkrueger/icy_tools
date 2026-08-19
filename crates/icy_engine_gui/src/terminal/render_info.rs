@@ -177,3 +177,44 @@ impl RenderInfo {
         half_block_y / 2
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::RenderInfo;
+
+    #[test]
+    fn maps_centered_scaled_canvas_to_document_pixels() {
+        let info = RenderInfo {
+            display_scale: 2.0,
+            viewport_x: 120.0,
+            viewport_y: 50.0,
+            viewport_width: 1280.0,
+            viewport_height: 800.0,
+            terminal_width: 640.0,
+            terminal_height: 400.0,
+            ..Default::default()
+        };
+
+        assert_eq!(info.screen_to_terminal_pixels(120.0, 50.0), Some((0.0, 0.0)));
+        assert_eq!(info.screen_to_terminal_pixels(760.0, 450.0), Some((320.0, 200.0)));
+        assert_eq!(info.screen_to_terminal_pixels(1399.0, 849.0), Some((639.5, 399.5)));
+        assert_eq!(info.screen_to_terminal_pixels(119.0, 50.0), None);
+    }
+
+    #[test]
+    fn maps_scanline_texture_to_normal_cell_rows() {
+        let info = RenderInfo {
+            display_scale: 1.0,
+            viewport_width: 640.0,
+            viewport_height: 800.0,
+            terminal_width: 640.0,
+            terminal_height: 800.0,
+            font_width: 8.0,
+            font_height: 16.0,
+            scan_lines: true,
+            ..Default::default()
+        };
+
+        assert_eq!(info.screen_to_cell(79.0, 63.0), Some((9, 1)));
+    }
+}

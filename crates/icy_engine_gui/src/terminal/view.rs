@@ -13,6 +13,8 @@ pub use icy_ui::mouse::ScrollDelta as WheelDelta;
 pub struct TerminalMouseEvent {
     /// Mouse position in pixel coordinates (relative to terminal widget)
     pub pixel_position: (f32, f32),
+    /// Position in terminal-document pixels after zoom, centering, and scroll mapping.
+    pub terminal_pixel_position: Option<Position>,
     /// Mouse position in text coordinates, if over the terminal area.
     ///
     /// Note: When the terminal is in `MouseTracking::HalfBlock`, this is *not* character-cell
@@ -29,10 +31,16 @@ impl TerminalMouseEvent {
     pub fn new(pixel_position: (f32, f32), text_position: Option<Position>, button: MouseButton, modifiers: KeyModifiers) -> Self {
         Self {
             pixel_position,
+            terminal_pixel_position: None,
             text_position,
             button,
             modifiers,
         }
+    }
+
+    pub fn with_terminal_pixel_position(mut self, position: Option<Position>) -> Self {
+        self.terminal_pixel_position = position;
+        self
     }
 
     /// Helper to check for a hyperlink at the click position.
@@ -78,7 +86,7 @@ pub enum TerminalMessage {
     /// Mouse dragged (button held while moving)
     Drag(TerminalMouseEvent),
     /// Mouse wheel scrolled
-    Scroll(WheelDelta),
+    Scroll(WheelDelta, TerminalMouseEvent),
     /// Zoom message (Cmd/Ctrl + scroll, or explicit zoom commands)
     Zoom(ZoomMessage),
 }
