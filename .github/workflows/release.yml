@@ -1,0 +1,257 @@
+# Draft GitHub releases for the three GUI tools.
+#
+# Push a version tag (or run this workflow by hand with that tag):
+#   IcyTerm0.8.3
+#   IcyDraw0.5.1
+#   IcyView0.9.1
+#
+# Only that one crate is packaged. Review the draft, then publish it.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "IcyTerm*"
+      - "IcyDraw*"
+      - "IcyView*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build (IcyTerm0.8.3, IcyDraw0.5.1, IcyView0.9.1)
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.parse.outputs.app }}
+      tag: ${{ steps.parse.outputs.tag }}
+    steps:
+      - id: parse
+        run: |
+          TAG="${{ env.TAG }}"
+          case "$TAG" in
+            IcyTerm*) APP=icy_term ;;
+            IcyDraw*) APP=icy_draw ;;
+            IcyView*) APP=icy_view ;;
+            *)
+              echo "Tag must start with IcyTerm, IcyDraw, or IcyView: $TAG"
+              exit 1
+              ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "app=$APP" >> "$GITHUB_OUTPUT"
+          echo "Building $APP from $TAG"
+
+  open_release:
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open the draft unless it already exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "$TAG already has a release, attaching to it"
+          else
+            gh release create "$TAG" --repo "$REPO" --draft --title "$TAG" --generate-notes
+            echo "opened a draft release for $TAG - review it and press publish"
+          fi
+
+  build_linux:
+    needs: [resolve, open_release]
+    runs-on: ubuntu-latest
+    env:
+      APP: ${{ needs.resolve.outputs.app }}
+      TAG: ${{ needs.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - name: Install required libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev nasm
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64
+          git submodule update --init
+
+      - name: Build deb
+        run: |
+          cargo install cargo-deb
+          version=$(python3 tools/prep_diz.py "$APP" "file_id.diz")
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "Version: $version"
+          cd "crates/$APP"
+          if [ "$APP" = "icy_draw" ]; then
+            cargo deb --locked --features rav1e-asm
+          else
+            cargo deb --locked
+          fi
+          DEB=$(ls -1 ../../target/debian/*.deb | grep -E "$(echo "$APP" | tr '_' '-')" | tail -n 1)
+          echo "Copy $DEB to $APP.deb"
+          mv "$DEB" "../../$APP.deb"
+
+      - name: Build AppImage
+        run: |
+          wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          mkdir -p "$APP-appimage/usr/bin"
+          cp "crates/$APP/build/linux/256x256.png" "$APP-appimage/$APP.png"
+          cp "crates/$APP/build/linux/$APP.desktop" "$APP-appimage/"
+          cp "target/release/$APP" "$APP-appimage/usr/bin/"
+          printf '%s\n' '#!/bin/bash' "exec \"\$(dirname \"\$0\")/usr/bin/$APP\" \"\$@\"" > "$APP-appimage/AppRun"
+          chmod a+x "$APP-appimage/AppRun"
+
+          app_img=$(python3 tools/get_app_img.py "$APP" "$VERSION" x86_64)
+          echo "APP_IMG=$app_img" >> "$GITHUB_ENV"
+          ./appimagetool-x86_64.AppImage "$APP-appimage" "$app_img"
+
+      - name: Pack Linux assets
+        run: |
+          zip -r "${APP}_linux_${VERSION}.zip" "$APP.deb" file_id.diz
+
+      - name: Attach Linux assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release upload "$TAG" \
+            "${APP}_linux_${VERSION}.zip" \
+            "$APP.deb" \
+            "$APP_IMG" \
+            --repo "$REPO" --clobber
+
+  build_windows:
+    needs: [resolve, open_release]
+    runs-on: windows-latest
+    env:
+      APP: ${{ needs.resolve.outputs.app }}
+      TAG: ${{ needs.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - name: Prepare FILE_ID.DIZ
+        shell: pwsh
+        run: |
+          $VERSION = $(python tools\prep_diz.py "$env:APP" "file_id.diz")
+          Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$VERSION"
+          echo "Version: $VERSION"
+
+      - name: Build exe
+        shell: bash
+        run: |
+          git submodule update --init
+          cargo build --release --locked -p "$APP"
+          mv "target/release/${APP}.exe" .
+
+      - name: Pack Windows assets
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "$env:APP.exe", "file_id.diz" -DestinationPath "${env:APP}_windows_${env:VERSION}.zip"
+
+      - name: Attach Windows assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release upload "$TAG" \
+            "${APP}_windows_${VERSION}.zip" \
+            "${APP}.exe" \
+            --repo "$REPO" --clobber
+
+  build_mac:
+    needs: [resolve, open_release]
+    runs-on: macos-15
+    env:
+      APP: ${{ needs.resolve.outputs.app }}
+      TAG: ${{ needs.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+
+      - name: Install packaging tools
+        run: |
+          rustup target add aarch64-apple-darwin
+          rustup target add x86_64-apple-darwin
+          brew install create-dmg
+          git submodule update --init
+
+      - name: Build universal app
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin -p "$APP"
+          cargo build --release --locked --target x86_64-apple-darwin -p "$APP"
+
+          display_name=$(python3 tools/get_name.py "$APP")
+          echo "APP_NAME=$display_name" >> "$GITHUB_ENV"
+
+          mkdir -p "$display_name.app/Contents/MacOS"
+          mkdir -p "$display_name.app/Contents/Resources"
+          cp "crates/$APP/build/mac/Info.plist" "$display_name.app/Contents/Info.plist"
+
+          mkdir -p AppIcon.iconset
+          sips -z 16 16 "crates/$APP/build/mac/128x128@2x.png" --out AppIcon.iconset/icon_16x16.png
+          sips -z 32 32 "crates/$APP/build/mac/128x128@2x.png" --out AppIcon.iconset/icon_16x16@2x.png
+          sips -z 32 32 "crates/$APP/build/mac/128x128@2x.png" --out AppIcon.iconset/icon_32x32.png
+          sips -z 64 64 "crates/$APP/build/mac/128x128@2x.png" --out AppIcon.iconset/icon_32x32@2.png
+          sips -z 128 128 "crates/$APP/build/mac/128x128@2x.png" --out AppIcon.iconset/icon_128x128.png
+          cp "crates/$APP/build/mac/128x128@2x.png" AppIcon.iconset/icon_128x128@2x.png
+          iconutil -c icns AppIcon.iconset
+          cp AppIcon.icns "$display_name.app/Contents/Resources"
+
+          version=$(python3 tools/prep_diz.py "$APP" "file_id.diz")
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "Version: $version"
+
+          lipo "target/x86_64-apple-darwin/release/$APP" \
+               "target/aarch64-apple-darwin/release/$APP" \
+               -create -output "$display_name.app/Contents/MacOS/$APP"
+
+      - name: Create dmg
+        run: |
+          set +e
+          create-dmg \
+            --volname "${APP_NAME} Installer" \
+            --volicon "AppIcon.icns" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 128 \
+            --hide-extension "${APP_NAME}.app" \
+            --app-drop-link 600 185 \
+            "${APP}-${VERSION}-universal.dmg" \
+            "${APP_NAME}.app"
+          status=$?
+          set -e
+          if [ ! -f "${APP}-${VERSION}-universal.dmg" ]; then
+            echo "create-dmg failed with $status and wrote no dmg"
+            exit "$status"
+          fi
+
+      - name: Pack macOS assets
+        run: |
+          zip -r "${APP}_osx_${VERSION}.zip" "${APP}-${VERSION}-universal.dmg" file_id.diz
+
+      - name: Attach macOS assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release upload "$TAG" \
+            "${APP}_osx_${VERSION}.zip" \
+            "${APP}-${VERSION}-universal.dmg" \
+            --repo "$REPO" --clobber

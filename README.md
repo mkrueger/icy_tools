@@ -47,3 +47,21 @@ cargo build --release
 # Executables for all tools are in  
 ls target/release  
 ```
+
+# CI and releases
+
+Pushes and pull requests run `cargo fmt`, the workspace tests, and one debug
+build of IcyTERM. They do not package installers.
+
+Release binaries are built when you push a version tag for one tool:
+
+```
+git tag IcyTerm0.8.3
+git push origin IcyTerm0.8.3
+```
+
+Accepted prefixes: `IcyTerm`, `IcyDraw`, `IcyView`. That opens a **draft**
+GitHub release and attaches Linux (`.deb`, AppImage), Windows (`.exe`), and
+macOS (`.dmg`) packages for that tool only. Review the draft, then publish it.
+
+You can rebuild an existing tag from Actions → Release → Run workflow.
