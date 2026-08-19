@@ -190,8 +190,51 @@ fn test_syncdoom_startup_queries() {
 
     parser.parse(b"\x1B[0$~\x1B[14t\x1B[16t\x1B[?u", &mut sink);
 
-    assert_eq!(sink.requests, [TerminalRequest::TextAreaPixelSizeReport, TerminalRequest::CellPixelSizeReport]);
+    assert_eq!(
+        sink.requests,
+        [
+            TerminalRequest::TextAreaPixelSizeReport,
+            TerminalRequest::CellPixelSizeReport,
+            TerminalRequest::KittyKeyboardQuery
+        ]
+    );
     assert_eq!(sink.cmds, [icy_parser_core::TerminalCommand::CsiSetStatusDisplayType(0)]);
+}
+
+#[test]
+fn test_kitty_keyboard_negotiation() {
+    use icy_parser_core::TerminalCommand;
+
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // Query, push flags (disambiguate | report events | report all keys), pop.
+    parser.parse(b"\x1B[?u\x1B[>11u\x1B[<u", &mut sink);
+
+    assert_eq!(sink.requests, [TerminalRequest::KittyKeyboardQuery]);
+    assert_eq!(
+        sink.cmds,
+        [TerminalCommand::PushKittyKeyboardFlags(11), TerminalCommand::PopKittyKeyboardFlags(1)]
+    );
+}
+
+#[test]
+fn test_kitty_keyboard_set_flags() {
+    use icy_parser_core::TerminalCommand;
+
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B[=5;1u\x1B[=2;2u\x1B[=1;3u", &mut sink);
+
+    assert_eq!(
+        sink.cmds,
+        [
+            TerminalCommand::SetKittyKeyboardFlags(5, 1),
+            TerminalCommand::SetKittyKeyboardFlags(2, 2),
+            TerminalCommand::SetKittyKeyboardFlags(1, 3),
+        ]
+    );
 }
 
 #[test]

@@ -20,7 +20,7 @@ use crate::{
 };
 
 use icy_engine::Position;
-use icy_engine_gui::{command_handler, error_dialog, music::music::SoundThread, ui::DialogStack, MonitorSettings};
+use icy_engine_gui::{command_handler, error_dialog, kitty_keyboard, music::music::SoundThread, ui::DialogStack, MonitorSettings};
 use icy_net::{telnet::TerminalEmulation, ConnectionType};
 use icy_ui::widget::toaster;
 use icy_ui::{keyboard, window, Element, Event, Task, Theme};
@@ -1705,6 +1705,11 @@ impl MainWindow {
         matches!(message, Message::ShowHelpDialog)
     }
 
+    /// Progressive-enhancement flags the connected application has pushed.
+    fn kitty_keyboard_flags(&self) -> u8 {
+        self.terminal_window.terminal.screen.lock().terminal_state().kitty_keyboard.flags()
+    }
+
     fn clear_selection(&mut self) {
         let mut edit_screen = self.terminal_window.terminal.screen.lock();
         let _ = edit_screen.clear_selection();
@@ -2017,6 +2022,7 @@ impl MainWindow {
                         text,
                         physical_key,
                         location,
+                        repeat,
                         ..
                     }) => {
                         if modifiers.alt() {
@@ -2072,7 +2078,8 @@ impl MainWindow {
 
                         // Tab/Shift+Tab always go to the terminal, never to focus navigation.
                         let is_tab = matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab));
-                        if is_tab {
+                        let kitty_flags = self.kitty_keyboard_flags();
+                        if is_tab && kitty_flags == 0 {
                             if let Some(bytes) = Self::map_key_event_to_bytes(self.terminal_emulation, key, physical_key, *modifiers) {
                                 return (Some(Message::SendData(bytes)), Task::none());
                             }
@@ -2082,7 +2089,7 @@ impl MainWindow {
                         // navigation Named key (ArrowUp, Home, …) but the `text` field
                         // contains the digit the user intended.  Send the text directly
                         // so that NumLock state is respected.
-                        if *location == keyboard::Location::Numpad {
+                        if *location == keyboard::Location::Numpad && kitty_flags == 0 {
                             if let Some(txt) = text {
                                 if !txt.is_empty() && matches!(key, keyboard::Key::Named(_)) {
                                     return (Some(Message::SendString(txt.to_string())), Task::none());
@@ -2105,6 +2112,21 @@ impl MainWindow {
                                 if let Some(msg) = self.commands.handle(event) {
                                     return (Some(msg), Task::none());
                                 }
+                            }
+                            if let Some(bytes) = kitty_keyboard::encode_key_event(
+                                kitty_flags,
+                                key,
+                                physical_key,
+                                *location,
+                                *modifiers,
+                                text.as_deref(),
+                                if *repeat {
+                                    kitty_keyboard::KeyEventKind::Repeat
+                                } else {
+                                    kitty_keyboard::KeyEventKind::Press
+                                },
+                            ) {
+                                return (Some(Message::SendData(bytes)), Task::none());
                             }
                             if let Some(bytes) = Self::map_key_event_to_bytes(self.terminal_emulation, key, physical_key, *modifiers) {
                                 return (Some(Message::SendData(bytes)), Task::none());
@@ -2133,6 +2155,28 @@ impl MainWindow {
                     }) => {
                         let input = std::mem::take(&mut self.alt_numeric_input);
                         Self::finish_alt_numeric_input(&input).map(Message::SendData)
+                    }
+                    Event::Keyboard(keyboard::Event::KeyReleased {
+                        key,
+                        physical_key,
+                        modifiers,
+                        location,
+                        ..
+                    }) => {
+                        // Only the Kitty protocol can express key-up.
+                        if !self.terminal_window.is_connected {
+                            return (None, Task::none());
+                        }
+                        kitty_keyboard::encode_key_event(
+                            self.kitty_keyboard_flags(),
+                            key,
+                            physical_key,
+                            *location,
+                            *modifiers,
+                            None,
+                            kitty_keyboard::KeyEventKind::Release,
+                        )
+                        .map(Message::SendData)
                     }
                     _ => None,
                 }

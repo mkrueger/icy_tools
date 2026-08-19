@@ -1068,6 +1068,11 @@ impl CommandParser for AnsiParser {
                                 // Secondary Device Attributes
                                 sink.request(TerminalRequest::SecondaryDeviceAttributes);
                             }
+                            b'u' => {
+                                // Kitty keyboard protocol: push progressive-enhancement flags
+                                let flags = self.params.first().copied().unwrap_or(0);
+                                sink.emit(TerminalCommand::PushKittyKeyboardFlags(flags as u8));
+                            }
                             _ => {
                                 sink.report_error(
                                     ParseError::MalformedSequence {
@@ -1111,6 +1116,14 @@ impl CommandParser for AnsiParser {
                         // Extended Device Attributes: ESC[<...c
                         // Reports terminal capabilities
                         sink.request(TerminalRequest::ExtendedDeviceAttributes);
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                    b'u' => {
+                        // Kitty keyboard protocol: pop progressive-enhancement flags
+                        let count = self.params.first().copied().unwrap_or(1);
+                        sink.emit(TerminalCommand::PopKittyKeyboardFlags(count));
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -1198,6 +1211,15 @@ impl CommandParser for AnsiParser {
                     b';' => {
                         self.params.push(0);
                         i += 1;
+                    }
+                    b'u' => {
+                        // Kitty keyboard protocol: set progressive-enhancement flags
+                        let flags = self.params.first().copied().unwrap_or(0);
+                        let mode = self.params.get(1).copied().unwrap_or(1);
+                        sink.emit(TerminalCommand::SetKittyKeyboardFlags(flags as u8, mode));
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
                     }
                     b'n' => {
                         // Font/mode reports: ESC[={n}n
@@ -2068,7 +2090,10 @@ impl AnsiParser {
     fn handle_dec_private_csi_final(&mut self, final_byte: u8, sink: &mut dyn CommandSink) {
         match final_byte {
             b'S' if self.params == [2, 1] => sink.request(TerminalRequest::GraphicsSizeReport),
-            b'u' if self.params.is_empty() => {}
+            b'u' => {
+                // Kitty keyboard protocol progressive-enhancement query
+                sink.request(TerminalRequest::KittyKeyboardQuery);
+            }
             b'h' | b'l' => {
                 let enabled = final_byte == b'h';
                 for &param in &self.params {
@@ -2083,7 +2108,7 @@ impl AnsiParser {
                                     value: format!("{}", param).to_string(),
                                     expected: None,
                                 },
-                                crate::ErrorLevel::Error,
+                                crate::ErrorLevel::Warning,
                             );
                         }
                     }

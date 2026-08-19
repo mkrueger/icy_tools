@@ -197,11 +197,15 @@ pub fn decode_image_apc(data: &[u8], font: Size, screen_size: Size) -> Option<(P
 /// This allows `icy_parser_core` parsers to drive `icy_engine`'s terminal emulation.
 pub struct ScreenSink<'a> {
     screen: &'a mut dyn EditableScreen,
+    diagnostics: Vec<(ParseError, ErrorLevel)>,
 }
 
 impl<'a> ScreenSink<'a> {
     pub fn new(screen: &'a mut dyn EditableScreen) -> Self {
-        Self { screen }
+        Self {
+            screen,
+            diagnostics: Vec::new(),
+        }
     }
 
     /// Get mutable reference to the underlying screen
@@ -212,6 +216,10 @@ impl<'a> ScreenSink<'a> {
     /// Get reference to the underlying screen
     pub fn screen(&self) -> &dyn EditableScreen {
         self.screen
+    }
+
+    pub fn diagnostics(&self) -> &[(ParseError, ErrorLevel)] {
+        &self.diagnostics
     }
 
     /// Get the current caret attribute with `inverse_video` applied if active
@@ -805,6 +813,17 @@ impl CommandSink for ScreenSink<'_> {
                 self.set_ansi_mode(mode, enabled);
             }
 
+            // Kitty keyboard protocol
+            TerminalCommand::PushKittyKeyboardFlags(flags) => {
+                self.screen.terminal_state_mut().kitty_keyboard.push(flags);
+            }
+            TerminalCommand::PopKittyKeyboardFlags(count) => {
+                self.screen.terminal_state_mut().kitty_keyboard.pop(count as usize);
+            }
+            TerminalCommand::SetKittyKeyboardFlags(flags, mode) => {
+                self.screen.terminal_state_mut().kitty_keyboard.set(flags, mode);
+            }
+
             // Caret style
             TerminalCommand::CsiSetCaretStyle(blinking, shape) => {
                 let caret = self.screen.caret_mut();
@@ -1184,8 +1203,13 @@ impl CommandSink for ScreenSink<'_> {
         // Push music playback callback to be handled by application layer
     }
 
-    fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
-        log::error!("Parser error: {error:?}");
+    fn report_error(&mut self, error: ParseError, level: ErrorLevel) {
+        match level {
+            ErrorLevel::Error => log::error!("Parser error: {error:?}"),
+            ErrorLevel::Warning => log::warn!("Parser warning: {error:?}"),
+            ErrorLevel::Info => log::info!("Parser info: {error:?}"),
+        }
+        self.diagnostics.push((error, level));
     }
 }
 

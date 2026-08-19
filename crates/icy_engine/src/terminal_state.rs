@@ -10,6 +10,77 @@ pub enum TerminalScrolling {
     Disabled,
 }
 
+/// Kitty keyboard protocol progressive-enhancement flags.
+///
+/// The terminal keeps a stack so an application can push its requirements and
+/// pop them back on exit without knowing what was set before.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct KittyKeyboardState {
+    stack: Vec<u8>,
+}
+
+impl KittyKeyboardState {
+    /// Emit escape codes for keys that would otherwise be ambiguous (e.g. Esc).
+    pub const DISAMBIGUATE: u8 = 0b1;
+    /// Report key repeat and release in addition to press.
+    pub const REPORT_EVENT_TYPES: u8 = 0b10;
+    /// Report shifted key and base layout key.
+    pub const REPORT_ALTERNATE_KEYS: u8 = 0b100;
+    /// Report every key as an escape code, including plain text and modifiers.
+    pub const REPORT_ALL_KEYS: u8 = 0b1000;
+    /// Append the text the key would have produced.
+    pub const REPORT_ASSOCIATED_TEXT: u8 = 0b1_0000;
+
+    const ALL_FLAGS: u8 = 0b1_1111;
+    /// Kitty's own limit; keeps a runaway application from growing the stack.
+    const MAX_DEPTH: usize = 16;
+
+    pub fn flags(&self) -> u8 {
+        self.stack.last().copied().unwrap_or(0)
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.flags() != 0
+    }
+
+    pub fn contains(&self, flag: u8) -> bool {
+        self.flags() & flag != 0
+    }
+
+    /// `CSI > flags u`
+    pub fn push(&mut self, flags: u8) {
+        if self.stack.len() >= Self::MAX_DEPTH {
+            self.stack.remove(0);
+        }
+        self.stack.push(flags & Self::ALL_FLAGS);
+    }
+
+    /// `CSI < count u`
+    pub fn pop(&mut self, count: usize) {
+        let count = count.max(1).min(self.stack.len());
+        self.stack.truncate(self.stack.len() - count);
+    }
+
+    /// `CSI = flags ; mode u` with mode 1 = set all, 2 = set bits, 3 = clear bits.
+    pub fn set(&mut self, flags: u8, mode: u16) {
+        let flags = flags & Self::ALL_FLAGS;
+        let current = self.flags();
+        let updated = match mode {
+            2 => current | flags,
+            3 => current & !flags,
+            _ => flags,
+        };
+        match self.stack.last_mut() {
+            Some(top) => *top = updated,
+            None => self.stack.push(updated),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.stack.clear();
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum OriginMode {
     #[default]
@@ -80,6 +151,7 @@ pub struct TerminalState {
     saved_text_window: Option<(OriginMode, Option<(i32, i32)>, Option<(i32, i32)>, bool)>,
     pub(crate) active_hyperlink: Option<(String, Position)>,
     pub mouse_state: MouseState,
+    pub kitty_keyboard: KittyKeyboardState,
 
     pub font_selection_state: FontSelectionState,
 
@@ -162,6 +234,7 @@ impl TerminalState {
             last_column_flag_forced: false,
             wrap_pending: false,
             mouse_state: MouseState::default(),
+            kitty_keyboard: KittyKeyboardState::default(),
             margins_top_bottom: None,
             margins_left_right: None,
             saved_text_window: None,
@@ -417,6 +490,7 @@ impl TerminalState {
         self.auto_wrap_mode = AutoWrapMode::AutoWrap;
         self.bracketed_paste_mode = false;
         self.wrap_pending = false;
+        self.kitty_keyboard.reset();
         if !self.last_column_flag_forced {
             self.last_column_flag_mode = false;
         }

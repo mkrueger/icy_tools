@@ -1969,6 +1969,10 @@ impl TerminalThread {
                 Some(format!("\x1BP{}$r{}\x1B\\", supported, payload).into_bytes())
             }
             TerminalRequest::JxlSupportReport => Some(b"\x1B[=1;1-n".to_vec()),
+            TerminalRequest::KittyKeyboardQuery => {
+                let flags = self.edit_screen.lock().terminal_state().kitty_keyboard.flags();
+                Some(format!("\x1b[?{flags}u").into_bytes())
+            }
             TerminalRequest::AudioChannelStateReport(channel) => {
                 let status = audio_apc::status();
                 let mut report = "\x1b[=7".to_string();

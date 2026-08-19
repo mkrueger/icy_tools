@@ -58,6 +58,7 @@ pub use scroll_viewport::ScrollViewport;
 pub use icy_engine::{KeyModifiers, MouseButton, MouseEvent, MouseEventType};
 
 pub mod key_map;
+pub mod kitty_keyboard;
 pub mod settings;
 
 pub mod blink;

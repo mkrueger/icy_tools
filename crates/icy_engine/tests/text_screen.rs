@@ -1333,3 +1333,53 @@ fn test_smaller_frame_does_not_evict_larger_one() {
 
     assert_eq!(screen.buffer.layers[0].sixels.len(), 2);
 }
+
+#[test]
+fn test_kitty_keyboard_flags_push_and_pop() {
+    use icy_engine::KittyKeyboardState;
+
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let state = &mut screen.terminal_state_mut().kitty_keyboard;
+    assert!(!state.is_active());
+
+    state.push(11);
+    assert_eq!(state.flags(), 11);
+    assert!(state.contains(KittyKeyboardState::REPORT_ALL_KEYS));
+    assert!(!state.contains(KittyKeyboardState::REPORT_ALTERNATE_KEYS));
+
+    // A nested application pushes its own requirements and pops them back.
+    state.push(1);
+    assert_eq!(state.flags(), 1);
+    state.pop(1);
+    assert_eq!(state.flags(), 11);
+
+    state.pop(1);
+    assert!(!state.is_active());
+    // Popping an empty stack must not panic.
+    state.pop(1);
+    assert_eq!(state.flags(), 0);
+}
+
+#[test]
+fn test_kitty_keyboard_set_modes() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let state = &mut screen.terminal_state_mut().kitty_keyboard;
+
+    state.set(0b1001, 1);
+    assert_eq!(state.flags(), 0b1001);
+    state.set(0b0010, 2);
+    assert_eq!(state.flags(), 0b1011);
+    state.set(0b0001, 3);
+    assert_eq!(state.flags(), 0b1010);
+    // Undefined bits are never stored.
+    state.set(0b1110_0000, 1);
+    assert_eq!(state.flags(), 0);
+}
+
+#[test]
+fn test_kitty_keyboard_resets_with_the_terminal() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    screen.terminal_state_mut().kitty_keyboard.push(11);
+    screen.reset_terminal();
+    assert!(!screen.terminal_state().kitty_keyboard.is_active());
+}

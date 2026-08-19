@@ -772,6 +772,16 @@ pub enum TerminalCommand {
     /// Emitted once per mode
     CsiSetMode(AnsiMode, bool),
 
+    /// Kitty keyboard protocol: push progressive-enhancement flags, CSI > {flags} u
+    PushKittyKeyboardFlags(u8),
+
+    /// Kitty keyboard protocol: pop {count} flag entries, CSI < {count} u
+    PopKittyKeyboardFlags(u16),
+
+    /// Kitty keyboard protocol: set flags, CSI = {flags} ; {mode} u
+    /// Mode 1 replaces, 2 sets the given bits, 3 clears them.
+    SetKittyKeyboardFlags(u8, u16),
+
     // CSI with intermediate bytes
     /// DECSCUSR - Set Cursor Style: ESC[{Ps} SP q
     ///
@@ -1046,6 +1056,9 @@ pub enum TerminalRequest {
     /// SyncTERM audio channel state query: CSI ? 7 [ ; <channel> ] n
     /// `None` asks for every active channel.
     AudioChannelStateReport(Option<u16>),
+
+    /// Kitty keyboard protocol progressive-enhancement query: CSI ? u
+    KittyKeyboardQuery,
 
     /// OSC 10/11 query for the current default foreground/background color.
     OscColorReport { foreground: bool },
