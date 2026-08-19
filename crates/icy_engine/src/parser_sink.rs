@@ -24,7 +24,175 @@ use icy_parser_core::{
 };
 use image::imageops::FilterType;
 
-use crate::{AttributedChar, BitFont, BufferType, EditableScreen, FontSelectionState, MouseMode, Position, SavedCaretState, Sixel};
+use crate::{AttributedChar, BitFont, BufferType, EditableScreen, FontSelectionState, MouseMode, Position, SavedCaretState, Sixel, Size};
+
+const MAX_ENCODED_SIZE: usize = 16 * 1024 * 1024;
+const MAX_PIXELS: u64 = 16_000_000;
+
+#[derive(Default)]
+struct ImageApcOptions {
+    sx: u32,
+    sy: u32,
+    sw: Option<u32>,
+    sh: Option<u32>,
+    dx: i32,
+    dy: i32,
+    dw: Option<u32>,
+    dh: Option<u32>,
+    flip_x: bool,
+    flip_y: bool,
+    zoom_x: u32,
+    zoom_y: u32,
+}
+
+fn parse_image_apc_options<'a>(parts: impl Iterator<Item = &'a str>) -> ImageApcOptions {
+    let mut options = ImageApcOptions {
+        zoom_x: 1,
+        zoom_y: 1,
+        ..Default::default()
+    };
+    for part in parts {
+        if part.eq_ignore_ascii_case("FX") {
+            options.flip_x = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("FY") {
+            options.flip_y = true;
+            continue;
+        }
+        let Some((key, value)) = part.split_once('=') else { continue };
+        match key.to_ascii_uppercase().as_str() {
+            "SX" => options.sx = value.parse().unwrap_or(0),
+            "SY" => options.sy = value.parse().unwrap_or(0),
+            "SW" => options.sw = value.parse().ok(),
+            "SH" => options.sh = value.parse().ok(),
+            "DX" => options.dx = value.parse().unwrap_or(0),
+            "DY" => options.dy = value.parse().unwrap_or(0),
+            "DW" => options.dw = value.parse().ok(),
+            "DH" => options.dh = value.parse().ok(),
+            "ZX" => options.zoom_x = value.parse().unwrap_or(0),
+            "ZY" => options.zoom_y = value.parse().unwrap_or(0),
+            _ => {}
+        }
+    }
+    options
+}
+
+/// Decodes and places an inline image payload.
+///
+/// Takes no screen reference so callers can run the decode without holding the render lock.
+/// `screen_size` is in characters; `options` is the `;`-separated argument list without the payload.
+pub fn decode_image_blob(bytes: &[u8], is_jxl: bool, options: &str, font: Size, screen_size: Size) -> Option<(Position, Sixel)> {
+    let options = parse_image_apc_options(options.split([';', ' ']).filter(|part| !part.is_empty()));
+
+    let mut image = if is_jxl {
+        let decoder = jxl_oxide::integration::JxlDecoder::new(std::io::Cursor::new(bytes)).ok()?;
+        image::DynamicImage::from_decoder(decoder).ok()?
+    } else {
+        image::load_from_memory_with_format(bytes, image::ImageFormat::Pnm).ok()?
+    };
+    if u64::from(image.width()) * u64::from(image.height()) > MAX_PIXELS {
+        log::warn!("Ignoring oversized inline image");
+        return None;
+    }
+
+    if options.sx >= image.width() || options.sy >= image.height() {
+        return None;
+    }
+    let width = options.sw.unwrap_or(image.width() - options.sx).min(image.width() - options.sx);
+    let height = options.sh.unwrap_or(image.height() - options.sy).min(image.height() - options.sy);
+    if width == 0 || height == 0 {
+        return None;
+    }
+    image = image.crop_imm(options.sx, options.sy, width, height);
+
+    if options.flip_x {
+        image = image.fliph();
+    }
+    if options.flip_y {
+        image = image.flipv();
+    }
+
+    if let (Some(width), Some(height)) = (options.dw, options.dh) {
+        if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_PIXELS {
+            return None;
+        }
+        image = image.resize_exact(width, height, FilterType::Nearest);
+    } else {
+        if options.zoom_x == 0 || options.zoom_y == 0 {
+            return None;
+        }
+        let width = image.width().checked_mul(options.zoom_x)?;
+        let height = image.height().checked_mul(options.zoom_y)?;
+        if u64::from(width) * u64::from(height) > MAX_PIXELS {
+            return None;
+        }
+        if options.zoom_x != 1 || options.zoom_y != 1 {
+            image = image.resize_exact(width, height, FilterType::Nearest);
+        }
+    }
+
+    let (mut dx, mut dy) = (options.dx, options.dy);
+    let screen_width = screen_size.width * font.width;
+    let screen_height = screen_size.height * font.height;
+    if dx < 0 {
+        let skip = dx.unsigned_abs();
+        if skip >= image.width() {
+            return None;
+        }
+        image = image.crop_imm(skip, 0, image.width() - skip, image.height());
+        dx = 0;
+    }
+    if dy < 0 {
+        let skip = dy.unsigned_abs();
+        if skip >= image.height() {
+            return None;
+        }
+        image = image.crop_imm(0, skip, image.width(), image.height() - skip);
+        dy = 0;
+    }
+    if image.width() == 0 || image.height() == 0 || dx >= screen_width || dy >= screen_height {
+        return None;
+    }
+    let visible_width = image.width().min((screen_width - dx) as u32);
+    let visible_height = image.height().min((screen_height - dy) as u32);
+    if visible_width != image.width() || visible_height != image.height() {
+        image = image.crop_imm(0, 0, visible_width, visible_height);
+    }
+
+    let rgba = image.to_rgba8();
+    let position = Position::new(dx / font.width.max(1), dy / font.height.max(1));
+    let mut sixel = Sixel::from_data((rgba.width() as i32, rgba.height() as i32), 1, 1, rgba.into_raw());
+    sixel.pixel_offset = Position::new(dx % font.width.max(1), dy % font.height.max(1));
+    Some((position, sixel))
+}
+
+/// Decodes a base64 `DrawPPMBlob` / `DrawJXLBlob` APC payload.
+pub fn decode_image_apc(data: &[u8], font: Size, screen_size: Size) -> Option<(Position, Sixel)> {
+    const PPM_PREFIX: &str = "SyncTERM:C;DrawPPMBlob";
+    const JXL_PREFIX: &str = "SyncTERM:C;DrawJXLBlob";
+
+    let command = std::str::from_utf8(data).ok()?;
+    let (arguments, is_jxl) = if let Some(arguments) = command.strip_prefix(PPM_PREFIX) {
+        (arguments, false)
+    } else if let Some(arguments) = command.strip_prefix(JXL_PREFIX) {
+        (arguments, true)
+    } else {
+        return None;
+    };
+
+    let arguments = arguments.trim_start_matches([';', ' ']);
+    let (options, encoded) = arguments.rsplit_once([';', ' ']).unwrap_or(("", arguments));
+    if encoded.is_empty() || encoded.len() > MAX_ENCODED_SIZE {
+        if !encoded.is_empty() {
+            log::warn!("Ignoring oversized inline image payload");
+        }
+        return None;
+    }
+    let bytes = general_purpose::STANDARD.decode(encoded).ok()?;
+    decode_image_blob(&bytes, is_jxl, options, font, screen_size)
+}
+
 /// Adapter that implements `CommandSink` for any type implementing `EditableScreen`.
 /// This allows `icy_parser_core` parsers to drive `icy_engine`'s terminal emulation.
 pub struct ScreenSink<'a> {
@@ -1005,153 +1173,11 @@ impl CommandSink for ScreenSink<'_> {
     }
 
     fn aps(&mut self, data: &[u8]) {
-        const PPM_PREFIX: &str = "SyncTERM:C;DrawPPMBlob";
-        const JXL_PREFIX: &str = "SyncTERM:C;DrawJXLBlob";
-        const MAX_ENCODED_SIZE: usize = 16 * 1024 * 1024;
-        const MAX_PIXELS: u64 = 16_000_000;
-
-        let Ok(command) = std::str::from_utf8(data) else { return };
-        let (arguments, is_jxl) = if let Some(arguments) = command.strip_prefix(PPM_PREFIX) {
-            (arguments, false)
-        } else if let Some(arguments) = command.strip_prefix(JXL_PREFIX) {
-            (arguments, true)
-        } else {
-            return;
-        };
-        let parts: Vec<&str> = arguments
-            .trim_start_matches([';', ' '])
-            .split([';', ' '])
-            .filter(|part| !part.is_empty())
-            .collect();
-        let Some(encoded) = parts.last() else { return };
-        if encoded.len() > MAX_ENCODED_SIZE {
-            log::warn!("Ignoring oversized DrawPPMBlob payload");
-            return;
-        }
-
-        let mut sx = 0u32;
-        let mut sy = 0u32;
-        let mut sw = None;
-        let mut sh = None;
-        let mut dx = 0i32;
-        let mut dy = 0i32;
-        let mut dw = None;
-        let mut dh = None;
-        let mut flip_x = false;
-        let mut flip_y = false;
-        let mut zoom_x = 1u32;
-        let mut zoom_y = 1u32;
-        for part in &parts[..parts.len().saturating_sub(1)] {
-            if part.eq_ignore_ascii_case("FX") {
-                flip_x = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("FY") {
-                flip_y = true;
-                continue;
-            }
-            let Some((key, value)) = part.split_once('=') else { continue };
-            match key.to_ascii_uppercase().as_str() {
-                "SX" => sx = value.parse().unwrap_or(0),
-                "SY" => sy = value.parse().unwrap_or(0),
-                "SW" => sw = value.parse().ok(),
-                "SH" => sh = value.parse().ok(),
-                "DX" => dx = value.parse().unwrap_or(0),
-                "DY" => dy = value.parse().unwrap_or(0),
-                "DW" => dw = value.parse().ok(),
-                "DH" => dh = value.parse().ok(),
-                "ZX" => zoom_x = value.parse().unwrap_or(0),
-                "ZY" => zoom_y = value.parse().unwrap_or(0),
-                _ => {}
-            }
-        }
-
-        let Ok(bytes) = general_purpose::STANDARD.decode(encoded) else { return };
-        let mut image = if is_jxl {
-            let Ok(decoder) = jxl_oxide::integration::JxlDecoder::new(std::io::Cursor::new(bytes)) else {
-                return;
-            };
-            let Ok(image) = image::DynamicImage::from_decoder(decoder) else { return };
-            image
-        } else {
-            let Ok(image) = image::load_from_memory_with_format(&bytes, image::ImageFormat::Pnm) else {
-                return;
-            };
-            image
-        };
-        if u64::from(image.width()) * u64::from(image.height()) > MAX_PIXELS {
-            log::warn!("Ignoring oversized DrawPPMBlob image");
-            return;
-        }
-
-        if sx < image.width() && sy < image.height() {
-            let width = sw.unwrap_or(image.width() - sx).min(image.width() - sx);
-            let height = sh.unwrap_or(image.height() - sy).min(image.height() - sy);
-            if width == 0 || height == 0 {
-                return;
-            }
-            image = image.crop_imm(sx, sy, width, height);
-        } else {
-            return;
-        }
-        if flip_x {
-            image = image.fliph();
-        }
-        if flip_y {
-            image = image.flipv();
-        }
-        if let (Some(width), Some(height)) = (dw, dh) {
-            if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_PIXELS {
-                return;
-            }
-            image = image.resize_exact(width, height, FilterType::Nearest);
-        } else {
-            if zoom_x == 0 || zoom_y == 0 {
-                return;
-            }
-            let Some(width) = image.width().checked_mul(zoom_x) else { return };
-            let Some(height) = image.height().checked_mul(zoom_y) else { return };
-            if u64::from(width) * u64::from(height) > MAX_PIXELS {
-                return;
-            }
-            if zoom_x != 1 || zoom_y != 1 {
-                image = image.resize_exact(width, height, FilterType::Nearest);
-            }
-        }
-
         let font = self.screen.font_dimensions();
-        let screen_width = self.screen.width() * font.width;
-        let screen_height = self.screen.height() * font.height;
-        if dx < 0 {
-            let skip = dx.unsigned_abs().min(image.width());
-            if skip >= image.width() {
-                return;
-            }
-            image = image.crop_imm(skip, 0, image.width() - skip, image.height());
-            dx = 0;
+        let screen_size = Size::new(self.screen.width(), self.screen.height());
+        if let Some((position, sixel)) = decode_image_apc(data, font, screen_size) {
+            self.screen.add_sixel(position, sixel);
         }
-        if dy < 0 {
-            let skip = dy.unsigned_abs().min(image.height());
-            if skip >= image.height() {
-                return;
-            }
-            image = image.crop_imm(0, skip, image.width(), image.height() - skip);
-            dy = 0;
-        }
-        if image.width() == 0 || image.height() == 0 || dx >= screen_width || dy >= screen_height {
-            return;
-        }
-        let visible_width = image.width().min((screen_width - dx) as u32);
-        let visible_height = image.height().min((screen_height - dy) as u32);
-        if visible_width != image.width() || visible_height != image.height() {
-            image = image.crop_imm(0, 0, visible_width, visible_height);
-        }
-
-        let rgba = image.to_rgba8();
-        let position = Position::new(dx / font.width.max(1), dy / font.height.max(1));
-        let mut sixel = Sixel::from_data((rgba.width() as i32, rgba.height() as i32), 1, 1, rgba.into_raw());
-        sixel.pixel_offset = Position::new(dx % font.width.max(1), dy % font.height.max(1));
-        self.screen.add_sixel(position, sixel);
     }
 
     fn play_music(&mut self, _music: AnsiMusic) {

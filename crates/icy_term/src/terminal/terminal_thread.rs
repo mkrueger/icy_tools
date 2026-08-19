@@ -7,7 +7,7 @@ use crate::TransferProtocol;
 use crate::{normalize_screen_mode, ConnectionInformation};
 use base64::{engine::general_purpose, Engine as _};
 use directories::UserDirs;
-use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel};
+use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel, Size};
 use icy_engine_gui::music::sound_effects::sound_data;
 use icy_engine_gui::util::BaudEmulator;
 use icy_engine_gui::util::QueuedCommand;
@@ -107,19 +107,13 @@ async fn store_cached_media(cache_directory: &std::path::Path, filename: &str, e
     Ok(())
 }
 
-async fn cached_jxl_blob_command(cache_directory: &std::path::Path, filename: &str, options: &str) -> Option<String> {
+async fn read_cached_media(cache_directory: &std::path::Path, filename: &str) -> Option<Vec<u8>> {
     let source = cache_directory.join(filename);
     let metadata = tokio::fs::metadata(&source).await.ok()?;
     if metadata.len() > MAX_CACHED_MEDIA_SIZE as u64 {
         return None;
     }
-    let bytes = tokio::fs::read(source).await.ok()?;
-    let encoded = general_purpose::STANDARD.encode(bytes);
-    Some(if options.is_empty() {
-        format!("SyncTERM:C;DrawJXLBlob;{encoded}")
-    } else {
-        format!("SyncTERM:C;DrawJXLBlob;{options};{encoded}")
-    })
+    tokio::fs::read(source).await.ok()
 }
 
 fn mode_report_status(enabled: Option<bool>) -> u8 {
@@ -1301,19 +1295,7 @@ impl TerminalThread {
     async fn try_process_async_command(&mut self, cmd: &QueuedCommand) -> bool {
         match cmd {
             QueuedCommand::Aps(data) => {
-                let drew = match self.process_cached_media_apc(data).await {
-                    Some(drew) => drew,
-                    None => {
-                        let mut screen = self.edit_screen.lock();
-                        if let Some(editable) = screen.as_editable() {
-                            ScreenSink::new(editable).aps(data);
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                };
-                if drew {
+                if self.process_image_apc(data).await {
                     if let Some(editable) = self.edit_screen.lock().as_editable() {
                         editable.mark_dirty();
                     }
@@ -1530,34 +1512,52 @@ impl TerminalThread {
         }
     }
 
-    async fn process_cached_media_apc(&mut self, data: &[u8]) -> Option<bool> {
-        let Some(command) = parse_cached_media_command(data) else {
-            return None;
+    /// Decodes an image APC (inline blob or cached JXL frame) and adds the result to the screen.
+    ///
+    /// The decode runs without the screen lock held, so the render thread is never blocked by it.
+    /// Returns true when a new overlay was placed.
+    async fn process_image_apc(&mut self, data: &[u8]) -> bool {
+        let (font, screen_size) = {
+            let mut screen = self.edit_screen.lock();
+            let Some(editable) = screen.as_editable() else {
+                return false;
+            };
+            (editable.font_dimensions(), Size::new(editable.width(), editable.height()))
         };
-        let Some(cache_directory) = self.cache_directory.as_ref() else {
-            return Some(false);
-        };
-        let drew = match command {
-            CachedMediaCommand::Store { filename, encoded } => {
-                if let Err(err) = store_cached_media(cache_directory, filename, encoded).await {
-                    log::warn!("{err}");
-                }
-                false
-            }
-            CachedMediaCommand::DrawJxl { filename, options } => {
-                let Some(blob) = cached_jxl_blob_command(cache_directory, filename, options).await else {
-                    return Some(false);
+
+        let decoded = match parse_cached_media_command(data) {
+            Some(command) => {
+                let Some(cache_directory) = self.cache_directory.clone() else {
+                    return false;
                 };
-                let mut screen = self.edit_screen.lock();
-                if let Some(editable) = screen.as_editable() {
-                    ScreenSink::new(editable).aps(blob.as_bytes());
-                    true
-                } else {
-                    false
+                match command {
+                    CachedMediaCommand::Store { filename, encoded } => {
+                        if let Err(err) = store_cached_media(&cache_directory, filename, encoded).await {
+                            log::warn!("{err}");
+                        }
+                        return false;
+                    }
+                    CachedMediaCommand::DrawJxl { filename, options } => {
+                        let Some(bytes) = read_cached_media(&cache_directory, filename).await else {
+                            return false;
+                        };
+                        icy_engine::decode_image_blob(&bytes, true, options, font, screen_size)
+                    }
                 }
             }
+            None => icy_engine::decode_image_apc(data, font, screen_size),
         };
-        Some(drew)
+
+        let Some((position, sixel)) = decoded else {
+            return false;
+        };
+        let mut screen = self.edit_screen.lock();
+        if let Some(editable) = screen.as_editable() {
+            editable.add_sixel(position, sixel);
+            true
+        } else {
+            false
+        }
     }
 
     /// Process commands from queue with granular locking
@@ -2188,8 +2188,8 @@ impl TerminalThread {
 #[cfg(test)]
 mod tests {
     use super::{
-        ansi_mode_report_status, cached_jxl_blob_command, dec_mode_report_status, decrqss_status, parse_cached_media_command, store_cached_media,
-        CachedMediaCommand, TerminalThread,
+        ansi_mode_report_status, dec_mode_report_status, decrqss_status, parse_cached_media_command, read_cached_media, store_cached_media, CachedMediaCommand,
+        TerminalThread,
     };
     use base64::{engine::general_purpose, Engine as _};
     use icy_engine::{EditableScreen, Size, TextScreen};
@@ -2267,8 +2267,9 @@ mod tests {
         store_cached_media(&root, "syncdoom.jxl", &encoded).await.unwrap();
         assert_eq!(tokio::fs::read(root.join("syncdoom.jxl")).await.unwrap(), bytes);
 
-        let blob = cached_jxl_blob_command(&root, "syncdoom.jxl", "DX=3;DY=4;ZX=2").await.unwrap();
-        assert_eq!(blob, format!("SyncTERM:C;DrawJXLBlob;DX=3;DY=4;ZX=2;{encoded}"));
+        let blob = read_cached_media(&root, "syncdoom.jxl").await.unwrap();
+        assert_eq!(blob, bytes);
+        assert!(read_cached_media(&root, "missing.jxl").await.is_none());
 
         tokio::fs::remove_dir_all(root).await.unwrap();
     }
