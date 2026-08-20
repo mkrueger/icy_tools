@@ -150,7 +150,7 @@ fn default_connect_timeout() -> Duration {
 }
 
 fn default_master_volume() -> f32 {
-    0.25
+    0.8
 }
 
 // Custom serialization for Duration as seconds

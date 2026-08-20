@@ -28,6 +28,10 @@ use super::ym_audio::{self, RingBuffer};
 
 pub type SoundResult<T> = anyhow::Result<T>;
 
+/// Used only for the brief window before the caller's first `configure()` call
+/// lands; must match `icy_term`'s `default_master_volume()`.
+const DEFAULT_MASTER_VOLUME: f32 = 0.8;
+
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum DialTone {
     /// 350 + 440 Hz dial tone
@@ -279,7 +283,7 @@ impl SoundThread {
                 Ok(handle) => {
                     let rate = handle.config().sample_rate();
                     let (mixer, source) = rodio::mixer::mixer(handle.config().channel_count(), rate);
-                    handle.mixer().add(source.amplify(0.25));
+                    handle.mixer().add(source.amplify(DEFAULT_MASTER_VOLUME));
                     (Some(handle), Some(mixer), rate)
                 }
                 Err(e) => {
@@ -302,7 +306,7 @@ impl SoundThread {
                 gist_player: GistPlayer::with_sample_rate(ym_audio::SAMPLE_RATE),
                 gist_playing: false,
                 audio_enabled: true,
-                master_volume: 0.25,
+                master_volume: DEFAULT_MASTER_VOLUME,
                 audio_device: None,
                 audio_apc: AudioApcState::new(),
             };
