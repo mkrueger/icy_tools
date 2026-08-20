@@ -278,7 +278,7 @@ fn test_run_loop_box_command() {
                 assert_eq!(*y1, x.into());
                 assert_eq!(*x2, (x + 50).into());
                 assert_eq!(*y2, (x + 50).into());
-                assert_eq!(*rounded, false);
+                assert!(!(*rounded));
             }
             _ => panic!("Expected Box command"),
         }

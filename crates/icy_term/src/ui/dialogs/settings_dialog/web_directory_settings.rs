@@ -2,7 +2,7 @@ use i18n_embed_fl::fl;
 use icy_engine_gui::{
     section_header,
     settings::{effect_box, left_label},
-    ui::*,
+    ui::{secondary_button, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL},
     SECTION_PADDING,
 };
 use icy_ui::{
@@ -79,7 +79,6 @@ impl SettingsDialogState {
                 .spacing(DIALOG_SPACING)
                 .into(),
             )
-            .into()
         } else {
             container(Space::new()).width(Length::Fill).height(Length::Fill).into()
         };

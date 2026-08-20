@@ -42,9 +42,9 @@ impl EmulatedModem {
 
     fn response(&self, code: &str, message: &str) -> Vec<u8> {
         if self.verbose_mode {
-            format!("\r\n{}\r\n", message).as_bytes().to_vec()
+            format!("\r\n{message}\r\n").as_bytes().to_vec()
         } else {
-            format!("{}\r", code).as_bytes().to_vec()
+            format!("{code}\r").as_bytes().to_vec()
         }
     }
 
@@ -184,11 +184,11 @@ impl EmulatedModem {
             ModemCommand::PlayLineSound
         } else if phone_number.chars().all(|c| c.is_ascii_digit() || c == '-' || c == '(' || c == ')' || c == ' ') {
             // Phone number with common separators
-            let clean_number = phone_number.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
+            let clean_number = phone_number.chars().filter(char::is_ascii_digit).collect::<String>();
             ModemCommand::PlayDialSound(use_tone_dial, clean_number)
         } else {
             // Try to parse as connection address - preserve case!
-            if let Ok(_) = crate::ConnectionInformation::parse(phone_number) {
+            if crate::ConnectionInformation::parse(phone_number).is_ok() {
                 ModemCommand::Connect(phone_number.to_string())
             } else {
                 // Fallback to dial sound
@@ -360,10 +360,10 @@ impl EmulatedModem {
             }
         }
 
-        if !out_vec.is_empty() {
-            ModemCommand::Output(out_vec)
-        } else {
+        if out_vec.is_empty() {
             ModemCommand::Nothing
+        } else {
+            ModemCommand::Output(out_vec)
         }
     }
 }

@@ -1,4 +1,8 @@
-use super::*;
+use super::{
+    dialog, widget, AnsiEditorCoreMessage, AnsiEditorMessage, AnsiStatusInfo, CanvasView, CharSelector, CharSelectorMessage, CharSelectorTarget, ColorSwitcher,
+    MouseCaptureTarget, OutlineSelectorMessage, SelectionDrag, TagDialogMessage, TagListDialogMessage, TopToolbar, TopToolbarMessage, ViewportInfo,
+    CHAR_SELECTOR_WIDTH,
+};
 use super::{tool_registry, tools};
 use tools::ToolHandler;
 
@@ -39,8 +43,8 @@ fn brush_mode_label(mode: BrushPrimaryMode, paint_char: char) -> String {
 /// `AnsiEditorMainArea` adds the full UI chrome (panels, palette grid, etc.).
 /// `CharFontEditor` uses this for editing TDF font glyphs.
 pub(crate) struct AnsiEditorCore {
-    /// The screen (contains EditState which wraps buffer, caret, undo stack, etc.)
-    /// Use screen.lock().as_any_mut().downcast_mut::<EditState>() to access EditState methods
+    /// The screen (contains `EditState` which wraps buffer, caret, undo stack, etc.)
+    /// Use `screen.lock().as_any_mut().downcast_mut::`<EditState>() to access `EditState` methods
     pub screen: Arc<Mutex<Box<dyn Screen>>>,
     /// Current active tool handler
     pub(super) current_tool: Box<dyn tools::ToolHandler>,
@@ -131,7 +135,7 @@ impl AnsiEditorCore {
     /// These modals are owned by Core but need to overlay the full UI, so this method
     /// takes and returns `AnsiEditorMessage` elements while internally using `AnsiEditorCoreMessage`.
     pub(super) fn wrap_with_modals<'a>(&'a self, main_layout: Element<'a, AnsiEditorMessage>) -> Element<'a, AnsiEditorMessage> {
-        self.wrap_with_modals_mapped(main_layout, |msg| AnsiEditorMessage::Core(msg))
+        self.wrap_with_modals_mapped(main_layout, AnsiEditorMessage::Core)
     }
 
     /// Generic version of `wrap_with_modals` that works with any message type.
@@ -220,7 +224,7 @@ impl AnsiEditorCore {
     /// This is intentionally kept in the core editor so the surrounding layout/chrome
     /// can stay in `AnsiEditorMainArea`.
     /// Also used by `CharFontEditor` for TDF glyph editing.
-    pub(crate) fn view<'a>(&'a self) -> Element<'a, AnsiEditorCoreMessage> {
+    pub(crate) fn view(&self) -> Element<'_, AnsiEditorCoreMessage> {
         // Build editor markers with current state (layer bounds, selection, etc.)
         let editor_markers = self.build_editor_markers();
 
@@ -367,7 +371,7 @@ impl AnsiEditorCore {
         abs_half_block - layer_offset
     }
 
-    /// Helper to access EditState without mutable borrow (uses shared lock internally)
+    /// Helper to access `EditState` without mutable borrow (uses shared lock internally)
     pub(crate) fn with_edit_state_readonly<R, F: FnOnce(&icy_engine_edit::EditState) -> R>(&self, f: F) -> R {
         let mut screen = self.screen.lock();
         let edit_state = screen
@@ -377,7 +381,7 @@ impl AnsiEditorCore {
         f(edit_state)
     }
 
-    /// Helper to access EditState mutably without requiring &mut self (uses shared lock internally)
+    /// Helper to access `EditState` mutably without requiring &mut self (uses shared lock internally)
     /// This is useful for view functions that need to modify state but can only have &self
     pub(crate) fn with_edit_state_mut_shared<R, F: FnOnce(&mut icy_engine_edit::EditState) -> R>(&self, f: F) -> R {
         let mut screen = self.screen.lock();
@@ -588,7 +592,7 @@ impl AnsiEditorCore {
         self.process_tool_result_from(MouseCaptureTarget::Paste, result)
     }
 
-    /// Process a ToolResult and perform editor-side effects.
+    /// Process a `ToolResult` and perform editor-side effects.
     ///
     /// `source` is used to attribute mouse capture correctly (e.g. paste mode has its own capture).
     pub(super) fn process_tool_result_from(&mut self, source: MouseCaptureTarget, result: tools::ToolResult) -> tools::ToolResult {
@@ -682,7 +686,7 @@ impl AnsiEditorCore {
 
     /// Construct the core editor from a buffer.
     ///
-    /// Returns (editor, palette, format_mode) so the public wrapper can initialize
+    /// Returns (editor, palette, `format_mode`) so the public wrapper can initialize
     /// palette-dependent UI widgets.
     pub(crate) fn from_buffer_inner(
         buffer: TextBuffer,
@@ -837,7 +841,7 @@ impl AnsiEditorCore {
             let caret_fg = screen.caret().attribute.foreground();
             let caret_bg = screen.caret().attribute.background();
             let palette = screen.palette();
-            let rgb = tools::paint::compute_preview_color(&brush_settings, caret_fg, caret_bg, &palette, snapshot.draw_button);
+            let rgb = tools::paint::compute_preview_color(&brush_settings, caret_fg, caret_bg, palette, snapshot.draw_button);
 
             (fw, fh, rgb)
         };
@@ -889,8 +893,8 @@ impl AnsiEditorCore {
         tools::ToolResult::None
     }
 
-    /// Access the EditState via downcast from the Screen trait object
-    /// Panics if the screen is not an EditState (should never happen in AnsiEditor)
+    /// Access the `EditState` via downcast from the Screen trait object
+    /// Panics if the screen is not an `EditState` (should never happen in `AnsiEditor`)
     pub(crate) fn with_edit_state<T, F: FnOnce(&mut EditState) -> T>(&mut self, f: F) -> T {
         let mut screen = self.screen.lock();
         let edit_state = screen
@@ -949,7 +953,7 @@ impl AnsiEditorCore {
         let caret = edit_state.get_caret().clone();
 
         // Get layer visibility
-        let layer_visibility: Vec<bool> = buffer.layers.iter().map(|l| l.is_visible()).collect();
+        let layer_visibility: Vec<bool> = buffer.layers.iter().map(icy_engine_edit::Layer::is_visible).collect();
 
         // Encode the active tool name. The full per-tool blob is filled in
         // by `AnsiEditorMainArea::get_session_data` (which has access to the
@@ -1099,7 +1103,7 @@ impl AnsiEditorCore {
                 .expect("AnsiEditor screen should always be EditState");
 
             // Caret coordinates are layer-local; scroll expects document coords.
-            let layer_offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+            let layer_offset = state.get_cur_layer().map(icy_engine_edit::Layer::offset).unwrap_or_default();
             let abs = state.get_caret().position() + layer_offset;
 
             let font_dim = state.get_buffer().font_dimensions();
@@ -1250,8 +1254,8 @@ impl AnsiEditorCore {
                         self.char_selector_target = None;
                         // Track in MRU history for the cycle hotkeys + UI strip (#9).
                         self.recent_chars.write().push(ch);
-                        let task = self.top_toolbar.update(msg).map(AnsiEditorCoreMessage::TopToolbar);
-                        task
+
+                        self.top_toolbar.update(msg).map(AnsiEditorCoreMessage::TopToolbar)
                     }
                     TopToolbarMessage::TypeFKey(slot) => {
                         let _ = self.type_fkey_slot(slot);
@@ -1288,7 +1292,7 @@ impl AnsiEditorCore {
                                 let _ = std::fs::create_dir_all(&font_dir);
                             }
                             if let Err(e) = open::that(&font_dir) {
-                                log::warn!("Failed to open font directory: {}", e);
+                                log::warn!("Failed to open font directory: {e}");
                             }
                         }
                         Task::none()
@@ -1330,11 +1334,9 @@ impl AnsiEditorCore {
                         // Let the active tool decide whether it needs to switch variants.
                         let _ = self.update(AnsiEditorCoreMessage::ToolMessage(tools::ToolMessage::ToggleFilled(v)));
 
-                        let task = self
-                            .top_toolbar
+                        self.top_toolbar
                             .update(TopToolbarMessage::ToggleFilled(v))
-                            .map(AnsiEditorCoreMessage::TopToolbar);
-                        task
+                            .map(AnsiEditorCoreMessage::TopToolbar)
                     }
 
                     // === Paste Mode Actions ===
@@ -1492,12 +1494,12 @@ impl AnsiEditorCore {
                 self.with_edit_state(|state| {
                     // Keep caret at the same absolute document position when switching layers.
                     // Caret coordinates are layer-local, so we translate via the layer offsets.
-                    let old_offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                    let old_offset = state.get_cur_layer().map(icy_engine_edit::Layer::offset).unwrap_or_default();
                     let abs_caret = state.get_caret().position() + old_offset;
 
                     state.set_current_layer(idx);
 
-                    let new_offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                    let new_offset = state.get_cur_layer().map(icy_engine_edit::Layer::offset).unwrap_or_default();
                     state.set_caret_position(abs_caret - new_offset);
                 });
                 Task::none()
@@ -1505,8 +1507,8 @@ impl AnsiEditorCore {
             AnsiEditorCoreMessage::ToggleLayerVisibility(idx) => {
                 let result = self.with_edit_state(move |state| state.toggle_layer_visibility(idx));
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("ToggleLayerVisibility failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("ToggleLayerVisibility failed: {e}"),
                 }
                 Task::none()
             }
@@ -1514,8 +1516,8 @@ impl AnsiEditorCore {
                 let current_layer = self.with_edit_state(|state| state.get_current_layer().unwrap_or(0));
                 let result = self.with_edit_state(|state| state.add_new_layer(current_layer));
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("AddLayer failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("AddLayer failed: {e}"),
                 }
                 Task::none()
             }
@@ -1525,8 +1527,8 @@ impl AnsiEditorCore {
                 if layer_count > 1 {
                     let result = self.with_edit_state(|state| state.remove_layer(idx));
                     match result {
-                        Ok(_) => self.is_modified = true,
-                        Err(e) => log::error!("RemoveLayer failed: {}", e),
+                        Ok(()) => self.is_modified = true,
+                        Err(e) => log::error!("RemoveLayer failed: {e}"),
                     }
                 }
                 Task::none()
@@ -1534,40 +1536,40 @@ impl AnsiEditorCore {
             AnsiEditorCoreMessage::MoveLayerUp(idx) => {
                 let result = self.with_edit_state(|state| state.raise_layer(idx));
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("MoveLayerUp failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("MoveLayerUp failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::MoveLayerDown(idx) => {
                 let result = self.with_edit_state(|state| state.lower_layer(idx));
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("MoveLayerDown failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("MoveLayerDown failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::DuplicateLayer(idx) => {
                 let result = self.with_edit_state(|state| state.duplicate_layer(idx));
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("DuplicateLayer failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("DuplicateLayer failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::MergeLayerDown(idx) => {
                 let result = self.with_edit_state(|state| state.merge_layer_down(idx));
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("MergeLayerDown failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("MergeLayerDown failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::ClearLayer(idx) => {
                 let result = self.with_edit_state(|state| state.clear_layer(idx));
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("ClearLayer failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("ClearLayer failed: {e}"),
                 }
                 Task::none()
             }
@@ -1634,138 +1636,138 @@ impl AnsiEditorCore {
             // Area operations
             // ═══════════════════════════════════════════════════════════════════
             AnsiEditorCoreMessage::JustifyLineCenter => {
-                let result = self.with_edit_state(|state| state.center_line());
+                let result = self.with_edit_state(icy_engine_edit::EditState::center_line);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("JustifyLineCenter failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("JustifyLineCenter failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::JustifyLineLeft => {
-                let result = self.with_edit_state(|state| state.justify_line_left());
+                let result = self.with_edit_state(icy_engine_edit::EditState::justify_line_left);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("JustifyLineLeft failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("JustifyLineLeft failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::JustifyLineRight => {
-                let result = self.with_edit_state(|state| state.justify_line_right());
+                let result = self.with_edit_state(icy_engine_edit::EditState::justify_line_right);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("JustifyLineRight failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("JustifyLineRight failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::InsertRow => {
-                let result = self.with_edit_state(|state| state.insert_row());
+                let result = self.with_edit_state(icy_engine_edit::EditState::insert_row);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("InsertRow failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("InsertRow failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::DeleteRow => {
-                let result = self.with_edit_state(|state| state.delete_row());
+                let result = self.with_edit_state(icy_engine_edit::EditState::delete_row);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("DeleteRow failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("DeleteRow failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::InsertColumn => {
-                let result = self.with_edit_state(|state| state.insert_column());
+                let result = self.with_edit_state(icy_engine_edit::EditState::insert_column);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("InsertColumn failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("InsertColumn failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::DeleteColumn => {
-                let result = self.with_edit_state(|state| state.delete_column());
+                let result = self.with_edit_state(icy_engine_edit::EditState::delete_column);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("DeleteColumn failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("DeleteColumn failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::EraseRow => {
-                let result = self.with_edit_state(|state| state.erase_row());
+                let result = self.with_edit_state(icy_engine_edit::EditState::erase_row);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("EraseRow failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("EraseRow failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::EraseRowToStart => {
-                let result = self.with_edit_state(|state| state.erase_row_to_start());
+                let result = self.with_edit_state(icy_engine_edit::EditState::erase_row_to_start);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("EraseRowToStart failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("EraseRowToStart failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::EraseRowToEnd => {
-                let result = self.with_edit_state(|state| state.erase_row_to_end());
+                let result = self.with_edit_state(icy_engine_edit::EditState::erase_row_to_end);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("EraseRowToEnd failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("EraseRowToEnd failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::EraseColumn => {
-                let result = self.with_edit_state(|state| state.erase_column());
+                let result = self.with_edit_state(icy_engine_edit::EditState::erase_column);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("EraseColumn failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("EraseColumn failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::EraseColumnToStart => {
-                let result = self.with_edit_state(|state| state.erase_column_to_start());
+                let result = self.with_edit_state(icy_engine_edit::EditState::erase_column_to_start);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("EraseColumnToStart failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("EraseColumnToStart failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::EraseColumnToEnd => {
-                let result = self.with_edit_state(|state| state.erase_column_to_end());
+                let result = self.with_edit_state(icy_engine_edit::EditState::erase_column_to_end);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("EraseColumnToEnd failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("EraseColumnToEnd failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::ScrollAreaUp => {
-                let result = self.with_edit_state(|state| state.scroll_area_up());
+                let result = self.with_edit_state(icy_engine_edit::EditState::scroll_area_up);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("ScrollAreaUp failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("ScrollAreaUp failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::ScrollAreaDown => {
-                let result = self.with_edit_state(|state| state.scroll_area_down());
+                let result = self.with_edit_state(icy_engine_edit::EditState::scroll_area_down);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("ScrollAreaDown failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("ScrollAreaDown failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::ScrollAreaLeft => {
-                let result = self.with_edit_state(|state| state.scroll_area_left());
+                let result = self.with_edit_state(icy_engine_edit::EditState::scroll_area_left);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("ScrollAreaLeft failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("ScrollAreaLeft failed: {e}"),
                 }
                 Task::none()
             }
             AnsiEditorCoreMessage::ScrollAreaRight => {
-                let result = self.with_edit_state(|state| state.scroll_area_right());
+                let result = self.with_edit_state(icy_engine_edit::EditState::scroll_area_right);
                 match result {
-                    Ok(_) => self.is_modified = true,
-                    Err(e) => log::error!("ScrollAreaRight failed: {}", e),
+                    Ok(()) => self.is_modified = true,
+                    Err(e) => log::error!("ScrollAreaRight failed: {e}"),
                 }
                 Task::none()
             }
@@ -1791,7 +1793,7 @@ impl AnsiEditorCore {
             AnsiEditorCoreMessage::FlipX => {
                 self.with_edit_state(|state| {
                     if let Err(e) = state.flip_x() {
-                        log::error!("FlipX failed: {}", e);
+                        log::error!("FlipX failed: {e}");
                     }
                 });
                 Task::none()
@@ -1799,7 +1801,7 @@ impl AnsiEditorCore {
             AnsiEditorCoreMessage::FlipY => {
                 self.with_edit_state(|state| {
                     if let Err(e) = state.flip_y() {
-                        log::error!("FlipY failed: {}", e);
+                        log::error!("FlipY failed: {e}");
                     }
                 });
                 Task::none()
@@ -1807,7 +1809,7 @@ impl AnsiEditorCore {
             AnsiEditorCoreMessage::Crop => {
                 self.with_edit_state(|state| {
                     if let Err(e) = state.crop() {
-                        log::error!("Crop failed: {}", e);
+                        log::error!("Crop failed: {e}");
                     }
                 });
                 Task::none()
@@ -1815,7 +1817,7 @@ impl AnsiEditorCore {
             AnsiEditorCoreMessage::JustifyCenter => {
                 self.with_edit_state(|state| {
                     if let Err(e) = state.center() {
-                        log::error!("JustifyCenter failed: {}", e);
+                        log::error!("JustifyCenter failed: {e}");
                     }
                 });
                 Task::none()
@@ -1823,7 +1825,7 @@ impl AnsiEditorCore {
             AnsiEditorCoreMessage::JustifyLeft => {
                 self.with_edit_state(|state| {
                     if let Err(e) = state.justify_left() {
-                        log::error!("JustifyLeft failed: {}", e);
+                        log::error!("JustifyLeft failed: {e}");
                     }
                 });
                 Task::none()
@@ -1831,7 +1833,7 @@ impl AnsiEditorCore {
             AnsiEditorCoreMessage::JustifyRight => {
                 self.with_edit_state(|state| {
                     if let Err(e) = state.justify_right() {
-                        log::error!("JustifyRight failed: {}", e);
+                        log::error!("JustifyRight failed: {e}");
                     }
                 });
                 Task::none()
@@ -1915,7 +1917,7 @@ impl AnsiEditorCore {
                 Task::none()
             }
             AnsiEditorCoreMessage::SwitchToDefaultColor => {
-                self.with_edit_state(|state| state.reset_caret_colors());
+                self.with_edit_state(icy_engine_edit::EditState::reset_caret_colors);
                 self.sync_ui();
                 Task::none()
             }
@@ -1932,7 +1934,7 @@ impl AnsiEditorCore {
                         icy_engine::IceMode::Ice
                     };
                     if let Err(e) = state.set_ice_mode(new_mode) {
-                        log::error!("ToggleIceMode failed: {}", e);
+                        log::error!("ToggleIceMode failed: {e}");
                     }
                 });
                 self.is_modified = true;
@@ -1942,7 +1944,7 @@ impl AnsiEditorCore {
                 self.with_edit_state(|state| {
                     let current = state.get_buffer().use_letter_spacing();
                     if let Err(e) = state.set_use_letter_spacing(!current) {
-                        log::error!("ToggleLetterSpacing failed: {}", e);
+                        log::error!("ToggleLetterSpacing failed: {e}");
                     }
                 });
                 // Letter spacing affects effective font metrics (and with aspect ratio
@@ -1956,7 +1958,7 @@ impl AnsiEditorCore {
                 self.with_edit_state(|state| {
                     let current = state.get_buffer().use_aspect_ratio();
                     if let Err(e) = state.set_use_aspect_ratio(!current) {
-                        log::error!("ToggleAspectRatio failed: {}", e);
+                        log::error!("ToggleAspectRatio failed: {e}");
                     }
                 });
                 // Aspect ratio affects effective font dimensions and therefore
@@ -1977,13 +1979,13 @@ impl AnsiEditorCore {
                         FontSelectorResult::SingleFont(font) => {
                             let slot = state.get_caret().font_page();
                             if let Err(e) = state.set_font_in_slot(slot, font) {
-                                log::error!("ApplyFontSelection (SingleFont) failed: {}", e);
+                                log::error!("ApplyFontSelection (SingleFont) failed: {e}");
                             }
                         }
                         FontSelectorResult::FontForSlot { slot, font } => {
                             state.set_caret_font_page(slot as u8);
                             if let Err(e) = state.set_font_in_slot(slot as u8, font) {
-                                log::error!("ApplyFontSelection (FontForSlot) failed: {}", e);
+                                log::error!("ApplyFontSelection (FontForSlot) failed: {e}");
                             }
                         }
                     }
@@ -2000,7 +2002,7 @@ impl AnsiEditorCore {
                         FontSlotManagerResult::ResetSlot { slot, font } => {
                             if let Some(f) = font {
                                 if let Err(e) = state.set_font_in_slot(slot as u8, f) {
-                                    log::error!("ApplyFontSlotChange (ResetSlot) failed: {}", e);
+                                    log::error!("ApplyFontSlotChange (ResetSlot) failed: {e}");
                                 }
                             }
                         }
@@ -2012,7 +2014,7 @@ impl AnsiEditorCore {
                         }
                         FontSlotManagerResult::AddSlot { slot, font } => {
                             if let Err(e) = state.set_font_in_slot(slot as u8, font) {
-                                log::error!("ApplyFontSlotChange (AddSlot) failed: {}", e);
+                                log::error!("ApplyFontSlotChange (AddSlot) failed: {e}");
                             }
                         }
                     }
@@ -2033,8 +2035,8 @@ impl AnsiEditorCore {
                 Task::none()
             }
             AnsiEditorCoreMessage::Deselect => {
-                if let Err(e) = self.with_edit_state(|state| state.clear_selection()) {
-                    log::error!("Deselect failed: {}", e);
+                if let Err(e) = self.with_edit_state(icy_engine_edit::EditState::clear_selection) {
+                    log::error!("Deselect failed: {e}");
                 }
                 self.refresh_selection_display();
                 Task::none()
@@ -2083,23 +2085,19 @@ impl AnsiEditorCore {
             }
             // Forward keyboard events directly into the editor.
             icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, modifiers: _, .. }) => {
-                let scroll_caret = Self::is_caret_scroll_navigation_key(&key);
+                let scroll_caret = Self::is_caret_scroll_navigation_key(key);
 
                 // Character selector overlay has priority and is closed with Escape.
-                if self.char_selector_target.is_some() {
-                    if matches!(key, icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Escape)) {
-                        self.char_selector_target = None;
-                        return true;
-                    }
+                if self.char_selector_target.is_some() && matches!(key, icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Escape)) {
+                    self.char_selector_target = None;
+                    return true;
                 }
 
                 // Outline selector keyboard handling (Escape = Cancel)
                 if let Some(font_tool) = self.current_tool.as_any_mut().downcast_mut::<tools::FontTool>() {
-                    if font_tool.is_outline_selector_open() {
-                        if matches!(key, icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Escape)) {
-                            font_tool.handle_outline_selector_message(&self.options, widget::outline_selector::OutlineSelectorMessage::Cancel);
-                            return true;
-                        }
+                    if font_tool.is_outline_selector_open() && matches!(key, icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Escape)) {
+                        font_tool.handle_outline_selector_message(&self.options, widget::outline_selector::OutlineSelectorMessage::Cancel);
+                        return true;
                     }
                 }
 
@@ -2139,19 +2137,17 @@ impl AnsiEditorCore {
                         }
                     }
                     // Tag list dialog keyboard handling (Escape = Close)
-                    if tag_tool.state().list_dialog.is_some() {
-                        if matches!(key, icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Escape)) {
-                            let screen = Arc::clone(&self.screen);
-                            let mut screen_guard = screen.lock();
-                            if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
-                                let result = tag_tool
-                                    .state_mut()
-                                    .handle_list_dialog_message(state, dialog::tag_list::TagListDialogMessage::Close);
-                                let _ = self.process_tool_result(result);
-                                self.update_tag_overlays();
-                            }
-                            return true;
+                    if tag_tool.state().list_dialog.is_some() && matches!(key, icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Escape)) {
+                        let screen = Arc::clone(&self.screen);
+                        let mut screen_guard = screen.lock();
+                        if let Some(state) = screen_guard.as_any_mut().downcast_mut::<EditState>() {
+                            let result = tag_tool
+                                .state_mut()
+                                .handle_list_dialog_message(state, dialog::tag_list::TagListDialogMessage::Close);
+                            let _ = self.process_tool_result(result);
+                            self.update_tag_overlays();
                         }
+                        return true;
                     }
                 }
 
@@ -2159,14 +2155,14 @@ impl AnsiEditorCore {
                 if matches!(key, icy_ui::keyboard::Key::Named(icy_ui::keyboard::key::Named::Escape)) {
                     let _ = self.cancel_shape_drag();
                     // Clear selection independent of current tool/mode
-                    let _ = self.with_edit_state(|state| state.clear_selection());
+                    let _ = self.with_edit_state(icy_engine_edit::EditState::clear_selection);
                     // Update the selection display to reflect the cleared selection
                     self.update_selection_mask_display();
                 }
 
                 // Paste mode has priority for special keys (handled by PasteTool)
                 if self.is_paste_mode() {
-                    log::debug!("handle_key_press: key={:?}, paste_mode=true", key);
+                    log::debug!("handle_key_press: key={key:?}, paste_mode=true");
                     let result = self.dispatch_paste_event(event);
                     if !matches!(result, tools::ToolResult::None) {
                         if scroll_caret {
@@ -2190,13 +2186,11 @@ impl AnsiEditorCore {
                             self.update_selection_mask_display();
                         }
                     }
-                    tools::ToolId::Tag => {
-                        if !matches!(result, tools::ToolResult::None) {
-                            self.update_tag_overlays();
-                            if let Some(tag_tool) = self.current_tool.as_any().downcast_ref::<tools::TagTool>() {
-                                if tag_tool.state().add_new_index.is_none() && !tag_tool.state().selection_drag_active {
-                                    self.clear_tool_overlay();
-                                }
+                    tools::ToolId::Tag if !matches!(result, tools::ToolResult::None) => {
+                        self.update_tag_overlays();
+                        if let Some(tag_tool) = self.current_tool.as_any().downcast_ref::<tools::TagTool>() {
+                            if tag_tool.state().add_new_index.is_none() && !tag_tool.state().selection_drag_active {
+                                self.clear_tool_overlay();
                             }
                         }
                     }
@@ -2209,7 +2203,7 @@ impl AnsiEditorCore {
         }
     }
 
-    /// Handle terminal mouse events directly from icy_engine_gui
+    /// Handle terminal mouse events directly from `icy_engine_gui`
     fn handle_terminal_mouse_event(&mut self, msg: &TerminalMessage) {
         match msg {
             TerminalMessage::Press(evt) => {
@@ -2434,7 +2428,7 @@ impl AnsiEditorCore {
 
         let rect = if is_half_block_mode {
             // Compute doc-space half-block coordinate (Y doubled)
-            let layer_offset = self.with_edit_state_readonly(|state| state.get_cur_layer().map(|l| l.offset()).unwrap_or_default());
+            let layer_offset = self.with_edit_state_readonly(|state| state.get_cur_layer().map(icy_engine_edit::Layer::offset).unwrap_or_default());
 
             let hb_layer = self.compute_half_block_pos(pixel_position);
             let hb_doc = icy_engine::Position::new(hb_layer.x + layer_offset.x, hb_layer.y + layer_offset.y * 2);
@@ -2487,7 +2481,7 @@ impl AnsiEditorCore {
     }
 
     /// Update viewport size after document size changes.
-    /// Call this after operations that change the buffer dimensions (e.g., apply_remote_document).
+    /// Call this after operations that change the buffer dimensions (e.g., `apply_remote_document`).
     pub fn update_viewport_size(&mut self) {
         self.canvas.update_viewport_size();
     }
@@ -2526,8 +2520,7 @@ impl AnsiEditorCore {
             let font_name = buffer
                 .font(font_page)
                 .or_else(|| buffer.font(0))
-                .map(|f| f.name().to_string())
-                .unwrap_or_else(|| "Unknown".to_string());
+                .map_or_else(|| "Unknown".to_string(), |f| f.name().to_string());
             (font_name, font_page, None)
         };
 
@@ -2615,7 +2608,7 @@ impl AnsiEditorCore {
         self.current_tool.as_any_mut()
     }
 
-    /// The current ToolId.
+    /// The current `ToolId`.
     pub(crate) fn current_tool_id(&self) -> tools::ToolId {
         self.current_tool.id()
     }
@@ -2641,12 +2634,12 @@ impl AnsiEditorCore {
     }
 
     pub(crate) fn change_tool(&mut self, tool_registry: &mut tool_registry::ToolRegistry, tool: tools::ToolId) {
-        self.change_tool_internal(tool_registry, tool, false)
+        self.change_tool_internal(tool_registry, tool, false);
     }
 
     /// Force change tool even if the tool ID is the same (used when switching registries)
     pub(crate) fn force_change_tool(&mut self, tool_registry: &mut tool_registry::ToolRegistry, tool: tools::ToolId) {
-        self.change_tool_internal(tool_registry, tool, true)
+        self.change_tool_internal(tool_registry, tool, true);
     }
 
     fn change_tool_internal(&mut self, tool_registry: &mut tool_registry::ToolRegistry, tool: tools::ToolId, force: bool) {

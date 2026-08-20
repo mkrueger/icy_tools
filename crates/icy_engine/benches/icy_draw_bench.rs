@@ -57,9 +57,9 @@ fn bench_icy_draw_saving(c: &mut Criterion) {
     group.throughput(Throughput::Elements(size));
     group.bench_function("save (with thumbnail)", |b| {
         b.iter(|| {
-            let mut buf_clone = buf.clone();
+            let buf_clone = buf.clone();
             let opts = SaveOptions::default();
-            let result = FileFormat::IcyDraw.to_bytes(black_box(&mut buf_clone), black_box(&opts));
+            let result = FileFormat::IcyDraw.to_bytes(black_box(&buf_clone), black_box(&opts));
             black_box(result)
         })
     });
@@ -76,7 +76,7 @@ fn bench_icy_draw_saving_skip_thumbnail(c: &mut Criterion) {
     group.throughput(Throughput::Elements(size));
     group.bench_function("save (fast_save/skip_thumbnail)", |b| {
         b.iter(|| {
-            let mut buf_clone = buf.clone();
+            let buf_clone = buf.clone();
             let opts = SaveOptions {
                 format: icy_engine::formats::FormatOptions::IcyDraw(icy_engine::formats::IcyDrawFormatOptions {
                     skip_thumbnail: true,
@@ -84,7 +84,7 @@ fn bench_icy_draw_saving_skip_thumbnail(c: &mut Criterion) {
                 }),
                 ..Default::default()
             };
-            let result = FileFormat::IcyDraw.to_bytes(black_box(&mut buf_clone), black_box(&opts));
+            let result = FileFormat::IcyDraw.to_bytes(black_box(&buf_clone), black_box(&opts));
             black_box(result)
         })
     });

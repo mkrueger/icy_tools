@@ -694,15 +694,14 @@ where
                 }
                 mouse::Event::ButtonPressed {
                     button: mouse::Button::Left, ..
-                } => {
+                }
                     // Use the hover index (found_index) which already accounts for scroll
-                    if is_over {
+                    if is_over => {
                         if let Some(index) = found_index {
                             let msg = (self.on_message)(FileListViewMessage::Click(index));
                             return Some(icy_ui::widget::Action::publish(msg));
                         }
                     }
-                }
                 _ => {}
             },
             _ => {}

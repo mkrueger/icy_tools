@@ -8,7 +8,6 @@ use icy_engine::formats::{FileFormat, LoadData};
 use icy_engine::{BitFont, TextPane};
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::EditState;
-use icy_engine_edit::UndoState;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::ui::DialogStack;
 use icy_ui::{
@@ -26,7 +25,11 @@ use crate::SharedFontLibrary;
 
 use crate::ui::widget::paste_controls::{PasteControls, PasteControlsMessage};
 
-use super::*;
+use super::{
+    constants, tool_registry, tool_session, tools, widget, AnsiEditorCore, AnsiEditorCoreMessage, AnsiEditorMessage, AnsiStatusInfo, ColorSwitcherMessage,
+    EditLayerDialog, FontSlotManagerDialog, PaletteGrid, PaletteGridMessage, ReferenceImageDialog, RightPanel, RightPanelMessage, SetFontDialog,
+    TdfFontSelectorDialog, TdfFontSelectorMessage, ToolPanel, ToolPanelMessage, TopToolbarMessage, RIGHT_PANEL_BASE_WIDTH,
+};
 
 /// Parse a `Tool` enum variant name (as produced by `format!("{tool:?}")`).
 fn parse_tool_name(name: &str) -> Option<Tool> {
@@ -151,15 +154,15 @@ impl AnsiEditorMainArea {
 
     /// Load from an autosave file, using the original path for file association
     ///
-    /// Autosave files are always saved in IcyDraw format (to preserve all data),
-    /// so we always load them as IcyDraw regardless of the original file extension.
+    /// Autosave files are always saved in `IcyDraw` format (to preserve all data),
+    /// so we always load them as `IcyDraw` regardless of the original file extension.
     pub fn load_from_autosave(
         autosave_path: &Path,
         original_path: PathBuf,
         options: Arc<RwLock<Settings>>,
         font_library: SharedFontLibrary,
     ) -> Result<Self, String> {
-        let data = std::fs::read(autosave_path).map_err(|e| format!("Failed to load autosave: {}", e))?;
+        let data = std::fs::read(autosave_path).map_err(|e| format!("Failed to load autosave: {e}"))?;
         // Autosave is always in IcyDraw format
         let format = FileFormat::IcyDraw;
         let loaded_doc = format.from_bytes(&data, Some(LoadData::default())).map_err(|e| e.to_string())?;
@@ -193,8 +196,8 @@ impl AnsiEditorMainArea {
         self.core.set_undo_stack(stack);
     }
 
-    /// Get collaboration sync info: (undo_stack_arc, position, has_selection)
-    /// Returns None if not in EditState mode
+    /// Get collaboration sync info: (`undo_stack_arc`, position, `has_selection`)
+    /// Returns None if not in `EditState` mode
     /// When selecting, returns the selection lead position; otherwise returns caret position
     pub fn get_collab_sync_info(&self) -> Option<(std::sync::Arc<std::sync::Mutex<icy_engine_edit::EditorUndoStack>>, (i32, i32), bool)> {
         let mut screen = self.core.screen.lock();
@@ -214,7 +217,7 @@ impl AnsiEditorMainArea {
         }
     }
 
-    /// Get floating layer blocks for collaboration PasteAsSelection
+    /// Get floating layer blocks for collaboration `PasteAsSelection`
     pub fn get_floating_layer_blocks(&self) -> Option<icy_engine_edit::collaboration::Blocks> {
         let mut screen = self.core.screen.lock();
         if let Some(state) = screen.as_any_mut().downcast_ref::<EditState>() {
@@ -271,10 +274,11 @@ impl AnsiEditorMainArea {
     fn collect_tool_session_state(&self) -> tool_session::AnsiToolSessionState {
         use tool_session::{AnsiToolSessionState, BrushSessionState, ShapeSessionState};
 
-        let mut out = AnsiToolSessionState::default();
-
-        // Selected tool — fall back to Click for Paste mode.
-        out.selected_tool = self.core.current_tool_id().as_engine_tool().unwrap_or(Tool::Click);
+        let mut out = AnsiToolSessionState {
+            // Selected tool — fall back to Click for Paste mode.
+            selected_tool: self.core.current_tool_id().as_engine_tool().unwrap_or(Tool::Click),
+            ..Default::default()
+        };
 
         // Single shared brush state — read once from the editor.
         out.brush = BrushSessionState::from(*self.core.brush().read());
@@ -385,12 +389,12 @@ impl AnsiEditorMainArea {
 
     /// Get the undo description for menu display
     pub fn undo_description(&self) -> Option<String> {
-        self.with_edit_state_readonly(|state| state.undo_description())
+        self.with_edit_state_readonly(icy_engine_edit::UndoState::undo_description)
     }
 
     /// Get the redo description for menu display
     pub fn redo_description(&self) -> Option<String> {
-        self.with_edit_state_readonly(|state| state.redo_description())
+        self.with_edit_state_readonly(icy_engine_edit::UndoState::redo_description)
     }
 
     /// Get mirror mode state for menu display
@@ -443,7 +447,7 @@ impl AnsiEditorMainArea {
 
     /// Apply a full remote document snapshot from collaboration.
     ///
-    /// Creates a new TextBuffer from a remote collaboration document.
+    /// Creates a new `TextBuffer` from a remote collaboration document.
     /// This is used when connecting to a server to create a fresh document.
     pub fn create_buffer_from_remote_document(doc: &icy_engine_edit::collaboration::ConnectedDocument) -> icy_engine::TextBuffer {
         use icy_engine::{AttributedChar, BitFont, Color, IceMode, Layer, Palette, Position, TextBuffer};
@@ -477,7 +481,7 @@ impl AnsiEditorMainArea {
         if let Ok(font) = BitFont::from_sauce_name(font_name) {
             buffer.set_font(0, font);
         } else {
-            log::warn!("[COLLAB] Font '{}' not found, using fallback 'IBM VGA'", font_name);
+            log::warn!("[COLLAB] Font '{font_name}' not found, using fallback 'IBM VGA'");
             if let Ok(fallback) = BitFont::from_sauce_name("IBM VGA") {
                 buffer.set_font(0, fallback);
             }
@@ -491,8 +495,10 @@ impl AnsiEditorMainArea {
             for row in 0..(doc.rows as usize) {
                 let block = doc.document.get(col).and_then(|c| c.get(row)).cloned().unwrap_or_default();
 
-                let mut ch = AttributedChar::default();
-                ch.ch = char::from_u32(block.code).unwrap_or(' ');
+                let mut ch = AttributedChar {
+                    ch: char::from_u32(block.code).unwrap_or(' '),
+                    ..Default::default()
+                };
                 ch.attribute.set_foreground(block.fg as u32);
                 ch.attribute.set_background(block.bg as u32);
 
@@ -529,7 +535,7 @@ impl AnsiEditorMainArea {
 
             buffer.set_size(Size::new(new_w, new_h));
 
-            for layer in buffer.layers.iter_mut() {
+            for layer in &mut buffer.layers {
                 layer.set_size(Size::new(new_w, new_h));
 
                 // Ensure we have a full line vector to work with.
@@ -544,7 +550,7 @@ impl AnsiEditorMainArea {
                 }
 
                 // Resize width for each line (preserve prefix)
-                for line in layer.lines.iter_mut() {
+                for line in &mut layer.lines {
                     if line.chars.len() > new_w.max(0) as usize {
                         line.chars.truncate(new_w.max(0) as usize);
                     } else if line.chars.len() < new_w.max(0) as usize {
@@ -561,14 +567,15 @@ impl AnsiEditorMainArea {
     }
 
     /// Apply SAUCE metadata change from remote user.
-    /// Note: This uses set_sauce_meta directly without undo, as remote changes should not be undoable.
+    /// Note: This uses `set_sauce_meta` directly without undo, as remote changes should not be undoable.
     pub fn apply_remote_sauce(&mut self, title: String, author: String, group: String, comments: String) {
         self.core.with_edit_state(|state| {
-            let mut sauce = icy_engine_edit::SauceMetaData::default();
-            sauce.title = title.into();
-            sauce.author = author.into();
-            sauce.group = group.into();
-            sauce.comments = comments.lines().map(|line| line.to_string().into()).collect();
+            let sauce = icy_engine_edit::SauceMetaData {
+                title: title.into(),
+                author: author.into(),
+                group: group.into(),
+                comments: comments.lines().map(|line| line.to_string().into()).collect(),
+            };
             state.set_sauce_meta(sauce);
         });
     }
@@ -851,11 +858,7 @@ impl AnsiEditorMainArea {
             return font.font_tool.selected_font;
         }
 
-        self.tool_panel
-            .registry
-            .get_ref::<tools::FontTool>()
-            .map(|t| t.font_tool.selected_font)
-            .unwrap_or(0)
+        self.tool_panel.registry.get_ref::<tools::FontTool>().map_or(0, |t| t.font_tool.selected_font)
     }
 
     pub fn with_edit_state<T, F: FnOnce(&mut EditState) -> T>(&mut self, f: F) -> T {
@@ -985,7 +988,7 @@ impl AnsiEditorMainArea {
             // Use atomic undo for single character set
             let _undo = state.begin_atomic_undo("MCP Set Char");
             if let Err(e) = state.set_char_at_layer_in_atomic(layer_index, pos, attributed_char) {
-                log::error!("MCP set_char_at failed: {}", e);
+                log::error!("MCP set_char_at failed: {e}");
                 return Err(e.to_string());
             }
             Ok(())
@@ -1099,7 +1102,12 @@ impl AnsiEditorMainArea {
         self.with_edit_state_readonly(|state| {
             let caret = state.get_caret();
             let current_layer = state.get_current_layer().map_err(|e| e.to_string())?;
-            let layer_offset = state.get_buffer().layers.get(current_layer).map(|l| l.offset()).unwrap_or_default();
+            let layer_offset = state
+                .get_buffer()
+                .layers
+                .get(current_layer)
+                .map(icy_engine_edit::Layer::offset)
+                .unwrap_or_default();
 
             Ok(crate::mcp::types::CaretInfo {
                 x: caret.x,
@@ -1160,7 +1168,7 @@ impl AnsiEditorMainArea {
         let mut new_index: Option<usize> = None;
         self.with_edit_state(|state| {
             if let Err(e) = state.add_new_layer(after_layer) {
-                log::error!("MCP add_layer failed: {}", e);
+                log::error!("MCP add_layer failed: {e}");
             } else {
                 new_index = state.get_current_layer().ok();
             }
@@ -1172,7 +1180,7 @@ impl AnsiEditorMainArea {
     pub fn delete_layer(&mut self, layer: usize) -> Result<(), String> {
         self.with_edit_state(|state| {
             if let Err(e) = state.remove_layer(layer) {
-                log::error!("MCP delete_layer failed: {}", e);
+                log::error!("MCP delete_layer failed: {e}");
             }
         });
         self.sync_ui();
@@ -1211,7 +1219,7 @@ impl AnsiEditorMainArea {
             }
 
             if let Err(e) = state.update_layer_properties(req.layer, props) {
-                log::error!("MCP update_layer_properties failed: {}", e);
+                log::error!("MCP update_layer_properties failed: {e}");
             }
         });
         self.sync_ui();
@@ -1221,7 +1229,7 @@ impl AnsiEditorMainArea {
     pub fn merge_down_layer(&mut self, layer: usize) -> Result<(), String> {
         self.with_edit_state(|state| {
             if let Err(e) = state.merge_layer_down(layer) {
-                log::error!("MCP merge_down_layer failed: {}", e);
+                log::error!("MCP merge_down_layer failed: {e}");
             }
         });
         self.sync_ui();
@@ -1235,7 +1243,7 @@ impl AnsiEditorMainArea {
                 crate::mcp::types::LayerMoveDirection::Down => state.lower_layer(layer),
             };
             if let Err(e) = res {
-                log::error!("MCP move_layer failed: {}", e);
+                log::error!("MCP move_layer failed: {e}");
             }
         });
         self.sync_ui();
@@ -1245,7 +1253,7 @@ impl AnsiEditorMainArea {
     pub fn resize_buffer(&mut self, width: i32, height: i32) -> Result<(), String> {
         self.with_edit_state(|state| {
             if let Err(e) = state.resize_buffer(true, (width, height)) {
-                log::error!("MCP resize_buffer failed: {}", e);
+                log::error!("MCP resize_buffer failed: {e}");
             }
         });
         self.core.update_viewport_size();
@@ -1258,7 +1266,7 @@ impl AnsiEditorMainArea {
 
         self.with_edit_state_readonly(|state| {
             let buffer = state.get_buffer();
-            let layer_ref = buffer.layers.get(layer).ok_or_else(|| format!("Layer index {} out of range", layer))?;
+            let layer_ref = buffer.layers.get(layer).ok_or_else(|| format!("Layer index {layer} out of range"))?;
 
             let size = layer_ref.size();
             if x < 0 || y < 0 || width < 0 || height < 0 || x + width > size.width || y + height > size.height {
@@ -1308,7 +1316,7 @@ impl AnsiEditorMainArea {
             // Validate layer index
             let buffer = state.get_buffer();
             if layer >= buffer.layers.len() {
-                return Err(format!("Layer index {} out of range", layer));
+                return Err(format!("Layer index {layer} out of range"));
             }
 
             let size = buffer.layers[layer].size();
@@ -1332,9 +1340,7 @@ impl AnsiEditorMainArea {
 
                     let pos = Position::new(x + xx, y + yy);
 
-                    let new = if !cell.is_visible {
-                        AttributedChar::invisible()
-                    } else {
+                    let new = if cell.is_visible {
                         let ch_value = cell.ch.chars().next().ok_or_else(|| "Empty character string".to_string())?;
                         let converted_char = buffer_type.convert_from_unicode(ch_value);
                         let fg = Self::mcp_info_to_color(&cell.fg);
@@ -1344,11 +1350,13 @@ impl AnsiEditorMainArea {
                         attr.set_is_blinking(cell.blink);
                         attr.set_font_page(cell.font_page);
                         AttributedChar::new(converted_char, attr)
+                    } else {
+                        AttributedChar::invisible()
                     };
 
                     // Push undo operation for this character using the new layer-specific method
                     if let Err(e) = state.set_char_at_layer_in_atomic(layer, pos, new) {
-                        log::error!("MCP set_region set_char_at_layer_in_atomic failed: {}", e);
+                        log::error!("MCP set_region set_char_at_layer_in_atomic failed: {e}");
                     }
                 }
             }
@@ -1418,7 +1426,7 @@ impl AnsiEditorMainArea {
                 _ => Ok(()),
             };
             if let Err(e) = res {
-                log::error!("MCP selection_action '{}' failed: {}", action, e);
+                log::error!("MCP selection_action '{action}' failed: {e}");
             }
         });
         self.refresh_selection_display();
@@ -1433,7 +1441,7 @@ impl AnsiEditorMainArea {
             // ═══════════════════════════════════════════════════════════════════
             AnsiEditorMessage::EditLayer(layer_index) => {
                 // Forward to ShowEditLayerDialog
-                return self.update(AnsiEditorMessage::ShowEditLayerDialog(layer_index), dialogs, plugins);
+                self.update(AnsiEditorMessage::ShowEditLayerDialog(layer_index), dialogs, plugins)
             }
             AnsiEditorMessage::ShowEditLayerDialog(layer_index) => {
                 let data = self.with_edit_state_readonly(|state| {
@@ -1452,11 +1460,11 @@ impl AnsiEditorMainArea {
             AnsiEditorMessage::ApplyEditLayer(ref result) => {
                 self.with_edit_state(|state| {
                     if let Err(e) = state.update_layer_properties(result.layer_index, result.properties.clone()) {
-                        log::error!("Failed to update layer properties: {}", e);
+                        log::error!("Failed to update layer properties: {e}");
                     }
                     if let Some(new_size) = result.new_size {
                         if let Err(e) = state.set_layer_size(result.layer_index, (new_size.width, new_size.height)) {
-                            log::error!("Failed to resize layer: {}", e);
+                            log::error!("Failed to resize layer: {e}");
                         }
                     }
                 });
@@ -1555,13 +1563,13 @@ impl AnsiEditorMainArea {
                     if let Err(err) = plugin.run_plugin(self.screen()) {
                         use crate::fl;
                         use icy_engine_gui::ui::error_dialog;
-                        dialogs.push(error_dialog(fl!("error-plugin-title"), format!("{}", err), |_| Message::CloseDialog));
+                        dialogs.push(error_dialog(fl!("error-plugin-title"), format!("{err}"), |_| Message::CloseDialog));
                     }
                 }
                 Task::none()
             }
             AnsiEditorMessage::InverseSelection => {
-                let _ = self.with_edit_state(|state| state.inverse_selection());
+                let _ = self.with_edit_state(icy_engine_edit::EditState::inverse_selection);
                 self.refresh_selection_display();
                 Task::none()
             }
@@ -1656,13 +1664,13 @@ impl AnsiEditorMainArea {
                         self.core.color_switcher.start_swap_animation();
                     }
                     ColorSwitcherMessage::AnimationComplete => {
-                        let (fg, bg) = self.core.with_edit_state(|state| state.swap_caret_colors());
+                        let (fg, bg) = self.core.with_edit_state(icy_engine_edit::EditState::swap_caret_colors);
                         self.palette_grid.set_foreground(fg);
                         self.palette_grid.set_background(bg);
                         self.core.color_switcher.confirm_swap();
                     }
                     ColorSwitcherMessage::ResetToDefault => {
-                        self.core.with_edit_state(|state| state.reset_caret_colors());
+                        self.core.with_edit_state(icy_engine_edit::EditState::reset_caret_colors);
                         self.palette_grid.set_foreground(7);
                         self.palette_grid.set_background(0);
                     }

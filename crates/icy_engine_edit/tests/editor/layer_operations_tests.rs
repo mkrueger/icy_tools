@@ -503,7 +503,7 @@ fn test_paste_rotate_rotates_sixel_image_layer() {
     assert_eq!(rotated.height(), w);
 
     // After CW rotation, the old (0,0) pixel should end up at (h-1, 0).
-    let idx = ((0 * h + (h - 1)) * 4) as usize;
+    let idx = ((h - 1) * 4) as usize;
     assert_eq!(rotated.picture_data[idx], 255);
     assert_eq!(rotated.picture_data[idx + 3], 255);
 }
@@ -540,9 +540,11 @@ fn test_make_layer_transparent_clears_transparent_chars() {
 fn test_update_layer_properties() {
     let mut state = create_test_state(20, 10);
 
-    let mut new_props = LayerProperties::default();
-    new_props.title = "New Layer Name".to_string();
-    new_props.is_visible = false;
+    let new_props = LayerProperties {
+        title: "New Layer Name".to_string(),
+        is_visible: false,
+        ..Default::default()
+    };
 
     let initial_undo_len = state.undo_stack_len();
 

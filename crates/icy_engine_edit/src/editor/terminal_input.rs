@@ -39,7 +39,7 @@ impl EditState {
         let pos = self.get_caret().position();
         let layer_idx = self.get_current_layer()?;
         let insert_mode = self.get_caret().insert_mode;
-        let caret_attr = self.get_caret().attribute.clone();
+        let caret_attr = self.get_caret().attribute;
         let mirror_mode = self.mirror_mode;
 
         // Get layer dimensions and characters we need
@@ -89,7 +89,7 @@ impl EditState {
         }
 
         // Build the attributed character with caret attributes
-        let new_char = AttributedChar::new(char_code, caret_attr.clone());
+        let new_char = AttributedChar::new(char_code, caret_attr);
 
         // Set the character with caret positions for undo/redo
         let redo_pos = Position::new((pos.x + 1).min(layer_width - 1), pos.y);
@@ -145,7 +145,7 @@ impl EditState {
 
         let layer_idx = self.get_current_layer()?;
         let insert_mode = self.get_caret().insert_mode;
-        let caret_attr = self.get_caret().attribute.clone();
+        let caret_attr = self.get_caret().attribute;
 
         // Collect data we need from layer
         let (layer_width, chars_to_shift, delete_pos_char) = {
@@ -227,7 +227,7 @@ impl EditState {
     pub fn delete_key(&mut self) -> Result<()> {
         let pos = self.get_caret().position();
         let layer_idx = self.get_current_layer()?;
-        let caret_attr = self.get_caret().attribute.clone();
+        let caret_attr = self.get_caret().attribute;
 
         // Collect data from layer
         let (layer_width, chars_to_shift) = {

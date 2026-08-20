@@ -269,7 +269,7 @@ impl TopToolbar {
         }
     }
 
-    /// Snapshot the current brush settings (BrushSettings is Copy, so the lock
+    /// Snapshot the current brush settings (`BrushSettings` is Copy, so the lock
     /// is released immediately).
     pub fn brush_settings(&self) -> BrushSettings {
         *self.brush.read()
@@ -292,7 +292,7 @@ impl TopToolbar {
             TopToolbarMessage::SetBrushChar(ch) => self.brush.write().paint_char = ch,
             TopToolbarMessage::ToggleColorizeFg(v) => self.brush.write().colorize_fg = v,
             TopToolbarMessage::ToggleColorizeBg(v) => self.brush.write().colorize_bg = v,
-            TopToolbarMessage::SetBrushSize(s) => self.brush.write().brush_size = (s as u32).clamp(1, 9),
+            TopToolbarMessage::SetBrushSize(s) => self.brush.write().brush_size = s.clamp(1, 9),
             TopToolbarMessage::IncrementBrushSize => {
                 let mut b = self.brush.write();
                 b.brush_size = (b.brush_size + 1).min(9);
@@ -768,9 +768,9 @@ impl TopToolbar {
                     } else {
                         icy_ui::Color::WHITE
                     };
-                    let hex_text = format!("#{:02x}{:02x}{:02x}", r, g, b);
+                    let hex_text = format!("#{r:02x}{g:02x}{b:02x}");
 
-                    let fg_label = text(format!("Vordergrund {}", fg_idx)).size(TEXT_SIZE_SMALL);
+                    let fg_label = text(format!("Vordergrund {fg_idx}")).size(TEXT_SIZE_SMALL);
                     let fg_box = container(
                         text(hex_text)
                             .size(TEXT_SIZE_SMALL)
@@ -800,9 +800,9 @@ impl TopToolbar {
                     } else {
                         icy_ui::Color::WHITE
                     };
-                    let hex_text = format!("#{:02x}{:02x}{:02x}", r, g, b);
+                    let hex_text = format!("#{r:02x}{g:02x}{b:02x}");
 
-                    let bg_label = text(format!("Hintergrund {}", bg_idx)).size(TEXT_SIZE_SMALL);
+                    let bg_label = text(format!("Hintergrund {bg_idx}")).size(TEXT_SIZE_SMALL);
                     let bg_box = container(
                         text(hex_text)
                             .size(TEXT_SIZE_SMALL)
@@ -862,10 +862,10 @@ impl TopToolbar {
         }
 
         // Font selection button - opens the TDF font selector dialog
-        let font_label = if !info.font_name.is_empty() {
-            info.font_name.clone()
-        } else {
+        let font_label = if info.font_name.is_empty() {
             "Select Font...".to_string()
+        } else {
+            info.font_name.clone()
         };
 
         let font_button = primary_button(font_label, Some(TopToolbarMessage::OpenFontSelector));
@@ -919,7 +919,7 @@ impl TopToolbar {
                 r1 = r1.push(t);
             } else {
                 r1 = r1.push(t.style(|theme: &Theme| text::Style { color: Some(theme.button.on) }));
-            };
+            }
         }
 
         // Build row 2
@@ -930,7 +930,7 @@ impl TopToolbar {
                 r2 = r2.push(t);
             } else {
                 r2 = r2.push(t.style(|theme: &Theme| text::Style { color: Some(theme.button.on) }));
-            };
+            }
         }
 
         Column::new().push(r1).push(r2).spacing(0).into()

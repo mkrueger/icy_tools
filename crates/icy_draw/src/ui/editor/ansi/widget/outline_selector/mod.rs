@@ -1,7 +1,7 @@
 //! Outline Style Selector Popup
 //!
 //! A visual grid of outline styles that can be selected with the mouse.
-//! Similar to the CharSelector popup, used for selecting TheDraw font outline styles.
+//! Similar to the `CharSelector` popup, used for selecting `TheDraw` font outline styles.
 
 use codepages::tables::UNICODE_TO_CP437;
 use icy_engine::BitFont;
@@ -18,7 +18,7 @@ use icy_ui::{
 const OUTLINE_WIDTH: usize = 8;
 const OUTLINE_HEIGHT: usize = 6;
 
-/// Preview pattern using TheDraw outline placeholders (A-Q = 65-81)
+/// Preview pattern using `TheDraw` outline placeholders (A-Q = 65-81)
 /// This pattern shows all the different outline elements:
 /// - Corners (E,F,G,H,I,J,K,L = various corner types)
 /// - Horizontal lines (A,B)
@@ -51,7 +51,7 @@ pub const OUTLINE_STYLES: usize = 19;
 /// Uniform padding around the entire popup
 const POPUP_PADDING: f32 = 12.0;
 
-/// TheDraw keyboard shortcuts for outline styles (A-S)
+/// `TheDraw` keyboard shortcuts for outline styles (A-S)
 const THEDRAW_SHORTCUTS: [&str; 19] = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S"];
 
 /// Messages from the outline selector
@@ -81,7 +81,7 @@ pub fn outline_selector_width() -> f32 {
 /// Total height of the selector popup
 pub fn outline_selector_height() -> f32 {
     let (_, cell_h) = cell_size();
-    let rows = (OUTLINE_STYLES + PER_ROW - 1) / PER_ROW;
+    let rows = OUTLINE_STYLES.div_ceil(PER_ROW);
     rows as f32 * (cell_h + CELL_SPACING) - CELL_SPACING + 2.0 * POPUP_PADDING
 }
 
@@ -139,12 +139,7 @@ impl OutlineSelectorProgram {
 
     /// Find which style cell contains the given point
     fn hit_test(&self, p: Point) -> Option<usize> {
-        for style in 0..OUTLINE_STYLES {
-            if self.cell_rect(style).contains(p) {
-                return Some(style);
-            }
-        }
-        None
+        (0..OUTLINE_STYLES).find(|&style| self.cell_rect(style).contains(p))
     }
 
     /// Draw a single outline preview cell
@@ -307,9 +302,7 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
             icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
-                let Some(cursor_pos) = cursor.position_in(bounds) else {
-                    return None;
-                };
+                let cursor_pos = cursor.position_in(bounds)?;
 
                 if let Some(style) = self.hit_test(cursor_pos) {
                     return Some(Action::publish(OutlineSelectorMessage::SelectOutline(style)));
@@ -388,13 +381,13 @@ impl canvas::Program<OutlineSelectorMessage> for OutlineSelectorProgram {
                     }
 
                     // Select with Enter or Space
-                    Key::Named(Named::Enter) | Key::Named(Named::Space) => {
+                    Key::Named(Named::Enter | Named::Space) => {
                         return Some(Action::publish(OutlineSelectorMessage::SelectOutline(state.cursor)));
                     }
 
                     // Handle A-S keys for quick selection (TheDraw shortcuts)
                     Key::Character(c) => {
-                        let ch = c.to_uppercase().to_string();
+                        let ch = c.to_uppercase().clone();
                         if let Some(idx) = THEDRAW_SHORTCUTS.iter().position(|&s| s == ch) {
                             return Some(Action::publish(OutlineSelectorMessage::SelectOutline(idx)));
                         }

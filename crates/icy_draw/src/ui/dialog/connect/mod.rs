@@ -2,7 +2,10 @@
 //!
 //! Simple dialog to connect to Moebius-compatible collaboration servers.
 
-use icy_engine_gui::ui::*;
+use icy_engine_gui::ui::{
+    button_row, dialog_area, modal_container, primary_button, secondary_button, separator, text_button_style, DIALOG_SPACING, DIALOG_WIDTH_MEDIUM,
+    TEXT_SIZE_NORMAL,
+};
 use icy_engine_gui::{Dialog, DialogAction};
 use icy_ui::{
     widget::{button, column, container, pick_list, row, svg, text, text_input},
@@ -186,7 +189,7 @@ impl Dialog<Message> for ConnectDialog {
 
         // Dialog layout
         let dialog_content = dialog_area(form.into());
-        let button_area = dialog_area(button_row.into());
+        let button_area = dialog_area(button_row);
 
         modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area].into(),

@@ -301,7 +301,7 @@ fn test_music_styles() {
     // Test different music styles: MF (foreground), MB (background), MN (normal), ML (legato), MS (staccato)
     parser.parse(b"\x1B[NMFC\x0E", &mut sink);
     let music = sink.get_music().expect("Should have music");
-    assert!(music.music_actions.len() >= 1);
+    assert!(!music.music_actions.is_empty());
 }
 
 #[test]

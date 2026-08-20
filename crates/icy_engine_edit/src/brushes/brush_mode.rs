@@ -1,11 +1,12 @@
 //! Brush modes for drawing operations
 
 /// The brush mode determines how pixels/characters are drawn
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum BrushMode {
     /// Draw full block characters (█)
     Block,
     /// Draw half-block characters for higher resolution (▀▄█ etc.)
+    #[default]
     HalfBlock,
     /// Draw outline characters using TheDraw font outlines
     Outline,
@@ -23,12 +24,6 @@ pub enum BrushMode {
 
     /// Set blinking attribute (true = on, false = off)
     Blink(bool),
-}
-
-impl Default for BrushMode {
-    fn default() -> Self {
-        Self::HalfBlock
-    }
 }
 
 /// Role of a point in a shape (for outline drawing)

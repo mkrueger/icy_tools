@@ -53,6 +53,7 @@ impl Default for FKeySets {
 }
 
 impl FKeySets {
+    #[must_use]
     pub fn load() -> Self {
         let Some(path) = Self::get_file_path() else {
             return Self::default();
@@ -68,7 +69,7 @@ impl FKeySets {
                 serde_json::from_reader(reader).unwrap_or_else(|_| Self::default())
             }
             Err(e) => {
-                log::warn!("Failed to load fkeys: {}", e);
+                log::warn!("Failed to load fkeys: {e}");
                 Self::default()
             }
         }
@@ -93,10 +94,12 @@ impl FKeySets {
         Settings::config_dir().map(|dirs| dirs.join("fkeys.json"))
     }
 
+    #[must_use]
     pub fn set_count(&self) -> usize {
         self.sets.len().max(1)
     }
 
+    #[must_use]
     pub fn current_set(&self) -> usize {
         self.current_set
     }
@@ -108,6 +111,7 @@ impl FKeySets {
         }
     }
 
+    #[must_use]
     pub fn code_at(&self, set: usize, slot: usize) -> u16 {
         self.sets.get(set).and_then(|s| s.get(slot)).copied().unwrap_or(32)
     }
@@ -121,17 +125,20 @@ impl FKeySets {
     }
 
     /// Returns the codes for the currently selected set.
+    #[must_use]
     pub fn current_set_codes(&self) -> [u16; 12] {
         self.sets.get(self.current_set).copied().unwrap_or([32; 12])
     }
 
     /// Returns the default codes for a given set index.
+    #[must_use]
     pub fn default_set_at(set_idx: usize) -> [u16; 12] {
         let defaults = Self::default();
         defaults.sets.get(set_idx).copied().unwrap_or([32; 12])
     }
 
     /// Checks if the given set is at default values.
+    #[must_use]
     pub fn is_set_default(&self, set_idx: usize) -> bool {
         let current = self.sets.get(set_idx).copied().unwrap_or([32; 12]);
         let default = Self::default_set_at(set_idx);

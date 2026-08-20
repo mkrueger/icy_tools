@@ -86,12 +86,10 @@ fn compare_rendered_output(rendered_size: &icy_engine::Size, rendered_data: &[u8
         for x in 0..width {
             let idx = (y * width + x) * 4;
             // Look for light gray (text) or blue pixels, not just any non-black
-            let r = img_buf[idx];
-            let g = img_buf[idx + 1];
             let b = img_buf[idx + 2];
 
             // Light gray (170,170,170) or blue (0,0,170)
-            if (r > 150 && g > 150 && b > 150) || (b > 150) {
+            if b > 150 {
                 ref_first_row = ref_first_row.min(y);
                 ref_first_col = ref_first_col.min(x);
                 ref_last_row = ref_last_row.max(y);

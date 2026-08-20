@@ -1,4 +1,4 @@
-//! MCP tool handlers for icy_draw
+//! MCP tool handlers for `icy_draw`
 
 use crate::mcp::types::{
     AnimationGetScreenRequest, AnimationGetTextRequest, AnimationReplaceTextRequest, AnsiAddLayerRequest, AnsiDeleteLayerRequest, AnsiGetLayerRequest,
@@ -534,7 +534,7 @@ impl IcyDrawMcpHandler {
             .map_err(|_| McpError::internal_error("Failed to add layer", None))?;
 
         match result {
-            Ok(idx) => Ok(CallToolResult::success(vec![Content::text(format!("Layer added: {}", idx))])),
+            Ok(idx) => Ok(CallToolResult::success(vec![Content::text(format!("Layer added: {idx}"))])),
             Err(e) => Ok(CallToolResult::error(vec![Content::text(e)])),
         }
     }
@@ -821,7 +821,7 @@ impl ServerHandler for IcyDrawMcpHandler {
     ) -> impl std::future::Future<Output = Result<CallToolResponse, McpError>> + Send + '_ {
         let tool_ctx = ToolCallContext::new(self, request, context);
         async move {
-            let result = self.tool_router.call(tool_ctx).await.map_err(Into::into);
+            let result = self.tool_router.call(tool_ctx).await;
             result
         }
     }
@@ -836,7 +836,7 @@ impl ServerHandler for IcyDrawMcpHandler {
         notification: rmcp::model::CancelledNotificationParam,
         _context: rmcp::service::NotificationContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = ()> + Send + '_ {
-        log::info!("Request cancelled: {:?}", notification);
+        log::info!("Request cancelled: {notification:?}");
         std::future::ready(())
     }
 }

@@ -1,4 +1,4 @@
-//! UI module for icy_draw
+//! UI module for `icy_draw`
 //!
 //! Contains the window manager, main window implementation, and all editors.
 //!
@@ -6,8 +6,8 @@
 //!
 //! - `main_window/` - Main window, menu, commands, session management
 //! - `editor/` - All editor types (ansi, animation, bitfont, charfont, palette)
-//! - `dialog/` - Global dialogs (new_file, settings, about, font_export/import)
-//! - `widget/` - Shared widgets (tool_panel)
+//! - `dialog/` - Global dialogs (`new_file`, settings, about, `font_export/import`)
+//! - `widget/` - Shared widgets (`tool_panel`)
 //! - `settings/` - Application settings, F-keys, recent files
 //! - `collaboration/` - Real-time collaboration
 

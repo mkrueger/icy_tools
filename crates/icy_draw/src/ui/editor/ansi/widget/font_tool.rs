@@ -1,6 +1,6 @@
 //! Font Tool state for TDF/Figlet font rendering
 //!
-//! This is the per-editor state that references the shared FontLibrary.
+//! This is the per-editor state that references the shared `FontLibrary`.
 
 use crate::SharedFontLibrary;
 
@@ -88,6 +88,6 @@ impl FontToolState {
 
     /// Get the maximum height of glyphs in the selected font
     pub fn max_height(&self) -> usize {
-        self.with_selected_font(|font| font.max_height()).unwrap_or(1)
+        self.with_selected_font(retrofont::Font::max_height).unwrap_or(1)
     }
 }

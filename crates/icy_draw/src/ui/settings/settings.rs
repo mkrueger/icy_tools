@@ -1,5 +1,4 @@
 use icy_engine_gui::{ExportSettings, MonitorSettings};
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::{fs, io::Write, path::PathBuf};
 
@@ -14,8 +13,8 @@ const PROJECT_ORGANIZATION: &str = "GitHub";
 const PROJECT_APPLICATION: &str = "icy_draw";
 
 /// Lazily initialized project directories (computed once on first access)
-pub(crate) static PROJECT_DIRS: Lazy<Option<directories::ProjectDirs>> =
-    Lazy::new(|| directories::ProjectDirs::from(PROJECT_QUALIFIER, PROJECT_ORGANIZATION, PROJECT_APPLICATION));
+pub(crate) static PROJECT_DIRS: std::sync::LazyLock<Option<directories::ProjectDirs>> =
+    std::sync::LazyLock::new(|| directories::ProjectDirs::from(PROJECT_QUALIFIER, PROJECT_ORGANIZATION, PROJECT_APPLICATION));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedSettings {
@@ -137,6 +136,7 @@ pub struct Settings {
 impl Settings {
     pub const FILE_NAME: &'static str = "settings.toml";
 
+    #[must_use]
     pub fn load() -> Self {
         let persistent = Self::load_settings_file();
         Self {
@@ -174,7 +174,7 @@ impl Settings {
 
         if !config_dir.exists() {
             if let Err(err) = fs::create_dir_all(&config_dir) {
-                log::error!("Can't create configuration directory {:?}: {}", config_dir, err);
+                log::error!("Can't create configuration directory {config_dir:?}: {err}");
                 return PersistedSettings::default();
             }
         }
@@ -188,7 +188,7 @@ impl Settings {
                         return result;
                     }
                 }
-                Err(err) => log::error!("Error reading options file: {}", err),
+                Err(err) => log::error!("Error reading options file: {err}"),
             }
         }
 
@@ -217,18 +217,18 @@ impl Settings {
                 })();
 
                 if let Err(err) = write_result {
-                    log::error!("Error writing temp settings file: {}", err);
+                    log::error!("Error writing temp settings file: {err}");
                     let _ = fs::remove_file(&temp_path); // Clean up temp file
                     return;
                 }
 
                 // Atomically rename temp file to final destination
                 if let Err(err) = fs::rename(&temp_path, &file_path) {
-                    log::error!("Error renaming settings file: {}", err);
+                    log::error!("Error renaming settings file: {err}");
                     let _ = fs::remove_file(&temp_path); // Clean up temp file
                 }
             }
-            Err(err) => log::error!("Error serializing options: {}", err),
+            Err(err) => log::error!("Error serializing options: {err}"),
         }
     }
 
@@ -236,10 +236,12 @@ impl Settings {
         PROJECT_DIRS.as_ref().map(|p| p.config_dir().to_path_buf())
     }
 
+    #[must_use]
     pub fn config_file() -> Option<PathBuf> {
         Self::config_dir().map(|d| d.join(Self::FILE_NAME))
     }
 
+    #[must_use]
     pub fn log_file() -> Option<PathBuf> {
         Self::config_dir().map(|d| {
             if cfg!(windows) {
@@ -256,6 +258,7 @@ impl Settings {
     /// - Prefer the new directory `data/text_art_fonts` if it exists.
     /// - Otherwise fall back to the legacy directory `data/fonts` if it exists.
     /// - If neither exists, return the new directory path.
+    #[must_use]
     pub fn text_art_font_dir() -> Option<PathBuf> {
         let config_dir = Self::config_dir()?;
         let new_dir = config_dir.join("data/text_art_fonts");
@@ -271,16 +274,18 @@ impl Settings {
         Some(new_dir)
     }
 
+    #[must_use]
     pub fn plugin_dir() -> Option<PathBuf> {
         Self::config_dir().map(|d| d.join("data/plugins"))
     }
 
+    #[must_use]
     pub fn taglists_dir() -> Option<PathBuf> {
         let dir = Self::plugin_dir()?.join("taglists");
 
         if !dir.exists() {
             if let Err(err) = fs::create_dir_all(&dir) {
-                log::error!("Can't create taglists directory {:?}: {}", dir, err);
+                log::error!("Can't create taglists directory {dir:?}: {err}");
             }
         }
 

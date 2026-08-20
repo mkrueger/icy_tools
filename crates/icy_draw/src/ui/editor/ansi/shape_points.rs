@@ -4,7 +4,7 @@ use icy_engine_edit::tools::Tool;
 
 /// Generates shape points for the given tool between two positions.
 ///
-/// Note: For HalfBlock mode, callers should pass half-block-space positions
+/// Note: For `HalfBlock` mode, callers should pass half-block-space positions
 /// (Y has 2x resolution) and interpret the returned points accordingly.
 pub fn shape_points(tool: Tool, p0: Position, p1: Position) -> Vec<Position> {
     match tool {

@@ -46,8 +46,9 @@ pub struct TransferProtocol {
 }
 
 impl TransferProtocol {
-    /// Creates a TransferProtocol from an internal protocol id.
+    /// Creates a `TransferProtocol` from an internal protocol id.
     /// Returns None if the id is not a known internal protocol.
+    #[must_use]
     pub fn from_internal_id(id: &str) -> Option<Self> {
         match id {
             "@zmodem" => Some(Self {
@@ -110,12 +111,14 @@ impl TransferProtocol {
     }
 
     /// Returns true if this is an internal protocol (id starts with @)
+    #[must_use]
     pub fn is_internal(&self) -> bool {
         self.id.starts_with('@')
     }
 
     /// Returns the display name for the protocol.
     /// For internal protocols, returns hardcoded names; for external protocols, returns the name field.
+    #[must_use]
     pub fn get_name(&self) -> String {
         if self.is_internal() {
             match self.id.as_str() {
@@ -158,9 +161,10 @@ impl TransferProtocol {
 
     /// Creates a Protocol instance for this transfer protocol.
     /// For internal protocols, creates the built-in implementation.
-    /// For external protocols, creates an ExternalProtocol that runs the configured command.
+    /// For external protocols, creates an `ExternalProtocol` that runs the configured command.
     ///
     /// `download_dir` is used for external protocols to expand the `%D` placeholder.
+    #[must_use]
     pub fn create(&self, download_dir: PathBuf) -> Option<Box<dyn icy_net::protocol::Protocol>> {
         use icy_net::protocol::TransferProtocolType;
 
@@ -197,6 +201,7 @@ impl TransferProtocol {
 }
 
 /// Returns the default list of built-in transfer protocols
+#[must_use]
 pub fn default_protocols() -> Vec<TransferProtocol> {
     vec![
         TransferProtocol {

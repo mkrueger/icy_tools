@@ -1,6 +1,6 @@
-//! Window Manager for icy_draw
+//! Window Manager for `icy_draw`
 //!
-//! Manages multiple independent windows, each with its own MainWindow state.
+//! Manages multiple independent windows, each with its own `MainWindow` state.
 //! Implements VS Code-like "Hot Exit" for session persistence and crash recovery.
 
 use std::sync::mpsc;
@@ -79,7 +79,7 @@ pub struct WindowManager {
     commands: WindowCommands,
     /// MCP command receiver (optional)
     mcp_rx: Option<tokio_mpsc::UnboundedReceiver<McpCommand>>,
-    /// Current keyboard modifiers state (for DnD with modifiers)
+    /// Current keyboard modifiers state (for `DnD` with modifiers)
     current_modifiers: keyboard::Modifiers,
 }
 
@@ -116,14 +116,7 @@ fn file_uri_to_pathbuf(uri: &str) -> Option<PathBuf> {
     let rest = uri.strip_prefix("file://")?;
 
     // Handle `file:///path` and `file://localhost/path`.
-    let path_part = if rest.starts_with('/') {
-        rest
-    } else if let Some(without_host) = rest.strip_prefix("localhost") {
-        without_host
-    } else {
-        // `file://<host>/...` (remote host) is ignored.
-        return None;
-    };
+    let path_part = if rest.starts_with('/') { rest } else { rest.strip_prefix("localhost")? };
 
     Some(PathBuf::from(percent_decode(path_part)))
 }
@@ -203,10 +196,7 @@ fn start_session_save_worker() -> mpsc::Sender<SaveRequest> {
             let manager = SessionManager::new();
 
             loop {
-                let request = match rx.recv() {
-                    Ok(req) => req,
-                    Err(_) => return,
-                };
+                let Ok(request) = rx.recv() else { return };
 
                 // Coalesce bursts: always keep only the last pending state.
                 let mut last_request = request;
@@ -217,12 +207,12 @@ fn start_session_save_worker() -> mpsc::Sender<SaveRequest> {
                 match last_request {
                     SaveRequest::Save(state) => {
                         if let Err(e) = manager.save_session(&state) {
-                            log::error!("Failed to save session: {}", e);
+                            log::error!("Failed to save session: {e}");
                         }
                     }
                     SaveRequest::Flush(state, ack) => {
                         if let Err(e) = manager.save_session(&state) {
-                            log::error!("Failed to save session: {}", e);
+                            log::error!("Failed to save session: {e}");
                         }
                         let _ = ack.send(());
                     }
@@ -235,7 +225,7 @@ fn start_session_save_worker() -> mpsc::Sender<SaveRequest> {
 }
 
 impl WindowManager {
-    /// Create a new WindowManager, restoring session if available
+    /// Create a new `WindowManager`, restoring session if available
 
     pub fn new(font_library: SharedFontLibrary, mcp_rx: Option<tokio_mpsc::UnboundedReceiver<McpCommand>>) -> (Self, Task<WindowManagerMessage>) {
         let session_manager = SessionManager::new();
@@ -253,7 +243,7 @@ impl WindowManager {
         Self::open_initial_window(font_library, session_manager, session_save_tx, options, commands, None, mcp_rx)
     }
 
-    /// Create WindowManager with a specific file (CLI argument - starts fresh session)
+    /// Create `WindowManager` with a specific file (CLI argument - starts fresh session)
     pub fn with_path(
         font_library: SharedFontLibrary,
         path: PathBuf,
@@ -411,7 +401,7 @@ impl WindowManager {
     fn build_session_state(&self) -> SessionState {
         let mut window_states = Vec::new();
 
-        for (window_id, window) in self.windows.iter() {
+        for (window_id, window) in &self.windows {
             let has_unsaved = window.is_modified();
             let file_path = window.file_path().cloned();
 
@@ -463,6 +453,7 @@ impl WindowManager {
         }
     }
 
+    #[must_use]
     pub fn title(&self, window_id: window::Id) -> String {
         let Some(w) = self.windows.get(&window_id) else {
             return String::new();
@@ -474,14 +465,14 @@ impl WindowManager {
         let title_with_zoom = if zoom_info.is_empty() {
             base_title
         } else {
-            format!("{} {}", base_title, zoom_info)
+            format!("{base_title} {zoom_info}")
         };
 
         if self.windows.len() == 1 {
             title_with_zoom
         } else if w.id <= 10 {
             let display_key = if w.id == 10 { 0 } else { w.id };
-            format!("{} - ⌘{}", title_with_zoom, display_key)
+            format!("{title_with_zoom} - ⌘{display_key}")
         } else {
             title_with_zoom
         }
@@ -594,7 +585,7 @@ impl WindowManager {
                             if !restore.mark_dirty {
                                 w.mark_saved();
                             }
-                            log::debug!("Restored session data from {:?}", session_path);
+                            log::debug!("Restored session data from {session_path:?}");
                         }
                     }
 
@@ -753,7 +744,7 @@ impl WindowManager {
                 // Quit app (menu click): attempt to close all windows.
                 // Modified windows will prompt via the existing CloseWindow flow.
                 if matches!(msg, crate::ui::Message::QuitApp) {
-                    let window_ids: Vec<_> = self.windows.keys().cloned().collect();
+                    let window_ids: Vec<_> = self.windows.keys().copied().collect();
                     let tasks: Vec<_> = window_ids.into_iter().map(|wid| Task::done(WindowManagerMessage::CloseWindow(wid))).collect();
                     return Task::batch(tasks);
                 }
@@ -859,7 +850,7 @@ impl WindowManager {
                 }
 
                 // Check each window for autosave
-                for (window_id, window) in self.windows.iter() {
+                for (window_id, window) in &self.windows {
                     let undo_len = window.undo_stack_len();
 
                     if self.session_manager.should_autosave(*window_id, undo_len) {
@@ -874,11 +865,11 @@ impl WindowManager {
                         match window.get_autosave_bytes() {
                             Ok(bytes) => {
                                 if let Err(e) = self.session_manager.save_autosave(&autosave_path, &bytes) {
-                                    log::error!("Autosave failed for {:?}: {}", autosave_path, e);
+                                    log::error!("Autosave failed for {autosave_path:?}: {e}");
                                 }
                             }
                             Err(e) => {
-                                log::error!("Failed to get autosave bytes for {:?}: {}", autosave_path, e);
+                                log::error!("Failed to get autosave bytes for {autosave_path:?}: {e}");
                             }
                         }
                     }
@@ -931,18 +922,17 @@ impl WindowManager {
                         session_data_path: None,
                     });
                     return Task::done(WindowManagerMessage::OpenWindow);
-                } else {
-                    // Normal drop: Open in current window (like File Open)
-                    if let Some(window) = self.windows.get(&window_id) {
-                        // Check if current window has unsaved changes
-                        if window.is_modified() {
-                            // Route through the dirty check flow
-                            return Task::done(WindowManagerMessage::WindowMessage(window_id, crate::ui::Message::OpenRecentFile(path)));
-                        }
-                    }
-                    // No unsaved changes - open directly
-                    return Task::done(WindowManagerMessage::WindowMessage(window_id, crate::ui::Message::FileOpened(path)));
                 }
+                // Normal drop: Open in current window (like File Open)
+                if let Some(window) = self.windows.get(&window_id) {
+                    // Check if current window has unsaved changes
+                    if window.is_modified() {
+                        // Route through the dirty check flow
+                        return Task::done(WindowManagerMessage::WindowMessage(window_id, crate::ui::Message::OpenRecentFile(path)));
+                    }
+                }
+                // No unsaved changes - open directly
+                return Task::done(WindowManagerMessage::WindowMessage(window_id, crate::ui::Message::FileOpened(path)));
             }
         };
 
@@ -958,6 +948,7 @@ impl WindowManager {
         window::close(window_id)
     }
 
+    #[must_use]
     pub fn view(&self, window_id: window::Id) -> Element<'_, WindowManagerMessage> {
         let id = window_id;
         if let Some(window) = self.windows.get(&window_id) {
@@ -967,6 +958,7 @@ impl WindowManager {
         }
     }
 
+    #[must_use]
     pub fn theme(&self, window: window::Id) -> Option<Theme> {
         Some(self.windows.get(&window)?.theme())
     }
@@ -991,7 +983,7 @@ impl WindowManager {
             icy_ui::event::listen_with(|event, _status, window_id| {
                 match &event {
                     // Window focus events
-                    Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => Some(WindowManagerMessage::Event(window_id, event)),
+                    Event::Window(window::Event::Focused | window::Event::Unfocused) => Some(WindowManagerMessage::Event(window_id, event)),
                     // External drag-and-drop events (new DnD API)
                     Event::Window(window::Event::DragEntered { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Window(window::Event::DragMoved { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
@@ -1031,7 +1023,7 @@ impl WindowManager {
         subs.push(icy_ui::time::every(Duration::from_millis(200)).map(|_| WindowManagerMessage::SessionSaveTick));
 
         // Animation tick - only active when an animation editor is playing
-        let needs_animation = self.windows.values().any(|w| w.needs_animation_tick());
+        let needs_animation = self.windows.values().any(crate::ui::MainWindow::needs_animation_tick);
         if needs_animation {
             subs.push(icy_ui::time::every(Duration::from_millis(16)).map(|_| WindowManagerMessage::AnimationTick));
         }
@@ -1080,12 +1072,9 @@ impl WindowManager {
             items.push(menu::MenuNode::item_with_id(menu::MenuId::from_str("recent.empty"), fl!("menu-no_recent_files"), wrap(Message::Noop)).enabled(false));
         } else {
             for (i, file) in recent_files.iter().rev().take(10).enumerate() {
-                let file_name = file
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| file.display().to_string());
+                let file_name = file.file_name().map_or_else(|| file.display().to_string(), |n| n.to_string_lossy().to_string());
                 items.push(menu::MenuNode::item_with_id(
-                    menu::MenuId::from_str(&format!("recent.{}", i)),
+                    menu::MenuId::from_str(&format!("recent.{i}")),
                     file_name,
                     wrap(Message::OpenRecentFile(file.clone())),
                 ));
@@ -1162,9 +1151,10 @@ impl WindowManager {
         // Get the focused window from context, or fall back to first window
         let (focused_window_id, focused_window) = match context.current_window.and_then(|id| state.windows.get(&id).map(|w| (id, w))) {
             Some((id, window)) => (id, window),
-            None => match state.windows.iter().next() {
-                Some((id, window)) => (*id, window),
-                None => {
+            None => {
+                if let Some((id, window)) = state.windows.iter().next() {
+                    (*id, window)
+                } else {
                     // No windows yet - return basic menu without window-specific items
                     let dummy_id = window::Id::unique();
                     let wrap = move |msg: Message| WindowManagerMessage::WindowMessage(dummy_id, msg);
@@ -1184,7 +1174,7 @@ impl WindowManager {
                     let help_menu = menu::submenu!(fl!("menu-help"), [menu::about!(fl!("menu-about"), wrap(Message::ShowAbout)),]);
                     return Some(menu::AppMenu::new(vec![file_menu, help_menu]));
                 }
-            },
+            }
         };
         let window_id = focused_window_id;
         let edit_mode = focused_window.mode();
@@ -1250,7 +1240,7 @@ impl WindowManager {
             file_nodes.push(menu::item!(fl!("menu-import-font"), wrap(Message::ShowImportFontDialog)));
         }
 
-        file_nodes.extend([
+        file_nodes.extend(vec![
             menu::separator!(),
             menu::item!(fl!("menu-connect-to-server"), wrap(Message::ShowConnectDialog)),
             menu::separator!(),
@@ -1268,11 +1258,11 @@ impl WindowManager {
 
         // Edit menu - with dynamic undo/redo labels
         let undo_label = match &undo_info.undo_description {
-            Some(desc) => format!("&Undo {}", desc),
+            Some(desc) => format!("&Undo {desc}"),
             None => "&Undo".to_string(),
         };
         let redo_label = match &undo_info.redo_description {
-            Some(desc) => format!("&Redo {}", desc),
+            Some(desc) => format!("&Redo {desc}"),
             None => "&Redo".to_string(),
         };
 

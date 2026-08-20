@@ -98,7 +98,7 @@ mod tests {
         assert!(new_scroll_y < 0.5, "Expected scroll_y near 0, got {new_scroll_y}");
     }
 
-    /// Caret at (0, 1), viewport at scroll_y = 0 - caret is visible, no scroll.
+    /// Caret at (0, 1), viewport at `scroll_y` = 0 - caret is visible, no scroll.
     #[test]
     fn caret_visible_no_scroll() {
         let result = compute_scroll_to_keep_caret_visible(0, 1, FONT_W, FONT_H, 0.0, 0.0, 640.0, 400.0, 640.0, 4432.0);

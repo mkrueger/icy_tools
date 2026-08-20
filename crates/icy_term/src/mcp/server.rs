@@ -14,6 +14,7 @@ pub struct McpServer {
 }
 
 impl McpServer {
+    #[must_use]
     pub fn new() -> (Self, mpsc::UnboundedReceiver<McpCommand>) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let handler = IcyTermMcpHandler::new(command_tx);
@@ -31,7 +32,7 @@ impl McpServer {
         let app = Router::new().route_service("/", mcp_service);
 
         let listener = TcpListener::bind(("127.0.0.1", port)).await?;
-        log::info!("MCP Streamable HTTP server listening on http://127.0.0.1:{}", port);
+        log::info!("MCP Streamable HTTP server listening on http://127.0.0.1:{port}");
 
         axum::serve(listener, app).await?;
         Ok(())

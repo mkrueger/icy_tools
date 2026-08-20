@@ -12,6 +12,12 @@ pub struct TestSink {
     terminal_requests: Vec<TerminalRequest>,
 }
 
+impl Default for TestSink {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TestSink {
     pub fn new() -> Self {
         Self {
@@ -91,7 +97,7 @@ fn test_rip_text_window() {
             assert_eq!(*y0, 0);
             assert_eq!(*x1, 19);
             assert_eq!(*y1, 35);
-            assert_eq!(*wrap, false);
+            assert!(!(*wrap));
             assert_eq!(*size, 1);
         }
         _ => panic!("Expected TextWindow command"),
@@ -779,7 +785,7 @@ fn test_debug_text_escaped_bang() {
         eprintln!("  [{}]: {:?}", i, cmd);
     }
 
-    assert!(sink.rip_commands.len() >= 1, "Should parse at least 1 command");
+    assert!(!sink.rip_commands.is_empty(), "Should parse at least 1 command");
 }
 
 #[test]

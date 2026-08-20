@@ -207,9 +207,8 @@ impl shader::Program<ColorSwitcherMessage> for ColorSwitcherProgram {
                 let delta = state.last_redraw.map_or(0.0, |prev| now.saturating_duration_since(prev).as_secs_f32());
                 state.last_redraw = Some(*now);
                 return Some(icy_ui::widget::Action::publish(ColorSwitcherMessage::Tick(delta)));
-            } else {
-                state.last_redraw = None;
             }
+            state.last_redraw = None;
         }
 
         if let icy_ui::Event::Mouse(mouse::Event::ButtonPressed {

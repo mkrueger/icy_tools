@@ -157,9 +157,7 @@ impl Program<SettingsDialogMessage> for CharGridProgram {
             icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
-                let Some(p) = cursor.position_in(bounds) else {
-                    return None;
-                };
+                let p = cursor.position_in(bounds)?;
                 let char_code = self.hit_test(p)?;
                 Some(Action::publish(SettingsDialogMessage::SelectCharFromGrid(char_code)))
             }
@@ -182,9 +180,7 @@ impl Program<SettingsDialogMessage> for CharGridProgram {
                     (theme.secondary.base, theme.secondary.base)
                 } else if is_selected {
                     (theme.accent.hover, theme.background.on)
-                } else if is_cursor {
-                    (theme.accent.base, theme.background.on)
-                } else if is_hovered {
+                } else if is_cursor || is_hovered {
                     (theme.accent.base, theme.background.on)
                 } else {
                     (theme.secondary.base, theme.background.on)
@@ -261,12 +257,7 @@ impl FKeySlotsProgram {
     }
 
     fn hit_test(&self, p: Point) -> Option<usize> {
-        for slot in 0..FKEY_SLOTS {
-            if self.slot_rect(slot).contains(p) {
-                return Some(slot);
-            }
-        }
-        None
+        (0..FKEY_SLOTS).find(|&slot| self.slot_rect(slot).contains(p))
     }
 
     fn draw_slot(&self, frame: &mut Frame, slot: usize, rect: Rectangle, fg: icy_ui::Color, bg: icy_ui::Color, label_color: icy_ui::Color) {
@@ -338,9 +329,7 @@ impl Program<SettingsDialogMessage> for FKeySlotsProgram {
             icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
-                let Some(p) = cursor.position_in(bounds) else {
-                    return None;
-                };
+                let p = cursor.position_in(bounds)?;
                 let slot = self.hit_test(p)?;
                 Some(Action::publish(SettingsDialogMessage::SelectCharsetSlot(slot)))
             }
@@ -413,7 +402,7 @@ pub fn view_charset<'a>(font: &BitFont, fkeys: &FKeySets, selected_slot: Option<
     .align_y(icy_ui::Alignment::Center);
 
     // F-key slots
-    let slots_widget = fkey_slots(font, fkeys, selected_slot).map(|msg| crate::ui::main_window::Message::SettingsDialog(msg));
+    let slots_widget = fkey_slots(font, fkeys, selected_slot).map(crate::ui::main_window::Message::SettingsDialog);
 
     // Combined row: F-key slots + set navigation
     let slots_row = row![slots_widget, icy_ui::widget::Space::new().width(Length::Fixed(12.0)), set_nav,].align_y(icy_ui::Alignment::Center);
@@ -421,7 +410,7 @@ pub fn view_charset<'a>(font: &BitFont, fkeys: &FKeySets, selected_slot: Option<
     // Character grid (active only when a slot is selected)
     let is_active = selected_slot.is_some();
     let selected_char = selected_slot.map(|slot| fkeys.code_at(set_idx, slot) as u8);
-    let grid_widget = char_grid(font, selected_char, cursor, is_active).map(|msg| crate::ui::main_window::Message::SettingsDialog(msg));
+    let grid_widget = char_grid(font, selected_char, cursor, is_active).map(crate::ui::main_window::Message::SettingsDialog);
 
     // Help label for keyboard shortcuts
     let help_text = text("F1-F12: Select slot  |  ←↑↓→: Navigate  |  Space: Assign")

@@ -26,7 +26,7 @@ use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::fl;
 use crate::ui::Message;
 
-/// Helper to wrap SetFontMessage in Message
+/// Helper to wrap `SetFontMessage` in Message
 fn msg(m: SetFontMessage) -> Message {
     Message::AnsiEditor(AnsiEditorMessage::SetFont(m))
 }
@@ -172,9 +172,9 @@ pub enum SetFontMessage {
     LoadFont,
     /// Font file selected from dialog
     FontFileSelected(std::path::PathBuf),
-    /// XBin file has multiple fonts - user selected one
+    /// `XBin` file has multiple fonts - user selected one
     XBinFontSelected(usize),
-    /// Cancel XBin font selection
+    /// Cancel `XBin` font selection
     XBinFontCancelled,
 
     /// Apply selection
@@ -192,7 +192,7 @@ pub enum SetFontMessage {
 pub enum FontSelectorResult {
     /// Single font selected
     SingleFont(BitFont),
-    /// Font selected for a specific slot (for XBin Extended / Unrestricted)
+    /// Font selected for a specific slot (for `XBin` Extended / Unrestricted)
     FontForSlot { slot: usize, font: BitFont },
 }
 
@@ -237,7 +237,7 @@ pub struct SetFontDialog {
     /// Cached list of visible items (rebuilt when filter/categories change)
     visible_items: RefCell<Vec<ListItem>>,
 
-    /// Pending XBin fonts when user selects an .xb file with multiple fonts
+    /// Pending `XBin` fonts when user selects an .xb file with multiple fonts
     pending_xbin_fonts: Option<Vec<BitFont>>,
 }
 
@@ -274,7 +274,7 @@ impl SetFontDialog {
         if !only_sauce_fonts {
             for slot in 0..icy_engine::ANSI_FONTS {
                 if let Some(ansi_font) = BitFont::from_ansi_font_page(slot as u8, 16) {
-                    let key = font_key(&ansi_font);
+                    let key = font_key(ansi_font);
                     if let Some(&existing_idx) = font_key_map.get(&key) {
                         fonts[existing_idx].source.ansi_slot = Some(slot);
                     } else {
@@ -433,8 +433,8 @@ impl SetFontDialog {
     }
 
     /// Scroll the list to make the selected item visible
-    /// Note: With scroll_area().show_viewport(), scrolling is handled by the native scrollbar.
-    /// Programmatic scrolling would require scroll_area.scroll_to() which we don't have access to here.
+    /// Note: With `scroll_area().show_viewport()`, scrolling is handled by the native scrollbar.
+    /// Programmatic scrolling would require `scroll_area.scroll_to()` which we don't have access to here.
     fn scroll_to_selection(&self) {
         // No-op for now - native scrollbar handles scrolling
         // TODO: Implement programmatic scrolling if icy_ui provides an API for it
@@ -564,7 +564,7 @@ impl SetFontDialog {
         }
     }
 
-    /// Load fonts from XBin data
+    /// Load fonts from `XBin` data
     fn load_fonts_from_xbin(data: &[u8], path: &PathBuf) -> Result<Vec<BitFont>, String> {
         // Try to parse as XBin
         let screen = FileFormat::XBin
@@ -726,7 +726,7 @@ impl SetFontDialog {
         modal_container(dialog_column.into(), DIALOG_WIDTH).into()
     }
 
-    /// View for XBin font selection when .xb has multiple fonts
+    /// View for `XBin` font selection when .xb has multiple fonts
     fn view_xbin_font_selection(&self, fonts: &[BitFont]) -> Element<'_, Message> {
         let title = text(fl!("set-font-xbin-select-title")).size(16);
 
@@ -901,7 +901,7 @@ impl canvas::Program<Message> for FontListCanvasViewport {
         let geometry = icy_ui::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame: &mut Frame| {
             let mut y = -scroll_y;
 
-            for item in self.visible_items.iter() {
+            for item in &self.visible_items {
                 let height = match item {
                     ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
                     ListItem::FontItem { .. } => FONT_ITEM_HEIGHT,
@@ -925,7 +925,7 @@ impl canvas::Program<Message> for FontListCanvasViewport {
                         frame.fill(&bg_rect, theme.secondary.base);
 
                         // Draw arrow and text
-                        let expanded = self.categories.get(category).map(|s| s.expanded).unwrap_or(true);
+                        let expanded = self.categories.get(category).is_none_or(|s| s.expanded);
                         let arrow = if expanded { "▼" } else { "▶" };
                         let label = format!("{} {} {} ({})", arrow, category.icon(), category.label(), count);
 
@@ -968,38 +968,36 @@ impl canvas::Program<Message> for FontListCanvasViewport {
     }
 
     fn update(&self, _state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
-        match event {
-            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
-                button: mouse::Button::Left, ..
-            }) => {
-                if let Some(pos) = cursor.position_in(bounds) {
-                    // Find which item was clicked
-                    let scroll_y = self.viewport.y;
-                    let click_y = pos.y + scroll_y;
-                    let mut current_y = 0.0;
+        if let icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
+            button: mouse::Button::Left, ..
+        }) = event
+        {
+            if let Some(pos) = cursor.position_in(bounds) {
+                // Find which item was clicked
+                let scroll_y = self.viewport.y;
+                let click_y = pos.y + scroll_y;
+                let mut current_y = 0.0;
 
-                    for item in self.visible_items.iter() {
-                        let height = match item {
-                            ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
-                            ListItem::FontItem { .. } => FONT_ITEM_HEIGHT,
-                        };
+                for item in &self.visible_items {
+                    let height = match item {
+                        ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
+                        ListItem::FontItem { .. } => FONT_ITEM_HEIGHT,
+                    };
 
-                        if click_y >= current_y && click_y < current_y + height {
-                            match item {
-                                ListItem::CategoryHeader { category, .. } => {
-                                    return Some(canvas::Action::publish(msg(SetFontMessage::ToggleCategory(*category))));
-                                }
-                                ListItem::FontItem { font_idx } => {
-                                    return Some(canvas::Action::publish(msg(SetFontMessage::SelectFont(*font_idx))));
-                                }
+                    if click_y >= current_y && click_y < current_y + height {
+                        match item {
+                            ListItem::CategoryHeader { category, .. } => {
+                                return Some(canvas::Action::publish(msg(SetFontMessage::ToggleCategory(*category))));
+                            }
+                            ListItem::FontItem { font_idx } => {
+                                return Some(canvas::Action::publish(msg(SetFontMessage::SelectFont(*font_idx))));
                             }
                         }
-
-                        current_y += height;
                     }
+
+                    current_y += height;
                 }
             }
-            _ => {}
         }
 
         None
@@ -1114,10 +1112,9 @@ impl Dialog<Message> for SetFontDialog {
                                 return Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(
                                     AnsiEditorCoreMessage::ApplyFontSelection(result),
                                 ))));
-                            } else {
-                                // Multiple fonts - show selection dialog
-                                self.pending_xbin_fonts = Some(fonts);
                             }
+                            // Multiple fonts - show selection dialog
+                            self.pending_xbin_fonts = Some(fonts);
                         }
                         Err(_e) => {
                             // TODO: Show error notification
@@ -1159,24 +1156,18 @@ impl Dialog<Message> for SetFontDialog {
     }
 
     fn handle_event(&mut self, event: &icy_ui::Event) -> Option<DialogAction<Message>> {
-        match event {
-            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) => {
-                use icy_ui::keyboard::key::Named;
-                use icy_ui::keyboard::Key;
+        if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
+            use icy_ui::keyboard::key::Named;
+            use icy_ui::keyboard::Key;
 
-                match key {
-                    // Only handle Enter globally for applying the selection
-                    Key::Named(Named::Enter) => {
-                        if let Some(result) = self.create_result() {
-                            return Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(
-                                AnsiEditorCoreMessage::ApplyFontSelection(result),
-                            ))));
-                        }
-                    }
-                    _ => {}
+            // Only handle Enter globally for applying the selection
+            if let Key::Named(Named::Enter) = key {
+                if let Some(result) = self.create_result() {
+                    return Some(DialogAction::CloseWith(Message::AnsiEditor(AnsiEditorMessage::Core(
+                        AnsiEditorCoreMessage::ApplyFontSelection(result),
+                    ))));
                 }
             }
-            _ => {}
         }
         None
     }

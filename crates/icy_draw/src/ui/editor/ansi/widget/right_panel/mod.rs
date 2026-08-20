@@ -80,7 +80,7 @@ impl RightPanel {
     }
 
     /// Render the right panel
-    /// The panel has a fixed width of RIGHT_PANEL_BASE_WIDTH (320pt at 100% scale)
+    /// The panel has a fixed width of `RIGHT_PANEL_BASE_WIDTH` (320pt at 100% scale)
     /// `paste_mode` indicates whether we're in paste mode (affects layer view behavior)
     /// `network_mode` indicates collaboration mode (hides layers - not compatible with Moebius)
     pub fn view<'a>(

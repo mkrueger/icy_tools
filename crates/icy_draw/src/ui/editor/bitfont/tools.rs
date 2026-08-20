@@ -1,6 +1,6 @@
-//! Tool system for BitFont editor
+//! Tool system for `BitFont` editor
 
-/// Available tools in the BitFont editor
+/// Available tools in the `BitFont` editor
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BitFontTool {
     /// Click tool - draw/erase single pixels, keyboard cursor navigation

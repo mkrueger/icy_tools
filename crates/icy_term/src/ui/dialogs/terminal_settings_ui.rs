@@ -12,7 +12,7 @@ use std::fmt;
 
 const COMBO_WIDTH: f32 = 120.0;
 
-/// Wrapper for TerminalEmulation to implement Display
+/// Wrapper for `TerminalEmulation` to implement Display
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TerminalEmulationWrapper(pub TerminalEmulation);
 
@@ -51,6 +51,7 @@ pub enum TerminalSettingsChange {
 }
 
 /// Check if the terminal type supports VGA modes
+#[must_use]
 pub fn supports_vga_modes(terminal_type: TerminalEmulation) -> bool {
     matches!(
         terminal_type,
@@ -59,11 +60,13 @@ pub fn supports_vga_modes(terminal_type: TerminalEmulation) -> bool {
 }
 
 /// Check if the terminal type supports ANSI music
+#[must_use]
 pub fn supports_ansi_music(terminal_type: TerminalEmulation) -> bool {
     matches!(terminal_type, TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi)
 }
 
 /// Get the default screen mode for a terminal type
+#[must_use]
 pub fn get_default_screen_mode(terminal_type: TerminalEmulation) -> ScreenMode {
     match terminal_type {
         TerminalEmulation::Ansi | TerminalEmulation::Ascii | TerminalEmulation::Avatar | TerminalEmulation::Utf8Ansi => ScreenMode::Vga(80, 25),

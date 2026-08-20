@@ -187,7 +187,7 @@ impl FileSettingsDialog {
         let title = sauce.title.to_string();
         let author = sauce.author.to_string();
         let group = sauce.group.to_string();
-        let comments = sauce.comments.iter().map(|s| s.to_string()).collect::<Vec<_>>().join("\n");
+        let comments = sauce.comments.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join("\n");
 
         Self::new(
             size.width,
@@ -207,7 +207,10 @@ impl FileSettingsDialog {
 
     /// Parse width value
     fn parsed_width(&self) -> Option<i32> {
-        self.width.parse::<i32>().ok().filter(|&w| w >= 1 && w <= icy_engine::limits::MAX_BUFFER_WIDTH)
+        self.width
+            .parse::<i32>()
+            .ok()
+            .filter(|&w| (1..=icy_engine::limits::MAX_BUFFER_WIDTH).contains(&w))
     }
 
     /// Parse height value
@@ -215,12 +218,15 @@ impl FileSettingsDialog {
         self.height
             .parse::<i32>()
             .ok()
-            .filter(|&h| h >= 1 && h <= icy_engine::limits::MAX_BUFFER_HEIGHT)
+            .filter(|&h| (1..=icy_engine::limits::MAX_BUFFER_HEIGHT).contains(&h))
     }
 
-    /// Parse font height value using constants from icy_engine_edit
+    /// Parse font height value using constants from `icy_engine_edit`
     fn parsed_font_height(&self) -> Option<i32> {
-        self.font_height.parse::<i32>().ok().filter(|&h| h >= MIN_FONT_HEIGHT && h <= MAX_FONT_HEIGHT)
+        self.font_height
+            .parse::<i32>()
+            .ok()
+            .filter(|&h| (MIN_FONT_HEIGHT..=MAX_FONT_HEIGHT).contains(&h))
     }
 
     /// Check if all inputs are valid
@@ -553,17 +559,17 @@ impl Dialog<Message> for FileSettingsDialog {
             // SAUCE (ASCII only, with length limits)
             FileSettingsDialogMessage::SetTitle(t) => {
                 // SAUCE title: ASCII only, max length from icy_sauce::limits
-                self.title = t.chars().filter(|c| c.is_ascii()).take(icy_sauce::limits::MAX_TITLE_LENGTH).collect();
+                self.title = t.chars().filter(char::is_ascii).take(icy_sauce::limits::MAX_TITLE_LENGTH).collect();
                 Some(DialogAction::None)
             }
             FileSettingsDialogMessage::SetAuthor(a) => {
                 // SAUCE author: ASCII only, max length from icy_sauce::limits
-                self.author = a.chars().filter(|c| c.is_ascii()).take(icy_sauce::limits::MAX_AUTHOR_LENGTH).collect();
+                self.author = a.chars().filter(char::is_ascii).take(icy_sauce::limits::MAX_AUTHOR_LENGTH).collect();
                 Some(DialogAction::None)
             }
             FileSettingsDialogMessage::SetGroup(g) => {
                 // SAUCE group: ASCII only, max length from icy_sauce::limits
-                self.group = g.chars().filter(|c| c.is_ascii()).take(icy_sauce::limits::MAX_GROUP_LENGTH).collect();
+                self.group = g.chars().filter(char::is_ascii).take(icy_sauce::limits::MAX_GROUP_LENGTH).collect();
                 Some(DialogAction::None)
             }
 
@@ -597,7 +603,7 @@ impl Dialog<Message> for FileSettingsDialog {
                                 .take(icy_sauce::limits::MAX_COMMENTS)
                                 .map(|line| {
                                     line.chars()
-                                        .filter(|c| c.is_ascii())
+                                        .filter(char::is_ascii)
                                         .take(icy_sauce::limits::MAX_COMMENT_LENGTH)
                                         .collect::<String>()
                                 })

@@ -14,6 +14,6 @@ pub fn test_viewdata() {
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
         log::info!("Testing file: {:?}…", cur_entry);
         let mut screen = ScreenMode::Videotex.create_screen(TerminalEmulation::ViewData, None);
-        super::run_parser_compare(&mut screen, &cur_entry, &data);
+        super::run_parser_compare(&mut screen, &cur_entry, data);
     }
 }

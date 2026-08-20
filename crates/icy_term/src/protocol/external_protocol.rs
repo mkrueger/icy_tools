@@ -30,6 +30,7 @@ pub struct ExternalProtocol {
 }
 
 impl ExternalProtocol {
+    #[must_use]
     pub fn new(name: String, send_command: String, recv_command: String, download_dir: PathBuf) -> Self {
         Self {
             send_command,
@@ -47,7 +48,7 @@ impl ExternalProtocol {
             .map(|p| {
                 let s = p.to_string_lossy();
                 if s.contains(' ') {
-                    format!("\"{}\"", s)
+                    format!("\"{s}\"")
                 } else {
                     s.to_string()
                 }
@@ -71,7 +72,6 @@ impl ExternalProtocol {
                     Some(next) if next == delimiter || next == '\\' => current.push(chars.next().unwrap()),
                     _ => current.push(ch),
                 },
-                Some(_) => current.push(ch),
                 None if ch == '\'' || ch == '"' => quote = Some(ch),
                 None if ch.is_whitespace() => {
                     if !current.is_empty() {
@@ -82,7 +82,7 @@ impl ExternalProtocol {
                     Some(next) if next.is_whitespace() || next == '\'' || next == '"' || next == '\\' => current.push(chars.next().unwrap()),
                     _ => current.push(ch),
                 },
-                None => current.push(ch),
+                Some(_) | None => current.push(ch),
             }
         }
 
@@ -100,7 +100,7 @@ impl ExternalProtocol {
         self.cancel_requested.store(false, Ordering::SeqCst);
         self.child_pid.store(0, Ordering::SeqCst);
 
-        log::info!("Running external protocol command: {}", command);
+        log::info!("Running external protocol command: {command}");
         if let Some(dir) = working_dir {
             log::info!("Working directory: {}", dir.display());
         }
@@ -123,12 +123,12 @@ impl ExternalProtocol {
 
         let mut child = cmd
             .spawn()
-            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { format!("Failed to start process: {}", e).into() })?;
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { format!("Failed to start process: {e}").into() })?;
 
         // Store PID for cancellation
         if let Some(pid) = child.id() {
             self.child_pid.store(pid, Ordering::SeqCst);
-            log::info!("External protocol process started with PID: {}", pid);
+            log::info!("External protocol process started with PID: {pid}");
         }
 
         let mut stdin = child.stdin.take().expect("Failed to open stdin");
@@ -155,12 +155,12 @@ impl ExternalProtocol {
                         Ok(0) => break, // Connection closed
                         Ok(n) => {
                             if let Err(e) = stdin.write_all(&read_buf[..n]).await {
-                                log::error!("Failed to write to process stdin: {}", e);
+                                log::error!("Failed to write to process stdin: {e}");
                                 break;
                             }
                         }
                         Err(e) => {
-                            log::error!("Connection read error: {}", e);
+                            log::error!("Connection read error: {e}");
                             break;
                         }
                     }
@@ -171,12 +171,12 @@ impl ExternalProtocol {
                         Ok(0) => break, // Process closed stdout
                         Ok(n) => {
                             if let Err(e) = com.send(&stdout_buf[..n]).await {
-                                log::error!("Failed to send to connection: {}", e);
+                                log::error!("Failed to send to connection: {e}");
                                 break;
                             }
                         }
                         Err(e) => {
-                            log::error!("Process stdout read error: {}", e);
+                            log::error!("Process stdout read error: {e}");
                             break;
                         }
                     }
@@ -185,17 +185,17 @@ impl ExternalProtocol {
                 result = child.wait() => {
                     match result {
                         Ok(status) => {
-                            log::info!("External protocol process exited with: {}", status);
+                            log::info!("External protocol process exited with: {status}");
                             break;
                         }
                         Err(e) => {
-                            log::error!("Error waiting for process: {}", e);
+                            log::error!("Error waiting for process: {e}");
                             break;
                         }
                     }
                 }
                 // Periodic check for cancellation (every 100ms)
-                _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
+                () = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
                     // Just continue the loop to check cancel flag
                 }
             }
@@ -203,32 +203,6 @@ impl ExternalProtocol {
 
         self.child_pid.store(0, Ordering::SeqCst);
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ExternalProtocol;
-
-    #[test]
-    fn parses_quoted_command_arguments() {
-        assert_eq!(
-            ExternalProtocol::parse_command(r#""C:\Program Files\transfer.exe" --send "C:\Users\Mike\Test File.zip""#).unwrap(),
-            [r#"C:\Program Files\transfer.exe"#, "--send", r#"C:\Users\Mike\Test File.zip"#]
-        );
-    }
-
-    #[test]
-    fn preserves_unquoted_windows_backslashes() {
-        assert_eq!(
-            ExternalProtocol::parse_command(r#"transfer.exe C:\Users\Mike\file.zip"#).unwrap(),
-            ["transfer.exe", r#"C:\Users\Mike\file.zip"#]
-        );
-    }
-
-    #[test]
-    fn rejects_unterminated_quotes() {
-        assert!(ExternalProtocol::parse_command(r#"transfer.exe "unfinished"#).is_err());
     }
 }
 
@@ -266,7 +240,7 @@ impl Protocol for ExternalProtocol {
         // Also try to kill the process directly using the stored PID
         let pid = self.child_pid.load(Ordering::SeqCst);
         if pid != 0 {
-            log::info!("Killing process {}", pid);
+            log::info!("Killing process {pid}");
             #[cfg(unix)]
             {
                 // Use kill command to send SIGTERM
@@ -280,5 +254,31 @@ impl Protocol for ExternalProtocol {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ExternalProtocol;
+
+    #[test]
+    fn parses_quoted_command_arguments() {
+        assert_eq!(
+            ExternalProtocol::parse_command(r#""C:\Program Files\transfer.exe" --send "C:\Users\Mike\Test File.zip""#).unwrap(),
+            [r"C:\Program Files\transfer.exe", "--send", r"C:\Users\Mike\Test File.zip"]
+        );
+    }
+
+    #[test]
+    fn preserves_unquoted_windows_backslashes() {
+        assert_eq!(
+            ExternalProtocol::parse_command(r"transfer.exe C:\Users\Mike\file.zip").unwrap(),
+            ["transfer.exe", r"C:\Users\Mike\file.zip"]
+        );
+    }
+
+    #[test]
+    fn rejects_unterminated_quotes() {
+        assert!(ExternalProtocol::parse_command(r#"transfer.exe "unfinished"#).is_err());
     }
 }

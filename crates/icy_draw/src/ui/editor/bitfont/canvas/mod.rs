@@ -1,4 +1,4 @@
-//! Canvas components for BitFont editor
+//! Canvas components for `BitFont` editor
 
 mod charset;
 mod edit_grid;

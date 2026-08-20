@@ -7,8 +7,8 @@ use std::path::Path;
 
 /// Export a font to an image file
 ///
-/// Creates a 16x16 grid of characters where each cell is font_width x font_height pixels.
-/// The resulting image is (16 * font_width) x (16 * font_height) pixels.
+/// Creates a 16x16 grid of characters where each cell is `font_width` x `font_height` pixels.
+/// The resulting image is (16 * `font_width`) x (16 * `font_height`) pixels.
 pub fn export_font_to_image(font: &BitFont, path: &Path, format: image::ImageFormat) -> Result<(), String> {
     let font_width = font.size().width as u32;
     let font_height = font.size().height as u32;
@@ -62,5 +62,5 @@ pub fn export_font_to_image(font: &BitFont, path: &Path, format: image::ImageFor
     }
 
     // Save the image
-    img.save_with_format(path, format).map_err(|e| format!("Failed to save image: {}", e))
+    img.save_with_format(path, format).map_err(|e| format!("Failed to save image: {e}"))
 }

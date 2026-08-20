@@ -215,15 +215,17 @@ impl Options {
             .or_else(|| directories::ProjectDirs::from("com", "GitHub", "icy_term").map(|dirs| dirs.config_dir().join("options.toml")))
     }
 
-    /// Returns the log directory path (for flexi_logger configuration).
+    /// Returns the log directory path (for `flexi_logger` configuration).
+    #[must_use]
     pub fn get_log_dir() -> Option<PathBuf> {
         directories::ProjectDirs::from("com", "GitHub", "icy_term").map(|proj_dirs| proj_dirs.config_dir().to_path_buf())
     }
 
     /// Returns the path to the current log file.
-    /// On Windows, this returns the rotated file name (icy_term_rCURRENT.log)
+    /// On Windows, this returns the rotated file name (`icy_term_rCURRENT.log`)
     /// since symlinks don't work reliably there.
-    /// On other platforms, this returns the symlink (icy_term.log).
+    /// On other platforms, this returns the symlink (`icy_term.log`).
+    #[must_use]
     pub fn get_log_file() -> Option<PathBuf> {
         Self::get_log_dir().map(|log_dir| {
             if cfg!(windows) {
@@ -255,6 +257,7 @@ impl Options {
         Ok(Options::default())
     }
 
+    #[must_use]
     pub fn capture_path(&self) -> String {
         if self.capture_path.is_empty() {
             Self::default_capture_directory().to_string_lossy().to_string()
@@ -263,6 +266,7 @@ impl Options {
         }
     }
 
+    #[must_use]
     pub fn download_path(&self) -> String {
         if self.download_path.is_empty() {
             Self::download_directory().to_string_lossy().to_string()
@@ -271,12 +275,14 @@ impl Options {
         }
     }
 
+    #[must_use]
     pub fn default_capture_directory() -> PathBuf {
         directories::UserDirs::new()
-            .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
+            .and_then(|dirs| dirs.document_dir().map(std::path::Path::to_path_buf))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
     }
 
+    #[must_use]
     pub fn download_directory() -> PathBuf {
         if let Some(dirs) = UserDirs::new() {
             if let Some(upload_location) = dirs.download_dir() {
@@ -341,24 +347,28 @@ mod tests {
 
     #[test]
     fn audio_settings_roundtrip() {
-        let mut options = Options::default();
-        options.audio_enabled = false;
-        options.master_volume = 0.42;
-        options.audio_device = Some("Test Device".to_string());
+        let options = Options {
+            audio_enabled: false,
+            master_volume: 0.42,
+            audio_device: Some("Test Device".to_string()),
+            ..Default::default()
+        };
 
         let encoded = toml::to_string(&options).unwrap();
         let decoded: Options = toml::from_str(&encoded).unwrap();
 
         assert!(!decoded.audio_enabled);
-        assert_eq!(decoded.master_volume, 0.42);
+        assert!((decoded.master_volume - 0.42).abs() < f32::EPSILON);
         assert_eq!(decoded.audio_device.as_deref(), Some("Test Device"));
     }
 
     #[test]
     fn cursor_settings_roundtrip() {
-        let mut options = Options::default();
-        options.default_cursor_shape = icy_parser_core::CaretShape::Bar;
-        options.default_cursor_blinking = false;
+        let options = Options {
+            default_cursor_shape: icy_parser_core::CaretShape::Bar,
+            default_cursor_blinking: false,
+            ..Default::default()
+        };
 
         let encoded = toml::to_string(&options).unwrap();
         let decoded: Options = toml::from_str(&encoded).unwrap();

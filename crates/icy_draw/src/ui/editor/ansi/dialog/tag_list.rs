@@ -1,6 +1,8 @@
 use icy_engine::{Position, TagPlacement};
 use icy_engine_gui::settings::effect_box;
-use icy_engine_gui::ui::*;
+use icy_engine_gui::ui::{
+    button_row, dialog_area, dialog_title, modal_container, secondary_button, separator, DIALOG_SPACING, DIALOG_WIDTH_LARGE, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
+};
 use icy_ui::{
     widget::{button, column, container, row, scrollable, text, Space},
     Element, Length, Theme,

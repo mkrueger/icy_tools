@@ -1,11 +1,11 @@
-//! About dialog for icy_draw - uses the shared dialog from icy_engine_gui
+//! About dialog for `icy_draw` - uses the shared dialog from `icy_engine_gui`
 
 pub use icy_engine_gui::ui::{AboutDialogMessage, AboutDialogWrapper};
 
 // Include the about ANSI file at compile time
 pub const ABOUT_ANSI: &[u8] = include_bytes!("../../../data/about.icy");
 
-/// Create an about dialog for icy_draw
+/// Create an about dialog for `icy_draw`
 ///
 /// # Example
 /// ```ignore

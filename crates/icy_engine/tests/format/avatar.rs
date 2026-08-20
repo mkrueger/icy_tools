@@ -78,8 +78,8 @@ fn output_avt(data: &[u8]) -> Vec<u8> {
 }
 
 fn test_avt(data: &[u8]) {
-    let mut buf = FileFormat::Avatar.from_bytes(data, None).unwrap().screen.buffer;
-    let converted = FileFormat::Avatar.to_bytes(&mut buf, &SaveOptions::new()).unwrap();
+    let buf = FileFormat::Avatar.from_bytes(data, None).unwrap().screen.buffer;
+    let converted = FileFormat::Avatar.to_bytes(&buf, &SaveOptions::new()).unwrap();
 
     // more gentle output.
     let b: Vec<u8> = output_avt(&converted);

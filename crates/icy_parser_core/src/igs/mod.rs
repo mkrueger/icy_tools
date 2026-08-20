@@ -697,10 +697,8 @@ impl CommandParser for IgsParser {
                                         match ch {
                                             b'|' => modifiers.xor_stepping = true,
                                             b'@' => modifiers.refresh_text_each_iteration = true,
-                                            b'0'..=b'9' => {
-                                                if digits_start.is_none() {
-                                                    digits_start = Some(i);
-                                                }
+                                            b'0'..=b'9' if digits_start.is_none() => {
+                                                digits_start = Some(i);
                                             }
                                             _ => {}
                                         }

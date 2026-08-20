@@ -1,6 +1,6 @@
 //! Terminal-specific Lua extension
 //!
-//! Provides terminal operations like send, wait_for, sleep, connect, etc.
+//! Provides terminal operations like send, `wait_for`, sleep, connect, etc.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -59,6 +59,7 @@ pub struct TerminalLuaExtension {
 }
 
 impl TerminalLuaExtension {
+    #[must_use]
     pub fn new(state: Arc<ScriptState>) -> Self {
         Self { state }
     }
@@ -162,7 +163,7 @@ impl TerminalLuaExtension {
                 let timeout = timeout_ms.unwrap_or(30000); // Default 30 seconds
                 let start = std::time::Instant::now();
 
-                let regex = Regex::new(&pattern).map_err(|e| mlua::Error::RuntimeError(format!("Invalid regex pattern: {}", e)))?;
+                let regex = Regex::new(&pattern).map_err(|e| mlua::Error::RuntimeError(format!("Invalid regex pattern: {e}")))?;
 
                 loop {
                     // Check if we should stop
@@ -201,7 +202,7 @@ impl TerminalLuaExtension {
                 let screen_text = get_screen_text(&screen);
 
                 // Check if pattern exists in screen text (supports regex)
-                let regex = Regex::new(&pattern).map_err(|e| mlua::Error::RuntimeError(format!("Invalid regex pattern: {}", e)))?;
+                let regex = Regex::new(&pattern).map_err(|e| mlua::Error::RuntimeError(format!("Invalid regex pattern: {e}")))?;
 
                 Ok(regex.is_match(&screen_text))
             })?,
@@ -264,7 +265,7 @@ impl TerminalLuaExtension {
 
                 // Give the UI time to process the connect request and establish connection
                 // The script should use wait_for() to wait for actual connection prompts
-                std::thread::sleep(std::time::Duration::from_millis(1000));
+                std::thread::sleep(std::time::Duration::from_secs(1));
 
                 Ok(name_or_url)
             })?,
@@ -371,6 +372,7 @@ impl TerminalLuaExtension {
 }
 
 /// Parse a key string (like "enter", "left", "f1") to bytes for the given terminal emulation
+#[must_use]
 pub fn parse_key_string(terminal_type: TerminalEmulation, key_str: &str) -> Option<Vec<u8>> {
     let key = match key_str.to_lowercase().as_str() {
         "enter" | "return" => keyboard::Key::Named(keyboard::key::Named::Enter),

@@ -1,4 +1,4 @@
-//! Character set canvas for BitFont editor
+//! Character set canvas for `BitFont` editor
 
 use icy_engine_edit::bitfont::BitFontFocusedPanel;
 use icy_ui::{
@@ -7,10 +7,12 @@ use icy_ui::{
     Color, Point, Rectangle, Size,
 };
 
-use super::super::style::*;
+use super::super::style::{
+    draw_corner_brackets, draw_rulers, RulerState, CHAR_HIGHLIGHT_BG, CURSOR_WIDTH, RECT_SELECTION_COLOR, SELECTION_BORDER, SELECTION_COLOR,
+};
 use super::super::{BitFontEditor, BitFontEditorMessage};
 
-/// State for CharSetCanvas to track mouse drag for selection
+/// State for `CharSetCanvas` to track mouse drag for selection
 #[derive(Default)]
 pub struct CharSetCanvasState {
     /// Currently hovered char code
@@ -29,7 +31,7 @@ pub struct CharSetCanvas<'a> {
     pub label_size: f32,
 }
 
-impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
+impl canvas::Program<BitFontEditorMessage> for CharSetCanvas<'_> {
     type State = CharSetCanvasState;
 
     fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, theme: &icy_ui::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
@@ -203,7 +205,7 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
 
                     // Helper: check if a cell at (col, row) is selected
                     let is_selected = |c: i32, r: i32| -> bool {
-                        if c < 0 || c > 15 || r < 0 || r > 15 {
+                        if !(0..=15).contains(&c) || !(0..=15).contains(&r) {
                             return false;
                         }
                         let cell_code = r * 16 + c;
@@ -277,7 +279,7 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
             let col = ((pos.x - self.label_size) / self.cell_width) as i32;
             let row = ((pos.y - self.label_size) / self.cell_height) as i32;
 
-            if col >= 0 && col < 16 && row >= 0 && row < 16 {
+            if (0..16).contains(&col) && (0..16).contains(&row) {
                 let ch_code = (row * 16 + col) as u8;
                 state.hovered = Some(ch_code);
 
@@ -343,9 +345,9 @@ impl<'a> canvas::Program<BitFontEditorMessage> for CharSetCanvas<'a> {
 }
 
 /// Calculate a cursor color that contrasts with both foreground and background colors.
-/// Returns (fg_cursor_color, bg_cursor_color) where:
-/// - fg_cursor_color is used for "set" pixels under the cursor
-/// - bg_cursor_color is used for "unset" pixels under the cursor
+/// Returns (`fg_cursor_color`, `bg_cursor_color`) where:
+/// - `fg_cursor_color` is used for "set" pixels under the cursor
+/// - `bg_cursor_color` is used for "unset" pixels under the cursor
 ///
 /// The algorithm ensures that cursor colors are visually distinct from both fg and bg
 /// by using a contrasting color scheme (inverted or complementary colors).

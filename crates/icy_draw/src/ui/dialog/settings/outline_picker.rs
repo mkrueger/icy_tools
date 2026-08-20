@@ -1,7 +1,7 @@
-//! Outline style picker widget for TDF (TheDraw Font) outline fonts.
+//! Outline style picker widget for TDF (`TheDraw` Font) outline fonts.
 //!
 //! This module provides a reusable `OutlinePicker` widget that displays
-//! all available outline styles (19 styles from TheDraw) and allows
+//! all available outline styles (19 styles from `TheDraw`) and allows
 //! the user to select one.
 
 use codepages::tables::UNICODE_TO_CP437;
@@ -19,7 +19,7 @@ use super::SettingsDialogMessage;
 const OUTLINE_WIDTH: usize = 8;
 const OUTLINE_HEIGHT: usize = 6;
 
-/// Preview pattern using TheDraw outline placeholders (A-Q = 65-81)
+/// Preview pattern using `TheDraw` outline placeholders (A-Q = 65-81)
 /// This pattern shows all the different outline elements:
 /// - Corners (E,F,G,H,I,J,K,L = various corner types)
 /// - Horizontal lines (A,B)
@@ -49,7 +49,7 @@ const CELL_SPACING: f32 = 4.0;
 /// Total number of outline styles available (from TheDraw/retrofont)
 pub const OUTLINE_STYLES: usize = 19;
 
-/// TheDraw keyboard shortcuts for outline styles (A-S)
+/// `TheDraw` keyboard shortcuts for outline styles (A-S)
 const THEDRAW_SHORTCUTS: [&str; 19] = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S"];
 
 /// Create an outline picker element.
@@ -69,7 +69,7 @@ pub fn outline_picker(selected_outline: usize, cursor: usize) -> Element<'static
     };
 
     let (cell_w, cell_h) = program.cell_size();
-    let rows = (OUTLINE_STYLES + PER_ROW - 1) / PER_ROW;
+    let rows = OUTLINE_STYLES.div_ceil(PER_ROW);
     let total_width = PER_ROW as f32 * (cell_w + CELL_SPACING) - CELL_SPACING;
     let total_height = rows as f32 * (cell_h + CELL_SPACING) - CELL_SPACING;
 
@@ -111,12 +111,7 @@ impl OutlinePickerProgram {
 
     /// Find which style cell contains the given point
     fn hit_test(&self, p: Point) -> Option<usize> {
-        for style in 0..OUTLINE_STYLES {
-            if self.cell_rect(style).contains(p) {
-                return Some(style);
-            }
-        }
-        None
+        (0..OUTLINE_STYLES).find(|&style| self.cell_rect(style).contains(p))
     }
 
     /// Draw a single outline preview cell
@@ -190,9 +185,7 @@ impl Program<SettingsDialogMessage> for OutlinePickerProgram {
             icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
-                let Some(p) = cursor.position_in(bounds) else {
-                    return None;
-                };
+                let p = cursor.position_in(bounds)?;
                 let style = self.hit_test(p)?;
                 Some(Action::publish(SettingsDialogMessage::SelectOutlineStyle(style)))
             }
@@ -229,9 +222,7 @@ impl Program<SettingsDialogMessage> for OutlinePickerProgram {
                 let label_text = canvas::Text {
                     content: shortcut.to_string(),
                     position: Point::new(rect.x + 3.0, rect.y + 2.0),
-                    color: if is_selected {
-                        theme.background.on
-                    } else if is_cursor {
+                    color: if is_selected || is_cursor {
                         theme.background.on
                     } else {
                         theme.secondary.base

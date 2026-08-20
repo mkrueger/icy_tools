@@ -24,8 +24,8 @@ use icy_net::{
     telnet::{TelnetConnection, TermCaps, TerminalEmulation},
     Connection, ConnectionState, ConnectionType,
 };
-use icy_parser_core::*;
 use icy_parser_core::{AnsiMusic, CommandParser, TerminalRequest};
+use icy_parser_core::{AskQuery, CaretShape, DeviceControlString, IgsCommand, SkypixCommand, StopType};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use log::error;
 use parking_lot::Mutex;
@@ -193,11 +193,10 @@ fn decrqss_status(screen: &dyn Screen, selector: &[u8]) -> Option<String> {
                 (CaretShape::Bar, true) => 5,
                 (CaretShape::Bar, false) => 6,
             };
-            Some(format!("{} q", style))
+            Some(format!("{style} q"))
         }
         b"*r" => {
             let baud = match state.baud_emulation() {
-                BaudEmulation::Off => 0,
                 BaudEmulation::Rate(300) => 1,
                 BaudEmulation::Rate(600) => 2,
                 BaudEmulation::Rate(1200) => 3,
@@ -209,9 +208,9 @@ fn decrqss_status(screen: &dyn Screen, selector: &[u8]) -> Option<String> {
                 BaudEmulation::Rate(57600) => 9,
                 BaudEmulation::Rate(76800) => 10,
                 BaudEmulation::Rate(115_200) => 11,
-                BaudEmulation::Rate(_) => 0,
+                BaudEmulation::Off | BaudEmulation::Rate(_) => 0,
             };
-            Some(format!("0;{}*r", baud))
+            Some(format!("0;{baud}*r"))
         }
         b"m" => {
             let attr = screen.caret().attribute;
@@ -309,9 +308,9 @@ pub enum TerminalEvent {
     TransferStarted(TransferState, bool),
     TransferProgress(TransferState),
     TransferCompleted(TransferState),
-    /// External protocol transfer started (protocol_name, is_download)
+    /// External protocol transfer started (`protocol_name`, `is_download`)
     ExternalTransferStarted(String, bool),
-    /// External protocol transfer completed (protocol_name, is_download, success, error_message)
+    /// External protocol transfer completed (`protocol_name`, `is_download`, success, `error_message`)
     ExternalTransferCompleted(String, bool, bool, Option<String>),
     Error(String, String),
     PlayMusic(AnsiMusic),
@@ -327,7 +326,7 @@ pub enum TerminalEvent {
     AutoTransferTriggered(String, bool, Option<String>),
     EmsiLogin(Box<EmsiISI>),
 
-    /// Play a GIST sound effect (BellsAndWhistles)
+    /// Play a GIST sound effect (`BellsAndWhistles`)
     PlayGist(Vec<i16>),
     /// Play chip music on a specific voice
     PlayChipMusic {
@@ -554,9 +553,7 @@ impl TerminalThread {
 
     /// Initialize mutable copy of all 20 IGS sound effects
     fn init_sound_data() -> Vec<Vec<i16>> {
-        (0..20)
-            .map(|i| sound_data(i).map(|data| data.to_vec()).unwrap_or_else(|| vec![0i16; 56]))
-            .collect()
+        (0..20).map(|i| sound_data(i).map_or_else(|| vec![0i16; 56], |data| data.to_vec())).collect()
     }
 
     async fn run(&mut self) {
@@ -618,7 +615,7 @@ impl TerminalThread {
                                 self.send_event(TerminalEvent::AutoTransferTriggered(protocol_id, is_download, filename));
                             }
                         } else {
-                            log::warn!("Unknown protocol id for auto-transfer: {}", protocol_id);
+                            log::warn!("Unknown protocol id for auto-transfer: {protocol_id}");
                         }
                     }
 
@@ -643,9 +640,9 @@ impl TerminalThread {
                                         }
                                     }
                                     Err(e) => {
-                                        error!("Connection poll error: {}", e);
+                                        error!("Connection poll error: {e}");
                                         self.disconnect().await;
-                                        self.process_data(format!("\n\r{}", e).as_bytes()).await;
+                                        self.process_data(format!("\n\r{e}").as_bytes()).await;
                                         continue;
                                     }
                                 }
@@ -698,8 +695,8 @@ impl TerminalThread {
                         }
                     }
                     Err(e) => {
-                        log::error!("{}", e);
-                        self.process_data(format!("NO CARRIER\r\n").as_bytes()).await;
+                        log::error!("{e}");
+                        self.process_data("NO CARRIER\r\n".to_string().as_bytes()).await;
                         self.send_event(TerminalEvent::Disconnected(Some(e.to_string())));
                     }
                 }
@@ -707,8 +704,8 @@ impl TerminalThread {
 
             TerminalCommand::OpenSerial(serial) => {
                 if let Err(e) = self.open_serial(serial).await {
-                    log::error!("{}", e);
-                    self.process_data(format!("FAILED.\r\n").as_bytes()).await;
+                    log::error!("{e}");
+                    self.process_data("FAILED.\r\n".to_string().as_bytes()).await;
                     self.send_event(TerminalEvent::Disconnected(Some(e.to_string())));
                 }
             }
@@ -723,9 +720,9 @@ impl TerminalThread {
             TerminalCommand::SendData(data) => {
                 if let Some(conn) = &mut self.connection {
                     if let Err(err) = conn.send(&data).await {
-                        log::error!("Failed to send data: {}", err);
+                        log::error!("Failed to send data: {err}");
                         self.disconnect().await;
-                        self.process_data(format!("\n\r{}", err).as_bytes()).await;
+                        self.process_data(format!("\n\r{err}").as_bytes()).await;
                     }
                 } else {
                     // Echo locally
@@ -748,7 +745,7 @@ impl TerminalThread {
                             self.send_event(TerminalEvent::Reconnect);
                         }
                         ModemCommand::Connect(address) => {
-                            self.process_data(format!("\r\nCALLING...\r\n").as_bytes()).await;
+                            self.process_data("\r\nCALLING...\r\n".to_string().as_bytes()).await;
                             self.send_event(TerminalEvent::Connect(address));
                         }
                     }
@@ -774,8 +771,8 @@ impl TerminalThread {
                     self.capture_writer = Some(BufWriter::new(file));
                 }
                 Err(e) => {
-                    log::error!("Failed to create capture file {}: {}", file_name, e);
-                    self.send_event(TerminalEvent::Error(format!("Failed to create capture file: {}", file_name), format!("{}", e)));
+                    log::error!("Failed to create capture file {file_name}: {e}");
+                    self.send_event(TerminalEvent::Error(format!("Failed to create capture file: {file_name}"), format!("{e}")));
                 }
             },
             TerminalCommand::StopCapture => {
@@ -810,7 +807,7 @@ impl TerminalThread {
                 screen_mode,
                 ansi_music,
             } => {
-                self.set_terminal_settings(terminal_type, screen_mode, ansi_music).await;
+                self.set_terminal_settings(terminal_type, screen_mode, ansi_music);
             }
         }
     }
@@ -822,7 +819,7 @@ impl TerminalThread {
 
         self.use_utf8 = config.terminal_type == TerminalEmulation::Utf8Ansi;
         self.baud_emulator.set_baud_rate(config.baud_emulation);
-        self.cache_directory = config.cache_directory.clone();
+        self.cache_directory.clone_from(&config.cache_directory);
 
         if !matches!(config.connection_info.protocol(), ConnectionType::Modem) {
             self.process_data(format!("ATDT{}\r\n", config.connection_info).as_bytes()).await;
@@ -901,10 +898,10 @@ impl TerminalThread {
                 {
                     Ok(ModemResponseType::Ok) => {}
                     Ok(response) => {
-                        return Err(format!("Modem init failed with response: {:?}", response).into());
+                        return Err(format!("Modem init failed with response: {response:?}").into());
                     }
                     Err(e) => {
-                        return Err(format!("Modem init timeout or error: {}", e).into());
+                        return Err(format!("Modem init timeout or error: {e}").into());
                     }
                 }
 
@@ -915,7 +912,7 @@ impl TerminalThread {
                 modem_config.dial_suffix.send(modem_conn.as_mut()).await?;
 
                 // Wait for CONNECT with longer timeout (60 seconds for dial)
-                let dial_timeout = Duration::from_secs(60);
+                let dial_timeout = Duration::from_mins(1);
                 let error_responses = [
                     ModemResponseType::NoCarrier,
                     ModemResponseType::Error,
@@ -930,11 +927,11 @@ impl TerminalThread {
                     Ok(ModemResponseType::Connect) => {}
                     Ok(response) => {
                         modem_config.hangup_command.send(modem_conn.as_mut()).await.ok();
-                        return Err(format!("Dial failed: {:?}", response).into());
+                        return Err(format!("Dial failed: {response:?}").into());
                     }
                     Err(e) => {
                         modem_config.hangup_command.send(modem_conn.as_mut()).await.ok();
-                        return Err(format!("Dial timeout or error: {}", e).into());
+                        return Err(format!("Dial timeout or error: {e}").into());
                     }
                 }
 
@@ -992,7 +989,7 @@ impl TerminalThread {
         // Update terminal emulation for scripting
         *self.terminal_emulation.lock() = config.terminal_type;
         // Build auto-transfer scanner from protocol list and store protocols for later lookup
-        self.transfer_protocols = config.transfer_protocols.clone();
+        self.transfer_protocols.clone_from(&config.transfer_protocols);
         self.auto_transfer_scanner = AutoTransferScanner::from_protocols(&self.transfer_protocols);
         self.send_event(TerminalEvent::Connected);
 
@@ -1032,7 +1029,7 @@ impl TerminalThread {
             let mut test_serial = serial.clone();
             test_serial.baud_rate = baud_rate;
 
-            self.process_data(format!("Trying {} baud...", baud_rate).as_bytes()).await;
+            self.process_data(format!("Trying {baud_rate} baud...").as_bytes()).await;
 
             match SerialConnection::open(test_serial) {
                 Ok(mut conn) => {
@@ -1051,7 +1048,7 @@ impl TerminalThread {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
                 Err(_) => {
-                    self.process_data(format!(" failed to open\r\n").as_bytes()).await;
+                    self.process_data(" failed to open\r\n".to_string().as_bytes()).await;
                 }
             }
         }
@@ -1059,7 +1056,7 @@ impl TerminalThread {
         if let Some(baud) = detected_baud {
             self.send_event(TerminalEvent::SerialBaudDetected(baud));
         } else {
-            self.process_data(format!("Auto-detection complete. No response detected.\r\n").as_bytes())
+            self.process_data("Auto-detection complete. No response detected.\r\n".to_string().as_bytes())
                 .await;
         }
         // Always notify that auto-detection is complete so the dialog can be shown again
@@ -1068,8 +1065,8 @@ impl TerminalThread {
 
     async fn try_read_response(&mut self, detected_baud: &mut Option<u32>, baud_rate: u32, conn: &mut SerialConnection) -> bool {
         let mut buf = [0u8; 64];
-        for _ in 0..3 {
-            match tokio::time::timeout(Duration::from_millis(1000), conn.read(&mut buf)).await {
+        if (0..3).next().is_some() {
+            match tokio::time::timeout(Duration::from_secs(1), conn.read(&mut buf)).await {
                 Ok(Ok(n)) if n > 0 => {
                     // Check if response contains printable ASCII (valid at this baud rate)
                     let printable_count = buf[..n]
@@ -1079,22 +1076,21 @@ impl TerminalThread {
                     // println!("Read {}/{} bytes at {} baud: {}", n, printable_count, baud_rate, String::from_utf8_lossy(&buf[..n]));
                     if printable_count == n {
                         // More than half printable - likely correct baud rate
-                        self.process_data(format!(" detected!\r\n").as_bytes()).await;
+                        self.process_data(" detected!\r\n".to_string().as_bytes()).await;
                         *detected_baud = Some(baud_rate);
                         let _ = conn.shutdown().await;
                         return true;
-                    } else {
-                        self.process_data(format!(" garbage response\r\n").as_bytes()).await;
-                        return false;
                     }
+                    self.process_data(" garbage response\r\n".to_string().as_bytes()).await;
+                    return false;
                 }
                 _ => {
-                    self.process_data(format!(" no response\r\n").as_bytes()).await;
+                    self.process_data(" no response\r\n".to_string().as_bytes()).await;
                     return false;
                 }
             }
         }
-        return false;
+        false
     }
 
     fn setup_auto_login(&mut self, config: &ConnectionConfig) {
@@ -1106,18 +1102,18 @@ impl TerminalThread {
 
         // Determine effective credentials with clear precedence
         let mut effective_user = config.user_name.as_ref().filter(|s: &&String| !s.is_empty()).cloned().or_else(|| {
-            if config.connection_info.protocol() != ConnectionType::SSH {
-                config.connection_info.user_name()
-            } else {
+            if config.connection_info.protocol() == ConnectionType::SSH {
                 None
+            } else {
+                config.connection_info.user_name()
             }
         });
 
         let mut effective_pass = config.password.as_ref().filter(|s| !s.is_empty()).cloned().or_else(|| {
-            if config.connection_info.protocol() != ConnectionType::SSH {
-                config.connection_info.password()
-            } else {
+            if config.connection_info.protocol() == ConnectionType::SSH {
                 None
+            } else {
+                config.connection_info.password()
             }
         });
 
@@ -1236,7 +1232,7 @@ impl TerminalThread {
                     }
                 }
                 Err(e) => {
-                    return Err(format!("Modem read error: {}", e).into());
+                    return Err(format!("Modem read error: {e}").into());
                 }
             }
         }
@@ -1253,7 +1249,7 @@ impl TerminalThread {
                 Err(e) => {
                     error!("Connection read error: {e}");
                     self.disconnect().await;
-                    self.process_data(format!("\n\r{}", e).as_bytes()).await;
+                    self.process_data(format!("\n\r{e}").as_bytes()).await;
                     None
                 }
             }
@@ -1343,7 +1339,7 @@ impl TerminalThread {
                         let terminal_settings = ICITerminalSettings::default();
                         match complete_iemsi_handshake(conn, user_settings, &terminal_settings, 5000).await {
                             Ok(Some(isi)) => {
-                                println!("[IEMSI] Handshake successful, received ISI: {:?}", isi);
+                                println!("[IEMSI] Handshake successful, received ISI: {isi:?}");
                                 log::info!("[IEMSI] Login successful: {}", isi.name);
                                 let _ = self.event_tx.send(TerminalEvent::EmsiLogin(Box::new(isi)));
                                 // Clear scanner after login
@@ -1356,8 +1352,8 @@ impl TerminalThread {
                                 scanner.reset();
                             }
                             Err(e) => {
-                                println!("[IEMSI] Handshake error: {}", e);
-                                log::error!("[IEMSI] Handshake error: {}", e);
+                                println!("[IEMSI] Handshake error: {e}");
+                                log::error!("[IEMSI] Handshake error: {e}");
                                 scanner.reset();
                             }
                         }
@@ -1409,7 +1405,7 @@ impl TerminalThread {
 
             QueuedCommand::Skypix(SkypixCommand::CrcTransfer { mode, filename, .. }) => {
                 let file_name = if filename.is_empty() { None } else { Some(filename.clone()) };
-                log::info!("SkyPix CRC transfer initiated: mode={:?}, filename={:?}", mode, file_name);
+                log::info!("SkyPix CRC transfer initiated: mode={mode:?}, filename={file_name:?}");
                 self.send_event(TerminalEvent::AutoTransferTriggered("@xmodem".to_string(), true, file_name));
                 true
             }
@@ -1518,7 +1514,7 @@ impl TerminalThread {
                 true
             }
 
-            QueuedCommand::Igs(IgsCommand::Noise { .. }) | QueuedCommand::Igs(IgsCommand::LoadMidiBuffer { .. }) => true,
+            QueuedCommand::Igs(IgsCommand::Noise { .. } | IgsCommand::LoadMidiBuffer { .. }) => true,
 
             QueuedCommand::Music(music) => {
                 let _ = self.event_tx.send(TerminalEvent::PlayMusic(music.clone()));
@@ -1582,7 +1578,7 @@ impl TerminalThread {
                                 editable.terminal_state_mut().sixel_decoder = decoder;
                             }
                         }
-                        log::error!("Error loading sixel: {}", err);
+                        log::error!("Error loading sixel: {err}");
                     }
                 }
                 true
@@ -1601,8 +1597,15 @@ impl TerminalThread {
                         }
                     }
                     AskQuery::CurrentResolution => {
-                        let screen = self.edit_screen.lock();
-                        if let GraphicsType::IGS(mode) = screen.graphics_type() {
+                        let mode = {
+                            let screen = self.edit_screen.lock();
+                            if let GraphicsType::IGS(mode) = screen.graphics_type() {
+                                Some(mode)
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(mode) = mode {
                             if let Some(conn) = &mut self.connection {
                                 let _ = conn.send(format!("{}:", mode as u8).as_bytes()).await;
                             }
@@ -1737,12 +1740,7 @@ impl TerminalThread {
     async fn process_command_queue(&mut self) {
         const MAX_LOCK_DURATION_MS: u64 = 10;
         let mut had_updates = false;
-        loop {
-            // Get next command
-            let Some(cmd) = self.command_queue.pop_front() else {
-                break;
-            };
-
+        while let Some(cmd) = self.command_queue.pop_front() {
             // Try to process as async command first
             if self.try_process_async_command(&cmd).await {
                 continue;
@@ -1810,7 +1808,7 @@ impl TerminalThread {
 
         let Some(mut prot) = protocol.create(download_dir) else {
             self.send_event(TerminalEvent::Error(
-                format!("Upload failed."),
+                "Upload failed.".to_string(),
                 format!("Protocol '{}' not configured", protocol.id),
             ));
             return;
@@ -1838,16 +1836,16 @@ impl TerminalThread {
 
                     // Run the file transfer
                     if let Err(e) = self.run_file_transfer(prot.as_mut(), state).await {
-                        log::error!("Upload error: {}", e);
-                        self.send_event(TerminalEvent::Error(format!("Upload failed."), format!("{}", e)));
+                        log::error!("Upload error: {e}");
+                        self.send_event(TerminalEvent::Error("Upload failed.".to_string(), format!("{e}")));
                     }
                 }
             }
             Err(e) => {
                 if is_external {
-                    self.send_event(TerminalEvent::ExternalTransferCompleted(protocol_name, false, false, Some(format!("{}", e))));
+                    self.send_event(TerminalEvent::ExternalTransferCompleted(protocol_name, false, false, Some(format!("{e}"))));
                 } else {
-                    self.send_event(TerminalEvent::Error(format!("Upload failed."), format!("{}", e)));
+                    self.send_event(TerminalEvent::Error("Upload failed.".to_string(), format!("{e}")));
                 }
             }
         }
@@ -1860,7 +1858,7 @@ impl TerminalThread {
 
         let Some(mut prot) = protocol.create(download_dir) else {
             self.send_event(TerminalEvent::Error(
-                format!("Download failed."),
+                "Download failed.".to_string(),
                 format!("Protocol '{}' not configured", protocol.id),
             ));
             return;
@@ -1891,16 +1889,16 @@ impl TerminalThread {
 
                     // Run the file transfer
                     if let Err(e) = self.run_file_transfer(prot.as_mut(), state).await {
-                        log::error!("Download error: {}", e);
-                        self.send_event(TerminalEvent::Error(format!("Download failed."), format!("{}", e)));
+                        log::error!("Download error: {e}");
+                        self.send_event(TerminalEvent::Error("Download failed.".to_string(), format!("{e}")));
                     }
                 }
             }
             Err(e) => {
                 if is_external {
-                    self.send_event(TerminalEvent::ExternalTransferCompleted(protocol_name, true, false, Some(format!("{}", e))));
+                    self.send_event(TerminalEvent::ExternalTransferCompleted(protocol_name, true, false, Some(format!("{e}"))));
                 } else {
-                    self.send_event(TerminalEvent::Error(format!("Download failed."), format!("{}", e)));
+                    self.send_event(TerminalEvent::Error("Download failed.".to_string(), format!("{e}")));
                 }
             }
         }
@@ -1959,8 +1957,8 @@ impl TerminalThread {
 
         // Copy downloaded files to the download
         if let Err(e) = copy_downloaded_files(&mut transfer_state, self.download_directory.as_ref()) {
-            log::error!("Failed to copy downloaded files: {}", e);
-            self.send_event(TerminalEvent::Error("File copy failed".to_string(), format!("{}", e)));
+            log::error!("Failed to copy downloaded files: {e}");
+            self.send_event(TerminalEvent::Error("File copy failed".to_string(), format!("{e}")));
         }
 
         self.current_transfer = Some(transfer_state.clone());
@@ -1972,14 +1970,14 @@ impl TerminalThread {
 
     fn send_event(&mut self, evt: TerminalEvent) {
         if let Err(err) = self.event_tx.send(evt) {
-            log::error!("Failed to send terminal event: {}", err);
+            log::error!("Failed to send terminal event: {err}");
         }
     }
 
     async fn write_to_capture(&mut self, data: &[u8]) {
         if let Some(writer) = &mut self.capture_writer {
             if let Err(e) = writer.write(data).await {
-                log::error!("Failed to write to capture file: {}", e);
+                log::error!("Failed to write to capture file: {e}");
                 // Close the capture file on error
                 self.capture_writer = None;
             }
@@ -1987,6 +1985,7 @@ impl TerminalThread {
     }
 
     async fn handle_terminal_request(&mut self, request: TerminalRequest) {
+        use std::fmt::Write as _;
         let response: Option<Vec<u8>> = match &request {
             TerminalRequest::DeviceAttributes => {
                 // respond with IcyTerm as ASCII followed by the package version.
@@ -2005,7 +2004,7 @@ impl TerminalThread {
                 let patch: i32 = env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
                 let version = major * 100 + minor * 10 + patch;
                 let hardware_options = 1 | 4 | 8 | 128;
-                Some(format!("\x1b[>65;{};{}c", version, hardware_options).into_bytes())
+                Some(format!("\x1b[>65;{version};{hardware_options}c").into_bytes())
             }
             TerminalRequest::ExtendedDeviceAttributes => {
                 /*
@@ -2025,15 +2024,15 @@ impl TerminalThread {
             TerminalRequest::CursorPositionReport => {
                 let screen = self.edit_screen.lock();
                 let pos = screen.caret_position();
-                let y = pos.y.min(screen.height() as i32 - 1) + 1;
-                let x = pos.x.min(screen.width() as i32 - 1) + 1;
-                Some(format!("\x1B[{};{}R", y, x).into_bytes())
+                let y = pos.y.min(screen.height() - 1) + 1;
+                let x = pos.x.min(screen.width() - 1) + 1;
+                Some(format!("\x1B[{y};{x}R").into_bytes())
             }
             TerminalRequest::ScreenSizeReport => {
                 let screen = self.edit_screen.lock();
                 let height = screen.height();
                 let width = screen.width();
-                Some(format!("\x1B[{};{}R", height, width).into_bytes())
+                Some(format!("\x1B[{height};{width}R").into_bytes())
             }
             TerminalRequest::TextAreaPixelSizeReport => {
                 let screen = self.edit_screen.lock();
@@ -2050,14 +2049,14 @@ impl TerminalThread {
                 let font = screen.font_dimensions();
                 let width = screen.width() * font.width;
                 let height = screen.height() * font.height;
-                Some(format!("\x1B[?2;0;{};{}S", width, height).into_bytes())
+                Some(format!("\x1B[?2;0;{width};{height}S").into_bytes())
             }
             TerminalRequest::RequestStatusString(selector) => {
                 let screen = self.edit_screen.lock();
                 let status = decrqss_status(&**screen, selector);
                 let supported = u8::from(status.is_some());
                 let payload = status.unwrap_or_else(|| String::from_utf8_lossy(selector).into_owned());
-                Some(format!("\x1BP{}$r{}\x1B\\", supported, payload).into_bytes())
+                Some(format!("\x1BP{supported}$r{payload}\x1B\\").into_bytes())
             }
             TerminalRequest::JxlSupportReport => Some(b"\x1B[=1;1-n".to_vec()),
             TerminalRequest::KittyKeyboardQuery => {
@@ -2070,12 +2069,12 @@ impl TerminalThread {
                 match channel {
                     Some(channel) => {
                         let state = u8::from(status.is_active(*channel as u8));
-                        report.push_str(&format!(";{channel};{state}"));
+                        let _ = write!(report, ";{channel};{state}");
                     }
                     None => {
                         for channel in 0..audio_apc::CHANNELS as u8 {
                             if status.is_active(channel) {
-                                report.push_str(&format!(";{channel};1"));
+                                let _ = write!(report, ";{channel};1");
                             }
                         }
                     }
@@ -2153,7 +2152,7 @@ impl TerminalThread {
             } => {
                 let screen = self.edit_screen.lock();
                 let checksum = icy_engine::decrqcra_checksum(&**screen, *top as i32, *left as i32, *bottom as i32, *right as i32);
-                Some(format!("\x1BP{}!~{:04X}\x1B\\", id, checksum).into_bytes())
+                Some(format!("\x1BP{id}!~{checksum:04X}\x1B\\").into_bytes())
             }
             TerminalRequest::FontStateReport => {
                 let screen = self.edit_screen.lock();
@@ -2233,7 +2232,7 @@ impl TerminalThread {
                 Some(format!("\x1B[=3;{};{}n", dim.height, dim.width).into_bytes())
             }
             TerminalRequest::MacroSpaceReport => Some(b"\x1B[32767*{".to_vec()),
-            TerminalRequest::MemoryChecksumReport(pid, checksum) => Some(format!("\x1BP{}!~{:04X}\x1B\\", pid, checksum).into_bytes()),
+            TerminalRequest::MemoryChecksumReport(pid, checksum) => Some(format!("\x1BP{pid}!~{checksum:04X}\x1B\\").into_bytes()),
             TerminalRequest::RipRequestTerminalId => {
                 let screen = self.edit_screen.lock();
                 if screen.graphics_type() == GraphicsType::Rip {
@@ -2242,19 +2241,10 @@ impl TerminalThread {
                     None
                 }
             }
-            TerminalRequest::RipQueryFile(_) => {
-                // TODO
-                None
-            }
-            TerminalRequest::RipQueryFileSize(_) => {
-                // TODO
-                None
-            }
-            TerminalRequest::RipQueryFileDate(_) => {
-                // TODO
-                None
-            }
-            TerminalRequest::RipReadFile(_) => {
+            TerminalRequest::RipQueryFile(_)
+            | TerminalRequest::RipQueryFileSize(_)
+            | TerminalRequest::RipQueryFileDate(_)
+            | TerminalRequest::RipReadFile(_) => {
                 // TODO
                 None
             }
@@ -2379,6 +2369,174 @@ impl TerminalThread {
     }
 }
 
+// Helper function to create a terminal thread for the UI
+pub fn create_terminal_thread(
+    edit_screen: Arc<Mutex<Box<dyn Screen>>>,
+    address_book: Arc<Mutex<crate::data::AddressBook>>,
+) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
+    let parser = icy_parser_core::AnsiParser::new();
+
+    TerminalThread::spawn(edit_screen, Box::new(parser), address_book)
+}
+
+fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Option<&PathBuf>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let upload_location = if let Some(dir) = download_dir {
+        dir.clone()
+    } else if let Some(dirs) = UserDirs::new() {
+        if let Some(default_dir) = dirs.download_dir() {
+            default_dir.to_path_buf()
+        } else {
+            return Err("Failed to get user download directory".into());
+        }
+    } else {
+        return Err("Failed to get user directories".into());
+    };
+
+    let mut lines = Vec::new();
+    for (name, path) in &transfer_state.recieve_state.finished_files {
+        let mut dest = upload_location.join(name);
+
+        if dest.exists() {
+            let new_name = PathBuf::from(name);
+            let stem = new_name.file_stem().map_or_else(|| "download".to_string(), |s| s.to_string_lossy().to_string());
+            let ext = new_name.extension().map(|e| e.to_string_lossy().to_string());
+
+            let mut i = 1;
+            loop {
+                let new_file_name = if let Some(ref e) = ext {
+                    format!("{stem}.{i}.{e}")
+                } else {
+                    format!("{stem}.{i}")
+                };
+                dest = upload_location.join(&new_file_name);
+                if !dest.exists() {
+                    break;
+                }
+                i += 1;
+            }
+        }
+        std::fs::copy(path, &dest)?;
+        std::fs::remove_file(path)?;
+        lines.push(format!("File copied to: {}", dest.display()));
+    }
+    for line in lines {
+        transfer_state.recieve_state.log_info(line);
+    }
+
+    Ok(())
+}
+
+impl TerminalThread {
+    /// Start running a Lua script from file
+    fn run_script(&mut self, path: PathBuf) {
+        // Stop any existing script
+        self.stop_script();
+
+        // Create a new script runner
+        let mut runner = ScriptRunner::new(
+            self.edit_screen.clone(),
+            self.command_tx.clone(),
+            self.event_tx.clone(),
+            self.address_book.clone(),
+            self.terminal_emulation.clone(),
+        );
+
+        match runner.run_file(&path) {
+            Ok(()) => {
+                self.send_event(TerminalEvent::ScriptStarted(path));
+                self.script_runner = Some(runner);
+            }
+            Err(e) => {
+                self.send_event(TerminalEvent::ScriptFinished(Err(e)));
+            }
+        }
+    }
+
+    /// Start running Lua script code directly (from string)
+    fn run_script_code(&mut self, code: String) {
+        // Stop any existing script
+        self.stop_script();
+
+        // Create a new script runner
+        let mut runner = ScriptRunner::new(
+            self.edit_screen.clone(),
+            self.command_tx.clone(),
+            self.event_tx.clone(),
+            self.address_book.clone(),
+            self.terminal_emulation.clone(),
+        );
+
+        match runner.run_script(code) {
+            Ok(()) => {
+                // Use a placeholder path for code-based scripts
+                self.send_event(TerminalEvent::ScriptStarted(PathBuf::from("<mcp_script>")));
+                self.script_runner = Some(runner);
+            }
+            Err(e) => {
+                self.send_event(TerminalEvent::ScriptFinished(Err(e)));
+            }
+        }
+    }
+
+    /// Stop the currently running script
+    fn stop_script(&mut self) {
+        if let Some(mut runner) = self.script_runner.take() {
+            runner.stop();
+            self.send_event(TerminalEvent::ScriptFinished(Ok(())));
+        }
+    }
+
+    /// Check if a script finished and send event
+    fn check_script_finished(&mut self) {
+        if let Some(runner) = &mut self.script_runner {
+            if let Some(result) = runner.get_result() {
+                let event = match result {
+                    crate::scripting::ScriptResult::Success | crate::scripting::ScriptResult::Stopped => TerminalEvent::ScriptFinished(Ok(())),
+                    crate::scripting::ScriptResult::Error(e) => TerminalEvent::ScriptFinished(Err(e)),
+                };
+                self.send_event(event);
+                self.script_runner = None;
+            }
+        }
+    }
+
+    /// Set terminal settings (terminal type, screen mode, ansi music) during session
+    /// This reinitializes the screen and parser similar to `connect()`
+    fn set_terminal_settings(&mut self, terminal_type: TerminalEmulation, screen_mode: ScreenMode, ansi_music: MusicOption) {
+        self.use_utf8 = terminal_type == TerminalEmulation::Utf8Ansi;
+        let screen_mode = normalize_screen_mode(terminal_type, screen_mode);
+        let lf_expand = self.edit_screen.lock().terminal_state().lf_expand;
+
+        // Create new screen and parser for the new terminal type
+        let (mut new_screen, parser) = screen_mode.create_screen(terminal_type, Some(CreationOptions { ansi_music }));
+        new_screen.terminal_state_mut().lf_expand = lf_expand;
+
+        // Use a default scrollback buffer size
+        new_screen.set_scrollback_buffer_size(10000);
+        new_screen.mark_dirty();
+
+        // Replace screen and parser
+        {
+            let mut screen = self.edit_screen.lock();
+            *screen = new_screen;
+        }
+        self.parser = parser;
+
+        // Request UI redraw
+        self.send_event(TerminalEvent::RequestRedraw);
+
+        // Update terminal emulation for scripting
+        *self.terminal_emulation.lock() = terminal_type;
+
+        // Notify UI of the change
+        self.send_event(TerminalEvent::TerminalSettingsChanged {
+            terminal_type,
+            screen_mode,
+            ansi_music,
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -2418,7 +2576,9 @@ mod tests {
         }
     }
 
-    fn test_terminal() -> (TerminalThread, Arc<Mutex<Vec<u8>>>, Arc<Mutex<Box<dyn Screen>>>) {
+    type TestTerminal = (TerminalThread, Arc<Mutex<Vec<u8>>>, Arc<Mutex<Box<dyn Screen>>>);
+
+    fn test_terminal() -> TestTerminal {
         let screen: Arc<Mutex<Box<dyn Screen>>> = Arc::new(Mutex::new(Box::new(TextScreen::new(Size::new(80, 25)))));
         let sent = Arc::new(Mutex::new(Vec::new()));
         let connection = FakeConnection { sent: sent.clone() };
@@ -2667,177 +2827,5 @@ mod tests {
         assert!(read_cached_media(&root, "missing.jxl").await.is_none());
 
         tokio::fs::remove_dir_all(root).await.unwrap();
-    }
-}
-
-// Helper function to create a terminal thread for the UI
-pub fn create_terminal_thread(
-    edit_screen: Arc<Mutex<Box<dyn Screen>>>,
-    address_book: Arc<Mutex<crate::data::AddressBook>>,
-) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
-    let parser = icy_parser_core::AnsiParser::new();
-
-    TerminalThread::spawn(edit_screen, Box::new(parser), address_book)
-}
-
-fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Option<&PathBuf>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let upload_location = if let Some(dir) = download_dir {
-        dir.clone()
-    } else if let Some(dirs) = UserDirs::new() {
-        if let Some(default_dir) = dirs.download_dir() {
-            default_dir.to_path_buf()
-        } else {
-            return Err("Failed to get user download directory".into());
-        }
-    } else {
-        return Err("Failed to get user directories".into());
-    };
-
-    let mut lines = Vec::new();
-    for (name, path) in &transfer_state.recieve_state.finished_files {
-        let mut dest = upload_location.join(name);
-
-        if dest.exists() {
-            let new_name = PathBuf::from(name);
-            let stem = new_name
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "download".to_string());
-            let ext = new_name.extension().map(|e| e.to_string_lossy().to_string());
-
-            let mut i = 1;
-            loop {
-                let new_file_name = if let Some(ref e) = ext {
-                    format!("{}.{}.{}", stem, i, e)
-                } else {
-                    format!("{}.{}", stem, i)
-                };
-                dest = upload_location.join(&new_file_name);
-                if !dest.exists() {
-                    break;
-                }
-                i += 1;
-            }
-        }
-        std::fs::copy(&path, &dest)?;
-        std::fs::remove_file(&path)?;
-        lines.push(format!("File copied to: {}", dest.display()));
-    }
-    for line in lines {
-        transfer_state.recieve_state.log_info(line);
-    }
-
-    Ok(())
-}
-
-impl TerminalThread {
-    /// Start running a Lua script from file
-    fn run_script(&mut self, path: PathBuf) {
-        // Stop any existing script
-        self.stop_script();
-
-        // Create a new script runner
-        let mut runner = ScriptRunner::new(
-            self.edit_screen.clone(),
-            self.command_tx.clone(),
-            self.event_tx.clone(),
-            self.address_book.clone(),
-            self.terminal_emulation.clone(),
-        );
-
-        match runner.run_file(&path) {
-            Ok(()) => {
-                self.send_event(TerminalEvent::ScriptStarted(path));
-                self.script_runner = Some(runner);
-            }
-            Err(e) => {
-                self.send_event(TerminalEvent::ScriptFinished(Err(e)));
-            }
-        }
-    }
-
-    /// Start running Lua script code directly (from string)
-    fn run_script_code(&mut self, code: String) {
-        // Stop any existing script
-        self.stop_script();
-
-        // Create a new script runner
-        let mut runner = ScriptRunner::new(
-            self.edit_screen.clone(),
-            self.command_tx.clone(),
-            self.event_tx.clone(),
-            self.address_book.clone(),
-            self.terminal_emulation.clone(),
-        );
-
-        match runner.run_script(code) {
-            Ok(()) => {
-                // Use a placeholder path for code-based scripts
-                self.send_event(TerminalEvent::ScriptStarted(PathBuf::from("<mcp_script>")));
-                self.script_runner = Some(runner);
-            }
-            Err(e) => {
-                self.send_event(TerminalEvent::ScriptFinished(Err(e)));
-            }
-        }
-    }
-
-    /// Stop the currently running script
-    fn stop_script(&mut self) {
-        if let Some(mut runner) = self.script_runner.take() {
-            runner.stop();
-            self.send_event(TerminalEvent::ScriptFinished(Ok(())));
-        }
-    }
-
-    /// Check if a script finished and send event
-    fn check_script_finished(&mut self) {
-        if let Some(runner) = &mut self.script_runner {
-            if let Some(result) = runner.get_result() {
-                let event = match result {
-                    crate::scripting::ScriptResult::Success => TerminalEvent::ScriptFinished(Ok(())),
-                    crate::scripting::ScriptResult::Error(e) => TerminalEvent::ScriptFinished(Err(e)),
-                    crate::scripting::ScriptResult::Stopped => TerminalEvent::ScriptFinished(Ok(())),
-                };
-                self.send_event(event);
-                self.script_runner = None;
-            }
-        }
-    }
-
-    /// Set terminal settings (terminal type, screen mode, ansi music) during session
-    /// This reinitializes the screen and parser similar to connect()
-    async fn set_terminal_settings(&mut self, terminal_type: TerminalEmulation, screen_mode: ScreenMode, ansi_music: MusicOption) {
-        self.use_utf8 = terminal_type == TerminalEmulation::Utf8Ansi;
-        let screen_mode = normalize_screen_mode(terminal_type, screen_mode);
-        let lf_expand = self.edit_screen.lock().terminal_state().lf_expand;
-
-        // Create new screen and parser for the new terminal type
-        let (mut new_screen, parser) = screen_mode.create_screen(terminal_type, Some(CreationOptions { ansi_music }));
-        new_screen.terminal_state_mut().lf_expand = lf_expand;
-
-        // Use a default scrollback buffer size
-        new_screen.set_scrollback_buffer_size(10000);
-        new_screen.mark_dirty();
-
-        // Replace screen and parser
-        {
-            let mut screen = self.edit_screen.lock();
-            *screen = new_screen;
-        }
-        self.parser = parser;
-
-        // Request UI redraw
-        self.send_event(TerminalEvent::RequestRedraw);
-
-        // Update terminal emulation for scripting
-        *self.terminal_emulation.lock() = terminal_type;
-
-        // Notify UI of the change
-        self.send_event(TerminalEvent::TerminalSettingsChanged {
-            terminal_type,
-            screen_mode,
-            ansi_music,
-        });
     }
 }

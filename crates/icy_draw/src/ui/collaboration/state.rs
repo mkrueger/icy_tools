@@ -205,7 +205,7 @@ impl CollaborationState {
         // Therefore, the UI must show our own messages locally on send.
         if let (Some(id), Some(nick)) = (self.core.our_user_id, self.nick.as_ref()) {
             let group = self.group.clone().unwrap_or_default();
-            let time = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+            let time = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
             self.core.add_chat_message(ChatMessage {
                 id,
                 nick: nick.clone(),
@@ -305,11 +305,11 @@ impl CollaborationState {
 
     /// Synchronize with the undo stack and send pending operations to the server.
     ///
-    /// This method tracks a sync_pointer into the undo stack. When called:
-    /// - If undo_stack.len() > sync_pointer: new operations were pushed (redo direction)
-    ///   -> collect redo_client_commands for ops [sync_pointer..len]
-    /// - If undo_stack.len() < sync_pointer: operations were undone
-    ///   -> collect undo_client_commands for ops that moved to redo stack
+    /// This method tracks a `sync_pointer` into the undo stack. When called:
+    /// - If `undo_stack.len()` > `sync_pointer`: new operations were pushed (redo direction)
+    ///   -> collect `redo_client_commands` for ops [`sync_pointer..len`]
+    /// - If `undo_stack.len()` < `sync_pointer`: operations were undone
+    ///   -> collect `undo_client_commands` for ops that moved to redo stack
     ///
     /// Also syncs cursor position and selection state.
     ///

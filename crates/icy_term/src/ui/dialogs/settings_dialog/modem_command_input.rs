@@ -5,19 +5,19 @@ use icy_ui::{
     Alignment, Element, Length,
 };
 
-/// Creates a row with a label, text input for ModemCommand editing, and error indicator (generic version).
+/// Creates a row with a label, text input for `ModemCommand` editing, and error indicator (generic version).
 ///
-/// The input displays the ModemCommand as a string and validates input in real-time.
+/// The input displays the `ModemCommand` as a string and validates input in real-time.
 /// If the input is invalid, an error icon with tooltip is shown.
 ///
 /// # Arguments
 /// * `label` - The label text for the input field
 /// * `placeholder` - Placeholder text shown when empty (e.g., "ATZ^M")
-/// * `current_value` - The current ModemCommand value (used for display)
+/// * `current_value` - The current `ModemCommand` value (used for display)
 /// * `on_change` - Callback function that receives the new string value
 ///
 /// # Note
-/// This input only updates the stored value when the input is a valid ModemCommand.
+/// This input only updates the stored value when the input is a valid `ModemCommand`.
 /// The error indicator shows parsing errors for the currently displayed value.
 ///
 /// # Returns
@@ -39,11 +39,11 @@ pub fn modem_command_input_generic<'a, M: Clone + 'static>(
         .width(Length::Fill)
         .size(TEXT_SIZE_NORMAL);
 
-    let error_element: Element<'a, M> = if !is_valid {
+    let error_element: Element<'a, M> = if is_valid {
+        Space::new().width(0).into()
+    } else {
         let error_text = format_validation_error(&validation_result);
         row![Space::new().width(4), error_tooltip(error_text),].into()
-    } else {
-        Space::new().width(0).into()
     };
 
     row![left_label_small(label), input, error_element,]
@@ -52,7 +52,7 @@ pub fn modem_command_input_generic<'a, M: Clone + 'static>(
         .into()
 }
 
-/// Creates a row with a label, text input for ModemCommand editing with an explicit display string.
+/// Creates a row with a label, text input for `ModemCommand` editing with an explicit display string.
 ///
 /// This version allows showing a different value than what's stored, useful for:
 /// - Showing user input that hasn't been validated yet
@@ -81,11 +81,11 @@ pub fn modem_command_input_with_string<'a, Message: Clone + 'static>(
         .width(Length::Fill)
         .size(TEXT_SIZE_NORMAL);
 
-    let error_element: Element<'a, Message> = if !is_valid {
+    let error_element: Element<'a, Message> = if is_valid {
+        Space::new().width(0).into()
+    } else {
         let error_text = format_validation_error(&validation_result);
         row![Space::new().width(4), error_tooltip(error_text),].into()
-    } else {
-        Space::new().width(0).into()
     };
 
     row![left_label_small(label), input, error_element,]
@@ -109,14 +109,14 @@ pub fn modem_command_input_inline<'a, Message: Clone + 'static>(
         .width(Length::Fill)
         .size(TEXT_SIZE_NORMAL);
 
-    if !is_valid {
+    if is_valid {
+        input.into()
+    } else {
         let error_text = format_validation_error(&validation_result);
         row![input, Space::new().width(4), error_tooltip(error_text),]
             .spacing(DIALOG_SPACING)
             .align_y(Alignment::Center)
             .into()
-    } else {
-        input.into()
     }
 }
 
@@ -127,22 +127,23 @@ fn format_validation_error(result: &icy_net::modem::ModemCommandValidationResult
     match result {
         ModemCommandValidationResult::Valid => String::new(),
         ModemCommandValidationResult::InvalidControlSequence { char, position } => {
-            format!("Invalid control sequence '^{}' at position {}", char, position)
+            format!("Invalid control sequence '^{char}' at position {position}")
         }
         ModemCommandValidationResult::IncompleteControlSequence { position } => {
-            format!("Incomplete control sequence at position {}", position)
+            format!("Incomplete control sequence at position {position}")
         }
         ModemCommandValidationResult::InvalidCharacter { char, position } => {
-            format!("Invalid character '{}' at position {}", char, position)
+            format!("Invalid character '{char}' at position {position}")
         }
         ModemCommandValidationResult::InvalidHexSequence { position } => {
-            format!("Invalid hex sequence at position {}", position)
+            format!("Invalid hex sequence at position {position}")
         }
     }
 }
 
 /// Validates a modem command string and returns an error message if invalid.
 /// Returns `None` if the string is valid, `Some(error_message)` otherwise.
+#[must_use]
 pub fn validate_modem_command(input: &str) -> Option<String> {
     let result = ModemCommand::validate(input);
     if result.is_valid() {
@@ -152,8 +153,9 @@ pub fn validate_modem_command(input: &str) -> Option<String> {
     }
 }
 
-/// Updates a ModemCommand from a string value, returning the updated command.
+/// Updates a `ModemCommand` from a string value, returning the updated command.
 /// If parsing fails, returns the previous value unchanged.
+#[must_use]
 pub fn update_modem_command(current: &ModemCommand, new_value: &str) -> ModemCommand {
     new_value.parse().unwrap_or_else(|_| current.clone())
 }

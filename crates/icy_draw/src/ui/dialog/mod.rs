@@ -1,4 +1,4 @@
-//! Global dialogs for icy_draw
+//! Global dialogs for `icy_draw`
 //!
 //! Contains dialogs that are not editor-specific:
 //! - `new_file` - New file dialog

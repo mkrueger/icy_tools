@@ -105,7 +105,7 @@ impl BitFontClipboardData {
         }
 
         // Calculate expected byte count per row
-        let bytes_per_row = (width as usize + 7) / 8;
+        let bytes_per_row = (width as usize).div_ceil(8);
         let expected_data_len = 2 + bytes_per_row * height as usize;
 
         if data.len() < expected_data_len {

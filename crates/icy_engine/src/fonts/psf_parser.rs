@@ -625,10 +625,10 @@ mod tests {
         for (codepoint, expected_len) in test_cases {
             let mut data = Vec::new();
             PsfFont::write_utf8_codepoint(&mut data, codepoint);
-            assert_eq!(data.len(), expected_len, "Wrong length for U+{:04X}", codepoint);
+            assert_eq!(data.len(), expected_len, "Wrong length for U+{codepoint:04X}");
 
             let (decoded, len) = PsfFont::parse_utf8_char(&data).unwrap();
-            assert_eq!(decoded, codepoint, "Roundtrip failed for U+{:04X}", codepoint);
+            assert_eq!(decoded, codepoint, "Roundtrip failed for U+{codepoint:04X}");
             assert_eq!(len, expected_len);
         }
     }
@@ -669,7 +669,7 @@ mod tests {
         assert_eq!(font.glyph_count(), 512);
 
         // Check glyph 300 has the right pattern
-        assert_eq!(font.glyphs[300].get_row(0), (300 & 0xFF) as u8);
+        assert_eq!(font.glyphs[300].get_row(0), (0x012c & 0xFF) as u8);
     }
 
     #[test]
@@ -699,7 +699,7 @@ mod tests {
         assert_eq!(font.glyph_count(), 400);
 
         // Check glyph 350 has the right pattern
-        assert_eq!(font.glyphs[350].get_row(0), (350 & 0xFF) as u8);
+        assert_eq!(font.glyphs[350].get_row(0), (0x015e & 0xFF) as u8);
     }
 
     #[test]
@@ -724,7 +724,7 @@ mod tests {
 
         // Verify glyph patterns
         for i in 0..512 {
-            assert!(loaded.glyphs[i].get_pixel(i % 8, 0), "Glyph {} pixel mismatch", i);
+            assert!(loaded.glyphs[i].get_pixel(i % 8, 0), "Glyph {i} pixel mismatch");
         }
 
         // Check unicode mapping

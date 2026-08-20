@@ -15,7 +15,7 @@ use crate::{
 
 pub type SenderType<T> = Arc<Mutex<Option<oneshot::Sender<T>>>>;
 
-/// Result type for script execution: Ok(output) or Err(error_message)
+/// Result type for script execution: Ok(output) or `Err(error_message)`
 pub type ScriptResult = Result<String, String>;
 
 #[derive(Debug)]

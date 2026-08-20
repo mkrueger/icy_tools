@@ -9,7 +9,7 @@
 //! - Tools receive raw `icy_ui::Event` (keyboard/window) and `TerminalMessage` (mouse)
 //! - `ToolResult`: Results from tool operations (redraw, commit, switch tool, etc.)
 //! - `ToolMessage`: Centralized enum for all tool-specific UI messages
-//! - `ToolContext`: Mutable context passed to tools (EditState, resources, etc.)
+//! - `ToolContext`: Mutable context passed to tools (`EditState`, resources, etc.)
 //!
 //! # Example
 //!
@@ -197,22 +197,22 @@ impl ToolResult {
         }
     }
 
-    /// Returns true if this result contains a Redraw, StartCapture, or anything
+    /// Returns true if this result contains a Redraw, `StartCapture`, or anything
     /// that indicates the overlay should be updated.
     pub fn needs_redraw(&self) -> bool {
         match self {
             ToolResult::Redraw | ToolResult::RedrawSelectionRect | ToolResult::StartCapture | ToolResult::EndCapture | ToolResult::Commit(_) => true,
-            ToolResult::Multi(results) => results.iter().any(|r| r.needs_redraw()),
+            ToolResult::Multi(results) => results.iter().any(ToolResult::needs_redraw),
             _ => false,
         }
     }
 
     /// Returns true if this result requires a full selection mask update.
-    /// RedrawSelectionRect only updates the rect, not the mask.
+    /// `RedrawSelectionRect` only updates the rect, not the mask.
     pub fn needs_selection_mask_update(&self) -> bool {
         match self {
             ToolResult::Redraw | ToolResult::Commit(_) => true,
-            ToolResult::Multi(results) => results.iter().any(|r| r.needs_selection_mask_update()),
+            ToolResult::Multi(results) => results.iter().any(ToolResult::needs_selection_mask_update),
             _ => false,
         }
     }
@@ -423,11 +423,11 @@ pub struct ToolContext<'a> {
     /// Shared UI/editor options (read-mostly, may be updated by some tools)
     pub options: Option<&'a Arc<RwLock<Settings>>>,
     /// Atomic undo guard for multi-step operations
-    /// Set by tool during MouseDown, cleared on MouseUp/Commit
+    /// Set by tool during `MouseDown`, cleared on MouseUp/Commit
     pub undo_guard: &'a mut Option<AtomicUndoGuard>,
 
     /// Optional pixel→half-block mapper (layer-local).
-    /// Used by tools that need 2x Y resolution (e.g. HalfBlock fill/paint).
+    /// Used by tools that need 2x Y resolution (e.g. `HalfBlock` fill/paint).
     pub half_block_mapper: Option<HalfBlockMapper>,
 }
 
@@ -477,7 +477,7 @@ fn current_layer_max_pos(ctx: &mut ToolContext) -> Option<Position> {
 }
 
 impl NavResult {
-    /// Convert to ToolResult
+    /// Convert to `ToolResult`
     pub fn to_tool_result(self) -> ToolResult {
         match self {
             NavResult::NotHandled => ToolResult::None,
@@ -680,16 +680,16 @@ impl SelectionMouseState {
         let current_selection = ctx.state.selection();
         let hit = hit_test_selection(current_selection, pos);
 
-        if hit != SelectionDrag::None {
-            // Start move/resize of existing selection
-            self.selection_drag = hit;
-            self.selection_start_rect = current_selection.map(|s| s.as_rectangle());
-        } else {
+        if hit == SelectionDrag::None {
             // Start new selection + position caret
             let _ = ctx.state.clear_selection();
             ctx.state.set_caret_from_document_position(pos);
             self.selection_drag = SelectionDrag::Create;
             self.selection_start_rect = None;
+        } else {
+            // Start move/resize of existing selection
+            self.selection_drag = hit;
+            self.selection_start_rect = current_selection.map(|s| s.as_rectangle());
         }
 
         self.selection_start_pos = Some(pos);
@@ -871,7 +871,7 @@ pub trait ToolHandler: Send + Sync {
     /// Check if this tool handler also handles the given tool variant.
     ///
     /// This is used to avoid registry swaps when switching between variants
-    /// of the same handler (e.g., switching from Line to Rectangle within ShapeTool).
+    /// of the same handler (e.g., switching from Line to Rectangle within `ShapeTool`).
     /// Default: false (most tools handle only one variant).
     fn is_same_handler(&self, _other: Tool) -> bool {
         false

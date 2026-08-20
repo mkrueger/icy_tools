@@ -35,7 +35,14 @@ pub struct DialogState {
     last_selected_pos: Option<Position>,
 }
 
+impl Default for DialogState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DialogState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             pattern: String::new(),
@@ -52,7 +59,7 @@ impl DialogState {
     pub fn update(&mut self, msg: FindDialogMsg, edit_screen: Arc<Mutex<Box<dyn Screen>>>) -> Option<Message> {
         match msg {
             FindDialogMsg::ChangePattern(pattern) => {
-                self.pattern = pattern.clone();
+                self.pattern.clone_from(&pattern);
 
                 // Clear selection if pattern is empty
                 if self.pattern.is_empty() {
@@ -328,7 +335,9 @@ impl DialogState {
         };
 
         let results_label = if self.results.is_empty() {
-            if !self.pattern.is_empty() {
+            if self.pattern.is_empty() {
+                row![text("").size(TEXT_SIZE_SMALL)]
+            } else {
                 row![
                     text("⚠").size(TEXT_SIZE_NORMAL).color(Color::from_rgb(0.8, 0.2, 0.2)),
                     text(fl!(crate::LANGUAGE_LOADER, "terminal-find-no-results"))
@@ -336,8 +345,6 @@ impl DialogState {
                         .color(Color::from_rgb(0.8, 0.2, 0.2))
                 ]
                 .spacing(4)
-            } else {
-                row![text("").size(TEXT_SIZE_SMALL)]
             }
         } else {
             row![

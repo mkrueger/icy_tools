@@ -1,7 +1,7 @@
 //! Line Numbers Overlay Widget
 //!
 //! Renders row numbers on the left/right and column numbers on top/bottom of the canvas.
-//! Uses display_scale from RenderInfo for correct zoom (works with Auto and Manual modes).
+//! Uses `display_scale` from `RenderInfo` for correct zoom (works with Auto and Manual modes).
 //! Draws as an overlay on top of the terminal widget.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
@@ -11,10 +11,10 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Create line numbers overlay that draws on top of the terminal
-/// Uses RenderInfo.display_scale for the actual zoom factor (works with Auto/Manual modes)
+/// Uses `RenderInfo.display_scale` for the actual zoom factor (works with Auto/Manual modes)
 ///
 /// If `selection_range` is Some, it highlights the selection range instead of the caret position.
-/// The selection_range is (min_col, min_row, max_col, max_row).
+/// The `selection_range` is (`min_col`, `min_row`, `max_col`, `max_row`).
 pub fn line_numbers_overlay(
     render_info: Arc<RwLock<RenderInfo>>,
     buffer_width: usize,
@@ -181,7 +181,7 @@ impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
                     color,
                     size: icy_ui::Pixels(line_number_font_size),
                     align_x: icy_ui::alignment::Horizontal::Center.into(),
-                    align_y: icy_ui::alignment::Vertical::Bottom.into(),
+                    align_y: icy_ui::alignment::Vertical::Bottom,
                     ..Default::default()
                 });
             }
@@ -195,7 +195,7 @@ impl<Message> canvas::Program<Message> for LineNumbersOverlayState {
                     color,
                     size: icy_ui::Pixels(line_number_font_size),
                     align_x: icy_ui::alignment::Horizontal::Center.into(),
-                    align_y: icy_ui::alignment::Vertical::Top.into(),
+                    align_y: icy_ui::alignment::Vertical::Top,
                     ..Default::default()
                 });
             }

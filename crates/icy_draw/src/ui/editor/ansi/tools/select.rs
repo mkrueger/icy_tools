@@ -16,6 +16,7 @@ use icy_engine_edit::tools::Tool;
 use icy_engine_edit::AtomicUndoGuard;
 
 /// Select tool state
+#[derive(Default)]
 pub struct SelectTool {
     selection_mode: SelectionMode,
     selection_mode_control: ShaderSegmentedControl,
@@ -34,23 +35,6 @@ pub struct SelectTool {
     modifier: SelectionModifier,
     /// Atomic undo guard for selection drag operations
     selection_undo: Option<AtomicUndoGuard>,
-}
-
-impl Default for SelectTool {
-    fn default() -> Self {
-        Self {
-            selection_mode: SelectionMode::default(),
-            selection_mode_control: ShaderSegmentedControl::new(),
-            drag_mode: SelectionDrag::default(),
-            hover_drag: SelectionDrag::default(),
-            start_pos: None,
-            current_pos: None,
-            start_selection: None,
-            is_dragging: false,
-            modifier: SelectionModifier::default(),
-            selection_undo: None,
-        }
-    }
 }
 
 impl SelectTool {
@@ -189,23 +173,23 @@ impl ToolHandler for SelectTool {
                 let current_rect = current_selection.map(|s| s.as_rectangle());
 
                 // In Add/Remove mode, commit current selection to mask and start fresh
-                if self.modifier != SelectionModifier::Replace {
+                if self.modifier == SelectionModifier::Replace {
+                    // Replace mode - check for move/resize of existing selection
+                    let _ = ctx.state.clear_selection_mask();
+                    let hit = hit_test_selection(current_selection, pos);
+                    if hit == SelectionDrag::None {
+                        self.drag_mode = SelectionDrag::Create;
+                        self.start_selection = None;
+                        let _ = ctx.state.clear_selection();
+                    } else {
+                        self.drag_mode = hit;
+                        self.start_selection = current_rect;
+                    }
+                } else {
                     let _ = ctx.state.add_selection_to_mask();
                     let _ = ctx.state.deselect();
                     self.drag_mode = SelectionDrag::Create;
                     self.start_selection = None;
-                } else {
-                    // Replace mode - check for move/resize of existing selection
-                    let _ = ctx.state.clear_selection_mask();
-                    let hit = hit_test_selection(current_selection, pos);
-                    if hit != SelectionDrag::None {
-                        self.drag_mode = hit;
-                        self.start_selection = current_rect;
-                    } else {
-                        self.drag_mode = SelectionDrag::Create;
-                        self.start_selection = None;
-                        let _ = ctx.state.clear_selection();
-                    }
                 }
 
                 self.start_pos = Some(pos);

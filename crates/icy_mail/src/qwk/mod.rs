@@ -43,6 +43,7 @@ pub struct MessageInfo {
 }
 
 /// Strips any number of leading `Re:` / `Re[2]:` / `Fwd:` prefixes and lowercases the rest.
+#[must_use]
 pub fn normalize_subject(subject: &str) -> String {
     let mut rest = subject.trim();
     loop {
@@ -133,7 +134,7 @@ impl QwkPackage {
         let control_data = control_dat.ok_or("CONTROL.DAT not found in archive")?;
 
         // Parse CONTROL.DAT
-        let control_file = ControlDat::read(&control_data).map_err(|e| format!("Failed to parse CONTROL.DAT: {:?}", e))?;
+        let control_file = ControlDat::read(&control_data).map_err(|e| format!("Failed to parse CONTROL.DAT: {e:?}"))?;
 
         // Use BBS name from control file if we don't have one yet
         if !control_file.bbs_name.is_empty() && bbs_id.is_empty() {
@@ -142,7 +143,7 @@ impl QwkPackage {
 
         // Parse just the headers, not full messages
         let messages_data = messages_dat.ok_or("MESSAGES.DAT not found in archive")?;
-        let headers = Self::parse_headers(&messages_data)?;
+        let headers = Self::parse_headers(&messages_data);
         let messages_data = Arc::new(messages_data);
 
         // Use filename as fallback for BBS name
@@ -210,10 +211,10 @@ impl QwkPackage {
             .collect()
     }
 
-    fn parse_headers(data: &[u8]) -> Res<Vec<MessageDescriptor>> {
+    fn parse_headers(data: &[u8]) -> Vec<MessageDescriptor> {
+        const HEADER_SIZE: usize = 128;
         let _timer = crate::perf::Timer::new("qwk::parse_headers");
         let mut headers = Vec::with_capacity(data.len() / 256); // Pre-allocate estimated capacity
-        const HEADER_SIZE: usize = 128;
 
         let mut pos = HEADER_SIZE; // Skip packet header
 
@@ -243,7 +244,7 @@ impl QwkPackage {
             pos += HEADER_SIZE * block_count as usize;
         }
 
-        Ok(headers)
+        headers
     }
 
     /// Load a specific message on demand with caching
@@ -269,14 +270,14 @@ impl QwkPackage {
 
         // Store in cache
         {
-            let mut cache = self.message_cache.lock().unwrap();
-
             // Optional: Limit cache size to prevent excessive memory usage
             const MAX_CACHE_SIZE: usize = 1000;
+            let mut cache = self.message_cache.lock().unwrap();
+
             if cache.len() >= MAX_CACHE_SIZE {
                 // Remove oldest entries (simple FIFO for now)
                 // In production, you might want LRU eviction
-                let keys_to_remove: Vec<usize> = cache.keys().take(cache.len() - MAX_CACHE_SIZE / 2).cloned().collect();
+                let keys_to_remove: Vec<usize> = cache.keys().take(cache.len() - MAX_CACHE_SIZE / 2).copied().collect();
                 for key in keys_to_remove {
                     cache.remove(&key);
                 }
@@ -295,16 +296,19 @@ impl QwkPackage {
     }
 
     /// Get cache statistics (for debugging/monitoring)
+    #[must_use]
     pub fn cache_stats(&self) -> (usize, usize) {
         let cache = self.message_cache.lock().unwrap();
         (cache.len(), self.descriptors.len())
     }
 
+    #[must_use]
     pub fn message_count(&self) -> usize {
         self.descriptors.len()
     }
 
     /// Conferences that actually carry messages, as `(number, name, message count)`.
+    #[must_use]
     pub fn conferences(&self) -> Vec<(u16, String, usize)> {
         let mut counts: HashMap<u16, usize> = HashMap::new();
         for info in &self.infos {
@@ -341,5 +345,5 @@ fn parse_qwk_number(data: &[u8]) -> Result<u32, Box<dyn Error>> {
     }
 
     // Parse directly from bytes
-    std::str::from_utf8(trimmed)?.parse::<u32>().map_err(|e| e.into())
+    std::str::from_utf8(trimmed)?.parse::<u32>().map_err(std::convert::Into::into)
 }

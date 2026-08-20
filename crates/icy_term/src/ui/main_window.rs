@@ -146,7 +146,7 @@ impl MainWindow {
         terminal_info_dialog::TerminalInfo {
             buffer_size: state.size(),
             screen_resolution: screen.resolution(),
-            font_size: screen.font(caret.font_page() as usize).map(|font| font.size()).unwrap_or_default(),
+            font_size: screen.font(caret.font_page() as usize).map(icy_engine::BitFont::size).unwrap_or_default(),
             caret_position: caret.position(),
             caret_visible: caret.visible,
             caret_blinking: caret.blinking,
@@ -186,7 +186,7 @@ impl MainWindow {
         options: Arc<Mutex<Options>>,
     ) -> Self {
         let default_capture_path: PathBuf = directories::UserDirs::new()
-            .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
+            .and_then(|dirs| dirs.document_dir().map(std::path::Path::to_path_buf))
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
         let terminal_window: super::TerminalWindow = terminal_window::TerminalWindow::new(sound_thread.clone());
@@ -313,7 +313,7 @@ impl MainWindow {
                     } else {
                         // No modem configured - show error and abort connection
                         let error_msg = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "connect-error-no-modem-configured");
-                        log::error!("{}", error_msg);
+                        log::error!("{error_msg}");
 
                         // Display error message in terminal
                         {
@@ -506,7 +506,7 @@ impl MainWindow {
                 // Handle OpenLink messages from the about dialog
                 if let crate::ui::dialogs::about_dialog::AboutDialogMessage::OpenLink(url) = msg {
                     if let Err(e) = open::that(url) {
-                        log::error!("Failed to open URL {}: {}", url, e);
+                        log::error!("Failed to open URL {url}: {e}");
                     }
                 }
                 // Route to dialog stack for other messages
@@ -593,12 +593,9 @@ impl MainWindow {
                 Task::none()
             }
             Message::OpenReleaseLink => {
-                let url = format!(
-                    "https://github.com/mkrueger/icy_tools/releases/tag/IcyTerm{}",
-                    crate::LATEST_VERSION.to_string()
-                );
+                let url = format!("https://github.com/mkrueger/icy_tools/releases/tag/IcyTerm{}", *crate::LATEST_VERSION);
                 if let Err(e) = webbrowser::open(&url) {
-                    eprintln!("Failed to open release link: {}", e);
+                    eprintln!("Failed to open release link: {e}");
                 }
                 Task::none()
             }
@@ -656,12 +653,12 @@ impl MainWindow {
             Message::ShowRunScriptDialog => {
                 self.switch_to_terminal_screen();
                 // Open file dialog to select a Lua script
-                return Task::perform(
+                Task::perform(
                     async {
                         rfd::AsyncFileDialog::new()
-                            .add_filter(&i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "script-dialog-filter-lua"), &["lua"])
-                            .add_filter(&i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "script-dialog-filter-all"), &["*"])
-                            .set_title(&i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "script-dialog-title"))
+                            .add_filter(i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "script-dialog-filter-lua"), &["lua"])
+                            .add_filter(i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "script-dialog-filter-all"), &["*"])
+                            .set_title(i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "script-dialog-title"))
                             .pick_file()
                             .await
                             .map(|f| f.path().to_path_buf())
@@ -673,7 +670,7 @@ impl MainWindow {
                             Message::None
                         }
                     },
-                );
+                )
             }
             Message::RunScript(path) => {
                 log::info!("Running script: {}", path.display());
@@ -706,7 +703,7 @@ impl MainWindow {
             Message::ShowFindDialog => {
                 self.switch_to_terminal_screen();
                 self.state.mode = MainWindowMode::ShowFindDialog;
-                return self.find_dialog.focus_search_input();
+                self.find_dialog.focus_search_input()
             }
             Message::ShowBaudEmulationDialog => {
                 self.switch_to_terminal_screen();
@@ -747,7 +744,7 @@ impl MainWindow {
                 // Save serial settings to options
                 self.options.lock().serial = serial.clone();
                 if let Err(e) = self.options.lock().store_options() {
-                    log::error!("Failed to save serial settings: {}", e);
+                    log::error!("Failed to save serial settings: {e}");
                 }
                 // Set serial mode for status bar
                 self.terminal_window.serial_connected = Some(serial.clone());
@@ -775,7 +772,7 @@ impl MainWindow {
                 let buffer_type = self.terminal_window.terminal.screen.lock().buffer_type();
                 // Re-initialize the export dialog with the current buffer type
                 let default_export_path = directories::UserDirs::new()
-                    .and_then(|dirs| dirs.document_dir().map(|p| p.to_path_buf()))
+                    .and_then(|dirs| dirs.document_dir().map(std::path::Path::to_path_buf))
                     .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")))
                     .join("export.icy");
 
@@ -853,7 +850,7 @@ impl MainWindow {
 
             Message::OpenLink(url) => {
                 if let Err(e) = webbrowser::open(&url) {
-                    log::error!("Failed to open URL {}: {}", url, e);
+                    log::error!("Failed to open URL {url}: {e}");
                 }
                 Task::none()
             }
@@ -1071,7 +1068,7 @@ impl MainWindow {
                                 return self.update(Message::Connect(address.into()));
                             }
                             Err(e) => {
-                                log::error!("Failed to parse URL {}: {}", url, e);
+                                log::error!("Failed to parse URL {url}: {e}");
                             }
                         }
                     }
@@ -1162,7 +1159,7 @@ impl MainWindow {
                         // For now, just set case_sensitive
                         self.find_dialog.case_sensitive = *case_sensitive;
                         // We'll need to modify the find dialog to support setting search text programmatically
-                        log::info!("Search requested for pattern: {}", pattern);
+                        log::info!("Search requested for pattern: {pattern}");
                         return self.update(Message::FindDialog(find_dialog::FindDialogMsg::FindNext));
                     }
                     McpCommand::ClearScreen => {
@@ -1210,7 +1207,7 @@ impl MainWindow {
 
                     McpCommand::RunScript(script, response_tx) => {
                         // Store the response channel to send result when script finishes
-                        self.pending_script_response = response_tx.clone();
+                        self.pending_script_response.clone_from(response_tx);
                         // Run the Lua script code directly
                         let _ = self.terminal_tx.send(TerminalCommand::RunScriptCode(script.clone()));
                     }
@@ -1235,7 +1232,7 @@ impl MainWindow {
             Message::UpdateSelection(pos) => {
                 {
                     let mut screen = self.terminal_window.terminal.screen.lock();
-                    if let Some(mut sel) = screen.selection().clone() {
+                    if let Some(mut sel) = screen.selection() {
                         if !sel.locked {
                             sel.lead = pos;
                             let _ = screen.set_selection(sel);
@@ -1248,7 +1245,7 @@ impl MainWindow {
             Message::EndSelection => {
                 {
                     let mut screen = self.terminal_window.terminal.screen.lock();
-                    if let Some(mut sel) = screen.selection().clone() {
+                    if let Some(mut sel) = screen.selection() {
                         sel.locked = true;
                         let _ = screen.set_selection(sel);
                     }
@@ -1320,7 +1317,7 @@ impl MainWindow {
             // If protocol requires asking for download location, show file dialog
             if protocol.ask_for_download_location {
                 let file = rfd::FileDialog::new()
-                    .set_title(&i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "file-dialog-save-download-as"))
+                    .set_title(i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "file-dialog-save-download-as"))
                     .set_directory(&download_path)
                     .set_file_name("download.bin")
                     .save_file();
@@ -1331,7 +1328,7 @@ impl MainWindow {
                         let _ = self.terminal_tx.send(TerminalCommand::SetDownloadDirectory(parent.to_path_buf()));
                     }
                     // Use the filename for the download
-                    let filename = save_path.file_name().and_then(|n| n.to_str()).map(|s| s.to_string());
+                    let filename = save_path.file_name().and_then(|n| n.to_str()).map(std::string::ToString::to_string);
                     let _ = self.terminal_tx.send(TerminalCommand::StartDownload(protocol, filename));
                     self.state.mode = MainWindowMode::FileTransfer(is_download);
                 } else {
@@ -1374,9 +1371,7 @@ impl MainWindow {
                 self.connection_time = None;
                 Task::none()
             }
-            TerminalEvent::Reconnect => {
-                return self.update(Message::Reconnect);
-            }
+            TerminalEvent::Reconnect => self.update(Message::Reconnect),
             TerminalEvent::Connect(name_or_url) => {
                 let addresses = self.dialing_directory.addresses.lock();
                 if let Some(address) = addresses
@@ -1396,7 +1391,7 @@ impl MainWindow {
                 }
 
                 // Not found - log error
-                log::warn!("Script connect: '{}' not found in address book and not a valid URL", name_or_url);
+                log::warn!("Script connect: '{name_or_url}' not found in address book and not a valid URL");
                 Task::none()
             }
             TerminalEvent::SendCredentials(mode) => {
@@ -1404,7 +1399,7 @@ impl MainWindow {
                 // Mode: 0 = username + password, 1 = username only, 2 = password only
                 let send_login = mode == 0 || mode == 1;
                 let send_password = mode == 0 || mode == 2;
-                return self.update(Message::SendLoginAndPassword(send_login, send_password));
+                self.update(Message::SendLoginAndPassword(send_login, send_password))
             }
 
             TerminalEvent::TransferStarted(_state, is_download) => {
@@ -1499,7 +1494,7 @@ impl MainWindow {
                 Task::none()
             }
             TerminalEvent::InformDelay(ms) => {
-                self.pause_message = Some(format!("Pause {}ms", ms));
+                self.pause_message = Some(format!("Pause {ms}ms"));
                 Task::none()
             }
             TerminalEvent::ContinueAfterDelay => {
@@ -1552,7 +1547,7 @@ impl MainWindow {
                 if let Some(protocol) = protocol {
                     self.initiate_file_transfer(protocol, is_download);
                 } else {
-                    log::error!("Unknown protocol id for auto-transfer: {}", protocol_id);
+                    log::error!("Unknown protocol id for auto-transfer: {protocol_id}");
                 }
                 Task::none()
             }
@@ -1581,7 +1576,7 @@ impl MainWindow {
                         log::info!("Script finished successfully");
                     }
                     Err(e) => {
-                        log::error!("Script error: {}", e);
+                        log::error!("Script error: {e}");
                         let mut dialog = error_dialog(i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-script-title"), e, |_| {
                             Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal))
                         });
@@ -1593,9 +1588,7 @@ impl MainWindow {
                 }
                 Task::none()
             }
-            TerminalEvent::Quit => {
-                return self.update(Message::QuitIcyTerm);
-            }
+            TerminalEvent::Quit => self.update(Message::QuitIcyTerm),
             TerminalEvent::SerialBaudDetected(baud_rate) => {
                 // Update the open serial dialog with detected baud rate
                 self.open_serial_dialog.serial.baud_rate = baud_rate;
@@ -1625,6 +1618,7 @@ impl MainWindow {
         }
     }
 
+    #[must_use]
     pub fn theme(&self) -> Theme {
         // Check if dialog stack has a dialog with custom theme (e.g., settings dialog with live preview)
         if let Some(theme) = self.dialogs.theme() {
@@ -1634,15 +1628,16 @@ impl MainWindow {
     }
 
     /// Get a string representing the current zoom level for display in title bar
+    #[must_use]
     pub fn get_zoom_info_string(&self) -> String {
         let opts = self.options.lock();
         opts.monitor_settings.scaling_mode.format_zoom_string()
     }
 
+    #[must_use]
     pub fn view(&self) -> Element<'_, Message> {
-        match &self.state.mode {
-            MainWindowMode::ShowDialingDirectory => return self.dialogs.view(self.dialing_directory.view(&self.options.lock())),
-            _ => {}
+        if self.state.mode == MainWindowMode::ShowDialingDirectory {
+            return self.dialogs.view(self.dialing_directory.view(&self.options.lock()));
         }
 
         let terminal_view = self
@@ -1660,7 +1655,7 @@ impl MainWindow {
                     terminal_view
                 }
             }
-            _ => {
+            MainWindowMode::ShowDialingDirectory => {
                 panic!("Unhandled main window mode in view()")
             }
         };
@@ -1672,6 +1667,7 @@ impl MainWindow {
         toaster::toaster(&self.toasts, with_dialogs).into()
     }
 
+    #[must_use]
     pub fn get_mode(&self) -> MainWindowMode {
         self.state.mode.clone()
     }
@@ -1873,9 +1869,8 @@ impl MainWindow {
                 MouseButton::Middle => {
                     if has_selection {
                         return self.update(Message::Copy);
-                    } else {
-                        return self.update(Message::Paste);
                     }
+                    return self.update(Message::Paste);
                 }
                 _ => {}
             }
@@ -1972,9 +1967,9 @@ impl MainWindow {
             Event::Window(window::Event::Unfocused) => {
                 return (Some(Message::SetFocus(false)), Task::none());
             }
-            Event::Mouse(icy_ui::mouse::Event::WheelScrolled { delta, modifiers: _ }) => {
+            Event::Mouse(icy_ui::mouse::Event::WheelScrolled { delta, modifiers: _ })
                 // Only handle mouse wheel in scrollback mode
-                if self.terminal_window.terminal.is_in_scrollback_mode() {
+                if self.terminal_window.terminal.is_in_scrollback_mode() => {
                     let line_height = self.terminal_window.terminal.char_height;
                     let direction = if self.options.lock().invert_mouse_wheel { -1.0 } else { 1.0 };
                     let scroll_amount = match delta {
@@ -1989,7 +1984,6 @@ impl MainWindow {
                     };
                     return (Some(Message::ScrollViewport(0.0, scroll_amount)), Task::none());
                 }
-            }
 
             _ => {}
         }
@@ -2037,10 +2031,6 @@ impl MainWindow {
                             let page_height = self.terminal_window.terminal.visible_height_px();
 
                             match key {
-                                // ESC exits scrollback mode
-                                keyboard::Key::Named(keyboard::key::Named::Escape) => {
-                                    return (Some(Message::ShowScrollback), Task::none());
-                                }
                                 // Arrow Up: scroll up one line
                                 keyboard::Key::Named(keyboard::key::Named::ArrowUp) => {
                                     return (Some(Message::ScrollViewport(0.0, -line_height)), Task::none());
@@ -2140,11 +2130,7 @@ impl MainWindow {
                             }
                         }
 
-                        if let Some(text) = text {
-                            Some(Message::SendString(text.to_string()))
-                        } else {
-                            None
-                        }
+                        text.as_ref().map(|text| Message::SendString(text.to_string()))
                     }
                     Event::Keyboard(keyboard::Event::KeyReleased {
                         key: keyboard::Key::Named(keyboard::key::Named::Alt),
@@ -2182,8 +2168,9 @@ impl MainWindow {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers: _, .. }) => match key {
                     keyboard::Key::Named(keyboard::key::Named::Escape) => Some(Message::FindDialog(find_dialog::FindDialogMsg::CloseDialog)),
                     keyboard::Key::Named(keyboard::key::Named::PageUp) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindPrev)),
-                    keyboard::Key::Named(keyboard::key::Named::PageDown) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindNext)),
-                    keyboard::Key::Named(keyboard::key::Named::Enter) => Some(Message::FindDialog(find_dialog::FindDialogMsg::FindNext)),
+                    keyboard::Key::Named(keyboard::key::Named::PageDown | keyboard::key::Named::Enter) => {
+                        Some(Message::FindDialog(find_dialog::FindDialogMsg::FindNext))
+                    }
                     _ => None,
                 },
                 _ => None,
@@ -2202,7 +2189,7 @@ impl MainWindow {
                     None
                 }
             }
-            _ => {
+            MainWindowMode::FileTransfer(_) => {
                 // Handle global shortcuts that work in any mode
                 match event {
                     // Try command handler for global shortcuts
@@ -2216,51 +2203,6 @@ impl MainWindow {
             }
         };
         (msg, Task::none())
-    }
-}
-
-#[cfg(test)]
-mod alt_numeric_tests {
-    use super::{MainWindow, Message};
-
-    #[test]
-    fn help_precedes_connected_terminal_keys() {
-        assert!(MainWindow::command_precedes_connected_terminal(&Message::ShowHelpDialog));
-        assert!(!MainWindow::command_precedes_connected_terminal(&Message::Copy));
-        assert!(!MainWindow::command_precedes_connected_terminal(&Message::Paste));
-    }
-
-    #[test]
-    fn converts_legacy_alt_codes_to_raw_bytes() {
-        assert_eq!(MainWindow::finish_alt_numeric_input("65"), Some(vec![65]));
-        assert_eq!(MainWindow::finish_alt_numeric_input("233"), Some(vec![233]));
-        assert_eq!(MainWindow::finish_alt_numeric_input("256"), None);
-    }
-
-    #[test]
-    fn converts_leading_zero_alt_codes_to_utf8() {
-        assert_eq!(MainWindow::finish_alt_numeric_input("08364"), Some("€".as_bytes().to_vec()));
-        assert_eq!(MainWindow::finish_alt_numeric_input("055296"), None);
-    }
-
-    #[test]
-    fn composes_login_data_in_one_payload() {
-        let mut address = crate::Address::default();
-        address.user_name = "user".to_string();
-        address.password = "secret".to_string();
-
-        assert_eq!(
-            MainWindow::build_login_data(&address, icy_net::telnet::TerminalEmulation::Ansi, true, true),
-            b"user\rsecret\r"
-        );
-        assert_eq!(
-            MainWindow::build_login_data(&address, icy_net::telnet::TerminalEmulation::Ansi, true, false),
-            b"user\r"
-        );
-        assert_eq!(
-            MainWindow::build_login_data(&address, icy_net::telnet::TerminalEmulation::Ansi, false, true),
-            b"secret\r"
-        );
     }
 }
 
@@ -2295,5 +2237,52 @@ impl icy_engine_gui::Window for MainWindow {
 
     fn handle_event(&mut self, event: &icy_ui::Event) -> (Option<Self::Message>, Task<Self::Message>) {
         self.handle_event(event)
+    }
+}
+
+#[cfg(test)]
+mod alt_numeric_tests {
+    use super::{MainWindow, Message};
+
+    #[test]
+    fn help_precedes_connected_terminal_keys() {
+        assert!(MainWindow::command_precedes_connected_terminal(&Message::ShowHelpDialog));
+        assert!(!MainWindow::command_precedes_connected_terminal(&Message::Copy));
+        assert!(!MainWindow::command_precedes_connected_terminal(&Message::Paste));
+    }
+
+    #[test]
+    fn converts_legacy_alt_codes_to_raw_bytes() {
+        assert_eq!(MainWindow::finish_alt_numeric_input("65"), Some(vec![65]));
+        assert_eq!(MainWindow::finish_alt_numeric_input("233"), Some(vec![233]));
+        assert_eq!(MainWindow::finish_alt_numeric_input("256"), None);
+    }
+
+    #[test]
+    fn converts_leading_zero_alt_codes_to_utf8() {
+        assert_eq!(MainWindow::finish_alt_numeric_input("08364"), Some("€".as_bytes().to_vec()));
+        assert_eq!(MainWindow::finish_alt_numeric_input("055296"), None);
+    }
+
+    #[test]
+    fn composes_login_data_in_one_payload() {
+        let address = crate::Address {
+            user_name: "user".to_string(),
+            password: "secret".to_string(),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            MainWindow::build_login_data(&address, icy_net::telnet::TerminalEmulation::Ansi, true, true),
+            b"user\rsecret\r"
+        );
+        assert_eq!(
+            MainWindow::build_login_data(&address, icy_net::telnet::TerminalEmulation::Ansi, true, false),
+            b"user\r"
+        );
+        assert_eq!(
+            MainWindow::build_login_data(&address, icy_net::telnet::TerminalEmulation::Ansi, false, true),
+            b"secret\r"
+        );
     }
 }

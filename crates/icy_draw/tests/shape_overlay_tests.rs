@@ -6,6 +6,9 @@
 use icy_engine::Position;
 use icy_engine_edit::tools::Tool;
 
+/// (rgba mask bytes, width, height), (min_x, min_y, max_x, max_y)
+type OverlayResult = (Option<(Vec<u8>, u32, u32)>, Option<(f32, f32, f32, f32)>);
+
 // Re-export the shape module functions for testing
 // We test via the public interface by including the relevant code
 
@@ -185,14 +188,7 @@ fn ellipse_filled_points(start: Position, end: Position) -> Vec<Position> {
 }
 
 /// Generate overlay mask for shape preview during drag (character mode).
-fn overlay_mask_for_drag(
-    tool: Tool,
-    font_width: f32,
-    font_height: f32,
-    start: Position,
-    end: Position,
-    color: (u8, u8, u8),
-) -> (Option<(Vec<u8>, u32, u32)>, Option<(f32, f32, f32, f32)>) {
+fn overlay_mask_for_drag(tool: Tool, font_width: f32, font_height: f32, start: Position, end: Position, color: (u8, u8, u8)) -> OverlayResult {
     let points = shape_points(tool, start, end);
     if points.is_empty() {
         return (None, None);
@@ -243,14 +239,7 @@ fn overlay_mask_for_drag(
 }
 
 /// Generate overlay mask for shape preview during drag (half-block mode).
-fn overlay_mask_for_drag_half_block(
-    tool: Tool,
-    font_width: f32,
-    font_height: f32,
-    start: Position,
-    end: Position,
-    color: (u8, u8, u8),
-) -> (Option<(Vec<u8>, u32, u32)>, Option<(f32, f32, f32, f32)>) {
+fn overlay_mask_for_drag_half_block(tool: Tool, font_width: f32, font_height: f32, start: Position, end: Position, color: (u8, u8, u8)) -> OverlayResult {
     let points = shape_points(tool, start, end);
     if points.is_empty() {
         return (None, None);

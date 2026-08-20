@@ -42,7 +42,7 @@ impl SettingsDialogState {
                             background: Some(icy_ui::Background::Color(theme.accent.selected)),
                             text_color: theme.accent.on,
                             border: Border::default().rounded(6.0),
-                            shadow: Default::default(),
+                            shadow: icy_ui::Shadow::default(),
                             snap: false,
                             ..Default::default()
                         }
@@ -51,14 +51,13 @@ impl SettingsDialogState {
                             background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                             text_color: theme.background.on,
                             border: Border::default().rounded(6.0),
-                            shadow: Default::default(),
+                            shadow: icy_ui::Shadow::default(),
                             snap: false,
                             ..Default::default()
                         }
                     };
 
                     match status {
-                        Status::Active | Status::Selected => base,
                         Status::Hovered if !is_selected => Style {
                             background: Some(icy_ui::Background::Color(theme.secondary.base)),
                             ..base
@@ -92,10 +91,9 @@ impl SettingsDialogState {
         .gap(8);
 
         let on_msg = on_message.clone();
-        let remove_button = if !modems.is_empty() {
+        let remove_button = if modems.is_empty() {
             tooltip(
-                button(delete_icon)
-                    .on_press(on_msg(SettingsDialogMessage::RemoveModem(selected_index)))
+                button(svg(svg::Handle::from_memory(DELETE_SVG)).width(Length::Fixed(18.0)).height(Length::Fixed(18.0)))
                     .padding(6)
                     .style(secondary_button_style),
                 container(text(fl!(crate::LANGUAGE_LOADER, "settings-modem-remove-tooltip")).size(TEXT_SIZE_SMALL))
@@ -106,7 +104,8 @@ impl SettingsDialogState {
             .gap(8)
         } else {
             tooltip(
-                button(svg(svg::Handle::from_memory(DELETE_SVG)).width(Length::Fixed(18.0)).height(Length::Fixed(18.0)))
+                button(delete_icon)
+                    .on_press(on_msg(SettingsDialogMessage::RemoveModem(selected_index)))
                     .padding(6)
                     .style(secondary_button_style),
                 container(text(fl!(crate::LANGUAGE_LOADER, "settings-modem-remove-tooltip")).size(TEXT_SIZE_SMALL))
@@ -141,7 +140,7 @@ impl SettingsDialogState {
 
         let modem_settings: Element<'_, M> = if let Some(modem) = modems.get(selected_index) {
             // Filter only Some(...) rates
-            let baud_options: Vec<String> = STANDARD_RATES.iter().filter_map(|r| r.as_ref()).map(|r| r.to_string()).collect();
+            let baud_options: Vec<String> = STANDARD_RATES.iter().filter_map(|r| r.as_ref()).map(std::string::ToString::to_string).collect();
 
             let current_baud = modem.baud_rate.to_string();
             let selected_baud = if baud_options.contains(&current_baud) {

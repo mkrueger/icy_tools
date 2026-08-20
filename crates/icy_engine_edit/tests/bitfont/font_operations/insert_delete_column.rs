@@ -38,7 +38,7 @@ fn test_insert_column_maximum_width() {
 
     // Set a pixel at rightmost column
     state.clear_glyph('A').unwrap();
-    state.set_pixel('A', (MAX_FONT_WIDTH - 1) as i32, 0, true).unwrap();
+    state.set_pixel('A', MAX_FONT_WIDTH - 1, 0, true).unwrap();
 
     // Try to insert column - should have no effect
     state.set_cursor_pos(0, 0);

@@ -93,7 +93,7 @@ impl PencilTool {
         let brush_size = settings.brush_size.max(1) as i32;
         let half = brush_size / 2;
 
-        let offset = ctx.state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+        let offset = ctx.state.get_cur_layer().map(icy_engine_edit::Layer::offset).unwrap_or_default();
 
         for dy in 0..brush_size {
             for dx in 0..brush_size {
@@ -163,11 +163,9 @@ impl ToolHandler for PencilTool {
                                 changed = true;
                             }
                         }
-                        Physical::Code(icy_ui::keyboard::key::Code::BracketRight) => {
-                            if b.brush_size != 1 {
-                                b.brush_size = 1;
-                                changed = true;
-                            }
+                        Physical::Code(icy_ui::keyboard::key::Code::BracketRight) if b.brush_size != 1 => {
+                            b.brush_size = 1;
+                            changed = true;
                         }
                         _ => {}
                     }
@@ -235,7 +233,7 @@ impl ToolHandler for PencilTool {
                     let mut cur = self.last_half_block.unwrap_or(new_hb);
                     while cur != new_hb {
                         let s = (new_hb - cur).signum();
-                        cur = cur + s;
+                        cur += s;
                         self.apply_half_block_with_brush_size(ctx, cur, self.stroke_button);
                     }
                     self.last_half_block = Some(new_hb);

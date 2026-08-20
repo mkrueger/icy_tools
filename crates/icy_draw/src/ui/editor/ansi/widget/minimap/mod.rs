@@ -23,7 +23,7 @@ fn generate_minimap_id() -> usize {
     MINIMAP_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Shared state between MinimapView and shader for communicating bounds
+/// Shared state between `MinimapView` and shader for communicating bounds
 #[derive(Debug, Default)]
 pub struct SharedMinimapState {
     pub available_width: f32,
@@ -289,7 +289,6 @@ impl MinimapView {
 
                 // Calculate which tiles to select based on visible area
                 let tile_height = TILE_HEIGHT as f32;
-                let scroll_normalized = scroll_normalized;
 
                 let max_tile_idx = ((content_height / tile_height).ceil().max(1.0) as i32) - 1;
 
@@ -321,9 +320,9 @@ impl MinimapView {
                     let last_count = *self.last_tile_count.borrow();
 
                     cache_state.is_none()
-                        || cache_state.as_ref().map_or(true, |cs| {
-                            cs.incomplete || cs.content_width != content_width_u32 || (cs.content_height - content_height).abs() > 0.1
-                        })
+                        || cache_state
+                            .as_ref()
+                            .is_none_or(|cs| cs.incomplete || cs.content_width != content_width_u32 || (cs.content_height - content_height).abs() > 0.1)
                         || last_first != first_tile_idx
                         || last_count != desired_count
                 };

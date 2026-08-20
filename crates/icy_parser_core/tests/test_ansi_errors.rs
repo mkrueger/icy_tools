@@ -127,7 +127,7 @@ fn test_valid_sgr_parameters() {
     parser.parse(b"\x1b[0m\x1b[1m\x1b[3m\x1b[5m\x1b[7m\x1b[31m\x1b[42m", &mut sink);
 
     assert_eq!(sink.errors.len(), 0, "No errors should be reported for valid SGR parameters");
-    assert!(sink.commands.len() > 0, "Should emit commands");
+    assert!(!sink.commands.is_empty(), "Should emit commands");
 }
 
 #[test]

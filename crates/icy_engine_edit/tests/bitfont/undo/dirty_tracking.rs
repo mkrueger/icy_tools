@@ -4,6 +4,8 @@
 
 use icy_engine_edit::bitfont::{BitFontEditState, BitFontUndoState};
 
+type StateOperation = Box<dyn FnOnce(&mut BitFontEditState)>;
+
 #[test]
 fn test_new_state_is_not_dirty() {
     let _state = BitFontEditState::new();
@@ -79,7 +81,7 @@ fn test_multiple_operations_dirty() {
 #[test]
 fn test_different_operation_types_mark_dirty() {
     // Test various operation types
-    let operations: Vec<Box<dyn FnOnce(&mut BitFontEditState)>> = vec![
+    let operations: Vec<StateOperation> = vec![
         Box::new(|s| {
             s.set_pixel('A', 1, 1, true).unwrap();
         }),

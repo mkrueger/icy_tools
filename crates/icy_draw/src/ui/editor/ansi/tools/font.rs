@@ -1,6 +1,6 @@
 //! Font Tool (TDF/Figlet Font Rendering)
 //!
-//! Renders text using TDF (TheDraw Font) or Figlet fonts.
+//! Renders text using TDF (`TheDraw` Font) or Figlet fonts.
 //! Each character typed is rendered as a multi-cell font glyph.
 //!
 //! This tool extends the Click tool's navigation and selection behavior,
@@ -102,7 +102,7 @@ impl FontTool {
     }
 
     fn outline_style_from_ctx(ctx: &ToolContext) -> usize {
-        ctx.options.and_then(|opts| Some(opts.read().font_outline_style)).unwrap_or(0)
+        ctx.options.map_or(0, |opts| opts.read().font_outline_style)
     }
 
     fn render_char(&mut self, ctx: &mut ToolContext, ch: char) -> ToolResult {
@@ -140,8 +140,8 @@ impl FontTool {
                 let lib = self.font_tool.font_library.read();
                 if let Some(font) = lib.get_font(font_idx as usize) {
                     match font.render_glyph(&mut renderer, ch, &render_options) {
-                        Ok(_) => Ok(Position::new(renderer.max_x(), start_y)),
-                        Err(e) => Err(icy_engine::EngineError::Generic(format!("Font render error: {}", e))),
+                        Ok(()) => Ok(Position::new(renderer.max_x(), start_y)),
+                        Err(e) => Err(icy_engine::EngineError::Generic(format!("Font render error: {e}"))),
                     }
                 } else {
                     Err(icy_engine::EngineError::Generic("Font not found".to_string()))
@@ -157,7 +157,7 @@ impl FontTool {
                 ToolResult::Commit("Render font character".to_string())
             }
             Err(e) => {
-                log::warn!("Failed to render font character: {}", e);
+                log::warn!("Failed to render font character: {e}");
                 ToolResult::None
             }
         }
@@ -198,11 +198,11 @@ impl FontTool {
                 if let Some(op) = stack[idx].try_clone() {
                     drop(stack);
                     match ctx.state.push_reverse_undo("Undo font character", op, OperationType::ReversedRenderCharacter) {
-                        Ok(_) => {
+                        Ok(()) => {
                             use_backspace = false;
                         }
                         Err(e) => {
-                            log::warn!("Failed to push reverse undo for font character: {}", e);
+                            log::warn!("Failed to push reverse undo for font character: {e}");
                         }
                     }
                 }

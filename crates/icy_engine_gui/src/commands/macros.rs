@@ -375,10 +375,10 @@ mod tests {
         let handler = SingleParamCommands::new();
 
         let hotkey = Hotkey::parse("Ctrl+Shift+N").unwrap();
-        assert_eq!(handler.handle(&hotkey, 42), Some(TestMessage::Open));
+        assert_eq!(handler.handle(hotkey, 42), Some(TestMessage::Open));
 
         let hotkey = Hotkey::parse("Ctrl+W").unwrap();
-        assert_eq!(handler.handle(&hotkey, 42), Some(TestMessage::Close(42)));
+        assert_eq!(handler.handle(hotkey, 42), Some(TestMessage::Close(42)));
     }
 
     #[test]
@@ -386,7 +386,7 @@ mod tests {
         let handler = TupleParamCommands::new();
 
         let hotkey = Hotkey::parse("Ctrl+Shift+N").unwrap();
-        assert_eq!(handler.handle(&hotkey, (42, 10)), Some(TestMessage::Move(42, 10, 0)));
+        assert_eq!(handler.handle(hotkey, (42, 10)), Some(TestMessage::Move(42, 10, 0)));
     }
 
     #[test]
@@ -394,6 +394,6 @@ mod tests {
         let handler = NoParamCommands::new();
 
         let hotkey = Hotkey::parse("Ctrl+O").unwrap();
-        assert_eq!(handler.handle(&hotkey), Some(TestMessage::Open));
+        assert_eq!(handler.handle(hotkey), Some(TestMessage::Open));
     }
 }

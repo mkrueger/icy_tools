@@ -14,6 +14,6 @@ pub fn test_avatar() {
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
 
         let mut screen = ScreenMode::Vga(80, 25).create_screen(TerminalEmulation::Avatar, None);
-        super::run_parser_compare(&mut screen, &cur_entry, &data);
+        super::run_parser_compare(&mut screen, &cur_entry, data);
     }
 }

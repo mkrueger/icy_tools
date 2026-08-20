@@ -342,10 +342,8 @@ impl ToolHandler for FillTool {
                                 continue;
                             }
                         }
-                        BrushPrimaryMode::Colorize => {
-                            if (settings.exact && cur != base_char) || (!settings.exact && cur.attribute != base_char.attribute) {
-                                continue;
-                            }
+                        BrushPrimaryMode::Colorize if ((settings.exact && cur != base_char) || (!settings.exact && cur.attribute != base_char.attribute)) => {
+                            continue;
                         }
                         _ => {}
                     }

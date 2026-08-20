@@ -2,6 +2,9 @@ use icy_parser_core::BaudEmulation;
 
 use crate::{Position, Size};
 
+/// Saved DECSTBM/DECSLRM state: origin mode, top/bottom margins, left/right margins, and left/right margin mode.
+type SavedTextWindow = (OriginMode, Option<(i32, i32)>, Option<(i32, i32)>, bool);
+
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum TerminalScrolling {
     #[default]
@@ -148,7 +151,7 @@ pub struct TerminalState {
     pub wrap_pending: bool,
     margins_top_bottom: Option<(i32, i32)>,
     margins_left_right: Option<(i32, i32)>,
-    saved_text_window: Option<(OriginMode, Option<(i32, i32)>, Option<(i32, i32)>, bool)>,
+    saved_text_window: Option<SavedTextWindow>,
     pub(crate) active_hyperlink: Option<(String, Position)>,
     pub mouse_state: MouseState,
     pub kitty_keyboard: KittyKeyboardState,

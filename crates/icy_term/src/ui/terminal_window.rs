@@ -62,6 +62,7 @@ impl TerminalWindow {
         }
     }
 
+    #[must_use]
     pub fn view(&self, monitor_settings: Arc<MonitorSettings>, options: &Options, pause_message: &Option<String>) -> Element<'_, Message> {
         // Create the button bar at the top
         let button_bar = self.create_button_bar();
@@ -93,139 +94,135 @@ impl TerminalWindow {
             0
         };
         // Create terminal area with optional scrollbar
-        let terminal_area = {
-            // Calculate scrollbar needs directly from viewport
-            let (needs_vscrollbar, needs_hscrollbar) = {
-                let visible_height = self.terminal.visible_content_height();
-                let visible_width = self.terminal.visible_content_width();
-                let height_ratio = visible_height / self.terminal.content_height().max(1.0);
-                let width_ratio = visible_width / self.terminal.content_width().max(1.0);
-                (height_ratio < 1.0, width_ratio < 1.0)
-            };
-
-            // Show scrollbar in:
-            // - Scrollback mode (always)
-            // - Manual scaling mode when zoomed in (content may exceed viewport)
-            let is_manual_mode = !options.monitor_settings.scaling_mode.is_auto();
-            let show_vscrollbar = self.terminal.is_in_scrollback_mode() || (is_manual_mode && needs_vscrollbar);
-            let show_hscrollbar = is_manual_mode && needs_hscrollbar;
-
-            if show_vscrollbar || show_hscrollbar {
-                let mut layers: Vec<Element<'_, Message>> = Vec::new();
-
-                // Compute scrollable content size from the active screen.
-                // `virtual_size` includes scrollback (if present).
-                let screen = self.terminal.screen.lock();
-                let virtual_size = screen.virtual_size();
-                drop(screen);
-
-                // Scroll state is kept in *content pixels at zoom 1.0*.
-                // The scroll_area viewport is in *zoomed* pixels, so we pass `zoom` to
-                // `update_scroll_from_viewport` for the inverse conversion.
-                let zoom = self.terminal.get_zoom();
-
-                let is_manual = !monitor_settings.scaling_mode.is_auto();
-                let last_viewport_w = self.terminal.visible_width_px();
-                let last_viewport_h = self.terminal.visible_height_px();
-
-                let mut scrollable_width = virtual_size.width as f32 * zoom;
-                let mut scrollable_height = virtual_size.height as f32 * zoom;
-
-                // Manual mode: center content when it's smaller than the viewport.
-                if is_manual {
-                    scrollable_width = scrollable_width.max(last_viewport_w.max(1.0));
-                    scrollable_height = scrollable_height.max(last_viewport_h.max(1.0));
-                }
-
-                let scrollable_size = Size::new(scrollable_width, scrollable_height);
-                let monitor_settings_clone = monitor_settings.clone();
-
-                let direction = match (show_vscrollbar, show_hscrollbar) {
-                    (true, true) => scrollable::Direction::Both {
-                        vertical: scrollable::Scrollbar::default(),
-                        horizontal: scrollable::Scrollbar::default(),
-                    },
-                    (true, false) => scrollable::Direction::Vertical(scrollable::Scrollbar::default()),
-                    (false, true) => scrollable::Direction::Horizontal(scrollable::Scrollbar::default()),
-                    (false, false) => scrollable::Direction::Both {
-                        vertical: scrollable::Scrollbar::default(),
-                        horizontal: scrollable::Scrollbar::default(),
-                    },
+        let terminal_area =
+            {
+                // Calculate scrollbar needs directly from viewport
+                let (needs_vscrollbar, needs_hscrollbar) = {
+                    let visible_height = self.terminal.visible_content_height();
+                    let visible_width = self.terminal.visible_content_width();
+                    let height_ratio = visible_height / self.terminal.content_height().max(1.0);
+                    let width_ratio = visible_width / self.terminal.content_width().max(1.0);
+                    (height_ratio < 1.0, width_ratio < 1.0)
                 };
 
-                // Use scroll_area().show_viewport(...) so the shader can sample the
-                // correct content region while scrolling.
-                let scrollable_terminal = scroll_area()
-                    .id(self.terminal.scroll_area_id())
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .direction(direction)
-                    .show_viewport(scrollable_size, move |scroll_viewport| {
-                        self.terminal.update_scroll_from_viewport(scroll_viewport, zoom);
+                // Show scrollbar in:
+                // - Scrollback mode (always)
+                // - Manual scaling mode when zoomed in (content may exceed viewport)
+                let is_manual_mode = !options.monitor_settings.scaling_mode.is_auto();
+                let show_vscrollbar = self.terminal.is_in_scrollback_mode() || (is_manual_mode && needs_vscrollbar);
+                let show_hscrollbar = is_manual_mode && needs_hscrollbar;
 
-                        let term = mk_terminal_view(monitor_settings_clone.clone());
-                        if is_manual {
-                            container(term)
-                                .width(Length::Fill)
-                                .height(Length::Fill)
-                                .align_x(icy_ui::alignment::Horizontal::Center)
-                                .align_y(icy_ui::alignment::Vertical::Center)
-                                .into()
-                        } else {
-                            term
-                        }
-                    });
+                if show_vscrollbar || show_hscrollbar {
+                    let mut layers: Vec<Element<'_, Message>> = Vec::new();
 
-                layers.push(container(scrollable_terminal).width(Length::Fill).height(Length::Fill).into());
+                    // Compute scrollable content size from the active screen.
+                    // `virtual_size` includes scrollback (if present).
+                    let screen = self.terminal.screen.lock();
+                    let virtual_size = screen.virtual_size();
+                    drop(screen);
 
-                // Add scroll position indicator if in scrollback mode
-                if self.terminal.is_in_scrollback_mode() {
-                    let scroll_indicator = container(text(format!("↑ {:04}", scrollback_lines)).size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| {
-                        icy_ui::widget::text::Style {
-                            color: Some(theme.accent.selected),
-                            ..Default::default()
-                        }
-                    }))
-                    .padding([2, 8])
-                    .style(|theme: &icy_ui::Theme| container::Style {
-                        background: Some(icy_ui::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
-                        border: Border {
-                            color: theme.primary.divider,
-                            width: 1.0,
-                            radius: 4.0.into(),
+                    // Scroll state is kept in *content pixels at zoom 1.0*.
+                    // The scroll_area viewport is in *zoomed* pixels, so we pass `zoom` to
+                    // `update_scroll_from_viewport` for the inverse conversion.
+                    let zoom = self.terminal.get_zoom();
+
+                    let is_manual = !monitor_settings.scaling_mode.is_auto();
+                    let last_viewport_w = self.terminal.visible_width_px();
+                    let last_viewport_h = self.terminal.visible_height_px();
+
+                    let mut scrollable_width = virtual_size.width as f32 * zoom;
+                    let mut scrollable_height = virtual_size.height as f32 * zoom;
+
+                    // Manual mode: center content when it's smaller than the viewport.
+                    if is_manual {
+                        scrollable_width = scrollable_width.max(last_viewport_w.max(1.0));
+                        scrollable_height = scrollable_height.max(last_viewport_h.max(1.0));
+                    }
+
+                    let scrollable_size = Size::new(scrollable_width, scrollable_height);
+                    let monitor_settings_clone = monitor_settings.clone();
+
+                    let direction = match (show_vscrollbar, show_hscrollbar) {
+                        (true, false) => scrollable::Direction::Vertical(scrollable::Scrollbar::default()),
+                        (false, true) => scrollable::Direction::Horizontal(scrollable::Scrollbar::default()),
+                        (true, true) | (false, false) => scrollable::Direction::Both {
+                            vertical: scrollable::Scrollbar::default(),
+                            horizontal: scrollable::Scrollbar::default(),
                         },
-                        ..Default::default()
-                    });
+                    };
 
-                    layers.push(
-                        container(scroll_indicator)
-                            .width(Length::Fill)
-                            .height(Length::Fill)
-                            .align_x(icy_ui::alignment::Horizontal::Right)
-                            .align_y(icy_ui::alignment::Vertical::Top)
-                            .padding([8, 16])
-                            .into(),
-                    );
-                }
-
-                container(icy_ui::widget::stack(layers)).width(Length::Fill).height(Length::Fill)
-            } else {
-                let is_manual = !monitor_settings.scaling_mode.is_auto();
-                let term = mk_terminal_view(monitor_settings.clone());
-                if is_manual {
-                    container(term)
+                    // Use scroll_area().show_viewport(...) so the shader can sample the
+                    // correct content region while scrolling.
+                    let scrollable_terminal = scroll_area()
+                        .id(self.terminal.scroll_area_id())
                         .width(Length::Fill)
                         .height(Length::Fill)
-                        .align_x(icy_ui::alignment::Horizontal::Center)
-                        .align_y(icy_ui::alignment::Vertical::Center)
+                        .direction(direction)
+                        .show_viewport(scrollable_size, move |scroll_viewport| {
+                            self.terminal.update_scroll_from_viewport(scroll_viewport, zoom);
+
+                            let term = mk_terminal_view(monitor_settings_clone.clone());
+                            if is_manual {
+                                container(term)
+                                    .width(Length::Fill)
+                                    .height(Length::Fill)
+                                    .align_x(icy_ui::alignment::Horizontal::Center)
+                                    .align_y(icy_ui::alignment::Vertical::Center)
+                                    .into()
+                            } else {
+                                term
+                            }
+                        });
+
+                    layers.push(container(scrollable_terminal).width(Length::Fill).height(Length::Fill).into());
+
+                    // Add scroll position indicator if in scrollback mode
+                    if self.terminal.is_in_scrollback_mode() {
+                        let scroll_indicator = container(text(format!("↑ {scrollback_lines:04}")).size(TEXT_SIZE_SMALL).style(|theme: &icy_ui::Theme| {
+                            icy_ui::widget::text::Style {
+                                color: Some(theme.accent.selected),
+                            }
+                        }))
+                        .padding([2, 8])
+                        .style(|theme: &icy_ui::Theme| container::Style {
+                            background: Some(icy_ui::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.7))),
+                            border: Border {
+                                color: theme.primary.divider,
+                                width: 1.0,
+                                radius: 4.0.into(),
+                            },
+                            ..Default::default()
+                        });
+
+                        layers.push(
+                            container(scroll_indicator)
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .align_x(icy_ui::alignment::Horizontal::Right)
+                                .align_y(icy_ui::alignment::Vertical::Top)
+                                .padding([8, 16])
+                                .into(),
+                        );
+                    }
+
+                    container(icy_ui::widget::stack(layers)).width(Length::Fill).height(Length::Fill)
                 } else {
-                    container(term).width(Length::Fill).height(Length::Fill)
+                    let is_manual = !monitor_settings.scaling_mode.is_auto();
+                    let term = mk_terminal_view(monitor_settings.clone());
+                    if is_manual {
+                        container(term)
+                            .width(Length::Fill)
+                            .height(Length::Fill)
+                            .align_x(icy_ui::alignment::Horizontal::Center)
+                            .align_y(icy_ui::alignment::Vertical::Center)
+                    } else {
+                        container(term).width(Length::Fill).height(Length::Fill)
+                    }
                 }
-            }
-        };
+            };
 
         // Status bar at the bottom - add scrollback info
-        let status_bar = self.create_status_bar(options, pause_message);
+        let status_bar = self.create_status_bar(options, pause_message.as_ref());
 
         // Build context menu items for right-click on terminal area
         let menu_items = self.build_context_menu_items();
@@ -280,13 +277,12 @@ impl TerminalWindow {
                     background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                     text_color: info_color,
                     border: Border::default(),
-                    shadow: Default::default(),
+                    shadow: icy_ui::Shadow::default(),
                     snap: false,
                     ..Default::default()
                 };
 
                 match status {
-                    Status::Active | Status::Selected => base,
                     Status::Hovered => Style {
                         background: Some(icy_ui::Background::Color(Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.1))),
                         ..base
@@ -295,7 +291,7 @@ impl TerminalWindow {
                         background: Some(icy_ui::Background::Color(Color::from_rgba(info_color.r, info_color.g, info_color.b, 0.15))),
                         ..base
                     },
-                    Status::Disabled => base,
+                    Status::Active | Status::Selected | Status::Disabled => base,
                 }
             }),
         )
@@ -393,13 +389,12 @@ impl TerminalWindow {
                             width: 1.0,
                             radius: 4.0.into(),
                         },
-                        shadow: Default::default(),
+                        shadow: icy_ui::Shadow::default(),
                         snap: false,
                         ..Default::default()
                     };
 
                     match status {
-                        Status::Active | Status::Selected => base,
                         Status::Hovered => Style {
                             background: Some(icy_ui::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.3))),
                             ..base
@@ -408,7 +403,7 @@ impl TerminalWindow {
                             background: Some(icy_ui::Background::Color(Color::from_rgba(1.0, 0.5, 0.0, 0.4))),
                             ..base
                         },
-                        Status::Disabled => base,
+                        Status::Active | Status::Selected | Status::Disabled => base,
                     }
                 });
 
@@ -466,19 +461,18 @@ impl TerminalWindow {
                     radius: 0.0.into(),
                 },
                 text_color: None,
-                shadow: Default::default(),
+                shadow: icy_ui::Shadow::default(),
                 snap: false,
             })
             .into()
     }
 
-    fn create_status_bar(&self, options: &Options, pause_message: &Option<String>) -> Element<'_, Message> {
+    fn create_status_bar(&self, options: &Options, pause_message: Option<&String>) -> Element<'_, Message> {
         let connection_status = if let Some(serial) = &self.serial_connected {
             // Serial connection
             text(format!("{} ({} baud)", serial.device, serial.baud_rate))
                 .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.success.hover),
-                    ..Default::default()
                 })
                 .size(16.0)
                 .font(icy_ui::Font {
@@ -497,7 +491,6 @@ impl TerminalWindow {
                 text(system)
                     .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                         color: Some(theme.success.hover),
-                        ..Default::default()
                     })
                     .size(16.0)
                     .font(icy_ui::Font {
@@ -508,20 +501,17 @@ impl TerminalWindow {
                 // Dialing - show "DIALING..." in normal color
                 text("DIALING...").style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.background.on),
-                    ..Default::default()
                 })
             } else {
                 // Connection lost but address still set - show "NO CARRIER" in red
                 text("NO CARRIER").style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.destructive.base),
-                    ..Default::default()
                 })
             }
         } else {
             // No address - show "NO CARRIER" in red
             text("NO CARRIER").style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.destructive.base),
-                ..Default::default()
             })
         };
 
@@ -572,11 +562,7 @@ impl TerminalWindow {
         };
 
         // Build the status bar row
-        let pause_text = if let Some(msg) = pause_message {
-            format!(" | {}", msg)
-        } else {
-            String::new()
-        };
+        let pause_text = if let Some(msg) = pause_message { format!(" | {msg}") } else { String::new() };
 
         let mut status_row = row![connection_status].spacing(DIALOG_SPACING).align_y(Alignment::Center);
 
@@ -610,7 +596,7 @@ impl TerminalWindow {
                         width: 1.0,
                         radius: 4.0.into(),
                     },
-                    shadow: Default::default(),
+                    shadow: icy_ui::Shadow::default(),
                     snap: false,
                     ..Default::default()
                 };
@@ -644,13 +630,13 @@ impl TerminalWindow {
         }
 
         // Add Baud Emulation button
-        let baud_text = if !self.is_connected {
-            "LOCAL".to_string()
-        } else {
+        let baud_text = if self.is_connected {
             match self.baud_emulation {
                 BaudEmulation::Off => fl!(crate::LANGUAGE_LOADER, "select-bps-dialog-bps-max"),
                 BaudEmulation::Rate(rate) => fl!(crate::LANGUAGE_LOADER, "select-bps-dialog-bps", bps = rate),
             }
+        } else {
+            "LOCAL".to_string()
         };
 
         let mut baud_button = button(text(baud_text).size(TEXT_SIZE_SMALL))
@@ -668,7 +654,7 @@ impl TerminalWindow {
                             width: 1.0,
                             radius: 4.0.into(),
                         },
-                        shadow: Default::default(),
+                        shadow: icy_ui::Shadow::default(),
                         snap: false,
                         ..Default::default()
                     };
@@ -683,7 +669,7 @@ impl TerminalWindow {
                         width: 1.0,
                         radius: 4.0.into(),
                     },
-                    shadow: Default::default(),
+                    shadow: icy_ui::Shadow::default(),
                     snap: false,
                     ..Default::default()
                 };
@@ -728,13 +714,12 @@ impl TerminalWindow {
                             width: 1.0,
                             radius: 4.0.into(),
                         },
-                        shadow: Default::default(),
+                        shadow: icy_ui::Shadow::default(),
                         snap: false,
                         ..Default::default()
                     };
 
                     match status {
-                        Status::Active | Status::Selected => base,
                         Status::Hovered => Style {
                             background: Some(icy_ui::Background::Color(theme.accent.selected)),
                             text_color: theme.accent.on,
@@ -745,7 +730,7 @@ impl TerminalWindow {
                             text_color: theme.accent.on,
                             ..base
                         },
-                        Status::Disabled => base,
+                        Status::Active | Status::Selected | Status::Disabled => base,
                     }
                 });
 
@@ -768,7 +753,6 @@ impl TerminalWindow {
                 };
 
                 match status {
-                    Status::Active | Status::Selected => base,
                     Status::Hovered => Style {
                         text_color: theme.accent.base,
                         ..base
@@ -777,7 +761,7 @@ impl TerminalWindow {
                         text_color: theme.accent.hover,
                         ..base
                     },
-                    Status::Disabled => base,
+                    Status::Active | Status::Selected | Status::Disabled => base,
                 }
             });
         status_row = status_row.push(text(" | ").size(TEXT_SIZE_SMALL));
@@ -795,7 +779,7 @@ impl TerminalWindow {
                     radius: 0.0.into(),
                 },
                 text_color: Some(theme.button.on),
-                shadow: Default::default(),
+                shadow: icy_ui::Shadow::default(),
                 snap: false,
             })
             .into()
@@ -806,19 +790,16 @@ impl TerminalWindow {
         self.current_address = address;
         self.is_dialing = true; // Mark that we're trying to connect
         self.is_connected = false;
-        match &self.current_address {
-            Some(addr) => {
-                self.baud_emulation = addr.baud_emulation;
-                self.terminal_emulation = addr.terminal_type.clone();
-                self.screen_mode = addr.get_screen_mode();
-                self.ansi_music = addr.ansi_music;
-            }
-            None => {
-                self.terminal_emulation = TerminalEmulation::Ansi;
-                self.screen_mode = icy_engine::ScreenMode::default();
-                self.ansi_music = icy_parser_core::MusicOption::Off;
-            }
-        };
+        if let Some(addr) = &self.current_address {
+            self.baud_emulation = addr.baud_emulation;
+            self.terminal_emulation = addr.terminal_type;
+            self.screen_mode = addr.get_screen_mode();
+            self.ansi_music = addr.ansi_music;
+        } else {
+            self.terminal_emulation = TerminalEmulation::Ansi;
+            self.screen_mode = icy_engine::ScreenMode::default();
+            self.ansi_music = icy_parser_core::MusicOption::Off;
+        }
     }
 
     /// Called when connection is established
@@ -828,7 +809,7 @@ impl TerminalWindow {
     }
 
     /// Called when connection fails or is lost
-    /// Does NOT clear current_address - that's only cleared on explicit hangup
+    /// Does NOT clear `current_address` - that's only cleared on explicit hangup
     pub fn connection_lost(&mut self) {
         self.is_connected = false;
         self.is_dialing = false;

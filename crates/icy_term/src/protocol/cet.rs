@@ -28,6 +28,7 @@ pub struct CetProtocol {
 }
 
 impl CetProtocol {
+    #[must_use]
     pub fn new(download_dir: PathBuf) -> Self {
         Self {
             download_dir,

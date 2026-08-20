@@ -533,7 +533,7 @@ impl EditState {
     /// In XBinExtended mode (FontMode::FixedSize), FG colors are limited to 0-7.
     /// Other modes allow all 16 colors.
     pub fn constrain_foreground_color(&self, color: u32) -> u32 {
-        if !self.screen.buffer.font_mode.has_high_fg_colors() && color >= 8 && color < 16 {
+        if !self.screen.buffer.font_mode.has_high_fg_colors() && (8..16).contains(&color) {
             color % 8
         } else {
             color
@@ -544,7 +544,7 @@ impl EditState {
     /// In Blink mode (no high bg colors), BG colors are limited to 0-7.
     /// In Ice mode, all 16 colors are allowed.
     pub fn constrain_background_color(&self, color: u32) -> u32 {
-        if !self.screen.buffer.ice_mode.has_high_bg_colors() && color >= 8 && color < 16 {
+        if !self.screen.buffer.ice_mode.has_high_bg_colors() && (8..16).contains(&color) {
             color % 8
         } else {
             color

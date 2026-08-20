@@ -10,7 +10,7 @@ use std::{
     num::NonZero,
     sync::{
         atomic::{AtomicU32, Ordering},
-        mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
+        mpsc::{self, Receiver, SyncSender, TrySendError},
         Arc,
     },
     time::Duration,
@@ -476,11 +476,7 @@ pub fn supports_format(major: u32, subtype: u32) -> bool {
 
     match major {
         SF_FORMAT_WAV | SF_FORMAT_AIFF | SF_FORMAT_FLAC => true,
-        SF_FORMAT_OGG => match subtype {
-            SF_FORMAT_VORBIS => true,
-            SF_FORMAT_OPUS => cfg!(feature = "opus-audio"),
-            _ => false,
-        },
+        SF_FORMAT_OGG => matches!(subtype, SF_FORMAT_VORBIS) || (subtype == SF_FORMAT_OPUS && cfg!(feature = "opus-audio")),
         _ => false,
     }
 }
@@ -796,23 +792,18 @@ impl AudioApcState {
     }
 
     pub fn poll(&mut self, mixer: Option<&Mixer>) {
-        loop {
-            match self.decode_rx.try_recv() {
-                Ok(result) => {
-                    let slot = result.slot as usize;
-                    if self.generations[slot] != result.generation {
-                        continue;
-                    }
-                    self.pending[slot] = false;
-                    if let Some(frames) = result.frames {
-                        self.store(result.slot, frames);
-                    }
-                    let commands = std::mem::take(&mut self.deferred[slot]);
-                    for command in commands {
-                        self.handle(mixer, None, command);
-                    }
-                }
-                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+        while let Ok(result) = self.decode_rx.try_recv() {
+            let slot = result.slot as usize;
+            if self.generations[slot] != result.generation {
+                continue;
+            }
+            self.pending[slot] = false;
+            if let Some(frames) = result.frames {
+                self.store(result.slot, frames);
+            }
+            let commands = std::mem::take(&mut self.deferred[slot]);
+            for command in commands {
+                self.handle(mixer, None, command);
             }
         }
         self.refresh_status();

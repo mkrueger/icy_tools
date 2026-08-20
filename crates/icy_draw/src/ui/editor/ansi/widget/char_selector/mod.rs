@@ -184,7 +184,7 @@ impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
         let selected_border = theme.background.on;
 
         // Calculate scale to fit cells
-        let font_height = self.font.as_ref().map(|f| f.size().height as f32).unwrap_or(16.0);
+        let font_height = self.font.as_ref().map_or(16.0, |f| f.size().height as f32);
         let scale = CELL_SIZE / font_height;
 
         let hovered_code = *state;
@@ -230,9 +230,7 @@ impl canvas::Program<CharSelectorMessage> for CharSelectorProgram {
             icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
-                let Some(cursor_pos) = cursor.position_in(bounds) else {
-                    return None;
-                };
+                let cursor_pos = cursor.position_in(bounds)?;
 
                 if let Some(code) = self.code_at_pos(cursor_pos) {
                     return Some(Action::publish(CharSelectorMessage::SelectChar(code)));

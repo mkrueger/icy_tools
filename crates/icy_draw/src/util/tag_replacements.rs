@@ -40,7 +40,7 @@ pub struct TagReplacementList {
     pub entries: Vec<TagReplacement>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct TaglistInfo {
     pub id: String,
     pub name: String,
@@ -49,15 +49,6 @@ pub struct TaglistInfo {
 impl std::fmt::Display for TaglistInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
-    }
-}
-
-impl Default for TaglistInfo {
-    fn default() -> Self {
-        Self {
-            id: String::new(),
-            name: String::new(),
-        }
     }
 }
 
@@ -101,12 +92,12 @@ fn load_taglist_toml_from_path(id: &str, path: &Path) -> Option<TagReplacementLi
         Ok(text) => match parse_taglist_toml(id, &text) {
             Ok(list) => Some(list),
             Err(err) => {
-                log::error!("Failed to parse taglist TOML {:?}: {}", path, err);
+                log::error!("Failed to parse taglist TOML {path:?}: {err}");
                 None
             }
         },
         Err(err) => {
-            log::error!("Failed to read taglist file {:?}: {}", path, err);
+            log::error!("Failed to read taglist file {path:?}: {err}");
             None
         }
     }
@@ -128,7 +119,7 @@ fn load_builtin_taglist(id: &str) -> Option<TagReplacementList> {
                     Some(list)
                 }
                 Err(err) => {
-                    log::error!("Failed to parse built-in taglist '{}': {}", id, err);
+                    log::error!("Failed to parse built-in taglist '{id}': {err}");
                     None
                 }
             }
@@ -143,7 +134,7 @@ fn load_builtin_taglist(id: &str) -> Option<TagReplacementList> {
                     Some(list)
                 }
                 Err(err) => {
-                    log::error!("Failed to parse built-in taglist '{}': {}", id, err);
+                    log::error!("Failed to parse built-in taglist '{id}': {err}");
                     None
                 }
             }
@@ -168,6 +159,7 @@ fn builtin_taglists() -> Vec<TaglistInfo> {
 ///
 /// Built-in lists are always included first.
 /// User lists are loaded from the provided directory (if any).
+#[must_use]
 pub fn get_available_taglists(taglists_dir: Option<&Path>) -> Vec<TaglistInfo> {
     let mut lists = builtin_taglists();
 
@@ -183,7 +175,7 @@ pub fn get_available_taglists(taglists_dir: Option<&Path>) -> Vec<TaglistInfo> {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(err) => {
-            log::error!("Failed to read taglists directory {:?}: {}", dir, err);
+            log::error!("Failed to read taglists directory {dir:?}: {err}");
             return lists;
         }
     };
@@ -208,7 +200,7 @@ pub fn get_available_taglists(taglists_dir: Option<&Path>) -> Vec<TaglistInfo> {
         }
     }
 
-    user_lists.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    user_lists.sort_by_key(|a| a.name.to_lowercase());
     lists.extend(user_lists);
 
     lists
@@ -216,7 +208,8 @@ pub fn get_available_taglists(taglists_dir: Option<&Path>) -> Vec<TaglistInfo> {
 
 /// Load a tag replacement list by id.
 ///
-/// If id is empty, loads the built-in PCBoard list.
+/// If id is empty, loads the built-in `PCBoard` list.
+#[must_use]
 pub fn load_taglist(id: &str, taglists_dir: Option<&Path>) -> TagReplacementList {
     if id.is_empty() {
         return load_builtin_taglist("pcboard").unwrap_or(TagReplacementList {
@@ -242,7 +235,7 @@ pub fn load_taglist(id: &str, taglists_dir: Option<&Path>) -> TagReplacementList
     }
 
     if let Some(dir) = taglists_dir {
-        let path: PathBuf = dir.join(format!("{}.toml", id));
+        let path: PathBuf = dir.join(format!("{id}.toml"));
         if let Some(list) = load_taglist_toml_from_path(id, &path) {
             return list;
         }

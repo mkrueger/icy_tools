@@ -50,10 +50,10 @@ impl AnsiEditorCore {
         }
     }
 
-    /// Build EditorMarkers from current editor state.
+    /// Build `EditorMarkers` from current editor state.
     ///
     /// This collects all marker data (layer bounds, selection, etc.) in one place
-    /// and returns it as an EditorMarkers struct to be passed to the view.
+    /// and returns it as an `EditorMarkers` struct to be passed to the view.
     pub(crate) fn build_editor_markers(&self) -> icy_engine_gui::EditorMarkers {
         let mut markers = icy_engine_gui::EditorMarkers::default();
 
@@ -98,11 +98,10 @@ impl AnsiEditorCore {
                 .get_current_layer()
                 .ok()
                 .and_then(|idx| buffer.layers.get(idx))
-                .map(|layer| {
+                .map_or((0.0, 0.0), |layer| {
                     let offset = layer.offset();
                     (offset.x as f32 * font_width, offset.y as f32 * font_height)
-                })
-                .unwrap_or((0.0, 0.0));
+                });
 
             // In paste mode, find the floating layer instead of current layer
             let target_layer = edit_state.get_current_layer().ok();

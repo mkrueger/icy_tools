@@ -113,7 +113,7 @@ struct FKeyToolbarProgram<'a> {
     cache: &'a Cache,
 }
 
-impl<'a> FKeyToolbarProgram<'a> {
+impl FKeyToolbarProgram<'_> {
     /// Calculate content layout - now relative to shadow padding
     fn layout(&self, _bounds_width: f32) -> FKeyLayout {
         // Content starts after shadow padding and border
@@ -167,7 +167,7 @@ impl<'a> FKeyToolbarProgram<'a> {
         frame.fill(&highlight, color);
     }
 
-    /// Get slot index at cursor position, returns (slot, is_on_char)
+    /// Get slot index at cursor position, returns (slot, `is_on_char`)
     fn slot_at(&self, cursor_pos: Point, bounds: Rectangle) -> Option<(usize, bool)> {
         let layout = self.layout(bounds.width);
 
@@ -327,7 +327,7 @@ impl<'a> FKeyToolbarProgram<'a> {
 
     /// Draw set number using the font
     fn draw_set_number(&self, frame: &mut Frame, x: f32, y: f32, set_num: usize, color: Color, scale: f32, char_w: f32) {
-        let num_str = format!("{}", set_num);
+        let num_str = format!("{set_num}");
         let num_scale = scale * 0.6; // Same scale as labels for consistency
         let bg_transparent = Color::TRANSPARENT;
 
@@ -347,7 +347,7 @@ struct FKeyLayout {
 enum HoverState {
     #[default]
     None,
-    /// Slot hover (slot_index, is_on_char)
+    /// Slot hover (`slot_index`, `is_on_char`)
     Slot(usize, bool),
     /// Hover over previous-set navigation arrow
     NavPrev,
@@ -391,9 +391,9 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyToolbarProgram<'_> {
             self.draw_background(frame, control_bounds, border_color, bg_color);
 
             // Calculate font scale to fit CHAR_DISPLAY_HEIGHT
-            let font_height = self.font.as_ref().map(|f| f.size().height as f32).unwrap_or(16.0);
+            let font_height = self.font.as_ref().map_or(16.0, |f| f.size().height as f32);
             let scale = CHAR_DISPLAY_HEIGHT / font_height;
-            let font_width = self.font.as_ref().map(|f| f.size().width as f32).unwrap_or(8.0);
+            let font_width = self.font.as_ref().map_or(8.0, |f| f.size().width as f32);
 
             // Shared char_w for labels and set number
             let label_char_w = font_width * scale * 0.6;
@@ -453,7 +453,7 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyToolbarProgram<'_> {
 
             // Set number - centered between arrows (uses same y as labels)
             let set_num = set_idx + 1;
-            let num_str = format!("{}", set_num);
+            let num_str = format!("{set_num}");
             let num_width = num_str.len() as f32 * label_char_w;
 
             // Space between arrows: from nav_x + NAV_SIZE to next_x
@@ -509,9 +509,7 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyToolbarProgram<'_> {
             icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
-                let Some(cursor_pos) = cursor.position_in(bounds) else {
-                    return None;
-                };
+                let cursor_pos = cursor.position_in(bounds)?;
 
                 // Check F-key slots - different action for label vs char area
                 if let Some((slot, is_on_char)) = self.slot_at(cursor_pos, bounds) {
@@ -519,11 +517,10 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyToolbarProgram<'_> {
                         // Click on char area: type the character
                         self.cache.clear();
                         return Some(Action::publish(FKeyToolbarMessage::TypeFKey(slot)));
-                    } else {
-                        // Click on label area: open character selector popup
-                        self.cache.clear();
-                        return Some(Action::publish(FKeyToolbarMessage::OpenCharSelector(slot)));
                     }
+                    // Click on label area: open character selector popup
+                    self.cache.clear();
+                    return Some(Action::publish(FKeyToolbarMessage::OpenCharSelector(slot)));
                 }
 
                 // Check navigation buttons

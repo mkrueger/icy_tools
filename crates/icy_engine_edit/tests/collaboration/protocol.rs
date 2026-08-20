@@ -416,8 +416,10 @@ fn buffer_layer_size_consistency_after_remote_document() {
         for row in 0..(remote_doc.rows as usize) {
             let block = remote_doc.document.get(col).and_then(|c| c.get(row)).cloned().unwrap_or_default();
 
-            let mut ch = AttributedChar::default();
-            ch.ch = char::from_u32(block.code).unwrap_or(' ');
+            let mut ch = AttributedChar {
+                ch: char::from_u32(block.code).unwrap_or(' '),
+                ..Default::default()
+            };
             ch.attribute.set_foreground(block.fg as u32);
             ch.attribute.set_background(block.bg as u32);
 

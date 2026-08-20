@@ -18,7 +18,7 @@ impl AnsiEditorCore {
 
     /// Check if current layer is an Image layer
     pub fn is_on_image_layer(&self) -> bool {
-        self.with_edit_state_readonly(|state| state.get_cur_layer().map(|l| matches!(l.role, icy_engine::Role::Image)).unwrap_or(false))
+        self.with_edit_state_readonly(|state| state.get_cur_layer().is_some_and(|l| matches!(l.role, icy_engine::Role::Image)))
     }
 
     /// Cut selection to clipboard (for Image layers: cut the entire layer)
@@ -35,7 +35,7 @@ impl AnsiEditorCore {
                 let mut screen = self.screen.lock();
                 if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
                     if let Err(e) = edit_state.remove_layer(idx) {
-                        log::error!("Cut layer remove_layer failed: {}", e);
+                        log::error!("Cut layer remove_layer failed: {e}");
                     }
                 }
             }
@@ -48,10 +48,10 @@ impl AnsiEditorCore {
             let mut screen = self.screen.lock();
             if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
                 if let Err(e) = edit_state.erase_selection() {
-                    log::error!("Cut erase_selection failed: {}", e);
+                    log::error!("Cut erase_selection failed: {e}");
                 }
                 if let Err(e) = edit_state.clear_selection() {
-                    log::error!("Cut clear_selection failed: {}", e);
+                    log::error!("Cut clear_selection failed: {e}");
                 }
             }
         }
@@ -126,7 +126,7 @@ impl AnsiEditorCore {
             let mut screen = self.screen.lock();
             if let Some(edit_state) = screen.as_any_mut().downcast_mut::<EditState>() {
                 if let Err(e) = edit_state.clear_selection() {
-                    log::error!("Copy clear_selection failed: {}", e);
+                    log::error!("Copy clear_selection failed: {e}");
                 }
             }
         }
@@ -141,7 +141,7 @@ impl AnsiEditorCore {
     }
 
     /// Copy selection to clipboard without clearing the selection
-    /// Used internally by cut() which handles its own selection clearing
+    /// Used internally by `cut()` which handles its own selection clearing
     fn copy_without_deselect<Message: Clone + Send + 'static>(
         &mut self,
         on_complete: impl Fn(Result<(), icy_engine_gui::ClipboardError>) -> Message + Clone + Send + 'static,
@@ -151,7 +151,7 @@ impl AnsiEditorCore {
         match icy_engine_gui::copy_selection(&mut **screen, on_complete) {
             Ok(task) => task,
             Err(e) => {
-                log::error!("Copy failed: {}", e);
+                log::error!("Copy failed: {e}");
                 Task::none()
             }
         }
@@ -165,7 +165,7 @@ impl AnsiEditorCore {
 
     /// Paste from clipboard (ICY format, image, or text)
     /// Creates a floating layer that can be positioned before anchoring
-    /// Note: This is the old sync version - prefer paste_icy_data/paste_image/paste_text
+    /// Note: This is the old sync version - prefer `paste_icy_data/paste_image/paste_text`
     #[allow(dead_code)]
     pub fn paste(&mut self) -> Result<(), String> {
         // Don't paste if already in paste mode

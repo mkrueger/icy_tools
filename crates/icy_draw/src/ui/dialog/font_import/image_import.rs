@@ -1,6 +1,6 @@
 //! Image to font conversion
 //!
-//! Converts a raster image (assumed to be a 16x16 grid of characters) to a BitFont.
+//! Converts a raster image (assumed to be a 16x16 grid of characters) to a `BitFont`.
 //! Optionally uses Floyd-Steinberg dithering via quantette for high-quality 2-color conversion.
 
 use std::path::Path;
@@ -17,14 +17,14 @@ use quantette::{deps::palette::Srgb, dither::FloydSteinberg, Image, PaletteSize,
 pub fn import_font_from_image(path: &Path, font_width: i32, font_height: i32, use_dithering: bool) -> Result<BitFont, String> {
     // Validate dimensions
     if font_width < 1 {
-        return Err(format!("Font width must be positive, got {}", font_width));
+        return Err(format!("Font width must be positive, got {font_width}"));
     }
     if font_height < 1 {
-        return Err(format!("Font height must be positive, got {}", font_height));
+        return Err(format!("Font height must be positive, got {font_height}"));
     }
 
     // Load image
-    let img = image::open(path).map_err(|e| format!("Failed to load image: {}", e))?;
+    let img = image::open(path).map_err(|e| format!("Failed to load image: {e}"))?;
     let rgb_img = img.to_rgb8();
 
     let img_width = rgb_img.width() as i32;
@@ -41,7 +41,7 @@ pub fn import_font_from_image(path: &Path, font_width: i32, font_height: i32, us
     // Convert image pixels to Srgb<u8> for quantette
     let pixels: Vec<Srgb<u8>> = rgb_img.pixels().map(|p| Srgb::new(p.0[0], p.0[1], p.0[2])).collect();
 
-    let quantette_img = Image::new(img_width as u32, img_height as u32, pixels).map_err(|e| format!("Failed to create quantette image: {}", e))?;
+    let quantette_img = Image::new(img_width as u32, img_height as u32, pixels).map_err(|e| format!("Failed to create quantette image: {e}"))?;
 
     // Use Pipeline with 2 colors and optionally Floyd-Steinberg dithering
     let palette_size = PaletteSize::try_from(2u16).map_err(|_| "Failed to create palette size")?;
@@ -65,11 +65,7 @@ pub fn import_font_from_image(path: &Path, font_width: i32, font_height: i32, us
     let white_index = if palette.len() >= 2 {
         let luma0 = palette[0].red as u32 + palette[0].green as u32 + palette[0].blue as u32;
         let luma1 = palette[1].red as u32 + palette[1].green as u32 + palette[1].blue as u32;
-        if luma1 > luma0 {
-            1u8
-        } else {
-            0u8
-        }
+        u8::from(luma1 > luma0)
     } else if !palette.is_empty() {
         0u8
     } else {

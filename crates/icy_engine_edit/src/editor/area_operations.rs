@@ -530,30 +530,22 @@ fn generate_y_variants_packed(glyph: &PackedGlyph, height: usize) -> Vec<PackedG
 
     // Shift up by 1
     let mut up: PackedGlyph = [0; 32];
-    for i in 0..height.saturating_sub(1) {
-        up[i] = glyph[i + 1];
-    }
+    up[..height.saturating_sub(1)].copy_from_slice(&glyph[1..(height.saturating_sub(1) + 1)]);
     variants.push(up);
 
     // Shift up by 2
     let mut up2: PackedGlyph = [0; 32];
-    for i in 0..height.saturating_sub(2) {
-        up2[i] = glyph[i + 2];
-    }
+    up2[..height.saturating_sub(2)].copy_from_slice(&glyph[2..(height.saturating_sub(2) + 2)]);
     variants.push(up2);
 
     // Shift down by 1
     let mut down: PackedGlyph = [0; 32];
-    for i in 1..height {
-        down[i] = glyph[i - 1];
-    }
+    down[1..height].copy_from_slice(&glyph[..(height - 1)]);
     variants.push(down);
 
     // Shift down by 2
     let mut down2: PackedGlyph = [0; 32];
-    for i in 2..height {
-        down2[i] = glyph[i - 2];
-    }
+    down2[2..height].copy_from_slice(&glyph[..(height - 2)]);
     variants.push(down2);
 
     variants

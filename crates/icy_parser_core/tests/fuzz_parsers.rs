@@ -59,6 +59,7 @@ impl CommandSink for FuzzSink {
 }
 
 /// Generate various fuzzy input patterns
+#[allow(clippy::vec_init_then_push)] // interspersed with loops that push conditionally
 fn generate_fuzz_patterns() -> Vec<Vec<u8>> {
     let mut patterns = Vec::new();
 
@@ -166,7 +167,7 @@ macro_rules! fuzz_test_parser {
         fn $test_name() {
             let patterns = generate_fuzz_patterns();
 
-            for (idx, pattern) in patterns.iter().enumerate() {
+            for pattern in &patterns {
                 let mut parser = <$parser_type>::new();
                 let mut sink = FuzzSink::new();
 
@@ -189,7 +190,6 @@ macro_rules! fuzz_test_parser {
 
                 // If we got here without panicking, the test passed
                 // We don't care about correctness in fuzzing, just no crashes
-                assert!(true, "Parser survived pattern {}", idx);
             }
         }
     };
@@ -198,7 +198,7 @@ macro_rules! fuzz_test_parser {
         fn $test_name() {
             let patterns = generate_fuzz_patterns();
 
-            for (idx, pattern) in patterns.iter().enumerate() {
+            for pattern in &patterns {
                 let mut parser = <$parser_type>::new($mode);
                 let mut sink = FuzzSink::new();
 
@@ -221,7 +221,6 @@ macro_rules! fuzz_test_parser {
 
                 // If we got here without panicking, the test passed
                 // We don't care about correctness in fuzzing, just no crashes
-                assert!(true, "Parser survived pattern {}", idx);
             }
         }
     };
@@ -247,7 +246,7 @@ fn fuzz_rip_parser() {
 
     let patterns = generate_fuzz_patterns();
 
-    for (idx, pattern) in patterns.iter().enumerate() {
+    for pattern in &patterns {
         let mut parser = RipParser::new();
         let mut sink = FuzzSink::new();
 
@@ -260,8 +259,6 @@ fn fuzz_rip_parser() {
         for chunk in pattern.chunks(3) {
             parser2.parse(chunk, &mut sink2);
         }
-
-        assert!(true, "RipParser survived pattern {}", idx);
     }
 }
 
@@ -272,7 +269,7 @@ fn fuzz_igs_parser() {
 
     let patterns = generate_fuzz_patterns();
 
-    for (idx, pattern) in patterns.iter().enumerate() {
+    for pattern in &patterns {
         let mut parser = IgsParser::new();
         let mut sink = FuzzSink::new();
 
@@ -284,8 +281,6 @@ fn fuzz_igs_parser() {
         for &byte in pattern.iter() {
             parser2.parse(&[byte], &mut sink2);
         }
-
-        assert!(true, "IgsParser survived pattern {}", idx);
     }
 }
 
@@ -368,7 +363,7 @@ fn fuzz_numeric_overflow_cases() {
         // Long digit sequences
         vec![0x1B, b'[']
             .into_iter()
-            .chain(std::iter::repeat(b'9').take(1000))
+            .chain(std::iter::repeat_n(b'9', 1000))
             .chain(std::iter::once(b'm'))
             .collect(),
     ];

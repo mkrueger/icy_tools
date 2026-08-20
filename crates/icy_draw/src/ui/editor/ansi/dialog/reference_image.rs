@@ -42,7 +42,7 @@ pub enum ReferenceImageDialogMessage {
     Cancel,
 }
 
-/// Helper to wrap AnsiEditorMessage in Message
+/// Helper to wrap `AnsiEditorMessage` in Message
 fn msg(m: AnsiEditorMessage) -> Message {
     Message::AnsiEditor(m)
 }

@@ -1,4 +1,5 @@
 //! Tests for shape drawing operations with undo support
+#![allow(clippy::needless_range_loop)]
 
 use crate::bitfont::helpers::create_test_state;
 use icy_engine_edit::bitfont::BitFontUndoState;

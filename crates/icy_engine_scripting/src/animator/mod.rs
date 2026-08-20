@@ -158,8 +158,8 @@ impl Animator {
     }
 
     /// Get current frame's buffer and settings
-    pub fn get_current_frame(&self) -> Option<(&Box<dyn Screen>, &MonitorSettings)> {
-        self.frames.get(self.cur_frame).map(|(scene, settings, _)| (scene, settings))
+    pub fn get_current_frame(&self) -> Option<(&dyn Screen, &MonitorSettings)> {
+        self.frames.get(self.cur_frame).map(|(scene, settings, _)| (scene.as_ref(), settings))
     }
 
     /// Get current monitor settings
@@ -168,8 +168,10 @@ impl Animator {
     }
 
     /// Get current frame buffer with all metadata (immutable)
-    pub fn get_cur_frame_buffer(&self) -> Option<(&Box<dyn Screen>, &MonitorSettings, &u32)> {
-        self.frames.get(self.cur_frame).map(|(scene, settings, delay)| (scene, settings, delay))
+    pub fn get_cur_frame_buffer(&self) -> Option<(&dyn Screen, &MonitorSettings, &u32)> {
+        self.frames
+            .get(self.cur_frame)
+            .map(|(scene, settings, delay)| (scene.as_ref(), settings, delay))
     }
 
     /// Get current frame buffer with all metadata (mutable)

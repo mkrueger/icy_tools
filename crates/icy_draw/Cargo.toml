@@ -73,7 +73,6 @@ once_cell = { workspace = true }
 tokio = { workspace = true }
 
 # Utilities
-lazy_static = { workspace = true }
 directories = { workspace = true }
 semver = { workspace = true }
 thiserror = { workspace = true }

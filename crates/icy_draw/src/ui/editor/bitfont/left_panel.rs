@@ -1,6 +1,6 @@
-//! Left panel for BitFont Editor
+//! Left panel for `BitFont` Editor
 //!
-//! Contains the tool panel (grid for BitFont tools)
+//! Contains the tool panel (grid for `BitFont` tools)
 //! Uses the shared GPU-accelerated tool panel component
 
 use icy_ui::{Color, Element};
@@ -12,7 +12,7 @@ use crate::ui::tool_panel::{GenericToolPanel, ToolPanelMessage};
 // BitFont Tool Panel (wrapper around generic tool panel)
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Messages from the BitFont tool panel
+/// Messages from the `BitFont` tool panel
 #[derive(Clone, Debug)]
 pub enum BitFontToolPanelMessage {
     /// Clicked on a tool slot
@@ -21,7 +21,7 @@ pub enum BitFontToolPanelMessage {
     Tick(f32),
 }
 
-/// BitFont tool panel state (wraps the generic tool panel)
+/// `BitFont` tool panel state (wraps the generic tool panel)
 pub struct BitFontToolPanel {
     /// Currently selected tool
     pub current_tool: BitFontTool,
@@ -74,7 +74,7 @@ impl BitFontToolPanel {
         for (slot, (primary, secondary)) in BITFONT_TOOL_SLOTS.iter().enumerate() {
             let display_tool = if self.current_tool == *primary {
                 *primary
-            } else if secondary.map_or(false, |s| self.current_tool == s) {
+            } else if secondary.is_some_and(|s| self.current_tool == s) {
                 secondary.unwrap()
             } else {
                 *primary
@@ -89,7 +89,7 @@ impl BitFontToolPanel {
     /// Map tool to slot index
     fn tool_to_slot(&self, tool: BitFontTool) -> Option<usize> {
         for (slot, (primary, secondary)) in BITFONT_TOOL_SLOTS.iter().enumerate() {
-            if *primary == tool || secondary.map_or(false, |s| s == tool) {
+            if *primary == tool || secondary.is_some_and(|s| s == tool) {
                 return Some(slot);
             }
         }
@@ -121,8 +121,6 @@ impl BitFontToolPanel {
                 if let Some(sec) = secondary {
                     self.current_tool = *sec;
                 }
-            } else if secondary.map_or(false, |s| self.current_tool == s) {
-                self.current_tool = *primary;
             } else {
                 self.current_tool = *primary;
             }

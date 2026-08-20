@@ -43,7 +43,7 @@ fn make_synthetic_inputs() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
             // Set color
             command_heavy.push(0x16); // AVT_CMD
             command_heavy.push(0x01); // Set color
-            command_heavy.push((y * x) as u8 & 0xFF);
+            command_heavy.push(y * x);
             command_heavy.push(b'*');
         }
     }

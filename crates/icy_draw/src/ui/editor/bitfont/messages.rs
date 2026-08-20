@@ -1,4 +1,4 @@
-//! Messages for BitFont editor
+//! Messages for `BitFont` editor
 
 use icy_engine_edit::bitfont::BitFontFocusedPanel;
 use icy_ui::{keyboard::Modifiers, Point};
@@ -16,7 +16,7 @@ pub enum ArrowDirection {
     Right,
 }
 
-/// Messages for the BitFont editor
+/// Messages for the `BitFont` editor
 #[derive(Clone, Debug)]
 pub enum BitFontEditorMessage {
     /// Select a glyph by character code
@@ -72,10 +72,10 @@ pub enum BitFontEditorMessage {
     /// Extend selection with shift+arrows (edit grid)
     ExtendSelection(i32, i32),
     /// Extend charset selection with shift+arrows (anchor/lead mode)
-    /// Second bool is is_rectangle: true = Alt held (rectangle mode)
+    /// Second bool is `is_rectangle`: true = Alt held (rectangle mode)
     ExtendCharsetSelection(i32, i32, bool),
     /// Set charset selection lead position directly (for mouse drag, anchor/lead mode)
-    /// bool is is_rectangle: true = Alt held (rectangle mode)
+    /// bool is `is_rectangle`: true = Alt held (rectangle mode)
     SetCharsetSelectionLead(i32, i32, bool),
     /// Clear current edit selection
     ClearSelection,
@@ -165,9 +165,9 @@ pub enum BitFontEditorMessage {
     HandleHome,
     /// End key - go to end of line
     HandleEnd,
-    /// PageUp key - go to top
+    /// `PageUp` key - go to top
     HandlePageUp,
-    /// PageDown key - go to bottom
+    /// `PageDown` key - go to bottom
     HandlePageDown,
     /// Confirm action (Space/Enter) - context-dependent
     HandleConfirm,

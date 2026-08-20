@@ -1,6 +1,9 @@
 use i18n_embed_fl::fl;
 use icy_engine_gui::dialog_wrapper;
-use icy_engine_gui::ui::*;
+use icy_engine_gui::ui::{
+    button_row, dialog_area, dialog_title, modal_container, primary_button, secondary_button, separator, StateResult, DIALOG_SPACING, DIALOG_WIDTH_SMALL,
+    TEXT_SIZE_NORMAL,
+};
 use icy_parser_core::BaudEmulation;
 use icy_ui::{
     widget::{column, container, radio, row, text, text_input, Space},
@@ -9,19 +12,19 @@ use icy_ui::{
 
 // Standard baud rates - index 0 is Off, 1-12 are rates, 13 is custom
 pub const STANDARD_RATES: [Option<u32>; 13] = [
-    None,         // 0: Off
-    Some(300),    // 1
-    Some(1200),   // 2
-    Some(2400),   // 3
-    Some(4800),   // 4
-    Some(9600),   // 5
-    Some(14400),  // 6
-    Some(19200),  // 7
-    Some(28800),  // 8
-    Some(38400),  // 9
-    Some(57600),  // 10
-    Some(115200), // 11
-    None,         // 12: Custom (placeholder)
+    None,          // 0: Off
+    Some(300),     // 1
+    Some(1200),    // 2
+    Some(2400),    // 3
+    Some(4800),    // 4
+    Some(9600),    // 5
+    Some(14400),   // 6
+    Some(19200),   // 7
+    Some(28800),   // 8
+    Some(38400),   // 9
+    Some(57600),   // 10
+    Some(115_200), // 11
+    None,          // 12: Custom (placeholder)
 ];
 
 const CUSTOM_INDEX: usize = 12;
@@ -42,6 +45,7 @@ pub struct SelectBpsDialogState {
 }
 
 impl SelectBpsDialogState {
+    #[must_use]
     pub fn new(current_bps: BaudEmulation) -> Self {
         let (selected_index, custom_rate) = match current_bps {
             BaudEmulation::Off => (0, String::new()),
@@ -59,6 +63,7 @@ impl SelectBpsDialogState {
         Self { selected_index, custom_rate }
     }
 
+    #[must_use]
     pub fn get_emulation(&self) -> BaudEmulation {
         if self.selected_index == 0 {
             BaudEmulation::Off
@@ -90,7 +95,7 @@ impl SelectBpsDialogState {
             }
             SelectBpsDialogMessage::CustomBpsChanged(value) => {
                 // Only allow digits
-                self.custom_rate = value.chars().filter(|c| c.is_ascii_digit()).collect();
+                self.custom_rate = value.chars().filter(char::is_ascii_digit).collect();
                 StateResult::None
             }
             SelectBpsDialogMessage::Apply => StateResult::Success(self.get_emulation()),
@@ -256,7 +261,7 @@ impl Default for SelectBpsDialogState {
 // Builder function for baud emulation dialog
 // ============================================================================
 
-/// Create a baud emulation selection dialog for use with DialogStack
+/// Create a baud emulation selection dialog for use with `DialogStack`
 ///
 /// # Example
 /// ```ignore

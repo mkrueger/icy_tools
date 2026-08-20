@@ -52,7 +52,7 @@ impl SettingsDialogState {
                             background: Some(icy_ui::Background::Color(theme.accent.selected)),
                             text_color,
                             border: Border::default().rounded(6.0),
-                            shadow: Default::default(),
+                            shadow: icy_ui::Shadow::default(),
                             snap: false,
                             ..Default::default()
                         }
@@ -61,14 +61,13 @@ impl SettingsDialogState {
                             background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                             text_color,
                             border: Border::default().rounded(6.0),
-                            shadow: Default::default(),
+                            shadow: icy_ui::Shadow::default(),
                             snap: false,
                             ..Default::default()
                         }
                     };
 
                     match status {
-                        Status::Active | Status::Selected => base,
                         Status::Hovered if !is_selected => Style {
                             background: Some(icy_ui::Background::Color(theme.secondary.base)),
                             ..base
@@ -101,7 +100,7 @@ impl SettingsDialogState {
         )
         .gap(8);
 
-        let can_remove = !protocols.is_empty() && protocols.get(selected_index).map_or(false, |p| !p.is_internal());
+        let can_remove = !protocols.is_empty() && protocols.get(selected_index).is_some_and(|p| !p.is_internal());
         let on_msg = on_message.clone();
         let remove_button = if can_remove {
             tooltip(
@@ -281,7 +280,9 @@ impl SettingsDialogState {
             };
 
             // Build name row (only for external protocols)
-            let name_row: Element<'_, M> = if !is_internal {
+            let name_row: Element<'_, M> = if is_internal {
+                Space::new().height(0).into()
+            } else {
                 row![
                     left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-protocol-name")),
                     text_input("", &protocol_name)
@@ -298,12 +299,12 @@ impl SettingsDialogState {
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center)
                 .into()
-            } else {
-                Space::new().height(0).into()
             };
 
             // Build description row (only for external protocols)
-            let description_row: Element<'_, M> = if !is_internal {
+            let description_row: Element<'_, M> = if is_internal {
+                Space::new().height(0).into()
+            } else {
                 row![
                     left_label_small(fl!(crate::LANGUAGE_LOADER, "settings-protocol-description")),
                     text_input("", &protocol_description)
@@ -320,8 +321,6 @@ impl SettingsDialogState {
                 .spacing(DIALOG_SPACING)
                 .align_y(Alignment::Center)
                 .into()
-            } else {
-                Space::new().height(0).into()
             };
 
             // Build internal protocol hint

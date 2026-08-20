@@ -1,7 +1,7 @@
-//! MainWindow for icy_draw
+//! `MainWindow` for `icy_draw`
 //!
-//! Each MainWindow represents one editing window with its own state and mode.
-//! The mode determines what kind of editor is shown (ANSI, BitFont, CharFont, Animation).
+//! Each `MainWindow` represents one editing window with its own state and mode.
+//! The mode determines what kind of editor is shown (ANSI, `BitFont`, `CharFont`, Animation).
 
 use std::collections::hash_map::DefaultHasher;
 use std::{
@@ -53,13 +53,14 @@ impl UndoInfo {
 }
 
 /// The editing mode of a window
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum EditMode {
     /// ANSI/ASCII art editor - the main mode
+    #[default]
     Ansi,
-    /// BitFont editor for editing bitmap fonts
+    /// `BitFont` editor for editing bitmap fonts
     BitFont,
-    /// CharFont editor for editing TDF character fonts
+    /// `CharFont` editor for editing TDF character fonts
     CharFont,
     /// Animation editor for Lua-scripted ANSI animations
     Animation,
@@ -134,12 +135,6 @@ command_handler!(MainWindowCommands, create_draw_commands(), => Message {
     area_cmd::SCROLL_RIGHT => Message::AnsiEditor(AnsiEditorMessage::Core(AnsiEditorCoreMessage::ScrollAreaRight)),
 });
 
-impl Default for EditMode {
-    fn default() -> Self {
-        Self::Ansi
-    }
-}
-
 impl std::fmt::Display for EditMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -151,10 +146,10 @@ impl std::fmt::Display for EditMode {
     }
 }
 
-/// State for the BitFont editor mode - now uses the full BitFontEditor
+/// State for the `BitFont` editor mode - now uses the full `BitFontEditor`
 pub type BitFontEditorState = BitFontEditor;
 
-/// State for the CharFont (TDF) editor mode - now uses the full CharFontEditor
+/// State for the `CharFont` (TDF) editor mode - now uses the full `CharFontEditor`
 pub type CharFontEditorState = crate::ui::editor::charfont::CharFontEditor;
 
 /// Mode-specific state
@@ -284,7 +279,7 @@ impl ModeState {
 }
 
 pub(super) fn enforce_extension(mut path: PathBuf, required_ext: &str) -> PathBuf {
-    if path.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case(required_ext)) != Some(true) {
+    if path.extension().and_then(|e| e.to_str()).is_none_or(|e| !e.eq_ignore_ascii_case(required_ext)) {
         path.set_extension(required_ext);
     }
     path
@@ -297,7 +292,7 @@ pub enum PasteData {
     Text(String),
 }
 
-/// Message type for MainWindow
+/// Message type for `MainWindow`
 #[derive(Clone, Debug)]
 pub enum Message {
     /// No-op message used by UI widgets that need an `on_press` but should not trigger any updates.
@@ -370,7 +365,7 @@ pub enum Message {
     InsertSixelFromFile,
     /// Insert a Sixel from the selected image file path
     InsertSixelFromPath(std::path::PathBuf),
-    /// Request WindowManager to open a new window with pending buffer
+    /// Request `WindowManager` to open a new window with pending buffer
     OpenNewWindowWithBuffer,
     SelectAll,
     Deselect,
@@ -459,13 +454,13 @@ pub struct AnsiStatusBarInfo {
     pub letter_spacing: bool,
     /// Use aspect ratio correction
     pub use_aspect_ratio: bool,
-    /// For XBinExtended: slot font info
+    /// For `XBinExtended`: slot font info
     pub slot_fonts: Option<SlotFontsInfo>,
     /// One-line discoverability hint for the active tool / brush mode.
     pub tool_hint: Option<String>,
 }
 
-/// Font slot information for XBinExtended mode
+/// Font slot information for `XBinExtended` mode
 #[derive(Clone, Debug)]
 pub struct SlotFontsInfo {
     pub current_slot: usize,
@@ -543,7 +538,7 @@ pub struct MainWindow {
     /// Undo stack length at last save - for dirty tracking
     pub(super) last_save: usize,
 
-    /// Close the window after a successful save (for SaveAndClose flow)
+    /// Close the window after a successful save (for `SaveAndClose` flow)
     pub(super) close_after_save: bool,
 
     /// Pending file to open after save (None inside = new file, Some(path) = open path)
@@ -612,7 +607,7 @@ impl MainWindow {
                     match crate::ui::editor::charfont::CharFontEditor::with_file(p.clone(), options.clone(), font_library.clone()) {
                         Ok(editor) => (ModeState::CharFont(editor), None),
                         Err(e) => {
-                            let error = Some(("Error Loading TDF Font".to_string(), format!("{}", e)));
+                            let error = Some(("Error Loading TDF Font".to_string(), format!("{e}")));
                             log::error!("Error loading TDF Font file '{}': {}", p.display(), error.as_ref().unwrap().1);
                             (
                                 ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone(), font_library.clone())),
@@ -666,7 +661,7 @@ impl MainWindow {
         window
     }
 
-    /// Create a MainWindow with a pre-existing TextBuffer (e.g., from paste as new image)
+    /// Create a `MainWindow` with a pre-existing `TextBuffer` (e.g., from paste as new image)
     pub fn with_buffer(id: usize, buffer: icy_engine::TextBuffer, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
         let mode_state = ModeState::Ansi(AnsiEditorMainArea::with_buffer(buffer, None, options.clone(), font_library.clone()));
         let last_save = mode_state.undo_stack_len();
@@ -721,9 +716,8 @@ impl MainWindow {
                 continue;
             }
 
-            let blocks = match self.collaboration_state.remote_paste_blocks.get(&user.user.id) {
-                Some(b) => b,
-                None => continue,
+            let Some(blocks) = self.collaboration_state.remote_paste_blocks.get(&user.user.id) else {
+                continue;
             };
 
             let (r, g, b) = self.collaboration_state.user_color(user.user.id);
@@ -778,7 +772,7 @@ impl MainWindow {
         editor.set_remote_paste_previews(previews);
     }
 
-    /// Create a MainWindow restored from a session
+    /// Create a `MainWindow` restored from a session
     ///
     /// This loads content from `load_path` but sets `original_path` as the file path.
     /// If `mark_dirty` is true, the window will be marked as modified.
@@ -811,7 +805,7 @@ impl MainWindow {
                     Some(FileFormat::IcyAnim) => match AnimationEditor::load_from_autosave(autosave, orig.clone()) {
                         Ok(editor) => (ModeState::Animation(editor), None),
                         Err(e) => {
-                            log::error!("Error loading animation autosave: {}", e);
+                            log::error!("Error loading animation autosave: {e}");
                             let error = Some(("Error Loading Animation Autosave".to_string(), e));
                             (ModeState::Animation(AnimationEditor::new()), error)
                         }
@@ -820,8 +814,8 @@ impl MainWindow {
                         match crate::ui::editor::charfont::CharFontEditor::load_from_autosave(autosave, orig.clone(), options.clone(), font_library.clone()) {
                             Ok(editor) => (ModeState::CharFont(editor), None),
                             Err(e) => {
-                                log::error!("Error loading TDF font autosave: {}", e);
-                                let error = Some(("Error Loading TDF Font Autosave".to_string(), format!("{}", e)));
+                                log::error!("Error loading TDF font autosave: {e}");
+                                let error = Some(("Error Loading TDF Font Autosave".to_string(), format!("{e}")));
                                 (
                                     ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone(), font_library.clone())),
                                     error,
@@ -834,8 +828,8 @@ impl MainWindow {
                         match AnsiEditorMainArea::load_from_autosave(autosave, orig.clone(), options.clone(), font_library.clone()) {
                             Ok(editor) => (ModeState::Ansi(editor), None),
                             Err(e) => {
-                                log::error!("Error loading autosave: {}", e);
-                                let error = Some(("Error Loading Autosave".to_string(), format!("{}", e)));
+                                log::error!("Error loading autosave: {e}");
+                                let error = Some(("Error Loading Autosave".to_string(), e.clone()));
                                 (ModeState::Ansi(AnsiEditorMainArea::new(options.clone(), font_library.clone())), error)
                             }
                         }
@@ -881,7 +875,7 @@ impl MainWindow {
                                 (ModeState::CharFont(editor), None)
                             }
                             Err(e) => {
-                                let error = Some(("Error Loading TDF Font".to_string(), format!("{}", e)));
+                                let error = Some(("Error Loading TDF Font".to_string(), format!("{e}")));
                                 (
                                     ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone(), font_library.clone())),
                                     error,
@@ -927,7 +921,7 @@ impl MainWindow {
                         match crate::ui::editor::charfont::CharFontEditor::with_file(orig.clone(), options.clone(), font_library.clone()) {
                             Ok(editor) => (ModeState::CharFont(editor), None),
                             Err(e) => {
-                                let error = Some(("Error Loading TDF Font".to_string(), format!("{}", e)));
+                                let error = Some(("Error Loading TDF Font".to_string(), format!("{e}")));
                                 (
                                     ModeState::CharFont(crate::ui::editor::charfont::CharFontEditor::new(options.clone(), font_library.clone())),
                                     error,
@@ -1001,7 +995,7 @@ impl MainWindow {
         self.mode_state.undo_stack_len() != self.last_save
     }
 
-    /// Mark document as saved - updates last_save to current undo stack length
+    /// Mark document as saved - updates `last_save` to current undo stack length
     pub fn mark_saved(&mut self) {
         self.last_save = self.mode_state.undo_stack_len();
         self.update_title();
@@ -1018,12 +1012,11 @@ impl MainWindow {
             .file_path()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| crate::fl!("unsaved-title"));
+            .map_or_else(|| crate::fl!("unsaved-title"), std::string::ToString::to_string);
 
         let modified = if self.is_modified() { "*" } else { "" };
 
-        format!("{}{}", file_name, modified)
+        format!("{file_name}{modified}")
     }
 
     /// Get zoom info string for display in title bar (e.g., "[AUTO]" or "[150%]")
@@ -1117,8 +1110,7 @@ impl MainWindow {
                     let filename = self
                         .file_path()
                         .and_then(|p| p.file_name())
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| fl!("unsaved-title"));
+                        .map_or_else(|| fl!("unsaved-title"), |n| n.to_string_lossy().to_string());
 
                     self.dialogs.push(confirm_yes_no_cancel(
                         fl!("save-changes-title", filename = filename),
@@ -1249,7 +1241,7 @@ impl MainWindow {
                     ModeState::Ansi(editor) => {
                         editor.with_edit_state(|state| {
                             if let Err(e) = state.undo() {
-                                log::error!("Undo failed: {}", e);
+                                log::error!("Undo failed: {e}");
                             }
                         });
                         // Sync UI after undo (palette may have changed)
@@ -1274,7 +1266,7 @@ impl MainWindow {
                     ModeState::Ansi(editor) => {
                         editor.with_edit_state(|state| {
                             if let Err(e) = state.redo() {
-                                log::error!("Redo failed: {}", e);
+                                log::error!("Redo failed: {e}");
                             }
                         });
                         // Sync UI after redo (palette may have changed)
@@ -1335,7 +1327,7 @@ impl MainWindow {
             }
             Message::CopyCompleted(result) => {
                 if let Err(e) = result {
-                    log::error!("Copy failed: {}", e);
+                    log::error!("Copy failed: {e}");
                 }
                 Task::none()
             }
@@ -1343,15 +1335,11 @@ impl MainWindow {
                 use icy_ui::clipboard::STANDARD;
 
                 match &self.mode_state {
-                    ModeState::BitFont(_) => {
-                        return icy_engine_edit::bitfont::get_from_clipboard(|result| match result {
-                            Ok(data) => Message::PasteApply(Some(PasteData::Icy(data.to_bytes()))),
-                            Err(_) => Message::PasteApply(None),
-                        });
-                    }
-                    _ => {
-                        return STANDARD.available_formats().map(Message::PasteWithFormats);
-                    }
+                    ModeState::BitFont(_) => icy_engine_edit::bitfont::get_from_clipboard(|result| match result {
+                        Ok(data) => Message::PasteApply(Some(PasteData::Icy(data.to_bytes()))),
+                        Err(_) => Message::PasteApply(None),
+                    }),
+                    _ => STANDARD.available_formats().map(Message::PasteWithFormats),
                 }
             }
             Message::PasteWithFormats(formats) => {
@@ -1361,7 +1349,7 @@ impl MainWindow {
                 let has_icy = formats.iter().any(|f| f == ICY_CLIPBOARD_TYPE);
                 let has_image = Format::Image.formats().iter().any(|f| formats.iter().any(|a| a == f));
                 let has_text = Format::Text.formats().iter().any(|f| formats.iter().any(|a| a == f));
-                println!("Paste formats: {:?} (icy: {}, image: {}, text: {})", formats, has_icy, has_image, has_text);
+                println!("Paste formats: {formats:?} (icy: {has_icy}, image: {has_image}, text: {has_text})");
 
                 if has_icy {
                     return STANDARD
@@ -1387,24 +1375,24 @@ impl MainWindow {
                     (ModeState::BitFont(editor), Some(PasteData::Icy(data))) => {
                         if let Ok(parsed) = icy_engine_edit::bitfont::BitFontClipboardData::from_bytes(&data) {
                             if let Err(e) = editor.state.paste_data(parsed) {
-                                log::error!("BitFont paste failed: {}", e);
+                                log::error!("BitFont paste failed: {e}");
                             }
                         }
                         editor.invalidate_caches();
                     }
                     (ModeState::Ansi(editor), Some(PasteData::Icy(data))) => {
                         if let Err(e) = editor.paste_icy_data(&data) {
-                            log::error!("Paste ICY data failed: {}", e);
+                            log::error!("Paste ICY data failed: {e}");
                         }
                     }
                     (ModeState::Ansi(editor), Some(PasteData::Image(img))) => {
                         if let Err(e) = editor.paste_image(img) {
-                            log::error!("Paste image failed: {}", e);
+                            log::error!("Paste image failed: {e}");
                         }
                     }
                     (ModeState::Ansi(editor), Some(PasteData::Text(text))) => {
                         if let Err(e) = editor.paste_text(&text) {
-                            log::error!("Paste text failed: {}", e);
+                            log::error!("Paste text failed: {e}");
                         }
                     }
                     _ => {}
@@ -1496,12 +1484,12 @@ impl MainWindow {
                     if let ModeState::Ansi(editor) = &mut self.mode_state {
                         editor.with_edit_state(|state| {
                             if let Err(e) = state.paste_sixel(sixel) {
-                                log::error!("Failed to insert sixel from file: {}", e);
+                                log::error!("Failed to insert sixel from file: {e}");
                             }
                         });
                     }
                 } else {
-                    log::error!("Failed to load image from {:?}", path);
+                    log::error!("Failed to load image from {path:?}");
                 }
                 Task::none()
             }
@@ -1603,20 +1591,20 @@ impl MainWindow {
                                 CollabToolEvent::PasteAsSelection => {
                                     if let Some(blocks) = editor.get_floating_layer_blocks() {
                                         if let Some(task) = self.collaboration_state.send_paste_as_selection(blocks) {
-                                            collab_tasks.push(task.map(|_| Message::Noop));
+                                            collab_tasks.push(task.map(|()| Message::Noop));
                                         }
                                     }
                                     // Also send initial operation position
                                     if let Some((x, y)) = editor.get_floating_layer_position() {
                                         if let Some(task) = self.collaboration_state.send_operation(x, y) {
-                                            collab_tasks.push(task.map(|_| Message::Noop));
+                                            collab_tasks.push(task.map(|()| Message::Noop));
                                         }
                                     }
                                 }
                                 CollabToolEvent::Operation(x, y) => {
-                                    log::debug!("[Collab] Sending Operation({}, {}) to server", x, y);
+                                    log::debug!("[Collab] Sending Operation({x}, {y}) to server");
                                     if let Some(task) = self.collaboration_state.send_operation(x, y) {
-                                        collab_tasks.push(task.map(|_| Message::Noop));
+                                        collab_tasks.push(task.map(|()| Message::Noop));
                                     }
                                 }
                             }
@@ -1629,7 +1617,7 @@ impl MainWindow {
                             // Use try_lock to avoid potential deadlocks
                             if let Ok(undo_stack) = undo_stack_arc.try_lock() {
                                 if let Some(collab_task) = self.collaboration_state.sync_from_undo_stack(&undo_stack, caret_pos, selecting) {
-                                    collab_tasks.push(collab_task.map(|_| Message::Noop));
+                                    collab_tasks.push(collab_task.map(|()| Message::Noop));
                                 }
                             }
                         }
@@ -1721,10 +1709,12 @@ impl MainWindow {
                         let _ = state.set_font_dimensions(icy_engine::Size::new(result.font_width, result.font_height));
 
                         // Apply SAUCE metadata with undo support
-                        let mut sauce_meta = icy_engine_edit::SauceMetaData::default();
-                        sauce_meta.title = result.title.as_str().into();
-                        sauce_meta.author = result.author.as_str().into();
-                        sauce_meta.group = result.group.as_str().into();
+                        let mut sauce_meta = icy_engine_edit::SauceMetaData {
+                            title: result.title.as_str().into(),
+                            author: result.author.as_str().into(),
+                            group: result.group.as_str().into(),
+                            ..Default::default()
+                        };
                         for line in result.comments.lines() {
                             sauce_meta.comments.push(line.into());
                         }
@@ -1779,7 +1769,7 @@ impl MainWindow {
                     let export_dir = opts
                         .last_export_directory
                         .clone()
-                        .or_else(|| editor.file_path().and_then(|p| p.parent()).map(|p| p.to_path_buf()))
+                        .or_else(|| editor.file_path().and_then(|p| p.parent()).map(std::path::Path::to_path_buf))
                         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
                     let saved_export_settings = opts.export_settings.clone();
                     drop(opts);
@@ -1871,12 +1861,12 @@ impl MainWindow {
                         #[cfg(not(windows))]
                         {
                             if let Err(err) = open::that(&log_file) {
-                                log::error!("Failed to open log file: {}", err);
+                                log::error!("Failed to open log file: {err}");
                             }
                         }
                     } else if let Some(parent) = log_file.parent() {
                         if let Err(err) = open::that(parent) {
-                            log::error!("Failed to open log directory: {}", err);
+                            log::error!("Failed to open log directory: {err}");
                         }
                     }
                 }
@@ -1907,23 +1897,20 @@ impl MainWindow {
             // ═══════════════════════════════════════════════════════════════════
             Message::OpenDiscussions => {
                 if let Err(e) = open::that("https://github.com/mkrueger/icy_tools/discussions") {
-                    log::error!("Failed to open discussions URL: {}", e);
+                    log::error!("Failed to open discussions URL: {e}");
                 }
                 Task::none()
             }
             Message::OpenReleasesPage => {
-                let url = format!(
-                    "https://github.com/mkrueger/icy_tools/releases/tag/IcyDraw{}",
-                    crate::LATEST_VERSION.to_string()
-                );
+                let url = format!("https://github.com/mkrueger/icy_tools/releases/tag/IcyDraw{}", *crate::LATEST_VERSION);
                 if let Err(e) = open::that(&url) {
-                    log::error!("Failed to open releases URL: {}", e);
+                    log::error!("Failed to open releases URL: {e}");
                 }
                 Task::none()
             }
             Message::ReportBug => {
                 if let Err(e) = open::that("https://github.com/mkrueger/icy_tools/issues") {
-                    log::error!("Failed to open issues URL: {}", e);
+                    log::error!("Failed to open issues URL: {e}");
                 }
                 Task::none()
             }
@@ -1938,7 +1925,7 @@ impl MainWindow {
                 // Handle OpenLink messages from the about dialog
                 if let icy_engine_gui::ui::AboutDialogMessage::OpenLink(url) = msg {
                     if let Err(e) = open::that(url) {
-                        log::error!("Failed to open URL {}: {}", url, e);
+                        log::error!("Failed to open URL {url}: {e}");
                     }
                 }
                 // Route to dialog stack for other messages
@@ -2041,20 +2028,22 @@ impl MainWindow {
                     CollaborationMessage::Event(event) => {
                         match event {
                             CollaborationEvent::Connected(doc) => {
-                                self.collaboration_state.start_session(&doc);
+                                self.collaboration_state.start_session(doc);
 
                                 // Create a new editor with the document from the server
-                                let buffer = AnsiEditorMainArea::create_buffer_from_remote_document(&doc);
+                                let buffer = AnsiEditorMainArea::create_buffer_from_remote_document(doc);
                                 self.mode_state =
                                     ModeState::Ansi(AnsiEditorMainArea::with_buffer(buffer, None, self.options.clone(), self.font_library.clone()));
 
                                 // Apply SAUCE metadata to the new editor
                                 if let ModeState::Ansi(editor) = &mut self.mode_state {
                                     editor.with_edit_state(|state| {
-                                        let mut sauce = icy_engine_edit::SauceMetaData::default();
-                                        sauce.title = doc.title.clone().into();
-                                        sauce.author = doc.author.clone().into();
-                                        sauce.group = doc.group.clone().into();
+                                        let mut sauce = icy_engine_edit::SauceMetaData {
+                                            title: doc.title.clone().into(),
+                                            author: doc.author.clone().into(),
+                                            group: doc.group.clone().into(),
+                                            ..Default::default()
+                                        };
                                         sauce.comments = doc.comments.lines().map(|line| line.to_string().into()).collect();
                                         state.set_sauce_meta(sauce);
                                     });
@@ -2063,7 +2052,7 @@ impl MainWindow {
 
                                 // Seed initial user list (Moebius sends existing users only)
                                 // show_join=false: these users were already connected, no "joined" message
-                                for user in doc.users.iter() {
+                                for user in &doc.users {
                                     self.collaboration_state.add_user(user.clone(), false);
                                 }
                                 self.sync_remote_cursors_to_editor();
@@ -2075,7 +2064,7 @@ impl MainWindow {
                                 self.sync_remote_cursors_to_editor();
                             }
                             CollaborationEvent::UserLeft { user_id, nick } => {
-                                log::info!("User {} left", nick);
+                                log::info!("User {nick} left");
                                 // show_leave=true: this user just left, show "left" message
                                 self.collaboration_state.remove_user(*user_id, true);
                                 self.sync_remote_cursors_to_editor();
@@ -2107,7 +2096,7 @@ impl MainWindow {
                                 // Show chat notification
                                 if let Some(user) = self.collaboration_state.remote_users().get(&sauce.id) {
                                     let nick = user.user.nick.clone();
-                                    self.collaboration_state.add_system_message(&format!("{} changed the SAUCE record", nick));
+                                    self.collaboration_state.add_system_message(&format!("{nick} changed the SAUCE record"));
                                 }
                             }
                             CollaborationEvent::Draw { col, row, block } => {
@@ -2202,7 +2191,7 @@ impl MainWindow {
                                     }));
                             }
                             CollaborationEvent::Error(e) => {
-                                log::error!("Collaboration error: {}", e);
+                                log::error!("Collaboration error: {e}");
                                 self.collaboration_state.end_session();
                                 self.sync_remote_cursors_to_editor();
                                 self.dialogs.push(error_dialog(
@@ -2213,7 +2202,7 @@ impl MainWindow {
                             }
                             _ => {
                                 // Handle other events as needed
-                                log::debug!("Unhandled collaboration event: {:?}", event);
+                                log::debug!("Unhandled collaboration event: {event:?}");
                             }
                         }
                     }
@@ -2345,7 +2334,7 @@ impl MainWindow {
             // Center shows last log message, clickable to toggle log panel
             let log_msg = editor.last_log_message().unwrap_or_else(|| "Log".to_string());
             let log_icon = if editor.is_log_visible() { "▼" } else { "▶" };
-            let center_content = mouse_area(container(text(format!("{} {}", log_icon, log_msg)).size(12)).center_x(Length::Fill))
+            let center_content = mouse_area(container(text(format!("{log_icon} {log_msg}")).size(12)).center_x(Length::Fill))
                 .on_press(Message::AnimationEditor(AnimationEditorMessage::ToggleLogPanel));
 
             return container(
@@ -2441,7 +2430,7 @@ impl MainWindow {
         // — users could not tell that Pencil/Char + `█` paints solid blocks).
         let dims_text = format!("{}×{}", info.buffer_size.0, info.buffer_size.1);
         let center_text = if let Some(hint) = info.tool_hint.as_deref() {
-            format!("{}    {}", hint, dims_text)
+            format!("{hint}    {dims_text}")
         } else {
             dims_text
         };
@@ -2451,12 +2440,12 @@ impl MainWindow {
             // Show selection range and size
             let width = (max_x - min_x).abs() + 1;
             let height = (max_y - min_y).abs() + 1;
-            text(format!("({},{})–({},{}) {}×{}", min_x, min_y, max_x, max_y, width, height))
+            text(format!("({min_x},{min_y})–({max_x},{max_y}) {width}×{height}"))
                 .size(14)
                 .style(statusbar_secondary_text_style)
                 .into()
         } else if let Some((x, y)) = info.cursor_position {
-            text(format!("({},{})", x, y)).size(14).style(statusbar_secondary_text_style).into()
+            text(format!("({x},{y})")).size(14).style(statusbar_secondary_text_style).into()
         } else {
             Space::new().width(0.0).into()
         };
@@ -2469,10 +2458,10 @@ impl MainWindow {
             let slot0_style = if slots.current_slot == 0 { active_slot_style } else { inactive_slot_style };
             let slot1_style = if slots.current_slot == 1 { active_slot_style } else { inactive_slot_style };
 
-            let slot0_btn = mouse_area(container(text(format!("0: {}", slot0_name)).size(14)).style(slot0_style).padding([2, 6]))
+            let slot0_btn = mouse_area(container(text(format!("0: {slot0_name}")).size(14)).style(slot0_style).padding([2, 6]))
                 .on_press(Message::AnsiEditor(AnsiEditorMessage::SwitchFontSlot(0)));
 
-            let slot1_btn = mouse_area(container(text(format!("1: {}", slot1_name)).size(14)).style(slot1_style).padding([2, 6]))
+            let slot1_btn = mouse_area(container(text(format!("1: {slot1_name}")).size(14)).style(slot1_style).padding([2, 6]))
                 .on_press(Message::AnsiEditor(AnsiEditorMessage::SwitchFontSlot(1)));
 
             row![slot0_btn, Space::new().width(4.0), slot1_btn].align_y(Alignment::Center).into()
@@ -2648,7 +2637,7 @@ impl MainWindow {
                         self.update_title();
                         Ok(())
                     }
-                    _ => Err(format!("Unknown document type: {}", doc_type)),
+                    _ => Err(format!("Unknown document type: {doc_type}")),
                 };
                 if let Some(tx) = response.lock().take() {
                     let _ = tx.send(result);
@@ -2685,7 +2674,7 @@ impl MainWindow {
                     ModeState::Ansi(editor) => {
                         editor.with_edit_state(|state| {
                             if let Err(e) = state.undo() {
-                                log::error!("MCP Undo failed: {}", e);
+                                log::error!("MCP Undo failed: {e}");
                             }
                         });
                         editor.sync_ui();
@@ -2714,7 +2703,7 @@ impl MainWindow {
                     ModeState::Ansi(editor) => {
                         editor.with_edit_state(|state| {
                             if let Err(e) = state.redo() {
-                                log::error!("MCP Redo failed: {}", e);
+                                log::error!("MCP Redo failed: {e}");
                             }
                         });
                         editor.sync_ui();
@@ -2820,7 +2809,7 @@ impl MainWindow {
                 response,
             } => {
                 let result = match &mut self.mode_state {
-                    ModeState::Ansi(editor) => editor.run_lua_script(&script, undo_description.as_deref()),
+                    ModeState::Ansi(editor) => editor.run_lua_script(script, undo_description.as_deref()),
                     _ => Err("Not in ANSI editor mode".to_string()),
                 };
                 if let Some(tx) = response.lock().take() {
@@ -3061,7 +3050,7 @@ impl MainWindow {
         }
     }
 
-    /// Build editor status for MCP get_status command
+    /// Build editor status for MCP `get_status` command
     fn build_editor_status(&self) -> crate::mcp::types::EditorStatus {
         use crate::mcp::types::{
             AnimationStatus, AnsiStatus, BitFontStatus, BufferInfo, CaretInfo, ColorInfo, EditorStatus, LayerInfo, RectangleInfo, SelectionInfo,
@@ -3276,7 +3265,7 @@ impl MainWindow {
                         self.update_title();
                         Ok(())
                     }
-                    Err(e) => Err(format!("{}", e)),
+                    Err(e) => Err(format!("{e}")),
                 }
             }
             _ => match AnsiEditorMainArea::with_file(path.clone(), self.options.clone(), self.font_library.clone()) {
@@ -3286,7 +3275,7 @@ impl MainWindow {
                     self.update_title();
                     Ok(())
                 }
-                Err(e) => Err(format!("{}", e)),
+                Err(e) => Err(e.clone()),
             },
         }
     }

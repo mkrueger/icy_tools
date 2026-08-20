@@ -49,6 +49,7 @@ impl From<UndoSixel> for crate::Sixel {
 
 /// Serializable editor undo operation enum
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)] // undo history keeps full before/after snapshots; boxing would ripple across call sites
 pub enum EditorUndoOp {
     /// Atomic group of operations
     Atomic {
@@ -489,7 +490,7 @@ impl EditorUndoOp {
             EditorUndoOp::Paste { layer, current_layer } => {
                 // Remove the pasted layer and update our stored copy
                 let removed = edit_state.get_buffer_mut().layers.remove(*current_layer + 1);
-                *layer = Box::new(removed);
+                **layer = removed;
                 edit_state.set_current_layer(*current_layer);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
@@ -663,18 +664,18 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::Deselect { sel } => {
-                edit_state.selection_opt = Some(sel.clone());
+                edit_state.selection_opt = Some(*sel);
                 edit_state.mark_overlay_dirty_mut();
                 Ok(())
             }
             EditorUndoOp::SelectNothing { sel, mask } => {
-                edit_state.selection_opt = sel.clone();
+                edit_state.selection_opt = *sel;
                 edit_state.set_selection_mask(mask.clone());
                 // set_selection_mask already marks overlay dirty
                 Ok(())
             }
             EditorUndoOp::SetSelection { old, .. } => {
-                edit_state.selection_opt = old.clone();
+                edit_state.selection_opt = *old;
                 edit_state.mark_overlay_dirty_mut();
                 Ok(())
             }
@@ -689,7 +690,7 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::InverseSelection { sel, old, new } => {
-                edit_state.selection_opt = sel.clone();
+                edit_state.selection_opt = *sel;
                 std::mem::swap(old, new);
                 edit_state.set_selection_mask(new.clone());
                 // set_selection_mask already marks overlay dirty
@@ -702,7 +703,7 @@ impl EditorUndoOp {
             }
             EditorUndoOp::SetSauceData { old, new } => {
                 std::mem::swap(old, new);
-                edit_state.set_sauce_meta(new.clone().into());
+                edit_state.set_sauce_meta(new.clone());
                 Ok(())
             }
             EditorUndoOp::SwitchToFontPage { old, new } => {
@@ -1126,7 +1127,7 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::Deselect { sel } => {
-                *sel = edit_state.selection_opt.clone().unwrap_or_default();
+                *sel = edit_state.selection_opt.unwrap_or_default();
                 edit_state.selection_opt = None;
                 edit_state.mark_overlay_dirty_mut();
                 Ok(())
@@ -1140,7 +1141,7 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::SetSelection { new, .. } => {
-                edit_state.selection_opt = new.clone();
+                edit_state.selection_opt = *new;
                 edit_state.mark_overlay_dirty_mut();
                 Ok(())
             }
@@ -1151,12 +1152,12 @@ impl EditorUndoOp {
             }
             EditorUndoOp::AddSelectionToMask { old, selection } => {
                 *old = edit_state.selection_mask.clone();
-                edit_state.selection_mask.add_selection(selection.clone());
+                edit_state.selection_mask.add_selection(*selection);
                 edit_state.mark_overlay_dirty_mut();
                 Ok(())
             }
             EditorUndoOp::InverseSelection { sel, old, new } => {
-                *sel = edit_state.selection_opt.clone();
+                *sel = edit_state.selection_opt;
                 std::mem::swap(old, new);
                 edit_state.selection_opt = None;
                 edit_state.set_selection_mask(new.clone());
@@ -1169,7 +1170,7 @@ impl EditorUndoOp {
             }
             EditorUndoOp::SetSauceData { old, new } => {
                 // Set value first, then swap for undo symmetry
-                edit_state.set_sauce_meta(new.clone().into());
+                edit_state.set_sauce_meta(new.clone());
                 std::mem::swap(old, new);
                 Ok(())
             }

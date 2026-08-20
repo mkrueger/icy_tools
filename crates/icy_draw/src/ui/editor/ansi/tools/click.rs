@@ -43,7 +43,7 @@ pub struct ClickTool {
     // === Selection Mouse State (shared with FontTool) ===
     selection_mouse: SelectionMouseState,
 
-    /// Whether the current layer is an Image layer (Role::Image)
+    /// Whether the current layer is an Image layer (`Role::Image`)
     /// Updated on layer change to control cursor/caret display
     is_on_image_layer: bool,
 }
@@ -73,7 +73,7 @@ impl ClickTool {
         let target = buffer_type.convert_from_unicode(unicode_cp437);
 
         if let Err(e) = ctx.state.type_key(target) {
-            log::warn!("Failed to type fkey (set {}, slot {}): {}", set_idx, slot, e);
+            log::warn!("Failed to type fkey (set {set_idx}, slot {slot}): {e}");
             return ToolResult::None;
         }
 
@@ -150,7 +150,7 @@ impl ClickTool {
 
     /// Update the cached image layer status from the current layer
     pub fn update_image_layer_status(&mut self, ctx: &ToolContext) {
-        self.is_on_image_layer = ctx.state.get_cur_layer().map(|l| matches!(l.role, Role::Image)).unwrap_or(false);
+        self.is_on_image_layer = ctx.state.get_cur_layer().is_some_and(|l| matches!(l.role, Role::Image));
     }
 
     /// Check if the current layer is an Image layer
@@ -365,7 +365,7 @@ impl ToolHandler for ClickTool {
                 if !self.is_on_image_layer && modifiers.shift() {
                     if let icy_ui::keyboard::Key::Named(Named::Space) = key {
                         if let Err(e) = ctx.state.type_key('\u{00FF}') {
-                            log::warn!("Failed to type hard blank: {}", e);
+                            log::warn!("Failed to type hard blank: {e}");
                             return ToolResult::None;
                         }
                         return ToolResult::Commit("Type hard blank".to_string());
@@ -385,7 +385,7 @@ impl ToolHandler for ClickTool {
                                 let buffer_type = ctx.state.get_buffer().buffer_type;
                                 let encoded = buffer_type.convert_from_unicode(ch);
                                 if let Err(e) = ctx.state.type_key(encoded) {
-                                    log::warn!("Failed to type character: {}", e);
+                                    log::warn!("Failed to type character: {e}");
                                     return ToolResult::None;
                                 }
                                 return ToolResult::Commit("Type character".to_string());
@@ -401,7 +401,7 @@ impl ToolHandler for ClickTool {
                             let buffer_type = ctx.state.get_buffer().buffer_type;
                             let encoded = buffer_type.convert_from_unicode(' ');
                             if let Err(e) = ctx.state.type_key(encoded) {
-                                log::warn!("Failed to type space: {}", e);
+                                log::warn!("Failed to type space: {e}");
                                 return ToolResult::None;
                             }
                             return ToolResult::Commit("Type character".to_string());

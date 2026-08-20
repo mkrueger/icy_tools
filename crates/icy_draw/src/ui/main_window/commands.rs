@@ -1,6 +1,6 @@
-//! Command definitions for icy_draw
+//! Command definitions for `icy_draw`
 //!
-//! Extends the common commands from icy_engine_gui with draw-specific commands.
+//! Extends the common commands from `icy_engine_gui` with draw-specific commands.
 
 #![allow(dead_code)]
 
@@ -9,7 +9,7 @@ use icy_engine_gui::commands::{create_common_commands, load_commands_from_str, C
 /// The embedded draw-specific commands TOML
 const DRAW_COMMANDS_TOML: &str = include_str!("../../../data/commands_draw.toml");
 
-/// Create the command set for icy_draw
+/// Create the command set for `icy_draw`
 ///
 /// Includes common commands plus draw-specific commands.
 pub fn create_draw_commands() -> CommandSet {
@@ -110,7 +110,7 @@ pub mod area_cmd {
     }
 }
 
-/// BitFont editor command definitions
+/// `BitFont` editor command definitions
 pub mod bitfont_cmd {
     use icy_engine_gui::define_commands;
 

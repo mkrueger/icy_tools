@@ -29,7 +29,7 @@ use crate::ui::Message;
 
 use super::font_import::FontPreviewCanvas;
 
-/// Helper to wrap FontExportMessage in Message
+/// Helper to wrap `FontExportMessage` in Message
 fn msg(m: FontExportMessage) -> Message {
     Message::BitFontEditor(BitFontEditorMessage::FontExportDialog(m))
 }
@@ -47,7 +47,7 @@ pub enum FontExportFormat {
     Raw,
     /// YAFF format (text-based)
     Yaff,
-    /// ANSI DCS sequence (CTerm format, copies to clipboard)
+    /// ANSI DCS sequence (`CTerm` format, copies to clipboard)
     AnsiDcs,
     /// DOS COM executable (Fontraption Non-TSR format)
     Com,
@@ -90,13 +90,13 @@ impl std::fmt::Display for ComExportFormat {
 
 impl FontExportFormat {
     /// Get the file extension for this format
-    /// For Raw format, font_height is used to generate .fXX extension
+    /// For Raw format, `font_height` is used to generate .fXX extension
     pub fn extension(&self, font_height: i32) -> String {
         match self {
             Self::Png => "png".to_string(),
             Self::Bmp => "bmp".to_string(),
             Self::Psf => "psf".to_string(),
-            Self::Raw => format!("f{:02}", font_height),
+            Self::Raw => format!("f{font_height:02}"),
             Self::Yaff => "yaff".to_string(),
             Self::AnsiDcs => "ans".to_string(),
             Self::Com => "com".to_string(),
@@ -257,7 +257,7 @@ impl FontExportDialog {
                     async move {
                         let handle = rfd::AsyncFileDialog::new()
                             .set_file_name(&default_name)
-                            .add_filter("Font file", &extensions.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+                            .add_filter("Font file", &extensions.iter().map(std::string::String::as_str).collect::<Vec<_>>())
                             .save_file()
                             .await;
                         handle.map(|h| h.path().to_path_buf())
@@ -406,7 +406,7 @@ impl Dialog<Message> for FontExportDialog {
         ]);
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());
-        let button_area = dialog_area(buttons.into());
+        let button_area = dialog_area(buttons);
 
         modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area].into(),
@@ -463,10 +463,10 @@ fn export_to_raw_bytes(font: &BitFont) -> Result<Vec<u8>, String> {
     Ok(data)
 }
 
-/// Encode font as ANSI DCS sequence (CTerm format)
+/// Encode font as ANSI DCS sequence (`CTerm` format)
 ///
 /// Creates a Device Control String that can be used to upload a font
-/// to terminals supporting CTerm font sequences.
+/// to terminals supporting `CTerm` font sequences.
 /// Format: ESC P CTerm:Font:<slot>:<base64-data> ESC \
 fn encode_font_as_ansi(font: &BitFont, font_slot: usize) -> String {
     let font_data = convert_font_to_u8_data(font);
@@ -477,7 +477,7 @@ fn encode_font_as_ansi(font: &BitFont, font_slot: usize) -> String {
 /// Convert font to raw u8 data for ANSI encoding
 fn convert_font_to_u8_data(font: &BitFont) -> Vec<u8> {
     let size = font.size();
-    let bytes_per_row = (size.width as usize + 7) / 8;
+    let bytes_per_row = (size.width as usize).div_ceil(8);
     let mut result = Vec::new();
 
     for ch_code in 0..256u32 {
@@ -504,15 +504,12 @@ fn convert_font_to_u8_data(font: &BitFont) -> Vec<u8> {
 /// - Non-TSR: Simple executable that loads the font and exits
 /// - TSR: Terminate-and-stay-resident, can be unloaded later
 ///
-/// COM format headers are based on VileR's Fontraption source code.
+/// COM format headers are based on `VileR`'s Fontraption source code.
 fn export_to_com(font: &BitFont, com_format: ComExportFormat) -> Result<Vec<u8>, String> {
     let height = font.size().height;
 
-    if height == 0 || height as i32 > MAX_FONT_HEIGHT {
-        return Err(format!(
-            "Font height {} is not supported for COM export (must be 1-{})",
-            height, MAX_FONT_HEIGHT
-        ));
+    if height == 0 || height > MAX_FONT_HEIGHT {
+        return Err(format!("Font height {height} is not supported for COM export (must be 1-{MAX_FONT_HEIGHT})"));
     }
 
     // Get raw font data (256 chars × height bytes)
@@ -589,8 +586,8 @@ fn export_tsr_com(height: u8, font_data: &[u8], modes_40: bool, modes_80: bool) 
     header[2] = ((jmp_offset >> 8) & 0xFF) as u8;
 
     // Patch mode flags at offsets 0x2D and 0x2F
-    let mode_01 = if modes_40 { 0x01u8 } else { 0x00u8 };
-    let mode_23 = if modes_80 { 0x01u8 } else { 0x00u8 };
+    let mode_01 = u8::from(modes_40);
+    let mode_23 = u8::from(modes_80);
     header[0x2D] = mode_01;
     header[0x2E] = mode_01;
     header[0x2F] = mode_23;

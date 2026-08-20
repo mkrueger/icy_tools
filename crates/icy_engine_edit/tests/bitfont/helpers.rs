@@ -1,6 +1,7 @@
 //! Shared test helpers for BitFont tests
 
 #![allow(dead_code)]
+#![allow(clippy::needless_range_loop)]
 
 use icy_engine_edit::bitfont::BitFontEditState;
 
@@ -53,7 +54,7 @@ pub fn create_vertical_line(width: usize, height: usize, col: usize) -> Vec<Vec<
 }
 
 /// Assert that two glyph patterns are equal
-pub fn assert_glyph_equals(actual: &Vec<Vec<bool>>, expected: &Vec<Vec<bool>>, message: &str) {
+pub fn assert_glyph_equals(actual: &[Vec<bool>], expected: &[Vec<bool>], message: &str) {
     assert_eq!(actual.len(), expected.len(), "{}: height mismatch", message);
     for (row_idx, (actual_row, expected_row)) in actual.iter().zip(expected.iter()).enumerate() {
         assert_eq!(actual_row.len(), expected_row.len(), "{}: width mismatch at row {}", message, row_idx);
@@ -64,6 +65,6 @@ pub fn assert_glyph_equals(actual: &Vec<Vec<bool>>, expected: &Vec<Vec<bool>>, m
 }
 
 /// Count set pixels in a glyph pattern
-pub fn count_pixels(pattern: &Vec<Vec<bool>>) -> usize {
+pub fn count_pixels(pattern: &[Vec<bool>]) -> usize {
     pattern.iter().flat_map(|row| row.iter()).filter(|&&p| p).count()
 }

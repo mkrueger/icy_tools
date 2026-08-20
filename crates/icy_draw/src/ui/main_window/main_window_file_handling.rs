@@ -1,4 +1,4 @@
-//! File handling methods for MainWindow
+//! File handling methods for `MainWindow`
 //!
 //! Contains all file operations: save, save-as, open, close, etc.
 
@@ -18,7 +18,7 @@ impl MainWindow {
     // Save operations
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// Handle SaveFile message - save to current path or trigger SaveAs
+    /// Handle `SaveFile` message - save to current path or trigger `SaveAs`
     /// Disabled in collaboration mode (server handles persistence)
     pub(super) fn save_file(&mut self) -> Task<Message> {
         // In collaboration mode, don't save - the server handles persistence
@@ -36,7 +36,7 @@ impl MainWindow {
         }
     }
 
-    /// Handle SaveFileAs message - show save dialog
+    /// Handle `SaveFileAs` message - show save dialog
     /// Disabled in collaboration mode (use Export instead)
     pub(super) fn save_file_as(&mut self) -> Task<Message> {
         // In collaboration mode, don't save - use Export instead
@@ -51,17 +51,14 @@ impl MainWindow {
             .mode_state
             .file_path()
             .and_then(|p| p.file_stem())
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "Untitled".to_string());
-        let default_file_name = format!("{}.{}", default_name, default_ext);
+            .map_or_else(|| "Untitled".to_string(), |s| s.to_string_lossy().to_string());
+        let default_file_name = format!("{default_name}.{default_ext}");
 
         // Use the current file's directory as the default, or fall back to current directory
-        let default_directory = self
-            .mode_state
-            .file_path()
-            .and_then(|p| p.parent())
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
+        let default_directory = self.mode_state.file_path().and_then(|p| p.parent()).map_or_else(
+            || std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            std::path::Path::to_path_buf,
+        );
 
         Task::perform(
             async move {
@@ -85,7 +82,7 @@ impl MainWindow {
         )
     }
 
-    /// Handle FileSaved message - save to selected path from SaveAs dialog
+    /// Handle `FileSaved` message - save to selected path from `SaveAs` dialog
     pub(super) fn file_saved(&mut self, path: PathBuf) -> Task<Message> {
         match self.mode_state.save(&path) {
             Ok(()) => {
@@ -161,14 +158,13 @@ impl MainWindow {
     // Close operations
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// Handle CloseFile message - check for unsaved changes
+    /// Handle `CloseFile` message - check for unsaved changes
     pub(super) fn close_file(&mut self) -> Task<Message> {
         if self.is_modified() {
             let filename = self
                 .file_path()
                 .and_then(|p| p.file_name())
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| fl!("unsaved-title"));
+                .map_or_else(|| fl!("unsaved-title"), |n| n.to_string_lossy().to_string());
 
             self.dialogs.push(confirm_yes_no_cancel(
                 fl!("save-changes-title", filename = filename),
@@ -185,7 +181,7 @@ impl MainWindow {
         }
     }
 
-    /// Handle SaveAndCloseFile message - save then close
+    /// Handle `SaveAndCloseFile` message - save then close
     pub(super) fn save_and_close_file(&mut self) -> Task<Message> {
         self.dialogs.pop();
 
@@ -210,14 +206,13 @@ impl MainWindow {
     // Open operations
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /// Handle OpenFile message - check for unsaved changes then show dialog
+    /// Handle `OpenFile` message - check for unsaved changes then show dialog
     pub(super) fn open_file(&mut self) -> Task<Message> {
         if self.is_modified() {
             let filename = self
                 .file_path()
                 .and_then(|p| p.file_name())
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| fl!("unsaved-title"));
+                .map_or_else(|| fl!("unsaved-title"), |n| n.to_string_lossy().to_string());
 
             self.pending_open_path = Some(Some(PathBuf::new()));
 
@@ -236,7 +231,7 @@ impl MainWindow {
         }
     }
 
-    /// Handle ForceShowOpenDialog message - show file picker
+    /// Handle `ForceShowOpenDialog` message - show file picker
     pub(super) fn show_open_dialog(&mut self) -> Task<Message> {
         self.dialogs.pop();
         self.pending_open_path = None;
@@ -244,18 +239,18 @@ impl MainWindow {
         let extensions: Vec<&str> = FileFormat::ALL
             .iter()
             .filter(|f| f.is_supported() || f.is_bitfont())
-            .flat_map(|f| f.all_extensions())
+            .flat_map(icy_engine::FileFormat::all_extensions)
             .copied()
             .collect();
 
         // Get the default directory: current file's directory or most recent file's directory
-        let default_directory = self.file_path().and_then(|p| p.parent().map(|p| p.to_path_buf())).or_else(|| {
+        let default_directory = self.file_path().and_then(|p| p.parent().map(std::path::Path::to_path_buf)).or_else(|| {
             self.options
                 .read()
                 .recent_files
                 .files()
                 .first()
-                .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
         });
 
         Task::perform(
@@ -281,14 +276,13 @@ impl MainWindow {
         )
     }
 
-    /// Handle OpenRecentFile message - check unsaved changes then open
+    /// Handle `OpenRecentFile` message - check unsaved changes then open
     pub(super) fn open_recent_file(&mut self, path: PathBuf) -> Task<Message> {
         if self.is_modified() {
             let filename = self
                 .file_path()
                 .and_then(|p| p.file_name())
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| fl!("unsaved-title"));
+                .map_or_else(|| fl!("unsaved-title"), |n| n.to_string_lossy().to_string());
 
             let open_path = path.clone();
             self.dialogs.push(confirm_yes_no_cancel(
@@ -306,7 +300,7 @@ impl MainWindow {
         }
     }
 
-    /// Handle SaveAndOpenFile message - save then open file
+    /// Handle `SaveAndOpenFile` message - save then open file
     pub(super) fn save_and_open_file(&mut self, path: PathBuf) -> Task<Message> {
         self.dialogs.pop();
 
@@ -327,13 +321,13 @@ impl MainWindow {
         }
     }
 
-    /// Handle ForceOpenFile message - open without saving
+    /// Handle `ForceOpenFile` message - open without saving
     pub(super) fn force_open_file(&mut self, path: PathBuf) -> Task<Message> {
         self.dialogs.pop();
         self.file_opened(path)
     }
 
-    /// Handle FileOpened message - load file into appropriate editor
+    /// Handle `FileOpened` message - load file into appropriate editor
     pub(super) fn file_opened(&mut self, path: PathBuf) -> Task<Message> {
         let format = FileFormat::from_path(&path);
 

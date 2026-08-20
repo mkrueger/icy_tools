@@ -1,5 +1,3 @@
-use std::u16;
-
 use icy_parser_core::{
     AnsiMode, AnsiParser, Blink, Color, CommandParser, CommandSink, DecMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode, ErrorLevel,
     Frame, Intensity, OperatingSystemCommand, ParseError, SgrAttribute, TerminalCommand, TerminalRequest, Underline,

@@ -14,7 +14,7 @@ pub const DEFAULT_FG: u32 = 7;
 /// Default BG color index when filter is disabled (black)
 pub const DEFAULT_BG: u32 = 0;
 
-/// Unified brush settings shared by Pencil / Shape / Fill / TopToolbar.
+/// Unified brush settings shared by Pencil / Shape / Fill / `TopToolbar`.
 ///
 /// Every brush-style tool reads from and writes to a single `SharedBrush`
 /// owned by the editor (`AnsiEditorCore`/`CharFontEditor`), so the toolbar UI
@@ -108,7 +108,7 @@ impl RecentChars {
             return None;
         }
         let len = self.items.len() as i32;
-        let idx = self.items.iter().position(|c| *c == current).map(|i| i as i32).unwrap_or(-1);
+        let idx = self.items.iter().position(|c| *c == current).map_or(-1, |i| i as i32);
         let next = ((idx + delta).rem_euclid(len)) as usize;
         Some(self.items[next])
     }
@@ -199,7 +199,7 @@ pub fn apply_stamp_at_doc_pos(state: &mut EditState, settings: BrushSettings, do
             // - If FG filter is ON: use caret FG, otherwise keep existing cell's FG
             // - If BG filter is ON: use caret BG, otherwise keep existing cell's BG
             // This applies to ALL drawing modes.
-            let existing_attr = state.get_cur_layer().map(|l| l.char_at(layer_pos).attribute).unwrap_or(caret_attr);
+            let existing_attr = state.get_cur_layer().map_or(caret_attr, |l| l.char_at(layer_pos).attribute);
 
             let effective_fg = if settings.colorize_fg { fg } else { existing_attr.foreground() };
             let effective_bg = if settings.colorize_bg { bg } else { existing_attr.background() };
@@ -212,7 +212,7 @@ pub fn apply_stamp_at_doc_pos(state: &mut EditState, settings: BrushSettings, do
                 width: i32,
                 height: i32,
             }
-            impl<'a> icy_engine_edit::brushes::DrawTarget for LayerTarget<'a> {
+            impl icy_engine_edit::brushes::DrawTarget for LayerTarget<'_> {
                 fn width(&self) -> i32 {
                     self.width
                 }

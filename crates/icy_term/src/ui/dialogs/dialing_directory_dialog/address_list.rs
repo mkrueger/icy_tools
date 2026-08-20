@@ -9,11 +9,12 @@ use icy_ui::{
     widget::{button, column, container, row, scrollable, text, text_input, Column, Space},
     Alignment, Element, Length,
 };
-use once_cell::sync::Lazy;
 
-static CONNECT_TOADDRESS_PLACEHOLDER: Lazy<String> = Lazy::new(|| fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-to-address"));
+static CONNECT_TOADDRESS_PLACEHOLDER: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-to-address"));
 
 impl super::DialingDirectoryState {
+    #[must_use]
     pub fn filtered(&self) -> Vec<(usize, Address)> {
         let fav = matches!(self.filter_mode, DialingDirectoryFilter::Favourites);
         let needle = self.filter_text.trim().to_lowercase();
@@ -127,18 +128,10 @@ impl super::DialingDirectoryState {
 }
 
 // Update the address_row_entry function to support highlighting
-fn address_row_entry<'a>(
-    selected: bool,
-    idx: Option<usize>,
-    name: String,
-    addr: String,
-    favored: bool,
-    calls: u32,
-    search_text: &'a str,
-) -> Element<'a, Message> {
+fn address_row_entry(selected: bool, idx: Option<usize>, name: String, addr: String, favored: bool, calls: u32, search_text: &str) -> Element<'_, Message> {
     fn truncate_text(text: String, max_chars: usize) -> String {
         if text.chars().count() <= max_chars {
-            text.to_string()
+            text.clone()
         } else {
             let mut result: String = text.chars().take(max_chars - 1).collect();
             result.push('…');
@@ -149,7 +142,6 @@ fn address_row_entry<'a>(
     let star = if favored {
         text("★").size(16).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
             color: Some(theme.warning.base),
-            ..Default::default()
         })
     } else {
         text("").size(16)
@@ -172,17 +164,15 @@ fn address_row_entry<'a>(
             .size(TEXT_SIZE_SMALL)
             .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.background.on.scale_alpha(0.55)),
-                ..Default::default()
             })
             .font(icy_ui::Font::MONOSPACE)
             .into()
     };
 
-    let calls_text = text(if calls == u32::MAX { String::new() } else { format!("✆ {}", calls) })
+    let calls_text = text(if calls == u32::MAX { String::new() } else { format!("✆ {calls}") })
         .size(TEXT_SIZE_SMALL)
         .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
             color: Some(theme.background.on.scale_alpha(0.4)),
-            ..Default::default()
         });
 
     let content = column![
@@ -215,7 +205,7 @@ fn address_row_entry<'a>(
                     radius: 4.0.into(),
                 },
                 text_color: icy_ui::Color::TRANSPARENT,
-                shadow: Default::default(),
+                shadow: icy_ui::Shadow::default(),
                 snap: false,
                 ..Default::default()
             }
@@ -281,7 +271,6 @@ fn highlight_name_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
                 .font(icy_ui::Font::MONOSPACE)
                 .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.accent.hover),
-                    ..Default::default()
                 })
                 .into(),
         );
@@ -301,7 +290,6 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
             .size(TEXT_SIZE_SMALL)
             .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                 color: Some(theme.background.on.scale_alpha(0.55)),
-                ..Default::default()
             })
             .font(icy_ui::Font::MONOSPACE)
             .into();
@@ -321,7 +309,6 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
                     .size(TEXT_SIZE_SMALL)
                     .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                         color: Some(theme.background.on.scale_alpha(0.55)),
-                        ..Default::default()
                     })
                     .font(icy_ui::Font::MONOSPACE)
                     .into(),
@@ -334,7 +321,6 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
                 .font(icy_ui::Font::MONOSPACE)
                 .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.accent.hover),
-                    ..Default::default()
                 })
                 .into(),
         );
@@ -346,7 +332,6 @@ fn highlight_addr_text<'a>(text_str: String, search: &str) -> Element<'a, Messag
                 .size(TEXT_SIZE_SMALL)
                 .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                     color: Some(theme.background.on.scale_alpha(0.55)),
-                    ..Default::default()
                 })
                 .font(icy_ui::Font::MONOSPACE)
                 .into(),

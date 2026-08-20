@@ -438,14 +438,14 @@ impl BitFontUndoOp {
                 let (width, height) = state.font_size();
                 let mut new_data = vec![vec![false; width as usize]; height as usize];
 
-                for y in 0..height as usize {
-                    for x in 0..width as usize {
+                for (y, new_row) in new_data.iter_mut().enumerate() {
+                    for (x, cell) in new_row.iter_mut().enumerate() {
                         let src_x = (x as i32 - dx).rem_euclid(width) as usize;
                         let src_y = (y as i32 - dy).rem_euclid(height) as usize;
 
                         if let Some(row) = old_data.get(src_y) {
                             if let Some(&pixel) = row.get(src_x) {
-                                new_data[y][x] = pixel;
+                                *cell = pixel;
                             }
                         }
                     }
@@ -484,6 +484,7 @@ impl BitFontUndoOp {
     }
 
     // Helper for flip operation (self-reversing)
+    #[allow(clippy::too_many_arguments)] // geometric parameters are clearer as individual coordinates
     fn do_flip(&self, state: &mut BitFontEditState, ch: char, horizontal: bool, x1: i32, y1: i32, x2: i32, y2: i32) -> Result<()> {
         let mut data = state.get_glyph_pixels(ch).clone();
 

@@ -49,7 +49,14 @@ pub struct ExternalTransferState {
     pub error_message: Option<String>,
 }
 
+impl Default for FileTransferDialogState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FileTransferDialogState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             selected_log: LogTab::All,
@@ -95,10 +102,9 @@ impl FileTransferDialogState {
                 if let Some(ext) = &self.external_protocol {
                     if ext.is_finished {
                         return Some(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)));
-                    } else {
-                        // TODO: For external protocols, we could try to kill the process
-                        return Some(crate::ui::Message::CancelFileTransfer);
                     }
+                    // TODO: For external protocols, we could try to kill the process
+                    return Some(crate::ui::Message::CancelFileTransfer);
                 }
 
                 if let Some(state) = &self.transfer_state {
@@ -115,6 +121,7 @@ impl FileTransferDialogState {
         }
     }
 
+    #[must_use]
     pub fn view<'a>(&'a self, is_download: bool, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
         // Check if this is an external protocol transfer
         if let Some(ext) = &self.external_protocol {
@@ -166,7 +173,7 @@ impl FileTransferDialogState {
                 row![
                     text(&transfer_info.file_name).size(16).style(text::default),
                     Space::new().width(Length::Fill),
-                    text(format!("{}%", percentage))
+                    text(format!("{percentage}%"))
                         .size(16)
                         .style(if percentage == 100 { text::success } else { text::primary }),
                     Space::new().width(8.0),
@@ -439,7 +446,7 @@ impl FileTransferDialogState {
             row![
                 text(icon).size(TEXT_SIZE_SMALL),
                 Space::new().width(4.0),
-                text(format!("{} ({})", label, count)).size(TEXT_SIZE_SMALL)
+                text(format!("{label} ({count})")).size(TEXT_SIZE_SMALL)
             ]
             .align_y(Alignment::Center),
         )
@@ -765,8 +772,8 @@ fn format_duration(duration: Duration) -> String {
     let seconds = total_secs % 60;
 
     if hours > 0 {
-        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
     } else {
-        format!("{:02}:{:02}", minutes, seconds)
+        format!("{minutes:02}:{seconds:02}")
     }
 }

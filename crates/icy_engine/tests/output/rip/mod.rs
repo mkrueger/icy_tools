@@ -13,6 +13,6 @@ pub fn test_rip() {
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
         let mut screen = ScreenMode::Rip.create_screen(TerminalEmulation::Rip, None);
         println!("Testing file: {:?}", cur_entry);
-        super::run_parser_compare(&mut screen, &cur_entry, &data);
+        super::run_parser_compare(&mut screen, &cur_entry, data);
     }
 }

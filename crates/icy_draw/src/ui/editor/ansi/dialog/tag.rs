@@ -1,6 +1,9 @@
 use icy_engine::{Position, TagPlacement};
 use icy_engine_gui::settings::{effect_box, left_label};
-use icy_engine_gui::ui::*;
+use icy_engine_gui::ui::{
+    button_row, dialog_area, modal_container, primary_button, secondary_button, separator, DIALOG_SPACING, DIALOG_WIDTH_LARGE, DIALOG_WIDTH_MEDIUM,
+    TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
+};
 use icy_ui::{
     widget::{button, column, container, pick_list, row, scrollable, text, text_input, Space},
     Element, Length,
@@ -208,15 +211,15 @@ impl TagDialog {
             .spacing(DIALOG_SPACING)
             .align_y(icy_ui::Alignment::Center);
 
-        let description = if !self.replacement_list.description.trim().is_empty() {
+        let description = if self.replacement_list.description.trim().is_empty() {
+            None
+        } else {
             Some(
                 text(&self.replacement_list.description)
                     .size(TEXT_SIZE_NORMAL)
                     .wrapping(icy_ui::widget::text::Wrapping::Word)
                     .width(Length::Fill),
             )
-        } else {
-            None
         };
 
         // Build list of replacements
@@ -245,15 +248,15 @@ impl TagDialog {
             .width(Length::Fill)
             .height(Length::Fixed(300.0));
 
-        let comments_box = if !self.replacement_list.comments.trim().is_empty() {
+        let comments_box = if self.replacement_list.comments.trim().is_empty() {
+            None
+        } else {
             let comments = text(&self.replacement_list.comments)
                 .size(TEXT_SIZE_SMALL)
                 .wrapping(icy_ui::widget::text::Wrapping::Word)
                 .width(Length::Fill);
 
             Some(effect_box(container(comments).padding(8).width(Length::Fill).into()))
-        } else {
-            None
         };
 
         let mut info_column = column![header].spacing(DIALOG_SPACING);

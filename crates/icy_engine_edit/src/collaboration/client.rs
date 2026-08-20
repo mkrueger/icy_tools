@@ -461,9 +461,11 @@ async fn run_client(
         config.url.clone()
     } else {
         // Check if port is specified
-        let has_port = config.url.split('/').next().map_or(false, |host_part| {
-            host_part.contains(':') && host_part.split(':').last().map_or(false, |p| p.parse::<u16>().is_ok())
-        });
+        let has_port = config
+            .url
+            .split('/')
+            .next()
+            .is_some_and(|host_part| host_part.contains(':') && host_part.split(':').next_back().is_some_and(|p| p.parse::<u16>().is_ok()));
         if has_port {
             format!("ws://{}", config.url)
         } else {

@@ -60,7 +60,7 @@ pub enum WindowManagerMessage {
     WindowMessage(window::Id, Message),
     TitleChanged(window::Id, String),
     Event(window::Id, icy_ui::Event),
-    /// Terminal event from async subscription (window_id, event)
+    /// Terminal event from async subscription (`window_id`, event)
     TerminalEvent(usize, TerminalEvent),
     /// MCP command from async subscription
     McpCommand(Arc<McpCommand>),
@@ -102,7 +102,7 @@ impl WindowManager {
                 startup_error = Some((
                     i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-address-book-load-title"),
                     i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "error-address-book-load-secondary"),
-                    format!("{}", err),
+                    format!("{err}"),
                 ));
                 AddressBook::default()
             }
@@ -140,6 +140,7 @@ impl WindowManager {
         manager
     }
 
+    #[must_use]
     pub fn title(&self, window_id: window::Id) -> String {
         self.windows
             .get(&window_id)
@@ -213,11 +214,10 @@ impl WindowManager {
                 };
 
                 // Handle startup script
-                let script_task = if let Some(script) = self.script_to_run.take() {
-                    Some(Task::done(WindowManagerMessage::WindowMessage(id, Message::RunScript(script))))
-                } else {
-                    None
-                };
+                let script_task = self
+                    .script_to_run
+                    .take()
+                    .map(|script| Task::done(WindowManagerMessage::WindowMessage(id, Message::RunScript(script))));
 
                 // Handle a capture played in for reproduction
                 let play_task = self
@@ -226,7 +226,7 @@ impl WindowManager {
                     .map(|path| Task::done(WindowManagerMessage::WindowMessage(id, Message::PlayFile(path))));
 
                 // Combine tasks
-                let focus_task = focus_input.map(move |_: ()| WindowManagerMessage::WindowOpened(id));
+                let focus_task = focus_input.map(move |(): ()| WindowManagerMessage::WindowOpened(id));
                 let mut tasks: Vec<Task<WindowManagerMessage>> = Vec::new();
                 tasks.extend(url_task);
                 tasks.extend(script_task);
@@ -255,8 +255,7 @@ impl WindowManager {
                 ) && self
                     .windows
                     .get(&window_id)
-                    .map(|w| matches!(w.state.mode, MainWindowMode::ShowTerminal) && w.dialogs.is_empty())
-                    .unwrap_or(false);
+                    .is_some_and(|w| matches!(w.state.mode, MainWindowMode::ShowTerminal) && w.dialogs.is_empty());
 
                 if !is_tab_in_terminal {
                     // Handle Alt+Number window switching
@@ -287,9 +286,9 @@ impl WindowManager {
 
             WindowManagerMessage::TerminalEvent(window_id, event) => {
                 // Find the window by its id (usize) and forward the terminal event
-                for (id, window) in self.windows.iter() {
+                for (id, window) in &self.windows {
                     if window.id == window_id {
-                        return Task::done(WindowManagerMessage::WindowMessage(id.clone(), Message::TerminalEvent(event)));
+                        return Task::done(WindowManagerMessage::WindowMessage(*id, Message::TerminalEvent(event)));
                     }
                 }
                 Task::none()
@@ -298,28 +297,27 @@ impl WindowManager {
             WindowManagerMessage::McpCommand(cmd) => {
                 // Forward MCP command to first window
                 if let Some((id, _)) = self.windows.iter().next() {
-                    return Task::done(WindowManagerMessage::WindowMessage(id.clone(), Message::McpCommand(cmd)));
+                    return Task::done(WindowManagerMessage::WindowMessage(*id, Message::McpCommand(cmd)));
                 }
                 Task::none()
             }
 
             WindowManagerMessage::TitleChanged(id, title) => {
                 if let Some(window) = self.windows.get_mut(&id) {
-                    window.title = title.clone();
+                    window.title.clone_from(&title);
                 }
                 Task::none()
             }
 
             WindowManagerMessage::FocusWindow(target_id) => focus_window_by_id(&self.windows, target_id),
 
-            WindowManagerMessage::AnimationTick => Task::none(),
-
             _ => Task::none(),
         }
     }
 
+    #[must_use]
     pub fn view(&self, window_id: window::Id) -> Element<'_, WindowManagerMessage> {
-        let id = window_id.clone();
+        let id = window_id;
         if let Some(window) = self.windows.get(&window_id) {
             window.view().map(move |msg| WindowManagerMessage::WindowMessage(id, msg))
         } else {
@@ -327,6 +325,7 @@ impl WindowManager {
         }
     }
 
+    #[must_use]
     pub fn theme(&self, window: window::Id) -> Option<Theme> {
         Some(self.windows.get(&window)?.theme())
     }
@@ -338,21 +337,14 @@ impl WindowManager {
                 // Only forward events that are actually needed - skip mouse move events
                 // as they are handled directly by the shader's update() method
                 match &event {
-                    // Window focus events are needed
-                    Event::Window(window::Event::Focused) | Event::Window(window::Event::Unfocused) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Mouse events: only CursorLeft and WheelScrolled are needed
-                    Event::Mouse(icy_ui::mouse::Event::CursorLeft) | Event::Mouse(icy_ui::mouse::Event::WheelScrolled { .. }) => {
-                        Some(WindowManagerMessage::Event(window_id, event))
-                    }
+                    // Window focus events, keyboard events (forwarded to update() where we can
+                    // inspect the active window's mode before deciding on shortcuts)
+                    Event::Mouse(icy_ui::mouse::Event::CursorLeft | icy_ui::mouse::Event::WheelScrolled { .. })
+                    | Event::Window(window::Event::Focused | window::Event::Unfocused)
+                    | Event::Keyboard(_) => Some(WindowManagerMessage::Event(window_id, event)),
                     // Skip other mouse events (CursorMoved, ButtonPressed, etc.) - handled by shader
-                    Event::Mouse(_) => None,
-
-                    // Forward all keyboard events to update() where we can
-                    // inspect the active window's mode before deciding on shortcuts.
-                    Event::Keyboard(_) => Some(WindowManagerMessage::Event(window_id, event)),
-                    // Skip touch events
-                    Event::Touch(_) => None,
-                    // Skip other events (InputMethod, etc.)
+                    // Skip touch and other events (InputMethod, etc.)
                     _ => None,
                 }
             }),

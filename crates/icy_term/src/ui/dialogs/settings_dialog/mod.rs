@@ -3,7 +3,10 @@ use std::sync::Arc;
 
 use i18n_embed_fl::fl;
 use icy_engine_gui::settings::{show_monitor_settings, update_monitor_settings, MonitorSettingsMessage};
-use icy_engine_gui::ui::*;
+use icy_engine_gui::ui::{
+    button_row_with_left, dialog_area, modal_container, primary_button, secondary_button, separator, StateResult, DIALOG_SPACING, DIALOG_WIDTH_XARGLE,
+    TEXT_SIZE_NORMAL,
+};
 use icy_engine_gui::{dialog_wrapper, Dialog, DialogAction};
 use icy_net::{
     modem::ModemConfiguration,
@@ -165,9 +168,6 @@ impl SettingsDialogState {
                         options.download_path = String::new();
                         options.capture_path = String::new();
                     }
-                    SettingsCategory::Keybinds => {
-                        // self.temp_options.reset_keybindings();
-                    }
                     SettingsCategory::Protocols => {
                         let mut options = self.temp_options.lock();
                         options.transfer_protocols = crate::data::default_protocols();
@@ -178,14 +178,15 @@ impl SettingsDialogState {
                         self.temp_options.lock().web_directories.clear();
                         self.selected_web_directory_index = 0;
                     }
-                    _ => {}
+                    // Keybinds: self.temp_options.reset_keybindings(); (not yet implemented)
+                    SettingsCategory::Keybinds | SettingsCategory::Modem => {}
                 }
                 StateResult::None
             }
             SettingsDialogMessage::OpenSettingsFolder => {
                 if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
                     if let Err(err) = open::that(proj_dirs.config_dir()) {
-                        log::error!("Failed to open settings folder: {}", err);
+                        log::error!("Failed to open settings folder: {err}");
                     }
                 }
                 StateResult::None
@@ -203,13 +204,13 @@ impl SettingsDialogState {
                         #[cfg(not(windows))]
                         {
                             if let Err(err) = open::that(&log_file) {
-                                log::error!("Failed to open log file: {}", err);
+                                log::error!("Failed to open log file: {err}");
                             }
                         }
                     } else if let Some(parent) = log_file.parent() {
                         // If log file doesn't exist yet, open the log directory
                         if let Err(err) = open::that(parent) {
-                            log::error!("Failed to open log file directory: {}", err);
+                            log::error!("Failed to open log file directory: {err}");
                         }
                     }
                 }
@@ -222,11 +223,11 @@ impl SettingsDialogState {
                 let new_buffer_size = tmp.max_scrollback_lines;
                 *self.original_options.lock() = tmp;
                 if let Err(e) = self.original_options.lock().store_options() {
-                    log::error!("Failed to save options: {}", e);
+                    log::error!("Failed to save options: {e}");
                 }
 
                 // Return result with scrollback size change if needed
-                let new_scrollback_size = if old_buffer_size != new_buffer_size { Some(new_buffer_size) } else { None };
+                let new_scrollback_size = if old_buffer_size == new_buffer_size { None } else { Some(new_buffer_size) };
 
                 StateResult::Success(SettingsResult { new_scrollback_size })
             }
@@ -426,7 +427,7 @@ impl SettingsDialogState {
     }
 
     /// Build just the dialog content (for use with Dialog trait)
-    pub fn view<'a, M: Clone + 'static>(&'a self, on_message: impl Fn(SettingsDialogMessage) -> M + Clone + 'static) -> Element<'a, M> {
+    pub fn view<M: Clone + 'static>(&self, on_message: impl Fn(SettingsDialogMessage) -> M + Clone + 'static) -> Element<'_, M> {
         // Category tabs
         let mut category_row = row![].spacing(DIALOG_SPACING);
         for category in SettingsCategory::all() {
@@ -443,7 +444,7 @@ impl SettingsDialogState {
                             background: Some(icy_ui::Background::Color(theme.accent.selected)),
                             text_color: theme.accent.on,
                             border: Border::default().rounded(4.0),
-                            shadow: Default::default(),
+                            shadow: icy_ui::Shadow::default(),
                             snap: false,
                             ..Default::default()
                         }
@@ -452,14 +453,13 @@ impl SettingsDialogState {
                             background: Some(icy_ui::Background::Color(Color::TRANSPARENT)),
                             text_color: theme.background.on,
                             border: Border::default().rounded(4.0),
-                            shadow: Default::default(),
+                            shadow: icy_ui::Shadow::default(),
                             snap: false,
                             ..Default::default()
                         }
                     };
 
                     match status {
-                        Status::Active | Status::Selected => base,
                         Status::Hovered if !is_selected => Style {
                             background: Some(icy_ui::Background::Color(Color::from_rgba(
                                 theme.accent.selected.r,
@@ -519,8 +519,7 @@ impl SettingsDialogState {
                         .into(),
                 )
             }
-            SettingsCategory::Terminal => None,
-            SettingsCategory::IEMSI => None,
+            SettingsCategory::Terminal | SettingsCategory::IEMSI | SettingsCategory::WebDirectories | SettingsCategory::Modem => None,
             SettingsCategory::Keybinds => {
                 // TODO: Add default keybindings check when implemented
                 Some(icy_engine_gui::ui::restore_defaults_button(true, on_message(SettingsDialogMessage::ResetCategory(self.current_category.clone()))).into())
@@ -545,8 +544,6 @@ impl SettingsDialogState {
                         .into(),
                 )
             }
-            SettingsCategory::WebDirectories => None,
-            _ => None,
         };
 
         let mut buttons_left: Vec<Element<'_, M>> = vec![];
@@ -573,7 +570,7 @@ impl SettingsDialogState {
 
         let dialog_content = dialog_area(column![category_row, Space::new().height(DIALOG_SPACING), content_container,].into());
 
-        let button_area_wrapped = dialog_area(button_area_row.into());
+        let button_area_wrapped = dialog_area(button_area_row);
 
         modal_container(
             column![container(dialog_content).height(Length::Fill), separator(), button_area_wrapped,].into(),
@@ -588,6 +585,7 @@ impl SettingsDialogState {
     }
 
     /// Get the current theme for live preview
+    #[must_use]
     pub fn get_theme(&self) -> icy_ui::Theme {
         self.temp_options.lock().monitor_settings.get_theme()
     }
@@ -729,29 +727,6 @@ impl ThemeOption {
     }
 }
 
-#[cfg(test)]
-mod web_directory_tests {
-    use super::{SettingsDialogMessage, SettingsDialogState};
-    use crate::Options;
-    use parking_lot::Mutex;
-    use std::sync::Arc;
-
-    #[test]
-    fn adding_web_directory_creates_editable_source() {
-        let options = Arc::new(Mutex::new(Options::default()));
-        let mut state = SettingsDialogState::new(options);
-
-        let _ = state.handle_message(SettingsDialogMessage::AddWebDirectory);
-
-        let sources = state.temp_options.lock().web_directories.clone();
-        assert_eq!(sources.len(), 1);
-        assert_eq!(sources[0].name, "Directory 1");
-        assert_eq!(sources[0].url, "https://");
-        assert!(sources[0].enabled);
-        assert_eq!(state.selected_web_directory_index, 0);
-    }
-}
-
 impl From<icy_ui::Theme> for ThemeOption {
     fn from(value: icy_ui::Theme) -> Self {
         ThemeOption(value)
@@ -774,7 +749,7 @@ impl std::fmt::Display for ThemeOption {
 // Builder functions for settings dialog
 // ============================================================================
 
-/// Create a settings dialog for use with DialogStack using an existing state
+/// Create a settings dialog for use with `DialogStack` using an existing state
 pub fn settings_dialog_with_state<M, F, E>(state: SettingsDialogState, on_message: F, extract_message: E) -> SettingsDialogWrapperWithTheme<M, F, E>
 where
     M: Clone + Send + 'static,
@@ -786,7 +761,7 @@ where
     }
 }
 
-/// Creates a settings dialog wrapper using a tuple of (on_message, extract_message).
+/// Creates a settings dialog wrapper using a tuple of (`on_message`, `extract_message`).
 ///
 /// This is a convenience function to use with the `dialog_msg!` macro:
 /// ```ignore
@@ -809,8 +784,8 @@ where
 // Custom wrapper that adds theme() support
 // ============================================================================
 
-/// A wrapper around SettingsDialogWrapper that adds theme() support for live preview.
-/// This is needed because the dialog_wrapper macro doesn't support custom theme methods.
+/// A wrapper around `SettingsDialogWrapper` that adds `theme()` support for live preview.
+/// This is needed because the `dialog_wrapper` macro doesn't support custom theme methods.
 pub struct SettingsDialogWrapperWithTheme<M, F, E>
 where
     M: Clone + Send + 'static,
@@ -827,6 +802,7 @@ where
     E: Fn(&M) -> Option<&SettingsDialogMessage> + Clone + 'static,
 {
     /// Set callback for successful save (confirm).
+    #[must_use]
     pub fn on_save<G>(mut self, callback: G) -> Self
     where
         G: Fn(SettingsResult) -> M + Send + 'static,
@@ -836,6 +812,7 @@ where
     }
 
     /// Set callback for cancel/close.
+    #[must_use]
     pub fn on_cancel<G>(mut self, callback: G) -> Self
     where
         G: Fn() -> M + Send + 'static,
@@ -878,5 +855,28 @@ where
     fn theme(&self) -> Option<icy_ui::Theme> {
         // Return the theme from temp_options so changes are previewed live
         Some(self.inner.state.get_theme())
+    }
+}
+
+#[cfg(test)]
+mod web_directory_tests {
+    use super::{SettingsDialogMessage, SettingsDialogState};
+    use crate::Options;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+
+    #[test]
+    fn adding_web_directory_creates_editable_source() {
+        let options = Arc::new(Mutex::new(Options::default()));
+        let mut state = SettingsDialogState::new(options);
+
+        let _ = state.handle_message(SettingsDialogMessage::AddWebDirectory);
+
+        let sources = state.temp_options.lock().web_directories.clone();
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].name, "Directory 1");
+        assert_eq!(sources[0].url, "https://");
+        assert!(sources[0].enabled);
+        assert_eq!(state.selected_web_directory_index, 0);
     }
 }

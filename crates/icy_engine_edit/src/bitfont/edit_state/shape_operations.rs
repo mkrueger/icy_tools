@@ -53,6 +53,7 @@ impl BitFontEditState {
     /// * `x1`, `y1` - Second corner coordinates (opposite corner)
     /// * `filled` - If true, draws a filled rectangle; if false, draws only the outline
     /// * `value` - Pixel value to set (true = on, false = off)
+    #[allow(clippy::too_many_arguments)] // geometric parameters are clearer as individual coordinates
     pub fn draw_rectangle(&mut self, ch: char, x0: i32, y0: i32, x1: i32, y1: i32, filled: bool, value: bool) -> Result<()> {
         let points = brushes::rectangle_points(x0, y0, x1, y1, filled);
         let old_data = self.get_glyph_pixels(ch).clone();

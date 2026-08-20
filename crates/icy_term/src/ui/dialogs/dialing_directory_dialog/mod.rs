@@ -3,7 +3,7 @@ use crate::ui::{MainWindowMode, Message};
 use crate::{Address, AddressBook, SshAuthenticationMode};
 use i18n_embed_fl::fl;
 use icy_engine::ScreenMode;
-use icy_engine_gui::ui::*;
+use icy_engine_gui::ui::{button_row, primary_button, secondary_button, separator, DIALOG_PADDING, DIALOG_SPACING};
 use icy_net::{telnet::TerminalEmulation, ConnectionType};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use icy_ui::keyboard;
@@ -20,16 +20,11 @@ mod delete_confirmation;
 
 const DELETE_SVG: &[u8] = include_bytes!("../../../../data/icons/delete.svg");
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DialingDirectoryFilter {
+    #[default]
     All,
     Favourites,
-}
-
-impl Default for DialingDirectoryFilter {
-    fn default() -> Self {
-        Self::All
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -49,7 +44,7 @@ pub struct DialingDirectoryState {
 
     // Double-click detection
     last_click_time: Option<std::time::Instant>,
-    last_clicked_index: Option<Option<usize>>,
+    last_clicked_index: Option<usize>,
 }
 
 impl DialingDirectoryState {
@@ -70,6 +65,7 @@ impl DialingDirectoryState {
         }
     }
 
+    #[must_use]
     pub fn view(&self, options: &crate::Options) -> Element<'_, Message> {
         // Main layout with left panel, right panel, and bottom bar
         let content_area = row![
@@ -150,17 +146,13 @@ impl DialingDirectoryState {
                 // Double-click detection
                 let now = std::time::Instant::now();
                 let is_double_click = if let Some(last_time) = self.last_click_time {
-                    if let Some(last_idx) = self.last_clicked_index {
-                        last_idx == idx && now.duration_since(last_time).as_millis() < 250
-                    } else {
-                        false
-                    }
+                    self.last_clicked_index == idx && now.duration_since(last_time).as_millis() < 250
                 } else {
                     false
                 };
 
                 self.last_click_time = Some(now);
-                self.last_clicked_index = Some(idx);
+                self.last_clicked_index = idx;
                 self.selected_bbs = idx;
 
                 if is_double_click {
@@ -194,7 +186,7 @@ impl DialingDirectoryState {
             DialingDirectoryMsg::AddAddress => {
                 let mut new_address = self.quick_connect_address.clone();
                 self.quick_connect_address = Address::default();
-                new_address.system_name = new_address.address.clone();
+                new_address.system_name.clone_from(&new_address.address);
                 self.addresses.lock().addresses.push(new_address);
                 self.selected_bbs = Some(self.addresses.lock().addresses.len() - 1);
                 Task::none()
@@ -246,7 +238,7 @@ impl DialingDirectoryState {
 
                     // Save the address book
                     if let Err(e) = addresses.store_phone_book() {
-                        eprintln!("Failed to save address book: {}", e);
+                        eprintln!("Failed to save address book: {e}");
                     }
                 }
                 self.pending_delete = None;
@@ -401,12 +393,12 @@ impl DialingDirectoryState {
 
                 // Save the address book
                 if let Err(e) = self.addresses.lock().store_phone_book() {
-                    eprintln!("Failed to save address book: {}", e);
+                    eprintln!("Failed to save address book: {e}");
                 }
 
                 // Return a task that triggers the connection
                 // You'll need to handle this in the parent component
-                Task::done(Message::Connect(addr.into()))
+                Task::done(Message::Connect(addr))
             }
 
             DialingDirectoryMsg::Close => {
@@ -418,7 +410,7 @@ impl DialingDirectoryState {
 
                 // Save any changes before closing
                 if let Err(e) = self.addresses.lock().store_phone_book() {
-                    eprintln!("Failed to save address book: {}", e);
+                    eprintln!("Failed to save address book: {e}");
                 }
                 // Return a task that closes the dialog
                 Task::done(crate::ui::Message::CloseDialog(Box::new(MainWindowMode::ShowTerminal)))
@@ -559,16 +551,17 @@ impl DialingDirectoryState {
 
     pub(crate) fn handle_event(&self, event: &icy_ui::Event) -> Option<Message> {
         match event {
-            Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => match key {
-                keyboard::Key::Named(keyboard::key::Named::Tab) => {
-                    if modifiers.shift() {
-                        Some(Message::FocusPrevious)
-                    } else {
-                        Some(Message::FocusNext)
-                    }
+            Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(keyboard::key::Named::Tab),
+                modifiers,
+                ..
+            }) => {
+                if modifiers.shift() {
+                    Some(Message::FocusPrevious)
+                } else {
+                    Some(Message::FocusNext)
                 }
-                _ => None,
-            },
+            }
             _ => None,
         }
     }

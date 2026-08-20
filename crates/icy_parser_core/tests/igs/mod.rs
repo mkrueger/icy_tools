@@ -55,7 +55,7 @@ fn test_igs_box_command() {
             assert_eq!(*y1, 20.into());
             assert_eq!(*x2, 100.into());
             assert_eq!(*y2, 200.into());
-            assert_eq!(*rounded, false);
+            assert!(!(*rounded));
         }
         _ => panic!("Expected Box command"),
     }
@@ -204,7 +204,7 @@ fn test_igs_passthrough_text() {
     parser.parse(b"Regular text before G#C1,15: and after", &mut sink);
 
     assert_eq!(sink.igs_commands.len(), 1);
-    assert!(sink.text.len() > 0);
+    assert!(!sink.text.is_empty());
     assert!(sink.text.join("").contains("Regular text"));
 }
 

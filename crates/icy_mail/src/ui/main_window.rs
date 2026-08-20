@@ -233,12 +233,9 @@ impl MainWindow {
 
             Message::CyclePane { forward } => {
                 self.focus = match (self.focus, forward) {
-                    (Pane::Conferences, true) => Pane::Messages,
-                    (Pane::Messages, true) => Pane::Content,
-                    (Pane::Content, true) => Pane::Conferences,
-                    (Pane::Conferences, false) => Pane::Content,
-                    (Pane::Messages, false) => Pane::Conferences,
-                    (Pane::Content, false) => Pane::Messages,
+                    (Pane::Content, true) | (Pane::Messages, false) => Pane::Conferences,
+                    (Pane::Conferences, true) | (Pane::Content, false) => Pane::Messages,
+                    (Pane::Messages, true) | (Pane::Conferences, false) => Pane::Content,
                 };
                 Task::none()
             }
@@ -266,8 +263,6 @@ impl MainWindow {
                     self.select_first_message()
                 }
             }
-
-            Message::TerminalMessage(_) => Task::none(),
 
             _ => Task::none(),
         }
@@ -454,9 +449,9 @@ impl MainWindow {
 
     /// Renders the message body through the ANSI parser into a terminal screen.
     fn load_message_to_screen(&mut self, data: &[u8]) {
-        let _timer = crate::perf::Timer::with("load_message_to_screen", format!("{} bytes", data.len()));
         use icy_engine::load_with_parser;
         use icy_parser_core::AnsiParser;
+        let _timer = crate::perf::Timer::with("load_message_to_screen", format!("{} bytes", data.len()));
 
         // QWK stores bare LF line ends; the ANSI parser needs the CR to return to column 0.
         let mut normalized = Vec::with_capacity(data.len() + data.len() / 8);

@@ -45,7 +45,7 @@ fn test_circle() {
         let dist = (dx * dx + dy * dy).sqrt();
 
         // Allow for some rasterization error
-        assert!(dist >= 4.0 && dist <= 6.0, "Point {:?} has distance {} from center", pt, dist);
+        assert!((4.0..=6.0).contains(&dist), "Point {:?} has distance {} from center", pt, dist);
     }
 }
 

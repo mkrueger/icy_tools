@@ -13,7 +13,6 @@ use std::collections::HashMap;
 use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::usize;
 
 use icy_ui::{
     advanced::{
@@ -320,10 +319,7 @@ impl LayerView {
         let icon = svg(svg::Handle::from_memory(icon_data))
             .width(Length::Fixed(20.0))
             .height(Length::Fixed(20.0))
-            .style(move |_theme: &Theme, _status| svg::Style {
-                color: Some(icon_color),
-                ..Default::default()
-            });
+            .style(move |_theme: &Theme, _status| svg::Style { color: Some(icon_color) });
 
         button(icon).on_press(message).padding(4).style(button::text_style).into()
     }
@@ -332,10 +328,7 @@ impl LayerView {
         let icon = svg(svg::Handle::from_memory(icon_data))
             .width(Length::Fixed(20.0))
             .height(Length::Fixed(20.0))
-            .style(move |_theme: &Theme, _status| svg::Style {
-                color: Some(icon_color),
-                ..Default::default()
-            });
+            .style(move |_theme: &Theme, _status| svg::Style { color: Some(icon_color) });
         let mut b = button(icon).padding(4).style(button::text_style);
         if let Some(msg) = message {
             b = b.on_press(msg);
@@ -636,11 +629,7 @@ impl LayerView {
         // Update previews/atlas only when something actually changed (buffer, scroll, viewport size).
         self.ensure_previews_and_atlas(screen, &rows);
 
-        let selected_list_idx: u32 = rows
-            .iter()
-            .position(|r| r.layer_index == current_layer)
-            .map(|idx| idx as u32)
-            .unwrap_or(u32::MAX);
+        let selected_list_idx: u32 = rows.iter().position(|r| r.layer_index == current_layer).map_or(u32::MAX, |idx| idx as u32);
 
         // Owner-rendered list widget (virtualized) + overlay scrollbar
         let list_widget: Element<'a, LayerMessage> = LayerListWidget {
@@ -717,9 +706,9 @@ impl LayerView {
             // Normal mode
             let add_btn = Self::icon_button(ADD_LAYER_SVG, icon_color, LayerMessage::Add);
             let has_layers = layer_count > 0;
-            let move_up_btn = Self::icon_button_opt(MOVE_UP_SVG, icon_color, has_layers.then(|| LayerMessage::MoveUp(current_layer)));
-            let move_down_btn = Self::icon_button_opt(MOVE_DOWN_SVG, icon_color, has_layers.then(|| LayerMessage::MoveDown(current_layer)));
-            let delete_btn = Self::icon_button_opt(DELETE_SVG, icon_color, has_layers.then(|| LayerMessage::Remove(current_layer)));
+            let move_up_btn = Self::icon_button_opt(MOVE_UP_SVG, icon_color, has_layers.then_some(LayerMessage::MoveUp(current_layer)));
+            let move_down_btn = Self::icon_button_opt(MOVE_DOWN_SVG, icon_color, has_layers.then_some(LayerMessage::MoveDown(current_layer)));
+            let delete_btn = Self::icon_button_opt(DELETE_SVG, icon_color, has_layers.then_some(LayerMessage::Remove(current_layer)));
 
             container(row![add_btn, move_up_btn, move_down_btn, delete_btn].spacing(0))
                 .padding([2, 0])
@@ -763,30 +752,18 @@ struct LayerListWidget<'a> {
     paste_mode: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 struct LayerListWidgetState {
     left_button_down: bool,
     pressed_list_idx: Option<usize>,
     pressed_pos: Option<Point>,
     pressed_was_selected: bool,
     /// Tracks the last completed click (release) for double-click detection.
-    /// (layer_index, timestamp)
+    /// (`layer_index`, timestamp)
     last_click: Option<(usize, std::time::Instant)>,
 }
 
-impl Default for LayerListWidgetState {
-    fn default() -> Self {
-        Self {
-            left_button_down: false,
-            pressed_list_idx: None,
-            pressed_pos: None,
-            pressed_was_selected: false,
-            last_click: None,
-        }
-    }
-}
-
-impl<'a> LayerListWidget<'a> {
+impl LayerListWidget<'_> {
     fn visibility_icon_handle(&self, is_visible: bool) -> Option<image::Handle> {
         if let Some(handle) = self.visibility_icon_cache.borrow().get(&is_visible) {
             return Some(handle.clone());
@@ -845,14 +822,12 @@ impl<'a> LayerListWidget<'a> {
         list_bounds: Rectangle,
         row_bounds: Rectangle,
         row: &LayerRowInfo,
-        is_hovered: bool,
+        _is_hovered: bool,
         is_selected: bool,
     ) {
         let title_fg = if is_selected {
             // Selected row background comes from primary; use its text color.
             theme.accent.on
-        } else if is_hovered {
-            theme.background.on
         } else {
             theme.background.on
         };
@@ -945,15 +920,13 @@ impl<'a> LayerListWidget<'a> {
         .or_else(|| {
             let fg = title_fg;
 
-            let Some(label) = ({
+            let label = ({
                 let mut screen_guard = self.screen.lock();
                 let state = screen_guard.as_any_mut().downcast_mut::<EditState>().expect("Screen should be EditState");
                 let buffer = state.get_buffer();
                 let font = self.font_page.and_then(|fp| buffer.font(fp as u8)).or_else(|| buffer.font(0));
                 font.and_then(|font| LayerView::render_label(font, &key.text, fg))
-            }) else {
-                return None;
-            };
+            })?;
             let mut cache = self.label_cache.borrow_mut();
             cache.entry(key).or_insert_with(|| label.clone());
             Some(label)
@@ -1089,8 +1062,7 @@ impl Widget<LayerMessage, Theme, icy_ui::Renderer> for LayerListWidget<'_> {
                         (y / LAYER_ROW_HEIGHT) as usize
                     })
                     .filter(|&idx| idx < self.rows.len())
-                    .map(|idx| idx as u32)
-                    .unwrap_or(u32::MAX);
+                    .map_or(u32::MAX, |idx| idx as u32);
 
                 let prev = self.hovered_list_idx.swap(hovered, Ordering::Relaxed);
                 if prev != hovered {
@@ -1185,9 +1157,9 @@ impl Widget<LayerMessage, Theme, icy_ui::Renderer> for LayerListWidget<'_> {
                 // User must: click to select → release → click again → release → dialog opens.
                 if pressed_was_selected {
                     // Check if this is a double-click (same layer, within 400ms of last click)
-                    let is_double = state.last_click.map_or(false, |(last_idx, last_time)| {
-                        last_idx == row.layer_index && now.duration_since(last_time).as_millis() < 400
-                    });
+                    let is_double = state
+                        .last_click
+                        .is_some_and(|(last_idx, last_time)| last_idx == row.layer_index && now.duration_since(last_time).as_millis() < 400);
 
                     if is_double {
                         // Reset after double-click to prevent triple-click triggering again
@@ -1202,20 +1174,18 @@ impl Widget<LayerMessage, Theme, icy_ui::Renderer> for LayerListWidget<'_> {
                     state.last_click = None;
                 }
             }
-            Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) => {
-                if cursor.is_over(bounds) {
-                    let mut vp = self.viewport.borrow_mut();
-                    match delta {
-                        mouse::ScrollDelta::Lines { y, .. } => {
-                            let scroll_delta = -y * LAYER_ROW_HEIGHT * 0.6;
-                            vp.scroll_y_by_smooth(scroll_delta);
-                        }
-                        mouse::ScrollDelta::Pixels { y, .. } => {
-                            vp.scroll_y_by(-y);
-                        }
+            Event::Mouse(mouse::Event::WheelScrolled { delta, .. }) if cursor.is_over(bounds) => {
+                let mut vp = self.viewport.borrow_mut();
+                match delta {
+                    mouse::ScrollDelta::Lines { y, .. } => {
+                        let scroll_delta = -y * LAYER_ROW_HEIGHT * 0.6;
+                        vp.scroll_y_by_smooth(scroll_delta);
                     }
-                    shell.request_redraw();
+                    mouse::ScrollDelta::Pixels { y, .. } => {
+                        vp.scroll_y_by(-y);
+                    }
                 }
+                shell.request_redraw();
             }
             _ => {}
         }
@@ -1503,7 +1473,7 @@ fn align_up(value: u64, alignment: u64) -> u64 {
     if alignment == 0 {
         return value;
     }
-    ((value + alignment - 1) / alignment) * alignment
+    value.div_ceil(alignment) * alignment
 }
 
 impl icy_ui::widget::shader::Pipeline for LayerListBackgroundRenderer {

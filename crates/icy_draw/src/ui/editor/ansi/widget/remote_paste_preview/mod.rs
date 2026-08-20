@@ -1,6 +1,6 @@
 //! Remote Paste Preview Overlay Widget
 //!
-//! Renders floating selection previews (Moebius PASTE_AS_SELECTION) for remote users.
+//! Renders floating selection previews (Moebius `PASTE_AS_SELECTION`) for remote users.
 //! The preview is drawn as an image (RGBA) positioned in document cell space and
 //! transformed into screen space using the same math as the terminal renderer.
 

@@ -1,4 +1,4 @@
-//! MCP HTTP server for icy_draw
+//! MCP HTTP server for `icy_draw`
 
 use std::sync::Arc;
 
@@ -35,7 +35,7 @@ impl McpServer {
         let app = Router::new().route_service("/", mcp_service);
 
         let listener = TcpListener::bind(("127.0.0.1", port)).await?;
-        log::info!("MCP Streamable HTTP server listening on http://127.0.0.1:{}", port);
+        log::info!("MCP Streamable HTTP server listening on http://127.0.0.1:{port}");
 
         axum::serve(listener, app).await?;
         Ok(())

@@ -56,7 +56,7 @@ impl PasteTool {
     }
 
     /// Set paste mode active (used when paste data is received asynchronously)
-    /// The undo_guard is stored so that cancel can properly undo the paste operation.
+    /// The `undo_guard` is stored so that cancel can properly undo the paste operation.
     pub fn set_active(&mut self, previous_tool: super::ToolId, undo_guard: AtomicUndoGuard) {
         self.active = true;
         self.previous_tool = Some(previous_tool);
@@ -89,10 +89,10 @@ impl PasteTool {
             PasteAction::None => ToolResult::None,
 
             PasteAction::Move(dx, dy) => {
-                let current_offset = state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                let current_offset = state.get_cur_layer().map(icy_engine_edit::Layer::offset).unwrap_or_default();
                 let new_pos = Position::new(current_offset.x + dx, current_offset.y + dy);
                 if let Err(e) = state.move_layer(new_pos) {
-                    log::warn!("Failed to move layer: {}", e);
+                    log::warn!("Failed to move layer: {e}");
                 }
                 ToolResult::UpdateLayerBounds
                     .and(ToolResult::CollabOperation(new_pos.x, new_pos.y))
@@ -108,14 +108,14 @@ impl PasteTool {
                 }
 
                 if let Err(e) = state.stamp_layer_down() {
-                    log::warn!("Failed to stamp layer: {}", e);
+                    log::warn!("Failed to stamp layer: {e}");
                 }
                 ToolResult::Commit("Stamp floating layer".to_string()).and(ToolResult::Redraw)
             }
 
             PasteAction::Rotate => {
                 if let Err(e) = state.paste_rotate() {
-                    log::warn!("Failed to rotate layer: {}", e);
+                    log::warn!("Failed to rotate layer: {e}");
                 }
                 ToolResult::UpdateLayerBounds
                     .and(ToolResult::Commit("Rotate floating layer".to_string()))
@@ -124,7 +124,7 @@ impl PasteTool {
 
             PasteAction::FlipX => {
                 if let Err(e) = state.paste_flip_x() {
-                    log::warn!("Failed to flip layer X: {}", e);
+                    log::warn!("Failed to flip layer X: {e}");
                 }
                 ToolResult::UpdateLayerBounds
                     .and(ToolResult::Commit("Flip floating layer X".to_string()))
@@ -133,7 +133,7 @@ impl PasteTool {
 
             PasteAction::FlipY => {
                 if let Err(e) = state.paste_flip_y() {
-                    log::warn!("Failed to flip layer Y: {}", e);
+                    log::warn!("Failed to flip layer Y: {e}");
                 }
                 ToolResult::UpdateLayerBounds
                     .and(ToolResult::Commit("Flip floating layer Y".to_string()))
@@ -142,7 +142,7 @@ impl PasteTool {
 
             PasteAction::ToggleTransparent => {
                 if let Err(e) = state.make_layer_transparent() {
-                    log::warn!("Failed to make layer transparent: {}", e);
+                    log::warn!("Failed to make layer transparent: {e}");
                 }
                 ToolResult::Commit("Toggle floating layer transparent".to_string()).and(ToolResult::Redraw)
             }
@@ -156,7 +156,7 @@ impl PasteTool {
 
                 // Use paste_anchor which handles both local anchor AND collaboration sync
                 if let Err(e) = state.paste_anchor() {
-                    log::error!("Failed to anchor layer: {}", e);
+                    log::error!("Failed to anchor layer: {e}");
                 }
 
                 let prev = self.finish_paste();
@@ -183,7 +183,7 @@ impl PasteTool {
                 // Convert the floating layer to a normal layer by pushing the AddFloatingLayer undo operation
                 // This changes the role from PasteImage/PastePreview to Image/Normal
                 if let Err(e) = state.add_floating_layer() {
-                    log::warn!("Failed to finalize floating layer: {}", e);
+                    log::warn!("Failed to finalize floating layer: {e}");
                 }
 
                 let prev = self.finish_paste();
@@ -468,7 +468,7 @@ impl ToolHandler for PasteTool {
                 };
                 if evt.button == MouseButton::Left {
                     // Get current layer offset
-                    let layer_offset = ctx.state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                    let layer_offset = ctx.state.get_cur_layer().map(icy_engine_edit::Layer::offset).unwrap_or_default();
                     self.start_drag(pos, layer_offset);
 
                     if self.move_undo.is_none() {

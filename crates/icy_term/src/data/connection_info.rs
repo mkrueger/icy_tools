@@ -72,10 +72,10 @@ impl fmt::Display for ConnectionInformation {
         // Username and password
         if !self.user_name_injected {
             if let Some(username) = &self.user_name {
-                write!(f, "{}", username)?;
+                write!(f, "{username}")?;
             }
             if let Some(password) = &self.password {
-                write!(f, ":{}", password)?;
+                write!(f, ":{password}")?;
             }
             if self.user_name.is_some() || self.password.is_some() {
                 write!(f, "@")?;
@@ -87,7 +87,7 @@ impl fmt::Display for ConnectionInformation {
 
         if !self.is_default_port() {
             if let Some(port) = &self.port {
-                write!(f, ":{}", port)?;
+                write!(f, ":{port}")?;
             }
         }
 
@@ -96,10 +96,12 @@ impl fmt::Display for ConnectionInformation {
 }
 
 impl ConnectionInformation {
+    #[must_use]
     pub fn user_name(&self) -> Option<String> {
         self.user_name.clone()
     }
 
+    #[must_use]
     pub fn password(&self) -> Option<String> {
         self.password.clone()
     }
@@ -107,10 +109,10 @@ impl ConnectionInformation {
     pub fn parse(url: &str) -> Res<Self> {
         let url = url.trim();
 
-        match url::Url::parse(&url) {
+        match url::Url::parse(url) {
             Err(err) => {
                 if err == url::ParseError::RelativeUrlWithoutBase {
-                    return Self::parse_address_string(&url);
+                    return Self::parse_address_string(url);
                 }
                 Err(Box::new(err))
             }
@@ -140,22 +142,18 @@ impl ConnectionInformation {
                 };
 
                 // Extract username and password if present
-                let user_name = if !parsed.username().is_empty() {
-                    Some(parsed.username().to_string())
-                } else {
+                let user_name = if parsed.username().is_empty() {
                     None
+                } else {
+                    Some(parsed.username().to_string())
                 };
 
-                let password = if let Some(password) = parsed.password() {
-                    Some(password.to_string())
-                } else {
-                    None
-                };
+                let password = parsed.password().map(std::string::ToString::to_string);
 
                 let (host, port) = if parsed.has_host() {
                     (parsed.host_str().unwrap_or("").to_string(), parsed.port())
                 } else {
-                    return Self::parse_address_string(&url);
+                    return Self::parse_address_string(url);
                 };
 
                 Ok(Self {
@@ -214,35 +212,35 @@ impl ConnectionInformation {
         })
     }
 
+    #[must_use]
     pub fn protocol(&self) -> ConnectionType {
         self.protocol.unwrap_or(ConnectionType::Telnet)
     }
 
+    #[must_use]
     pub fn port(&self) -> u16 {
         self.port.unwrap_or_else(|| match self.protocol() {
-            ConnectionType::Telnet => 23,
             ConnectionType::SSH => 22,
-            ConnectionType::Raw => 23,
             ConnectionType::Websocket => 80,
             ConnectionType::SecureWebsocket => 443,
             ConnectionType::Rlogin | ConnectionType::RloginSwapped => 513,
             _ => 23,
         })
     }
+    #[must_use]
     pub fn is_default_port(&self) -> bool {
         self.port.is_none()
             || match self.protocol() {
-                ConnectionType::Telnet => self.port == Some(23),
+                ConnectionType::Telnet | ConnectionType::Raw | ConnectionType::Serial => self.port == Some(23),
                 ConnectionType::SSH => self.port == Some(22),
-                ConnectionType::Raw => self.port == Some(23),
                 ConnectionType::Websocket => self.port == Some(80),
                 ConnectionType::SecureWebsocket => self.port == Some(443),
-                ConnectionType::Serial => self.port == Some(23),
                 ConnectionType::Rlogin | ConnectionType::RloginSwapped => self.port == Some(513),
                 _ => false,
             }
     }
 
+    #[must_use]
     pub fn endpoint(&self) -> String {
         format!("{}:{}", self.host, self.port())
     }
@@ -353,7 +351,7 @@ mod tests {
             password: None,
         };
 
-        let display = format!("{}", conn_info);
+        let display = format!("{conn_info}");
         assert_eq!(display, "telnet://bbs.example.com");
     }
 
@@ -368,7 +366,7 @@ mod tests {
             user_name_injected: false,
         };
 
-        let display = format!("{}", conn_info);
+        let display = format!("{conn_info}");
         assert_eq!(display, "ssh://sysop:secret@bbs.example.com:2222");
     }
 
@@ -383,7 +381,7 @@ mod tests {
             user_name_injected: false,
         };
 
-        let display = format!("{}", conn_info);
+        let display = format!("{conn_info}");
         assert_eq!(display, "bbs.example.com:8888");
     }
 
@@ -464,7 +462,7 @@ mod tests {
             terminal_type: TerminalEmulation::Ansi,
             comment: String::new(),
             font_name: None,
-            screen_mode: Default::default(),
+            screen_mode: icy_engine::ScreenMode::default(),
             auto_login: String::new(),
             proxy_command: String::new(),
             ansi_music: MusicOption::default(),
@@ -506,7 +504,7 @@ mod tests {
             terminal_type: TerminalEmulation::Ansi,
             comment: String::new(),
             font_name: None,
-            screen_mode: Default::default(),
+            screen_mode: icy_engine::ScreenMode::default(),
             auto_login: String::new(),
             proxy_command: String::new(),
             ansi_music: MusicOption::default(),
@@ -547,7 +545,7 @@ mod tests {
             terminal_type: TerminalEmulation::Ansi,
             comment: String::new(),
             font_name: None,
-            screen_mode: Default::default(),
+            screen_mode: icy_engine::ScreenMode::default(),
             auto_login: String::new(),
             proxy_command: String::new(),
             ansi_music: MusicOption::default(),
@@ -578,7 +576,7 @@ mod tests {
     fn test_roundtrip_parse_display() {
         let original_url = "ssh://user:pass@bbs.example.com:2222";
         let conn_info = ConnectionInformation::parse(original_url).unwrap();
-        let display = format!("{}", conn_info);
+        let display = format!("{conn_info}");
 
         // Parse the displayed string again
         let reparsed = ConnectionInformation::parse(&display).unwrap();

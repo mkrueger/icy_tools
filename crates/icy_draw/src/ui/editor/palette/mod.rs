@@ -61,7 +61,7 @@ impl PaletteEditorDialog {
     pub fn new(mut palette: Palette) -> Self {
         palette.resize(16);
         let (r, g, b) = palette.rgb(0);
-        let hex_input = format!("{:02X}{:02X}{:02X}", r, g, b);
+        let hex_input = format!("{r:02X}{g:02X}{b:02X}");
 
         Self {
             palette,
@@ -78,12 +78,12 @@ impl PaletteEditorDialog {
     fn set_selected_rgb(&mut self, r: u8, g: u8, b: u8) {
         self.palette.set_color(self.selected_index as u32, Color::new(r, g, b));
         self.palette.resize(16);
-        self.hex_input = format!("{:02X}{:02X}{:02X}", r, g, b);
+        self.hex_input = format!("{r:02X}{g:02X}{b:02X}");
     }
 
     fn update_hex_from_selection(&mut self) {
         let (r, g, b) = self.selected_rgb();
-        self.hex_input = format!("{:02X}{:02X}{:02X}", r, g, b);
+        self.hex_input = format!("{r:02X}{g:02X}{b:02X}");
     }
 
     fn parse_hex(hex: &str) -> Option<(u8, u8, u8)> {
@@ -112,9 +112,9 @@ impl PaletteEditorDialog {
     }
 
     fn try_load_palette_from_path(path: &PathBuf) -> Result<Palette, String> {
-        let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
+        let ext = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
 
-        if matches!(ext.as_deref(), Some("xb") | Some("xbin")) {
+        if matches!(ext.as_deref(), Some("xb" | "xbin")) {
             let loaded_doc = FileFormat::XBin.load(path.as_path(), None).map_err(|e| e.to_string())?;
             let mut pal = loaded_doc.screen.palette().clone();
             pal.resize(16);
@@ -126,7 +126,7 @@ impl PaletteEditorDialog {
             Some("gpl") => FileFormat::Palette(PaletteFormat::Gpl),
             Some("hex") => FileFormat::Palette(PaletteFormat::Hex),
             Some("txt") => FileFormat::Palette(PaletteFormat::Txt),
-            Some("ice") | Some("icepal") => FileFormat::Palette(PaletteFormat::Ice),
+            Some("ice" | "icepal") => FileFormat::Palette(PaletteFormat::Ice),
             Some("ase") => FileFormat::Palette(PaletteFormat::Ase),
             _ => {
                 return Err("Unsupported palette file type".to_string());
@@ -140,14 +140,16 @@ impl PaletteEditorDialog {
     }
 
     fn export_to_path(&self, path: &PathBuf) -> Result<(), String> {
-        let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
+        let ext = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
 
         match ext.as_deref() {
-            Some("xb") | Some("xbin") => {
+            Some("xb" | "xbin") => {
                 let mut buffer = TextBuffer::new((1, 1));
                 buffer.palette = self.palette.clone();
-                let mut options = SaveOptions::default();
-                options.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false });
+                let options = SaveOptions {
+                    format: icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false }),
+                    ..Default::default()
+                };
                 let bytes = FileFormat::XBin.to_bytes(&buffer, &options).map_err(|e| e.to_string())?;
                 std::fs::write(path, bytes).map_err(|e| e.to_string())
             }
@@ -179,7 +181,7 @@ impl PaletteEditorDialog {
                     .map_err(|e| e.to_string())?;
                 std::fs::write(path, bytes).map_err(|e| e.to_string())
             }
-            Some("ice") | Some("icepal") => {
+            Some("ice" | "icepal") => {
                 let bytes = self
                     .palette
                     .export_palette(&FileFormat::Palette(PaletteFormat::Ice))
@@ -388,7 +390,7 @@ impl PaletteEditorDialog {
     fn color_preview(&self) -> Element<'_, Message> {
         let (r, g, b) = self.selected_rgb();
         container(
-            text(format!("#{:02X}{:02X}{:02X}", r, g, b))
+            text(format!("#{r:02X}{g:02X}{b:02X}"))
                 .size(TEXT_SIZE_SMALL)
                 .style(move |_theme: &icy_ui::Theme| {
                     // Choose text color based on luminance

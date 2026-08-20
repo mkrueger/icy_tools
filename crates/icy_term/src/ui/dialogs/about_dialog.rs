@@ -1,4 +1,4 @@
-//! About dialog for icy_term - uses the shared dialog from icy_engine_gui
+//! About dialog for `icy_term` - uses the shared dialog from `icy_engine_gui`
 
 pub use icy_engine_gui::ui::{AboutDialogMessage, AboutDialogState, AboutDialogWrapper};
 
@@ -7,7 +7,7 @@ use crate::VERSION;
 // Include the about ANSI file at compile time
 pub const ABOUT_ANSI: &[u8] = include_bytes!("../../../data/about.icy");
 
-/// Create an about dialog for icy_term
+/// Create an about dialog for `icy_term`
 ///
 /// # Example
 /// ```ignore

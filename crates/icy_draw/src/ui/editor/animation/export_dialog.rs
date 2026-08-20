@@ -203,7 +203,7 @@ impl AnimationExportDialog {
                 // Use tokio sleep which doesn't block the UI thread
                 tokio::time::sleep(Duration::from_millis(50)).await;
             },
-            |_| msg(AnimationExportMessage::Tick),
+            |()| msg(AnimationExportMessage::Tick),
         )
     }
 }
@@ -297,8 +297,8 @@ impl Dialog<Message> for AnimationExportDialog {
             ])
         };
 
-        let dialog_content = dialog_area(column![title, Space::new().height(Length::Fixed(DIALOG_SPACING as f32)), content_column].into());
-        let button_area = dialog_area(buttons.into());
+        let dialog_content = dialog_area(column![title, Space::new().height(Length::Fixed(DIALOG_SPACING)), content_column].into());
+        let button_area = dialog_area(buttons);
 
         modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area].into(),
@@ -371,7 +371,7 @@ impl Dialog<Message> for AnimationExportDialog {
                 }
                 AnimationExportMessage::Tick => {
                     // Check if export is still running
-                    let is_complete = self.progress.as_ref().map(|p| p.complete.load(Ordering::Relaxed)).unwrap_or(false);
+                    let is_complete = self.progress.as_ref().is_some_and(|p| p.complete.load(Ordering::Relaxed));
 
                     if is_complete {
                         // Export finished, check for error
@@ -477,7 +477,7 @@ fn export_to_gif_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
             },
             || progress.cancelled.load(Ordering::Relaxed),
         )
-        .map_err(|e| format!("GIF encoding failed: {}", e))
+        .map_err(|e| format!("GIF encoding failed: {e}"))
 }
 
 /// Export animation frames to AV1 (IVF container) with progress tracking
@@ -536,8 +536,8 @@ fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
     let height = *height as usize;
 
     // Ensure dimensions are even (required by AV1)
-    let width = if width % 2 != 0 { width + 1 } else { width };
-    let height = if height % 2 != 0 { height + 1 } else { height };
+    let width = if width.is_multiple_of(2) { width } else { width + 1 };
+    let height = if height.is_multiple_of(2) { height } else { height + 1 };
 
     // Calculate FPS from average delay
     let total_delay_ms: u32 = rendered_frames.iter().map(|(_, _, _, d)| d).sum();
@@ -578,10 +578,10 @@ fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
 
     let config = Config::new().with_encoder_config(enc_config).with_threads(num_cpus::get());
 
-    let mut ctx: Context<u8> = config.new_context().map_err(|e| format!("Failed to create encoder context: {:?}", e))?;
+    let mut ctx: Context<u8> = config.new_context().map_err(|e| format!("Failed to create encoder context: {e:?}"))?;
 
     // Open output file and write IVF header
-    let mut file = std::fs::File::create(path).map_err(|e| format!("Failed to create output file: {}", e))?;
+    let mut file = std::fs::File::create(path).map_err(|e| format!("Failed to create output file: {e}"))?;
 
     // IVF header (32 bytes)
     let mut header = [0u8; 32];
@@ -596,7 +596,7 @@ fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
     header[24..28].copy_from_slice(&(frame_count as u32).to_le_bytes()); // frame count
     header[28..32].copy_from_slice(&0u32.to_le_bytes()); // unused
 
-    file.write_all(&header).map_err(|e| format!("Failed to write IVF header: {}", e))?;
+    file.write_all(&header).map_err(|e| format!("Failed to write IVF header: {e}"))?;
 
     // Send frames to encoder
     for (i, (rgba_data, orig_w, orig_h, _delay_ms)) in rendered_frames.into_iter().enumerate() {
@@ -685,7 +685,7 @@ fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
             }
         }
 
-        ctx.send_frame(frame).map_err(|e| format!("Failed to send frame {}: {:?}", i, e))?;
+        ctx.send_frame(frame).map_err(|e| format!("Failed to send frame {i}: {e:?}"))?;
     }
 
     // Flush encoder
@@ -706,14 +706,14 @@ fn export_to_av1_with_progress(animator: &Arc<Mutex<Animator>>, path: &PathBuf, 
                 // Write IVF frame header (12 bytes)
                 let frame_size = packet.data.len() as u32;
                 file.write_all(&frame_size.to_le_bytes())
-                    .map_err(|e| format!("Failed to write frame size: {}", e))?;
-                file.write_all(&pts.to_le_bytes()).map_err(|e| format!("Failed to write PTS: {}", e))?;
-                file.write_all(&packet.data).map_err(|e| format!("Failed to write frame data: {}", e))?;
+                    .map_err(|e| format!("Failed to write frame size: {e}"))?;
+                file.write_all(&pts.to_le_bytes()).map_err(|e| format!("Failed to write PTS: {e}"))?;
+                file.write_all(&packet.data).map_err(|e| format!("Failed to write frame data: {e}"))?;
                 pts += 1;
             }
-            Err(EncoderStatus::Encoded) => continue,
-            Err(EncoderStatus::LimitReached) | Err(EncoderStatus::EnoughData) => break,
-            Err(e) => return Err(format!("Encoding error: {:?}", e)),
+            Err(EncoderStatus::Encoded) => {}
+            Err(EncoderStatus::LimitReached | EncoderStatus::EnoughData) => break,
+            Err(e) => return Err(format!("Encoding error: {e:?}")),
         }
     }
 
@@ -733,13 +733,10 @@ fn export_to_asciicast_with_progress(animator: &Arc<Mutex<Animator>>, path: &Pat
     let first_frame = &animator.frames[0].0;
     let size = first_frame.size();
 
-    let mut file = std::fs::File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;
+    let mut file = std::fs::File::create(path).map_err(|e| format!("Failed to create file: {e}"))?;
 
     // Write header (Asciicast v2 format)
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
 
     let header = serde_json::json!({
         "version": 2,
@@ -753,7 +750,7 @@ fn export_to_asciicast_with_progress(animator: &Arc<Mutex<Animator>>, path: &Pat
         }
     });
 
-    writeln!(file, "{}", header).map_err(|e| format!("Failed to write header: {}", e))?;
+    writeln!(file, "{header}").map_err(|e| format!("Failed to write header: {e}"))?;
 
     // Write frames
     let mut time_offset = 0.0;
@@ -771,11 +768,11 @@ fn export_to_asciicast_with_progress(animator: &Arc<Mutex<Animator>>, path: &Pat
         let ansi_output = render_screen_to_ansi(screen.as_ref());
 
         // Clear screen and move cursor to home
-        let frame_data = format!("\x1b[2J\x1b[H{}", ansi_output);
+        let frame_data = format!("\x1b[2J\x1b[H{ansi_output}");
 
         // Write event as JSON array: [time, "o", data]
-        let escaped = serde_json::to_string(&frame_data).map_err(|e| format!("Failed to encode frame: {}", e))?;
-        writeln!(file, "[{:.6}, \"o\", {}]", time_offset, escaped).map_err(|e| format!("Failed to write frame: {}", e))?;
+        let escaped = serde_json::to_string(&frame_data).map_err(|e| format!("Failed to encode frame: {e}"))?;
+        writeln!(file, "[{time_offset:.6}, \"o\", {escaped}]").map_err(|e| format!("Failed to write frame: {e}"))?;
 
         time_offset += *delay_ms as f64 / 1000.0;
     }
@@ -804,10 +801,10 @@ fn render_screen_to_ansi(screen: &dyn Screen) -> String {
                 let bg = ch.attribute.background();
 
                 // Set foreground color (256 color mode)
-                result.push_str(&format!("\x1b[38;5;{}m", fg));
+                result.push_str(&format!("\x1b[38;5;{fg}m"));
 
                 // Set background color (256 color mode)
-                result.push_str(&format!("\x1b[48;5;{}m", bg));
+                result.push_str(&format!("\x1b[48;5;{bg}m"));
 
                 if ch.attribute.is_bold() {
                     result.push_str("\x1b[1m");

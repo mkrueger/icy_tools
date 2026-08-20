@@ -65,7 +65,7 @@ impl PasteControls {
         // Calculate layout - 2 buttons side by side or stacked
         let cols = ((available_width - ICON_PADDING) / (ICON_SIZE + ICON_PADDING)).floor() as usize;
         let cols = cols.max(1).min(NUM_BUTTONS);
-        let rows = (NUM_BUTTONS + cols - 1) / cols;
+        let rows = NUM_BUTTONS.div_ceil(cols);
 
         let total_width = available_width;
         let total_height = rows as f32 * (ICON_SIZE + ICON_PADDING) + ICON_PADDING;
@@ -232,7 +232,7 @@ impl shader::Primitive for PasteControlsPrimitive {
             time: self.time,
             cols: self.cols as u32,
             rows: self.rows as u32,
-            hovered_button: self.hovered_button.map(|i| i as i32).unwrap_or(-1),
+            hovered_button: self.hovered_button.map_or(-1, |i| i as i32),
             bg_color: [self.bg_color[0], self.bg_color[1], self.bg_color[2], 1.0],
         };
 

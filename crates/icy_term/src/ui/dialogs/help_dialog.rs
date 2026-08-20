@@ -1,4 +1,4 @@
-//! Help dialog for icy_term
+//! Help dialog for `icy_term`
 
 use i18n_embed_fl::fl;
 use icy_engine_gui::commands::CommandDef;
@@ -49,7 +49,7 @@ fn get_help_commands() -> Vec<CommandDef> {
     ]
 }
 
-/// Create a help dialog for use with DialogStack
+/// Create a help dialog for use with `DialogStack`
 ///
 /// # Example
 /// ```ignore
@@ -67,7 +67,7 @@ where
     let state = HelpDialogState::new(fl!(LANGUAGE_LOADER, "help-title"), fl!(LANGUAGE_LOADER, "help-subtitle"))
         .with_commands(get_help_commands())
         .with_category_translator(|category_key| {
-            let translation_key = format!("cmd-category-{}", category_key);
+            let translation_key = format!("cmd-category-{category_key}");
             icy_engine_gui::LANGUAGE_LOADER.get(&translation_key)
         });
 

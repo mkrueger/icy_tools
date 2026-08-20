@@ -17,9 +17,6 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Global render generation counter - incremented each time tiles are re-rendered
-/// Used to detect content changes in the shader instead of Arc pointer hashing
-
 /// Clamps the terminal height to fit within the viewport bounds.
 ///
 /// This function sets the terminal window height (via `TerminalState`) to
@@ -407,9 +404,9 @@ impl<'a> CRTShaderProgram<'a> {
                     let tile_height = crate::TILE_HEIGHT;
                     let font_height = screen.font_dimensions().height.max(1) as u32;
                     let tile_height_lines = tile_height / font_height;
-                    if tile_height_lines > 0 {
-                        let first_tile = (first_dirty_line as u32 / tile_height_lines) as i32;
-                        let last_tile = ((last_dirty_line as u32).saturating_sub(1) / tile_height_lines) as i32;
+                    if let Some(first_tile) = (first_dirty_line as u32).checked_div(tile_height_lines) {
+                        let first_tile = first_tile as i32;
+                        let last_tile = (((last_dirty_line as u32).saturating_sub(1)) / tile_height_lines) as i32;
                         // Selective invalidation: only remove tiles in dirty range
                         cache.invalidate_tiles(first_tile, last_tile);
                     } else {

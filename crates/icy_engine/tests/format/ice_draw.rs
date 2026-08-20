@@ -63,9 +63,14 @@ fn create_buffer() -> TextBuffer {
 
 fn test_ice_draw(buffer: &mut TextBuffer) -> TextBuffer {
     let xb = FileFormat::IceDraw;
-    let mut opt = SaveOptions::default();
-    opt.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false });
-    opt.preprocess.optimize_colors = false;
+    let opt = SaveOptions {
+        format: icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false }),
+        preprocess: icy_engine::PreprocessOptions {
+            optimize_colors: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
     let bytes = xb.to_bytes(buffer, &opt).unwrap();
     let buffer2 = xb.from_bytes(&bytes, None).unwrap().screen.buffer;
     compare_buffers(buffer, &buffer2, CompareOptions::ALL);

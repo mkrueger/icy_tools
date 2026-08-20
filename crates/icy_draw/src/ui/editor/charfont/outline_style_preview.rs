@@ -1,7 +1,7 @@
 //! Outline Style Selector Widget (egui-like)
 //!
-//! Shows the 19 TheDraw outline styles as an 8×6 preview pattern per style.
-//! Used by the CharFont (TDF) editor outline preview panel.
+//! Shows the 19 `TheDraw` outline styles as an 8×6 preview pattern per style.
+//! Used by the `CharFont` (TDF) editor outline preview panel.
 
 use codepages::tables::UNICODE_TO_CP437;
 use icy_engine::BitFont;
@@ -21,7 +21,7 @@ pub const OUTLINE_STYLE_COUNT: usize = 19;
 const OUTLINE_WIDTH: usize = 8;
 const OUTLINE_HEIGHT: usize = 6;
 
-/// Preview pattern using TheDraw outline placeholders (A-Q = 65-81)
+/// Preview pattern using `TheDraw` outline placeholders (A-Q = 65-81)
 /// Copied from the ANSI outline selector.
 const OUTLINE_FONT_CHAR: [u8; 48] = [
     69, 65, 65, 65, 65, 65, 65, 70, 67, 79, 71, 66, 66, 72, 79, 68, 67, 79, 73, 65, 65, 74, 79, 68, 67, 79, 71, 66, 66, 72, 79, 68, 67, 79, 68, 64, 64, 67, 79,
@@ -31,7 +31,7 @@ const OUTLINE_FONT_CHAR: [u8; 48] = [
 /// Styles per row in the selector grid (compact)
 const PER_ROW: usize = 4;
 
-/// Padding/spacing tuned for the CharFont side panel
+/// Padding/spacing tuned for the `CharFont` side panel
 const POPUP_PADDING: f32 = 8.0;
 const CELL_PADDING: f32 = 4.0;
 const CELL_SPACING: f32 = 6.0;
@@ -58,7 +58,7 @@ pub fn selector_width() -> f32 {
 pub fn selector_height() -> f32 {
     let font = BitFont::default();
     let (_, cell_h) = cell_size(&font);
-    let rows = (OUTLINE_STYLE_COUNT + PER_ROW - 1) / PER_ROW;
+    let rows = OUTLINE_STYLE_COUNT.div_ceil(PER_ROW);
     rows as f32 * (cell_h + CELL_SPACING) - CELL_SPACING + 2.0 * POPUP_PADDING
 }
 
@@ -101,12 +101,7 @@ impl OutlineStyleSelectorProgram {
     }
 
     fn hit_test(&self, p: Point) -> Option<usize> {
-        for style in 0..OUTLINE_STYLE_COUNT {
-            if self.cell_rect(style).contains(p) {
-                return Some(style);
-            }
-        }
-        None
+        (0..OUTLINE_STYLE_COUNT).find(|&style| self.cell_rect(style).contains(p))
     }
 
     fn draw_cell(&self, frame: &mut Frame, style: usize, rect: Rectangle, fg: Color, bg: Color) {
@@ -197,9 +192,7 @@ impl canvas::Program<OutlineStyleSelectorMessage> for OutlineStyleSelectorProgra
             icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
-                let Some(cursor_pos) = cursor.position_in(bounds) else {
-                    return None;
-                };
+                let cursor_pos = cursor.position_in(bounds)?;
 
                 if let Some(style) = self.hit_test(cursor_pos) {
                     return Some(Action::publish(OutlineStyleSelectorMessage::Select(style)));

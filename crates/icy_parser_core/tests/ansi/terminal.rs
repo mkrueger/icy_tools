@@ -277,7 +277,7 @@ fn test_csi_set_caret_style() {
     parser.parse(b"\x1B[0 q", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
     if let TerminalCommand::CsiSetCaretStyle(blinking, shape) = sink.cmds[0] {
-        assert_eq!(blinking, true);
+        assert!(blinking);
         assert_eq!(shape, CaretShape::Block);
     } else {
         panic!("Expected CsiSetCaretStyle(true, Block)");
@@ -289,7 +289,7 @@ fn test_csi_set_caret_style() {
     parser.parse(b"\x1B[1 q", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
     if let TerminalCommand::CsiSetCaretStyle(blinking, shape) = sink.cmds[0] {
-        assert_eq!(blinking, true);
+        assert!(blinking);
         assert_eq!(shape, CaretShape::Block);
     } else {
         panic!("Expected CsiSetCaretStyle(true, Block)");
@@ -301,7 +301,7 @@ fn test_csi_set_caret_style() {
     parser.parse(b"\x1B[2 q", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
     if let TerminalCommand::CsiSetCaretStyle(blinking, shape) = sink.cmds[0] {
-        assert_eq!(blinking, false);
+        assert!(!blinking);
         assert_eq!(shape, CaretShape::Block);
     } else {
         panic!("Expected CsiSetCaretStyle(false, Block)");
@@ -313,7 +313,7 @@ fn test_csi_set_caret_style() {
     parser.parse(b"\x1B[3 q", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
     if let TerminalCommand::CsiSetCaretStyle(blinking, shape) = sink.cmds[0] {
-        assert_eq!(blinking, true);
+        assert!(blinking);
         assert_eq!(shape, CaretShape::Underline);
     } else {
         panic!("Expected CsiSetCaretStyle(true, Underline)");
@@ -325,7 +325,7 @@ fn test_csi_set_caret_style() {
     parser.parse(b"\x1B[4 q", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
     if let TerminalCommand::CsiSetCaretStyle(blinking, shape) = sink.cmds[0] {
-        assert_eq!(blinking, false);
+        assert!(!blinking);
         assert_eq!(shape, CaretShape::Underline);
     } else {
         panic!("Expected CsiSetCaretStyle(false, Underline)");
@@ -337,7 +337,7 @@ fn test_csi_set_caret_style() {
     parser.parse(b"\x1B[5 q", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
     if let TerminalCommand::CsiSetCaretStyle(blinking, shape) = sink.cmds[0] {
-        assert_eq!(blinking, true);
+        assert!(blinking);
         assert_eq!(shape, CaretShape::Bar);
     } else {
         panic!("Expected CsiSetCaretStyle(true, Bar)");
@@ -349,7 +349,7 @@ fn test_csi_set_caret_style() {
     parser.parse(b"\x1B[6 q", &mut sink);
     assert_eq!(sink.cmds.len(), 1);
     if let TerminalCommand::CsiSetCaretStyle(blinking, shape) = sink.cmds[0] {
-        assert_eq!(blinking, false);
+        assert!(!blinking);
         assert_eq!(shape, CaretShape::Bar);
     } else {
         panic!("Expected CsiSetCaretStyle(false, Bar)");

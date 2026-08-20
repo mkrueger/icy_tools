@@ -46,6 +46,7 @@ pub const ALL_TERMINALS: [TerminalEmulation; 11] = [
     TerminalEmulation::Mode7,
 ];
 
+#[must_use]
 pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
     match emulator {
         TerminalEmulation::Ansi => "ANSI",
@@ -83,12 +84,12 @@ impl fmt::Display for SshAuthenticationMode {
     }
 }
 
+#[must_use]
 pub fn normalize_screen_mode(terminal_type: TerminalEmulation, screen_mode: ScreenMode) -> ScreenMode {
     match terminal_type {
         TerminalEmulation::Ansi | TerminalEmulation::Avatar | TerminalEmulation::Ascii => screen_mode,
         TerminalEmulation::Utf8Ansi => match screen_mode {
-            ScreenMode::Vga(w, h) => ScreenMode::Unicode(w, h),
-            ScreenMode::Unicode(w, h) => ScreenMode::Unicode(w, h),
+            ScreenMode::Vga(w, h) | ScreenMode::Unicode(w, h) => ScreenMode::Unicode(w, h),
             _ => ScreenMode::Unicode(80, 25),
         },
         TerminalEmulation::PETscii => ScreenMode::Vic,
@@ -136,6 +137,7 @@ pub const ALL: [ConnectionType; 8] = [
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::unsafe_derive_deserialize)] // unsafe here only guards a module-level static lock, not this struct's fields
 pub struct AddressBook {
     pub version: Version,
 
@@ -211,7 +213,7 @@ impl AddressBook {
         if let Some(dialing_directory) = Address::get_dialing_directory_file() {
             secure_phonebook_file(&dialing_directory)?;
             if !dialing_directory.exists() {
-                log::error!("Dialing directory file does not exist: {:?}, creating deafult", dialing_directory);
+                log::error!("Dialing directory file does not exist: {}, creating deafult", dialing_directory.display());
                 return Ok(AddressBook::default());
             }
 
@@ -219,7 +221,7 @@ impl AddressBook {
                 Ok(input_text) => {
                     if let Err(err) = res.load_string(&input_text) {
                         log::error!("Error parsing phonebook {err}");
-                        return Err(err.into());
+                        return Err(err);
                     }
                 }
                 Err(err) => {
@@ -285,6 +287,7 @@ impl AddressBook {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(clippy::unsafe_derive_deserialize)] // unsafe here only bumps a module-level id counter, not this struct's fields
 pub struct Address {
     #[serde(skip)]
     pub web_source: Option<String>,
@@ -560,7 +563,7 @@ impl Address {
                 return None;
             }
             if let Err(err) = secure_phonebook_file(path) {
-                log::error!("Can't secure dialing directory {path:?}: {err}");
+                log::error!("Can't secure dialing directory {}: {err}", path.display());
                 return None;
             }
             return Some(path.clone());
@@ -568,18 +571,18 @@ impl Address {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(proj_dirs) = directories::ProjectDirs::from("com", "GitHub", "icy_term") {
             if !proj_dirs.config_dir().exists() && fs::create_dir_all(proj_dirs.config_dir()).is_err() {
-                log::error!("Can't create configuration directory {:?}", proj_dirs.config_dir());
+                log::error!("Can't create configuration directory {}", proj_dirs.config_dir().display());
                 return None;
             }
             let dialing_directory = proj_dirs.config_dir().join("phonebook.toml");
             if !dialing_directory.exists() {
                 if let Err(err) = fs::write(&dialing_directory, TEMPLATE) {
-                    log::error!("Can't create dialing_directory {dialing_directory:?} : {err}");
+                    log::error!("Can't create dialing_directory {} : {err}", dialing_directory.display());
                     return None;
                 }
             }
             if let Err(err) = secure_phonebook_file(&dialing_directory) {
-                log::error!("Can't secure dialing directory {dialing_directory:?}: {err}");
+                log::error!("Can't secure dialing directory {}: {err}", dialing_directory.display());
                 return None;
             }
             return Some(dialing_directory);
@@ -591,12 +594,12 @@ impl Address {
     pub fn get_cache_directory(&self) -> Option<PathBuf> {
         if let Some(mut cache_directory) = Self::cache_root() {
             if !cache_directory.exists() && fs::create_dir_all(&cache_directory).is_err() {
-                log::error!("Can't create cache directory {:?}", &cache_directory);
+                log::error!("Can't create cache directory {}", cache_directory.display());
                 return None;
             }
             cache_directory.push(Self::cache_key(&self.address));
             if !cache_directory.exists() && fs::create_dir_all(&cache_directory).is_err() {
-                log::error!("Can't create cache directory {:?}", &cache_directory);
+                log::error!("Can't create cache directory {}", cache_directory.display());
                 return None;
             }
             Some(cache_directory)
@@ -610,7 +613,7 @@ impl Address {
         if let Some(mut cache_directory) = self.get_cache_directory() {
             cache_directory = cache_directory.join("rip");
             if !cache_directory.exists() && fs::create_dir_all(&cache_directory).is_err() {
-                log::error!("Can't create cache directory {:?}", &cache_directory);
+                log::error!("Can't create cache directory {}", cache_directory.display());
                 return None;
             }
             Some(cache_directory)
@@ -677,9 +680,7 @@ pub fn start_watch_thread() {
     }
 }
 
-lazy_static::lazy_static! {
-    pub static ref vga_regex: Regex = Regex::new("vga\\((\\d+),\\s*(\\d+)\\)").unwrap();
-}
+pub static vga_regex: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| Regex::new("vga\\((\\d+),\\s*(\\d+)\\)").unwrap());
 
 #[cfg(test)]
 mod tests {

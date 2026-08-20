@@ -45,13 +45,13 @@ pub fn color_test() {
 
     // Test Low resolution
     let mut screen = ScreenMode::AtariST(icy_engine::TerminalResolution::Low, false).create_screen(TerminalEmulation::AtariST, None);
-    super::run_parser_compare(&mut screen, &Path::new("tests/output/vt52/2st.low.png"), &data);
+    super::run_parser_compare(&mut screen, Path::new("tests/output/vt52/2st.low.png"), &data);
 
     // Test Medium resolution
     let mut screen = ScreenMode::AtariST(icy_engine::TerminalResolution::Medium, false).create_screen(TerminalEmulation::AtariST, None);
-    super::run_parser_compare(&mut screen, &Path::new("tests/output/vt52/2st.medium.png"), &data);
+    super::run_parser_compare(&mut screen, Path::new("tests/output/vt52/2st.medium.png"), &data);
 
     // Test High resolution
     let mut screen = ScreenMode::AtariST(icy_engine::TerminalResolution::High, false).create_screen(TerminalEmulation::AtariST, None);
-    super::run_parser_compare(&mut screen, &Path::new("tests/output/vt52/2st.high.png"), &data);
+    super::run_parser_compare(&mut screen, Path::new("tests/output/vt52/2st.high.png"), &data);
 }

@@ -14,7 +14,7 @@ fn test_moebius_compress_uncompress_single() {
 #[test]
 fn test_moebius_compress_uncompress_run() {
     let block = Block { code: 32, fg: 7, bg: 0 };
-    let blocks: Vec<Block> = std::iter::repeat(block.clone()).take(100).collect();
+    let blocks: Vec<Block> = std::iter::repeat_n(block.clone(), 100).collect();
     let compressed = compress_moebius_data(&blocks);
     let decompressed = uncompress_moebius_data(100, 1, &compressed).unwrap();
     assert_eq!(blocks.len(), decompressed.len());

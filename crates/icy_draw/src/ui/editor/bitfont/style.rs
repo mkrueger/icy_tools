@@ -1,4 +1,4 @@
-//! Style constants and colors for the BitFont editor
+//! Style constants and colors for the `BitFont` editor
 //!
 //! Provides a consistent, professional look across all editor components.
 
@@ -9,7 +9,7 @@ use icy_ui::{Color, Point, Size, Theme};
 // Layout Constants
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Size of each pixel cell in the glyph editor (calculated to match charset height: 16 * scale = CELL_SIZE + CELL_GAP)
+/// Size of each pixel cell in the glyph editor (calculated to match charset height: 16 * scale = `CELL_SIZE` + `CELL_GAP`)
 pub const CELL_SIZE: f32 = 30.0;
 /// Gap between cells
 pub const CELL_GAP: f32 = 2.0;
@@ -128,7 +128,7 @@ pub struct RulerState {
 }
 
 impl RulerState {
-    /// Create a new RulerState with the given parameters
+    /// Create a new `RulerState` with the given parameters
     pub fn new(
         is_focused: bool,
         cursor_col: i32,
@@ -194,12 +194,12 @@ pub fn draw_rulers(frame: &mut Frame, state: &RulerState, theme: &Theme) {
         };
 
         frame.fill_text(canvas::Text {
-            content: format!("{:X}", col),
+            content: format!("{col:X}"),
             position: Point::new(cell_x, state.ruler_size / 2.0),
             color: ruler_color,
             size: icy_ui::Pixels(RULER_FONT_SIZE),
             align_x: icy_ui::alignment::Horizontal::Center.into(),
-            align_y: icy_ui::alignment::Vertical::Center.into(),
+            align_y: icy_ui::alignment::Vertical::Center,
             ..Default::default()
         });
     }
@@ -211,12 +211,12 @@ pub fn draw_rulers(frame: &mut Frame, state: &RulerState, theme: &Theme) {
         let ruler_color = if row == state.cursor_row { text_highlight } else { text_normal };
 
         frame.fill_text(canvas::Text {
-            content: format!("{:X}", row),
+            content: format!("{row:X}"),
             position: Point::new(state.ruler_size / 2.0, cell_y),
             color: ruler_color,
             size: icy_ui::Pixels(RULER_FONT_SIZE),
             align_x: icy_ui::alignment::Horizontal::Center.into(),
-            align_y: icy_ui::alignment::Vertical::Center.into(),
+            align_y: icy_ui::alignment::Vertical::Center,
             ..Default::default()
         });
     }

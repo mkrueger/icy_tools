@@ -78,12 +78,12 @@ mod tests {
         let handler = CommandHandler::new(create_common_commands(), test_handler);
 
         let hotkey = Hotkey::parse("Ctrl+Shift+N").unwrap();
-        assert_eq!(handler.handle(&hotkey, 42), Some(TestMessage::Open));
+        assert_eq!(handler.handle(hotkey, 42), Some(TestMessage::Open));
 
         let hotkey = Hotkey::parse("Ctrl+W").unwrap();
-        assert_eq!(handler.handle(&hotkey, 42), Some(TestMessage::Close(42)));
+        assert_eq!(handler.handle(hotkey, 42), Some(TestMessage::Close(42)));
 
         let hotkey = Hotkey::parse("Ctrl+X").unwrap();
-        assert_eq!(handler.handle(&hotkey, 42), None);
+        assert_eq!(handler.handle(hotkey, 42), None);
     }
 }

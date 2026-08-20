@@ -157,24 +157,6 @@ fn key_group_parts(keys: &str) -> Vec<String> {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::key_group_parts;
-
-    #[test]
-    fn separates_literal_plus_key_from_modifiers() {
-        assert_eq!(key_group_parts("Ctrl++"), ["Ctrl", "+"]);
-        assert_eq!(key_group_parts("Ctrl+Shift++"), ["Ctrl", "Shift", "+"]);
-        assert_eq!(key_group_parts("+"), ["+"]);
-    }
-
-    #[test]
-    fn preserves_regular_shortcuts_and_space_groups() {
-        assert_eq!(key_group_parts("Ctrl+Shift+N"), ["Ctrl", "Shift", "N"]);
-        assert_eq!(key_group_parts("Alt D"), ["Alt", "D"]);
-    }
-}
-
 /// Create a category header
 fn category_header<Message: 'static>(name: &str) -> container::Container<'static, Message> {
     container(
@@ -433,4 +415,22 @@ where
         on_message,
         extract_message,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::key_group_parts;
+
+    #[test]
+    fn separates_literal_plus_key_from_modifiers() {
+        assert_eq!(key_group_parts("Ctrl++"), ["Ctrl", "+"]);
+        assert_eq!(key_group_parts("Ctrl+Shift++"), ["Ctrl", "Shift", "+"]);
+        assert_eq!(key_group_parts("+"), ["+"]);
+    }
+
+    #[test]
+    fn preserves_regular_shortcuts_and_space_groups() {
+        assert_eq!(key_group_parts("Ctrl+Shift+N"), ["Ctrl", "Shift", "N"]);
+        assert_eq!(key_group_parts("Alt D"), ["Alt", "D"]);
+    }
 }

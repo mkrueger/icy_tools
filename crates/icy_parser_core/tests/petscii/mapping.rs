@@ -213,11 +213,11 @@ fn test_petscii_all_byte_mappings() {
     // Verify 0xFF: PI character (byte 94)
     let mut found_pi = false;
     for cmd in &sink.commands {
-        if let MappingCommand::Text(data) = cmd {
-            if data.contains(&94) {
-                found_pi = true;
-                break;
-            }
+        if let MappingCommand::Text(data) = cmd
+            && data.contains(&94)
+        {
+            found_pi = true;
+            break;
         }
     }
     assert!(found_pi, "Expected PI character (byte 94) from 0xFF");

@@ -23,15 +23,15 @@ struct MinimapUniforms {
     viewport_rect: [f32; 4],
     /// Viewport border color RGBA
     viewport_color: [f32; 4],
-    /// Visible UV range (what part of texture is currently shown): min_y, max_y, unused, unused
+    /// Visible UV range (what part of texture is currently shown): `min_y`, `max_y`, unused, unused
     visible_uv_range: [f32; 4],
-    /// Render dimensions: texture_width, texture_height, available_width, available_height
+    /// Render dimensions: `texture_width`, `texture_height`, `available_width`, `available_height`
     render_dimensions: [f32; 4],
     /// Viewport border thickness in pixels
     border_thickness: f32,
     /// Whether to show viewport overlay
     show_viewport: f32,
-    /// Number of texture slices (1..=MAX_TEXTURE_SLICES)
+    /// Number of texture slices (`1..=MAX_TEXTURE_SLICES`)
     num_slices: f32,
     /// Total image height across all slices
     total_image_height: f32,
@@ -41,7 +41,7 @@ struct MinimapUniforms {
     checker_color1: [f32; 4],
     /// Second checkerboard color (RGBA)
     checker_color2: [f32; 4],
-    /// Checkerboard params: x=cell_size, y=enabled, z=max_layer_height, w=unused
+    /// Checkerboard params: `x=cell_size`, y=enabled, `z=max_layer_height`, w=unused
     checker_params: [f32; 4],
 
     /// Solid background color for the minimap canvas (RGBA)
@@ -182,10 +182,10 @@ mod tests {
 }
 
 /// The minimap shader program (high-level interface)
-/// This implements shader::Program and creates MinimapPrimitive for rendering
+/// This implements `shader::Program` and creates `MinimapPrimitive` for rendering
 #[derive(Debug, Clone)]
 pub struct MinimapProgram {
-    /// Texture slices (up to MAX_TEXTURE_SLICES)
+    /// Texture slices (up to `MAX_TEXTURE_SLICES`)
     pub slices: Vec<TextureSliceData>,
     /// Heights of each slice in pixels
     pub slice_heights: Vec<u32>,
@@ -203,9 +203,9 @@ pub struct MinimapProgram {
     pub full_content_height: f32,
     /// Where the first slice starts in document Y coordinates
     pub first_slice_start_y: f32,
-    /// Shared state for communicating bounds back to MinimapView
+    /// Shared state for communicating bounds back to `MinimapView`
     pub shared_state: Arc<Mutex<SharedMinimapState>>,
-    /// Checkerboard colors for transparency (from MonitorSettings)
+    /// Checkerboard colors for transparency (from `MonitorSettings`)
     pub checkerboard_colors: CheckerboardColors,
 
     /// Viewport overlay color (RGBA)
@@ -443,14 +443,12 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
             }
 
             // Handle cursor movement while dragging
-            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                if state.is_dragging {
-                    // Use cursor.position() for mouse capture effect - works even outside bounds
-                    if let Some(pos) = cursor.position() {
-                        state.last_pointer_position = Some(pos);
-                        if let Some((norm_x, norm_y)) = self.calculate_normalized_position(pos, bounds) {
-                            return Some(icy_ui::widget::Action::publish(MinimapMessage::ScrollTo { norm_x, norm_y }));
-                        }
+            icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) if state.is_dragging => {
+                // Use cursor.position() for mouse capture effect - works even outside bounds
+                if let Some(pos) = cursor.position() {
+                    state.last_pointer_position = Some(pos);
+                    if let Some((norm_x, norm_y)) = self.calculate_normalized_position(pos, bounds) {
+                        return Some(icy_ui::widget::Action::publish(MinimapMessage::ScrollTo { norm_x, norm_y }));
                     }
                 }
             }
@@ -465,7 +463,7 @@ impl shader::Program<MinimapMessage> for MinimapProgram {
 /// The minimap shader primitive (low-level GPU rendering)
 #[derive(Debug, Clone)]
 pub struct MinimapPrimitive {
-    /// Texture slices (up to MAX_TEXTURE_SLICES)
+    /// Texture slices (up to `MAX_TEXTURE_SLICES`)
     pub slices: Vec<TextureSliceData>,
     /// Heights of each slice in pixels
     pub slice_heights: Vec<u32>,
@@ -485,7 +483,7 @@ pub struct MinimapPrimitive {
     pub full_content_height: f32,
     /// Where the first slice starts in document Y coordinates
     pub first_slice_start_y: f32,
-    /// Checkerboard colors for transparency (from MonitorSettings)
+    /// Checkerboard colors for transparency (from `MonitorSettings`)
     pub checkerboard_colors: CheckerboardColors,
 
     /// Viewport overlay color (RGBA)
@@ -649,7 +647,7 @@ impl shader::Primitive for MinimapPrimitive {
             let clamped = crate::ui::widget::gpu_util::create_clamped_texture(
                 device,
                 crate::ui::widget::gpu_util::ClampedTextureDescriptor {
-                    label: &format!("Minimap Texture Array {}", id),
+                    label: &format!("Minimap Texture Array {id}"),
                     width: max_slice_w,
                     height: max_slice_h,
                     depth_or_array_layers: layer_count,
@@ -668,7 +666,7 @@ impl shader::Primitive for MinimapPrimitive {
 
             // Create uniform buffer
             let uniform_buffer = device.create_buffer(&icy_ui::wgpu::BufferDescriptor {
-                label: Some(&format!("Minimap Uniforms {}", id)),
+                label: Some(&format!("Minimap Uniforms {id}")),
                 size: std::mem::size_of::<MinimapUniforms>() as u64,
                 usage: icy_ui::wgpu::BufferUsages::UNIFORM | icy_ui::wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
@@ -694,7 +692,7 @@ impl shader::Primitive for MinimapPrimitive {
             ];
 
             let bind_group = device.create_bind_group(&icy_ui::wgpu::BindGroupDescriptor {
-                label: Some(&format!("Minimap BindGroup {}", id)),
+                label: Some(&format!("Minimap BindGroup {id}")),
                 layout: &pipeline.bind_group_layout,
                 entries: &entries,
             });
@@ -856,7 +854,7 @@ impl shader::Primitive for MinimapPrimitive {
             canvas_bg: self.canvas_bg,
         };
 
-        let uniform_bytes = unsafe { std::slice::from_raw_parts(&uniforms as *const MinimapUniforms as *const u8, std::mem::size_of::<MinimapUniforms>()) };
+        let uniform_bytes = unsafe { std::slice::from_raw_parts((&raw const uniforms).cast::<u8>(), std::mem::size_of::<MinimapUniforms>()) };
         queue.write_buffer(&resources.uniform_buffer, 0, uniform_bytes);
     }
 

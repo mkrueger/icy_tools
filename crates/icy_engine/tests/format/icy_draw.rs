@@ -153,7 +153,7 @@ fn test_empty_buffer() {
     buf.set_height(23);
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -164,7 +164,7 @@ fn test_icy_draw_load_syncs_terminal_state_size() {
     buf.layers[0].set_char((0, 0), AttributedChar::new('X', TextAttribute::default()));
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let loaded = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
 
     assert_eq!(loaded.width(), 300);
@@ -178,14 +178,16 @@ fn test_iced_v1_compression_off_writes_uncompressed_records() {
     let mut buf = TextBuffer::new((2, 2));
     buf.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::default()));
 
-    let mut options = SaveOptions::default();
-    options.format = icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
-        skip_thumbnail: false,
-        compress: false,
-    });
+    let options = SaveOptions {
+        format: icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+            skip_thumbnail: false,
+            compress: false,
+        }),
+        ..Default::default()
+    };
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &options).unwrap();
+    let bytes = draw.to_bytes(&buf, &options).unwrap();
 
     // Sanity: roundtrip must still work.
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
@@ -216,14 +218,16 @@ fn test_iced_v1_compression_on_writes_zstd_records() {
     let mut buf = TextBuffer::new((2, 2));
     buf.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::default()));
 
-    let mut options = SaveOptions::default();
-    options.format = icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
-        skip_thumbnail: false,
-        compress: true,
-    });
+    let options = SaveOptions {
+        format: icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+            skip_thumbnail: false,
+            compress: true,
+        }),
+        ..Default::default()
+    };
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &options).unwrap();
+    let bytes = draw.to_bytes(&buf, &options).unwrap();
 
     // Sanity: roundtrip must still work.
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
@@ -257,7 +261,7 @@ fn test_save_image_layer_without_sixels_returns_error() {
     buf.layers.push(image_layer);
 
     let draw = FileFormat::IcyDraw;
-    let res = draw.to_bytes(&mut buf, &SaveOptions::default());
+    let res = draw.to_bytes(&buf, &SaveOptions::default());
     assert!(res.is_err(), "expected error when saving image layer with no sixels");
 }
 
@@ -328,14 +332,16 @@ fn test_sixel_layer_roundtrip() {
     buf.layers.push(image_layer);
 
     // Save with compression
-    let mut options = SaveOptions::default();
-    options.format = icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
-        skip_thumbnail: false,
-        compress: true,
-    });
+    let options = SaveOptions {
+        format: icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+            skip_thumbnail: false,
+            compress: true,
+        }),
+        ..Default::default()
+    };
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &options).unwrap();
+    let bytes = draw.to_bytes(&buf, &options).unwrap();
 
     // Verify SIXEL chunk is NOT zstd-compressed (PNG is already compressed)
     let raw_records = extract_png_chunks_by_type(&bytes, ICYD_CHUNK_TYPE);
@@ -402,14 +408,16 @@ fn test_sixel_layer_roundtrip_uncompressed() {
     buf.layers.push(image_layer);
 
     // Save WITHOUT compression
-    let mut options = SaveOptions::default();
-    options.format = icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
-        skip_thumbnail: false,
-        compress: false,
-    });
+    let options = SaveOptions {
+        format: icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+            skip_thumbnail: false,
+            compress: false,
+        }),
+        ..Default::default()
+    };
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &options).unwrap();
+    let bytes = draw.to_bytes(&buf, &options).unwrap();
 
     // Load back and verify
     let loaded = draw.from_bytes(&bytes, None).unwrap();
@@ -445,7 +453,7 @@ fn test_rgb_serialization_bug() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -468,7 +476,7 @@ fn test_rgb_serialization_bug_2() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -490,7 +498,7 @@ fn test_nonstandard_palettes() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
 
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
@@ -512,7 +520,7 @@ fn test_fg_switch() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
 
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
@@ -530,7 +538,7 @@ fn test_escape_char() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -604,7 +612,7 @@ fn test_tag_roundtrip_short_and_long() {
     });
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
 
     assert_eq!(buf2.tags.len(), 2);
@@ -638,7 +646,7 @@ fn test_layer_continuation_resume_is_y_based_not_line_count() {
     buf.layers[0].set_char((0, 300), AttributedChar { ch: 'B', attribute: attr });
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
 
     assert_eq!(buf2.width(), 1000);
@@ -667,7 +675,7 @@ fn test_fuzz_lite_no_panic_on_corrupt_icy_draw() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let good = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let good = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
 
     let mut cases: Vec<Vec<u8>> = Vec::new();
 
@@ -712,9 +720,14 @@ fn test_0_255_chars() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let mut opt = SaveOptions::default();
-    opt.preprocess.optimize_colors = false;
-    let bytes = draw.to_bytes(&mut buf, &opt).unwrap();
+    let opt = SaveOptions {
+        preprocess: icy_engine::PreprocessOptions {
+            optimize_colors: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let bytes = draw.to_bytes(&buf, &opt).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
 
     // Use ignore_invisible_chars since we only set 2 chars in a 2x2 buffer
@@ -753,7 +766,7 @@ fn test_too_long_lines() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -770,7 +783,7 @@ fn test_space_persistance_buffer() {
     );
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
 }
@@ -784,7 +797,7 @@ fn test_invisible_layer_bug() {
     buf.layers[1].properties.is_visible = false;
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let mut buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
 
     compare_buffers(&buf, &buf2, CompareOptions::ALL);
@@ -809,7 +822,7 @@ fn test_trailing_invisible_chars_roundtrip() {
     // Columns 41-79 are invisible
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
 
     // Use ignore_invisible_chars since we only set a few chars in an 80x25 buffer
@@ -831,10 +844,10 @@ fn test_invisisible_persistance_bug() {
     buf.layers[1].properties.is_visible = false;
     buf.layers[1].properties.has_alpha_channel = true;
 
-    assert_eq!(AttributedChar::invisible(), buf.layers[1].char_at((1, 0).into()).into());
+    assert_eq!(AttributedChar::invisible(), buf.layers[1].char_at((1, 0).into()));
 
     let draw = FileFormat::IcyDraw;
-    let bytes = draw.to_bytes(&mut buf, &SaveOptions::default()).unwrap();
+    let bytes = draw.to_bytes(&buf, &SaveOptions::default()).unwrap();
     let mut buf2 = draw.from_bytes(&bytes, None).unwrap().screen.buffer;
 
     compare_buffers(&buf, &buf2, CompareOptions::ALL);

@@ -1,4 +1,4 @@
-//! Edit grid canvas for BitFont editor
+//! Edit grid canvas for `BitFont` editor
 
 use icy_engine_edit::bitfont::{brushes, BitFontFocusedPanel};
 use icy_engine_gui::theme::main_area_background;
@@ -9,9 +9,15 @@ use icy_ui::{
     Color, Point, Rectangle, Size,
 };
 
-use super::super::{style::*, ArrowDirection, BitFontEditor, BitFontEditorMessage, BitFontTool, CanvasEvent};
+use super::super::{
+    style::{
+        darken, draw_corner_brackets, draw_rulers, RulerState, CURSOR_WIDTH, NINE_DOT_COLUMN, NINE_DOT_SEPARATOR, RULER_SIZE, SELECTION_BORDER,
+        SELECTION_COLOR, SHAPE_PREVIEW,
+    },
+    ArrowDirection, BitFontEditor, BitFontEditorMessage, BitFontTool, CanvasEvent,
+};
 
-/// State for EditGridCanvas to track hover position
+/// State for `EditGridCanvas` to track hover position
 #[derive(Default)]
 pub struct EditGridCanvasState {
     /// Currently hovered cell (x, y)
@@ -25,7 +31,7 @@ pub struct EditGridCanvas<'a> {
     pub bg_color: u32,
 }
 
-impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
+impl canvas::Program<BitFontEditorMessage> for EditGridCanvas<'_> {
     type State = EditGridCanvasState;
 
     fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, theme: &icy_ui::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
@@ -238,7 +244,7 @@ impl<'a> canvas::Program<BitFontEditorMessage> for EditGridCanvas<'a> {
                     return Some(Action::publish(BitFontEditorMessage::HandleArrow(ArrowDirection::Right, *modifiers)));
                 }
                 // Space/Enter - context-dependent confirm action
-                Key::Named(keyboard::key::Named::Space) | Key::Named(keyboard::key::Named::Enter) => {
+                Key::Named(keyboard::key::Named::Space | keyboard::key::Named::Enter) => {
                     return Some(Action::publish(BitFontEditorMessage::HandleConfirm));
                 }
                 // Escape - context-dependent cancel action

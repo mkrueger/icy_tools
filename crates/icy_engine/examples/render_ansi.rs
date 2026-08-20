@@ -39,7 +39,7 @@ fn main() {
     screen.terminal_state_mut().lf_expand = lf_expand;
     let mut sink = ScreenSink::new(screen);
     if chunk == 0 {
-        parser.parse(&data, &mut sink);
+        parser.parse(data, &mut sink);
     } else {
         for piece in data.chunks(chunk) {
             parser.parse(piece, &mut sink);

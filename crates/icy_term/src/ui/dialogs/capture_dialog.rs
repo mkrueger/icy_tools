@@ -1,7 +1,10 @@
 use i18n_embed_fl::fl;
 use icy_engine_gui::dialog_wrapper;
 use icy_engine_gui::settings::effect_box;
-use icy_engine_gui::ui::*;
+use icy_engine_gui::ui::{
+    browse_button, button_row, button_row_with_left, danger_button, dialog_area, dialog_title, error_tooltip, left_label_small, modal_container,
+    primary_button, secondary_button, separator, warning_tooltip, DIALOG_SPACING, DIALOG_WIDTH_LARGE, LABEL_SMALL_WIDTH, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
+};
 use icy_engine_gui::StateResult;
 use icy_ui::{
     widget::{column, container, row, text, text_input, Space},
@@ -42,11 +45,12 @@ pub struct CaptureDialogState {
 }
 
 impl CaptureDialogState {
+    #[must_use]
     pub fn new(initial_dir: String, is_capturing: bool) -> Self {
         let dir = if initial_dir.is_empty() {
             std::env::current_dir()
                 .ok()
-                .and_then(|p| p.to_str().map(|s| s.to_string()))
+                .and_then(|p| p.to_str().map(std::string::ToString::to_string))
                 .unwrap_or_else(|| ".".to_string())
         } else {
             initial_dir
@@ -74,7 +78,7 @@ impl CaptureDialogState {
 
         // Create directory if it doesn't exist
         if let Err(e) = std::fs::create_dir_all(&self.capture_directory) {
-            log::error!("Failed to create directory: {}", e);
+            log::error!("Failed to create directory: {e}");
             return StateResult::None;
         }
 
@@ -147,7 +151,7 @@ impl CaptureDialogState {
         }
     }
 
-    pub fn view<'a, M: Clone + 'static>(&'a self, on_message: impl Fn(CaptureDialogMessage) -> M + 'static + Clone) -> Element<'a, M> {
+    pub fn view<M: Clone + 'static>(&self, on_message: impl Fn(CaptureDialogMessage) -> M + 'static + Clone) -> Element<'_, M> {
         let content = self.create_modal_content(on_message.clone());
 
         if self.pending_overwrite {
@@ -170,7 +174,7 @@ impl CaptureDialogState {
         }
     }
 
-    fn create_modal_content<'a, M: Clone + 'static>(&'a self, on_message: impl Fn(CaptureDialogMessage) -> M + 'static + Clone) -> Element<'a, M> {
+    fn create_modal_content<M: Clone + 'static>(&self, on_message: impl Fn(CaptureDialogMessage) -> M + 'static + Clone) -> Element<'_, M> {
         let title = dialog_title(if self.is_capturing {
             fl!(crate::LANGUAGE_LOADER, "toolbar-stop-capture")
         } else {
@@ -253,16 +257,16 @@ impl CaptureDialogState {
 
         // Check if settings are at defaults for restore button
         let default_dir = crate::data::Options::default_capture_directory();
-        let is_at_defaults = default_dir.to_str().map(|s| s == self.temp_directory).unwrap_or(true);
+        let is_at_defaults = default_dir.to_str().is_none_or(|s| s == self.temp_directory);
 
-        let restore_btn = if !self.is_capturing {
+        let restore_btn = if self.is_capturing {
+            None
+        } else {
             let on_msg = on_message.clone();
             Some(icy_engine_gui::ui::restore_defaults_button(
                 !is_at_defaults,
                 on_msg(CaptureDialogMessage::RestoreDefaults),
             ))
-        } else {
-            None
         };
 
         // Action buttons
@@ -297,7 +301,7 @@ impl CaptureDialogState {
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box, Space::new().height(DIALOG_SPACING),].into());
 
-        let button_area = dialog_area(buttons.into());
+        let button_area = dialog_area(buttons);
 
         let modal = modal_container(
             column![container(dialog_content).height(Length::Fill), separator(), button_area,].into(),

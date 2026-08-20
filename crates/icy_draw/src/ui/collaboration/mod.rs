@@ -1,4 +1,4 @@
-//! Collaboration module for icy_draw
+//! Collaboration module for `icy_draw`
 //!
 //! This module provides real-time collaboration:
 //! - WebSocket client connection to collaboration servers

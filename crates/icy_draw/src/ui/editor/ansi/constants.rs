@@ -52,7 +52,7 @@ pub const LEFT_BAR_WIDTH: f32 = SIDEBAR_WIDTH - 12.0;
 // TOP TOOLBAR CONTROLS (FKey toolbar, SegmentedControl)
 // =============================================================================
 
-/// Height of the content area inside toolbar controls (FKey toolbar, SegmentedControl)
+/// Height of the content area inside toolbar controls (`FKey` toolbar, `SegmentedControl`)
 pub const TOP_CONTROL_HEIGHT: f32 = 36.0;
 
 /// Shadow padding around toolbar controls

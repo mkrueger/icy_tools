@@ -1,4 +1,5 @@
 //! Tests for brush algorithms (pure functions, no state)
+#![allow(clippy::needless_range_loop)]
 
 use icy_engine_edit::bitfont::brushes::{bresenham_line, flood_fill_points, rectangle_points};
 

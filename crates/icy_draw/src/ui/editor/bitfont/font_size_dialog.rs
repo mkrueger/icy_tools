@@ -1,7 +1,7 @@
-//! Font Size Dialog for BitFont Editor
+//! Font Size Dialog for `BitFont` Editor
 //!
 //! Allows changing the width and height of the font.
-//! Implements the Dialog trait from icy_engine_gui for stack-based dialog management.
+//! Implements the Dialog trait from `icy_engine_gui` for stack-based dialog management.
 
 use icy_engine_gui::settings::effect_box;
 use icy_engine_gui::ui::{
@@ -18,7 +18,7 @@ use super::BitFontEditorMessage;
 use crate::fl;
 use crate::ui::Message;
 
-/// Helper to wrap FontSizeDialogMessage in Message
+/// Helper to wrap `FontSizeDialogMessage` in Message
 fn msg(m: FontSizeDialogMessage) -> Message {
     Message::BitFontEditor(BitFontEditorMessage::FontSizeDialog(m))
 }
@@ -56,12 +56,12 @@ impl FontSizeDialog {
 
     /// Parse the current width value (1-8 for old-style bit fonts)
     pub fn parsed_width(&self) -> Option<i32> {
-        self.width.parse::<i32>().ok().filter(|&w| w >= 1 && w <= 8)
+        self.width.parse::<i32>().ok().filter(|&w| (1..=8).contains(&w))
     }
 
     /// Parse the current height value (1-32 for old-style bit fonts)
     pub fn parsed_height(&self) -> Option<i32> {
-        self.height.parse::<i32>().ok().filter(|&h| h >= 1 && h <= 32)
+        self.height.parse::<i32>().ok().filter(|&h| (1..=32).contains(&h))
     }
 
     /// Check if the input is valid
@@ -126,7 +126,7 @@ impl Dialog<Message> for FontSizeDialog {
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());
 
-        let button_area = dialog_area(buttons.into());
+        let button_area = dialog_area(buttons);
 
         modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area,].into(),

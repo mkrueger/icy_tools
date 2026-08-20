@@ -2,6 +2,7 @@
 //!
 //! Tests the slide operation which rotates pixels within the selection.
 //! Unlike move, slide uses Rust's rotate_left/rotate_right for efficient rotation.
+#![allow(clippy::needless_range_loop)]
 
 use icy_engine_edit::bitfont::{BitFontEditState, BitFontUndoState};
 

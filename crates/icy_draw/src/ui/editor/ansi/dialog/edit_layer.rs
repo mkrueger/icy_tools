@@ -1,7 +1,7 @@
 //! Edit Layer Dialog
 //!
 //! Combined dialog for editing layer properties and size.
-//! Replaces the separate EditLayerDialog and ResizeLayerDialog from the egui version.
+//! Replaces the separate `EditLayerDialog` and `ResizeLayerDialog` from the egui version.
 
 use icy_engine::{LayerProperties, Mode, Size};
 use icy_engine_gui::settings::effect_box;
@@ -328,7 +328,7 @@ impl Dialog<Message> for EditLayerDialog {
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());
 
-        let button_area = dialog_area(buttons.into());
+        let button_area = dialog_area(buttons);
 
         modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area].into(),

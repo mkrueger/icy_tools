@@ -1,6 +1,6 @@
-//! MCP (Model Context Protocol) server for icy_draw
+//! MCP (Model Context Protocol) server for `icy_draw`
 //!
-//! Provides remote control and automation capabilities for icy_draw via HTTP.
+//! Provides remote control and automation capabilities for `icy_draw` via HTTP.
 //! Enables AI assistants to interact with the editor programmatically.
 
 pub mod handlers;

@@ -1,7 +1,7 @@
 //! Shared GPU Glyph Renderer
 //!
 //! Provides a reusable GPU-accelerated glyph rendering system based on a
-//! 16x16 CP437 glyph atlas. Used by FKey-Toolbar and SegmentedControl for
+//! 16x16 CP437 glyph atlas. Used by FKey-Toolbar and `SegmentedControl` for
 //! crisp, pixel-perfect character rendering.
 
 use codepages::tables::CP437_TO_UNICODE;
@@ -63,8 +63,8 @@ pub fn font_key(font: &BitFont) -> u64 {
     hasher.finish()
 }
 
-/// Build a 16x16 glyph atlas texture (256 glyphs) from a BitFont.
-/// Returns (atlas_width, atlas_height, rgba_data).
+/// Build a 16x16 glyph atlas texture (256 glyphs) from a `BitFont`.
+/// Returns (`atlas_width`, `atlas_height`, `rgba_data`).
 pub fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
     let size = font.size();
     let gw = size.width.max(1) as u32;
@@ -76,8 +76,8 @@ pub fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
     for code in 0u32..256u32 {
         // Try both CP437 slot and Unicode lookup
         let slot_ch = char::from_u32(code).unwrap_or(' ');
-        let col = (code % 16) as u32;
-        let row = (code / 16) as u32;
+        let col = code % 16;
+        let row = code / 16;
         let base_x = col * gw;
         let base_y = row * gh;
 
@@ -93,7 +93,7 @@ pub fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
                     continue;
                 }
                 let on = glyph.get_pixel(x, y);
-                let idx = ((dst_y * atlas_w as usize + dst_x) * 4) as usize;
+                let idx = (dst_y * atlas_w as usize + dst_x) * 4;
                 rgba[idx] = 255;
                 rgba[idx + 1] = 255;
                 rgba[idx + 2] = 255;
@@ -110,5 +110,5 @@ pub fn cp437_index(ch: char) -> u32 {
     if (ch as u32) <= 0xFF {
         return ch as u32;
     }
-    CP437_TO_UNICODE.iter().position(|&c| c == ch).map(|idx| idx as u32).unwrap_or(b'?' as u32)
+    CP437_TO_UNICODE.iter().position(|&c| c == ch).map_or(b'?' as u32, |idx| idx as u32)
 }

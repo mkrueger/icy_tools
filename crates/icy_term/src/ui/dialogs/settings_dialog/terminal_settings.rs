@@ -220,7 +220,7 @@ impl SettingsDialogState {
                         text_input("2000", &max_scrollback_lines.to_string())
                             .on_input(move |value: String| {
                                 if let Ok(lines) = value.parse::<usize>() {
-                                    let lines = lines.clamp(100, 100000);
+                                    let lines = lines.clamp(100, 100_000);
                                     let mut new_options = temp_options3.lock().clone();
                                     new_options.max_scrollback_lines = lines;
                                     on_msg3(SettingsDialogMessage::UpdateOptions(new_options))

@@ -79,7 +79,7 @@ impl WindowManager {
             }
             WindowManagerMessage::CloseWindow(id) => window::close(id),
             WindowManagerMessage::WindowOpened(id) => {
-                let window: MainWindow = MainWindow::new(id.clone(), MainWindowMode::ShowWelcomeScreen);
+                let window: MainWindow = MainWindow::new(id, MainWindowMode::ShowWelcomeScreen);
                 self.windows.insert(id, window);
 
                 let focus_input: Task<()> = operation::focus(format!("input-{id}"));
@@ -140,8 +140,8 @@ impl WindowManager {
 
             WindowManagerMessage::_UpdateBuffers => {
                 let mut tasks = vec![];
-                for (id, _window) in self.windows.iter() {
-                    let id = id.clone();
+                for id in self.windows.keys() {
+                    let id = *id;
                     tasks.push(Task::done(WindowManagerMessage::WindowMessage(id, Message::BufferUpdated)));
                 }
                 Task::batch(tasks)
@@ -150,7 +150,7 @@ impl WindowManager {
     }
 
     pub fn view(&self, window_id: window::Id) -> Element<'_, WindowManagerMessage> {
-        let id = window_id.clone();
+        let id = window_id;
         if let Some(window) = self.windows.get(&window_id) {
             window.view().map(move |msg| WindowManagerMessage::WindowMessage(id, msg))
         } else {
@@ -167,45 +167,37 @@ impl WindowManager {
             window::close_events().map(WindowManagerMessage::WindowClosed),
             icy_ui::event::listen_with(|event, status, window_id| {
                 let captured = matches!(status, icy_ui::event::Status::Captured);
-                match &event {
-                    Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                        // Tab cycles our own panes unless a text widget has focus and used it.
-                        let tab_owned_by_window = matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab)) && !captured;
+                if let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = &event {
+                    // Tab cycles our own panes unless a text widget has focus and used it.
+                    let tab_owned_by_window = matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab)) && !captured;
 
-                        // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
-                        if !tab_owned_by_window {
-                            if let Some(action) = handle_window_manager_keyboard_press(key, modifiers) {
-                                return match action {
-                                    KeyboardAction::FocusWindow(target_id) => Some(WindowManagerMessage::FocusWindow(target_id)),
-                                    KeyboardAction::FocusNext => Some(WindowManagerMessage::FocusNext),
-                                    KeyboardAction::FocusPrevious => Some(WindowManagerMessage::FocusPrevious),
-                                };
+                    // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
+                    if !tab_owned_by_window {
+                        if let Some(action) = handle_window_manager_keyboard_press(key, modifiers) {
+                            return match action {
+                                KeyboardAction::FocusWindow(target_id) => Some(WindowManagerMessage::FocusWindow(target_id)),
+                                KeyboardAction::FocusNext => Some(WindowManagerMessage::FocusNext),
+                                KeyboardAction::FocusPrevious => Some(WindowManagerMessage::FocusPrevious),
+                            };
+                        }
+                    }
+
+                    if modifiers.shift() {
+                        if modifiers.command() {
+                            if let keyboard::Key::Character(s) = &key {
+                                if s.to_lowercase().as_str() == "n" {
+                                    return Some(WindowManagerMessage::OpenWindow);
+                                }
                             }
                         }
-
-                        if modifiers.shift() {
-                            if modifiers.command() {
-                                match &key {
-                                    keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
-                                        "n" => return Some(WindowManagerMessage::OpenWindow),
-                                        _ => {}
-                                    },
-                                    _ => {}
-                                }
-                            }
-                        } else {
-                            if modifiers.command() {
-                                match &key {
-                                    keyboard::Key::Character(s) => match s.to_lowercase().as_str() {
-                                        "w" => return Some(WindowManagerMessage::CloseWindow(window_id)),
-                                        _ => {}
-                                    },
-                                    _ => {}
-                                }
+                    } else if modifiers.command() {
+                        if let keyboard::Key::Character(s) = &key {
+                            if s.to_lowercase().as_str() == "w" {
+                                return Some(WindowManagerMessage::CloseWindow(window_id));
                             }
                         }
                     }
-                    _ => { /* Handle other events if necessary */ }
+                } else { /* Handle other events if necessary */
                 }
 
                 Some(WindowManagerMessage::Event(window_id, event, captured))

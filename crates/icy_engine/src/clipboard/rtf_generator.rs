@@ -123,14 +123,14 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
         use std::fmt::Write;
 
         // Foreground color change (add 1 because color table index 0 is reserved)
-        if last_fg_idx.map(|i| i != fg_idx).unwrap_or(true) {
+        if last_fg_idx.is_none_or(|i| i != fg_idx) {
             let _ = write!(rtf, "\\cf{} ", fg_idx + 1);
             *last_fg_idx = Some(fg_idx);
         }
 
         // Background highlight
         if let Some(bi) = bg_idx {
-            if last_bg_idx.map(|i| i != bi).unwrap_or(true) {
+            if last_bg_idx.is_none_or(|i| i != bi) {
                 let _ = write!(rtf, "\\highlight{} ", bi + 1);
                 *last_bg_idx = Some(bi);
             }

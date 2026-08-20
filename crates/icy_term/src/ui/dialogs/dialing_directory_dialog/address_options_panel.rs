@@ -14,13 +14,13 @@ use icy_ui::{
     widget::{button, column, container, pick_list, row, scrollable, svg, text, text_input, Space},
     Alignment, Element, Length,
 };
-use once_cell::sync::Lazy;
 use std::fmt;
 
-static COMMENT_PLACEHOLDER: Lazy<String> = Lazy::new(|| fl!(crate::LANGUAGE_LOADER, "dialing_directory-comment-placeholder"));
+static COMMENT_PLACEHOLDER: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| fl!(crate::LANGUAGE_LOADER, "dialing_directory-comment-placeholder"));
 
 const VISIBILITY_SVG: &[u8] = include_bytes!("../../../../data/icons/visibility.svg");
 const VISIBILITY_OFF_SVG: &[u8] = include_bytes!("../../../../data/icons/visibility_off.svg");
+const COMBO_WIDTH: f32 = 110.0;
 
 // Wrapper types to implement Display
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,7 +115,9 @@ impl super::DialingDirectoryState {
         let id = self.selected_bbs;
 
         // Header section - explicitly type as Element
-        let header: Element<'_, Message> = if !is_quick {
+        let header: Element<'_, Message> = if is_quick {
+            container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-to")).size(20.0)).into()
+        } else {
             let name_input = text_input(&fl!(crate::LANGUAGE_LOADER, "dialing_directory-name-placeholder"), &addr.system_name)
                 .on_input(move |s| {
                     Message::from(DialingDirectoryMsg::AddressFieldChanged {
@@ -127,11 +129,7 @@ impl super::DialingDirectoryState {
                 .width(Length::Fill);
 
             let star_btn: button::Button<'_, Message> = button(text(if addr.is_favored { "★" } else { "☆" }).wrapping(text::Wrapping::None))
-                .on_press(Message::from(DialingDirectoryMsg::ToggleFavorite(if let Some(addr_idx) = self.selected_bbs {
-                    addr_idx
-                } else {
-                    0
-                })))
+                .on_press(Message::from(DialingDirectoryMsg::ToggleFavorite(self.selected_bbs.unwrap_or_default())))
                 .style(button::text_style);
 
             let calls = addr.number_of_calls;
@@ -148,23 +146,15 @@ impl super::DialingDirectoryState {
             column![
                 row![name_input, star_btn].spacing(DIALOG_SPACING).align_y(Alignment::Center),
                 row![
-                    container(text(format!("✆ {calls}")).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
-                        color: Some(theme.button.on),
-                        ..Default::default()
-                    })),
+                    container(text(format!("✆ {calls}")).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style { color: Some(theme.button.on) })),
                     Space::new().width(Length::Fill),
-                    container(text(last_call_text).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
-                        color: Some(theme.button.on),
-                        ..Default::default()
-                    })),
+                    container(text(last_call_text).style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style { color: Some(theme.button.on) })),
                     Space::new().width(8.0),
                 ]
                 .spacing(20)
             ]
             .spacing(4)
             .into()
-        } else {
-            container(text(fl!(crate::LANGUAGE_LOADER, "dialing_directory-connect-to")).size(20.0)).into()
         };
 
         // Server Settings Section
@@ -274,11 +264,10 @@ impl super::DialingDirectoryState {
 
                     let error_row = row![
                         left_label(String::new()), // Offset to align with the field
-                        text(format!("⚠ {}", err_msg))
+                        text(format!("⚠ {err_msg}"))
                             .size(TEXT_SIZE_SMALL)
                             .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                                 color: Some(theme.destructive.base),
-                                ..Default::default()
                             })
                     ]
                     .spacing(DIALOG_SPACING)
@@ -288,7 +277,6 @@ impl super::DialingDirectoryState {
                 }
             }
 
-            const COMBO_WIDTH: f32 = 110.0;
             // Baud emulation row (only if not Modem protocol)
             if addr.protocol != ConnectionType::Modem {
                 let baud_pick = pick_list(BaudEmulation::OPTIONS.to_vec(), Some(addr.baud_emulation), move |b| {
@@ -374,7 +362,7 @@ impl super::DialingDirectoryState {
                         // Cols input
                         let cols_input = text_input("", &cols_str)
                             .on_input(move |s| {
-                                let new_w = s.parse::<i32>().map(|v| v.clamp(1, 255)).unwrap_or(w);
+                                let new_w = s.parse::<i32>().map_or(w, |v| v.clamp(1, 255));
                                 Message::from(DialingDirectoryMsg::AddressFieldChanged {
                                     id,
                                     field: AddressFieldChange::ScreenMode(ScreenMode::Vga(new_w, h)),
@@ -387,7 +375,7 @@ impl super::DialingDirectoryState {
                         // Rows input
                         let rows_input = text_input("", &rows_str)
                             .on_input(move |s| {
-                                let new_h = s.parse::<i32>().map(|v| v.clamp(1, 80)).unwrap_or(h);
+                                let new_h = s.parse::<i32>().map_or(h, |v| v.clamp(1, 80));
                                 Message::from(DialingDirectoryMsg::AddressFieldChanged {
                                     id,
                                     field: AddressFieldChange::ScreenMode(ScreenMode::Vga(w, new_h)),
@@ -531,11 +519,13 @@ impl super::DialingDirectoryState {
                 );
             }
 
-            effect_box(server_content.into()).into()
+            effect_box(server_content.into())
         };
 
         // Login Settings Section (only for non-quick connect)
-        let login_section: Option<Element<'_, Message>> = if !is_quick {
+        let login_section: Option<Element<'_, Message>> = if is_quick {
+            None
+        } else {
             let mut login_content = column![].spacing(DIALOG_SPACING);
 
             // User field
@@ -720,13 +710,13 @@ impl super::DialingDirectoryState {
                     .align_y(Alignment::Center),
             );*/
 
-            Some(effect_box(login_content.into()).into())
-        } else {
-            None
+            Some(effect_box(login_content.into()))
         };
 
         // Comment/Notes section (only for non-quick connect)
-        let comment_section: Option<Element<'_, Message>> = if !is_quick {
+        let comment_section: Option<Element<'_, Message>> = if is_quick {
+            None
+        } else {
             let comment = text_input(&COMMENT_PLACEHOLDER, &addr.comment)
                 .on_input(move |s| {
                     Message::from(DialingDirectoryMsg::AddressFieldChanged {
@@ -738,13 +728,13 @@ impl super::DialingDirectoryState {
                 .size(TEXT_SIZE_NORMAL)
                 .width(Length::Fill);
 
-            Some(effect_box(comment.into()).into())
-        } else {
-            None
+            Some(effect_box(comment.into()))
         };
 
         // Options section (only for non-quick connect)
-        let options_section: Option<Element<'_, Message>> = if !is_quick {
+        let options_section: Option<Element<'_, Message>> = if is_quick {
+            None
+        } else {
             let mut options_content = column![].spacing(DIALOG_SPACING);
 
             // Mouse reporting checkbox
@@ -818,15 +808,25 @@ impl super::DialingDirectoryState {
                 options_content = options_content.push(palette_grid);
             }
 
-            Some(effect_box(options_content.into()).into())
-        } else {
-            None
+            Some(effect_box(options_content.into()))
         };
 
         // Main content layout
         let mut content: icy_ui::widget::Column<'_, Message> = column![header, Space::new().height(SECTION_SPACING), server_section,];
 
-        if !is_quick {
+        if is_quick {
+            // Quick connect "Add BBS" button
+            let add_btn = if self.quick_connect_address.address.is_empty() {
+                secondary_button(fl!(crate::LANGUAGE_LOADER, "dialing_directory-add-bbs-button"), None)
+            } else {
+                primary_button(
+                    fl!(crate::LANGUAGE_LOADER, "dialing_directory-add-bbs-button"),
+                    Some(Message::from(DialingDirectoryMsg::AddAddress)),
+                )
+            };
+
+            content = content.push(Space::new().height(24)).push(row![Space::new().width(Length::Fill), add_btn]);
+        } else {
             if let Some(login) = login_section {
                 content = content
                     .push(Space::new().height(SECTION_SPACING))
@@ -847,18 +847,6 @@ impl super::DialingDirectoryState {
                     .push(section_header(fl!(crate::LANGUAGE_LOADER, "dialing_directory-notes")))
                     .push(notes);
             }
-        } else {
-            // Quick connect "Add BBS" button
-            let add_btn = if self.quick_connect_address.address.is_empty() {
-                secondary_button(fl!(crate::LANGUAGE_LOADER, "dialing_directory-add-bbs-button"), None)
-            } else {
-                primary_button(
-                    fl!(crate::LANGUAGE_LOADER, "dialing_directory-add-bbs-button"),
-                    Some(Message::from(DialingDirectoryMsg::AddAddress)),
-                )
-            };
-
-            content = content.push(Space::new().height(24)).push(row![Space::new().width(Length::Fill), add_btn]);
         }
 
         scrollable(content.padding(Padding {

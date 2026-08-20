@@ -1,7 +1,7 @@
 //! Color switcher component
 //!
 //! Shows foreground/background color rectangles with swap functionality.
-//! Ported from egui palette_switcher.
+//! Ported from egui `palette_switcher`.
 //!
 //! Layout (like Photoshop color picker):
 //! - Large foreground rectangle (top-left, overlapping)

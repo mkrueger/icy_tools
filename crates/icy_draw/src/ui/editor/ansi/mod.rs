@@ -17,7 +17,7 @@
 //! - Font changes: Use `state.set_font()` or `state.set_font_in_slot(slot, font)`
 //! - Layer operations: Use `state.add_layer()`, `state.remove_layer()`, etc.
 //! - Character changes: Use `state.set_char()`, etc.
-//! - Selection operations: Use corresponding EditState methods
+//! - Selection operations: Use corresponding `EditState` methods
 //!
 //! Direct buffer modifications bypass the undo system and will cause
 //! inconsistent state when users try to undo/redo.
@@ -194,7 +194,7 @@ pub enum AnsiEditorCoreMessage {
 /// These messages deal with panels, dialogs, tool switching, and layout.
 #[derive(Clone, Debug)]
 pub enum AnsiEditorMessage {
-    /// Forward a core message to AnsiEditorCore
+    /// Forward a core message to `AnsiEditorCore`
     Core(AnsiEditorCoreMessage),
 
     // --- Panel Widgets ---
@@ -269,7 +269,7 @@ enum MouseCaptureTarget {
 pub struct AnsiStatusInfo {
     /// Caret position (x, y) - None if tool doesn't show caret
     pub cursor_position: Option<(i32, i32)>,
-    /// Selection range (min_x, min_y, max_x, max_y) - None if no selection
+    /// Selection range (`min_x`, `min_y`, `max_x`, `max_y`) - None if no selection
     pub selection_range: Option<(i32, i32, i32, i32)>,
     /// Buffer size (width, height)
     pub buffer_size: (i32, i32),
@@ -283,9 +283,9 @@ pub struct AnsiStatusInfo {
     pub use_aspect_ratio: bool,
     /// Current format mode
     pub format_mode: icy_engine_edit::FormatMode,
-    /// Currently active font slot (0 or 1 for XBinExtended)
+    /// Currently active font slot (0 or 1 for `XBinExtended`)
     pub current_font_slot: usize,
-    /// Font names for slots (only set for XBinExtended)
+    /// Font names for slots (only set for `XBinExtended`)
     pub slot_fonts: Option<[Option<String>; 2]>,
     /// One-line discoverability hint for the current tool/brush mode,
     /// e.g. `"Pencil  •  Char mode — paints '█'"`. Rendered in the status bar.

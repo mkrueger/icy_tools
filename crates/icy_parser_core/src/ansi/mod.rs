@@ -187,7 +187,6 @@ impl AnsiParser {
                 grid_size,
                 sixel_data: self.parse_buffer[i + 1..].to_vec(),
             });
-            return;
         }
 
         // Unknown DCS commands are intentionally ignored.

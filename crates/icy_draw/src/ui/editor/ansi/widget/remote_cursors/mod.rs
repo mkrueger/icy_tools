@@ -2,7 +2,7 @@
 //!
 //! Renders cursor positions of remote users in a collaboration session.
 //! Each remote user gets a distinct color and their nickname is displayed
-//! near the cursor. Uses display_scale from RenderInfo for correct zoom.
+//! near the cursor. Uses `display_scale` from `RenderInfo` for correct zoom.
 //! Supports different cursor modes: Editing, Selection, Operation.
 
 use crate::ui::editor::ansi::AnsiEditorCoreMessage;
@@ -277,7 +277,7 @@ impl<Message> canvas::Program<Message> for RemoteCursorsOverlayState {
                     size: text_size.into(),
                     font: icy_ui::Font::MONOSPACE,
                     align_x: icy_ui::alignment::Horizontal::Left.into(),
-                    align_y: icy_ui::alignment::Vertical::Top.into(),
+                    align_y: icy_ui::alignment::Vertical::Top,
                     ..Default::default()
                 });
             }

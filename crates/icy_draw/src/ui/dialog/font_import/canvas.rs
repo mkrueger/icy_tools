@@ -1,6 +1,6 @@
 //! Font preview canvas for the import dialog
 //!
-//! Similar to the CharSetCanvas in the bitfont editor
+//! Similar to the `CharSetCanvas` in the bitfont editor
 
 use icy_ui::{
     mouse::Cursor,
@@ -18,7 +18,7 @@ pub struct FontPreviewCanvas<'a> {
     pub label_size: f32,
 }
 
-impl<'a, Message> canvas::Program<Message> for FontPreviewCanvas<'a> {
+impl<Message> canvas::Program<Message> for FontPreviewCanvas<'_> {
     type State = ();
 
     fn draw(&self, _state: &Self::State, renderer: &icy_ui::Renderer, theme: &icy_ui::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {

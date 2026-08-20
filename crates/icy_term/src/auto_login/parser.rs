@@ -34,7 +34,7 @@ impl AutoLoginParser {
                                 let seconds = if num_str.is_empty() {
                                     1 // Default to 1 second if no number specified
                                 } else {
-                                    num_str.parse::<u32>().map_err(|_| format!("Invalid delay value: {}", num_str))?
+                                    num_str.parse::<u32>().map_err(|_| format!("Invalid delay value: {num_str}"))?
                                 };
                                 commands.push(AutoLoginCommand::Delay(seconds));
                             }
@@ -56,11 +56,11 @@ impl AutoLoginParser {
                                         break;
                                     }
                                 }
-                                let code = num_str.parse::<u8>().map_err(|_| format!("Invalid control code: {}", num_str))?;
+                                let code = num_str.parse::<u8>().map_err(|_| format!("Invalid control code: {num_str}"))?;
                                 commands.push(AutoLoginCommand::SendControlCode(code));
                             }
                             _ => {
-                                return Err(format!("Unknown command: @{}", cmd_char));
+                                return Err(format!("Unknown command: @{cmd_char}"));
                             }
                         }
                     } else {
@@ -88,7 +88,7 @@ impl AutoLoginParser {
                                     break;
                                 }
                             }
-                            let code = num_str.parse::<u8>().map_err(|_| format!("Invalid control code: !{}", num_str))?;
+                            let code = num_str.parse::<u8>().map_err(|_| format!("Invalid control code: !{num_str}"))?;
                             commands.push(AutoLoginCommand::SendControlCode(code));
                         } else {
                             // Parse script filename

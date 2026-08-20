@@ -50,6 +50,7 @@ pub struct AutoLoginContext {
 }
 
 impl AutoLoginContext {
+    #[must_use]
     pub fn new(full_name: String, password: String) -> Self {
         let parts: Vec<&str> = full_name.split_whitespace().collect();
         let first_name = parts.first().unwrap_or(&"").to_string();

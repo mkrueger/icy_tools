@@ -34,7 +34,7 @@ pub const NETWORK_TOOL_SLOTS: &[ToolPair] = &[
     ToolPair::single(Tool::Font),
 ];
 
-/// Tool slots for the CharFont editor (no Tag tool)
+/// Tool slots for the `CharFont` editor (no Tag tool)
 pub const CHARFONT_TOOL_SLOTS: &[ToolPair] = &[
     ToolPair::single(Tool::Click),
     ToolPair::single(Tool::Select),
@@ -59,13 +59,13 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
-    /// Create a new ToolRegistry with the given tool slots
+    /// Create a new `ToolRegistry` with the given tool slots
     pub fn new(slots: &[ToolPair], font_library: SharedFontLibrary, brush: SharedBrush) -> Self {
         Self::new_internal(slots, font_library, brush, false)
     }
 
-    /// Create a new ToolRegistry for outline font editing
-    /// Uses OutlineClickTool instead of ClickTool
+    /// Create a new `ToolRegistry` for outline font editing
+    /// Uses `OutlineClickTool` instead of `ClickTool`
     pub fn new_for_outline(slots: &[ToolPair], font_library: SharedFontLibrary, brush: SharedBrush) -> Self {
         Self::new_internal(slots, font_library, brush, true)
     }

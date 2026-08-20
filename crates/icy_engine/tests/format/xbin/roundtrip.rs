@@ -45,9 +45,14 @@ fn test_icy_xbin_roundtrip(filename: &str, expected_compressed_size: usize) {
 
     // Step 2: Save as XBin (uncompressed)
     let xbin_format = FileFormat::XBin;
-    let mut save_options = SaveOptions::default();
-    save_options.format = icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false });
-    save_options.preprocess.optimize_colors = false;
+    let mut save_options = SaveOptions {
+        format: icy_engine::FormatOptions::Compressed(icy_engine::CompressedFormatOptions { compress: false }),
+        preprocess: icy_engine::PreprocessOptions {
+            optimize_colors: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
 
     let xbin_bytes = xbin_format
         .to_bytes(&original.screen.buffer, &save_options)

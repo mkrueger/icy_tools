@@ -163,7 +163,7 @@ impl GenericToolPanel {
         // Calculate columns based on available width
         let cols = ((available_width - ICON_PADDING) / (ICON_SIZE + ICON_PADDING)).floor() as usize;
         let cols = cols.max(1).min(self.num_slots);
-        let rows = (self.num_slots + cols - 1) / cols;
+        let rows = self.num_slots.div_ceil(cols);
 
         let total_width = available_width;
         let total_height = rows as f32 * (ICON_SIZE + ICON_PADDING) + ICON_PADDING;
@@ -440,7 +440,7 @@ pub struct ToolPanelRenderer {
 /// Standard icon atlas dimensions (4x4 grid for up to 16 icons)
 const ATLAS_COLS: u32 = 4;
 const ATLAS_ROWS: u32 = 4;
-/// Icon size in atlas (2x display size for HiDPI)
+/// Icon size in atlas (2x display size for `HiDPI`)
 const ATLAS_ICON_SIZE: u32 = (ICON_SIZE * 2.0) as u32;
 
 impl shader::Pipeline for ToolPanelRenderer {

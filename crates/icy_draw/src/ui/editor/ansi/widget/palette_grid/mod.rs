@@ -2,7 +2,7 @@
 //!
 //! Shows all palette colors in a grid with FG/BG markers.
 //! Supports 16, 64, and 256 color palettes.
-//! Ported from egui palette_editor_16.
+//! Ported from egui `palette_editor_16`.
 
 use icy_engine::{FontMode, IceMode, Palette};
 use icy_ui::{
@@ -90,7 +90,7 @@ impl PaletteGrid {
     }
 
     /// Calculate the optimal layout for the palette based on available width
-    /// Returns (items_per_row, cell_size, total_width, total_height)
+    /// Returns (`items_per_row`, `cell_size`, `total_width`, `total_height`)
     fn calculate_layout_for_width(palette_len: usize, available_width: f32) -> (usize, f32, f32, f32) {
         // Target cell size - we want reasonably sized color cells
         let target_cell_size = 16.0;
@@ -120,7 +120,7 @@ impl PaletteGrid {
     /// `color_limit` restricts display/selection to the first N colors.
     pub fn view_with_width(&self, available_width: f32, color_limit: Option<usize>) -> Element<'_, PaletteGridMessage> {
         let palette_len = self.cached_palette.len();
-        let visible_len = color_limit.map(|l| l.min(palette_len)).unwrap_or(palette_len);
+        let visible_len = color_limit.map_or(palette_len, |l| l.min(palette_len));
 
         // Special layouts:
         // - 16 colors: 8 rows × 2 columns (vertical), square cells, fill full available width
@@ -190,7 +190,7 @@ impl PaletteGridProgram {
     fn color_to_grid(&self, color: u32) -> (usize, usize) {
         if self.visible_len == 16 && self.items_per_row == 2 {
             // Column 0: colors 0-7, Column 1: colors 8-15
-            let col = if color >= 8 { 1 } else { 0 };
+            let col = usize::from(color >= 8);
             let row = (color % 8) as usize;
             (col, row)
         } else {
@@ -301,12 +301,11 @@ impl Program<PaletteGridMessage> for PaletteGridProgram {
                                     return Some(canvas::Action::publish(PaletteGridMessage::SetForeground(color)));
                                 }
                             }
-                            mouse::Button::Right => {
+                            mouse::Button::Right
                                 // Check if high background color is allowed
-                                if color < 8 || self.ice_mode.has_high_bg_colors() || self.visible_len > 16 {
+                                if (color < 8 || self.ice_mode.has_high_bg_colors() || self.visible_len > 16) => {
                                     return Some(canvas::Action::publish(PaletteGridMessage::SetBackground(color)));
                                 }
-                            }
                             _ => {}
                         }
                     }

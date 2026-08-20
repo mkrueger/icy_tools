@@ -71,7 +71,7 @@ fn is_system_message(msg: &ChatMessage) -> bool {
 fn group_messages(messages: &[ChatMessage], state: &CollaborationState) -> Vec<ChatItem> {
     let mut items: Vec<ChatItem> = Vec::new();
 
-    for msg in messages.iter() {
+    for msg in messages {
         // System messages are always standalone
         if is_system_message(msg) {
             items.push(ChatItem::SystemMessage(msg.text.clone()));
@@ -120,7 +120,7 @@ fn format_time(timestamp: u64) -> String {
     if let Ok(elapsed) = now.duration_since(msg_time) {
         let hours_ago = elapsed.as_secs() / 3600;
         if hours_ago < 24 {
-            format!("{:02}:{:02}", hours, minutes)
+            format!("{hours:02}:{minutes:02}")
         } else if hours_ago < 48 {
             format!("{} {:02}:{:02}", fl!("collab-yesterday"), hours, minutes)
         } else {
@@ -128,7 +128,7 @@ fn format_time(timestamp: u64) -> String {
             fl!("collab-days-ago", days = days.to_string())
         }
     } else {
-        format!("{:02}:{:02}", hours, minutes)
+        format!("{hours:02}:{minutes:02}")
     }
 }
 
@@ -372,7 +372,7 @@ fn view_message_group(group: MessageGroup) -> Element<'static, Message> {
 
     // <Group> in secondary color (if not empty)
     if !user_group.is_empty() {
-        header_row = header_row.push(text(format!("<{}>", user_group)).size(12).color(SECONDARY_COLOR));
+        header_row = header_row.push(text(format!("<{user_group}>")).size(12).color(SECONDARY_COLOR));
     }
 
     // · Time in secondary color (always show if available)

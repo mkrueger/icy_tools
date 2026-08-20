@@ -18,9 +18,7 @@ use super::terminal_extension::{ScriptState, TerminalLuaExtension};
 use crate::data::AddressBook;
 use crate::terminal::{TerminalCommand, TerminalEvent};
 
-lazy_static::lazy_static! {
-    static ref HEX_REGEX: Regex = Regex::new(r"#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})").unwrap();
-}
+static HEX_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| Regex::new(r"#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})").unwrap());
 
 /// Result of script execution
 #[derive(Debug)]
@@ -76,6 +74,7 @@ impl ScriptRunner {
     }
 
     /// Check if a script is currently running
+    #[must_use]
     pub fn is_running(&self) -> bool {
         if let Some(handle) = &self.run_thread {
             !handle.is_finished()
@@ -117,39 +116,39 @@ fn run_lua_script(state: Arc<ScriptState>, script: String) -> ScriptResult {
             let r = u32::from_str_radix(caps.get(1).unwrap().as_str(), 16).unwrap();
             let g = u32::from_str_radix(caps.get(2).unwrap().as_str(), 16).unwrap();
             let b = u32::from_str_radix(caps.get(3).unwrap().as_str(), 16).unwrap();
-            format!("{},{},{}", r, g, b)
+            format!("{r},{g},{b}")
         })
         .to_string();
 
     // Register terminal extension functions
     let extension = TerminalLuaExtension::new(state.clone());
     if let Err(e) = extension.register(&lua) {
-        return ScriptResult::Error(format!("Failed to register extension: {}", e));
+        return ScriptResult::Error(format!("Failed to register extension: {e}"));
     }
 
     // Register log function
     if let Err(e) = globals.set(
         "log",
         lua.create_function(move |_, msg: String| {
-            log::info!("{}", msg);
+            log::info!("{msg}");
             Ok(())
         })
         .unwrap(),
     ) {
-        return ScriptResult::Error(format!("Failed to register log function: {}", e));
+        return ScriptResult::Error(format!("Failed to register log function: {e}"));
     }
 
     // Register print override to also log
     if let Err(e) = globals.set(
         "print",
         lua.create_function(move |_, args: mlua::Variadic<String>| {
-            let msg = args.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\t");
-            log::info!("{}", msg);
+            let msg = args.iter().map(std::string::String::as_str).collect::<Vec<_>>().join("\t");
+            log::info!("{msg}");
             Ok(())
         })
         .unwrap(),
     ) {
-        return ScriptResult::Error(format!("Failed to register print function: {}", e));
+        return ScriptResult::Error(format!("Failed to register print function: {e}"));
     }
 
     // Execute the script
@@ -161,7 +160,7 @@ fn run_lua_script(state: Arc<ScriptState>, script: String) -> ScriptResult {
                 ScriptResult::Success
             }
         }
-        Err(e) => ScriptResult::Error(format!("{}", e)),
+        Err(e) => ScriptResult::Error(format!("{e}")),
     }
 }
 

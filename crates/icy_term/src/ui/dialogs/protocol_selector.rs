@@ -1,7 +1,7 @@
 use i18n_embed_fl::fl;
 use icy_engine_gui::{
     dialog_wrapper,
-    ui::{StateResult, *},
+    ui::{button_row, dialog_area, dialog_title, modal_container, secondary_button, separator, StateResult, DIALOG_SPACING, DIALOG_WIDTH_MEDIUM},
 };
 use icy_ui::{
     widget::{button, column, container, row, scrollable, text, Space},
@@ -14,7 +14,7 @@ use crate::TransferProtocol;
 const PROTOCOL_NAME_SIZE: u32 = 16;
 const PROTOCOL_DESCRIPTION_SIZE: u32 = 14;
 
-/// Result type for protocol selection: (protocol, is_download)
+/// Result type for protocol selection: (protocol, `is_download`)
 pub type ProtocolSelectionResult = (TransferProtocol, bool);
 
 #[derive(Debug, Clone)]
@@ -30,6 +30,7 @@ pub struct ProtocolSelectorState {
 }
 
 impl ProtocolSelectorState {
+    #[must_use]
     pub fn new(is_download: bool, protocols: Vec<TransferProtocol>) -> Self {
         Self { is_download, protocols }
     }
@@ -72,16 +73,12 @@ impl ProtocolSelectorState {
                                 .size(PROTOCOL_NAME_SIZE)
                                 .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
                                     color: Some(theme.accent.hover),
-                                    ..Default::default()
                                 })
                         )
                         .width(Length::Fixed(120.0)),
                         text(description)
                             .size(PROTOCOL_DESCRIPTION_SIZE)
-                            .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style {
-                                color: Some(theme.button.on),
-                                ..Default::default()
-                            })
+                            .style(|theme: &icy_ui::Theme| icy_ui::widget::text::Style { color: Some(theme.button.on) })
                     ]
                     .spacing(DIALOG_SPACING)
                     .align_y(Alignment::Center),
@@ -157,7 +154,7 @@ fn protocol_button_style(theme: &icy_ui::Theme, status: button::Status) -> butto
             width: 0.0,
             radius: 4.0.into(),
         },
-        shadow: Default::default(),
+        shadow: icy_ui::Shadow::default(),
         snap: false,
         ..Default::default()
     };
@@ -188,7 +185,7 @@ fn protocol_button_style(theme: &icy_ui::Theme, status: button::Status) -> butto
 // Builder functions
 // ============================================================================
 
-/// Create a protocol selector dialog for use with DialogStack
+/// Create a protocol selector dialog for use with `DialogStack`
 pub fn protocol_selector_dialog<M, F, E>(
     is_download: bool,
     protocols: Vec<TransferProtocol>,
@@ -203,7 +200,7 @@ where
     ProtocolSelectorWrapper::new(ProtocolSelectorState::new(is_download, protocols), on_message, extract_message)
 }
 
-/// Creates a protocol selector dialog wrapper using a tuple of (on_message, extract_message).
+/// Creates a protocol selector dialog wrapper using a tuple of (`on_message`, `extract_message`).
 pub fn protocol_selector_dialog_from_msg<M, F, E>(is_download: bool, protocols: Vec<TransferProtocol>, msg_tuple: (F, E)) -> ProtocolSelectorWrapper<M, F, E>
 where
     M: Clone + Send + 'static,

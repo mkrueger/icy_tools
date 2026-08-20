@@ -270,7 +270,7 @@ fn test_screen_palette() {
     let screen = TextScreen::new(Size::new(80, 25));
     let palette = screen.palette();
     // Ensure palette has colors
-    assert!(palette.len() > 0);
+    assert!(!palette.is_empty());
 }
 
 #[test]

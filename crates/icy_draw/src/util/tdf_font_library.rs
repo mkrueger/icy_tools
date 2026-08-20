@@ -48,7 +48,7 @@ pub struct TextArtFontLibrary {
     fonts: Vec<Font>,
     /// Path to the font directory being watched
     font_dir: Option<PathBuf>,
-    /// Cached preview images (font_index -> preview)
+    /// Cached preview images (`font_index` -> preview)
     preview_cache: HashMap<usize, FontPreview>,
 }
 
@@ -69,6 +69,7 @@ impl TextArtFontLibrary {
     }
 
     /// Create a shared font library with file watching
+    #[must_use]
     pub fn create_shared() -> SharedFontLibrary {
         let library = Arc::new(RwLock::new(Self::new()));
 
@@ -96,7 +97,7 @@ impl TextArtFontLibrary {
             // Create directory if it doesn't exist (no lock needed)
             if !font_dir.exists() {
                 if let Err(e) = std::fs::create_dir_all(&font_dir) {
-                    log::error!("Failed to create font directory: {}", e);
+                    log::error!("Failed to create font directory: {e}");
                     return;
                 }
             }
@@ -117,46 +118,55 @@ impl TextArtFontLibrary {
     }
 
     /// Get the number of loaded fonts
+    #[must_use]
     pub fn font_count(&self) -> usize {
         self.fonts.len()
     }
 
     /// Check if any fonts are loaded
+    #[must_use]
     pub fn has_fonts(&self) -> bool {
         !self.fonts.is_empty()
     }
 
     /// Get font at index
+    #[must_use]
     pub fn get_font(&self, index: usize) -> Option<&Font> {
         self.fonts.get(index)
     }
 
     /// Get font name at index
+    #[must_use]
     pub fn font_name(&self, index: usize) -> Option<&str> {
-        self.fonts.get(index).map(|f| f.name())
+        self.fonts.get(index).map(retrofont::Font::name)
     }
 
     /// Get all font names
+    #[must_use]
     pub fn font_names(&self) -> Vec<String> {
         self.fonts.iter().map(|f| f.name().to_string()).collect()
     }
 
     /// Check if font at index has a glyph for the character
+    #[must_use]
     pub fn has_char(&self, index: usize, ch: char) -> bool {
-        self.fonts.get(index).map(|f| f.has_char(ch)).unwrap_or(false)
+        self.fonts.get(index).is_some_and(|f| f.has_char(ch))
     }
 
     /// Get character availability for all printable ASCII chars
+    #[must_use]
     pub fn get_char_availability(&self, index: usize) -> Vec<(char, bool)> {
         ('!'..='~').map(|ch| (ch, self.has_char(index, ch))).collect()
     }
 
     /// Get cached preview for a font (returns None if not yet generated)
+    #[must_use]
     pub fn get_preview(&self, index: usize) -> Option<&FontPreview> {
         self.preview_cache.get(&index)
     }
 
     /// Check if a preview exists for a font
+    #[must_use]
     pub fn has_preview(&self, index: usize) -> bool {
         self.preview_cache.contains_key(&index)
     }
@@ -281,8 +291,8 @@ impl TextArtFontLibrary {
         {
             let mut lib = library.write();
             for (idx, preview) in rendered {
-                if !lib.preview_cache.contains_key(&idx) {
-                    lib.preview_cache.insert(idx, preview);
+                if let std::collections::hash_map::Entry::Vacant(e) = lib.preview_cache.entry(idx) {
+                    e.insert(preview);
                     inserted.push(idx);
                 }
             }
@@ -303,7 +313,7 @@ impl TextArtFontLibrary {
 
         thread::spawn(move || {
             if let Err(e) = watch_font_directory(&font_dir, library) {
-                log::error!("Font watcher error: {}", e);
+                log::error!("Font watcher error: {e}");
             }
         });
     }
@@ -334,12 +344,12 @@ fn watch_font_directory(path: &Path, library: SharedFontLibrary) -> notify::Resu
                         }
                     }
                     Err(e) => {
-                        log::error!("Font watch error: {}", e);
+                        log::error!("Font watch error: {e}");
                     }
                 }
             }
             Err(e) => {
-                log::error!("Font watcher channel error: {}", e);
+                log::error!("Font watcher channel error: {e}");
                 break;
             }
         }
@@ -387,12 +397,12 @@ fn load_fonts_from_dir(dir: &Path) -> Vec<Font> {
     }
 
     // Sort fonts by name for consistent ordering
-    fonts.sort_by(|a, b| a.name().to_lowercase().cmp(&b.name().to_lowercase()));
+    fonts.sort_by_key(|a| a.name().to_lowercase());
 
     fonts
 }
 
-/// Load fonts from an archive using unarc-rs via FileFormat
+/// Load fonts from an archive using unarc-rs via `FileFormat`
 fn load_fonts_from_archive(data: &[u8], format: &FileFormat, fonts: &mut Vec<Font>) {
     let cursor = Cursor::new(data);
     let Ok(mut archive) = format.open_archive(cursor) else {
@@ -441,7 +451,7 @@ fn load_fonts_from_archive(data: &[u8], format: &FileFormat, fonts: &mut Vec<Fon
 
 /// Check if a directory entry is hidden
 fn is_hidden(entry: &walkdir::DirEntry) -> bool {
-    entry.file_name().to_str().map(|s| s.starts_with('.')).unwrap_or(false)
+    entry.file_name().to_str().is_some_and(|s| s.starts_with('.'))
 }
 
 #[cfg(test)]

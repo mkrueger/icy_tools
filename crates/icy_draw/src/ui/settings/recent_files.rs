@@ -42,6 +42,7 @@ pub struct MostRecentlyUsedFiles {
 
 impl MostRecentlyUsedFiles {
     /// Create a new empty MRU list
+    #[must_use]
     pub fn new() -> Self {
         Self {
             files: Vec::new(),
@@ -50,6 +51,7 @@ impl MostRecentlyUsedFiles {
     }
 
     /// Load MRU list from config file
+    #[must_use]
     pub fn load() -> Self {
         let Some(path) = Self::get_mru_file_path() else {
             return Self::new();
@@ -65,7 +67,7 @@ impl MostRecentlyUsedFiles {
                 serde_json::from_reader(reader).unwrap_or_default()
             }
             Err(e) => {
-                log::warn!("Failed to load recent files: {}", e);
+                log::warn!("Failed to load recent files: {e}");
                 Self::new()
             }
         }
@@ -82,7 +84,7 @@ impl MostRecentlyUsedFiles {
     pub fn files(&self) -> Vec<PathBuf> {
         let cache_valid = {
             let cache = self.cache.borrow();
-            cache.timestamp.map_or(false, |ts| ts.elapsed() < Duration::from_secs(EXISTENCE_CACHE_TTL_SECS))
+            cache.timestamp.is_some_and(|ts| ts.elapsed() < Duration::from_secs(EXISTENCE_CACHE_TTL_SECS))
         };
 
         if cache_valid {
@@ -147,7 +149,7 @@ impl MostRecentlyUsedFiles {
         self.invalidate_cache();
 
         if let Err(e) = self.save() {
-            log::error!("Error saving recent files: {}", e);
+            log::error!("Error saving recent files: {e}");
         }
     }
 
@@ -157,7 +159,7 @@ impl MostRecentlyUsedFiles {
         self.invalidate_cache();
 
         if let Err(e) = self.save() {
-            log::error!("Error saving recent files: {}", e);
+            log::error!("Error saving recent files: {e}");
         }
     }
 

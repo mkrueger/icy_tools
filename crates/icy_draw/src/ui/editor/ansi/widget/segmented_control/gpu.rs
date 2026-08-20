@@ -263,7 +263,7 @@ impl<T: Clone + Send + Sync + std::fmt::Debug + 'static> shader::Program<Segment
         match event {
             icy_ui::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let new_hover = cursor.position_in(bounds).and_then(|pos| segment_at_x(pos.x, &self.segment_widths));
-                let new_raw = new_hover.map(|i| i as u32).unwrap_or(NO_HOVER);
+                let new_raw = new_hover.map_or(NO_HOVER, |i| i as u32);
                 let old_raw = self.hovered_index.swap(new_raw, Ordering::Relaxed);
                 if old_raw != new_raw {
                     return Some(icy_ui::widget::Action::request_redraw());
@@ -280,16 +280,10 @@ impl<T: Clone + Send + Sync + std::fmt::Debug + 'static> shader::Program<Segment
             icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
                 button: mouse::Button::Left, ..
             }) => {
-                let Some(pos) = cursor.position_in(bounds) else {
-                    return None;
-                };
-                let Some(idx) = segment_at_x(pos.x, &self.segment_widths) else {
-                    return None;
-                };
+                let pos = cursor.position_in(bounds)?;
+                let idx = segment_at_x(pos.x, &self.segment_widths)?;
 
-                let Some(seg) = self.segments.get(idx) else {
-                    return None;
-                };
+                let seg = self.segments.get(idx)?;
                 let value = seg.value.clone();
                 if self.multi_select {
                     Some(icy_ui::widget::Action::publish(SegmentedControlMessage::Toggled(value)))
@@ -885,7 +879,7 @@ impl ShaderSegmentedControl {
     }
 
     /// Render the segmented control with char colors for Char segments
-    /// The fg_color and bg_color are palette indices that will be used for the caret colors
+    /// The `fg_color` and `bg_color` are palette indices that will be used for the caret colors
     pub fn view_with_char_colors<T: Clone + PartialEq + Send + 'static>(
         &self,
         segments: Vec<Segment<T>>,
@@ -1144,7 +1138,7 @@ impl canvas::Program<SegmentedControlMessage<usize>> for SegmentedTtfOverlay {
                     size: 14.0.into(),
                     font: icy_ui::Font::default(),
                     align_x: icy_ui::alignment::Horizontal::Center.into(),
-                    align_y: icy_ui::alignment::Vertical::Center.into(),
+                    align_y: icy_ui::alignment::Vertical::Center,
                     ..Default::default()
                 });
             }
@@ -1159,10 +1153,10 @@ impl canvas::Program<SegmentedControlMessage<usize>> for SegmentedTtfOverlay {
 /// Magnification factor for Char segments (2x)
 const CHAR_MAGNIFICATION: f32 = 2.0;
 
-/// Calculate segment width - uses native font size (pixel_size = 1) for text,
+/// Calculate segment width - uses native font size (`pixel_size` = 1) for text,
 /// and 2x magnification for Char segments
 fn calculate_segment_width<T: Clone>(segment: &Segment<T>, font: &Option<BitFont>) -> f32 {
-    let font_width = font.as_ref().map(|f| f.size().width as f32).unwrap_or(8.0) * SEGMENT_FONT_SCALE;
+    let font_width = font.as_ref().map_or(8.0, |f| f.size().width as f32) * SEGMENT_FONT_SCALE;
 
     let content_width = match &segment.content {
         SegmentContent::Text(text) => text.chars().count() as f32 * font_width,
@@ -1176,7 +1170,7 @@ fn align_up(value: u64, alignment: u64) -> u64 {
     if alignment == 0 {
         return value;
     }
-    ((value + alignment - 1) / alignment) * alignment
+    value.div_ceil(alignment) * alignment
 }
 
 fn resolve_font(font: Option<BitFont>) -> BitFont {

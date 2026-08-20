@@ -1,6 +1,6 @@
-//! Character set canvas for CharFont (TDF) editor
+//! Character set canvas for `CharFont` (TDF) editor
 //!
-//! Similar to the BitFont editor's charset grid, but displays TDF font characters.
+//! Similar to the `BitFont` editor's charset grid, but displays TDF font characters.
 
 use icy_ui::{
     keyboard,
@@ -12,9 +12,11 @@ use icy_ui::{
 use icy_engine_edit::charset::TdfFont;
 
 use super::{ArrowDirection, CharFontEditorMessage};
-use crate::ui::editor::bitfont::style::*;
+use crate::ui::editor::bitfont::style::{
+    darken, draw_corner_brackets, draw_rulers, RulerState, CHAR_HIGHLIGHT_BG, CURSOR_WIDTH, RECT_SELECTION_COLOR, SELECTION_BORDER, SELECTION_COLOR,
+};
 
-/// State for CharSetCanvas to track mouse drag for selection
+/// State for `CharSetCanvas` to track mouse drag for selection
 #[derive(Default)]
 pub struct CharSetCanvasState {
     /// Currently hovered char code
@@ -39,7 +41,7 @@ pub struct CharSetCanvas<'a> {
 /// Map from grid position to character code
 /// Grid is 16 columns x 6 rows for chars '!' (0x21) to '~' (0x7E)
 fn grid_to_char(col: i32, row: i32) -> Option<char> {
-    if col < 0 || col >= 16 || row < 0 || row >= 6 {
+    if !(0..16).contains(&col) || !(0..6).contains(&row) {
         return None;
     }
     let index = row * 16 + col;
@@ -54,7 +56,7 @@ fn grid_to_char(col: i32, row: i32) -> Option<char> {
 /// Map from character to grid position
 fn char_to_grid(ch: char) -> Option<(i32, i32)> {
     let code = ch as u8;
-    if code >= b'!' && code <= b'~' {
+    if (b'!'..=b'~').contains(&code) {
         let index = (code - b'!') as i32;
         Some((index % 16, index / 16))
     } else {
@@ -62,7 +64,7 @@ fn char_to_grid(ch: char) -> Option<(i32, i32)> {
     }
 }
 
-impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
+impl canvas::Program<CharFontEditorMessage> for CharSetCanvas<'_> {
     type State = CharSetCanvasState;
 
     fn draw(&self, state: &Self::State, renderer: &icy_ui::Renderer, theme: &icy_ui::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {
@@ -103,7 +105,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                     let is_cursor_cell = self.is_focused && col == self.cursor_col && row == self.cursor_row;
 
                     // Check if font has this character
-                    let has_char = self.font.map(|f| f.has_char(ch)).unwrap_or(false);
+                    let has_char = self.font.is_some_and(|f| f.has_char(ch));
 
                     // Determine cell colors
                     let (cell_fg, cell_bg) = if is_cursor_cell {
@@ -130,7 +132,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                         color: cell_fg,
                         size: icy_ui::Pixels(12.0),
                         align_x: icy_ui::alignment::Horizontal::Center.into(),
-                        align_y: icy_ui::alignment::Vertical::Center.into(),
+                        align_y: icy_ui::alignment::Vertical::Center,
                         ..Default::default()
                     });
 
@@ -159,7 +161,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
 
                 for sel_row in min_y..=max_y {
                     for sel_col in min_x..=max_x {
-                        if sel_col >= 0 && sel_col < 16 && sel_row >= 0 && sel_row < 6 {
+                        if (0..16).contains(&sel_col) && (0..6).contains(&sel_row) {
                             let char_x = self.label_size + sel_col as f32 * self.cell_width;
                             let char_y = self.label_size + sel_row as f32 * self.cell_height;
                             frame.fill_rectangle(Point::new(char_x, char_y), Size::new(self.cell_width, self.cell_height), RECT_SELECTION_COLOR);
@@ -209,7 +211,7 @@ impl<'a> canvas::Program<CharFontEditorMessage> for CharSetCanvas<'a> {
                     let char_y = self.label_size + sel_row as f32 * self.cell_height;
 
                     let is_selected = |c: i32, r: i32| -> bool {
-                        if c < 0 || c > 15 || r < 0 || r > 5 {
+                        if !(0..=15).contains(&c) || !(0..=5).contains(&r) {
                             return false;
                         }
                         let cell_code = r * 16 + c;

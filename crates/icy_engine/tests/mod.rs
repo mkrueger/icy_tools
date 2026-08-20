@@ -191,7 +191,7 @@ fn compare_rendered_output(rendered_size: &icy_engine::Size, font_w: usize, font
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().unwrap();
-        writer.write_image_data(&rendered_data).unwrap();
+        writer.write_image_data(rendered_data).unwrap();
 
         panic!(
             "Test failed for: {}\nResolution mismatch!\nExpected: {}x{}\nGot: {}x{}\nOutput saved to: file://{}\nShould look like: file://{}",
@@ -243,7 +243,7 @@ fn compare_rendered_output(rendered_size: &icy_engine::Size, font_w: usize, font
         }
     }
 
-    if mismatch.is_some() {
+    if let Some((x, y, expected, got)) = mismatch {
         // Save the rendered output as PNG for comparison
         let file = File::create(&output_path).unwrap();
         let w = BufWriter::new(file);
@@ -252,9 +252,8 @@ fn compare_rendered_output(rendered_size: &icy_engine::Size, font_w: usize, font
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().unwrap();
-        writer.write_image_data(&rendered_data).unwrap();
+        writer.write_image_data(rendered_data).unwrap();
 
-        let (x, y, expected, got) = mismatch.unwrap();
         panic!(
             "Test failed for: {}\nMismatch {}x{} pixel at x: {}, y: {}.\nExpected: {:?}\nGot: {:?}\nOutput saved to: file://{}\nShould look like: file://{}\n",
             filename,

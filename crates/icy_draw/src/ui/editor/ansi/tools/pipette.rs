@@ -214,7 +214,7 @@ impl ToolHandler for PipetteTool {
             } else {
                 icy_ui::Color::WHITE
             };
-            let hex_text = format!("#{:02x}{:02x}{:02x}", r, g, b);
+            let hex_text = format!("#{r:02x}{g:02x}{b:02x}");
 
             // Show in the labels what would be taken on click, based on current modifier state.
             // (Right click is still BG-only, but the main confusion was Shift/Ctrl behavior.)
@@ -257,7 +257,7 @@ impl ToolHandler for PipetteTool {
             } else {
                 icy_ui::Color::WHITE
             };
-            let hex_text = format!("#{:02x}{:02x}{:02x}", r, g, b);
+            let hex_text = format!("#{r:02x}{g:02x}{b:02x}");
             let bg_label_text = format!(
                 "{} {}",
                 fl!(LANGUAGE_LOADER, "pipette-background", index = bg_idx.to_string()),

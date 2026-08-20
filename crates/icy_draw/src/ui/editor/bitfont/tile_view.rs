@@ -1,4 +1,4 @@
-//! Tile view canvas for BitFont editor
+//! Tile view canvas for `BitFont` editor
 
 use icy_ui::{
     mouse::Cursor,
@@ -18,7 +18,7 @@ pub struct TileViewCanvas<'a> {
     pub grid_size: i32,
 }
 
-impl<'a> canvas::Program<BitFontEditorMessage> for TileViewCanvas<'a> {
+impl canvas::Program<BitFontEditorMessage> for TileViewCanvas<'_> {
     type State = ();
 
     fn draw(&self, _state: &Self::State, renderer: &icy_ui::Renderer, _theme: &icy_ui::Theme, bounds: Rectangle, _cursor: Cursor) -> Vec<canvas::Geometry> {

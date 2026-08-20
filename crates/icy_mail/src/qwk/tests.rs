@@ -3,6 +3,7 @@ use std::io::Write;
 use crate::qwk::QwkPackage;
 
 /// Builds a 128-byte QWK message header.
+#[allow(clippy::too_many_arguments)] // each argument maps directly to a fixed QWK header field
 fn header(status: u8, number: u32, date_time: &str, to: &str, from: &str, subject: &str, ref_number: u32, blocks: u32, conference: u16) -> Vec<u8> {
     fn field(value: &str, len: usize) -> Vec<u8> {
         let mut bytes = value.as_bytes().to_vec();
@@ -29,6 +30,7 @@ fn header(status: u8, number: u32, date_time: &str, to: &str, from: &str, subjec
 }
 
 /// Appends a message (header + body padded to whole 128-byte blocks) to MESSAGES.DAT.
+#[allow(clippy::too_many_arguments)] // each argument maps directly to a fixed QWK header field
 fn message(out: &mut Vec<u8>, number: u32, date_time: &str, from: &str, subject: &str, ref_number: u32, conference: u16, body_lines: usize) {
     // QWK separates body lines with 0xE3, not LF.
     let mut body: Vec<u8> = Vec::new();
@@ -95,6 +97,7 @@ fn write_packet(dir: &std::path::Path) -> std::path::PathBuf {
     path
 }
 
+#[must_use]
 pub fn load() -> (TempDir, QwkPackage) {
     let dir = TempDir::new();
     let path = write_packet(dir.path());

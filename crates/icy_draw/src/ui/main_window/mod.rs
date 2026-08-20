@@ -1,4 +1,4 @@
-//! Main window module for icy_draw
+//! Main window module for `icy_draw`
 //!
 //! Contains:
 //! - `main_window` - Main window implementation

@@ -25,6 +25,7 @@ pub struct ShowIemsiState {
 }
 
 impl ShowIemsiState {
+    #[must_use]
     pub fn new(iemsi_info: EmsiISI) -> Self {
         Self { iemsi_info }
     }
@@ -35,7 +36,7 @@ impl ShowIemsiState {
         }
     }
 
-    pub fn view<'a, M: Clone + 'static>(&'a self, on_message: impl Fn(ShowIemsiMessage) -> M + Clone + 'static) -> Element<'a, M> {
+    pub fn view<M: Clone + 'static>(&self, on_message: impl Fn(ShowIemsiMessage) -> M + Clone + 'static) -> Element<'_, M> {
         let on_msg = on_message.clone();
 
         // System info section
@@ -74,7 +75,7 @@ impl ShowIemsiState {
         let buttons = button_row(vec![ok_btn.into()]);
 
         let dialog_content = dialog_area(content.into());
-        let button_area = dialog_area(buttons.into());
+        let button_area = dialog_area(buttons);
 
         modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area,].into(),
@@ -98,7 +99,7 @@ impl ShowIemsiState {
 // Builder functions
 // ============================================================================
 
-/// Create an IEMSI dialog for use with DialogStack
+/// Create an IEMSI dialog for use with `DialogStack`
 pub fn show_iemsi_dialog<M, F, E>(iemsi_info: EmsiISI, on_message: F, extract_message: E) -> ShowIemsiWrapper<M, F, E>
 where
     M: Clone + Send + 'static,
@@ -108,7 +109,7 @@ where
     ShowIemsiWrapper::new(ShowIemsiState::new(iemsi_info), on_message, extract_message)
 }
 
-/// Creates an IEMSI dialog wrapper using a tuple of (on_message, extract_message).
+/// Creates an IEMSI dialog wrapper using a tuple of (`on_message`, `extract_message`).
 pub fn show_iemsi_dialog_from_msg<M, F, E>(iemsi_info: EmsiISI, msg_tuple: (F, E)) -> ShowIemsiWrapper<M, F, E>
 where
     M: Clone + Send + 'static,

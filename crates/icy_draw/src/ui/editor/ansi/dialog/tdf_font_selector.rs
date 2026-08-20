@@ -34,7 +34,7 @@ use crate::SharedFontLibrary;
 use crate::LANGUAGE_LOADER;
 use i18n_embed_fl::fl;
 
-/// Helper function to wrap TdfFontSelectorMessage in the full Message path
+/// Helper function to wrap `TdfFontSelectorMessage` in the full Message path
 fn tdf_msg(m: TdfFontSelectorMessage) -> Message {
     Message::AnsiEditor(AnsiEditorMessage::TdfFontSelector(m))
 }
@@ -161,7 +161,7 @@ pub struct TdfFontSelectorDialog {
     keyboard_cursor: usize,
     /// Cached filtered font indices
     filtered_fonts: Vec<usize>,
-    /// Cached font info (font_index -> info) - avoids locks during view
+    /// Cached font info (`font_index` -> info) - avoids locks during view
     font_info_cache: HashMap<usize, CachedFontInfo>,
 }
 
@@ -179,7 +179,7 @@ struct FontListWidget<'a> {
     viewport: Rectangle,
 }
 
-impl<'a> FontListWidget<'a> {
+impl FontListWidget<'_> {
     fn visible_range(&self, bounds: Rectangle) -> (usize, usize) {
         let scroll_offset = self.viewport.y;
         let first_visible = (scroll_offset / FONT_ITEM_HEIGHT).floor().max(0.0) as usize;
@@ -574,8 +574,8 @@ impl Widget<Message, Theme, icy_ui::Renderer> for FontListWidget<'_> {
                 }
 
                 let info = self.font_info_cache.get(&font_idx);
-                let font_name = info.map(|i| i.name.as_str()).unwrap_or("Unknown");
-                let font_type = info.map(|i| i.font_type).unwrap_or(FontType::Figlet);
+                let font_name = info.map_or("Unknown", |i| i.name.as_str());
+                let font_type = info.map_or(FontType::Figlet, |i| i.font_type);
 
                 self.draw_row(r, theme, bounds, row_bounds, list_idx, font_idx, font_name, font_type, &lib);
             }
@@ -595,26 +595,24 @@ impl Widget<Message, Theme, icy_ui::Renderer> for FontListWidget<'_> {
     ) {
         let bounds = layout.bounds();
 
-        match event {
-            Event::Mouse(mouse::Event::ButtonPressed {
-                button: mouse::Button::Left, ..
-            }) => {
-                if let Some(pos) = cursor.position_in(bounds) {
-                    let scroll_offset = self.viewport.y;
-                    let clicked_y = pos.y + scroll_offset;
-                    let list_idx = (clicked_y / FONT_ITEM_HEIGHT) as usize;
-                    if list_idx < self.filtered_fonts.len() {
-                        let font_idx = self.filtered_fonts[list_idx];
-                        // If clicking on already selected font, confirm and close
-                        if self.selected_font == font_idx as i32 {
-                            shell.publish(tdf_msg(TdfFontSelectorMessage::Confirm(self.selected_font)));
-                        } else {
-                            shell.publish(tdf_msg(TdfFontSelectorMessage::SelectFont(font_idx)));
-                        }
+        if let Event::Mouse(mouse::Event::ButtonPressed {
+            button: mouse::Button::Left, ..
+        }) = event
+        {
+            if let Some(pos) = cursor.position_in(bounds) {
+                let scroll_offset = self.viewport.y;
+                let clicked_y = pos.y + scroll_offset;
+                let list_idx = (clicked_y / FONT_ITEM_HEIGHT) as usize;
+                if list_idx < self.filtered_fonts.len() {
+                    let font_idx = self.filtered_fonts[list_idx];
+                    // If clicking on already selected font, confirm and close
+                    if self.selected_font == font_idx as i32 {
+                        shell.publish(tdf_msg(TdfFontSelectorMessage::Confirm(self.selected_font)));
+                    } else {
+                        shell.publish(tdf_msg(TdfFontSelectorMessage::SelectFont(font_idx)));
                     }
                 }
             }
-            _ => {}
         }
     }
 
@@ -718,7 +716,7 @@ impl TdfFontSelectorDialog {
 
         // Serialize font to bytes
         let Ok(bytes) = font.to_bytes() else {
-            log::error!("Failed to serialize font: {}", font_name);
+            log::error!("Failed to serialize font: {font_name}");
             return;
         };
 
@@ -728,12 +726,12 @@ impl TdfFontSelectorDialog {
         // Open save dialog
         let file_dialog = rfd::FileDialog::new()
             .set_title(fl!(LANGUAGE_LOADER, "tdf-font-selector-export_title"))
-            .set_file_name(format!("{}.{}", font_name, extension))
+            .set_file_name(format!("{font_name}.{extension}"))
             .add_filter("Font file", &[extension]);
 
         if let Some(path) = file_dialog.save_file() {
             if let Err(e) = std::fs::write(&path, &bytes) {
-                log::error!("Failed to write font file: {}", e);
+                log::error!("Failed to write font file: {e}");
             } else {
                 log::info!("Exported font to: {}", path.display());
             }
@@ -800,18 +798,16 @@ impl TdfFontSelectorDialog {
         }
 
         // Sort for consistent ordering
-        self.filtered_fonts.sort();
+        self.filtered_fonts.sort_unstable();
 
         // Find position of selected font in filtered list and set cursor there
-        if !self.filtered_fonts.is_empty() {
-            if let Some(pos) = self.filtered_fonts.iter().position(|&idx| idx as i32 == self.selected_font) {
-                self.keyboard_cursor = pos;
-            } else {
-                // Selected font not in filtered list, clamp cursor
-                self.keyboard_cursor = self.keyboard_cursor.min(self.filtered_fonts.len() - 1);
-            }
-        } else {
+        if self.filtered_fonts.is_empty() {
             self.keyboard_cursor = 0;
+        } else if let Some(pos) = self.filtered_fonts.iter().position(|&idx| idx as i32 == self.selected_font) {
+            self.keyboard_cursor = pos;
+        } else {
+            // Selected font not in filtered list, clamp cursor
+            self.keyboard_cursor = self.keyboard_cursor.min(self.filtered_fonts.len() - 1);
         }
     }
 

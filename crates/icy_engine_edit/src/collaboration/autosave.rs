@@ -276,7 +276,7 @@ impl AutosaveManager {
 
         let (buffer, sauce) = self.document_to_buffer().await;
         self.save_buffer_to_file(&buffer, &sauce, path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     /// Save a TextBuffer to a file.
@@ -284,8 +284,10 @@ impl AutosaveManager {
         let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("ans");
 
         let format = FileFormat::from_extension(extension).unwrap_or(FileFormat::Ansi);
-        let mut options = SaveOptions::default();
-        options.sauce = Some(sauce.clone());
+        let options = SaveOptions {
+            sauce: Some(sauce.clone()),
+            ..Default::default()
+        };
 
         let bytes = format.to_bytes(buffer, &options)?;
         std::fs::write(path, bytes)?;
@@ -299,14 +301,12 @@ impl AutosaveManager {
         let last_file = self.last_saved_file.read().await;
 
         if let Some(last_path) = last_file.as_ref() {
-            if last_path != new_path && last_path.exists() && new_path.exists() {
-                if files_are_identical(last_path, new_path) {
-                    // Remove the duplicate
-                    if let Err(e) = std::fs::remove_file(new_path) {
-                        log::warn!("Failed to remove duplicate file {:?}: {}", new_path, e);
-                    }
-                    return false;
+            if last_path != new_path && last_path.exists() && new_path.exists() && files_are_identical(last_path, new_path) {
+                // Remove the duplicate
+                if let Err(e) = std::fs::remove_file(new_path) {
+                    log::warn!("Failed to remove duplicate file {:?}: {}", new_path, e);
                 }
+                return false;
             }
         }
 
@@ -341,7 +341,7 @@ fn block_to_attributed_char(block: &Block) -> AttributedChar {
     attr.set_foreground(block.fg as u32);
     attr.set_background(block.bg as u32);
 
-    AttributedChar::new(char::from_u32(block.code as u32).unwrap_or(' '), attr)
+    AttributedChar::new(char::from_u32(block.code).unwrap_or(' '), attr)
 }
 
 /// Check if two files have identical content.

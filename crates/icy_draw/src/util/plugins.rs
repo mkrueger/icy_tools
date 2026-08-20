@@ -1,4 +1,4 @@
-//! Plugin system for icy_draw
+//! Plugin system for `icy_draw`
 //!
 //! Plugins are Lua scripts that can manipulate the buffer.
 //! They are loaded from the plugin directory and shown in the Extensions menu.
@@ -60,9 +60,8 @@ impl Plugin {
                 cap.get(1)
                     .unwrap()
                     .as_str()
-                    .to_string()
                     .split('/')
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect::<Vec<String>>()
             } else {
                 vec![]
@@ -70,8 +69,8 @@ impl Plugin {
 
             return Ok(Self {
                 title,
-                author,
                 description,
+                author,
                 text,
                 path,
             });
@@ -224,6 +223,7 @@ impl Plugin {
     }
 
     /// Read all plugins from the plugin directory
+    #[must_use]
     pub fn read_plugin_directory() -> Vec<Self> {
         let mut result = Vec::new();
         let Some(root) = Settings::plugin_dir() else {
@@ -269,6 +269,7 @@ impl Plugin {
     }
 
     /// Group plugins by their menu path for building hierarchical menus
+    #[must_use]
     pub fn group_by_path(plugins: &[Plugin]) -> Vec<(String, Vec<(usize, &Plugin)>)> {
         let mut buttons: HashMap<String, Vec<(usize, &Plugin)>> = HashMap::new();
 
@@ -288,7 +289,7 @@ impl Plugin {
             a.0.cmp(&b.0)
         });
 
-        for (_i, v) in result.iter_mut() {
+        for (_i, v) in &mut result {
             v.sort_by(|a, b| a.1.title.cmp(&b.1.title));
         }
 
@@ -297,7 +298,7 @@ impl Plugin {
 }
 
 fn is_hidden(entry: &walkdir::DirEntry) -> bool {
-    entry.file_name().to_str().map(|s| s.starts_with('.')).unwrap_or(false)
+    entry.file_name().to_str().is_some_and(|s| s.starts_with('.'))
 }
 
 /// Lua wrapper for buffer access
@@ -407,20 +408,20 @@ impl UserData for LuaBufferView {
                 let layer_len = state.get_buffer().layers.len();
                 if cur_layer >= layer_len {
                     return Err(mlua::Error::SyntaxError {
-                        message: format!("Current layer {} out of range (0..<{})", cur_layer, layer_len),
+                        message: format!("Current layer {cur_layer} out of range (0..<{layer_len})"),
                         incomplete_input: false,
                     });
                 }
-                let mut attr = state.get_caret().attribute.clone();
+                let mut attr = state.get_caret().attribute;
                 attr.attr &= !attribute::INVISIBLE;
                 let ch = AttributedChar::new(ch_converted, attr);
 
                 if let Err(err) = state.set_char((x, y), ch) {
                     return Err(mlua::Error::SyntaxError {
-                        message: format!("Error setting char: {}", err),
+                        message: format!("Error setting char: {err}"),
                         incomplete_input: false,
                     });
-                };
+                }
                 Ok(())
             })?
         });
@@ -431,7 +432,7 @@ impl UserData for LuaBufferView {
                 let layer_len = state.get_buffer().layers.len();
                 if cur_layer >= layer_len {
                     return Err(mlua::Error::SyntaxError {
-                        message: format!("Current layer {} out of range (0..<{})", cur_layer, layer_len),
+                        message: format!("Current layer {cur_layer} out of range (0..<{layer_len})"),
                         incomplete_input: false,
                     });
                 }
@@ -446,7 +447,7 @@ impl UserData for LuaBufferView {
                 let layer_len = state.get_buffer().layers.len();
                 if cur_layer >= layer_len {
                     return Err(mlua::Error::SyntaxError {
-                        message: format!("Current layer {} out of range (0..<{})", cur_layer, layer_len),
+                        message: format!("Current layer {cur_layer} out of range (0..<{layer_len})"),
                         incomplete_input: false,
                     });
                 }
@@ -467,7 +468,7 @@ impl UserData for LuaBufferView {
                 let layer_len = state.get_buffer().layers.len();
                 if cur_layer >= layer_len {
                     return Err(mlua::Error::SyntaxError {
-                        message: format!("Current layer {} out of range (0..<{})", cur_layer, layer_len),
+                        message: format!("Current layer {cur_layer} out of range (0..<{layer_len})"),
                         incomplete_input: false,
                     });
                 }
@@ -475,7 +476,7 @@ impl UserData for LuaBufferView {
                 ch.attribute.set_foreground(col);
                 if let Err(err) = state.set_char((x, y), ch) {
                     return Err(mlua::Error::SyntaxError {
-                        message: format!("Error setting char: {}", err),
+                        message: format!("Error setting char: {err}"),
                         incomplete_input: false,
                     });
                 }
@@ -489,7 +490,7 @@ impl UserData for LuaBufferView {
                 let layer_len = state.get_buffer().layers.len();
                 if cur_layer >= layer_len {
                     return Err(mlua::Error::SyntaxError {
-                        message: format!("Current layer {} out of range (0..<{})", cur_layer, layer_len),
+                        message: format!("Current layer {cur_layer} out of range (0..<{layer_len})"),
                         incomplete_input: false,
                     });
                 }
@@ -504,7 +505,7 @@ impl UserData for LuaBufferView {
                 let layer_len = state.get_buffer().layers.len();
                 if cur_layer >= layer_len {
                     return Err(mlua::Error::SyntaxError {
-                        message: format!("Current layer {} out of range (0..<{})", cur_layer, layer_len),
+                        message: format!("Current layer {cur_layer} out of range (0..<{layer_len})"),
                         incomplete_input: false,
                     });
                 }
@@ -512,7 +513,7 @@ impl UserData for LuaBufferView {
                 ch.attribute.set_background(col);
                 if let Err(err) = state.set_char((x, y), ch) {
                     return Err(mlua::Error::SyntaxError {
-                        message: format!("Error setting char: {}", err),
+                        message: format!("Error setting char: {err}"),
                         incomplete_input: false,
                     });
                 }
@@ -526,7 +527,7 @@ impl UserData for LuaBufferView {
                 let layer_len = state.get_buffer().layers.len();
                 if cur_layer >= layer_len {
                     return Err(mlua::Error::SyntaxError {
-                        message: format!("Current layer {} out of range (0..<{})", cur_layer, layer_len),
+                        message: format!("Current layer {cur_layer} out of range (0..<{layer_len})"),
                         incomplete_input: false,
                     });
                 }
@@ -540,7 +541,7 @@ impl UserData for LuaBufferView {
                 let ch_converted = this.convert_from_unicode(c.to_string())?;
                 this.with_edit_state(|state| {
                     let pos = state.get_caret().position();
-                    let mut attribute = state.get_caret().attribute.clone();
+                    let mut attribute = state.get_caret().attribute;
                     attribute.attr &= !attribute::INVISIBLE;
                     let ch = AttributedChar::new(ch_converted, attribute);
                     let _ = state.set_char(pos, ch);
@@ -593,7 +594,7 @@ impl UserData for LuaBufferView {
                     Ok(())
                 } else {
                     Err(mlua::Error::SyntaxError {
-                        message: format!("Layer {} out of range (0..<{})", layer, layer_len),
+                        message: format!("Layer {layer} out of range (0..<{layer_len})"),
                         incomplete_input: false,
                     })
                 }

@@ -1,6 +1,9 @@
 use i18n_embed_fl::fl;
 use icy_engine_gui::settings::effect_box;
-use icy_engine_gui::ui::*;
+use icy_engine_gui::ui::{
+    button_row_with_left, dialog_area, dialog_title, left_label_small, modal_container, primary_button, secondary_button, separator, DIALOG_SPACING,
+    DIALOG_WIDTH_LARGE, TEXT_SIZE_NORMAL,
+};
 use icy_net::serial::{CharSize, FlowControl, Parity, Serial, StopBits};
 use icy_ui::{
     widget::{column, container, pick_list, row, text, text_input},
@@ -10,7 +13,7 @@ use icy_ui::{
 use crate::ui::MainWindowMode;
 
 /// Standard baud rates for serial connections
-pub const BAUD_RATES: [u32; 11] = [300, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115200];
+pub const BAUD_RATES: [u32; 11] = [300, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115_200];
 
 pub struct OpenSerialDialog {
     pub serial: Serial,
@@ -28,6 +31,7 @@ pub enum OpenSerialMsg {
 }
 
 impl OpenSerialDialog {
+    #[must_use]
     pub fn new(serial: Serial) -> Self {
         Self { serial }
     }
@@ -62,6 +66,7 @@ impl OpenSerialDialog {
         }
     }
 
+    #[must_use]
     pub fn view<'a>(&'a self, terminal_content: Element<'a, crate::ui::Message>) -> Element<'a, crate::ui::Message> {
         crate::ui::modal(
             terminal_content,

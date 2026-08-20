@@ -64,8 +64,8 @@ impl From<BrushSessionState> for BrushSettings {
 /// Shape tool extends brush with the chosen shape variant.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct ShapeSessionState {
-    /// Currently selected shape (Line, RectangleOutline, RectangleFilled,
-    /// EllipseOutline, EllipseFilled).
+    /// Currently selected shape (Line, `RectangleOutline`, `RectangleFilled`,
+    /// `EllipseOutline`, `EllipseFilled`).
     #[serde(default = "default_shape_tool")]
     pub shape: Tool,
 }

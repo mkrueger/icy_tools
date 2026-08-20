@@ -295,7 +295,7 @@ impl Palette {
                 res.push_str(format!(";Colors: {}\n", self.colors.len()).as_str());
 
                 for c in &self.colors {
-                    res.push_str(format!("FF{:02x}{:02x}{:02x}\n", c.r, c.g, c.b,).as_str());
+                    res.push_str(format!("FF{:02x}{:02x}{:02x}\n", c.r, c.g, c.b).as_str());
                 }
 
                 Ok(res.as_bytes().to_vec())

@@ -789,9 +789,9 @@ impl MainWindow {
                             }
                         }
                     }
-                    TileGridMessage::OpenSelected => {
+                    TileGridMessage::OpenSelected
                         // Open selected item (Enter key)
-                        if should_open {
+                        if should_open => {
                             if let Some((item_path, _label, is_container)) = self.tile_grid.get_selected_info() {
                                 if is_container {
                                     // Handle web mode vs file mode differently
@@ -863,7 +863,6 @@ impl MainWindow {
                                 }
                             }
                         }
-                    }
                     _ => {}
                 }
                 Task::none()

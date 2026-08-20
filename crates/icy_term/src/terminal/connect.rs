@@ -23,15 +23,14 @@ pub struct OpenConnectionData {
 }
 
 impl OpenConnectionData {
+    #[must_use]
     pub fn from(call_adr: &Address, timeout: Duration, window_size: icy_engine::Size, modem: Option<ModemConfiguration>) -> Self {
-        if timeout.as_secs() == 0 {
-            panic!("Timeout must be greater than 0");
-        }
+        assert!(timeout.as_secs() != 0, "Timeout must be greater than 0");
         Self {
             screen_mode: call_adr.screen_mode,
             address: call_adr.address.clone(),
-            connection_type: call_adr.protocol.clone(),
-            baud_emulation: call_adr.baud_emulation.clone(),
+            connection_type: call_adr.protocol,
+            baud_emulation: call_adr.baud_emulation,
             user_name: call_adr.user_name.clone(),
             password: call_adr.password.clone(),
             use_ansi_music: call_adr.ansi_music,

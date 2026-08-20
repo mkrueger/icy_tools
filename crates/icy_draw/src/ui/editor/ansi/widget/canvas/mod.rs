@@ -1,7 +1,7 @@
 //! Canvas view component
 //!
 //! The main editing area in the center, displaying the buffer with terminal rendering.
-//! This is similar to PreviewView in icy_view but for editing.
+//! This is similar to `PreviewView` in `icy_view` but for editing.
 //! Includes scrollbars, zoom support, and CRT shader effects.
 //!
 //! NOTE: Some scroll methods are prepared for future smooth animation support.
@@ -69,7 +69,7 @@ pub struct CanvasView {
 
 impl CanvasView {
     /// Create a new canvas view with a screen
-    /// The screen should be an EditState wrapped as Box<dyn Screen>
+    /// The screen should be an `EditState` wrapped as Box<dyn Screen>
     pub fn new(screen: Arc<Mutex<Box<dyn Screen>>>, monitor_settings: Arc<RwLock<MonitorSettings>>) -> Self {
         // Create terminal widget
         let mut terminal = Terminal::new(screen);
@@ -135,7 +135,7 @@ impl CanvasView {
         self.apply_zoom(ZoomMessage::Reset);
     }
 
-    /// Apply a zoom message (unified zoom handling like icy_view)
+    /// Apply a zoom message (unified zoom handling like `icy_view`)
     fn apply_zoom(&mut self, zoom_msg: ZoomMessage) {
         let current_zoom = self.terminal.get_zoom();
         let use_integer = self.monitor_settings.read().use_integer_scaling;
@@ -145,10 +145,10 @@ impl CanvasView {
         *self.monitor_settings.write() = new_settings;
     }
 
-    /// Handle unified terminal mouse events from icy_engine_gui.
-    /// For icy_draw, we mainly need to handle selection and forwarding to tools.
+    /// Handle unified terminal mouse events from `icy_engine_gui`.
+    /// For `icy_draw`, we mainly need to handle selection and forwarding to tools.
     /// The actual event type (Press, Release, Move, Drag) is distinguished
-    /// by the caller in the TerminalMessage match.
+    /// by the caller in the `TerminalMessage` match.
     fn handle_terminal_mouse_event(&mut self, _evt: icy_engine_gui::TerminalMouseEvent) {
         // For now, icy_draw handles selection at the CanvasMessage level
         // Individual tool handling will be added later
@@ -169,7 +169,7 @@ impl CanvasView {
     }
 
     /// Update viewport size after document size changes.
-    /// Call this after operations that change the buffer dimensions (e.g., apply_remote_document).
+    /// Call this after operations that change the buffer dimensions (e.g., `apply_remote_document`).
     pub fn update_viewport_size(&mut self) {
         self.terminal.update_viewport_size();
     }
@@ -195,15 +195,15 @@ impl CanvasView {
     }
 
     /// Set the selection mask for complex (non-rectangular) selections
-    /// mask_data: (RGBA texture data, width in cells, height in cells)
+    /// `mask_data`: (RGBA texture data, width in cells, height in cells)
     pub fn set_selection_mask(&mut self, mask_data: Option<(Vec<u8>, u32, u32)>) {
         let mut markers = self.terminal.markers.write();
         markers.selection_mask_data = sanitize_mask(mask_data);
     }
 
     /// Set the tool overlay for Moebius-style translucent tool previews.
-    /// mask_data: (RGBA texture data, width in pixels, height in pixels)
-    /// rect_px: (x, y, width, height) in document pixels
+    /// `mask_data`: (RGBA texture data, width in pixels, height in pixels)
+    /// `rect_px`: (x, y, width, height) in document pixels
     pub fn set_tool_overlay_mask(&mut self, mask_data: Option<(Vec<u8>, u32, u32)>, rect_px: Option<(f32, f32, f32, f32)>) {
         let sanitized = sanitize_mask(mask_data);
         let mut markers = self.terminal.markers.write();
@@ -286,7 +286,7 @@ impl CanvasView {
     ///
     /// # Arguments
     /// * `editor_markers` - Optional editor markers (layer bounds, selection, etc.)
-    ///   The caller should set layer_bounds, selection_rect, etc. before calling view().
+    ///   The caller should set `layer_bounds`, `selection_rect`, etc. before calling `view()`.
     pub fn view(&self, editor_markers: Option<EditorMarkers>) -> Element<'_, TerminalMessage> {
         // Get scrollable content size from screen (virtual_size includes full document)
         let screen = self.terminal.screen.lock();

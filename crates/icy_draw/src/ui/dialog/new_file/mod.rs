@@ -172,10 +172,10 @@ impl FileTemplate {
     }
 
     fn needs_size(&self) -> bool {
-        match self {
-            FileTemplate::ColorFont | FileTemplate::BlockFont | FileTemplate::OutlineFont | FileTemplate::Animation => false,
-            _ => true,
-        }
+        !matches!(
+            self,
+            FileTemplate::ColorFont | FileTemplate::BlockFont | FileTemplate::OutlineFont | FileTemplate::Animation
+        )
     }
 
     fn templates_for_editor(editor: EditorType) -> Vec<FileTemplate> {
@@ -194,7 +194,7 @@ impl FileTemplate {
     }
 }
 
-/// Create a TextBuffer for a given template with specified dimensions
+/// Create a `TextBuffer` for a given template with specified dimensions
 pub fn create_buffer_for_template(template: FileTemplate, width: i32, height: i32) -> TextBuffer {
     let mut buf = TextBuffer::new((width.max(1), height.max(1)));
     if let Ok(font) = BitFont::from_sauce_name("IBM VGA") {
@@ -357,8 +357,8 @@ impl NewFileDialog {
     }
 
     /// Scroll the list to make the selected item visible
-    /// Note: With scroll_area().show_viewport(), scrolling is handled by the native scrollbar.
-    /// Programmatic scrolling would require scroll_area.scroll_to() which we don't have access to here.
+    /// Note: With `scroll_area().show_viewport()`, scrolling is handled by the native scrollbar.
+    /// Programmatic scrolling would require `scroll_area.scroll_to()` which we don't have access to here.
     fn scroll_to_selection(&self) {
         // No-op for now - native scrollbar handles scrolling
         // TODO: Implement programmatic scrolling if icy_ui provides an API for it
@@ -645,7 +645,7 @@ impl canvas::Program<Message> for TemplateListCanvasViewport {
         let geometry = icy_ui::widget::canvas::Cache::new().draw(renderer, bounds.size(), |frame: &mut Frame| {
             let mut y = -scroll_y;
 
-            for item in self.visible_items.iter() {
+            for item in &self.visible_items {
                 let height = match item {
                     ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
                     ListItem::TemplateItem { .. } => TEMPLATE_ITEM_HEIGHT,
@@ -669,7 +669,7 @@ impl canvas::Program<Message> for TemplateListCanvasViewport {
                         frame.fill(&bg_rect, theme.primary.divider);
 
                         // Draw arrow and text
-                        let expanded = self.categories.get(editor).map(|s| s.expanded).unwrap_or(true);
+                        let expanded = self.categories.get(editor).is_none_or(|s| s.expanded);
                         let arrow = if expanded { "▼" } else { "▶" };
                         let label = format!("{} {} {} ({})", arrow, editor.icon(), editor.label(), count);
 
@@ -691,7 +691,7 @@ impl canvas::Program<Message> for TemplateListCanvasViewport {
                         }
 
                         // Draw icon and template name
-                        let text_color = if is_selected { theme.background.on } else { theme.background.on };
+                        let text_color = theme.background.on;
 
                         // Icon
                         frame.fill_text(Text {
@@ -721,61 +721,58 @@ impl canvas::Program<Message> for TemplateListCanvasViewport {
     }
 
     fn update(&self, _state: &mut Self::State, event: &icy_ui::Event, bounds: Rectangle, cursor: mouse::Cursor) -> Option<canvas::Action<Message>> {
-        match event {
-            icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
-                button: mouse::Button::Left, ..
-            }) => {
-                if let Some(pos) = cursor.position_in(bounds) {
-                    // Find which item was clicked
-                    let scroll_y = self.viewport.y;
-                    let click_y = pos.y + scroll_y;
-                    let mut current_y = 0.0;
+        if let icy_ui::Event::Mouse(mouse::Event::ButtonPressed {
+            button: mouse::Button::Left, ..
+        }) = event
+        {
+            if let Some(pos) = cursor.position_in(bounds) {
+                // Find which item was clicked
+                let scroll_y = self.viewport.y;
+                let click_y = pos.y + scroll_y;
+                let mut current_y = 0.0;
 
-                    for item in self.visible_items.iter() {
-                        let height = match item {
-                            ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
-                            ListItem::TemplateItem { .. } => TEMPLATE_ITEM_HEIGHT,
-                        };
+                for item in &self.visible_items {
+                    let height = match item {
+                        ListItem::CategoryHeader { .. } => CATEGORY_HEADER_HEIGHT,
+                        ListItem::TemplateItem { .. } => TEMPLATE_ITEM_HEIGHT,
+                    };
 
-                        if click_y >= current_y && click_y < current_y + height {
-                            match item {
-                                ListItem::CategoryHeader { editor, .. } => {
-                                    return Some(canvas::Action::publish(Message::NewFileDialog(NewFileMessage::ToggleEditor(*editor))));
-                                }
-                                ListItem::TemplateItem { template } => {
-                                    // Check for double-click (within 500ms on same template)
-                                    let now = Instant::now();
-                                    let is_double_click = {
-                                        let last = self.last_click.borrow();
-                                        if let Some((last_time, last_template)) = *last {
-                                            last_template == *template && now.duration_since(last_time).as_millis() < 500
-                                        } else {
-                                            false
-                                        }
-                                    };
-
-                                    if is_double_click {
-                                        // Double-click: create the file
-                                        *self.last_click.borrow_mut() = None;
-                                        return Some(canvas::Action::publish(Message::NewFileDialog(NewFileMessage::Create(
-                                            *template,
-                                            template.default_width(),
-                                            template.default_height(),
-                                        ))));
+                    if click_y >= current_y && click_y < current_y + height {
+                        match item {
+                            ListItem::CategoryHeader { editor, .. } => {
+                                return Some(canvas::Action::publish(Message::NewFileDialog(NewFileMessage::ToggleEditor(*editor))));
+                            }
+                            ListItem::TemplateItem { template } => {
+                                // Check for double-click (within 500ms on same template)
+                                let now = Instant::now();
+                                let is_double_click = {
+                                    let last = self.last_click.borrow();
+                                    if let Some((last_time, last_template)) = *last {
+                                        last_template == *template && now.duration_since(last_time).as_millis() < 500
                                     } else {
-                                        // Single click: select and record time
-                                        *self.last_click.borrow_mut() = Some((now, *template));
-                                        return Some(canvas::Action::publish(Message::NewFileDialog(NewFileMessage::SelectTemplate(*template))));
+                                        false
                                     }
+                                };
+
+                                if is_double_click {
+                                    // Double-click: create the file
+                                    *self.last_click.borrow_mut() = None;
+                                    return Some(canvas::Action::publish(Message::NewFileDialog(NewFileMessage::Create(
+                                        *template,
+                                        template.default_width(),
+                                        template.default_height(),
+                                    ))));
                                 }
+                                // Single click: select and record time
+                                *self.last_click.borrow_mut() = Some((now, *template));
+                                return Some(canvas::Action::publish(Message::NewFileDialog(NewFileMessage::SelectTemplate(*template))));
                             }
                         }
-
-                        current_y += height;
                     }
+
+                    current_y += height;
                 }
             }
-            _ => {}
         }
 
         None
@@ -907,14 +904,15 @@ impl Dialog<Message> for NewFileDialog {
     }
 
     fn handle_event(&mut self, event: &icy_ui::Event) -> Option<DialogAction<Message>> {
-        if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, .. }) = event {
-            if let Key::Named(Named::Enter) = key {
-                return Some(DialogAction::CloseWith(Message::NewFileCreated(
-                    self.selected_template,
-                    self.width,
-                    self.height,
-                )));
-            }
+        if let icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed {
+            key: Key::Named(Named::Enter), ..
+        }) = event
+        {
+            return Some(DialogAction::CloseWith(Message::NewFileCreated(
+                self.selected_template,
+                self.width,
+                self.height,
+            )));
         }
         None
     }

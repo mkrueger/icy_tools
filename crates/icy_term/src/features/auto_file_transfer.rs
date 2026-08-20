@@ -10,13 +10,15 @@ struct SignatureScanner {
 
 /// Scans incoming data for auto-transfer signatures.
 /// Built from the protocol list at session start.
+#[derive(Default)]
 pub struct AutoTransferScanner {
     scanners: Vec<SignatureScanner>,
 }
 
 impl AutoTransferScanner {
     /// Creates a new scanner from a list of transfer protocols.
-    /// Only includes protocols that have auto_transfer enabled and non-empty signatures.
+    /// Only includes protocols that have `auto_transfer` enabled and non-empty signatures.
+    #[must_use]
     pub fn from_protocols(protocols: &[TransferProtocol]) -> Self {
         let mut scanners = Vec::new();
 
@@ -49,7 +51,7 @@ impl AutoTransferScanner {
         Self { scanners }
     }
 
-    /// Returns (protocol_id, is_download) if a transfer signature is detected
+    /// Returns (`protocol_id`, `is_download`) if a transfer signature is detected
     pub fn try_transfer(&mut self, ch: u8) -> Option<(String, bool)> {
         for scanner in &mut self.scanners {
             if scanner.recognizer.push_ch(ch) {
@@ -57,11 +59,5 @@ impl AutoTransferScanner {
             }
         }
         None
-    }
-}
-
-impl Default for AutoTransferScanner {
-    fn default() -> Self {
-        Self { scanners: Vec::new() }
     }
 }

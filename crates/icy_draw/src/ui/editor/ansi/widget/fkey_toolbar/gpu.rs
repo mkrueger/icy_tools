@@ -29,7 +29,7 @@ fn align_up(value: u64, alignment: u64) -> u64 {
     if alignment == 0 {
         return value;
     }
-    ((value + alignment - 1) / alignment) * alignment
+    value.div_ceil(alignment) * alignment
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -111,8 +111,8 @@ pub(crate) fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
         // - others label glyphs by Unicode (e.g. box-drawing U+250C)
         // We build the atlas by CP437 index, using the slot character.
         let slot_ch = char::from_u32(code).unwrap_or(' ');
-        let col = (code % 16) as u32;
-        let row = (code / 16) as u32;
+        let col = code % 16;
+        let row = code / 16;
         let base_x = col * gw;
         let base_y = row * gh;
 
@@ -128,8 +128,8 @@ pub(crate) fn build_glyph_atlas_rgba(font: &BitFont) -> (u32, u32, Vec<u8>) {
                     continue;
                 }
                 let on = glyph.get_pixel(x, y);
-                let idx = ((dst_y * atlas_w as usize + dst_x) * 4) as usize;
-                rgba[idx + 0] = 255;
+                let idx = (dst_y * atlas_w as usize + dst_x) * 4;
+                rgba[idx] = 255;
                 rgba[idx + 1] = 255;
                 rgba[idx + 2] = 255;
                 rgba[idx + 3] = if on { 255 } else { 0 };
@@ -234,9 +234,8 @@ impl shader::Program<FKeyToolbarMessage> for FKeyOnePassProgram {
                     let is_on_char = hover_type == 1;
                     if is_on_char {
                         return Some(icy_ui::widget::Action::publish(FKeyToolbarMessage::TypeFKey(slot as usize)));
-                    } else {
-                        return Some(icy_ui::widget::Action::publish(FKeyToolbarMessage::OpenCharSelector(slot as usize)));
                     }
+                    return Some(icy_ui::widget::Action::publish(FKeyToolbarMessage::OpenCharSelector(slot as usize)));
                 }
 
                 if hover_type == 2 {
@@ -1021,7 +1020,7 @@ impl shader::Pipeline for FKeyOnePassRenderer {
 // Helper Functions
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Compute hover state from cursor position using FKeyLayout.
+/// Compute hover state from cursor position using `FKeyLayout`.
 ///
 /// The `nav_label_space` parameter allows overriding the computed label space
 /// (used when we know the exact font dimensions). Pass 0.0 to use default.
@@ -1083,8 +1082,7 @@ impl ShaderFKeyToolbar {
         // Use centralized layout calculations
         let (font_w, font_h) = font
             .as_ref()
-            .map(|f| (f.size().width.max(1) as f32, f.size().height.max(1) as f32))
-            .unwrap_or((8.0, 16.0));
+            .map_or((8.0, 16.0), |f| (f.size().width.max(1) as f32, f.size().height.max(1) as f32));
         let layout = FKeyLayout::new(font_w, font_h);
 
         // Share the exact label-space with hit-testing.
@@ -1188,7 +1186,7 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyTtfLabelOverlay {
                 size: slot_label_font_size.into(),
                 font: icy_ui::Font::default(),
                 align_x: icy_ui::alignment::Horizontal::Center.into(),
-                align_y: icy_ui::alignment::Vertical::Center.into(),
+                align_y: icy_ui::alignment::Vertical::Center,
                 ..Default::default()
             });
 
@@ -1200,7 +1198,7 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyTtfLabelOverlay {
                 size: slot_label_font_size.into(),
                 font: icy_ui::Font::default(),
                 align_x: icy_ui::alignment::Horizontal::Center.into(),
-                align_y: icy_ui::alignment::Vertical::Center.into(),
+                align_y: icy_ui::alignment::Vertical::Center,
                 ..Default::default()
             });
         }
@@ -1227,7 +1225,7 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyTtfLabelOverlay {
             size: set_label_font_size.into(),
             font: icy_ui::Font::default(),
             align_x: icy_ui::alignment::Horizontal::Center.into(),
-            align_y: icy_ui::alignment::Vertical::Center.into(),
+            align_y: icy_ui::alignment::Vertical::Center,
             ..Default::default()
         });
 
@@ -1238,7 +1236,7 @@ impl canvas::Program<FKeyToolbarMessage> for FKeyTtfLabelOverlay {
             size: set_label_font_size.into(),
             font: icy_ui::Font::default(),
             align_x: icy_ui::alignment::Horizontal::Center.into(),
-            align_y: icy_ui::alignment::Vertical::Center.into(),
+            align_y: icy_ui::alignment::Vertical::Center,
             ..Default::default()
         });
 

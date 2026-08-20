@@ -1,4 +1,4 @@
-//! TTF/OTF font to BitFont conversion
+//! TTF/OTF font to `BitFont` conversion
 //!
 //! Rasterizes TrueType/OpenType fonts to bitmap fonts using fontdue.
 //! Uses CP437 character mapping for the 256 character slots.
@@ -22,17 +22,17 @@ use icy_engine::BitFont;
 pub fn import_font_from_ttf(path: &Path, font_width: i32, font_height: i32) -> Result<BitFont, String> {
     // Validate dimensions
     if !(4..=16).contains(&font_width) {
-        return Err(format!("Font width must be 4-16, got {}", font_width));
+        return Err(format!("Font width must be 4-16, got {font_width}"));
     }
     if !(4..=32).contains(&font_height) {
-        return Err(format!("Font height must be 4-32, got {}", font_height));
+        return Err(format!("Font height must be 4-32, got {font_height}"));
     }
 
     // Read the font file
-    let font_data = std::fs::read(path).map_err(|e| format!("Failed to read font file: {}", e))?;
+    let font_data = std::fs::read(path).map_err(|e| format!("Failed to read font file: {e}"))?;
 
     // Parse the font with fontdue
-    let font = fontdue::Font::from_bytes(font_data, fontdue::FontSettings::default()).map_err(|e| format!("Failed to parse font: {}", e))?;
+    let font = fontdue::Font::from_bytes(font_data, fontdue::FontSettings::default()).map_err(|e| format!("Failed to parse font: {e}"))?;
 
     // Calculate the proper px_size to fill the cell
     // We need to find a size where the em-square maps to our cell height
@@ -213,7 +213,7 @@ fn find_best_grid_position(bitmap: &[u8], metrics: &fontdue::Metrics, baseline_y
         }
     }
 
-    best_result.map(|r| r.buffer).unwrap_or_else(|| vec![0u8; cell_height as usize])
+    best_result.map_or_else(|| vec![0u8; cell_height as usize], |r| r.buffer)
 }
 
 /// Apply grid-aware thresholding
@@ -317,7 +317,7 @@ fn score_grid_result(gray: &[u8], binary: &[u8], width: u32, height: u32) -> f32
         }
         // Reward columns that are either mostly on or mostly off
         let ratio = stem_count as f32 / height as f32;
-        if ratio > 0.7 || ratio < 0.3 {
+        if !(0.3..=0.7).contains(&ratio) {
             consistency_score += 1.0;
         }
     }

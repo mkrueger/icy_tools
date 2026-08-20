@@ -232,7 +232,7 @@ fn test_scroll_area() {
         right: 70,
     };
 
-    sink.emit(cmd.clone());
+    sink.emit(cmd);
     assert_eq!(sink.cmds.len(), 1);
 
     if let TerminalCommand::ScrollArea {

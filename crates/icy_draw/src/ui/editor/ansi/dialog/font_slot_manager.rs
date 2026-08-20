@@ -23,7 +23,7 @@ use icy_ui::{
 use super::super::{AnsiEditorCoreMessage, AnsiEditorMessage};
 use crate::ui::Message;
 
-/// Helper to wrap FontSlotManagerMessage in Message
+/// Helper to wrap `FontSlotManagerMessage` in Message
 fn msg(m: FontSlotManagerMessage) -> Message {
     Message::AnsiEditor(AnsiEditorMessage::FontSlotManager(m))
 }
@@ -121,7 +121,7 @@ impl FontSlotManagerDialog {
         let current_font_page = state.get_caret().font_page();
 
         // Determine font height from current font
-        let font_height = buffer.font(current_font_page as u8).map(|f| f.size().height as u8).unwrap_or(16);
+        let font_height = buffer.font(current_font_page).map_or(16, |f| f.size().height as u8);
 
         // Build slot list: 0-42 (ANSI) + any custom slots from document
         let mut slots: Vec<usize> = (0..icy_engine::ANSI_FONTS).collect();
@@ -133,7 +133,7 @@ impl FontSlotManagerDialog {
                 slots.push(slot_usize);
             }
         }
-        slots.sort();
+        slots.sort_unstable();
 
         // Build font map
         let mut slot_fonts: HashMap<usize, Option<BitFont>> = HashMap::new();
@@ -384,10 +384,10 @@ impl FontSlotManagerDialog {
 // ============================================================================
 
 /// Canvas program that renders slots based on the visible viewport.
-/// Used with scroll_area().show_viewport() - the viewport rectangle
+/// Used with `scroll_area().show_viewport()` - the viewport rectangle
 /// is provided by the scroll area and tells us which content region is visible.
 struct SlotListCanvasViewport {
-    /// The visible viewport in content coordinates (provided by scroll_area)
+    /// The visible viewport in content coordinates (provided by `scroll_area`)
     viewport: Rectangle,
     /// All slot indices (cloned for ownership)
     slots: Vec<usize>,
@@ -428,9 +428,7 @@ impl canvas::Program<Message> for SlotListCanvasViewport {
                 let (font_name, is_empty, is_custom) = match self.slot_fonts.get(&slot) {
                     Some(Some(font)) => {
                         let is_ansi_default = if slot < icy_engine::ANSI_FONTS {
-                            BitFont::from_ansi_font_page(slot as u8, self.font_height)
-                                .map(|default| default.name() == font.name())
-                                .unwrap_or(false)
+                            BitFont::from_ansi_font_page(slot as u8, self.font_height).is_some_and(|default| default.name() == font.name())
                         } else {
                             false
                         };
@@ -457,7 +455,7 @@ impl canvas::Program<Message> for SlotListCanvasViewport {
                 // Slot number
                 let slot_color = if is_active { Color::WHITE } else { Color::from_rgb(0.5, 0.5, 0.5) };
                 frame.fill_text(Text {
-                    content: format!("[{:2}]", slot),
+                    content: format!("[{slot:2}]"),
                     position: Point::new(8.0, y + (SLOT_ITEM_HEIGHT - 13.0) / 2.0),
                     color: slot_color,
                     size: icy_ui::Pixels(13.0),

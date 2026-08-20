@@ -96,10 +96,10 @@ impl SegmentedLayout {
     ///
     /// # Arguments
     /// * `segments` - Content types for each segment.
-    /// * `font` - Optional BitFont for dimension calculations.
+    /// * `font` - Optional `BitFont` for dimension calculations.
     pub fn new(segments: &[SegmentContentType], font: Option<&BitFont>) -> Self {
-        let font_width = font.map(|f| f.size().width as f32).unwrap_or(8.0) * SEGMENT_FONT_SCALE;
-        let font_height = font.map(|f| f.size().height as f32).unwrap_or(16.0) * SEGMENT_FONT_SCALE;
+        let font_width = font.map_or(8.0, |f| f.size().width as f32) * SEGMENT_FONT_SCALE;
+        let font_height = font.map_or(16.0, |f| f.size().height as f32) * SEGMENT_FONT_SCALE;
 
         let preview_magnify = (PREVIEW_GLYPH_HEIGHT / font_height).floor().max(1.0);
 
@@ -253,7 +253,7 @@ impl SegmentedLayout {
 
     /// Hit test and return as GPU uniform representation.
     pub fn hit_test_uniform(&self, pos: Point) -> u32 {
-        self.hit_test(pos).map(|i| i as u32).unwrap_or(NO_HOVER)
+        self.hit_test(pos).map_or(NO_HOVER, |i| i as u32)
     }
 }
 
@@ -344,14 +344,14 @@ impl SegmentedLayoutScaled {
 
 /// Calculate segment width for a text segment.
 pub fn text_segment_width(text: &str, font: Option<&BitFont>) -> f32 {
-    let font_width = font.map(|f| f.size().width as f32).unwrap_or(8.0);
+    let font_width = font.map_or(8.0, |f| f.size().width as f32);
     let char_count = text.chars().count();
     char_count as f32 * font_width + SEGMENT_PADDING_H * 2.0
 }
 
 /// Calculate segment width for a char segment.
 pub fn char_segment_width(font: Option<&BitFont>) -> f32 {
-    let font_width = font.map(|f| f.size().width as f32).unwrap_or(8.0);
+    let font_width = font.map_or(8.0, |f| f.size().width as f32);
     font_width * CHAR_MAGNIFICATION + SEGMENT_PADDING_H * 2.0
 }
 

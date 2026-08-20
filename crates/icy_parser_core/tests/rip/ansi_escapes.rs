@@ -102,9 +102,6 @@ fn test_rip_unknown_ansi_sequence_passthrough() {
 
     // Should pass through to ANSI parser, no RIP commands
     assert_eq!(sink.rip_commands.len(), 0);
-
-    // The ANSI parser should have received the sequence
-    assert!(sink.terminal_commands.len() > 0 || true); // ANSI parser was called
 }
 
 #[test]
@@ -149,9 +146,9 @@ fn test_real_world_rip_query_version() {
 
     // Verify the specific sequence: DeviceAttributes, CursorPositionReport, RipRequestTerminalId, CursorPositionReport
     assert!(
-        matches!(sink.terminal_requests.get(0), Some(TerminalRequest::DeviceAttributes)),
+        matches!(sink.terminal_requests.first(), Some(TerminalRequest::DeviceAttributes)),
         "Expected DeviceAttributes at position 0, got {:?}",
-        sink.terminal_requests.get(0)
+        sink.terminal_requests.first()
     );
     assert!(
         matches!(sink.terminal_requests.get(1), Some(TerminalRequest::CursorPositionReport)),

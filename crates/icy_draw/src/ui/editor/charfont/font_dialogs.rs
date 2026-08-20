@@ -1,4 +1,4 @@
-//! Font Dialogs for CharFont (TDF) Editor
+//! Font Dialogs for `CharFont` (TDF) Editor
 //!
 //! Provides dialogs for:
 //! - Adding a new font (selecting type, name, spacing)
@@ -22,7 +22,7 @@ use crate::fl;
 use crate::ui::Message;
 use icy_engine_edit::charset::TdfFontType;
 
-/// Wrapper for TdfFontType that implements Display for use in pick_list
+/// Wrapper for `TdfFontType` that implements Display for use in `pick_list`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FontTypeOption(pub TdfFontType);
 
@@ -52,7 +52,7 @@ impl From<FontTypeOption> for TdfFontType {
 // Add Font Dialog
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Helper to wrap AddFontDialogMessage in Message
+/// Helper to wrap `AddFontDialogMessage` in Message
 fn add_msg(m: AddFontDialogMessage) -> Message {
     Message::CharFontEditor(CharFontEditorMessage::AddFontDialog(m))
 }
@@ -101,7 +101,7 @@ impl AddFontDialog {
 
     /// Parse the spacing value
     pub fn parsed_spacing(&self) -> Option<i32> {
-        self.spacing.parse::<i32>().ok().filter(|&s| s >= -10 && s <= 10)
+        self.spacing.parse::<i32>().ok().filter(|&s| (-10..=10).contains(&s))
     }
 
     /// Check if the input is valid
@@ -185,7 +185,7 @@ impl Dialog<Message> for AddFontDialog {
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());
 
-        let button_area = dialog_area(buttons.into());
+        let button_area = dialog_area(buttons);
 
         modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area,].into(),
@@ -247,7 +247,7 @@ impl Dialog<Message> for AddFontDialog {
 // Edit Font Settings Dialog
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Helper to wrap EditFontSettingsDialogMessage in Message
+/// Helper to wrap `EditFontSettingsDialogMessage` in Message
 fn edit_msg(m: EditFontSettingsDialogMessage) -> Message {
     Message::CharFontEditor(CharFontEditorMessage::EditFontSettingsDialog(m))
 }
@@ -285,7 +285,7 @@ impl EditFontSettingsDialog {
 
     /// Parse the spacing value
     pub fn parsed_spacing(&self) -> Option<i32> {
-        self.spacing.parse::<i32>().ok().filter(|&s| s >= -10 && s <= 10)
+        self.spacing.parse::<i32>().ok().filter(|&s| (-10..=10).contains(&s))
     }
 
     /// Check if the input is valid
@@ -348,7 +348,7 @@ impl Dialog<Message> for EditFontSettingsDialog {
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());
 
-        let button_area = dialog_area(buttons.into());
+        let button_area = dialog_area(buttons);
 
         modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area,].into(),

@@ -59,8 +59,8 @@ impl UnicodeGlyphCache {
         let mut buf = UnicodeBuffer::new();
         // rustybuzz expects strings; single char works
         buf.push_str(&ch.to_string());
-        let face = if use_bold && self.hb_bold_face.is_some() {
-            self.hb_bold_face.as_ref().unwrap()
+        let face = if use_bold {
+            self.hb_bold_face.as_ref().unwrap_or(&self.hb_face)
         } else {
             &self.hb_face
         };

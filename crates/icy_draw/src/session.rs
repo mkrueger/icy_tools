@@ -1,4 +1,4 @@
-//! Session management for icy_draw
+//! Session management for `icy_draw`
 //!
 //! Implements VS Code-like "Hot Exit" functionality:
 //! - Saves session state (open windows, positions, files) on exit
@@ -22,8 +22,8 @@ use crate::ui::EditMode;
 pub use icy_engine_edit::bitfont::BitFontSessionState;
 pub use icy_engine_edit::AnsiEditorSessionState;
 
-/// Session state for the CharFont (TDF) editor
-/// Uses the same undo system as AnsiEditor since it's based on AnsiEditorCore
+/// Session state for the `CharFont` (TDF) editor
+/// Uses the same undo system as `AnsiEditor` since it's based on `AnsiEditorCore`
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CharFontSessionState {
     /// Version for future compatibility
@@ -210,7 +210,7 @@ pub struct WindowState {
     pub size: (f32, f32),
     /// Original file path (if any) - the actual file on disk
     pub file_path: Option<PathBuf>,
-    /// Edit mode (Ansi, BitFont, Animation)
+    /// Edit mode (Ansi, `BitFont`, Animation)
     pub edit_mode: String,
     /// Whether this window has unsaved changes
     pub has_unsaved_changes: bool,
@@ -243,7 +243,7 @@ impl WindowState {
     pub fn to_restore_info(&self) -> WindowRestoreInfo {
         if self.has_unsaved_changes {
             // Has unsaved changes - load from autosave if available AND exists
-            let autosave_exists = self.autosave_path.as_ref().map_or(false, |p| p.exists());
+            let autosave_exists = self.autosave_path.as_ref().is_some_and(|p| p.exists());
             let load_path = if autosave_exists {
                 self.autosave_path.clone()
             } else {
@@ -329,7 +329,7 @@ pub struct SessionManager {
     session_dir: PathBuf,
     /// Autosave delay in seconds
     autosave_delay_secs: u64,
-    /// Autosave status per window (keyed by window::Id)
+    /// Autosave status per window (keyed by `window::Id`)
     autosave_status: HashMap<window::Id, AutosaveStatus>,
 }
 
@@ -366,12 +366,12 @@ impl SessionManager {
             Ok(content) => match serde_json::from_str(&content) {
                 Ok(state) => Some(state),
                 Err(e) => {
-                    log::warn!("Failed to parse session file: {}", e);
+                    log::warn!("Failed to parse session file: {e}");
                     None
                 }
             },
             Err(e) => {
-                log::warn!("Failed to read session file: {}", e);
+                log::warn!("Failed to read session file: {e}");
                 None
             }
         }
@@ -385,13 +385,13 @@ impl SessionManager {
         // Use atomic write: write to temp file then rename
         let temp_path = path.with_extension("tmp");
 
-        let json = serde_json::to_string_pretty(state).map_err(|e| format!("Failed to serialize session: {}", e))?;
+        let json = serde_json::to_string_pretty(state).map_err(|e| format!("Failed to serialize session: {e}"))?;
 
-        fs::write(&temp_path, &json).map_err(|e| format!("Failed to write session file: {}", e))?;
+        fs::write(&temp_path, &json).map_err(|e| format!("Failed to write session file: {e}"))?;
 
-        fs::rename(&temp_path, &path).map_err(|e| format!("Failed to rename session file: {}", e))?;
+        fs::rename(&temp_path, &path).map_err(|e| format!("Failed to rename session file: {e}"))?;
 
-        log::info!("Session saved to {:?}", path);
+        log::info!("Session saved to {path:?}");
         Ok(())
     }
 
@@ -407,13 +407,13 @@ impl SessionManager {
     pub fn get_autosave_path(&self, original_path: &PathBuf) -> PathBuf {
         // Use CRC32 hash of the path for the filename
         let hash = crc32fast::hash(original_path.to_string_lossy().as_bytes());
-        self.session_dir.join(format!("{:08x}.autosave", hash))
+        self.session_dir.join(format!("{hash:08x}.autosave"))
     }
 
     /// Get autosave path for an untitled document
     /// Uses a counter that increments for each untitled document
     pub fn get_untitled_autosave_path(&self, untitled_index: usize) -> PathBuf {
-        self.session_dir.join(format!("untitled_{}.autosave", untitled_index))
+        self.session_dir.join(format!("untitled_{untitled_index}.autosave"))
     }
 
     /// Save autosave data
@@ -421,11 +421,11 @@ impl SessionManager {
         // Atomic write
         let temp_path = autosave_path.with_extension("tmp");
 
-        fs::write(&temp_path, data).map_err(|e| format!("Failed to write autosave: {}", e))?;
+        fs::write(&temp_path, data).map_err(|e| format!("Failed to write autosave: {e}"))?;
 
-        fs::rename(&temp_path, autosave_path).map_err(|e| format!("Failed to rename autosave: {}", e))?;
+        fs::rename(&temp_path, autosave_path).map_err(|e| format!("Failed to rename autosave: {e}"))?;
 
-        log::debug!("Autosave written to {:?}", autosave_path);
+        log::debug!("Autosave written to {autosave_path:?}");
         Ok(())
     }
 
@@ -433,7 +433,7 @@ impl SessionManager {
     pub fn remove_autosave(&self, autosave_path: &PathBuf) {
         if autosave_path.exists() {
             let _ = fs::remove_file(autosave_path);
-            log::debug!("Autosave removed: {:?}", autosave_path);
+            log::debug!("Autosave removed: {autosave_path:?}");
         }
     }
 
@@ -456,22 +456,22 @@ impl SessionManager {
     /// Get session data file path for a given file
     pub fn get_session_data_path(&self, original_path: &PathBuf) -> PathBuf {
         let hash = crc32fast::hash(original_path.to_string_lossy().as_bytes());
-        self.session_dir.join(format!("{:08x}.session", hash))
+        self.session_dir.join(format!("{hash:08x}.session"))
     }
 
     /// Get session data path for an untitled document
     pub fn get_untitled_session_data_path(&self, untitled_index: usize) -> PathBuf {
-        self.session_dir.join(format!("untitled_{}.session", untitled_index))
+        self.session_dir.join(format!("untitled_{untitled_index}.session"))
     }
 
     /// Save editor session data using a versioned bitcode envelope.
     pub fn save_session_data(&self, path: &PathBuf, data: &EditorSessionData) -> Result<(), String> {
-        let bytes = data.encode_versioned().map_err(|e| format!("Failed to serialize session data: {}", e))?;
+        let bytes = data.encode_versioned().map_err(|e| format!("Failed to serialize session data: {e}"))?;
 
         // Atomic write
         let temp_path = path.with_extension("tmp");
-        fs::write(&temp_path, &bytes).map_err(|e| format!("Failed to write session data: {}", e))?;
-        fs::rename(&temp_path, path).map_err(|e| format!("Failed to rename session data: {}", e))?;
+        fs::write(&temp_path, &bytes).map_err(|e| format!("Failed to write session data: {e}"))?;
+        fs::rename(&temp_path, path).map_err(|e| format!("Failed to rename session data: {e}"))?;
 
         log::debug!("Session data saved to {:?} ({} bytes)", path, bytes.len());
         Ok(())
@@ -487,16 +487,16 @@ impl SessionManager {
         match fs::read(path) {
             Ok(bytes) => match EditorSessionData::decode_versioned(&bytes) {
                 Ok(data) => {
-                    log::debug!("Session data loaded from {:?}", path);
+                    log::debug!("Session data loaded from {path:?}");
                     Some(data)
                 }
                 Err(e) => {
-                    log::warn!("Failed to deserialize session data from {:?}: {}", path, e);
+                    log::warn!("Failed to deserialize session data from {path:?}: {e}");
                     None
                 }
             },
             Err(e) => {
-                log::warn!("Failed to read session data from {:?}: {}", path, e);
+                log::warn!("Failed to read session data from {path:?}: {e}");
                 None
             }
         }
@@ -507,7 +507,7 @@ impl SessionManager {
     pub fn remove_session_data(&self, path: &PathBuf) {
         if path.exists() {
             let _ = fs::remove_file(path);
-            log::debug!("Session data removed: {:?}", path);
+            log::debug!("Session data removed: {path:?}");
         }
     }
 }
@@ -518,31 +518,57 @@ impl Default for SessionManager {
     }
 }
 
+/// Get the session directory path
+fn get_session_dir() -> PathBuf {
+    if let Some(proj_dirs) = crate::PROJECT_DIRS.as_ref() {
+        let dir = proj_dirs.data_local_dir().join("session");
+        return dir;
+    }
+    // Fallback to config dir
+    PathBuf::from(".icy_draw_session")
+}
+
+/// Convert `EditMode` to string for serialization
+pub fn edit_mode_to_string(mode: &EditMode) -> String {
+    match mode {
+        EditMode::Ansi => "ansi".to_string(),
+        EditMode::BitFont => "bitfont".to_string(),
+        EditMode::CharFont => "charfont".to_string(),
+        EditMode::Animation => "animation".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
 
     fn sample_ansi_data() -> EditorSessionData {
-        let mut state = AnsiEditorSessionState::default();
-        state.selected_tool = "Pencil".to_string();
-        state.zoom_level = 2.0;
-        state.scroll_offset = (12.0, 34.0);
+        let state = AnsiEditorSessionState {
+            selected_tool: "Pencil".to_string(),
+            zoom_level: 2.0,
+            scroll_offset: (12.0, 34.0),
+            ..Default::default()
+        };
         EditorSessionData::Ansi(state)
     }
 
     fn sample_bitfont_data() -> EditorSessionData {
-        let mut state = BitFontSessionState::default();
-        state.selected_glyph = 42;
-        state.edit_zoom = 3.0;
-        state.selected_tool = "Pencil".to_string();
+        let state = BitFontSessionState {
+            selected_glyph: 42,
+            edit_zoom: 3.0,
+            selected_tool: "Pencil".to_string(),
+            ..Default::default()
+        };
         EditorSessionData::BitFont(state)
     }
 
     fn sample_charfont_data() -> EditorSessionData {
-        let mut state = CharFontSessionState::default();
-        state.selected_slot = 65;
-        state.preview_text = "ICE".to_string();
+        let mut state = CharFontSessionState {
+            selected_slot: 65,
+            preview_text: "ICE".to_string(),
+            ..Default::default()
+        };
         state.ansi_state.selected_tool = "Font".to_string();
         EditorSessionData::CharFont(state)
     }
@@ -689,25 +715,5 @@ mod tests {
         assert_same_session_data(&loaded, &data);
 
         let _ = fs::remove_dir_all(dir);
-    }
-}
-
-/// Get the session directory path
-fn get_session_dir() -> PathBuf {
-    if let Some(proj_dirs) = crate::PROJECT_DIRS.as_ref() {
-        let dir = proj_dirs.data_local_dir().join("session");
-        return dir;
-    }
-    // Fallback to config dir
-    PathBuf::from(".icy_draw_session")
-}
-
-/// Convert EditMode to string for serialization
-pub fn edit_mode_to_string(mode: &EditMode) -> String {
-    match mode {
-        EditMode::Ansi => "ansi".to_string(),
-        EditMode::BitFont => "bitfont".to_string(),
-        EditMode::CharFont => "charfont".to_string(),
-        EditMode::Animation => "animation".to_string(),
     }
 }

@@ -19,6 +19,7 @@ pub struct Timer {
 }
 
 impl Timer {
+    #[must_use]
     pub fn new(label: &'static str) -> Self {
         Self::with(label, "")
     }
@@ -47,14 +48,14 @@ impl Drop for Timer {
 
 /// Counts `view()` calls and reports the rate once per second.
 pub fn count_frame(rows: usize) {
-    if !enabled() {
-        return;
-    }
-
     use std::cell::Cell;
     thread_local! {
         static FRAMES: Cell<u32> = const { Cell::new(0) };
         static WINDOW_START: Cell<Option<Instant>> = const { Cell::new(None) };
+    }
+
+    if !enabled() {
+        return;
     }
 
     WINDOW_START.with(|start| {

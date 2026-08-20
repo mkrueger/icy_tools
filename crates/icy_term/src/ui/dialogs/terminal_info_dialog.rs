@@ -128,6 +128,7 @@ pub struct TerminalInfoDialog {
 }
 
 impl TerminalInfoDialog {
+    #[must_use]
     pub fn new(info: TerminalInfo) -> Self {
         Self {
             selected_terminal_type: info.terminal_type,
@@ -168,6 +169,7 @@ impl TerminalInfoDialog {
         }
     }
 
+    #[must_use]
     pub fn has_changes(&self) -> bool {
         self.selected_terminal_type != self.info.terminal_type
             || self.selected_screen_mode != self.info.screen_mode
@@ -175,11 +177,12 @@ impl TerminalInfoDialog {
     }
 
     /// Format terminal info as text for clipboard
+    #[must_use]
     pub fn format_info_text(&self) -> String {
         let margins_str = match (self.info.margins_top_bottom, self.info.margins_left_right) {
-            (Some((t, b)), Some((l, r))) => format!("Lines {}→{} • Cols {}→{}", t, b, l, r),
-            (Some((t, b)), None) => format!("Lines {}→{}", t, b),
-            (None, Some((l, r))) => format!("Cols {}→{}", l, r),
+            (Some((t, b)), Some((l, r))) => format!("Lines {t}→{b} • Cols {l}→{r}"),
+            (Some((t, b)), None) => format!("Lines {t}→{b}"),
+            (None, Some((l, r))) => format!("Cols {l}→{r}"),
             (None, None) => "Not Set".to_string(),
         };
 
@@ -262,7 +265,7 @@ impl TerminalInfoDialog {
         )
     }
 
-    pub fn view<'a, M: Clone + 'static>(&'a self, on_message: impl Fn(TerminalInfoDialogMessage) -> M + 'static + Clone) -> Element<'a, M> {
+    pub fn view<M: Clone + 'static>(&self, on_message: impl Fn(TerminalInfoDialogMessage) -> M + 'static + Clone) -> Element<'_, M> {
         self.create_modal_content(on_message)
     }
 
@@ -294,7 +297,7 @@ impl TerminalInfoDialog {
                 let is_current = mode.to_lowercase() == current_mode_lower;
                 let alpha = if is_current { 1.0 } else { 0.5 };
                 row![
-                    text(format!("{:<16}", mode))
+                    text(format!("{mode:<16}"))
                         .size(TEXT_SIZE_SMALL)
                         .font(icy_ui::Font::MONOSPACE)
                         .style(move |theme: &Theme| text::Style {
@@ -335,10 +338,10 @@ impl TerminalInfoDialog {
         row![
             text(label).size(TEXT_SIZE_NORMAL).width(Length::Fixed(LABEL_WIDTH)),
             row![
-                text(format!("{}x{}", cols, rows)).size(TEXT_SIZE_NORMAL).style(|theme: &Theme| text::Style {
+                text(format!("{cols}x{rows}")).size(TEXT_SIZE_NORMAL).style(|theme: &Theme| text::Style {
                     color: Some(theme.background.on.scale_alpha(0.7)),
                 }),
-                text(format!("({}x{} px)", px_width, px_height))
+                text(format!("({px_width}x{px_height} px)"))
                     .size(TEXT_SIZE_SMALL)
                     .style(|theme: &Theme| text::Style {
                         color: Some(theme.background.on.scale_alpha(0.4)),
@@ -368,7 +371,7 @@ impl TerminalInfoDialog {
 
         let tooltip_rows: Vec<Element<'static, M>> = shapes
             .iter()
-            .zip(shape_descriptions.into_iter())
+            .zip(shape_descriptions)
             .map(|((shape, sym), (shape_name, desc))| {
                 let is_current = *shape == current_shape;
                 let alpha = if is_current { 1.0 } else { 0.5 };
@@ -376,7 +379,7 @@ impl TerminalInfoDialog {
                     text(*sym).size(TEXT_SIZE_SMALL).style(move |theme: &Theme| text::Style {
                         color: Some(theme.background.on.scale_alpha(alpha)),
                     }),
-                    text(format!("{:<12}", shape_name))
+                    text(format!("{shape_name:<12}"))
                         .size(TEXT_SIZE_SMALL)
                         .font(icy_ui::Font::MONOSPACE)
                         .style(move |theme: &Theme| text::Style {
@@ -428,7 +431,7 @@ impl TerminalInfoDialog {
             .into()
     }
 
-    fn create_modal_content<'a, M: Clone + 'static>(&'a self, on_message: impl Fn(TerminalInfoDialogMessage) -> M + 'static + Clone) -> Element<'a, M> {
+    fn create_modal_content<M: Clone + 'static>(&self, on_message: impl Fn(TerminalInfoDialogMessage) -> M + 'static + Clone) -> Element<'_, M> {
         // Get translations
         let terminal_title = fl!(crate::LANGUAGE_LOADER, "terminal-info-dialog-terminal-section");
         let caret_title = fl!(crate::LANGUAGE_LOADER, "terminal-info-dialog-caret-section");
@@ -486,9 +489,9 @@ impl TerminalInfoDialog {
 
         // Left column - Terminal state
         let margins_str = match (self.info.margins_top_bottom, self.info.margins_left_right) {
-            (Some((t, b)), Some((l, r))) => format!("Lines {}→{} • Cols {}→{}", t, b, l, r),
-            (Some((t, b)), None) => format!("Lines {}→{}", t, b),
-            (None, Some((l, r))) => format!("Cols {}→{}", l, r),
+            (Some((t, b)), Some((l, r))) => format!("Lines {t}→{b} • Cols {l}→{r}"),
+            (Some((t, b)), None) => format!("Lines {t}→{b}"),
+            (None, Some((l, r))) => format!("Cols {l}→{r}"),
             (None, None) => not_set_str,
         };
 
@@ -637,7 +640,7 @@ impl TerminalInfoDialog {
         let buttons = button_row_with_left(vec![copy_btn.into()], vec![apply_btn.into(), close_btn.into()]);
 
         let dialog_content = dialog_area(content.into());
-        let button_area = dialog_area(buttons.into());
+        let button_area = dialog_area(buttons);
 
         let modal = modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area,].into(),

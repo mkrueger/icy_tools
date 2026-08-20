@@ -120,7 +120,7 @@ fn test_atascii_all_byte_mappings() {
     // Skip to first control command - first command should be Text with bytes 0x00-0x1A
     let cmd = get_cmd();
     if let Some(MappingCommand::Text(data)) = cmd {
-        assert!(data.len() > 0, "Expected text command with printable bytes");
+        assert!(!data.is_empty(), "Expected text command with printable bytes");
     } else {
         panic!("Expected Text command first, got: {:?}", cmd);
     }
@@ -238,11 +238,11 @@ fn test_atascii_all_byte_mappings() {
     // Verify ESC sequence handling: 0x1B followed by 0x1C should result in literal 0x1C
     let mut found_escaped_char = false;
     for cmd in &all_commands {
-        if let MappingCommand::Text(data) = cmd {
-            if data.contains(&0x1C) {
-                found_escaped_char = true;
-                break;
-            }
+        if let MappingCommand::Text(data) = cmd
+            && data.contains(&0x1C)
+        {
+            found_escaped_char = true;
+            break;
         }
     }
     assert!(found_escaped_char, "Expected literal 0x1C character from ESC+0x1C sequence");
@@ -359,14 +359,14 @@ fn test_atascii_inverse_video() {
     for cmd in &sink.commands {
         if let MappingCommand::Text(data) = cmd {
             for &byte in data {
-                if byte >= 0x80 && byte < 0xFD {
+                if (0x80..0xFD).contains(&byte) {
                     found_inverse.push(byte);
                 }
             }
         }
     }
 
-    assert!(found_inverse.len() > 0, "Expected inverse video characters to be printed");
+    assert!(!found_inverse.is_empty(), "Expected inverse video characters to be printed");
     assert!(found_inverse.contains(&0x80), "Expected 0x80 inverse character");
 }
 

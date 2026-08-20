@@ -70,10 +70,10 @@ impl OutlineClickTool {
     fn type_outline_char(&self, ctx: &mut ToolContext, ch: char) -> ToolResult {
         // Outline fonts store raw ASCII codes directly
         if let Err(e) = ctx.state.type_key(ch) {
-            log::warn!("Failed to type outline char '{}': {}", ch, e);
+            log::warn!("Failed to type outline char '{ch}': {e}");
             return ToolResult::None;
         }
-        ToolResult::Commit(format!("Type outline '{}'", ch))
+        ToolResult::Commit(format!("Type outline '{ch}'"))
     }
 }
 
@@ -114,19 +114,19 @@ impl ToolHandler for OutlineClickTool {
         let code_label = crate::fl!("tdf-editor-cheat_sheet_code");
         let res_label = crate::fl!("tdf-editor-cheat_sheet_res");
 
-        let mut key_row: Vec<Element<'_, ToolMessage>> = vec![text(format!("{:>6}:", key_label)).size(11).font(mono).into()];
+        let mut key_row: Vec<Element<'_, ToolMessage>> = vec![text(format!("{key_label:>6}:")).size(11).font(mono).into()];
         for k in OUTLINE_KEYS {
-            key_row.push(text(format!(" {:>3}", k)).size(11).font(mono).into());
+            key_row.push(text(format!(" {k:>3}")).size(11).font(mono).into());
         }
 
-        let mut code_row: Vec<Element<'_, ToolMessage>> = vec![text(format!("{:>6}:", code_label)).size(11).font(mono).into()];
+        let mut code_row: Vec<Element<'_, ToolMessage>> = vec![text(format!("{code_label:>6}:")).size(11).font(mono).into()];
         for c in OUTLINE_CODES {
-            code_row.push(text(format!(" {:>3}", c)).size(11).font(mono).into());
+            code_row.push(text(format!(" {c:>3}")).size(11).font(mono).into());
         }
 
-        let mut res_row: Vec<Element<'_, ToolMessage>> = vec![text(format!("{:>6}:", res_label)).size(11).font(mono).into()];
+        let mut res_row: Vec<Element<'_, ToolMessage>> = vec![text(format!("{res_label:>6}:")).size(11).font(mono).into()];
         for r in OUTLINE_RESULTS {
-            res_row.push(text(format!(" {:>3}", r)).size(11).font(mono).into());
+            res_row.push(text(format!(" {r:>3}")).size(11).font(mono).into());
         }
 
         container(column![row(key_row).spacing(0), row(code_row).spacing(0), row(res_row).spacing(0),].spacing(2))
@@ -153,14 +153,14 @@ impl ToolHandler for OutlineClickTool {
                     let current_selection = ctx.state.selection();
                     let hit = hit_test_selection(current_selection, pos);
 
-                    if hit != SelectionDrag::None {
-                        self.selection_drag = hit;
-                        self.selection_start_rect = current_selection.map(|s| s.as_rectangle());
-                    } else {
+                    if hit == SelectionDrag::None {
                         let _ = ctx.state.clear_selection();
                         ctx.state.set_caret_from_document_position(pos);
                         self.selection_drag = SelectionDrag::Create;
                         self.selection_start_rect = None;
+                    } else {
+                        self.selection_drag = hit;
+                        self.selection_start_rect = current_selection.map(|s| s.as_rectangle());
                     }
 
                     self.selection_start_pos = Some(pos);
@@ -219,7 +219,9 @@ impl ToolHandler for OutlineClickTool {
             }
 
             TerminalMessage::Release(evt) => {
-                if self.selection_drag != SelectionDrag::None {
+                if self.selection_drag == SelectionDrag::None {
+                    ToolResult::None
+                } else {
                     let end_pos = evt.text_position;
 
                     if self.selection_drag == SelectionDrag::Create {
@@ -237,8 +239,6 @@ impl ToolHandler for OutlineClickTool {
                     self.selection_start_rect = None;
 
                     ToolResult::EndCapture.and(ToolResult::Redraw)
-                } else {
-                    ToolResult::None
                 }
             }
 

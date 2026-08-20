@@ -21,7 +21,7 @@ fn load_test_files(dir: &str) -> Vec<(String, Vec<u8>)> {
             let path = entry.path();
             if path
                 .extension()
-                .map_or(false, |ext| ext.eq_ignore_ascii_case("xb") || ext.eq_ignore_ascii_case("xbin"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("xb") || ext.eq_ignore_ascii_case("xbin"))
             {
                 if let Ok(data) = fs::read(&path) {
                     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_string();

@@ -1,4 +1,4 @@
-//! BitFont Editor for icy_draw
+//! `BitFont` Editor for `icy_draw`
 //!
 //! Provides a pixel-based editor for bitmap fonts (.psf, .fXX, .yaff files).
 //! Features:
@@ -60,9 +60,9 @@ const MAX_GRID_HEIGHT: f32 = 580.0;
 /// Minimum scale factor to prevent grids from becoming too small
 const MIN_SCALE_FACTOR: f32 = 0.25;
 
-/// State for the BitFont editor
+/// State for the `BitFont` editor
 ///
-/// We store our own editable glyph data since BitFont doesn't expose mutable access
+/// We store our own editable glyph data since `BitFont` doesn't expose mutable access
 /// to glyph pixels directly. When saving, we'll convert back to yaff format.
 pub struct BitFontEditor {
     /// Backend model containing all font editing state and undo history
@@ -108,7 +108,7 @@ pub struct BitFontEditor {
 }
 
 impl BitFontEditor {
-    /// Create a new BitFont editor with a default font
+    /// Create a new `BitFont` editor with a default font
     pub fn new() -> Self {
         let state = BitFontEditState::new();
         let (width, height) = state.font_size();
@@ -136,11 +136,11 @@ impl BitFontEditor {
         }
     }
 
-    /// Create a BitFont editor from a file
+    /// Create a `BitFont` editor from a file
     pub fn from_file(path: PathBuf) -> Result<Self, String> {
-        let data = std::fs::read(&path).map_err(|e| format!("Failed to read file: {}", e))?;
+        let data = std::fs::read(&path).map_err(|e| format!("Failed to read file: {e}"))?;
         let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Font").to_string();
-        let font = BitFont::from_bytes(name, &data).map_err(|e| format!("Failed to parse font: {}", e))?;
+        let font = BitFont::from_bytes(name, &data).map_err(|e| format!("Failed to parse font: {e}"))?;
         let size = font.size();
         let mut state = BitFontEditState::from_font(font.clone());
         state.set_file_path(Some(path.clone()));
@@ -223,7 +223,7 @@ impl BitFontEditor {
         self.state.clear_selection();
     }
 
-    /// Get charset selection (anchor, lead, is_rectangle)
+    /// Get charset selection (anchor, lead, `is_rectangle`)
     pub(crate) fn charset_selection(&self) -> Option<(icy_engine::Position, icy_engine::Position, bool)> {
         self.state.charset_selection()
     }
@@ -247,9 +247,9 @@ impl BitFontEditor {
 
     /// Calculate scale factors for edit grid and charset based on available height
     ///
-    /// Returns (edit_cell_scale, charset_scale) where:
-    /// - edit_cell_scale: multiplier for EDIT_CELL_SIZE (1.0 = default 30px cells)
-    /// - charset_scale: multiplier for font size in charset (2.0 = default)
+    /// Returns (`edit_cell_scale`, `charset_scale`) where:
+    /// - `edit_cell_scale`: multiplier for `EDIT_CELL_SIZE` (1.0 = default 30px cells)
+    /// - `charset_scale`: multiplier for font size in charset (2.0 = default)
     fn calculate_grid_scales(&self) -> (f32, f32) {
         let (_font_width, font_height) = self.state.font_size();
 
@@ -403,17 +403,17 @@ impl BitFontEditor {
 
     /// Get glyph data for a specific character code
     ///
-    /// Returns GlyphData with base64-encoded bitmap (row-major, MSB first)
+    /// Returns `GlyphData` with base64-encoded bitmap (row-major, MSB first)
     pub fn get_glyph_data(&self, code: u32) -> Result<crate::mcp::types::GlyphData, String> {
         if code > 255 {
-            return Err(format!("Character code {} out of range (0-255)", code));
+            return Err(format!("Character code {code} out of range (0-255)"));
         }
-        let ch = char::from_u32(code).ok_or_else(|| format!("Invalid character code: {}", code))?;
+        let ch = char::from_u32(code).ok_or_else(|| format!("Invalid character code: {code}"))?;
         let pixels = self.state.get_glyph_pixels(ch);
         let (width, height) = self.font_size();
 
         // Convert bool grid to packed bits (row-major, MSB first)
-        let bytes_per_row = (width as usize + 7) / 8;
+        let bytes_per_row = (width as usize).div_ceil(8);
         let mut bitmap = vec![0u8; bytes_per_row * height as usize];
 
         for (y, row) in pixels.iter().enumerate() {
@@ -449,7 +449,7 @@ impl BitFontEditor {
 
     /// Set glyph data for a specific character code
     ///
-    /// Takes GlyphData with base64-encoded bitmap in row-major format, MSB first
+    /// Takes `GlyphData` with base64-encoded bitmap in row-major format, MSB first
     pub fn set_glyph_data(&mut self, data: &crate::mcp::types::GlyphData) -> Result<(), String> {
         if data.code > 255 {
             return Err(format!("Character code {} out of range (0-255)", data.code));
@@ -457,7 +457,7 @@ impl BitFontEditor {
         let ch = char::from_u32(data.code).ok_or_else(|| format!("Invalid character code: {}", data.code))?;
 
         use base64::prelude::*;
-        let bitmap = BASE64_STANDARD.decode(&data.bitmap).map_err(|e| format!("Invalid base64: {}", e))?;
+        let bitmap = BASE64_STANDARD.decode(&data.bitmap).map_err(|e| format!("Invalid base64: {e}"))?;
 
         let (font_width, font_height) = self.font_size();
         if data.width != font_width || data.height != font_height {
@@ -467,7 +467,7 @@ impl BitFontEditor {
             ));
         }
 
-        let bytes_per_row = (data.width as usize + 7) / 8;
+        let bytes_per_row = (data.width as usize).div_ceil(8);
         let expected_size = bytes_per_row * data.height as usize;
         if bitmap.len() != expected_size {
             return Err(format!(
@@ -491,23 +491,23 @@ impl BitFontEditor {
         }
 
         // Use set_glyph_pixels which handles undo properly
-        self.state.set_glyph_pixels(ch, pixels).map_err(|e| format!("Failed to set glyph: {}", e))?;
+        self.state.set_glyph_pixels(ch, pixels).map_err(|e| format!("Failed to set glyph: {e}"))?;
 
         self.invalidate_caches();
         Ok(())
     }
 
-    /// Get number of glyphs in the font (always 256 for BitFont)
+    /// Get number of glyphs in the font (always 256 for `BitFont`)
     pub fn glyph_count(&self) -> usize {
         256
     }
 
-    /// Get first character code (always 0 for BitFont)
+    /// Get first character code (always 0 for `BitFont`)
     pub fn first_char(&self) -> u32 {
         0
     }
 
-    /// Get last character code (always 255 for BitFont)
+    /// Get last character code (always 255 for `BitFont`)
     pub fn last_char(&self) -> u32 {
         255
     }
@@ -558,9 +558,9 @@ impl BitFontEditor {
     ///
     /// The autosave file is always saved as PSF2 format.
     pub fn load_from_autosave(autosave_path: &std::path::Path, original_path: PathBuf) -> Result<Self, String> {
-        let data = std::fs::read(autosave_path).map_err(|e| format!("Failed to read autosave: {}", e))?;
+        let data = std::fs::read(autosave_path).map_err(|e| format!("Failed to read autosave: {e}"))?;
         let name = original_path.file_stem().and_then(|s| s.to_str()).unwrap_or("Font").to_string();
-        let font = BitFont::from_bytes(name, &data).map_err(|e| format!("Failed to parse font: {}", e))?;
+        let font = BitFont::from_bytes(name, &data).map_err(|e| format!("Failed to parse font: {e}"))?;
         let size = font.size();
         let mut state = BitFontEditState::from_font(font.clone());
         state.set_file_path(Some(original_path));
@@ -604,7 +604,7 @@ impl BitFontEditor {
                 return Task::none();
             }
             BitFontEditorMessage::FontSizeApply(width, height) => {
-                let _ = self.resize_font(width, height);
+                let () = self.resize_font(width, height);
                 self.invalidate_caches();
                 return Task::none();
             }
@@ -1011,7 +1011,7 @@ impl BitFontEditor {
 
     /// Extend charset selection with shift+arrows (anchor/lead mode)
     /// Anchor stays at original position, lead moves with cursor
-    /// is_rectangle: true = Alt held (rectangle mode), false = linear (default)
+    /// `is_rectangle`: true = Alt held (rectangle mode), false = linear (default)
     fn extend_charset_selection(&mut self, dx: i32, dy: i32, is_rectangle: bool) {
         // move_charset_cursor_and_extend_selection handles starting a new selection
         // if none exists, so we don't need to call start_charset_selection_with_mode
@@ -1021,7 +1021,7 @@ impl BitFontEditor {
 
     /// Set charset selection lead position directly (for mouse drag)
     /// Anchor stays fixed where selection started, lead follows mouse
-    /// is_rectangle: true = Alt held (rectangle mode), false = linear (default)
+    /// `is_rectangle`: true = Alt held (rectangle mode), false = linear (default)
     fn set_charset_selection_lead(&mut self, col: i32, row: i32, is_rectangle: bool) {
         if self.state.charset_selection().is_none() {
             // Start new charset selection at current cursor (becomes anchor)
@@ -1365,7 +1365,7 @@ impl BitFontEditor {
         Task::none()
     }
 
-    /// Handle PageUp key - go to top row
+    /// Handle `PageUp` key - go to top row
     fn handle_page_up(&mut self) -> Task<BitFontEditorMessage> {
         match self.state.focused_panel() {
             BitFontFocusedPanel::EditGrid => {
@@ -1389,7 +1389,7 @@ impl BitFontEditor {
         Task::none()
     }
 
-    /// Handle PageDown key - go to bottom row
+    /// Handle `PageDown` key - go to bottom row
     fn handle_page_down(&mut self) -> Task<BitFontEditorMessage> {
         match self.state.focused_panel() {
             BitFontFocusedPanel::EditGrid => {
@@ -1490,7 +1490,7 @@ impl BitFontEditor {
         // Convert selected char to CP437 Unicode representation
         let selected_char_code = self.selected_char() as u8;
         let unicode_char = CP437_TO_UNICODE.get(selected_char_code as usize).copied().unwrap_or(selected_char_code as char);
-        let edit_title = format!("0x{:02X}: {}", selected_char_code, unicode_char);
+        let edit_title = format!("0x{selected_char_code:02X}: {unicode_char}");
 
         let edit_area = column![
             Space::new().height(Length::Fill),
@@ -1665,7 +1665,7 @@ impl BitFontEditor {
             },
             {
                 let (width, height) = self.state.font_size();
-                format!("{}×{}", width, height)
+                format!("{width}×{height}")
             },
             format!("Undo: {} Redo: {}", self.state.undo_stack_len(), self.state.redo_stack_len()),
         )
@@ -1693,7 +1693,7 @@ impl BitFontEditor {
         let font = self.state.build_font();
 
         // Determine format from extension
-        let ext = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()).unwrap_or_default();
+        let ext = path.extension().and_then(|e| e.to_str()).map(str::to_lowercase).unwrap_or_default();
 
         let bytes = if ext == "yaff" {
             // YAFF format is read-only for now, save as text representation

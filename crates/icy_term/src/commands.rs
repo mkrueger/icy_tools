@@ -1,14 +1,15 @@
-//! icy_term specific commands
+//! `icy_term` specific commands
 //!
-//! These commands are specific to icy_term and are merged with
-//! the common commands from icy_engine_gui.
+//! These commands are specific to `icy_term` and are merged with
+//! the common commands from `icy_engine_gui`.
 
 use icy_engine_gui::commands::{load_commands_from_str, CommandSet};
 
-/// The embedded icy_term specific commands TOML
+/// The embedded `icy_term` specific commands TOML
 const ICY_TERM_COMMANDS_TOML: &str = include_str!("../data/commands_icy_term.toml");
 
-/// Create the icy_term command set by merging common commands with icy_term specific commands
+/// Create the `icy_term` command set by merging common commands with `icy_term` specific commands
+#[must_use]
 pub fn create_icy_term_commands() -> CommandSet {
     let mut commands = icy_engine_gui::commands::create_common_commands();
 
@@ -18,11 +19,11 @@ pub fn create_icy_term_commands() -> CommandSet {
     commands
 }
 
-/// Command definitions for icy_term
+/// Command definitions for `icy_term`
 ///
 /// Each command is a `LazyLock<CommandDef>` that lazily loads:
 /// - Hotkeys from the embedded TOML
-/// - Translations from the LANGUAGE_LOADER
+/// - Translations from the `LANGUAGE_LOADER`
 pub mod cmd {
     use icy_engine_gui::define_commands;
 

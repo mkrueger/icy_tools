@@ -36,35 +36,6 @@ fn find_command_in_toml(toml_str: &str, id: &str) -> Option<CommandDef> {
     file.commands.into_iter().find(|cmd| cmd.id == id).map(|c| c.into_command_def())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::commands::toml_loader::CommandToml;
-
-    const TEST_TOML: &str = include_str!("../../data/commands_common.toml");
-
-    #[ignore = "fixme"]
-    #[test]
-    fn test_find_command_in_toml() {
-        // First, try to parse the TOML to see if it works at all
-        #[derive(serde::Deserialize)]
-        struct CommandsFile {
-            _commands: Vec<CommandToml>,
-        }
-
-        let result: Result<CommandsFile, _> = toml::from_str(TEST_TOML);
-        assert!(result.is_ok(), "TOML should parse without errors");
-
-        let cmd = find_command_in_toml(TEST_TOML, "edit.copy");
-        assert!(cmd.is_some(), "edit.copy should be found in TOML");
-
-        let cmd = cmd.unwrap();
-        assert_eq!(cmd.id, "edit.copy");
-        assert_eq!(cmd.hotkeys().len(), 1, "edit.copy should have hotkeys from TOML");
-        assert_eq!(cmd.primary_hotkey_display(), Some("Ctrl+C".to_string()));
-    }
-}
-
 /// Create a CommandDef from TOML, applying translations from the loader
 pub fn create_command_def(id: &'static str, toml_str: &'static str, loader: &FluentLanguageLoader) -> CommandDef {
     // Try to find in TOML, otherwise create a basic command
@@ -110,4 +81,33 @@ macro_rules! define_commands {
                 });
         )*
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::toml_loader::CommandToml;
+
+    const TEST_TOML: &str = include_str!("../../data/commands_common.toml");
+
+    #[ignore = "fixme"]
+    #[test]
+    fn test_find_command_in_toml() {
+        // First, try to parse the TOML to see if it works at all
+        #[derive(serde::Deserialize)]
+        struct CommandsFile {
+            _commands: Vec<CommandToml>,
+        }
+
+        let result: Result<CommandsFile, _> = toml::from_str(TEST_TOML);
+        assert!(result.is_ok(), "TOML should parse without errors");
+
+        let cmd = find_command_in_toml(TEST_TOML, "edit.copy");
+        assert!(cmd.is_some(), "edit.copy should be found in TOML");
+
+        let cmd = cmd.unwrap();
+        assert_eq!(cmd.id, "edit.copy");
+        assert_eq!(cmd.hotkeys().len(), 1, "edit.copy should have hotkeys from TOML");
+        assert_eq!(cmd.primary_hotkey_display(), Some("Ctrl+C".to_string()));
+    }
 }

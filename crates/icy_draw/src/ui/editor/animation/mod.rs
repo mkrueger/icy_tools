@@ -1,4 +1,4 @@
-//! Animation Editor for icy_draw
+//! Animation Editor for `icy_draw`
 //!
 //! Provides a Lua-scripted animation editor for creating ANSI animations.
 //! Features:
@@ -50,9 +50,11 @@ pub enum AnimationPane {
 /// Create monitor settings optimized for animation preview
 /// Uses auto-scaling without integer scaling for smooth preview
 fn create_preview_monitor_settings() -> Arc<MonitorSettings> {
-    let mut settings = MonitorSettings::default();
-    settings.scaling_mode = ScalingMode::Auto;
-    settings.use_integer_scaling = false;
+    let settings = MonitorSettings {
+        scaling_mode: ScalingMode::Auto,
+        use_integer_scaling: false,
+        ..Default::default()
+    };
     Arc::new(settings)
 }
 
@@ -251,7 +253,7 @@ impl AnimationEditor {
 
     /// Create a new animation editor from a file
     pub fn from_file(path: PathBuf, content: String) -> Self {
-        let parent_path = path.parent().map(|p| p.to_path_buf());
+        let parent_path = path.parent().map(std::path::Path::to_path_buf);
         let animator = Animator::run(&parent_path, content.clone());
 
         // Create pane layout: Code Editor | Preview
@@ -338,8 +340,7 @@ impl AnimationEditor {
         animator
             .log
             .iter()
-            .filter(|entry| entry.frame <= current_frame)
-            .last()
+            .rfind(|entry| entry.frame <= current_frame)
             .map(|entry| format!("[{}] {}", entry.frame, entry.text.clone()))
     }
 
@@ -349,7 +350,7 @@ impl AnimationEditor {
     }
 
     /// Get current time position and total duration in milliseconds
-    /// Returns (current_time_ms, total_time_ms)
+    /// Returns (`current_time_ms`, `total_time_ms`)
     pub fn get_time_info(&self) -> (u64, u64) {
         let animator = self.animator.lock();
         let frames = &animator.frames;
@@ -378,7 +379,7 @@ impl AnimationEditor {
         let tenths = (ms % 1000) / 100;
         let minutes = total_seconds / 60;
         let seconds = total_seconds % 60;
-        format!("{:02}:{:02}.{}", minutes, seconds, tenths)
+        format!("{minutes:02}:{seconds:02}.{tenths}")
     }
 
     /// Check if dirty
@@ -411,21 +412,21 @@ impl AnimationEditor {
 
     /// Set file path
     pub fn set_file_path(&mut self, path: PathBuf) {
-        self.parent_path = path.parent().map(|p| p.to_path_buf());
+        self.parent_path = path.parent().map(std::path::Path::to_path_buf);
         self.file_path = Some(path);
     }
 
     /// Save the animation script to a file
     pub fn save(&mut self, path: &std::path::Path) -> Result<(), String> {
         let content = self.get_script();
-        std::fs::write(path, content).map_err(|e| format!("Failed to save file: {}", e))?;
+        std::fs::write(path, content).map_err(|e| format!("Failed to save file: {e}"))?;
         self.is_dirty = false;
         Ok(())
     }
 
     /// Load an animation script from a file
     pub fn load_file(path: PathBuf) -> Result<Self, String> {
-        let content = std::fs::read_to_string(&path).map_err(|e| format!("Failed to load file: {}", e))?;
+        let content = std::fs::read_to_string(&path).map_err(|e| format!("Failed to load file: {e}"))?;
         Ok(Self::from_file(path, content))
     }
 
@@ -460,7 +461,7 @@ impl AnimationEditor {
 
     /// Load from an autosave file, using the original path for file association
     pub fn load_from_autosave(autosave_path: &std::path::Path, original_path: PathBuf) -> Result<Self, String> {
-        let content = std::fs::read_to_string(autosave_path).map_err(|e| format!("Failed to load autosave: {}", e))?;
+        let content = std::fs::read_to_string(autosave_path).map_err(|e| format!("Failed to load autosave: {e}"))?;
         let mut editor = Self::from_file(original_path, content);
         editor.is_dirty = true; // Autosave means we have unsaved changes
         Ok(editor)
@@ -516,11 +517,7 @@ impl AnimationEditor {
         if self.playback.is_playing && self.is_ready() {
             let animator = self.animator.lock();
             if !animator.frames.is_empty() {
-                let delay = animator
-                    .frames
-                    .get(self.playback.current_frame)
-                    .map(|(_, _, d)| *d)
-                    .unwrap_or(DEFAULT_FRAME_DELAY);
+                let delay = animator.frames.get(self.playback.current_frame).map_or(DEFAULT_FRAME_DELAY, |(_, _, d)| *d);
 
                 // Apply speed multiplier (higher speed = shorter delay)
                 let adjusted_delay = (delay as f32 / self.playback.speed) as u128;
@@ -997,7 +994,7 @@ impl AnimationEditor {
                 .into_iter()
                 .map(|(frame, entry_text)| {
                     row![
-                        text(format!("[{}]", frame)).size(11).style(|theme: &Theme| icy_ui::widget::text::Style {
+                        text(format!("[{frame}]")).size(11).style(|theme: &Theme| icy_ui::widget::text::Style {
                             color: Some(theme.accent.selected),
                         }),
                         Space::new().width(6),
@@ -1105,7 +1102,7 @@ impl AnimationEditor {
                             // Emit ANSI color codes (simplified - using palette indices)
                             let fg_idx = fg.as_palette_index().unwrap_or(7);
                             let bg_idx = bg.as_palette_index().unwrap_or(0);
-                            result.push_str(&format!("\x1b[38;5;{}m\x1b[48;5;{}m", fg_idx, bg_idx));
+                            result.push_str(&format!("\x1b[38;5;{fg_idx}m\x1b[48;5;{bg_idx}m"));
                             last_fg = Some(fg);
                             last_bg = Some(bg);
                         }

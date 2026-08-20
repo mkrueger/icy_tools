@@ -14,7 +14,7 @@ pub fn test_petscii() {
         let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
 
         let mut screen = ScreenMode::Vic.create_screen(TerminalEmulation::PETscii, None);
-        super::run_parser_compare(&mut screen, &cur_entry, &data);
+        super::run_parser_compare(&mut screen, &cur_entry, data);
     }
 }
 

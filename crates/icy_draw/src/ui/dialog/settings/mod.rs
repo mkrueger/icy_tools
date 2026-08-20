@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use icy_engine::BitFont;
 use icy_engine_gui::settings::{effect_box, left_label, show_monitor_settings_with_options, update_monitor_settings, MonitorSettingsMessage};
-use icy_engine_gui::ui::*;
+use icy_engine_gui::ui::{
+    browse_button, dialog_area, modal_container, primary_button, secondary_button, section_header, separator, DIALOG_SPACING, DIALOG_WIDTH_XARGLE,
+    TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
+};
 use icy_engine_gui::{Dialog, DialogAction, MonitorSettings};
 use icy_ui::{
     keyboard::{key::Named, Key},
@@ -98,7 +101,7 @@ impl SettingsDialog {
         let mut temp_fkeys = fkeys;
         temp_fkeys.clamp_current_set();
 
-        let charset_font = preview_font.unwrap_or_else(BitFont::default);
+        let charset_font = preview_font.unwrap_or_default();
 
         Self {
             options,
@@ -175,8 +178,7 @@ impl SettingsDialog {
     }
 
     fn view_outline(&self) -> Element<'_, crate::ui::main_window::Message> {
-        let picker =
-            outline_picker::outline_picker(self.temp_outline_style, self.outline_cursor).map(|msg| crate::ui::main_window::Message::SettingsDialog(msg));
+        let picker = outline_picker::outline_picker(self.temp_outline_style, self.outline_cursor).map(crate::ui::main_window::Message::SettingsDialog);
 
         let help_text = text("Type letter A-S  |  ←↑↓→: Navigate  |  Enter: Confirm")
             .size(TEXT_SIZE_SMALL)
@@ -199,14 +201,12 @@ impl SettingsDialog {
     }
 
     fn view_paths(&self) -> Element<'_, crate::ui::main_window::Message> {
-        let config_dir = Settings::config_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
-        let config_file = Settings::config_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
-        let log_file = Settings::log_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
-        let text_art_font_dir = Settings::text_art_font_dir()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| "N/A".to_string());
-        let plugin_dir = Settings::plugin_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
-        let taglists_dir = Settings::taglists_dir().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
+        let config_dir = Settings::config_dir().map_or_else(|| "N/A".to_string(), |p| p.display().to_string());
+        let config_file = Settings::config_file().map_or_else(|| "N/A".to_string(), |p| p.display().to_string());
+        let log_file = Settings::log_file().map_or_else(|| "N/A".to_string(), |p| p.display().to_string());
+        let text_art_font_dir = Settings::text_art_font_dir().map_or_else(|| "N/A".to_string(), |p| p.display().to_string());
+        let plugin_dir = Settings::plugin_dir().map_or_else(|| "N/A".to_string(), |p| p.display().to_string());
+        let taglists_dir = Settings::taglists_dir().map_or_else(|| "N/A".to_string(), |p| p.display().to_string());
 
         let inner: Element<'_, crate::ui::main_window::Message> = column![
             row![
@@ -333,7 +333,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
         let button_area_row = icy_engine_gui::ui::button_row_with_left(buttons_left, buttons_right);
 
         let dialog_content = dialog_area(column![category_tabs, Space::new().height(DIALOG_SPACING), content_container].into());
-        let button_area = dialog_area(button_area_row.into());
+        let button_area = dialog_area(button_area_row);
 
         modal_container(
             column![container(dialog_content).height(Length::Fill), separator(), button_area].into(),
@@ -413,7 +413,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                 if let Some(dir) = Settings::config_dir() {
                     let _ = std::fs::create_dir_all(&dir);
                     if let Err(err) = open::that(&dir) {
-                        log::error!("Failed to open config dir: {}", err);
+                        log::error!("Failed to open config dir: {err}");
                     }
                 }
                 Some(DialogAction::None)
@@ -428,12 +428,12 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                         #[cfg(not(windows))]
                         {
                             if let Err(err) = open::that(&log_file) {
-                                log::error!("Failed to open log file: {}", err);
+                                log::error!("Failed to open log file: {err}");
                             }
                         }
                     } else if let Some(parent) = log_file.parent() {
                         if let Err(err) = open::that(parent) {
-                            log::error!("Failed to open log directory: {}", err);
+                            log::error!("Failed to open log directory: {err}");
                         }
                     }
                 }
@@ -443,7 +443,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                 if let Some(dir) = Settings::text_art_font_dir() {
                     let _ = std::fs::create_dir_all(&dir);
                     if let Err(err) = open::that(&dir) {
-                        log::error!("Failed to open font dir: {}", err);
+                        log::error!("Failed to open font dir: {err}");
                     }
                 }
                 Some(DialogAction::None)
@@ -452,7 +452,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                 if let Some(dir) = Settings::plugin_dir() {
                     let _ = std::fs::create_dir_all(&dir);
                     if let Err(err) = open::that(&dir) {
-                        log::error!("Failed to open plugin dir: {}", err);
+                        log::error!("Failed to open plugin dir: {err}");
                     }
                 }
                 Some(DialogAction::None)
@@ -461,7 +461,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                 if let Some(dir) = Settings::taglists_dir() {
                     let _ = std::fs::create_dir_all(&dir);
                     if let Err(err) = open::that(&dir) {
-                        log::error!("Failed to open taglists dir: {}", err);
+                        log::error!("Failed to open taglists dir: {err}");
                     }
                 }
                 Some(DialogAction::None)
@@ -475,7 +475,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                     guard.fkeys = self.temp_fkeys.clone();
                     guard.store_persistent();
                     if let Err(err) = guard.fkeys.save() {
-                        log::error!("Failed to save fkeys: {}", err);
+                        log::error!("Failed to save fkeys: {err}");
                     }
                 }
 
@@ -497,7 +497,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
             guard.fkeys = self.temp_fkeys.clone();
             guard.store_persistent();
             if let Err(err) = guard.fkeys.save() {
-                log::error!("Failed to save fkeys: {}", err);
+                log::error!("Failed to save fkeys: {err}");
             }
         }
 
@@ -609,7 +609,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                     }
                     return Some(DialogAction::None);
                 }
-                Key::Named(Named::Space) | Key::Named(Named::Enter) => {
+                Key::Named(Named::Space | Named::Enter) => {
                     self.temp_outline_style = self.outline_cursor;
                     return Some(DialogAction::None);
                 }
@@ -749,7 +749,7 @@ impl Dialog<crate::ui::main_window::Message> for SettingsDialog {
                 Some(DialogAction::None)
             }
             // Space/Enter to confirm selection
-            Key::Named(Named::Space) | Key::Named(Named::Enter) if self.selected_charset_slot.is_some() => {
+            Key::Named(Named::Space | Named::Enter) if self.selected_charset_slot.is_some() => {
                 if let Some(slot) = self.selected_charset_slot {
                     let set_idx = self.temp_fkeys.current_set();
                     self.temp_fkeys.set_code_at(set_idx, slot, self.charset_cursor as u16);

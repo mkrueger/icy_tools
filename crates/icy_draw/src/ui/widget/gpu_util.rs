@@ -1,6 +1,6 @@
 //! Small GPU helpers shared by the widget renderers.
 //!
-//! All of icy_draw's `iced_wgpu`-backed widgets build essentially the same
+//! All of `icy_draw`'s `iced_wgpu`-backed widgets build essentially the same
 //! render pipeline and most share the same bind-group shape (uniform +
 //! texture + sampler). This module captures both as small functions so each
 //! widget only spells out what it actually customises.
@@ -8,7 +8,7 @@
 use icy_ui::wgpu;
 use std::num::NonZeroU64;
 
-/// Build a render pipeline using icy_draw's standard widget defaults:
+/// Build a render pipeline using `icy_draw`'s standard widget defaults:
 ///
 /// - vertex entry `vs_main`, fragment entry `fs_main`
 /// - alpha blending against `format`, full color write mask
@@ -112,7 +112,7 @@ pub fn build_uniform_texture_sampler_layout(device: &wgpu::Device, opts: Uniform
 /// Description of a 2D / 2D-array texture that should be clamped to the
 /// device's reported limits before allocation.
 ///
-/// All shader-backed widgets in icy_draw used to allocate textures using
+/// All shader-backed widgets in `icy_draw` used to allocate textures using
 /// hard-coded sizes. On the wgpu GLES downlevel path
 /// `max_texture_dimension_2d` can be as low as 2048 and
 /// `max_texture_array_layers` as low as 256; allocating beyond that panics
@@ -199,18 +199,7 @@ fn clamp_texture_size(label: &str, width: u32, height: u32, layers: u32, max_dim
     let l = req_layers.min(max_layers);
 
     if w != req_w || h != req_h || l != req_layers {
-        log::warn!(
-            "{}: texture clamped to device limits ({}x{}x{} -> {}x{}x{}; max_dim={}, max_layers={})",
-            label,
-            req_w,
-            req_h,
-            req_layers,
-            w,
-            h,
-            l,
-            max_dim,
-            max_layers,
-        );
+        log::warn!("{label}: texture clamped to device limits ({req_w}x{req_h}x{req_layers} -> {w}x{h}x{l}; max_dim={max_dim}, max_layers={max_layers})");
     }
 
     (w, h, l)

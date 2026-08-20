@@ -3,7 +3,7 @@
 //! Draws geometric shapes between two drag points.
 //! Supports half-block mode for higher resolution.
 //!
-//! This tool handles: Line, RectangleOutline, RectangleFilled, EllipseOutline, EllipseFilled
+//! This tool handles: Line, `RectangleOutline`, `RectangleFilled`, `EllipseOutline`, `EllipseFilled`
 
 use icy_engine::{MouseButton, Position, TextPane};
 use icy_engine_edit::AttributedChar;
@@ -122,7 +122,7 @@ impl ShapeTool {
     }
 
     /// Generate overlay mask for shape preview during drag (character mode).
-    /// Returns (rgba_data, mask_rect) for the overlay.
+    /// Returns (`rgba_data`, `mask_rect`) for the overlay.
     pub fn overlay_mask_for_drag(
         tool: Tool,
         font_width: f32,
@@ -189,7 +189,7 @@ impl ShapeTool {
 
     /// Generate overlay mask for shape preview during drag (half-block mode).
     /// In half-block mode, Y coordinates have 2x resolution.
-    /// Returns (rgba_data, mask_rect) for the overlay.
+    /// Returns (`rgba_data`, `mask_rect`) for the overlay.
     pub fn overlay_mask_for_drag_half_block(
         tool: Tool,
         font_width: f32,
@@ -333,10 +333,10 @@ impl ToolHandler for ShapeTool {
                     _ => self.tool,
                 };
 
-                if new_tool != self.tool {
-                    ToolResult::SwitchTool(super::ToolId::from(new_tool))
-                } else {
+                if new_tool == self.tool {
                     ToolResult::None
+                } else {
+                    ToolResult::SwitchTool(super::ToolId::from(new_tool))
                 }
             }
             _ => ToolResult::None,
@@ -544,7 +544,7 @@ impl ToolHandler for ShapeTool {
                         };
 
                         let pts_hb = shape_points(self.tool, start_hb, end_hb);
-                        let offset = _ctx.state.get_cur_layer().map(|l| l.offset()).unwrap_or_default();
+                        let offset = _ctx.state.get_cur_layer().map(icy_engine_edit::Layer::offset).unwrap_or_default();
                         for p in pts_hb {
                             if p.y < 0 {
                                 continue;
@@ -554,7 +554,7 @@ impl ToolHandler for ShapeTool {
                             let cell_doc = cell_layer + offset;
 
                             if self.clear_mode {
-                                let (layer_w, layer_h) = _ctx.state.get_cur_layer().map(|l| (l.width(), l.height())).unwrap_or((0, 0));
+                                let (layer_w, layer_h) = _ctx.state.get_cur_layer().map_or((0, 0), |l| (l.width(), l.height()));
                                 if cell_layer.x < 0 || cell_layer.y < 0 || cell_layer.x >= layer_w || cell_layer.y >= layer_h {
                                     continue;
                                 }
@@ -642,11 +642,9 @@ impl ToolHandler for ShapeTool {
                                 changed = true;
                             }
                         }
-                        Physical::Code(icy_ui::keyboard::key::Code::BracketRight) => {
-                            if b.brush_size != 1 {
-                                b.brush_size = 1;
-                                changed = true;
-                            }
+                        Physical::Code(icy_ui::keyboard::key::Code::BracketRight) if b.brush_size != 1 => {
+                            b.brush_size = 1;
+                            changed = true;
                         }
                         _ => {}
                     }

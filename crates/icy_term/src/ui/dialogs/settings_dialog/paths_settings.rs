@@ -17,19 +17,15 @@ pub fn paths_settings_content_generic<'a, M: Clone + 'static>(
     capture_path: String,
     on_message: impl Fn(SettingsDialogMessage) -> M + Clone + 'static,
 ) -> Element<'a, M> {
-    let config_dir = directories::ProjectDirs::from("com", "GitHub", "icy_term")
-        .map(|p| p.config_dir().display().to_string())
-        .unwrap_or_else(|| "N/A".to_string());
+    let config_dir = directories::ProjectDirs::from("com", "GitHub", "icy_term").map_or_else(|| "N/A".to_string(), |p| p.config_dir().display().to_string());
 
     let config_file = directories::ProjectDirs::from("com", "GitHub", "icy_term")
-        .map(|p| p.config_dir().join("options.toml").display().to_string())
-        .unwrap_or_else(|| "N/A".to_string());
+        .map_or_else(|| "N/A".to_string(), |p| p.config_dir().join("options.toml").display().to_string());
 
     let phonebook_file = directories::ProjectDirs::from("com", "GitHub", "icy_term")
-        .map(|p| p.config_dir().join("phonebook.toml").display().to_string())
-        .unwrap_or_else(|| "N/A".to_string());
+        .map_or_else(|| "N/A".to_string(), |p| p.config_dir().join("phonebook.toml").display().to_string());
 
-    let log_file = Options::get_log_file().map(|p| p.display().to_string()).unwrap_or_else(|| "N/A".to_string());
+    let log_file = Options::get_log_file().map_or_else(|| "N/A".to_string(), |p| p.display().to_string());
 
     let on_msg = on_message.clone();
     let on_msg2 = on_message.clone();

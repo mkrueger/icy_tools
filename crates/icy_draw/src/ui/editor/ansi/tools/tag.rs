@@ -29,7 +29,7 @@ use icy_engine::{Tag, TagPlacement, TagRole, TextPane};
 /// Consolidated state for the Tag tool system.
 ///
 /// This structure holds all tag-related state that was previously scattered
-/// across AnsiEditor fields. It manages:
+/// across `AnsiEditor` fields. It manages:
 /// - Tag dialogs (edit and list)
 /// - Drag operations (single and multi-select)
 /// - Selection state
@@ -45,11 +45,11 @@ pub struct TagToolState {
     pub drag_active: bool,
     /// Indices of tags being dragged (supports multi-selection)
     pub drag_indices: Vec<usize>,
-    /// Tag positions at start of drag (parallel to drag_indices)
+    /// Tag positions at start of drag (parallel to `drag_indices`)
     pub drag_start_positions: Vec<Position>,
     /// Selected tag indices for multi-selection
     pub selection: Vec<usize>,
-    /// Context menu state: Some((tag_index, screen_position)) when open
+    /// Context menu state: `Some((tag_index`, `screen_position`)) when open
     pub context_menu: Option<(usize, Position)>,
     /// If Some(index), we are adding a new tag and dragging it
     pub add_new_index: Option<usize>,
@@ -61,7 +61,7 @@ pub struct TagToolState {
     pub drag_start: Position,
     /// Drag current position (text coordinates)
     pub drag_cur: Position,
-    /// Pending click: Some((tag_index, position)) when mouse pressed but not yet dragged
+    /// Pending click: `Some((tag_index`, position)) when mouse pressed but not yet dragged
     pub pending_click: Option<(usize, Position)>,
     /// Double-click detector for opening edit dialog
     pub double_click_detector: DoubleClickDetector<usize>,
@@ -129,7 +129,7 @@ impl TagToolState {
             }
             TagListDialogMessage::Delete(index) => {
                 if let Err(err) = state.remove_tag(index) {
-                    log::warn!("Failed to remove tag: {}", err);
+                    log::warn!("Failed to remove tag: {err}");
                     return ToolResult::None;
                 }
 
@@ -163,7 +163,7 @@ impl TagToolState {
     pub fn delete_tag(&mut self, state: &mut EditState, index: usize) -> ToolResult {
         self.close_context_menu();
         if let Err(err) = state.remove_tag(index) {
-            log::warn!("Failed to remove tag: {}", err);
+            log::warn!("Failed to remove tag: {err}");
             return ToolResult::None;
         }
 
@@ -180,7 +180,7 @@ impl TagToolState {
     pub fn clone_tag(&mut self, state: &mut EditState, index: usize) -> ToolResult {
         self.close_context_menu();
         if let Err(err) = state.clone_tag(index) {
-            log::warn!("Failed to clone tag: {}", err);
+            log::warn!("Failed to clone tag: {err}");
             return ToolResult::None;
         }
         ToolResult::Commit("Clone tag".to_string())
@@ -195,14 +195,14 @@ impl TagToolState {
 
         for index in indices {
             if let Err(err) = state.remove_tag(index) {
-                log::warn!("Failed to remove tag {}: {}", index, err);
+                log::warn!("Failed to remove tag {index}: {err}");
             }
         }
 
         let count = self.selection.len();
         self.selection.clear();
 
-        ToolResult::Commit(format!("Remove {} tags", count))
+        ToolResult::Commit(format!("Remove {count} tags"))
     }
 
     pub fn generate_next_tag_name(state: &EditState) -> String {
@@ -230,13 +230,13 @@ impl TagToolState {
 
         self.drag_undo = Some(state.begin_atomic_undo("Add tag"));
 
-        if let Err(err) = (|| {
+        if let Err(err) = {
             if !state.get_buffer().show_tags {
                 let _ = state.show_tags(true);
             }
             state.add_new_tag(new_tag)
-        })() {
-            log::warn!("Failed to add tag: {}", err);
+        } {
+            log::warn!("Failed to add tag: {err}");
             self.drag_undo = None;
             return ToolResult::None;
         }
@@ -346,12 +346,12 @@ impl TagToolState {
                 };
 
                 if let Err(err) = fs::create_dir_all(&dir) {
-                    log::error!("Failed to create taglists directory {:?}: {}", dir, err);
+                    log::error!("Failed to create taglists directory {dir:?}: {err}");
                     return ToolResult::None;
                 }
 
                 let Some(file_name) = src_path.file_name() else {
-                    log::error!("Invalid taglist file path (no filename): {:?}", src_path);
+                    log::error!("Invalid taglist file path (no filename): {src_path:?}");
                     return ToolResult::None;
                 };
 
@@ -373,7 +373,7 @@ impl TagToolState {
                         ToolResult::Redraw
                     }
                     Err(err) => {
-                        log::error!("Failed to import taglist {:?} -> {:?}: {}", src_path, dest_path, err);
+                        log::error!("Failed to import taglist {src_path:?} -> {dest_path:?}: {err}");
                         ToolResult::None
                     }
                 }
@@ -434,23 +434,21 @@ impl TagToolState {
 
                 if let Some(index) = edit_index {
                     if let Err(err) = state.update_tag(new_tag, index) {
-                        log::warn!("Failed to update tag: {}", err);
+                        log::warn!("Failed to update tag: {err}");
                         return ToolResult::None;
                     }
-                } else {
-                    if let Err(err) = (|| {
-                        if !state.get_buffer().show_tags {
-                            state.show_tags(true)?;
-                        }
-                        state.add_new_tag(new_tag)?;
-                        if from_selection {
-                            let _ = state.clear_selection();
-                        }
-                        Ok::<(), icy_engine::EngineError>(())
-                    })() {
-                        log::warn!("Failed to add tag: {}", err);
-                        return ToolResult::None;
+                } else if let Err(err) = (|| {
+                    if !state.get_buffer().show_tags {
+                        state.show_tags(true)?;
                     }
+                    state.add_new_tag(new_tag)?;
+                    if from_selection {
+                        let _ = state.clear_selection();
+                    }
+                    Ok::<(), icy_engine::EngineError>(())
+                })() {
+                    log::warn!("Failed to add tag: {err}");
+                    return ToolResult::None;
                 }
 
                 ToolResult::Commit(commit_message.to_string())
@@ -493,9 +491,7 @@ impl TagToolState {
         use icy_ui::Length;
         use icy_ui::Theme;
 
-        let Some((tag_index, pos)) = self.context_menu else {
-            return None;
-        };
+        let (tag_index, pos) = self.context_menu?;
 
         let edit_btn = button(text(fl!("tag-toolbar-edit")).size(TEXT_SIZE_NORMAL))
             .padding([4, 12])
@@ -535,8 +531,8 @@ impl TagToolState {
         let scale = display_scale.max(0.001);
         let font_w = font_width.max(1.0);
         let font_h = font_height.max(1.0);
-        let menu_x = ((pos.x as f32 - scroll_x) * font_w * scale) as f32;
-        let menu_y = ((pos.y as f32 - scroll_y + 1.0) * font_h * scale) as f32;
+        let menu_x = (pos.x as f32 - scroll_x) * font_w * scale;
+        let menu_y = (pos.y as f32 - scroll_y + 1.0) * font_h * scale;
 
         let menu_positioned = container(menu_content).padding(icy_ui::Padding {
             top: menu_y,
@@ -990,7 +986,7 @@ impl ToolHandler for TagTool {
 impl TagTool {
     /// Handle mouse press for Tag tool
     ///
-    /// Returns ToolResult for the editor to process.
+    /// Returns `ToolResult` for the editor to process.
     pub fn handle_mouse_down(
         state: &mut icy_engine_edit::EditState,
         tag_state: &mut TagToolState,
@@ -1246,7 +1242,7 @@ impl TagTool {
                         }
                         let count = tag_state.selection.len();
                         tag_state.selection.clear();
-                        return ToolResult::Commit(format!("Delete {} tag(s)", count));
+                        return ToolResult::Commit(format!("Delete {count} tag(s)"));
                     }
                 }
                 Named::Escape => {

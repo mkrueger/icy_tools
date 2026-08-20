@@ -105,8 +105,8 @@ fn test_programmatic_command_building() {
 
     for (id, hotkeys, hotkeys_mac) in commands {
         let mut cmd = CommandDef::new(id);
-        cmd = cmd.with_hotkeys(&hotkeys.iter().map(|s| *s).collect::<Vec<_>>());
-        cmd = cmd.with_hotkeys_mac(&hotkeys_mac.iter().map(|s| *s).collect::<Vec<_>>());
+        cmd = cmd.with_hotkeys(&hotkeys.to_vec());
+        cmd = cmd.with_hotkeys_mac(&hotkeys_mac.to_vec());
         set.add(cmd);
     }
 

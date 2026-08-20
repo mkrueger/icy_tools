@@ -1,4 +1,4 @@
-//! Editor modules for icy_draw
+//! Editor modules for `icy_draw`
 //!
 //! Contains different editor types:
 //! - `ansi` - ANSI art editor (main editor)

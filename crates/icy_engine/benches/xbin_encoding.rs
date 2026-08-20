@@ -21,7 +21,7 @@ fn load_all_xbin_files() -> Vec<icy_engine::TextBuffer> {
             let path = entry.path();
             if path
                 .extension()
-                .map_or(false, |ext| ext.eq_ignore_ascii_case("xb") || ext.eq_ignore_ascii_case("xbin"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("xb") || ext.eq_ignore_ascii_case("xbin"))
             {
                 if let Ok(data) = fs::read(&path) {
                     if let Ok(screen) = FileFormat::XBin.from_bytes(&data, None) {

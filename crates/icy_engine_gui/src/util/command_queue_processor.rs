@@ -82,12 +82,7 @@ impl CommandQueueProcessor {
     /// - Async commands are processed via the handler trait
     /// - Screen commands are batched with time-limited locks
     pub async fn process_queue<H: AsyncCommandHandler>(&mut self, handler: &mut H) {
-        loop {
-            // Get next command
-            let Some(cmd) = self.command_queue.pop_front() else {
-                break;
-            };
-
+        while let Some(cmd) = self.command_queue.pop_front() {
             // Try to process as async command first
             match handler.try_handle_async(&cmd).await {
                 AsyncCommandResult::Handled => continue,

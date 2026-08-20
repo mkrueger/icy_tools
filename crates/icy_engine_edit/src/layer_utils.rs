@@ -31,10 +31,10 @@ pub fn chars_from_area(source: &Layer, area: Rectangle) -> CharGrid {
     let height = area.size.height.max(0) as usize;
     let mut result = vec![vec![AttributedChar::invisible(); width]; height];
 
-    for y in 0..height {
-        for x in 0..width {
+    for (y, row) in result.iter_mut().enumerate() {
+        for (x, cell) in row.iter_mut().enumerate() {
             let src_pos = area.start + Position::new(x as i32, y as i32);
-            result[y][x] = source.char_at(src_pos);
+            *cell = source.char_at(src_pos);
         }
     }
     result

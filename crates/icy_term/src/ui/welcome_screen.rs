@@ -26,7 +26,7 @@ pub fn create_welcome_screen() -> TextScreen {
     let port = MCP_PORT.load(std::sync::atomic::Ordering::Relaxed);
     if port != 0 {
         // Print MCP message in yellow (color 14)
-        let mcp_msg = format!("MCP SERVER STARTED ON PORT {}.", port);
+        let mcp_msg = format!("MCP SERVER STARTED ON PORT {port}.");
         let yellow_attr = TextAttribute::from_u8(0x0E, icy_engine::IceMode::Ice);
 
         for msg_char in mcp_msg.chars() {

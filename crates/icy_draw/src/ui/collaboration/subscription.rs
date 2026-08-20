@@ -19,7 +19,7 @@ pub enum CollaborationMessage {
     Ready(CollaborationClient),
 }
 
-/// Wrapper around ClientHandle that can be cloned and sent as a message
+/// Wrapper around `ClientHandle` that can be cloned and sent as a message
 #[derive(Clone)]
 pub struct CollaborationClient {
     handle: ClientHandle,
@@ -136,7 +136,7 @@ impl CollaborationClient {
     }
 }
 
-/// Global config storage for subscription (needed because run() takes fn pointer)
+/// Global config storage for subscription (needed because `run()` takes fn pointer)
 static PENDING_CONFIG: OnceLock<std::sync::Mutex<Option<ClientConfig>>> = OnceLock::new();
 
 /// Set the config for the next connection

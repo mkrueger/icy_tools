@@ -323,7 +323,7 @@ fn test_vt52_text_and_commands() {
     parser.parse(b"Hello \x1BE World", &mut sink);
 
     assert_eq!(sink.commands.len(), 1); // Clear screen
-    assert!(sink.text.len() > 0);
+    assert!(!sink.text.is_empty());
     let combined_text = sink.text.join("");
     assert!(combined_text.contains("Hello"));
     assert!(combined_text.contains("World"));

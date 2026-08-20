@@ -766,7 +766,7 @@ impl CharSetEditState {
 /// Map from grid position to character code
 /// Grid is 16 columns x 6 rows for chars '!' (0x21) to '~' (0x7E)
 pub fn grid_to_char(col: i32, row: i32) -> Option<char> {
-    if col < 0 || col >= 16 || row < 0 || row >= 6 {
+    if !(0..16).contains(&col) || !(0..6).contains(&row) {
         return None;
     }
     let index = row * 16 + col;
@@ -781,7 +781,7 @@ pub fn grid_to_char(col: i32, row: i32) -> Option<char> {
 /// Map from character to grid position
 pub fn char_to_grid(ch: char) -> Option<(i32, i32)> {
     let code = ch as u8;
-    if code >= b'!' && code <= b'~' {
+    if (b'!'..=b'~').contains(&code) {
         let index = (code - b'!') as i32;
         Some((index % 16, index / 16))
     } else {

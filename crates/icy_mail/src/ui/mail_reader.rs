@@ -376,7 +376,7 @@ fn cell<'a>(value: String, width: f32) -> Element<'a, Message> {
 }
 
 /// Header strip that stays put while the list scrolls underneath it.
-fn header_row<'a>(cells: Vec<Element<'a, Message>>) -> Element<'a, Message> {
+fn header_row(cells: Vec<Element<'_, Message>>) -> Element<'_, Message> {
     let mut content = row![].spacing(4).padding([0, 6]).align_y(Alignment::Center);
     for cell in cells {
         content = content.push(cell);
@@ -395,11 +395,11 @@ fn header_row<'a>(cells: Vec<Element<'a, Message>>) -> Element<'a, Message> {
         .into()
 }
 
-fn sort_header<'a>(label: &'a str, width: f32, active: bool, direction: SortDirection, on_press: Message) -> Element<'a, Message> {
+fn sort_header(label: &str, width: f32, active: bool, direction: SortDirection, on_press: Message) -> Element<'_, Message> {
     opt_sort_header(label, width, active, direction, Some(on_press))
 }
 
-fn opt_sort_header<'a>(label: &'a str, width: f32, active: bool, direction: SortDirection, on_press: Option<Message>) -> Element<'a, Message> {
+fn opt_sort_header(label: &str, width: f32, active: bool, direction: SortDirection, on_press: Option<Message>) -> Element<'_, Message> {
     let arrow = if active { direction.arrow() } else { "" };
     let content = row![
         text(label).size(HEADER_TEXT_SIZE).font(Font::MONOSPACE),
@@ -430,7 +430,7 @@ fn opt_sort_header<'a>(label: &'a str, width: f32, active: bool, direction: Sort
 }
 
 /// Wraps a pane in a border that marks keyboard focus and forwards clicks as focus changes.
-fn pane_frame<'a>(content: Element<'a, Message>, focused: bool) -> container::Container<'a, Message> {
+fn pane_frame(content: Element<'_, Message>, focused: bool) -> container::Container<'_, Message> {
     container(content).style(move |theme: &icy_ui::Theme| container::Style {
         border: Border {
             width: 1.0,
@@ -486,6 +486,6 @@ fn segmented_style(theme: &icy_ui::Theme, status: icy_ui::widget::button::Status
 }
 
 /// Click anywhere in a pane to give it keyboard focus.
-fn focus_on_click<'a>(content: Element<'a, Message>, pane: Pane) -> Element<'a, Message> {
+fn focus_on_click(content: Element<'_, Message>, pane: Pane) -> Element<'_, Message> {
     mouse_area(content).on_press(Message::FocusPane(pane)).into()
 }

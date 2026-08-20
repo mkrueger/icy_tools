@@ -1,10 +1,10 @@
 //! ANSI Editor Tool Panel wrapper
 //!
-//! Wraps the shared GenericToolPanel for use with the ANSI editor's Tool enum.
-//! Provides the same interface as the old tool_panel_gpu.rs but uses the shared
+//! Wraps the shared `GenericToolPanel` for use with the ANSI editor's Tool enum.
+//! Provides the same interface as the old `tool_panel_gpu.rs` but uses the shared
 //! GPU rendering backend.
 //!
-//! The ToolPanel now takes a reference to the ToolRegistry and uses it to
+//! The `ToolPanel` now takes a reference to the `ToolRegistry` and uses it to
 //! determine which tool slots to display and how to handle clicks.
 
 use icy_engine_edit::tools::Tool;
@@ -22,7 +22,7 @@ pub enum ToolPanelMessage {
     Tick(f32),
 }
 
-/// Tool icons in atlas order (must match STANDARD_ICONS in tool_panel/mod.rs)
+/// Tool icons in atlas order (must match `STANDARD_ICONS` in `tool_panel/mod.rs`)
 const TOOL_ICON_ORDER: &[Tool] = &[
     Tool::Click,            // 0
     Tool::Select,           // 1
@@ -100,7 +100,7 @@ impl ToolPanel {
         }
     }
 
-    /// Update the tool panel state (only handles Tick, ClickSlot is handled by the editor)
+    /// Update the tool panel state (only handles Tick, `ClickSlot` is handled by the editor)
     pub fn update(&mut self, message: ToolPanelMessage) -> icy_ui::Task<ToolPanelMessage> {
         match message {
             ToolPanelMessage::ClickSlot(_) => {

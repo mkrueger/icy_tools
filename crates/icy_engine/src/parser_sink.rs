@@ -1312,7 +1312,7 @@ mod tests {
     fn draws_inline_ppm_apc() {
         let ppm = b"P3\n2 1\n255\n255 0 0  0 255 0\n";
         let encoded = general_purpose::STANDARD.encode(ppm);
-        let sequence = format!("\x1B_SyncTERM:C;DrawPPMBlob;DW=4;DH=2;{}\x1B\\", encoded);
+        let sequence = format!("\x1B_SyncTERM:C;DrawPPMBlob;DW=4;DH=2;{encoded}\x1B\\");
         let mut screen = crate::TextScreen::new((80, 25));
         let mut parser = AnsiParser::new();
 
@@ -1327,7 +1327,7 @@ mod tests {
     fn transforms_and_positions_inline_ppm_apc() {
         let ppm = b"P3\n2 1\n255\n255 0 0  0 255 0\n";
         let encoded = general_purpose::STANDARD.encode(ppm);
-        let sequence = format!("\x1B_SyncTERM:C;DrawPPMBlob;FX;ZX=2;ZY=2;DX=3;DY=5;{}\x1B\\", encoded);
+        let sequence = format!("\x1B_SyncTERM:C;DrawPPMBlob;FX;ZX=2;ZY=2;DX=3;DY=5;{encoded}\x1B\\");
         let mut screen = crate::TextScreen::new((80, 25));
         let mut parser = AnsiParser::new();
         parser.parse(sequence.as_bytes(), &mut ScreenSink::new(&mut screen));
@@ -1342,7 +1342,7 @@ mod tests {
     fn clips_negative_inline_ppm_destination() {
         let ppm = b"P3\n2 1\n255\n255 0 0  0 255 0\n";
         let encoded = general_purpose::STANDARD.encode(ppm);
-        let sequence = format!("\x1B_SyncTERM:C;DrawPPMBlob;DX=-1;{}\x1B\\", encoded);
+        let sequence = format!("\x1B_SyncTERM:C;DrawPPMBlob;DX=-1;{encoded}\x1B\\");
         let mut screen = crate::TextScreen::new((80, 25));
         let mut parser = AnsiParser::new();
         parser.parse(sequence.as_bytes(), &mut ScreenSink::new(&mut screen));

@@ -1,4 +1,4 @@
-//! Top toolbar component for BitFont Editor
+//! Top toolbar component for `BitFont` Editor
 //!
 //! Shows keyboard shortcut hints for actions not in the menu.
 

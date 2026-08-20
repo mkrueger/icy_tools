@@ -2,7 +2,7 @@
 //!
 //! Provides a dialog for importing fonts from various file formats:
 //! - Native font files (.yaff, .psf, .f08, etc.) - direct import
-//! - XB files - import font from XBin with font selection (1 or 2 fonts)
+//! - XB files - import font from `XBin` with font selection (1 or 2 fonts)
 //! - Image files - convert raster image to bitmap font
 //! - TTF/OTF files - rasterize TrueType/OpenType fonts to bitmap
 
@@ -30,7 +30,7 @@ use crate::fl;
 use crate::ui::editor::bitfont::BitFontEditorMessage;
 use crate::ui::Message;
 
-/// Helper to wrap FontImportMessage in Message
+/// Helper to wrap `FontImportMessage` in Message
 fn msg(m: FontImportMessage) -> Message {
     Message::BitFontEditor(BitFontEditorMessage::FontImportDialog(m))
 }
@@ -140,7 +140,7 @@ impl FontImportDialog {
         self.xb_fonts.clear();
         self.xb_selected_font = 0;
 
-        let ext = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()).unwrap_or_default();
+        let ext = path.extension().and_then(|e| e.to_str()).map(str::to_lowercase).unwrap_or_default();
 
         // Determine file type and load accordingly
         if is_native_font_extension(&ext) {
@@ -159,7 +159,7 @@ impl FontImportDialog {
             self.auto_detect_image_dimensions(path);
             self.load_image_file(path);
         } else {
-            self.error = Some(format!("Unsupported file type: .{}", ext));
+            self.error = Some(format!("Unsupported file type: .{ext}"));
             self.source_type = None;
         }
     }
@@ -174,12 +174,12 @@ impl FontImportDialog {
                         self.preview_font = Some(font);
                     }
                     Err(e) => {
-                        self.error = Some(format!("Failed to parse font: {}", e));
+                        self.error = Some(format!("Failed to parse font: {e}"));
                     }
                 }
             }
             Err(e) => {
-                self.error = Some(format!("Failed to read file: {}", e));
+                self.error = Some(format!("Failed to read file: {e}"));
             }
         }
     }
@@ -187,7 +187,7 @@ impl FontImportDialog {
     /// Load a DOS COM file and extract font
     ///
     /// Supports multiple COM font formats:
-    /// - PCMag FontEdit .COM: checksum 0x8696, height at 0x32, data at 0x63
+    /// - `PCMag` `FontEdit` .COM: checksum 0x8696, height at 0x32, data at 0x63
     /// - Fontraption Non-TSR .COM: checksum 0xEF10, height at 0x15, data at 0x19  
     /// - Fontraption TSR .COM: 'VILE' at 0x28, height at 0x5D, data at 0x63
     fn load_com_file(&mut self, path: &std::path::Path) {
@@ -205,7 +205,7 @@ impl FontImportDialog {
                 }
             }
             Err(e) => {
-                self.error = Some(format!("Failed to read file: {}", e));
+                self.error = Some(format!("Failed to read file: {e}"));
             }
         }
     }
@@ -240,13 +240,13 @@ impl FontImportDialog {
                         }
                     }
                     Err(e) => {
-                        self.error = Some(format!("Failed to parse XB file: {}", e));
+                        self.error = Some(format!("Failed to parse XB file: {e}"));
                         self.source_type = None;
                     }
                 }
             }
             Err(e) => {
-                self.error = Some(format!("Failed to read file: {}", e));
+                self.error = Some(format!("Failed to read file: {e}"));
             }
         }
     }
@@ -301,7 +301,7 @@ impl FontImportDialog {
         if let Some(FontSourceType::Image) = &self.source_type {
             let path = PathBuf::from(&self.file_path);
             if path.exists() {
-                let ext = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()).unwrap_or_default();
+                let ext = path.extension().and_then(|e| e.to_str()).map(str::to_lowercase).unwrap_or_default();
                 if is_ttf_extension(&ext) {
                     self.load_ttf_file(&path);
                 } else {
@@ -447,7 +447,7 @@ impl Dialog<Message> for FontImportDialog {
         ]);
 
         let dialog_content = dialog_area(column![title, Space::new().height(DIALOG_SPACING), content_box].into());
-        let button_area = dialog_area(buttons.into());
+        let button_area = dialog_area(buttons);
 
         modal_container(
             column![container(dialog_content).height(Length::Shrink), separator(), button_area,].into(),
@@ -541,7 +541,7 @@ impl FontImportDialog {
                 let selected = options.get(self.xb_selected_font).cloned();
 
                 let picker = pick_list(options, selected, |s: String| {
-                    let index = if s == fl!("font-import-xb-font-2") { 1 } else { 0 };
+                    let index = usize::from(s == fl!("font-import-xb-font-2"));
                     msg(FontImportMessage::SelectXBFont(index))
                 })
                 .width(Length::Fill);
@@ -672,7 +672,7 @@ fn parse_com_font(name: &str, data: &[u8]) -> Result<BitFont, String> {
                 chunk[0] as u16
             }
         })
-        .fold(0u16, |acc, val| acc.wrapping_add(val));
+        .fold(0u16, u16::wrapping_add);
 
     // Try to detect the format
     let (height, data_offset) = if checksum == 0x8696 {
@@ -693,7 +693,7 @@ fn parse_com_font(name: &str, data: &[u8]) -> Result<BitFont, String> {
 
     // Validate height
     if height == 0 || height as i32 > MAX_FONT_HEIGHT {
-        return Err(format!("Invalid font height: {} (must be 1-{})", height, MAX_FONT_HEIGHT));
+        return Err(format!("Invalid font height: {height} (must be 1-{MAX_FONT_HEIGHT})"));
     }
 
     // Check if we have enough data

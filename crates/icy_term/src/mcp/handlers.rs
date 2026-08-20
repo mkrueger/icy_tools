@@ -31,6 +31,7 @@ pub struct IcyTermMcpHandler {
 
 #[tool_router]
 impl IcyTermMcpHandler {
+    #[must_use]
     pub fn new(command_tx: mpsc::UnboundedSender<McpCommand>) -> Self {
         Self {
             command_tx,
@@ -119,18 +120,19 @@ impl IcyTermMcpHandler {
         let text = addresses
             .iter()
             .map(|a| {
+                use std::fmt::Write as _;
                 let mut entry = format!("• {} - {}", a.system_name, a.address);
 
                 if !a.user_name.is_empty() {
-                    entry.push_str(&format!("\n  Username: {}", a.user_name));
+                    let _ = write!(entry, "\n  Username: {}", a.user_name);
                 }
 
                 if !a.password.is_empty() {
-                    entry.push_str(&format!("\n  Password: {}", a.password));
+                    let _ = write!(entry, "\n  Password: {}", a.password);
                 }
 
-                entry.push_str(&format!("\n  Protocol: {:?}", a.protocol));
-                entry.push_str(&format!("\n  Terminal: {:?}", a.terminal_type));
+                let _ = write!(entry, "\n  Protocol: {:?}", a.protocol);
+                let _ = write!(entry, "\n  Terminal: {:?}", a.terminal_type);
                 entry
             })
             .collect::<Vec<_>>()
@@ -139,7 +141,7 @@ impl IcyTermMcpHandler {
         let out = if text.is_empty() {
             "No addresses found".to_string()
         } else {
-            format!("BBS Directory:\n\n{}", text)
+            format!("BBS Directory:\n\n{text}")
         };
 
         Ok(CallToolResult::success(vec![Content::text(out)]))
@@ -167,7 +169,7 @@ impl IcyTermMcpHandler {
             .send(McpCommand::RunScript(params.0.script.clone(), Some(sender)))
             .map_err(|e| McpError::internal_error(format!("Failed to send command: {e}"), None))?;
 
-        let result = tokio::time::timeout(Duration::from_secs(300), response_rx)
+        let result = tokio::time::timeout(Duration::from_mins(5), response_rx)
             .await
             .map_err(|_| McpError::internal_error("Script execution timed out (5 minutes)", None))
             .and_then(|r| r.map_err(|_| McpError::internal_error("Script execution channel closed unexpectedly", None)))?;
@@ -179,11 +181,11 @@ impl IcyTermMcpHandler {
                 let text = if output.is_empty() {
                     "Script executed successfully".to_string()
                 } else {
-                    format!("Script output:\n{}", output)
+                    format!("Script output:\n{output}")
                 };
                 Ok(CallToolResult::success(vec![Content::text(text)]))
             }
-            Err(error) => Ok(CallToolResult::error(vec![Content::text(format!("Script error: {}", error))])),
+            Err(error) => Ok(CallToolResult::error(vec![Content::text(format!("Script error: {error}"))])),
         }
     }
 
@@ -218,7 +220,7 @@ impl ServerHandler for IcyTermMcpHandler {
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = Result<CallToolResponse, McpError>> + Send + '_ {
         let tool_ctx = ToolCallContext::new(self, request, context);
-        async move { self.tool_router.call(tool_ctx).await.map_err(Into::into) }
+        async move { self.tool_router.call(tool_ctx).await }
     }
 
     fn list_resources(
@@ -261,7 +263,7 @@ impl ServerHandler for IcyTermMcpHandler {
         notification: rmcp::model::CancelledNotificationParam,
         _context: rmcp::service::NotificationContext<rmcp::RoleServer>,
     ) -> impl std::future::Future<Output = ()> + Send + '_ {
-        log::info!("Request cancelled: {:?}", notification);
+        log::info!("Request cancelled: {notification:?}");
         std::future::ready(())
     }
 }

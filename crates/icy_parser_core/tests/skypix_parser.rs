@@ -360,7 +360,7 @@ fn test_ansi_cursor_up() {
 
     parser.parse(b"\x1B[5A", &mut sink);
 
-    assert!(sink.ansi_commands.len() > 0);
+    assert!(!sink.ansi_commands.is_empty());
     assert!(sink.ansi_commands[0].contains("MoveCursor(Up"));
 }
 
@@ -371,7 +371,7 @@ fn test_ansi_cursor_position() {
 
     parser.parse(b"\x1B[10;20H", &mut sink);
 
-    assert!(sink.ansi_commands.len() > 0);
+    assert!(!sink.ansi_commands.is_empty());
     assert!(sink.ansi_commands[0].contains("CursorPosition"));
 }
 
@@ -382,7 +382,7 @@ fn test_ansi_color_change() {
 
     parser.parse(b"\x1B[31m", &mut sink);
 
-    assert!(sink.ansi_commands.len() > 0);
+    assert!(!sink.ansi_commands.is_empty());
     assert!(sink.ansi_commands[0].contains("Foreground"));
 }
 
@@ -393,7 +393,7 @@ fn test_ansi_erase_display() {
 
     parser.parse(b"\x1B[2J", &mut sink);
 
-    assert!(sink.ansi_commands.len() > 0);
+    assert!(!sink.ansi_commands.is_empty());
     assert!(sink.ansi_commands[0].contains("EraseInDisplay"));
 }
 
@@ -405,7 +405,7 @@ fn test_mixed_ansi_and_skypix() {
     // Color change + SkyPix command + more text
     parser.parse(b"\x1B[31mRed text\x1B[15;3!More text", &mut sink);
 
-    assert!(sink.ansi_commands.len() > 0);
+    assert!(!sink.ansi_commands.is_empty());
     assert_eq!(sink.skypix_commands.len(), 1);
     match &sink.skypix_commands[0] {
         SkypixCommand::SetPenA { color } => {
@@ -436,7 +436,7 @@ fn test_regular_text_passthrough() {
     parser.parse(b"Hello, World!", &mut sink);
 
     // Should have emitted printable characters
-    assert!(sink.ansi_commands.len() > 0);
+    assert!(!sink.ansi_commands.is_empty());
 }
 
 #[test]

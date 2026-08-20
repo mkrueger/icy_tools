@@ -15,9 +15,10 @@ use crate::terminal::terminal_thread::TerminalEvent;
 
 /// Pending terminal receivers waiting to be connected to subscriptions
 /// Key: window id, Value: receiver
-static PENDING_RECEIVERS: OnceLock<std::sync::Mutex<Vec<(usize, UnboundedReceiver<TerminalEvent>)>>> = OnceLock::new();
+type PendingReceivers = std::sync::Mutex<Vec<(usize, UnboundedReceiver<TerminalEvent>)>>;
+static PENDING_RECEIVERS: OnceLock<PendingReceivers> = OnceLock::new();
 
-fn get_pending_receivers() -> &'static std::sync::Mutex<Vec<(usize, UnboundedReceiver<TerminalEvent>)>> {
+fn get_pending_receivers() -> &'static PendingReceivers {
     PENDING_RECEIVERS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
 }
 
@@ -39,7 +40,7 @@ fn take_pending_receiver(window_id: usize) -> Option<UnboundedReceiver<TerminalE
 }
 
 /// Create a subscription for terminal events for a specific window
-/// Uses window_id as the subscription identifier for deduplication
+/// Uses `window_id` as the subscription identifier for deduplication
 pub fn terminal_events(window_id: usize) -> Subscription<(usize, TerminalEvent)> {
     // Use run_with with window_id as the hashable data for subscription identity
     Subscription::run_with(window_id, |id: &usize| {
@@ -63,7 +64,7 @@ async fn run_terminal_subscription(window_id: usize, mut output: Sender<(usize, 
     }
 
     let Some(mut rx) = rx else {
-        log::warn!("No terminal receiver found for window {}", window_id);
+        log::warn!("No terminal receiver found for window {window_id}");
         // Keep subscription alive
         std::future::pending::<()>().await;
         return;
@@ -111,6 +112,7 @@ fn take_mcp_receiver() -> Option<UnboundedReceiver<McpCommand>> {
 }
 
 /// Check if MCP receiver is registered
+#[must_use]
 pub fn has_mcp_receiver() -> bool {
     if let Ok(pending) = get_pending_mcp_receiver().lock() {
         pending.is_some()

@@ -1,4 +1,4 @@
-//! CharFont (TDF) Editor Mode
+//! `CharFont` (TDF) Editor Mode
 //!
 //! This module contains the TDF font editor with:
 //! - Left sidebar: Font list, character selector
@@ -21,7 +21,6 @@ use icy_engine::Screen;
 use icy_engine::{AttributedChar, BitFont, Layer, Size, TextAttribute, TextBuffer, TextPane};
 use icy_engine_edit::charset::{load_tdf_fonts, CharSetEditState, CharSetFocusedPanel, TdfFontType};
 use icy_engine_edit::EditState;
-use icy_engine_edit::UndoState;
 use icy_engine_gui::theme::main_area_background;
 use icy_engine_gui::ui::{add_icon, arrow_downward_icon, arrow_upward_icon, content_copy_icon, delete_icon, edit_icon, DialogStack};
 use icy_engine_gui::TerminalMessage;
@@ -52,7 +51,7 @@ pub enum ArrowDirection {
     Right,
 }
 
-/// Messages for the CharFont editor
+/// Messages for the `CharFont` editor
 #[derive(Clone)]
 pub enum CharFontEditorMessage {
     /// Color switcher messages
@@ -131,7 +130,7 @@ pub enum CharFontEditorMessage {
     // ═══════════════════════════════════════════════════════════════════════════
     // ANSI Editor Core Messages (for editing TDF glyphs)
     // ═══════════════════════════════════════════════════════════════════════════
-    /// Forward messages to the embedded AnsiEditorCore for glyph editing
+    /// Forward messages to the embedded `AnsiEditorCore` for glyph editing
     AnsiEditor(crate::ui::editor::ansi::AnsiEditorCoreMessage),
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -223,9 +222,9 @@ impl std::fmt::Debug for CharFontEditorMessage {
     }
 }
 
-/// The CharFont (TDF) editor component
+/// The `CharFont` (TDF) editor component
 pub struct CharFontEditor {
-    /// The CharSet edit state (model layer from icy_engine_edit)
+    /// The `CharSet` edit state (model layer from `icy_engine_edit`)
     charset_state: CharSetEditState,
     /// The ANSI editor core for editing TDF glyphs
     ansi_core: AnsiEditorCore,
@@ -243,7 +242,7 @@ pub struct CharFontEditor {
     last_update_preview: usize,
     /// Currently selected outline style (0-18) for outline font preview
     selected_outline_style: usize,
-    /// Last character loaded into the edit buffer (for save_old_selected_char)
+    /// Last character loaded into the edit buffer (for `save_old_selected_char`)
     last_edited_char: Option<char>,
 
     /// Separate preview screen + canvas for outline fonts (egui-like preview buffer)
@@ -252,19 +251,19 @@ pub struct CharFontEditor {
 }
 
 impl CharFontEditor {
-    /// Create a new empty CharFont editor with default Color font
+    /// Create a new empty `CharFont` editor with default Color font
     pub fn new(options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
         let charset_state = CharSetEditState::new();
         Self::with_charset_state(charset_state, options, font_library)
     }
 
-    /// Create a new empty CharFont editor with the specified font type
+    /// Create a new empty `CharFont` editor with the specified font type
     pub fn new_with_font_type(font_type: TdfFontType, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
         let charset_state = CharSetEditState::new_with_font_type(font_type);
         Self::with_charset_state(charset_state, options, font_library)
     }
 
-    /// Create a CharFont editor from CharSetEditState
+    /// Create a `CharFont` editor from `CharSetEditState`
     fn with_charset_state(charset_state: CharSetEditState, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> Self {
         // Create edit buffer for the character
         let mut buffer = TextBuffer::create((30, 12));
@@ -278,7 +277,7 @@ impl CharFontEditor {
         let palette = buffer.palette.clone();
 
         // Determine the correct tool slots based on the initial font type
-        let is_outline = charset_state.selected_font().map(|f| f.font_type == TdfFontType::Outline).unwrap_or(false);
+        let is_outline = charset_state.selected_font().is_some_and(|f| f.font_type == TdfFontType::Outline);
 
         let initial_slots = if is_outline {
             tool_registry::OUTLINE_TOOL_SLOTS
@@ -419,7 +418,7 @@ impl CharFontEditor {
         state.mark_buffer_dirty();
     }
 
-    /// Create a CharFont editor with a file
+    /// Create a `CharFont` editor with a file
     pub fn with_file(path: PathBuf, options: Arc<RwLock<Settings>>, font_library: SharedFontLibrary) -> anyhow::Result<Self> {
         let charset_state = CharSetEditState::load_from_file(path)?;
         Ok(Self::with_charset_state(charset_state, options, font_library))
@@ -446,7 +445,7 @@ impl CharFontEditor {
         Some(crate::session::CharFontSessionState {
             version: 1,
             ansi_state,
-            selected_slot: self.charset_state.selected_char().map(|c| c as usize).unwrap_or(0),
+            selected_slot: self.charset_state.selected_char().map_or(0, |c| c as usize),
             preview_text: String::new(), // TODO: Implement preview text retrieval
         })
     }
@@ -494,20 +493,20 @@ impl CharFontEditor {
         // First check charset_state undo, then ansi_core
         self.charset_state
             .undo_description()
-            .or_else(|| self.ansi_core.with_edit_state_readonly(|state| state.undo_description()))
+            .or_else(|| self.ansi_core.with_edit_state_readonly(icy_engine_edit::UndoState::undo_description))
     }
 
     /// Get redo description
     pub fn redo_description(&self) -> Option<String> {
         self.charset_state
             .redo_description()
-            .or_else(|| self.ansi_core.with_edit_state_readonly(|state| state.redo_description()))
+            .or_else(|| self.ansi_core.with_edit_state_readonly(icy_engine_edit::UndoState::redo_description))
     }
 
     /// Update the tool registry and tool panel based on the current font type
-    /// Outline fonts use a reduced tool set (only Click and Select) with OutlineClickTool
+    /// Outline fonts use a reduced tool set (only Click and Select) with `OutlineClickTool`
     fn update_tool_registry_for_font_type(&mut self) {
-        let font_type = self.charset_state.selected_font().map(|f| f.font_type).unwrap_or(TdfFontType::Color);
+        let font_type = self.charset_state.selected_font().map_or(TdfFontType::Color, |f| f.font_type);
 
         let is_outline = font_type == TdfFontType::Outline;
         let needed_slots = if is_outline {
@@ -546,7 +545,7 @@ impl CharFontEditor {
     }
 
     /// Save the currently edited character back to the font
-    /// Converts the TextBuffer back to a retrofont::Glyph based on font type
+    /// Converts the `TextBuffer` back to a `retrofont::Glyph` based on font type
     fn save_old_selected_char(&mut self) {
         let undo_len = self.ansi_core.undo_stack_len();
         if undo_len == 0 {
@@ -581,11 +580,7 @@ impl CharFontEditor {
     fn update_selected_char(&mut self) {
         self.save_old_selected_char();
 
-        let font = match self.charset_state.selected_font() {
-            Some(f) => f,
-            None => return,
-        };
-
+        let Some(font) = self.charset_state.selected_font() else { return };
         let selected_char = self.charset_state.selected_char();
         let font_type = font.font_type;
 
@@ -625,16 +620,10 @@ impl CharFontEditor {
     }
 
     /// Apply current caret colors to all visible characters (for Block/Outline fonts)
-    /// Uses interior mutability so it can be called from view()
+    /// Uses interior mutability so it can be called from `view()`
     fn apply_font_type_colors(&self) {
-        let font = match self.charset_state.selected_font() {
-            Some(f) => f,
-            None => return,
-        };
-
+        let Some(font) = self.charset_state.selected_font() else { return };
         let font_type = font.font_type;
-
-        // Only apply for Block and Outline fonts
         if font_type != TdfFontType::Block && font_type != TdfFontType::Outline {
             return;
         }
@@ -667,13 +656,13 @@ impl CharFontEditor {
             }
 
             CharFontEditorMessage::ColorSwitcher(msg) => {
-                let nested_task = match msg {
+                match msg {
                     ColorSwitcherMessage::SwapColors => {
                         self.color_switcher.start_swap_animation();
                         Task::none()
                     }
                     ColorSwitcherMessage::AnimationComplete => {
-                        let (fg, bg) = self.ansi_core.with_edit_state(|state| state.swap_caret_colors());
+                        let (fg, bg) = self.ansi_core.with_edit_state(icy_engine_edit::EditState::swap_caret_colors);
                         self.palette_grid.set_foreground(fg);
                         self.palette_grid.set_background(bg);
                         self.color_switcher.confirm_swap();
@@ -698,8 +687,7 @@ impl CharFontEditor {
                             Task::none()
                         }
                     }
-                };
-                nested_task
+                }
             }
             CharFontEditorMessage::PaletteGrid(msg) => {
                 match msg {
@@ -1073,8 +1061,8 @@ impl CharFontEditor {
     }
 
     /// Handle top-level window/input events that must reach the editor.
-    /// Tab switches focus between Edit and CharSet panels.
-    /// Other events are forwarded to AnsiEditorCore only when the Edit panel has focus.
+    /// Tab switches focus between Edit and `CharSet` panels.
+    /// Other events are forwarded to `AnsiEditorCore` only when the Edit panel has focus.
     /// Returns `true` if the event was handled.
     pub fn handle_event(&mut self, event: &icy_ui::Event) -> bool {
         // Handle Tab key to switch focus between panels
@@ -1375,10 +1363,10 @@ fn set_up_buffer(buffer: &mut TextBuffer) {
     buffer.layers.push(layer);
 }
 
-/// Convert a TextBuffer back to a retrofont::Glyph
+/// Convert a `TextBuffer` back to a `retrofont::Glyph`
 ///
 /// This function extracts the glyph content from the edit buffer and converts it
-/// back to the appropriate GlyphPart representation based on the font type:
+/// back to the appropriate `GlyphPart` representation based on the font type:
 ///
 /// - **Color**: Each cell becomes `GlyphPart::AnsiChar { ch, fg, bg, blink }`
 /// - **Block**: Each cell becomes `GlyphPart::Char(ch)` or `GlyphPart::HardBlank` for 0xFF
@@ -1447,7 +1435,7 @@ fn is_empty_cell(ch: char) -> bool {
     ch == ' ' || ch == '\0'
 }
 
-/// Convert a single AttributedChar cell to the appropriate GlyphPart based on font type
+/// Convert a single `AttributedChar` cell to the appropriate `GlyphPart` based on font type
 fn convert_cell_to_glyph_part(cell: AttributedChar, font_type: TdfFontType) -> GlyphPart {
     let ch = cell.ch;
     let attr = cell.attribute;
@@ -1487,7 +1475,7 @@ fn convert_cell_to_glyph_part(cell: AttributedChar, font_type: TdfFontType) -> G
     }
 }
 
-/// Convert an outline font cell back to the appropriate GlyphPart
+/// Convert an outline font cell back to the appropriate `GlyphPart`
 ///
 /// In edit mode, outline fonts show:
 /// - 'A' through 'R' (or 'Q') as placeholder letters

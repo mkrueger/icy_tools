@@ -88,7 +88,7 @@ pub const NO_HOVER: u32 = 0xFFFF_FFFF;
 pub enum HoverState {
     #[default]
     None,
-    /// Slot hover (slot_index 0..11, is_on_char: true=char area, false=label area).
+    /// Slot hover (`slot_index` 0..11, `is_on_char`: true=char area, false=label area).
     Slot(usize, bool),
     /// Hover over previous-set navigation arrow.
     NavPrev,
@@ -97,11 +97,11 @@ pub enum HoverState {
 }
 
 impl HoverState {
-    /// Convert to GPU uniform representation (slot, hover_type).
+    /// Convert to GPU uniform representation (slot, `hover_type`).
     pub fn to_uniforms(&self) -> (u32, u32) {
         match self {
             HoverState::None => (NO_HOVER, 0),
-            HoverState::Slot(idx, is_char) => (*idx as u32, if *is_char { 1 } else { 0 }),
+            HoverState::Slot(idx, is_char) => (*idx as u32, u32::from(*is_char)),
             HoverState::NavPrev => (NO_HOVER, 2),
             HoverState::NavNext => (NO_HOVER, 3),
         }

@@ -1,4 +1,4 @@
-//! MCP request/response types for icy_draw
+//! MCP request/response types for `icy_draw`
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -52,7 +52,7 @@ pub struct AnimationStatus {
     pub current_frame: usize,
 }
 
-/// BitFont editor status
+/// `BitFont` editor status
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct BitFontStatus {
     /// Width of glyphs in pixels
@@ -325,7 +325,7 @@ pub struct AnsiSetSelectionRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AnsiSelectionActionRequest {
-    /// Action name (e.g. "flip_x", "flip_y", "justify_left", "justify_center", "justify_right", "crop")
+    /// Action name (e.g. "`flip_x`", "`flip_y`", "`justify_left`", "`justify_center`", "`justify_right`", "crop")
     pub action: String,
 }
 
