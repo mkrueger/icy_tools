@@ -1048,6 +1048,45 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "set ICY_AUDIO_TEST_FILE to exercise a real music asset"]
+    fn decodes_external_music_fixture() {
+        let path = std::env::var("ICY_AUDIO_TEST_FILE").expect("ICY_AUDIO_TEST_FILE is required");
+        let data = std::fs::read(&path).expect("fixture should be readable");
+        let started = std::time::Instant::now();
+        let decoded = AudioApcState::decode(data).expect("fixture should decode");
+        let peak = decoded.iter().fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+
+        eprintln!("decoded {} stereo frames in {:?}, peak={peak}", decoded.len() / 2, started.elapsed());
+        assert!(!decoded.is_empty());
+        assert!(peak > 0.01, "decoded fixture was silent");
+
+        let path = std::path::PathBuf::from(path);
+        let cache_directory = path.parent().unwrap();
+        let file = path.file_name().unwrap().to_string_lossy().into_owned();
+        let (mixer, _source) = rodio::mixer::mixer(stereo(), sample_rate());
+        let mut state = AudioApcState::new();
+        state.handle(Some(&mixer), Some(cache_directory), AudioApcCommand::Load { slot: 0, file });
+        state.handle(
+            Some(&mixer),
+            Some(cache_directory),
+            AudioApcCommand::Queue {
+                channel: 0,
+                slot: 0,
+                fade_in: 0,
+                looping: true,
+                left_db: 0.0,
+                right_db: 0.0,
+            },
+        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !state.status.is_active(0) && std::time::Instant::now() < deadline {
+            state.poll(Some(&mixer));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(state.status.is_active(0), "looping fixture never reached the player");
+    }
+
+    #[test]
     fn stereo_gain_preserves_channels_and_live_updates() {
         let control = Arc::new(StereoGainControl::new(1.0, 0.25));
         let buffer = SamplesBuffer::new(stereo(), sample_rate(), vec![1.0, 1.0, 0.5, 0.5]);
