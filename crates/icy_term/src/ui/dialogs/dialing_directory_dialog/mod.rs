@@ -1,6 +1,6 @@
 use crate::ui::dialogs::terminal_settings_ui;
 use crate::ui::{MainWindowMode, Message};
-use crate::{Address, AddressBook};
+use crate::{Address, AddressBook, SshAuthenticationMode};
 use i18n_embed_fl::fl;
 use icy_engine::ScreenMode;
 use icy_engine_gui::ui::*;
@@ -283,6 +283,15 @@ impl DialingDirectoryState {
                     AddressFieldChange::Password(password) => {
                         addr.password = password;
                     }
+                    AddressFieldChange::SshAuthentication(authentication) => {
+                        addr.ssh_authentication = authentication;
+                    }
+                    AddressFieldChange::SshPrivateKey(path) => {
+                        addr.ssh_private_key = path;
+                    }
+                    AddressFieldChange::SshKeyPassphrase(passphrase) => {
+                        addr.ssh_key_passphrase = passphrase;
+                    }
                     AddressFieldChange::AutoLogin(script) => {
                         addr.auto_login = script;
                     }
@@ -349,6 +358,22 @@ impl DialingDirectoryState {
 
             DialingDirectoryMsg::ToggleShowPasswords => {
                 self.show_passwords = !self.show_passwords;
+                Task::none()
+            }
+
+            DialingDirectoryMsg::BrowseSshPrivateKey(id) => {
+                if let Some(path) = rfd::FileDialog::new().set_title("Select SSH private key").pick_file() {
+                    let mut lock = self.addresses.lock();
+                    let address = match id {
+                        Some(id) => lock.addresses.get_mut(id),
+                        None => Some(&mut self.quick_connect_address),
+                    };
+                    if let Some(address) = address {
+                        if address.web_source.is_none() {
+                            address.ssh_private_key = path.to_string_lossy().into_owned();
+                        }
+                    }
+                }
                 Task::none()
             }
 
@@ -560,6 +585,7 @@ pub enum DialingDirectoryMsg {
     DeleteAddress(usize),
     AddressFieldChanged { id: Option<usize>, field: AddressFieldChange },
     ToggleShowPasswords,
+    BrowseSshPrivateKey(Option<usize>),
     GeneratePassword,
     ConnectSelected,
     Close,
@@ -576,6 +602,9 @@ pub enum AddressFieldChange {
     ModemId(String),
     User(String),
     Password(String),
+    SshAuthentication(SshAuthenticationMode),
+    SshPrivateKey(String),
+    SshKeyPassphrase(String),
     AutoLogin(String),
     Protocol(ConnectionType),
     Terminal(TerminalEmulation),

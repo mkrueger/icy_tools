@@ -1,10 +1,10 @@
 use crate::ui::dialing_directory_dialog::{AddressFieldChange, DialingDirectoryMsg};
 use crate::ui::Message;
-use crate::ConnectionInformation;
+use crate::{ConnectionInformation, SshAuthenticationMode};
 use i18n_embed_fl::fl;
 use icy_engine::{ScreenMode, TerminalResolutionExt, VGA_MODES};
 use icy_engine_gui::settings::{effect_box, left_label};
-use icy_engine_gui::ui::{primary_button, secondary_button, text_button_style, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
+use icy_engine_gui::ui::{browse_button, primary_button, secondary_button, text_button_style, DIALOG_SPACING, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL};
 use icy_engine_gui::{section_header, LABEL_WIDTH, SECTION_SPACING};
 use icy_net::{telnet::TerminalEmulation, ConnectionType};
 use icy_parser_core::{BaudEmulation, MusicOption};
@@ -556,66 +556,129 @@ impl super::DialingDirectoryState {
                     .align_y(Alignment::Center),
             );
 
-            // Password field with visibility toggle
-            let pw_field = text_input("", &addr.password)
-                .on_input(move |s| {
-                    Message::from(DialingDirectoryMsg::AddressFieldChanged {
-                        id,
-                        field: AddressFieldChange::Password(s),
+            if addr.protocol != ConnectionType::SSH || matches!(addr.ssh_authentication, SshAuthenticationMode::Password | SshAuthenticationMode::Auto) {
+                // Password field with visibility toggle
+                let pw_field = text_input("", &addr.password)
+                    .on_input(move |s| {
+                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                            id,
+                            field: AddressFieldChange::Password(s),
+                        })
                     })
-                })
-                .secure(!self.show_passwords)
-                .padding(6)
-                .size(TEXT_SIZE_NORMAL)
-                .width(Length::Fill);
+                    .secure(!self.show_passwords)
+                    .padding(6)
+                    .size(TEXT_SIZE_NORMAL)
+                    .width(Length::Fill);
 
-            let visibility_icon = if self.show_passwords {
-                svg(svg::Handle::from_memory(VISIBILITY_SVG))
-            } else {
-                svg(svg::Handle::from_memory(VISIBILITY_OFF_SVG))
+                let visibility_icon = if self.show_passwords {
+                    svg(svg::Handle::from_memory(VISIBILITY_SVG))
+                } else {
+                    svg(svg::Handle::from_memory(VISIBILITY_OFF_SVG))
+                }
+                .width(Length::Fixed(20.0))
+                .height(Length::Fixed(20.0));
+
+                let toggler_pw = button(visibility_icon)
+                    .on_press(Message::from(DialingDirectoryMsg::ToggleShowPasswords))
+                    .padding(4)
+                    .style(text_button_style);
+
+                let (generate_btn, tooltip_label) = if addr.password.is_empty() {
+                    (
+                        primary_button(
+                            fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate"),
+                            Some(Message::from(DialingDirectoryMsg::GeneratePassword)),
+                        ),
+                        fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate-tooltip"),
+                    )
+                } else {
+                    (
+                        secondary_button(fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate"), None),
+                        fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate-disabled-tooltip"),
+                    )
+                };
+
+                let generate_btn = tooltip(
+                    generate_btn,
+                    container(text(tooltip_label).size(TEXT_SIZE_SMALL)).style(container::rounded_box),
+                    tooltip::Position::Bottom,
+                )
+                .gap(10)
+                .style(container::rounded_box)
+                .padding(8);
+
+                login_content = login_content.push(
+                    row![
+                        left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-password")),
+                        pw_field,
+                        toggler_pw,
+                        generate_btn
+                    ]
+                    .spacing(DIALOG_SPACING)
+                    .align_y(Alignment::Center),
+                );
             }
-            .width(Length::Fixed(20.0))
-            .height(Length::Fixed(20.0));
 
-            let toggler_pw = button(visibility_icon)
-                .on_press(Message::from(DialingDirectoryMsg::ToggleShowPasswords))
-                .padding(4)
-                .style(text_button_style);
-
-            let (generate_btn, tooltip_label) = if addr.password.is_empty() {
-                (
-                    primary_button(
-                        fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate"),
-                        Some(Message::from(DialingDirectoryMsg::GeneratePassword)),
-                    ),
-                    fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate-tooltip"),
+            if addr.protocol == ConnectionType::SSH {
+                let authentication = pick_list(
+                    vec![
+                        SshAuthenticationMode::Password,
+                        SshAuthenticationMode::PrivateKey,
+                        SshAuthenticationMode::Agent,
+                        SshAuthenticationMode::Auto,
+                    ],
+                    Some(addr.ssh_authentication),
+                    move |authentication| {
+                        Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                            id,
+                            field: AddressFieldChange::SshAuthentication(authentication),
+                        })
+                    },
                 )
-            } else {
-                (
-                    secondary_button(fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate"), None),
-                    fl!(crate::LANGUAGE_LOADER, "dialing_directory-generate-disabled-tooltip"),
-                )
-            };
+                .width(Length::Fill)
+                .text_size(TEXT_SIZE_NORMAL);
+                login_content = login_content.push(
+                    row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-ssh-authentication")), authentication]
+                        .spacing(DIALOG_SPACING)
+                        .align_y(Alignment::Center),
+                );
 
-            let generate_btn = tooltip(
-                generate_btn,
-                container(text(tooltip_label).size(TEXT_SIZE_SMALL)).style(container::rounded_box),
-                tooltip::Position::Bottom,
-            )
-            .gap(10)
-            .style(container::rounded_box)
-            .padding(8);
+                if matches!(addr.ssh_authentication, SshAuthenticationMode::PrivateKey | SshAuthenticationMode::Auto) {
+                    let key_path = text_input("", &addr.ssh_private_key)
+                        .on_input(move |path| {
+                            Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                                id,
+                                field: AddressFieldChange::SshPrivateKey(path),
+                            })
+                        })
+                        .padding(6)
+                        .size(TEXT_SIZE_NORMAL)
+                        .width(Length::Fill);
+                    let browse = browse_button(Message::from(DialingDirectoryMsg::BrowseSshPrivateKey(id)));
+                    login_content = login_content.push(
+                        row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-ssh-private-key")), key_path, browse]
+                            .spacing(DIALOG_SPACING)
+                            .align_y(Alignment::Center),
+                    );
 
-            login_content = login_content.push(
-                row![
-                    left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-password")),
-                    pw_field,
-                    toggler_pw,
-                    generate_btn
-                ]
-                .spacing(DIALOG_SPACING)
-                .align_y(Alignment::Center),
-            );
+                    let passphrase = text_input("", &addr.ssh_key_passphrase)
+                        .on_input(move |passphrase| {
+                            Message::from(DialingDirectoryMsg::AddressFieldChanged {
+                                id,
+                                field: AddressFieldChange::SshKeyPassphrase(passphrase),
+                            })
+                        })
+                        .secure(!self.show_passwords)
+                        .padding(6)
+                        .size(TEXT_SIZE_NORMAL)
+                        .width(Length::Fill);
+                    login_content = login_content.push(
+                        row![left_label(fl!(crate::LANGUAGE_LOADER, "dialing_directory-ssh-key-passphrase")), passphrase]
+                            .spacing(DIALOG_SPACING)
+                            .align_y(Alignment::Center),
+                    );
+                }
+            }
 
             /*
             // Auto login combo box

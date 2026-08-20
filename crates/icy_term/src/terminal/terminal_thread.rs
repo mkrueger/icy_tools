@@ -4,7 +4,7 @@ use crate::features::AutoTransferScanner;
 use crate::scripting::ScriptRunner;
 use crate::ui::open_serial_dialog::BAUD_RATES;
 use crate::TransferProtocol;
-use crate::{normalize_screen_mode, ConnectionInformation};
+use crate::{normalize_screen_mode, ConnectionInformation, SshAuthenticationMode};
 use base64::{engine::general_purpose, Engine as _};
 use directories::UserDirs;
 use icy_engine::{CreationOptions, GraphicsType, Screen, ScreenMode, ScreenSink, Sixel, Size};
@@ -20,7 +20,7 @@ use icy_net::{
     protocol::{Protocol, TransferState},
     raw::RawConnection,
     serial::{Serial, SerialConnection},
-    ssh::{Credentials, SSHConnection},
+    ssh::{Credentials, PrivateKeyCredential, SSHConnection, SecretString, SshAuthentication},
     telnet::{TelnetConnection, TermCaps, TerminalEmulation},
     Connection, ConnectionState, ConnectionType,
 };
@@ -387,6 +387,10 @@ pub struct ConnectionConfig {
     /// BBS password - the one in connection info may be empty
     /// or different (e.g. for auto-login)
     pub password: Option<String>,
+
+    pub ssh_authentication: SshAuthenticationMode,
+    pub ssh_private_key: Option<PathBuf>,
+    pub ssh_key_passphrase: Option<String>,
 
     pub proxy_command: Option<String>,
     pub modem: Option<ModemConfiguration>,
@@ -845,9 +849,30 @@ impl TerminalThread {
                     (config.user_name.clone(), config.password.clone())
                 };
 
+                let user_name = user_name.unwrap_or_default();
+                let password = password.unwrap_or_default();
+                let passphrase = config.ssh_key_passphrase.map(SecretString::new);
+                let authentication = match config.ssh_authentication {
+                    SshAuthenticationMode::Password => SshAuthentication::Password {
+                        password: SecretString::new(password),
+                    },
+                    SshAuthenticationMode::PrivateKey => SshAuthentication::PrivateKey {
+                        path: config.ssh_private_key.ok_or("SSH private-key authentication requires a key file")?,
+                        passphrase,
+                    },
+                    SshAuthenticationMode::Agent => SshAuthentication::Agent { public_key: None },
+                    SshAuthenticationMode::Auto => SshAuthentication::Auto {
+                        private_keys: config
+                            .ssh_private_key
+                            .map(|path| vec![PrivateKeyCredential { path, passphrase }])
+                            .unwrap_or_default(),
+                        use_agent: true,
+                        password: (!password.is_empty()).then(|| SecretString::new(password)),
+                    },
+                };
                 let creds = Credentials {
-                    user_name: user_name.unwrap_or_default(),
-                    password: password.unwrap_or_default(),
+                    user_name,
+                    authentication,
                     proxy_command: config.proxy_command.clone(),
                 };
                 Box::new(SSHConnection::open(&config.connection_info.endpoint(), term_caps, creds).await?)

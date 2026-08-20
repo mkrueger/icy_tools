@@ -359,6 +359,10 @@ impl MainWindow {
                     },
                     password: if address.password.is_empty() { None } else { Some(address.password.clone()) },
 
+                    ssh_authentication: address.ssh_authentication,
+                    ssh_private_key: (!address.ssh_private_key.is_empty()).then(|| address.ssh_private_key.clone().into()),
+                    ssh_key_passphrase: (!address.ssh_key_passphrase.is_empty()).then(|| address.ssh_key_passphrase.clone()),
+
                     proxy_command: None, // fill from settings if needed
                     modem,
                     ansi_music: address.ansi_music,

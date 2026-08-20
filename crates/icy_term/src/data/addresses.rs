@@ -9,6 +9,7 @@ use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::Path;
 use std::{
     collections::HashSet,
@@ -58,6 +59,27 @@ pub fn fmt_terminal_emulation(emulator: &TerminalEmulation) -> &str {
         TerminalEmulation::Rip => "RIPscrip",
         TerminalEmulation::Skypix => "Skypix",
         TerminalEmulation::AtariST => "Atari ST",
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SshAuthenticationMode {
+    #[default]
+    Password,
+    PrivateKey,
+    Agent,
+    Auto,
+}
+
+impl fmt::Display for SshAuthenticationMode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Password => formatter.write_str("Password"),
+            Self::PrivateKey => formatter.write_str("Private key"),
+            Self::Agent => formatter.write_str("SSH agent"),
+            Self::Auto => formatter.write_str("Automatic"),
+        }
     }
 }
 
@@ -278,6 +300,15 @@ pub struct Address {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub password: String,
 
+    #[serde(default, skip_serializing_if = "is_default_ssh_authentication")]
+    pub ssh_authentication: SshAuthenticationMode,
+
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub ssh_private_key: String,
+
+    #[serde(skip)]
+    pub ssh_key_passphrase: String,
+
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub comment: String,
 
@@ -434,6 +465,10 @@ fn is_default_terminal(t: &TerminalEmulation) -> bool {
 
 fn is_default_connection(c: &ConnectionType) -> bool {
     matches!(c, ConnectionType::Telnet) // Assuming Telnet is the default
+}
+
+fn is_default_ssh_authentication(authentication: &SshAuthenticationMode) -> bool {
+    *authentication == SshAuthenticationMode::default()
 }
 
 fn is_default_music(m: &MusicOption) -> bool {
@@ -673,6 +708,24 @@ mod tests {
         let stored = toml::to_string(&address).unwrap();
         let restored: Address = toml::from_str(&stored).unwrap();
         assert!(!restored.lf_expand(), "an explicit opt-out must survive a round trip");
+    }
+
+    #[test]
+    fn ssh_key_settings_do_not_persist_the_passphrase() {
+        let mut address = Address::new("ssh.example");
+        address.ssh_authentication = SshAuthenticationMode::PrivateKey;
+        address.ssh_private_key = "/home/user/.ssh/id_ed25519".to_string();
+        address.ssh_key_passphrase = "do-not-store".to_string();
+
+        let stored = toml::to_string(&address).unwrap();
+        assert!(stored.contains("ssh_authentication = \"private_key\""));
+        assert!(stored.contains("ssh_private_key = \"/home/user/.ssh/id_ed25519\""));
+        assert!(!stored.contains("do-not-store"));
+
+        let restored: Address = toml::from_str(&stored).unwrap();
+        assert_eq!(restored.ssh_authentication, SshAuthenticationMode::PrivateKey);
+        assert_eq!(restored.ssh_private_key, "/home/user/.ssh/id_ed25519");
+        assert!(restored.ssh_key_passphrase.is_empty());
     }
 
     #[test]
