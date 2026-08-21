@@ -41,9 +41,22 @@ const MIN_PAUSE_DISPLAY_MS: u64 = 500;
 const MAX_CACHED_MEDIA_SIZE: usize = 12 * 1024 * 1024;
 const MAX_CACHE_FILENAME_LEN: usize = 128;
 
+/// Client pixel buffers a board may load a frame into, addressed by `B=`.
+const PIXEL_BUFFERS: usize = 2;
+
 enum CachedMediaCommand<'a> {
     Store { filename: &'a str, encoded: &'a str },
     DrawJxl { filename: &'a str, options: &'a str },
+    LoadBlob { buffer: usize, encoded: &'a str },
+    PasteBlob { buffer: usize, options: &'a str },
+}
+
+fn image_buffer(options: &str) -> Option<usize> {
+    options
+        .split(';')
+        .find_map(|option| option.strip_prefix("B="))
+        .and_then(|buffer| buffer.parse::<usize>().ok())
+        .filter(|buffer| *buffer < PIXEL_BUFFERS)
 }
 
 /// Validates a cache-relative name. Audio doors namespace their uploads
@@ -69,6 +82,13 @@ fn parse_cached_media_command(data: &[u8]) -> Option<CachedMediaCommand<'_>> {
     if let Some(arguments) = command.strip_prefix("SyncTERM:C;DrawJXL;") {
         let (options, filename) = arguments.rsplit_once(';').map_or(("", arguments), |(options, filename)| (options, filename));
         return valid_cache_filename(filename).then_some(CachedMediaCommand::DrawJxl { filename, options });
+    }
+    if let Some(arguments) = command.strip_prefix("SyncTERM:C;LoadJXLBlob;") {
+        let (options, encoded) = arguments.split_once(';')?;
+        return image_buffer(options).map(|buffer| CachedMediaCommand::LoadBlob { buffer, encoded });
+    }
+    if let Some(options) = command.strip_prefix("SyncTERM:P;Paste;") {
+        return image_buffer(options).map(|buffer| CachedMediaCommand::PasteBlob { buffer, options });
     }
     None
 }
@@ -480,6 +500,8 @@ pub struct TerminalThread {
     audio_notify_armed: u32,
     /// Last observed audio channel activity, for edge-triggered notifications.
     audio_last_active: u32,
+    /// Frames held by `SyncTERM:C;LoadJXLBlob` until a `SyncTERM:P;Paste` places them.
+    pixel_buffers: [Option<Vec<u8>>; PIXEL_BUFFERS],
 }
 
 impl TerminalThread {
@@ -523,6 +545,7 @@ impl TerminalThread {
             injected_data: Vec::new(),
             audio_notify_armed: 0,
             audio_last_active: 0,
+            pixel_buffers: std::array::from_fn(|_| None),
         }
     }
 
@@ -1700,6 +1723,19 @@ impl TerminalThread {
         };
 
         let decoded = match parse_cached_media_command(data) {
+            Some(CachedMediaCommand::LoadBlob { buffer, encoded }) => {
+                self.pixel_buffers[buffer] = general_purpose::STANDARD
+                    .decode(encoded)
+                    .ok()
+                    .filter(|bytes| bytes.len() <= MAX_CACHED_MEDIA_SIZE);
+                return false;
+            }
+            Some(CachedMediaCommand::PasteBlob { buffer, options }) => {
+                let Some(bytes) = self.pixel_buffers[buffer].as_deref() else {
+                    return false;
+                };
+                icy_engine::decode_image_blob(bytes, true, options, font, screen_size)
+            }
             Some(command) => {
                 let Some(cache_directory) = self.cache_directory.clone() else {
                     return false;
@@ -1717,6 +1753,7 @@ impl TerminalThread {
                         };
                         icy_engine::decode_image_blob(&bytes, true, options, font, screen_size)
                     }
+                    CachedMediaCommand::LoadBlob { .. } | CachedMediaCommand::PasteBlob { .. } => return false,
                 }
             }
             None => icy_engine::decode_image_apc(data, font, screen_size),
@@ -2810,6 +2847,23 @@ mod tests {
         ));
         assert!(parse_cached_media_command(b"SyncTERM:C;S;../escape.jxl;YWJj").is_none());
         assert!(parse_cached_media_command(b"SyncTERM:C;DrawJXL;/tmp/escape.jxl").is_none());
+    }
+
+    #[test]
+    fn parses_the_client_pixel_buffer_commands() {
+        assert!(matches!(
+            parse_cached_media_command(b"SyncTERM:C;LoadJXLBlob;B=1;YWJj"),
+            Some(CachedMediaCommand::LoadBlob { buffer: 1, encoded: "YWJj" })
+        ));
+        assert!(matches!(
+            parse_cached_media_command(b"SyncTERM:P;Paste;B=0;SX=2;SY=3;DX=20;DY=30"),
+            Some(CachedMediaCommand::PasteBlob {
+                buffer: 0,
+                options: "B=0;SX=2;SY=3;DX=20;DY=30"
+            })
+        ));
+        assert!(parse_cached_media_command(b"SyncTERM:C;LoadJXLBlob;B=2;YWJj").is_none());
+        assert!(parse_cached_media_command(b"SyncTERM:P;Paste;B=9").is_none());
     }
 
     #[tokio::test]
