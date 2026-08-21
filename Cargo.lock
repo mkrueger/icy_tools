@@ -3696,6 +3696,7 @@ dependencies = [
  "icy_ui",
  "image",
  "log",
+ "md5",
  "mlua",
  "notify",
  "once_cell",

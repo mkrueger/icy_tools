@@ -49,6 +49,7 @@ enum CachedMediaCommand<'a> {
     DrawJxl { filename: &'a str, options: &'a str },
     LoadBlob { buffer: usize, encoded: &'a str },
     PasteBlob { buffer: usize, options: &'a str },
+    List { pattern: &'a str },
 }
 
 fn image_buffer(options: &str) -> Option<usize> {
@@ -90,7 +91,54 @@ fn parse_cached_media_command(data: &[u8]) -> Option<CachedMediaCommand<'_>> {
     if let Some(options) = command.strip_prefix("SyncTERM:P;Paste;") {
         return image_buffer(options).map(|buffer| CachedMediaCommand::PasteBlob { buffer, options });
     }
+    // Last of the `C;` verbs, so it cannot swallow `LoadJXLBlob`.
+    if let Some(arguments) = command.strip_prefix("SyncTERM:C;L") {
+        return Some(CachedMediaCommand::List {
+            pattern: arguments.strip_prefix(';').unwrap_or("*"),
+        });
+    }
     None
+}
+
+/// The cache entries matching `pattern`, each with its digest, so a board can send
+/// only what the caller is missing.
+fn cache_listing(cache_directory: &std::path::Path, pattern: &str) -> String {
+    let mut entries = Vec::new();
+    collect_cache_entries(cache_directory, "", &mut entries);
+    entries.sort();
+    entries
+        .iter()
+        .filter(|name| cache_glob_matches(pattern, name))
+        .filter_map(|name| {
+            let data = std::fs::read(cache_directory.join(name)).ok()?;
+            Some(format!("{name}\t{:x}\n", md5::compute(&data)))
+        })
+        .collect()
+}
+
+fn collect_cache_entries(directory: &std::path::Path, prefix: &str, entries: &mut Vec<String>) {
+    let Ok(listing) = std::fs::read_dir(directory) else {
+        return;
+    };
+    for entry in listing.flatten() {
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        let relative = format!("{prefix}{name}");
+        if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            collect_cache_entries(&entry.path(), &format!("{relative}/"), entries);
+        } else {
+            entries.push(relative);
+        }
+    }
+}
+
+/// The listing glob, which in practice is a plain prefix such as `gfx/*`.
+fn cache_glob_matches(pattern: &str, name: &str) -> bool {
+    match pattern.split_once('*') {
+        Some((head, tail)) => name.len() >= head.len() + tail.len() && name.starts_with(head) && name.ends_with(tail),
+        None => pattern == name,
+    }
 }
 
 async fn store_cached_media(cache_directory: &std::path::Path, filename: &str, encoded: &str) -> Result<(), String> {
@@ -1736,6 +1784,13 @@ impl TerminalThread {
                 };
                 icy_engine::decode_image_blob(bytes, true, options, font, screen_size)
             }
+            Some(CachedMediaCommand::List { pattern }) => {
+                let listing = self.cache_directory.as_deref().map(|directory| cache_listing(directory, pattern)).unwrap_or_default();
+                if let Some(conn) = &mut self.connection {
+                    let _ = conn.send(format!("\x1b_SyncTERM:C;L\n{listing}\x1b\\").as_bytes()).await;
+                }
+                return false;
+            }
             Some(command) => {
                 let Some(cache_directory) = self.cache_directory.clone() else {
                     return false;
@@ -1753,7 +1808,7 @@ impl TerminalThread {
                         };
                         icy_engine::decode_image_blob(&bytes, true, options, font, screen_size)
                     }
-                    CachedMediaCommand::LoadBlob { .. } | CachedMediaCommand::PasteBlob { .. } => return false,
+                    CachedMediaCommand::LoadBlob { .. } | CachedMediaCommand::PasteBlob { .. } | CachedMediaCommand::List { .. } => return false,
                 }
             }
             None => icy_engine::decode_image_apc(data, font, screen_size),
@@ -2577,7 +2632,7 @@ impl TerminalThread {
 #[cfg(test)]
 mod tests {
     use super::{
-        ansi_mode_report_status, dec_mode_report_status, decrqss_status, parse_cached_media_command, read_cached_media, store_cached_media,
+        ansi_mode_report_status, cache_listing, dec_mode_report_status, decrqss_status, parse_cached_media_command, read_cached_media, store_cached_media,
         valid_cache_filename, CachedMediaCommand, TerminalThread,
     };
     use async_trait::async_trait;
@@ -2850,8 +2905,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_the_client_pixel_buffer_commands() {
-        assert!(matches!(
+    fn parses_the_client_pixel_buffer_commands() {        assert!(matches!(
             parse_cached_media_command(b"SyncTERM:C;LoadJXLBlob;B=1;YWJj"),
             Some(CachedMediaCommand::LoadBlob { buffer: 1, encoded: "YWJj" })
         ));
@@ -2864,6 +2918,26 @@ mod tests {
         ));
         assert!(parse_cached_media_command(b"SyncTERM:C;LoadJXLBlob;B=2;YWJj").is_none());
         assert!(parse_cached_media_command(b"SyncTERM:P;Paste;B=9").is_none());
+    }
+
+    #[test]
+    fn the_cache_listing_names_what_the_caller_holds() {
+        let root = std::env::temp_dir().join(format!("icy_term_listing_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("snd")).unwrap();
+        std::fs::create_dir_all(root.join("gfx")).unwrap();
+        std::fs::write(root.join("snd/tone.wav"), b"tone").unwrap();
+        std::fs::write(root.join("gfx/frame.jxl"), b"frame").unwrap();
+
+        let everything = cache_listing(&root, "*");
+        assert!(everything.contains(&format!("snd/tone.wav\t{:x}\n", md5::compute("tone"))), "{everything:?}");
+        assert!(everything.contains("gfx/frame.jxl\t"), "{everything:?}");
+
+        let sound_only = cache_listing(&root, "snd/*");
+        assert!(sound_only.contains("snd/tone.wav\t"), "{sound_only:?}");
+        assert!(!sound_only.contains("gfx/"), "{sound_only:?}");
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
