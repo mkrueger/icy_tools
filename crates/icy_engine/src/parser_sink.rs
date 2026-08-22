@@ -646,6 +646,7 @@ impl CommandSink for ScreenSink<'_> {
                 self.screen.cr();
             }
             TerminalCommand::CsiCursorHorizontalAbsolute(col) => {
+                self.screen.terminal_state_mut().wrap_pending = false;
                 let col = (col as i32).saturating_sub(1).max(0);
                 let mut pos = self.screen.caret_position();
                 pos.x = col;
@@ -653,6 +654,7 @@ impl CommandSink for ScreenSink<'_> {
                 self.screen.limit_caret_pos(false);
             }
             TerminalCommand::CsiCursorPosition(row, col) => {
+                self.screen.terminal_state_mut().wrap_pending = false;
                 let upper_left = self.screen.upper_left_position();
                 let row = upper_left.y + (row as i32).saturating_sub(1).max(0);
                 let col = upper_left.x + (col as i32).saturating_sub(1).max(0);

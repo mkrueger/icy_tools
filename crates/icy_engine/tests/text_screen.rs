@@ -1,7 +1,7 @@
 //! Unit tests for TextScreen - testing Screen and EditableScreen trait implementations
 
 use icy_engine::{AttributedChar, EditableScreen, IceMode, Position, Screen, ScreenSink, Selection, Size, TextAttribute, TextPane, TextScreen};
-use icy_parser_core::{CommandSink, OperatingSystemCommand};
+use icy_parser_core::{AnsiParser, CommandParser, CommandSink, OperatingSystemCommand};
 
 // ============================================================================
 // TextPane Tests
@@ -89,6 +89,95 @@ fn test_dec_rectangular_fill_uses_origin_margins() {
 
     assert_eq!(screen.char_at(Position::new(2, 1)).ch, 'X');
     assert_eq!(screen.char_at(Position::new(0, 0)).ch, ' ');
+}
+
+#[test]
+fn test_scroll_up_respects_rectangular_margins() {
+    let mut screen = TextScreen::new(Size::new(8, 6));
+    screen.terminal_state_mut().set_margins_top_bottom(1, 4);
+    screen.terminal_state_mut().set_dec_left_right_margins(true);
+    screen.terminal_state_mut().set_margins_left_right(2, 5);
+
+    for (row, marker) in [(1, 'A'), (2, 'B'), (3, 'C'), (4, 'D')] {
+        for column in 2..=5 {
+            screen.set_char(Position::new(column, row), AttributedChar::new(marker, TextAttribute::default()));
+        }
+    }
+
+    ScreenSink::new(&mut screen).emit(icy_parser_core::TerminalCommand::CsiScroll(icy_parser_core::Direction::Up, 1));
+
+    for column in 2..=5 {
+        assert_eq!(screen.char_at(Position::new(column, 1)).ch, 'B');
+        assert_eq!(screen.char_at(Position::new(column, 2)).ch, 'C');
+        assert_eq!(screen.char_at(Position::new(column, 3)).ch, 'D');
+        assert_eq!(screen.char_at(Position::new(column, 4)).ch, ' ');
+    }
+    assert_eq!(screen.char_at(Position::new(1, 2)).ch, ' ');
+    assert_eq!(screen.char_at(Position::new(6, 2)).ch, ' ');
+}
+
+#[test]
+fn test_right_margin_defers_autowrap_inside_rectangular_margins() {
+    let mut screen = TextScreen::new(Size::new(8, 6));
+    screen.terminal_state_mut().set_margins_top_bottom(1, 4);
+    screen.terminal_state_mut().set_dec_left_right_margins(true);
+    screen.terminal_state_mut().set_margins_left_right(2, 5);
+
+    for (row, marker) in [(1, 'A'), (2, 'B'), (3, 'C'), (4, 'D')] {
+        for column in 2..=5 {
+            screen.set_char(Position::new(column, row), AttributedChar::new(marker, TextAttribute::default()));
+        }
+    }
+
+    screen.set_caret_position(Position::new(2, 4));
+    for ch in "EEEE".chars() {
+        screen.print_char(AttributedChar::new(ch, TextAttribute::default()));
+    }
+
+    assert_eq!(screen.caret_position(), Position::new(5, 4));
+    assert!(screen.terminal_state().wrap_pending);
+    assert_eq!(screen.char_at(Position::new(2, 1)).ch, 'A');
+    assert_eq!(screen.char_at(Position::new(2, 4)).ch, 'E');
+}
+
+#[test]
+fn test_cursor_position_cancels_pending_margin_wrap() {
+    let mut screen = TextScreen::new(Size::new(8, 6));
+    screen.terminal_state_mut().set_margins_top_bottom(1, 4);
+    screen.terminal_state_mut().set_dec_left_right_margins(true);
+    screen.terminal_state_mut().set_margins_left_right(2, 5);
+
+    screen.set_caret_position(Position::new(2, 1));
+    for ch in "AAAA".chars() {
+        screen.print_char(AttributedChar::new(ch, TextAttribute::default()));
+    }
+    assert!(screen.terminal_state().wrap_pending);
+
+    ScreenSink::new(&mut screen).emit(icy_parser_core::TerminalCommand::CsiCursorPosition(3, 3));
+    assert!(!screen.terminal_state().wrap_pending);
+    screen.print_char(AttributedChar::new('B', TextAttribute::default()));
+
+    assert_eq!(screen.char_at(Position::new(2, 2)).ch, 'B');
+    assert_eq!(screen.char_at(Position::new(2, 3)).ch, ' ');
+}
+
+#[test]
+fn test_absolute_cursor_rows_inside_rectangular_margins() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    screen.terminal_state_mut().is_terminal_buffer = true;
+    let mut parser = AnsiParser::new();
+
+    parser.parse(b"\x1b[5;18r\x1b[?69h\x1b[18;63s", &mut ScreenSink::new(&mut screen));
+    for (row, marker) in (5..=18).zip('A'..='N') {
+        let sequence = format!("\x1b[{row};18H\x1b[37;40m{}", marker.to_string().repeat(46));
+        parser.parse(sequence.as_bytes(), &mut ScreenSink::new(&mut screen));
+    }
+    parser.parse(b"\x1b[?1000h\x1b[?1006h", &mut ScreenSink::new(&mut screen));
+
+    for (row, marker) in (4..=17).zip('A'..='N') {
+        assert_eq!(screen.char_at(Position::new(17, row)).ch, marker, "screen row {row}");
+    }
+    assert_eq!(screen.char_at(Position::new(17, 18)).ch, ' ');
 }
 
 #[test]

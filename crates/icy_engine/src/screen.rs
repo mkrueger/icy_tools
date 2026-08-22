@@ -454,7 +454,8 @@ pub trait EditableScreen: Screen {
             // lf needs to be in margins, if there are some.
             caret_pos.x = last_col;
             if self.terminal_state_mut().auto_wrap_mode == crate::AutoWrapMode::AutoWrap {
-                if self.terminal_state().last_column_flag_mode {
+                // DECLRMM follows VT delayed autowrap; an immediate LF here can scroll before a following SU.
+                if self.terminal_state().last_column_flag_mode || self.terminal_state().margins_left_right().is_some() {
                     self.terminal_state_mut().wrap_pending = true;
                     self.set_caret_position(caret_pos);
                 } else {

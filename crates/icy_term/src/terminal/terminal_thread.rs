@@ -1783,7 +1783,11 @@ impl TerminalThread {
                 icy_engine::decode_image_blob(bytes, true, options, font, screen_size)
             }
             Some(CachedMediaCommand::List { pattern }) => {
-                let listing = self.cache_directory.as_deref().map(|directory| cache_listing(directory, pattern)).unwrap_or_default();
+                let listing = self
+                    .cache_directory
+                    .as_deref()
+                    .map(|directory| cache_listing(directory, pattern))
+                    .unwrap_or_default();
                 if let Some(conn) = &mut self.connection {
                     let _ = conn.send(format!("\x1b_SyncTERM:C;L\n{listing}\x1b\\").as_bytes()).await;
                 }
@@ -2635,7 +2639,7 @@ mod tests {
     };
     use async_trait::async_trait;
     use base64::{engine::general_purpose, Engine as _};
-    use icy_engine::{EditableScreen, Screen, Size, TextScreen};
+    use icy_engine::{EditableScreen, Position, Screen, Size, TextScreen};
     use icy_net::{telnet::TerminalEmulation, Connection, ConnectionType};
     use parking_lot::Mutex;
     use std::sync::Arc;
@@ -2808,6 +2812,34 @@ mod tests {
         assert_eq!(&*sent.lock(), b"\x1b[?5u\x1B[?1003;1$y\x1B[?1006;2$y\x1B[?1016;1$y\x1B[?80;1$y\x1B[?1070;2$y");
     }
 
+    #[tokio::test]
+    async fn rectangular_margin_rows_survive_startup_and_repaint_chunking() {
+        let mut input = String::from("\x1b[5;18r\x1b[?69h\x1b[18;63s");
+        for (row, marker) in (5..=18).zip('A'..='N') {
+            input.push_str(&format!("\x1b[{row};18H\x1b[37;40m{}", marker.to_string().repeat(46)));
+        }
+        input.push_str("\x1b[5;18H\x1b[37;40m");
+        input.push_str(&"A".repeat(46));
+        input.push_str("\x1b[6;18H\x1b[30;47m");
+        input.push_str(&"B".repeat(46));
+
+        for bytewise in [false, true] {
+            let (mut terminal, _, screen) = test_terminal();
+            if bytewise {
+                for byte in input.as_bytes() {
+                    terminal.process_data(std::slice::from_ref(byte)).await;
+                }
+            } else {
+                terminal.process_data(input.as_bytes()).await;
+            }
+
+            let screen = screen.lock();
+            for (row, marker) in (4..=17).zip('A'..='N') {
+                assert_eq!(screen.char_at(Position::new(17, row)).ch, marker, "screen row {row}, bytewise={bytewise}");
+            }
+        }
+    }
+
     #[test]
     fn auto_login_enter_uses_active_terminal_mapping() {
         assert_eq!(TerminalThread::auto_login_control_code(TerminalEmulation::ATAscii, b'\r'), vec![0x9B]);
@@ -2903,7 +2935,8 @@ mod tests {
     }
 
     #[test]
-    fn parses_the_client_pixel_buffer_commands() {        assert!(matches!(
+    fn parses_the_client_pixel_buffer_commands() {
+        assert!(matches!(
             parse_cached_media_command(b"SyncTERM:C;LoadJXLBlob;B=1;YWJj"),
             Some(CachedMediaCommand::LoadBlob { buffer: 1, encoded: "YWJj" })
         ));
