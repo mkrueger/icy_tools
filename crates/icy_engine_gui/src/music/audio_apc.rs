@@ -161,6 +161,7 @@ pub enum AudioFeatureQuery {
 #[derive(Debug, Default)]
 pub struct AudioApcStatus {
     active: AtomicU32,
+    completed: [AtomicU32; CHANNELS],
 }
 
 impl AudioApcStatus {
@@ -172,7 +173,10 @@ impl AudioApcStatus {
         if active {
             self.active.fetch_or(bit, Ordering::Relaxed);
         } else {
-            self.active.fetch_and(!bit, Ordering::Relaxed);
+            let previous = self.active.fetch_and(!bit, Ordering::Relaxed);
+            if previous & bit != 0 {
+                self.completed[channel as usize].fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
 
@@ -182,6 +186,10 @@ impl AudioApcStatus {
 
     pub fn active_mask(&self) -> u32 {
         self.active.load(Ordering::Relaxed)
+    }
+
+    pub fn completion_generation(&self, channel: u8) -> u32 {
+        self.completed.get(channel as usize).map_or(0, |generation| generation.load(Ordering::Relaxed))
     }
 
     pub fn clear(&self) {
@@ -1358,12 +1366,14 @@ mod tests {
     #[test]
     fn status_tracks_channels_independently() {
         let status = AudioApcStatus::default();
+        let generation = status.completion_generation(3);
         status.set_active(3, true);
         status.set_active(9, true);
         assert!(status.is_active(3));
         assert!(!status.is_active(4));
         status.set_active(3, false);
         assert!(!status.is_active(3));
+        assert_eq!(status.completion_generation(3), generation.wrapping_add(1));
         assert!(status.is_active(9));
         // Out-of-range writes must not corrupt the mask.
         status.set_active(200, true);

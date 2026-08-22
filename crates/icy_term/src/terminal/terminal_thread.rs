@@ -544,10 +544,10 @@ pub struct TerminalThread {
     cache_directory: Option<PathBuf>,
     /// Bytes injected by `PlayFile`, drained into the receive path by the run loop.
     injected_data: Vec<u8>,
-    /// Channels armed by `SyncTERM:A;Update`, as a bitmask.
-    audio_notify_armed: u32,
-    /// Last observed audio channel activity, for edge-triggered notifications.
-    audio_last_active: u32,
+    /// Completion generation preceding the last queue on each channel.
+    audio_queue_generation: [u32; audio_apc::CHANNELS],
+    /// Generation an `Update` command is waiting to see advance.
+    audio_notify_generation: [Option<u32>; audio_apc::CHANNELS],
     /// Frames held by `SyncTERM:C;LoadJXLBlob` until a `SyncTERM:P;Paste` places them.
     pixel_buffers: [Option<Vec<u8>>; PIXEL_BUFFERS],
 }
@@ -591,8 +591,8 @@ impl TerminalThread {
             modem_config: None,
             cache_directory: None,
             injected_data: Vec::new(),
-            audio_notify_armed: 0,
-            audio_last_active: 0,
+            audio_queue_generation: [0; audio_apc::CHANNELS],
+            audio_notify_generation: [None; audio_apc::CHANNELS],
             pixel_buffers: std::array::from_fn(|_| None),
         }
     }
@@ -1728,8 +1728,11 @@ impl TerminalThread {
         };
 
         if let AudioApcCommand::Update { channel } = command {
-            self.audio_notify_armed |= 1 << channel;
+            self.audio_notify_generation[channel as usize] = Some(self.audio_queue_generation[channel as usize]);
             return true;
+        }
+        if let AudioApcCommand::Queue { channel, .. } = &command {
+            self.audio_queue_generation[*channel as usize] = audio_apc::status().completion_generation(*channel);
         }
         self.send_event(TerminalEvent::AudioApc(command, self.cache_directory.clone()));
         true
@@ -1737,20 +1740,15 @@ impl TerminalThread {
 
     /// Emits `CSI = 7 ; <ch> ; 0 n` once for each armed channel that has drained.
     async fn poll_audio_notifications(&mut self) {
-        if self.audio_notify_armed == 0 {
-            return;
-        }
-        let active = audio_apc::status().active_mask();
-        let stopped = self.audio_last_active & !active & self.audio_notify_armed;
-        self.audio_last_active = active;
-        if stopped == 0 {
-            return;
-        }
-        self.audio_notify_armed &= !stopped;
-        for channel in 0..audio_apc::CHANNELS as u32 {
-            if stopped & (1 << channel) == 0 {
+        let status = audio_apc::status();
+        for channel in 0..audio_apc::CHANNELS {
+            let Some(generation) = self.audio_notify_generation[channel] else {
+                continue;
+            };
+            if status.completion_generation(channel as u8) == generation {
                 continue;
             }
+            self.audio_notify_generation[channel] = None;
             if let Some(conn) = &mut self.connection {
                 let _ = conn.send(format!("\x1b[=7;{channel};0n").as_bytes()).await;
             }
