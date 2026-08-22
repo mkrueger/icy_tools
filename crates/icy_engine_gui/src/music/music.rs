@@ -280,7 +280,8 @@ impl SoundThread {
         if let Err(err) = std::thread::Builder::new().name("music_thread".to_string()).spawn(move || {
             // Create audio stream inside the thread (OutputStream is not Send)
             let (stream, mixer, sample_rate) = match rodio::DeviceSinkBuilder::open_default_sink() {
-                Ok(handle) => {
+                Ok(mut handle) => {
+                    handle.log_on_drop(false);
                     let rate = handle.config().sample_rate();
                     let (mixer, source) = rodio::mixer::mixer(handle.config().channel_count(), rate);
                     handle.mixer().add(source.amplify(DEFAULT_MASTER_VOLUME));
@@ -463,7 +464,8 @@ impl SoundBackgroundThreadData {
             .or_else(|| rodio::DeviceSinkBuilder::open_default_sink().ok());
 
         match opened {
-            Some(handle) => {
+            Some(mut handle) => {
+                handle.log_on_drop(false);
                 self.sample_rate = handle.config().sample_rate();
                 let (mixer, source) = rodio::mixer::mixer(handle.config().channel_count(), self.sample_rate);
                 handle.mixer().add(source.amplify(self.master_volume));
