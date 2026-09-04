@@ -259,9 +259,12 @@ impl WindowManager {
 
                 if !is_tab_in_terminal {
                     // Handle Alt+Number window switching
-                    if let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = &event {
+                    if let Event::Keyboard(keyboard::Event::KeyPressed {
+                        key, modified_key, modifiers, ..
+                    }) = &event
+                    {
                         if let Some(icy_engine_gui::KeyboardAction::FocusWindow(target_id)) =
-                            icy_engine_gui::handle_window_manager_keyboard_press(key, modifiers)
+                            icy_engine_gui::handle_window_manager_keyboard_press(key, modified_key, modifiers)
                         {
                             return Task::done(WindowManagerMessage::FocusWindow(target_id));
                         }

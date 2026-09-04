@@ -265,7 +265,14 @@ pub enum KeyboardAction {
 /// Window IDs: 1-9 map to windows 1-9, 0 maps to window 10.
 ///
 /// Note: Uses Alt on all platforms. On macOS, Cmd is also accepted (without Ctrl).
-pub fn handle_window_manager_keyboard_press(key: &icy_ui::keyboard::Key, modifiers: &icy_ui::keyboard::Modifiers) -> Option<KeyboardAction> {
+/// `modified_key` must include the current keyboard layout and modifiers. This
+/// prevents Option+number combinations that produce punctuation on macOS from
+/// being mistaken for window shortcuts.
+pub fn handle_window_manager_keyboard_press(
+    key: &icy_ui::keyboard::Key,
+    modified_key: &icy_ui::keyboard::Key,
+    modifiers: &icy_ui::keyboard::Modifiers,
+) -> Option<KeyboardAction> {
     use icy_ui::keyboard::key::Named;
 
     // Handle Tab / Shift+Tab for focus navigation
@@ -283,7 +290,7 @@ pub fn handle_window_manager_keyboard_press(key: &icy_ui::keyboard::Key, modifie
     let is_alt_or_cmd = modifiers.alt() || (modifiers.command() && !modifiers.control());
 
     if is_alt_or_cmd && !modifiers.shift() {
-        if let icy_ui::keyboard::Key::Character(s) = key {
+        if let icy_ui::keyboard::Key::Character(s) = modified_key {
             if let Some(digit) = s.chars().next() {
                 if digit.is_ascii_digit() {
                     let target_id = digit.to_digit(10).unwrap() as usize;
@@ -295,4 +302,35 @@ pub fn handle_window_manager_keyboard_press(key: &icy_ui::keyboard::Key, modifie
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{handle_window_manager_keyboard_press, KeyboardAction};
+    use icy_ui::keyboard::{Key, Modifiers};
+
+    #[test]
+    fn alt_digit_focuses_window() {
+        let key = Key::Character("5".into());
+        assert_eq!(
+            handle_window_manager_keyboard_press(&key, &key, &Modifiers::ALT),
+            Some(KeyboardAction::FocusWindow(5))
+        );
+    }
+
+    #[test]
+    fn option_generated_characters_are_not_window_shortcuts() {
+        for (unmodified, modified, modifiers) in [
+            ("5", "[", Modifiers::ALT),
+            ("6", "]", Modifiers::ALT),
+            ("7", "|", Modifiers::ALT),
+            ("8", "{", Modifiers::ALT),
+            ("9", "}", Modifiers::ALT),
+            ("7", "\\", Modifiers::ALT | Modifiers::SHIFT),
+        ] {
+            let unmodified_key = Key::Character(unmodified.into());
+            let modified_key = Key::Character(modified.into());
+            assert_eq!(handle_window_manager_keyboard_press(&unmodified_key, &modified_key, &modifiers), None);
+        }
+    }
 }

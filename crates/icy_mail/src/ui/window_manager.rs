@@ -167,13 +167,16 @@ impl WindowManager {
             window::close_events().map(WindowManagerMessage::WindowClosed),
             icy_ui::event::listen_with(|event, status, window_id| {
                 let captured = matches!(status, icy_ui::event::Status::Captured);
-                if let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = &event {
+                if let Event::Keyboard(keyboard::Event::KeyPressed {
+                    key, modified_key, modifiers, ..
+                }) = &event
+                {
                     // Tab cycles our own panes unless a text widget has focus and used it.
                     let tab_owned_by_window = matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab)) && !captured;
 
                     // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
                     if !tab_owned_by_window {
-                        if let Some(action) = handle_window_manager_keyboard_press(key, modifiers) {
+                        if let Some(action) = handle_window_manager_keyboard_press(key, modified_key, modifiers) {
                             return match action {
                                 KeyboardAction::FocusWindow(target_id) => Some(WindowManagerMessage::FocusWindow(target_id)),
                                 KeyboardAction::FocusNext => Some(WindowManagerMessage::FocusNext),

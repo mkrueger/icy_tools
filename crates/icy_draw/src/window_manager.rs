@@ -996,9 +996,14 @@ impl WindowManager {
                     Event::Mouse(icy_ui::mouse::Event::ButtonPressed { .. }) => Some(WindowManagerMessage::Event(window_id, event)),
                     Event::Mouse(_) => None,
                     // Keyboard events are handled below
-                    Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                    Event::Keyboard(keyboard::Event::KeyPressed {
+                        key,
+                        modified_key,
+                        modifiers,
+                        ..
+                    }) => {
                         // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
-                        if let Some(action) = icy_engine_gui::handle_window_manager_keyboard_press(key, modifiers) {
+                        if let Some(action) = icy_engine_gui::handle_window_manager_keyboard_press(key, modified_key, modifiers) {
                             use icy_engine_gui::KeyboardAction;
                             return match action {
                                 KeyboardAction::FocusWindow(target_id) => Some(WindowManagerMessage::FocusWindow(target_id)),
