@@ -152,6 +152,19 @@ fn extract_paths_from_drag_drop(format: &str, data: &[u8]) -> Vec<PathBuf> {
     paths
 }
 
+#[cfg(test)]
+mod tests {
+    use super::file_uri_to_pathbuf;
+    use std::path::PathBuf;
+
+    #[test]
+    fn converts_macos_document_urls_to_paths() {
+        assert_eq!(file_uri_to_pathbuf("file:///Users/test/My%20File.pcb"), Some(PathBuf::from("/Users/test/My File.pcb")));
+        assert_eq!(file_uri_to_pathbuf("file://localhost/Users/test/foo.pcb"), Some(PathBuf::from("/Users/test/foo.pcb")));
+        assert_eq!(file_uri_to_pathbuf("https://example.com/foo.pcb"), None);
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum WindowManagerMessage {
     OpenWindow,
@@ -185,6 +198,8 @@ pub enum WindowManagerMessage {
     McpCommand(Arc<McpCommand>),
     /// File was dropped onto the window (with Ctrl state for new window)
     FileDropped(window::Id, PathBuf, bool),
+    /// Document URL received from Finder or Launch Services on macOS.
+    OpenDocumentUrl(String),
 }
 
 fn start_session_save_worker() -> mpsc::Sender<SaveRequest> {
@@ -934,6 +949,35 @@ impl WindowManager {
                 // No unsaved changes - open directly
                 return Task::done(WindowManagerMessage::WindowMessage(window_id, crate::ui::Message::FileOpened(path)));
             }
+
+            WindowManagerMessage::OpenDocumentUrl(url) => {
+                let Some(path) = file_uri_to_pathbuf(&url) else {
+                    return Task::batch([mcp_task]);
+                };
+
+                // Reuse the initial empty window when the application has just
+                // been launched by Finder. Otherwise, preserve the current
+                // document and open the requested file in a new window.
+                if self.windows.len() == 1 {
+                    let (&window_id, window) = self.windows.first_key_value().expect("one window");
+                    if window.file_path().is_none() && !window.is_modified() {
+                        return Task::done(WindowManagerMessage::WindowMessage(
+                            window_id,
+                            crate::ui::Message::FileOpened(path),
+                        ));
+                    }
+                }
+
+                self.pending_restores.push(WindowRestoreInfo {
+                    original_path: Some(path),
+                    load_path: None,
+                    mark_dirty: false,
+                    position: None,
+                    size: (DEFAULT_SIZE.width, DEFAULT_SIZE.height),
+                    session_data_path: None,
+                });
+                return Task::done(WindowManagerMessage::OpenWindow);
+            }
         };
 
         Task::batch([main_task, mcp_task])
@@ -1017,6 +1061,7 @@ impl WindowManager {
                     _ => None,
                 }
             }),
+            icy_ui::event::listen_url().map(WindowManagerMessage::OpenDocumentUrl),
             // Autosave tick - check every second
             icy_ui::time::every(std::time::Duration::from_secs(1)).map(|_| WindowManagerMessage::AutosaveTick),
         ];
