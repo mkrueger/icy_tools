@@ -259,26 +259,16 @@ impl ToolHandler for OutlineClickTool {
                 }
 
                 // Handle character input using translated text - filter for valid outline chars only
-                if !modifiers.control() && !modifiers.alt() {
-                    if let Some(input_text) = text {
-                        if let Some(ch) = input_text.chars().next() {
-                            // Skip control characters (0x00-0x1F) and DEL (0x7F) - these should be handled
-                            // by Named key handlers (Backspace, Tab, Enter, Delete, etc.)
-                            if ch < ' ' || ch == '\x7F' {
-                                // Fall through to Named key handling below
-                            } else {
-                                let upper = ch.to_ascii_uppercase();
+                if let Some(ch) = super::translated_text_character(text.as_deref(), modifiers) {
+                    let upper = ch.to_ascii_uppercase();
 
-                                // Only accept valid outline characters (A-Q, @, &)
-                                if Self::is_valid_outline_char(upper) {
-                                    return self.type_outline_char(ctx, upper);
-                                }
-
-                                // Invalid character - ignore silently
-                                return ToolResult::None;
-                            }
-                        }
+                    // Only accept valid outline characters (A-Q, @, &)
+                    if Self::is_valid_outline_char(upper) {
+                        return self.type_outline_char(ctx, upper);
                     }
+
+                    // Invalid character - ignore silently
+                    return ToolResult::None;
                 }
 
                 // Handle Space key (text field may not contain it)

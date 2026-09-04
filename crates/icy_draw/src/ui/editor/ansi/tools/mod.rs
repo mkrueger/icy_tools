@@ -492,6 +492,18 @@ impl NavResult {
     }
 }
 
+/// Return the printable character produced by the active keyboard layout.
+///
+/// Alt/Option must not be rejected here: macOS keyboard layouts use Option to
+/// enter characters such as `[`, `]`, `{`, `}`, `\`, and `|`.
+fn translated_text_character(text: Option<&str>, modifiers: &icy_ui::keyboard::Modifiers) -> Option<char> {
+    if modifiers.control() {
+        return None;
+    }
+
+    text?.chars().next().filter(|ch| *ch >= ' ' && *ch != '\x7F')
+}
+
 /// Handle common navigation and selection keyboard events.
 ///
 /// This covers:
@@ -625,6 +637,27 @@ pub fn handle_navigation_key(ctx: &mut ToolContext, key: &icy_ui::keyboard::Key,
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::translated_text_character;
+    use icy_ui::keyboard::Modifiers;
+
+    #[test]
+    fn accepts_characters_produced_with_option() {
+        for character in ['[', ']', '{', '}', '\\', '|'] {
+            let text = character.to_string();
+            assert_eq!(translated_text_character(Some(&text), &Modifiers::ALT), Some(character));
+        }
+    }
+
+    #[test]
+    fn rejects_control_shortcuts_and_control_characters() {
+        assert_eq!(translated_text_character(Some("t"), &Modifiers::CTRL), None);
+        assert_eq!(translated_text_character(Some("\u{1b}"), &Modifiers::empty()), None);
+        assert_eq!(translated_text_character(Some("\u{7f}"), &Modifiers::empty()), None);
+    }
 }
 
 // ============================================================================

@@ -319,7 +319,7 @@ impl ToolHandler for FontTool {
 
     fn handle_event(&mut self, ctx: &mut ToolContext, event: &icy_ui::Event) -> ToolResult {
         match event {
-            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+            icy_ui::Event::Keyboard(icy_ui::keyboard::Event::KeyPressed { key, modifiers, text, .. }) => {
                 use icy_ui::keyboard::key::Named;
 
                 // Font-specific keys: Backspace, Enter, Space
@@ -358,13 +358,9 @@ impl ToolHandler for FontTool {
                     }
                 }
 
-                // Character input - render font glyph
-                if let icy_ui::keyboard::Key::Character(s) = key {
-                    if !modifiers.control() && !modifiers.alt() {
-                        if let Some(ch) = s.chars().next() {
-                            return self.render_char(ctx, ch);
-                        }
-                    }
+                // Character input - render the glyph produced by the active keyboard layout.
+                if let Some(ch) = super::translated_text_character(text.as_deref(), modifiers) {
+                    return self.render_char(ctx, ch);
                 }
 
                 ToolResult::None

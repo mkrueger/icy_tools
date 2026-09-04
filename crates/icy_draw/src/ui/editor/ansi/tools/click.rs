@@ -373,24 +373,16 @@ impl ToolHandler for ClickTool {
                 }
 
                 // Character input using the translated text (respects keyboard layout) - not for Image layers
-                if !self.is_on_image_layer && !modifiers.control() && !modifiers.alt() {
-                    if let Some(input_text) = text {
-                        if let Some(ch) = input_text.chars().next() {
-                            // Skip control characters (0x00-0x1F) and DEL (0x7F) - these should be handled
-                            // by Named key handlers (Backspace, Tab, Enter, Delete, etc.)
-                            if ch < ' ' || ch == '\x7F' {
-                                // Fall through to Named key handling below
-                            } else {
-                                // Convert Unicode -> buffer encoding (CP437 etc.)
-                                let buffer_type = ctx.state.get_buffer().buffer_type;
-                                let encoded = buffer_type.convert_from_unicode(ch);
-                                if let Err(e) = ctx.state.type_key(encoded) {
-                                    log::warn!("Failed to type character: {e}");
-                                    return ToolResult::None;
-                                }
-                                return ToolResult::Commit("Type character".to_string());
-                            }
+                if !self.is_on_image_layer {
+                    if let Some(ch) = super::translated_text_character(text.as_deref(), modifiers) {
+                        // Convert Unicode -> buffer encoding (CP437 etc.)
+                        let buffer_type = ctx.state.get_buffer().buffer_type;
+                        let encoded = buffer_type.convert_from_unicode(ch);
+                        if let Err(e) = ctx.state.type_key(encoded) {
+                            log::warn!("Failed to type character: {e}");
+                            return ToolResult::None;
                         }
+                        return ToolResult::Commit("Type character".to_string());
                     }
                 }
 
