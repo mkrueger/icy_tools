@@ -72,6 +72,7 @@ enum ParserState {
     CsiLess = 24,    // CSI < ...
     // Other states
     OscString = 5,
+    OscEscape = 25,
     DcsString = 6,
     DcsEscape = 7,
     ApsString = 8,
@@ -1397,24 +1398,28 @@ impl CommandParser for AnsiParser {
                             i += term_pos + 1;
                             printable_start = i;
                         } else {
-                            // ESC - might be ST (String Terminator: ESC \)
-                            i += term_pos;
-                            if i + 1 < input.len() && input[i + 1] == b'\\' {
-                                // ST - String Terminator
-                                self.emit_osc_sequence(sink);
-                                self.reset();
-                                i += 2; // Skip both ESC and \
-                                printable_start = i;
-                            } else {
-                                // Collect ESC as part of OSC string
-                                self.push_string_data(&[ESC]);
-                                i += 1;
-                            }
+                            // Preserve a possible ST across input boundaries.
+                            self.state = ParserState::OscEscape;
+                            i += term_pos + 1;
                         }
                     } else {
                         // No terminator found - consume rest of input
                         self.push_string_data(&input[i..]);
                         i = input.len();
+                    }
+                }
+
+                ParserState::OscEscape => {
+                    if byte == b'\\' {
+                        self.emit_osc_sequence(sink);
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    } else {
+                        // ESC was payload; reprocess this byte so BEL or another
+                        // ESC still has exactly the same meaning in every chunking.
+                        self.push_string_data(&[ESC]);
+                        self.state = ParserState::OscString;
                     }
                 }
 

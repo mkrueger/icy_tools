@@ -53,9 +53,8 @@ impl CommandSink for TestSink {
         }
     }
 
-    fn emit_view_data(&mut self, command: ViewDataCommand) -> bool {
+    fn emit_view_data(&mut self, command: ViewDataCommand) {
         self.commands.push(format!("ViewData: {:?}", command));
-        false
     }
 }
 

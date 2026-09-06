@@ -14,10 +14,23 @@
 
 use crate::{Blink, Color, CommandParser, CommandSink, Direction, SgrAttribute, TerminalCommand, ViewDataCommand};
 
-/// Viewdata/Prestel parser
+/// Streaming syntax only. Display state belongs to the executor, not the parser.
+#[derive(Default)]
 pub struct ViewdataParser {
     /// ESC sequence state
     got_esc: bool,
+}
+
+impl ViewdataParser {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+/// Persistent Viewdata execution state. Store this alongside the screen so that
+/// queued and immediate execution use the same geometry and attribute state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ViewdataState {
     /// Hold graphics mode - retain last graphics character
     hold_graphics: bool,
     /// Last graphics character to hold
@@ -28,40 +41,28 @@ pub struct ViewdataParser {
     is_in_graphic_mode: bool,
 }
 
-impl Default for ViewdataParser {
+impl Default for ViewdataState {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ViewdataParser {
-    pub fn new() -> Self {
         Self {
-            got_esc: false,
             hold_graphics: false,
             held_graphics_character: b' ',
             is_contiguous: true,
             is_in_graphic_mode: false,
         }
     }
+}
 
-    /// Reset parser state (called on new row or clear screen)
-    fn reset_screen(&mut self) {
-        self.got_esc = false;
-        self.hold_graphics = false;
-        self.held_graphics_character = b' ';
-        self.is_contiguous = true;
-        self.is_in_graphic_mode = false;
-    }
-
-    fn reset_on_row_change(&mut self, sink: &mut dyn CommandSink) {
-        self.reset_screen();
+impl ViewdataState {
+    /// Reset display attributes at a row boundary, without changing parser syntax.
+    pub fn reset(&mut self, sink: &mut dyn CommandSink) {
+        *self = Self::default();
         sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Reset));
     }
 
-    #[inline(always)]
-    fn interpret_char(&mut self, sink: &mut dyn CommandSink, ch: u8) {
-        if self.got_esc {
+    /// Execute one cell. `wraps` is calculated from the current screen column
+    /// and width immediately before execution, never while parsing into a queue.
+    pub fn write_cell(&mut self, sink: &mut dyn CommandSink, ch: u8, mut escaped: bool, wraps: bool) {
+        if escaped {
             match ch {
                 b'\\' => {
                     // Black Background
@@ -104,7 +105,7 @@ impl ViewdataParser {
         }
 
         let mut print_ch = ch;
-        if self.got_esc || ch < 0x20 {
+        if escaped || ch < 0x20 {
             print_ch = if self.hold_graphics { self.held_graphics_character } else { b' ' };
         } else if self.is_in_graphic_mode {
             if (0x20..0x40).contains(&ch) || (0x60..0x80).contains(&ch) {
@@ -123,11 +124,13 @@ impl ViewdataParser {
             self.held_graphics_character = print_ch;
         }
         sink.emit_view_data(ViewDataCommand::SetChar(print_ch));
-        if sink.emit_view_data(ViewDataCommand::MoveCaret(Direction::Right)) {
-            self.reset_on_row_change(sink);
+        sink.emit_view_data(ViewDataCommand::MoveCaret(Direction::Right));
+        if wraps {
+            self.reset(sink);
+            escaped = false;
         }
 
-        if self.got_esc {
+        if escaped {
             match ch {
                 b'A'..=b'G' => {
                     // Alpha Red, Green, Yellow, Blue, Magenta, Cyan, White
@@ -166,8 +169,6 @@ impl ViewdataParser {
                 _ => {}
             }
         }
-
-        self.got_esc = false;
     }
 }
 
@@ -192,14 +193,12 @@ impl CommandParser for ViewdataParser {
                 }
                 0b000_1001 => {
                     // Caret right 0x09
-                    if sink.emit_view_data(ViewDataCommand::MoveCaret(Direction::Right)) {
-                        self.reset_on_row_change(sink);
-                    }
+                    sink.emit_view_data(ViewDataCommand::Advance);
                 }
                 0b000_1010 => {
                     // Caret down 0x0A
                     sink.emit_view_data(ViewDataCommand::MoveCaret(Direction::Down));
-                    self.reset_on_row_change(sink);
+                    sink.emit_view_data(ViewDataCommand::ResetAttributes);
                 }
                 0b000_1011 => {
                     // Caret up 0x0B
@@ -209,8 +208,7 @@ impl CommandParser for ViewdataParser {
                     // 12 / 0x0C - Form feed/clear screen
                     // Preserve caret visibility (e.g., if hidden by 0x14)
                     sink.emit_view_data(ViewDataCommand::ViewDataClearScreen);
-                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Reset));
-                    self.reset_screen();
+                    sink.emit_view_data(ViewDataCommand::ResetAttributes);
                 }
                 0b000_1101 => {
                     // 13 / 0x0D
@@ -251,7 +249,11 @@ impl CommandParser for ViewdataParser {
                 }
                 0b001_1111 => {} // ignore
                 _ => {
-                    self.interpret_char(sink, byte);
+                    sink.emit_view_data(ViewDataCommand::WriteCell {
+                        ch: byte,
+                        escaped: self.got_esc,
+                    });
+                    self.got_esc = false;
                     continue;
                 }
             }

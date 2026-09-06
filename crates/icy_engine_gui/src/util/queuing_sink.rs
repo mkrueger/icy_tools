@@ -113,14 +113,28 @@ pub struct QueueingSink<'a> {
 }
 
 impl<'a> QueueingSink<'a> {
+    /// Bound individual text commands so coalescing cannot create an arbitrarily
+    /// large screen operation between the queue processor's lock-budget checks.
+    pub const MAX_PRINT_BYTES: usize = 16 * 1024;
+
     pub fn new(queue: &'a mut VecDeque<QueuedCommand>) -> Self {
         Self { command_queue: queue }
     }
 }
 
 impl CommandSink for QueueingSink<'_> {
-    fn print(&mut self, text: &[u8]) {
-        self.command_queue.push_back(QueuedCommand::Print(text.to_vec()));
+    fn print(&mut self, mut text: &[u8]) {
+        // Only the immediately preceding text event is eligible. Attributes,
+        // requests, graphics, delays, etc. are strict ordering barriers.
+        if let Some(QueuedCommand::Print(previous)) = self.command_queue.back_mut() {
+            let available = Self::MAX_PRINT_BYTES.saturating_sub(previous.len());
+            let count = available.min(text.len());
+            previous.extend_from_slice(&text[..count]);
+            text = &text[count..];
+        }
+        for chunk in text.chunks(Self::MAX_PRINT_BYTES) {
+            self.command_queue.push_back(QueuedCommand::Print(chunk.to_vec()));
+        }
     }
 
     fn emit(&mut self, cmd: ParserCommand) {
@@ -153,10 +167,8 @@ impl CommandSink for QueueingSink<'_> {
         self.command_queue.push_back(QueuedCommand::Igs(cmd));
     }
 
-    fn emit_view_data(&mut self, cmd: ViewDataCommand) -> bool {
+    fn emit_view_data(&mut self, cmd: ViewDataCommand) {
         self.command_queue.push_back(QueuedCommand::ViewData(cmd));
-        // Return false since we can't check row change here - it will be done when command is executed
-        false
     }
 
     fn device_control(&mut self, dcs: DeviceControlString) {

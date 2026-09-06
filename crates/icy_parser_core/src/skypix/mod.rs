@@ -732,7 +732,10 @@ impl CommandParser for SkypixParser {
             }
         }
 
-        // Flush any remaining input at the end
-        flush_input(input, sink, input.len(), start);
+        // An unfinished command belongs to parser state, not printable output.
+        // A chunk boundary must not expose buffered parameters or string data.
+        if self.state == State::Default {
+            flush_input(input, sink, input.len(), start);
+        }
     }
 }

@@ -62,3 +62,10 @@ default = ["opus-audio"]
 # Ogg-Opus playback for the SyncTERM audio APC music tier. Links libopus,
 # so disabling it drops the C dependency; the capability reply follows suit.
 opus-audio = ["dep:opus", "dep:symphonia"]
+
+[dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
+
+[[bench]]
+name = "parser_pipeline"
+harness = false

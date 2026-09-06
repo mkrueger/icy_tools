@@ -1040,7 +1040,7 @@ impl CommandSink for ScreenSink<'_> {
         self.screen.handle_igs_command(cmd);
     }
 
-    fn emit_view_data(&mut self, cmd: ViewDataCommand) -> bool {
+    fn emit_view_data(&mut self, cmd: ViewDataCommand) {
         let current_row = self.screen.caret_position().y;
         if current_row != self.screen.terminal_state_mut().vd_last_row {
             // For Viewdata, default foreground is white (color 7), not black
@@ -1050,6 +1050,24 @@ impl CommandSink for ScreenSink<'_> {
         }
 
         match cmd {
+            ViewDataCommand::WriteCell { ch, escaped } => {
+                let wraps = self.screen.caret().x + 1 >= self.screen.terminal_state().width();
+                let mut state = self.screen.terminal_state().viewdata;
+                state.write_cell(self, ch, escaped, wraps);
+                self.screen.terminal_state_mut().viewdata = state;
+            }
+            ViewDataCommand::Advance => {
+                let wraps = self.screen.caret().x + 1 >= self.screen.terminal_state().width();
+                self.emit_view_data(ViewDataCommand::MoveCaret(Direction::Right));
+                if wraps {
+                    self.emit_view_data(ViewDataCommand::ResetAttributes);
+                }
+            }
+            ViewDataCommand::ResetAttributes => {
+                let mut state = self.screen.terminal_state().viewdata;
+                state.reset(self);
+                self.screen.terminal_state_mut().viewdata = state;
+            }
             ViewDataCommand::ViewDataClearScreen => {
                 // Preserve caret visibility (e.g., if hidden by 0x14)
                 let was_visible = self.screen.caret().visible;
@@ -1113,7 +1131,6 @@ impl CommandSink for ScreenSink<'_> {
                     if self.screen.caret().x >= self.screen.terminal_state().width() {
                         self.screen.caret_mut().x = 0;
                         self.emit_view_data(ViewDataCommand::MoveCaret(Direction::Down));
-                        return true;
                     }
                 }
             },
@@ -1126,7 +1143,6 @@ impl CommandSink for ScreenSink<'_> {
                 self.screen.set_char(self.screen.caret_position(), ch);
             }
         }
-        false
     }
 
     fn device_control(&mut self, dcs: DeviceControlString) {

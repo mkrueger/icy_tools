@@ -1,5 +1,5 @@
 use icy_parser_core::{
-    Blink, Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, SgrAttribute, TerminalCommand, ViewDataCommand, ViewdataParser,
+    Blink, Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, SgrAttribute, TerminalCommand, ViewDataCommand, ViewdataParser, ViewdataState,
 };
 
 #[derive(Debug, PartialEq)]
@@ -20,11 +20,15 @@ enum MappingCommand {
 
 struct MappingTestSink {
     commands: Vec<MappingCommand>,
+    viewdata: ViewdataState,
 }
 
 impl MappingTestSink {
     fn new() -> Self {
-        Self { commands: Vec::new() }
+        Self {
+            commands: Vec::new(),
+            viewdata: ViewdataState::default(),
+        }
     }
 
     fn get_cmd(&mut self, index: usize) -> Option<MappingCommand> {
@@ -83,8 +87,20 @@ impl CommandSink for MappingTestSink {
         }
     }
 
-    fn emit_view_data(&mut self, cmd: ViewDataCommand) -> bool {
+    fn emit_view_data(&mut self, cmd: ViewDataCommand) {
         match cmd {
+            ViewDataCommand::WriteCell { ch, escaped } => {
+                let mut state = std::mem::take(&mut self.viewdata);
+                // Legacy lowering tests intentionally have no screen geometry.
+                state.write_cell(self, ch, escaped, false);
+                self.viewdata = state;
+            }
+            ViewDataCommand::Advance => self.emit_view_data(ViewDataCommand::MoveCaret(Direction::Right)),
+            ViewDataCommand::ResetAttributes => {
+                let mut state = std::mem::take(&mut self.viewdata);
+                state.reset(self);
+                self.viewdata = state;
+            }
             ViewDataCommand::ViewDataClearScreen => {
                 self.commands.push(MappingCommand::ClearScreen);
                 self.commands.push(MappingCommand::Home);
@@ -106,7 +122,6 @@ impl CommandSink for MappingTestSink {
             }
             _ => {}
         }
-        false
     }
 }
 

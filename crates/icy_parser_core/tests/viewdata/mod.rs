@@ -1,14 +1,18 @@
-use icy_parser_core::{CommandParser, CommandSink, Direction, TerminalCommand, ViewDataCommand, ViewdataParser};
+use icy_parser_core::{CommandParser, CommandSink, Direction, TerminalCommand, ViewDataCommand, ViewdataParser, ViewdataState};
 
 mod mapping;
 
 struct TestSink {
     commands: Vec<String>,
+    viewdata: ViewdataState,
 }
 
 impl TestSink {
     fn new() -> Self {
-        Self { commands: Vec::new() }
+        Self {
+            commands: Vec::new(),
+            viewdata: ViewdataState::default(),
+        }
     }
 }
 
@@ -49,8 +53,20 @@ impl CommandSink for TestSink {
         }
     }
 
-    fn emit_view_data(&mut self, cmd: ViewDataCommand) -> bool {
+    fn emit_view_data(&mut self, cmd: ViewDataCommand) {
         match cmd {
+            ViewDataCommand::WriteCell { ch, escaped } => {
+                let mut state = std::mem::take(&mut self.viewdata);
+                // Legacy lowering tests intentionally have no screen geometry.
+                state.write_cell(self, ch, escaped, false);
+                self.viewdata = state;
+            }
+            ViewDataCommand::Advance => self.emit_view_data(ViewDataCommand::MoveCaret(Direction::Right)),
+            ViewDataCommand::ResetAttributes => {
+                let mut state = std::mem::take(&mut self.viewdata);
+                state.reset(self);
+                self.viewdata = state;
+            }
             ViewDataCommand::ViewDataClearScreen => {
                 self.commands.push("EraseInDisplay: All".to_string());
                 self.commands.push("CursorPosition: 1,1".to_string());
@@ -78,7 +94,6 @@ impl CommandSink for TestSink {
             }
             _ => {}
         }
-        false
     }
 }
 

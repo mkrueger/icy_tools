@@ -3350,6 +3350,7 @@ dependencies = [
  "bytemuck",
  "codepages 0.1.0 (git+https://github.com/mkrueger/icy_board)",
  "cpal",
+ "criterion",
  "fastrand",
  "i18n-embed",
  "i18n-embed-fl",

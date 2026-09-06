@@ -36,7 +36,7 @@ pub use petscii::{C64_TERMINAL_SIZE, PetsciiParser};
 mod viewdata;
 use serde::Deserialize;
 use serde::Serialize;
-pub use viewdata::ViewdataParser;
+pub use viewdata::{ViewdataParser, ViewdataState};
 
 mod mode7;
 pub use mode7::Mode7Parser;
@@ -1151,8 +1151,12 @@ pub enum TerminalRequest {
     RipReadFile(String),
 }
 
+/// Ordered output of a parser. Emission must not depend on immediate execution:
+/// sinks may execute synchronously, record, or queue the same events.
 pub trait CommandSink {
-    /// Output printable text data
+    /// Output borrowed text bytes, not necessarily UTF-8 or complete codepoints.
+    /// The consumer owns decoding state across calls. Adjacent calls may be merged,
+    /// but never across another event; borrowed data must be copied if retained.
     fn print(&mut self, text: &[u8]);
 
     fn emit(&mut self, cmd: TerminalCommand);
@@ -1166,10 +1170,8 @@ pub trait CommandSink {
     /// Emit an IGS (Interactive Graphics System) command. Default implementation does nothing.
     fn emit_igs(&mut self, _cmd: IgsCommand) {}
 
-    /// if true, reset on row change should be called.
-    fn emit_view_data(&mut self, _cmd: ViewDataCommand) -> bool {
-        false
-    }
+    /// Emit a Viewdata operation. Display-dependent state is resolved on execution.
+    fn emit_view_data(&mut self, _cmd: ViewDataCommand) {}
 
     /// Emit a Device Control String (DCS) sequence. Default implementation does nothing.
     fn device_control(&mut self, _dcs: DeviceControlString) {}
@@ -1222,6 +1224,10 @@ pub trait CommandSink {
     fn end_igs_xor_mode(&mut self) {}
 }
 
+/// Stateful byte-stream parser. Keep one instance across input chunks.
+/// Chunk boundaries (including empty chunks) are not end-of-stream markers.
+/// Parsing the same stream with different chunking must preserve event order and
+/// meaning; adjacent `print` calls may have different boundaries.
 pub trait CommandParser: Send {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink);
 }
@@ -1346,6 +1352,16 @@ impl BaudEmulation {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewDataCommand {
+    /// Display a text or escaped attribute cell. Graphics/hold state and wrapping
+    /// are resolved by the executor using its persistent `ViewdataState`.
+    WriteCell {
+        ch: u8,
+        escaped: bool,
+    },
+    /// Explicit cursor-right control, including attribute reset on wrap.
+    Advance,
+    /// Reset graphics/hold state and SGR attributes (e.g. on explicit line feed).
+    ResetAttributes,
     /// preserves caret visibilty
     ViewDataClearScreen,
     FillToEol,

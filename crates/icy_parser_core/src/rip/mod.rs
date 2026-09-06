@@ -73,7 +73,25 @@ impl Default for RipParser {
 
 impl CommandParser for RipParser {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink) {
-        for &ch in input {
+        let mut i = 0;
+        while i < input.len() {
+            // Preserve ANSI's text batching instead of invoking it once per byte.
+            // Only ESC and ! can change routing in normal mode. Newlines inside
+            // the span are handled by ANSI; its last byte determines whether a
+            // following ! is at the start of a line. No temporary Vec is needed.
+            if input.len() - i > 1 && self.mode == ParserMode::NonRip && self.state == State::Default {
+                let count = memchr::memchr2(0x1B, b'!', &input[i..]).unwrap_or(input.len() - i);
+                if count > 0 {
+                    let end = i + count;
+                    self.ansi_parser.parse(&input[i..end], sink);
+                    self.at_line_start = matches!(input[end - 1], b'\r' | b'\n');
+                    i = end;
+                    continue;
+                }
+            }
+
+            let ch = input[i];
+            i += 1;
             let at_line_start = self.at_line_start;
             self.at_line_start = ch == b'\r' || ch == b'\n';
 

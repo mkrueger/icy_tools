@@ -212,6 +212,8 @@ pub struct TerminalState {
 
     // Special for Viewdata terminals - they reset colors on row change.
     pub(crate) vd_last_row: i32,
+    /// Graphics/hold state is owned by execution, not by the input parser.
+    pub(crate) viewdata: icy_parser_core::ViewdataState,
 
     /// UTF-8 parser for handling multi-byte sequences across print calls
     pub(crate) utf8_parser: utf8parse::Parser,
@@ -280,6 +282,7 @@ impl TerminalState {
             ice_colors: false,
             dec_left_right_margins: false,
             vd_last_row: 0,
+            viewdata: icy_parser_core::ViewdataState::default(),
             utf8_parser: utf8parse::Parser::new(),
         };
         ret.reset_tabs();
@@ -540,6 +543,8 @@ impl TerminalState {
         self.auto_wrap_mode = AutoWrapMode::AutoWrap;
         self.bracketed_paste_mode = false;
         self.wrap_pending = false;
+        self.viewdata = icy_parser_core::ViewdataState::default();
+        self.vd_last_row = 0;
         self.kitty_keyboard.reset();
         self.sixel_at_cursor = true;
         self.sixel_shared_palette = false;
