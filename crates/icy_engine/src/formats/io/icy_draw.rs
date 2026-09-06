@@ -10,6 +10,7 @@ use super::super::{LoadData, SauceBuilder, SaveOptions};
 
 mod constants {
     pub const ICED_VERSION: u16 = 1;
+    pub const ICED_CUSTOM_PALETTE_VERSION: u16 = 2;
     pub const ICED_HEADER_SIZE: usize = 19; // Version(2) + Type(3) + Modes(4) + Size(8) + FontDims(2)
 
     /// Compression methods for ICED format (stored in first byte of Type field)
@@ -303,7 +304,7 @@ fn process_icy_draw_v1_decoded_chunk(
             }
 
             let version = u16::from_le_bytes([bytes[0], bytes[1]]);
-            if version != 1 {
+            if version != constants::ICED_VERSION && version != constants::ICED_CUSTOM_PALETTE_VERSION {
                 return Err(IcedError::UnsupportedVersion(version));
             }
             if bytes.len() < constants::ICED_HEADER_SIZE {
@@ -417,7 +418,7 @@ fn process_icy_draw_v1_decoded_chunk(
                 };
                 cur = &cur[1..];
 
-                let (rest, text_attr) = TextAttribute::decode_attribute(cur);
+                let (rest, text_attr) = TextAttribute::decode_attribute(cur).map_err(|e| IcedError::InvalidRecord(format!("tag attribute: {e}")))?;
                 cur = rest;
                 result.tags.push(crate::Tag {
                     preview,
@@ -496,8 +497,15 @@ fn process_icy_draw_v1_decoded_chunk(
             const MIN_BYTES_PER_CHAR: i64 = 9; // char(4) + attr_min(5)
             const MAX_BYTES_PER_CHAR: i64 = 15; // char(4) + attr_max(11)
 
-            let min_expected = cell_count * MIN_BYTES_PER_CHAR;
-            let max_expected = cell_count * MAX_BYTES_PER_CHAR;
+            if width <= 0 || height <= 0 {
+                return Err(IcedError::InvalidRecord(format!("invalid layer dimensions {width}x{height}")));
+            }
+            let min_expected = cell_count
+                .checked_mul(MIN_BYTES_PER_CHAR)
+                .ok_or_else(|| IcedError::InvalidRecord("layer size overflow".into()))?;
+            let max_expected = cell_count
+                .checked_mul(MAX_BYTES_PER_CHAR)
+                .ok_or_else(|| IcedError::InvalidRecord("layer size overflow".into()))?;
 
             if (char_data_size as i64) < min_expected || (char_data_size as i64) > max_expected {
                 return Err(IcedError::InvalidRecord(format!(
@@ -513,7 +521,8 @@ fn process_icy_draw_v1_decoded_chunk(
                     }
                     let ch = u32::from_le_bytes(cur[0..4].try_into().unwrap());
                     cur = &cur[4..];
-                    let (rest, attribute) = TextAttribute::decode_attribute(cur);
+                    let (rest, attribute) =
+                        TextAttribute::decode_attribute(cur).map_err(|e| IcedError::InvalidRecord(format!("layer '{title}' attribute at {x},{y}: {e}")))?;
                     cur = rest;
 
                     layer.set_char(
@@ -664,11 +673,28 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     };
 
     {
-        let mut result = vec![constants::ICED_VERSION as u8, (constants::ICED_VERSION >> 8) as u8];
+        // Keep ordinary documents readable by v1 readers. Only the new custom
+        // palette escape requires v2, so older readers reject rather than misread it.
+        let custom_palette = buf.tags.iter().any(|tag| tag.attribute.requires_custom_palette_encoding())
+            || buf.layers.iter().filter(|layer| layer.role != crate::Role::Image).any(|layer| {
+                layer.lines.iter().take(layer.height().max(0) as usize).any(|line| {
+                    line.chars
+                        .iter()
+                        .take(layer.width().max(0) as usize)
+                        .any(|ch| ch.attribute.requires_custom_palette_encoding())
+                })
+            });
+        let version = if custom_palette {
+            constants::ICED_CUSTOM_PALETTE_VERSION
+        } else {
+            constants::ICED_VERSION
+        };
+        let mut result = version.to_le_bytes().to_vec();
         // Type field: [compression: u8][reserved: u16]
         result.push(file_compression); // compression method
         result.extend([0, 0]); // reserved
-                               // Modes
+
+        // Modes
         result.extend(u16::to_le_bytes(buf.buffer_type.to_byte() as u16));
         result.push(buf.ice_mode.to_byte());
         result.push(buf.font_mode.to_byte());

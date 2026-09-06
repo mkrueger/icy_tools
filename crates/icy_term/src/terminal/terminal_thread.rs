@@ -1627,9 +1627,12 @@ impl TerminalThread {
                 } else {
                     Sixel::parse_from(*aspect_ratio, *zero_color, *grid_size, sixel_data)
                 };
+                let decoded = decoded.and_then(|mut sixel| {
+                    sixel.apply_raster_scale()?;
+                    Ok(sixel)
+                });
                 match decoded {
-                    Ok(mut sixel) => {
-                        sixel.apply_raster_scale();
+                    Ok(sixel) => {
                         let displayed_height = sixel.height();
                         {
                             let mut screen = self.edit_screen.lock();

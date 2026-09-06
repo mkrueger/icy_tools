@@ -37,30 +37,30 @@ pub fn clipboard_data(buffer: &TextBuffer, layer: usize, selection_mask: &Select
             };
             let c = buffer.buffer_type.convert_to_unicode(ch.ch);
             data.extend(u32::to_le_bytes(c as u32));
+            if ch.attribute.requires_custom_palette_encoding() {
+                // Old readers must reject the new color escape instead of losing colors.
+                data[0] = 1;
+            }
             TextAttribute::encode_attribute(&ch.attribute, &mut data);
         }
     }
     Some(data)
 }
 
-/// .
-///
-/// # Panics
-///
-/// Panics if .
+/// Decode clipboard v0/v1, rejecting invalid dimensions, Unicode and attributes.
 pub fn from_clipboard_data(buffer_type: BufferType, data: &[u8]) -> Option<Layer> {
     if data.len() < 17 {
         log::warn!("from_clipboard_data: data too short ({} bytes)", data.len());
         return None;
     }
-    if data[0] != 0 {
+    if data[0] > 1 {
         log::warn!("from_clipboard_data: invalid header byte {}", data[0]);
         return None;
     }
     let x = i32::from_le_bytes(data[1..5].try_into().unwrap());
     let y = i32::from_le_bytes(data[5..9].try_into().unwrap());
-    let width = u32::from_le_bytes(data[9..13].try_into().unwrap()) as usize;
-    let height = u32::from_le_bytes(data[13..17].try_into().unwrap()) as usize;
+    let width = i32::try_from(u32::from_le_bytes(data[9..13].try_into().unwrap())).ok()?;
+    let height = i32::try_from(u32::from_le_bytes(data[13..17].try_into().unwrap())).ok()?;
 
     log::debug!(
         "from_clipboard_data: x={}, y={}, width={}, height={}, data_len={}",
@@ -71,13 +71,13 @@ pub fn from_clipboard_data(buffer_type: BufferType, data: &[u8]) -> Option<Layer
         data.len()
     );
 
-    if width == 0 || height == 0 {
-        log::warn!("from_clipboard_data: empty dimensions {width}x{height}");
+    if !crate::limits::is_within_limits(width, height) {
+        log::warn!("from_clipboard_data: invalid dimensions {width}x{height}");
         return None;
     }
 
-    // Minimum size check: header(17) + chars(width*height*4) + at least some attribute bytes
-    let min_size = 17 + width * height * 4;
+    // Each cell needs a Unicode scalar (4 bytes) and an attribute (at least 5).
+    let min_size = (width as usize).checked_mul(height as usize)?.checked_mul(9)?.checked_add(17)?;
     if data.len() < min_size {
         log::warn!(
             "from_clipboard_data: data too short for dimensions (expected at least {}, got {})",
@@ -98,13 +98,13 @@ pub fn from_clipboard_data(buffer_type: BufferType, data: &[u8]) -> Option<Layer
                 log::warn!("from_clipboard_data: data truncated at char");
                 return None;
             }
-            let ch = unsafe { char::from_u32_unchecked(u32::from_le_bytes(data[0..4].try_into().unwrap())) };
+            let ch = char::from_u32(u32::from_le_bytes(data[0..4].try_into().unwrap()))?;
             let ch = buffer_type.convert_from_unicode(ch);
             data = &data[4..];
-            let (rest, text_attr) = TextAttribute::decode_attribute(data);
+            let (rest, text_attr) = TextAttribute::decode_attribute(data).ok()?;
             data = rest;
             let attr_ch = AttributedChar { ch, attribute: text_attr };
-            layer.set_char((x as i32, y as i32), attr_ch);
+            layer.set_char((x, y), attr_ch);
         }
     }
     Some(layer)

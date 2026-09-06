@@ -12,6 +12,10 @@ pub const MAX_BUFFER_WIDTH: i32 = 1000;
 /// memory exhaustion from malformed files
 pub const MAX_BUFFER_HEIGHT: i32 = 20000;
 
+/// Maximum RGBA byte count of a sixel after raster scaling.
+/// Matches the decoder's 64-megapixel budget; scaling must not bypass it.
+pub const MAX_SIXEL_BYTES: usize = 256 * 1024 * 1024;
+
 /// Check if dimensions are within safe limits
 #[inline]
 pub fn is_within_limits(width: i32, height: i32) -> bool {

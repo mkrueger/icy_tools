@@ -1173,11 +1173,14 @@ impl CommandSink for ScreenSink<'_> {
                 } else {
                     Sixel::parse_from(aspect_ratio, zero_color, grid_size, &sixel_data)
                 };
+                let decoded = decoded.and_then(|mut sixel| {
+                    sixel.apply_raster_scale()?;
+                    Ok(sixel)
+                });
                 match decoded {
-                    Ok(mut sixel) => {
+                    Ok(sixel) => {
                         let at_cursor = self.screen.terminal_state().sixel_at_cursor;
                         let pos = if at_cursor { self.screen.caret_position() } else { Position::default() };
-                        sixel.apply_raster_scale();
                         self.screen.add_sixel(pos, sixel);
                     }
                     Err(err) => {
@@ -1317,6 +1320,17 @@ mod tests {
 
         parser.parse(b"\x1b[?80h\x1bPq~\x1b\\", &mut ScreenSink::new(&mut screen));
         assert_eq!(screen.buffer.layers[0].sixels.last().unwrap().position, Position::default());
+    }
+
+    #[test]
+    fn oversized_sixel_is_dropped_and_parser_continues() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        let mut parser = AnsiParser::new();
+        parser.parse(b"\x1bPq\"100000;100000;1;6~\x1b\\", &mut ScreenSink::new(&mut screen));
+        assert!(screen.buffer.layers[0].sixels.is_empty());
+        assert_eq!(screen.caret_position(), Position::default());
+        parser.parse(b"\x1bPq~\x1b\\", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.buffer.layers[0].sixels.len(), 1);
     }
 
     #[test]

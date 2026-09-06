@@ -11,12 +11,12 @@ An `.icy` file is always a **PNG image (RGBA, 8-bit)** that contains:
 
 There are two metadata encodings in the wild:
 
-- **v1 (current)**: custom PNG chunk type `icYD` containing binary records (optionally Zstd-compressed).
+- **v1/v2 (current)**: custom PNG chunk type `icYD` containing binary records (optionally Zstd-compressed). v2 adds a custom document-palette color escape; ordinary documents still use v1.
 - **v0 (legacy)**: PNG `tEXt`/`zTXt` chunks containing Base64 of binary payloads.
 
 Reference implementation:
 
-- v1: `crates/icy_engine/src/formats/io/icy_draw.rs`
+- v1/v2: `crates/icy_engine/src/formats/io/icy_draw.rs`
 - v0: `crates/icy_engine/src/formats/io/icy_draw_v0.rs`
 
 ---
@@ -50,11 +50,11 @@ byte[byte_len] utf8
 
 ---
 
-## 3. v1 (current): `icYD` binary records
+## 3. v1/v2 (current): `icYD` binary records
 
 ### 3.1 Metadata transport (`icYD` chunk)
 
-In v1, ICY metadata is stored in a custom PNG chunk type:
+In v1 and v2, ICY metadata is stored in a custom PNG chunk type:
 
 - Chunk type: `icYD` (4 bytes)
 - Chunk payload: a self-delimiting record
@@ -73,6 +73,7 @@ Notes:
 
 - `keyword` is UTF-8 in the current implementation.
 - `data` may be compressed (see `ICED.type.compression`).
+- The record envelope version stays `1` for both document versions. `ICED.version` is `2` only when a cell or tag uses a custom document-palette index above 15 (color tag 19). Older v1 readers must reject that document rather than misinterpret its attributes. Existing v1 documents remain readable.
 
 ### 3.2 Chunk/keyword overview (v1)
 
@@ -101,34 +102,31 @@ Ordering rules (strict):
 - `ICED` **must** appear exactly once.
 - Readers should stop interpreting metadata after `END`.
 
-### 3.3 `ICED` header (v1)
+### 3.3 `ICED` header (v1/v2)
 
 The `ICED` record contains a fixed-size binary header.
 
-Header size: **20 bytes**.
+Header size: **19 bytes** (unchanged between v1 and v2).
 
 Layout:
 
 | Offset | Field | Type | Size | Description |
 | ---: | --- | --- | ---: | --- |
-| 0 | `version` | u16_le | 2 | Format version (currently `1`) |
-| 2 | `type` | byte[4] | 4 | Type field: `[compression:u8][sixel_format:u8][reserved:u16]` |
-| 6 | `buffer_type` | u16_le | 2 | `BufferType::to_byte()` stored as u16 |
-| 8 | `ice_mode` | u8 | 1 | `IceMode::to_byte()` |
-| 9 | `font_mode` | u8 | 1 | `FontMode::to_byte()` |
-| 10 | `width_chars` | u32_le | 4 | Canvas width in characters |
-| 14 | `height_chars` | u32_le | 4 | Canvas height in characters |
-| 18 | `font_width_px` | u8 | 1 | Font cell width in pixels |
-| 19 | `font_height_px` | u8 | 1 | Font cell height in pixels |
+| 0 | `version` | u16_le | 2 | Format version (`1` or `2`) |
+| 2 | `type` | byte[3] | 3 | Type field: `[compression:u8][reserved:u16]` |
+| 5 | `buffer_type` | u16_le | 2 | `BufferType::to_byte()` stored as u16 |
+| 7 | `ice_mode` | u8 | 1 | `IceMode::to_byte()` |
+| 8 | `font_mode` | u8 | 1 | `FontMode::to_byte()` |
+| 9 | `width_chars` | u32_le | 4 | Canvas width in characters |
+| 13 | `height_chars` | u32_le | 4 | Canvas height in characters |
+| 17 | `font_width_px` | u8 | 1 | Font cell width in pixels |
+| 18 | `font_height_px` | u8 | 1 | Font cell height in pixels |
 
 Type field enums:
 
 - `compression`:
   - `0` = none
   - `2` = zstd
-- `sixel_format`:
-  - `0` = raw RGBA (reserved)
-  - `1` = embedded PNG (used by writer)
 
 ### 3.4 `PALETTE` record (v1)
 
@@ -219,18 +217,22 @@ u8 tag
 switch tag:
   0:            // Transparent
     // no further bytes
-  1..=16:       // Palette index = tag-1
+  1..=16:       // Document palette index = tag-1
     // no further bytes
-  17:           // Extended palette
+  17:           // Extended xterm palette (NOT the document palette)
     u8 index
   18:           // RGB
     u8 r
     u8 g
     u8 b
+  19:           // Document palette (requires ICED v2)
+    u8 index    // writer uses this for indices 16..=255
 ```
 
 Notes:
 
+- Attributes occupy 5..=11 bytes. Unknown color tags and truncated payloads are errors; readers must not index beyond available input.
+- The same encoding is used by the binary clipboard format: clipboard version `0` retains tags 0..=18; writers use version `1` when any selected cell requires tag 19. Its 17-byte header and other fields are unchanged. Readers accept both versions, validate Unicode scalar values and dimensions, and require at least 9 bytes per cell before allocating a layer.
 - `attr_flags` contains the styling flags and may include I/O markers such as `INVISIBLE`/`INVISIBLE_SHORT`.
 - Unlike legacy v0, v1 currently writes a full `width*height` grid (no end-of-line sentinel compression).
 

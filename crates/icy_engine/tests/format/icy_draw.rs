@@ -432,7 +432,6 @@ fn test_sixel_layer_roundtrip_uncompressed() {
 }
 
 #[test]
-#[ignore = "ICY format changed - extended palette encoding incompatible with V1"]
 fn test_rgb_serialization_bug() {
     let mut buf = TextBuffer::new((2, 2));
     let fg = buf.palette.insert_color(Color::new(82, 85, 82));
@@ -459,7 +458,6 @@ fn test_rgb_serialization_bug() {
 }
 
 #[test]
-#[ignore = "ICY format changed - extended palette encoding incompatible with V1"]
 fn test_rgb_serialization_bug_2() {
     // was a bug in compare_buffers, but having more test doesn't hurt.
     let mut buf = TextBuffer::new((2, 2));
@@ -482,7 +480,6 @@ fn test_rgb_serialization_bug_2() {
 }
 
 #[test]
-#[ignore = "ICY format changed - extended palette encoding incompatible with V1"]
 fn test_nonstandard_palettes() {
     // was a bug in compare_buffers, but having more test doesn't hurt.
     let mut buf = TextBuffer::new((2, 2));

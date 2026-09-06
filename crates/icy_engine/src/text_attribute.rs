@@ -116,32 +116,29 @@ pub struct TextAttribute {
 }
 
 impl TextAttribute {
-    /// Decode `AttributeColor` from legacy wire format (`ext_attr` + u32 `raw_color`).
+    /// Decode a tagged color, rejecting unknown tags and truncated payloads.
     #[inline(always)]
-    fn decode_color(data: &[u8]) -> (&[u8], AttributeColor) {
-        match data[0] {
-            0 => (&data[1..], AttributeColor::Transparent),
-            1..=16 => (&data[1..], AttributeColor::Palette(data[0] - 1)),
-            17 => {
-                let p = data[1];
-                (&data[2..], AttributeColor::ExtendedPalette(p))
-            }
-            18 => {
-                let r = data[1];
-                let g = data[2];
-                let b = data[3];
-                (&data[4..], AttributeColor::Rgb(r, g, b))
-            }
-            _ => (&data[1..], AttributeColor::Transparent), // Fallback for unknown values
+    fn decode_color(data: &[u8]) -> crate::Result<(&[u8], AttributeColor)> {
+        match data {
+            [0, rest @ ..] => Ok((rest, AttributeColor::Transparent)),
+            [tag @ 1..=16, rest @ ..] => Ok((rest, AttributeColor::Palette(*tag - 1))),
+            [17, index, rest @ ..] => Ok((rest, AttributeColor::ExtendedPalette(*index))),
+            [18, r, g, b, rest @ ..] => Ok((rest, AttributeColor::Rgb(*r, *g, *b))),
+            // ICED v2 / clipboard v1: index into the document's custom palette,
+            // not the xterm palette represented by tag 17.
+            [19, index, rest @ ..] => Ok((rest, AttributeColor::Palette(*index))),
+            [] | [0..=19, ..] => Err(crate::EngineError::FileTooShort),
+            [tag, ..] => Err(crate::EngineError::Generic(format!("Invalid attribute color tag: {tag}"))),
         }
     }
 
-    /// Encode `AttributeColor` to legacy wire format, returns (`raw_u32`, `ext_attr_bits`).
+    /// Encode a tagged color, retaining compact encoding for palette indices 0..=15.
     #[inline(always)]
     fn encode_color(color: AttributeColor, data: &mut Vec<u8>) {
         match color {
             AttributeColor::Transparent => data.push(0),
-            AttributeColor::Palette(p) => data.push(1 + p), // Palette colors 1-16
+            AttributeColor::Palette(p @ 0..=15) => data.push(1 + p),
+            AttributeColor::Palette(p) => data.extend([19, p]),
             AttributeColor::ExtendedPalette(p) => {
                 data.push(17);
                 data.push(p);
@@ -155,17 +152,18 @@ impl TextAttribute {
         }
     }
 
-    /// Decode a `TextAttribute` from bytes (10 bytes: fg:u32, bg:u32, `font_page:u8`, `ext_attr:u8`).
-    /// The attr:u16 field must be set separately on the returned `TextAttribute`.
+    /// Decode foreground, background, font page and little-endian style flags.
+    /// Consumes 5..=11 bytes and returns the remaining input.
+    /// Returns an error for truncated attributes or unknown color tags.
     #[inline(always)]
-    pub fn decode_attribute(bytes: &[u8]) -> (&[u8], Self) {
-        let (rest, foreground_color) = Self::decode_color(&bytes[0..]);
-        let (rest, background_color) = Self::decode_color(rest);
-        let font_page = rest[0];
-        let attr = rest[1] as u16 | (rest[2] as u16) << 8;
-        let rest = &rest[3..];
+    pub fn decode_attribute(bytes: &[u8]) -> crate::Result<(&[u8], Self)> {
+        let (rest, foreground_color) = Self::decode_color(bytes)?;
+        let (rest, background_color) = Self::decode_color(rest)?;
+        let (fields, rest) = rest.split_first_chunk::<3>().ok_or(crate::EngineError::FileTooShort)?;
+        let font_page = fields[0];
+        let attr = u16::from_le_bytes([fields[1], fields[2]]);
 
-        (
+        Ok((
             rest,
             Self {
                 font_page,
@@ -173,11 +171,16 @@ impl TextAttribute {
                 background_color,
                 attr,
             },
-        )
+        ))
     }
 
-    /// Encode a `TextAttribute` to bytes (10 bytes: fg:u32, bg:u32, `font_page:u8`, `ext_attr:u8`).
-    /// The attr:u16 field must be written separately.
+    /// Whether encoding this attribute requires ICED v2 / clipboard v1.
+    pub(crate) fn requires_custom_palette_encoding(&self) -> bool {
+        matches!(self.foreground_color, AttributeColor::Palette(16..=255)) || matches!(self.background_color, AttributeColor::Palette(16..=255))
+    }
+
+    /// Encode tagged colors, font page and little-endian style flags (5..=11 bytes).
+    /// Custom palette indices above 15 require ICED v2 / clipboard v1.
     #[inline(always)]
     pub fn encode_attribute(attr: &TextAttribute, data: &mut Vec<u8>) {
         Self::encode_color(attr.foreground_color(), data);

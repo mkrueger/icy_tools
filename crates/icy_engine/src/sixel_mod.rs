@@ -124,17 +124,40 @@ impl Sixel {
         self.size = size;
     }
 
-    pub fn apply_raster_scale(&mut self) {
+    /// Apply raster scaling without exceeding the decoded-image memory budget.
+    /// Invalid dimensions, inconsistent RGBA data and allocation failures are errors.
+    /// The image is unchanged on error.
+    pub fn apply_raster_scale(&mut self) -> Result<()> {
+        let invalid = |message: &str| crate::EngineError::SixelDecodeError { message: message.to_string() };
+        if self.size.width <= 0 || self.size.height <= 0 {
+            return Err(invalid("invalid raster dimensions"));
+        }
         let horizontal = self.horizontal_scale.max(1);
         let vertical = self.vertical_scale.max(1);
-        if horizontal == 1 && vertical == 1 {
-            return;
-        }
+        let output_width = self.size.width.checked_mul(horizontal).ok_or_else(|| invalid("raster width overflow"))?;
+        let output_height = self.size.height.checked_mul(vertical).ok_or_else(|| invalid("raster height overflow"))?;
+        let output_width = output_width as usize;
+        let output_height = output_height as usize;
+        let output_len = output_width
+            .checked_mul(output_height)
+            .and_then(|pixels| pixels.checked_mul(4))
+            .filter(|bytes| *bytes <= crate::limits::MAX_SIXEL_BYTES)
+            .ok_or_else(|| invalid("scaled raster exceeds sixel memory limit"))?;
+
         let source_width = self.size.width as usize;
         let source_height = self.size.height as usize;
-        let output_width = source_width * horizontal as usize;
-        let output_height = source_height * vertical as usize;
-        let mut output = vec![0u8; output_width * output_height * 4];
+        let source_len = source_width.checked_mul(source_height).and_then(|pixels| pixels.checked_mul(4));
+        if source_len != Some(self.picture_data.len()) {
+            return Err(invalid("raster dimensions do not match RGBA data"));
+        }
+        if horizontal == 1 && vertical == 1 {
+            return Ok(());
+        }
+        let mut output = Vec::new();
+        output.try_reserve_exact(output_len).map_err(|e| crate::EngineError::SixelDecodeError {
+            message: format!("cannot allocate scaled raster: {e}"),
+        })?;
+        output.resize(output_len, 0u8);
         for y in 0..output_height {
             let source_y = y / vertical as usize;
             for x in 0..output_width {
@@ -148,6 +171,7 @@ impl Sixel {
         self.size = Size::new(output_width as i32, output_height as i32);
         self.horizontal_scale = 1;
         self.vertical_scale = 1;
+        Ok(())
     }
 }
 
@@ -189,4 +213,62 @@ fn raster_scale(data: &[u8]) -> (i32, i32) {
 #[inline(always)]
 pub fn parse_next_number(x: i32, ch: u8) -> i32 {
     x.saturating_mul(10).saturating_add(ch as i32).saturating_sub(b'0' as i32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn raster_scale_preserves_pixels_and_is_idempotent() {
+        let mut sixel = Sixel::from_data((2, 2), 2, 3, (0..16).collect());
+        sixel.apply_raster_scale().unwrap();
+        assert_eq!(sixel.size(), Size::new(6, 4));
+        for y in 0..4 {
+            for x in 0..6 {
+                let source = ((y / 2) * 2 + x / 3) * 4;
+                let offset = (y * 6 + x) * 4;
+                assert_eq!(&sixel.picture_data[offset..offset + 4], &(source as u8..source as u8 + 4).collect::<Vec<_>>());
+            }
+        }
+        let scaled = sixel.clone();
+        sixel.apply_raster_scale().unwrap();
+        assert_eq!(sixel, scaled);
+    }
+
+    #[test]
+    fn raster_scale_rejects_amplification_without_changing_image() {
+        let mut sixel = Sixel::parse_from(None, None, None, b"\"100000;100000;1;6~").unwrap();
+        let original = sixel.clone();
+        assert!(sixel.apply_raster_scale().is_err());
+        assert_eq!(sixel, original);
+    }
+
+    #[test]
+    fn raster_scale_rejects_invalid_dimensions_and_data() {
+        for (size, data_len) in [((0, 1), 0), ((-1, 1), 0), ((1, -1), 0), ((2, 2), 15), ((2, 2), 17)] {
+            for scale in [1, 2] {
+                let mut sixel = Sixel::from_data(size, scale, scale, vec![0; data_len]);
+                let original = sixel.clone();
+                assert!(sixel.apply_raster_scale().is_err());
+                assert_eq!(sixel, original);
+            }
+        }
+    }
+
+    #[test]
+    fn raster_scale_rejects_dimension_overflow() {
+        for (vertical, horizontal) in [(i32::MAX, 1), (1, i32::MAX), (i32::MAX, i32::MAX)] {
+            let mut sixel = Sixel::from_data((2, 2), vertical, horizontal, vec![0; 16]);
+            assert!(sixel.apply_raster_scale().is_err());
+        }
+    }
+
+    #[test]
+    fn raster_scale_keeps_unscaled_allocation() {
+        let mut sixel = Sixel::from_data((1, 1), 1, 1, vec![1, 2, 3, 255]);
+        let ptr = sixel.picture_data.as_ptr();
+        sixel.apply_raster_scale().unwrap();
+        assert_eq!(sixel.picture_data.as_ptr(), ptr);
+    }
 }
