@@ -26,7 +26,7 @@
 //mod ui;
 use std::{
     path::PathBuf,
-    sync::{atomic::AtomicU16, Arc, LazyLock},
+    sync::{Arc, LazyLock, atomic::AtomicU16},
     time::Instant,
 };
 
@@ -35,23 +35,13 @@ use clap_i18n_richformatter::clap_i18n;
 use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use semver::Version;
 
-//use ui::MainWindow;
-pub type TerminalResult<T> = Res<T>;
-
-pub mod data;
 pub use data::*;
-pub mod protocol;
-pub mod terminal;
+pub use icy_term::{LANGUAGE_LOADER, Res, TerminalResult, auto_login, data, features, protocol, scripting, terminal, util};
 pub use terminal::*;
 
-pub mod auto_login;
 pub mod commands;
-pub mod features;
 pub mod mcp;
-pub mod scripting;
 pub mod ui;
-mod util;
-pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 use clap::Parser;
 
@@ -59,21 +49,10 @@ static VERSION: LazyLock<Version> = LazyLock::new(|| Version::parse(env!("CARGO_
 #[allow(dead_code)] // reserved for a future uptime display; previously hidden from dead_code analysis by the lazy_static macro
 static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
-static LATEST_VERSION: LazyLock<Version> = LazyLock::new(|| {
-    icy_engine_gui::release_check::latest_release("mkrueger/icy_tools", "IcyTerm").unwrap_or_else(|| VERSION.clone())
-});
-
-#[derive(rust_embed::RustEmbed)]
-#[folder = "i18n"] // path to the compiled localization resources
-struct Localizations;
+static LATEST_VERSION: LazyLock<Version> =
+    LazyLock::new(|| icy_engine_gui::release_check::latest_release("mkrueger/icy_tools", "IcyTerm").unwrap_or_else(|| VERSION.clone()));
 
 use crate::ui::WindowManager;
-static LANGUAGE_LOADER: std::sync::LazyLock<i18n_embed::fluent::FluentLanguageLoader> = std::sync::LazyLock::new(|| {
-    let loader = i18n_embed::fluent::fluent_language_loader!();
-    let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
-    let _result = i18n_embed::select(&loader, &Localizations, &requested_languages);
-    loader
-});
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "app-about"), long_about = None)]

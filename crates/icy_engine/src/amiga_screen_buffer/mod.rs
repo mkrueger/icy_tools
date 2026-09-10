@@ -716,8 +716,8 @@ impl EditableScreen for AmigaScreenBuffer {
 
         // Add top line to scrollback BEFORE scrolling (while data is still there)
         if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state.is_terminal_buffer {
-            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, line_height as i32);
-            self.scrollback_buffer.add_chunk(rgba_data, size);
+            let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, line_height as i32);
+            self.scrollback_buffer.push_chunk(chunk);
         }
 
         let row_len = screen_width; // bytes per pixel row (1 byte per pixel)
@@ -795,8 +795,8 @@ impl EditableScreen for AmigaScreenBuffer {
     fn clear_screen(&mut self) {
         // Add entire screen to scrollback BEFORE clearing
         if self.terminal_state.is_terminal_buffer {
-            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, self.pixel_size.height);
-            self.scrollback_buffer.add_chunk(rgba_data, size);
+            let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, self.pixel_size.height);
+            self.scrollback_buffer.push_chunk(chunk);
         }
 
         self.set_caret_position(Position::default());

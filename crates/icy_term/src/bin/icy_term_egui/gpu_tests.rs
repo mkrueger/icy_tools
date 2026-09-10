@@ -1,0 +1,732 @@
+use super::*;
+use egui_wgpu::wgpu;
+
+struct Harness {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    renderer: egui_wgpu::Renderer,
+    context: egui::Context,
+    time: f64,
+    controls: std::collections::HashMap<String, egui::Pos2>,
+    text_bounds: std::collections::HashMap<String, egui::Rect>,
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_overlays_and_shortcut_actions() {
+    use icy_engine::{EditableScreen, Screen};
+    let mut harness = Harness::new().await;
+    let mut screen = TextScreen::default();
+    for (column, character) in "HISTORY".chars().enumerate() {
+        screen.set_char((column as i32, 0).into(), icy_engine::AttributedChar::new(character, Default::default()));
+    }
+    screen.terminal_state_mut().is_terminal_buffer = true;
+    screen.set_scrollback_buffer_size(400);
+    for _ in 0..40 {
+        screen.scroll_up();
+    }
+    let mut app = TerminalApp::new(screen, "Icy Term".into());
+    app.focus_terminal = true;
+    app.tools.host_info = Some(vec![("Name".into(), "Test BBS".into())]);
+
+    // The status bar exposes the legacy overlay controls.
+    harness.capture(&mut app, [1000, 720], 1.0, vec![], "overlay-warmup");
+    harness.capture(&mut app, [1000, 720], 1.0, vec![], "overlay-status");
+    assert!(harness.controls.contains_key("LOCAL"), "missing BPS control");
+    assert!(harness.controls.contains_key("IEMSI"), "missing IEMSI control");
+    assert!(
+        harness.controls.keys().any(|label| label.contains('\u{2022}')),
+        "missing clickable terminal info"
+    );
+
+    // The scrollback overlay reports the distance from the live screen.
+    app.shortcut(hotkeys::Action::Scrollback, &harness.context.clone());
+    harness.capture(&mut app, [1000, 720], 1.0, vec![], "overlay-history-warmup");
+    harness.capture(&mut app, [1000, 720], 1.0, vec![], "overlay-history");
+    assert!(app.terminal.is_in_scrollback_mode());
+    let indicator = harness
+        .controls
+        .keys()
+        .find(|label| label.starts_with('\u{2191}'))
+        .expect("missing scrollback indicator")
+        .clone();
+    let info = app.terminal.render_info.read().clone();
+    let bounds = harness.text_bounds[&indicator];
+    let widget = egui::Rect::from_min_size(egui::pos2(info.bounds_x, info.bounds_y), egui::vec2(info.bounds_width, info.bounds_height));
+    assert!(
+        widget.contains_rect(bounds) && bounds.min.x > widget.center().x && bounds.min.y < widget.min.y + 60.0,
+        "indicator {bounds:?} is not in the top right of {widget:?}"
+    );
+    app.shortcut(hotkeys::Action::Scrollback, &harness.context.clone());
+
+    // The right-click menu offers the same entries as the legacy client.
+    let center = egui::pos2(info.bounds_x + info.viewport_x + 40.0, info.bounds_y + info.viewport_y + 40.0);
+    for pressed in [true, false] {
+        harness.capture(
+            &mut app,
+            [1000, 720],
+            1.0,
+            vec![
+                egui::Event::PointerMoved(center),
+                egui::Event::PointerButton {
+                    pos: center,
+                    button: egui::PointerButton::Secondary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+            "overlay-context-click",
+        );
+    }
+    harness.capture(&mut app, [1000, 720], 1.0, vec![], "overlay-context-menu");
+    for entry in [
+        tr!("terminal-dialing_directory"),
+        tr!("terminal-upload"),
+        tr!("terminal-download"),
+        tr!("terminal-menu-copy"),
+        tr!("terminal-menu-paste"),
+        tr!("terminal-menu-info"),
+    ] {
+        assert!(harness.controls.contains_key(&entry), "missing context entry {entry}");
+    }
+    harness.capture(
+        &mut app,
+        [1000, 720],
+        1.0,
+        vec![egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        "overlay-context-close",
+    );
+
+    // Shortcuts open the shared dialogs and list the same keys as the command table.
+    for (action, expected) in [(hotkeys::Action::Help, tr!("help-title")), (hotkeys::Action::About, "Icy Term".to_string())] {
+        app.shortcut(action, &harness.context.clone());
+        harness.capture(&mut app, [360, 640], 1.0, vec![], "overlay-dialog-warmup");
+        harness.capture(&mut app, [360, 640], 1.0, vec![], &format!("overlay-{action:?}"));
+        assert!(harness.controls.contains_key(&expected), "{action:?} did not open");
+        assert!(app.blocks_terminal(), "{action:?} must hold the keyboard");
+        app.help_open = false;
+        app.about_open = false;
+    }
+    app.shortcut(hotkeys::Action::Help, &harness.context.clone());
+    harness.capture(&mut app, [1000, 720], 1.0, vec![], "overlay-help-warmup");
+    harness.capture(&mut app, [1000, 720], 1.0, vec![], "overlay-help");
+    for shortcut in [
+        hotkeys::shortcut(hotkeys::Action::DialingDirectory),
+        hotkeys::shortcut(hotkeys::Action::Hangup),
+        hotkeys::shortcut(hotkeys::Action::Upload),
+    ] {
+        assert!(harness.controls.contains_key(&shortcut), "help is missing {shortcut}");
+    }
+    for (_, entries) in hotkeys::help_entries() {
+        for (name, _) in entries {
+            assert!(!name.contains("No localization"), "untranslated shortcut label: {name}");
+        }
+    }
+    app.help_open = false;
+
+    // Zoom and clear are wired to the terminal, not just to the menu.
+    app.shortcut(hotkeys::Action::ZoomReset, &harness.context.clone());
+    assert!(matches!(app.settings.scaling_mode, ScalingMode::Manual(zoom) if (zoom - 1.0).abs() < f32::EPSILON));
+    app.shortcut(hotkeys::Action::ZoomFit, &harness.context.clone());
+    assert!(app.settings.scaling_mode.is_auto());
+    app.shortcut(hotkeys::Action::ClearScreen, &harness.context.clone());
+    harness.capture(&mut app, [1000, 720], 1.0, vec![], "overlay-cleared");
+    assert_eq!(app.terminal.screen.lock().char_at((0, 0).into()).ch, ' ');
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_ui_themes_and_text_layout() {
+    let mut harness = Harness::new().await;
+    for (theme, name) in [(egui::ThemePreference::Dark, "dark"), (egui::ThemePreference::Light, "light")] {
+        harness.context.set_theme(theme);
+        let screen = FileFormat::IcyDraw
+            .from_bytes(include_bytes!("../../../data/welcome_screen.1.icy"), None)
+            .unwrap()
+            .screen;
+        let mut app = TerminalApp::new(screen, "Icy Term".into());
+        for (size, scale, viewport) in [([1000, 720], 1.0, "desktop"), ([360, 640], 1.0, "narrow"), ([1600, 1200], 2.0, "hidpi")] {
+            app.preferences = None;
+            harness.capture(&mut app, size, scale, vec![], "theme-warmup");
+            harness.capture(&mut app, size, scale, vec![], &format!("{name}-{viewport}-welcome"));
+            assert!(app.terminal.render_info.read().bounds_y <= 44.0);
+            let path = std::env::temp_dir().join(format!("icy-theme-{}.toml", fastrand::u64(..)));
+            app.preferences = Some(settings::Settings::open(&icy_term::Options::default(), path).unwrap());
+            harness.capture(&mut app, size, scale, vec![], "form-warmup");
+            harness.capture(&mut app, size, scale, vec![], &format!("{name}-{viewport}-form"));
+            let labels = [
+                tr!("egui-connect-timeout"),
+                tr!("egui-scrollback-lines"),
+                tr!("egui-cursor"),
+                tr!("egui-appearance"),
+                "1000".into(),
+                "2000".into(),
+                "Block".into(),
+                tr!("egui-system"),
+                tr!("settings-terminal-invert-mouse-wheel"),
+                tr!("settings-terminal-cursor-blinking"),
+                tr!("egui-save"),
+                tr!("egui-discard"),
+            ];
+            for (index, label) in labels.iter().enumerate() {
+                let bounds = harness.text_bounds.get(label).unwrap_or_else(|| panic!("Missing {label} in {name}-{viewport}"));
+                for other in &labels[index + 1..] {
+                    let other_bounds = harness.text_bounds.get(other).unwrap();
+                    assert!(!bounds.shrink(1.0).intersects(*other_bounds), "{label} overlaps {other}: {name}-{viewport}");
+                }
+            }
+        }
+        app.preferences = None;
+        let fixture = phonebook::tests::Fixture::new();
+        let mut book = fixture.load();
+        phonebook::tests::add(&mut book, "Northern Lights BBS");
+        book.toggle_favorite(0).unwrap();
+        app.dialing_directory.phonebook = Some(book);
+        app.dialing_directory.open = true;
+        harness.capture(&mut app, [1000, 720], 1.0, vec![], "theme-directory-warmup");
+        harness.capture(&mut app, [1000, 720], 1.0, vec![], &format!("{name}-directory"));
+        let facts = [
+            tr!("dialing_directory-user"),
+            tr!("dialing_directory-screen_mode"),
+            tr!("egui-font"),
+            tr!("egui-baud"),
+            tr!("egui-calls"),
+        ];
+        for adjacent in facts.windows(2) {
+            assert!(harness.text_bounds[&adjacent[0]].bottom() < harness.text_bounds[&adjacent[1]].top());
+        }
+        assert!((harness.text_bounds["VGA 80x25"].left() - harness.text_bounds["IBM VGA"].left()).abs() < 1.0);
+        app.dialing_directory.open = false;
+        harness.capture(&mut app, [360, 640], 1.0, vec![], "menu-warmup");
+        let position = egui::pos2(330.0, 20.0);
+        for pressed in [true, false] {
+            harness.capture(
+                &mut app,
+                [360, 640],
+                1.0,
+                vec![
+                    egui::Event::PointerMoved(position),
+                    egui::Event::PointerButton {
+                        pos: position,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                "menu-click",
+            );
+        }
+        harness.capture(&mut app, [360, 640], 1.0, vec![], &format!("{name}-menu"));
+        for label in [
+            tr!("egui-file"),
+            tr!("egui-view"),
+            tr!("egui-quick-connect"),
+            tr!("egui-edit"),
+            tr!("egui-session"),
+        ] {
+            assert!(harness.controls.contains_key(&label), "Missing menu {label}");
+        }
+        harness.capture(
+            &mut app,
+            [360, 640],
+            1.0,
+            vec![egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            "menu-close",
+        );
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_navigation_and_session_dialogs() {
+    use icy_engine::EditableScreen;
+    let mut harness = Harness::new().await;
+    let mut screen = TextScreen::default();
+    for (column, character) in "SELECT".chars().enumerate() {
+        screen.set_char((column as i32, 0).into(), icy_engine::AttributedChar::new(character, Default::default()));
+    }
+    let mut app = TerminalApp::new(screen, "Selection".into());
+    app.focus_terminal = true;
+    harness.capture(&mut app, [1000, 720], 1.0, vec![], "selection-warmup");
+    harness.capture(&mut app, [1000, 720], 1.0, vec![], "selection-layout");
+    let info = app.terminal.render_info.read().clone();
+    let origin = egui::pos2(
+        info.bounds_x + info.viewport_x + info.font_width * info.display_scale * 0.5,
+        info.bounds_y + info.viewport_y + info.font_height * info.display_scale * 0.5,
+    );
+    let end = origin + egui::vec2(info.font_width * info.display_scale * 5.0, 0.0);
+    harness.capture(
+        &mut app,
+        [1000, 720],
+        1.0,
+        vec![
+            egui::Event::PointerMoved(origin),
+            egui::Event::PointerButton {
+                pos: origin,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        "selection-press",
+    );
+    harness.capture(&mut app, [1000, 720], 1.0, vec![egui::Event::PointerMoved(end)], "selection-drag");
+    harness.capture(
+        &mut app,
+        [1000, 720],
+        1.0,
+        vec![egui::Event::PointerButton {
+            pos: end,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        "selection-release",
+    );
+    assert_eq!(navigation::selected_text(&**app.terminal.screen.lock()).as_deref(), Some("SELECT"));
+    let path = std::env::temp_dir().join(format!("icy-settings-gpu-{}.toml", fastrand::u64(..)));
+    app.preferences = Some(settings::Settings::open(&icy_term::Options::default(), path).unwrap());
+    app.preferences.as_mut().unwrap().draft.modems.push(Default::default());
+    for (size, scale, prefix) in [
+        ([1000, 800], 1.0, "desktop"),
+        ([360, 640], 1.0, "narrow"),
+        ([1600, 1200], 2.0, "hidpi"),
+        ([360, 240], 1.0, "short"),
+    ] {
+        for page in [
+            settings::Page::Terminal,
+            settings::Page::Audio,
+            settings::Page::Paths,
+            settings::Page::Login,
+            settings::Page::Serial,
+            settings::Page::Sources,
+            settings::Page::Modems,
+            settings::Page::Protocols,
+        ] {
+            app.preferences.as_mut().unwrap().page = page;
+            harness.capture(&mut app, size, scale, vec![], "settings-warmup");
+            harness.capture(&mut app, size, scale, vec![], &format!("{prefix}-settings-{page:?}"));
+            assert!(
+                harness.controls.contains_key(&*tr!("egui-save")) && harness.controls.contains_key(&*tr!("egui-discard")),
+                "Missing settings actions {prefix} {page:?}"
+            );
+        }
+    }
+    app.preferences = None;
+    app.transfers.choose(true);
+    for (size, prefix) in [([1000, 800], "desktop"), ([360, 640], "narrow"), ([360, 240], "short")] {
+        harness.capture(&mut app, size, 1.0, vec![], "transfer-warmup");
+        harness.capture(&mut app, size, 1.0, vec![], &format!("{prefix}-transfer"));
+        assert!(harness.controls.contains_key(&*tr!("egui-close")));
+    }
+    app.transfers.open = false;
+    app.tools.serial_open = true;
+    harness.capture(&mut app, [360, 640], 1.0, vec![], "serial-warmup");
+    harness.capture(&mut app, [360, 640], 1.0, vec![], "narrow-serial");
+    assert!(harness.controls.contains_key(&*tr!("dialing_directory-connect-button")) && harness.controls.contains_key(&*tr!("egui-cancel")));
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_dialing_directory_layout() {
+    let mut harness = Harness::new().await;
+    let fixture = phonebook::tests::Fixture::new();
+    let mut book = fixture.load();
+    for name in [
+        "Northern Lights BBS",
+        "Retro Computing Network",
+        "A very long system name that must stay inside the directory",
+    ] {
+        phonebook::tests::add(&mut book, name);
+    }
+    book.toggle_favorite(0).unwrap();
+    let mut app = TerminalApp::new(TextScreen::default(), "Icy Term".into());
+    app.dialing_directory.phonebook = Some(book);
+    app.dialing_directory.open = true;
+    for (size, scale, name) in [
+        ([1000, 800], 1.0, "dial-desktop"),
+        ([360, 640], 1.0, "dial-narrow"),
+        ([1600, 1200], 2.0, "dial-hidpi"),
+    ] {
+        harness.capture(&mut app, size, scale, vec![], "dial-warmup");
+        let pixels = harness.capture(&mut app, size, scale, vec![], name);
+        let bounds = app.dialing_directory.bounds.unwrap();
+        assert!(bounds.min.x >= -1.0 && bounds.min.y >= -1.0, "{bounds:?}");
+        assert!(
+            bounds.max.x <= size[0] as f32 / scale + 1.0 && bounds.max.y <= size[1] as f32 / scale + 1.0,
+            "{bounds:?}"
+        );
+        assert!(pixels.chunks_exact(4).collect::<std::collections::HashSet<_>>().len() > 20);
+    }
+    app.dialing_directory.phonebook.as_mut().unwrap().begin_edit();
+    harness.capture(&mut app, [1000, 800], 1.0, vec![], "dial-edit-warmup");
+    harness.capture(&mut app, [1000, 800], 1.0, vec![], "dial-edit");
+    harness.capture(&mut app, [360, 640], 1.0, vec![], "dial-edit-narrow-warmup");
+    harness.capture(&mut app, [360, 640], 1.0, vec![], "dial-edit-narrow");
+    let bounds = app.dialing_directory.bounds.unwrap();
+    assert!(
+        bounds.min.x >= -1.0 && bounds.min.y >= -1.0 && bounds.max.x <= 361.0 && bounds.max.y <= 641.0,
+        "{bounds:?}"
+    );
+    for page in [
+        &*tr!("egui-connection"),
+        &*tr!("settings-terminal-category"),
+        &*tr!("egui-login"),
+        &*tr!("egui-colors"),
+        &*tr!("dialing_directory-notes"),
+    ] {
+        let draft = app.dialing_directory.phonebook.as_mut().unwrap().draft.as_mut().unwrap();
+        draft.custom_palette = Some(
+            icy_engine::DOS_DEFAULT_PALETTE
+                .iter()
+                .map(|color| {
+                    let (red, green, blue) = color.rgb();
+                    [red, green, blue]
+                })
+                .collect(),
+        );
+        draft.proxy = Some(icy_net::proxy::ProxyConfig::socks5("127.0.0.1", 9050));
+        draft.protocol = icy_net::ConnectionType::SSH;
+        draft.ssh_authentication = icy_term::SshAuthenticationMode::PrivateKey;
+        for (size, name) in [([1000, 800], "desktop"), ([360, 640], "narrow")] {
+            harness.capture(&mut app, size, 1.0, vec![], "page-warmup");
+            harness.capture(&mut app, size, 1.0, vec![], "page-layout");
+            let position = *harness.controls.get(page).unwrap_or_else(|| panic!("Missing page {page}"));
+            harness.capture(
+                &mut app,
+                size,
+                1.0,
+                vec![
+                    egui::Event::PointerMoved(position),
+                    egui::Event::PointerButton {
+                        pos: position,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                "page-press",
+            );
+            harness.capture(
+                &mut app,
+                size,
+                1.0,
+                vec![egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                "page-release",
+            );
+            harness.capture(&mut app, size, 1.0, vec![], &format!("{name}-{page}"));
+            assert!(
+                harness.controls.contains_key(&*tr!("egui-save")) && harness.controls.contains_key(&*tr!("egui-discard")),
+                "Hidden actions on {name} {page}"
+            );
+            let bounds = app.dialing_directory.bounds.unwrap();
+            assert!(
+                bounds.min.x >= -1.0 && bounds.min.y >= -1.0 && bounds.max.x <= size[0] as f32 + 1.0 && bounds.max.y <= size[1] as f32 + 1.0,
+                "{page} {bounds:?}"
+            );
+        }
+    }
+    harness.capture(&mut app, [360, 240], 1.0, vec![], "short-warmup");
+    harness.capture(&mut app, [360, 240], 1.0, vec![], "short");
+    let bounds = app.dialing_directory.bounds.unwrap();
+    assert!(
+        bounds.min.x >= -1.0 && bounds.min.y >= -1.0 && bounds.max.x <= 361.0 && bounds.max.y <= 241.0,
+        "{bounds:?}"
+    );
+}
+
+impl Harness {
+    async fn new() -> Self {
+        let instance = wgpu::Instance::default();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions::default())
+            .await
+            .expect("GPU adapter required");
+        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor::default()).await.unwrap();
+        let mut renderer = egui_wgpu::Renderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, Default::default());
+        renderer
+            .callback_resources
+            .insert(TerminalShaderRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm));
+        eprintln!("egui GPU test: {:?}", adapter.get_info());
+        Self {
+            device,
+            queue,
+            renderer,
+            context: egui::Context::default(),
+            time: 0.0,
+            controls: Default::default(),
+            text_bounds: Default::default(),
+        }
+    }
+
+    fn capture(&mut self, app: &mut TerminalApp, size: [u32; 2], scale: f32, events: Vec<egui::Event>, name: &str) -> Vec<u8> {
+        let started = std::time::Instant::now();
+        self.time += 0.1;
+        let mut input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(size[0] as f32 / scale, size[1] as f32 / scale),
+            )),
+            time: Some(self.time),
+            events,
+            ..Default::default()
+        };
+        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().native_pixels_per_point = Some(scale);
+        let output = self.context.run(input, |context| app.show(context));
+        let ui_finished = std::time::Instant::now();
+        assert_eq!(output.pixels_per_point, scale);
+        self.controls.clear();
+        self.text_bounds.clear();
+        for shape in &output.shapes {
+            if let egui::Shape::Text(text) = &shape.shape {
+                let rect = egui::Rect::from_min_size(text.pos, text.galley.size());
+                if shape.clip_rect.contains_rect(rect) {
+                    self.controls.insert(text.galley.text().to_string(), rect.center());
+                    self.text_bounds.insert(text.galley.text().to_string(), rect);
+                }
+            }
+        }
+        let jobs = self.context.tessellate(output.shapes, output.pixels_per_point);
+        for (id, delta) in &output.textures_delta.set {
+            self.renderer.update_texture(&self.device, &self.queue, *id, delta);
+        }
+        let screen = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: size,
+            pixels_per_point: output.pixels_per_point,
+        };
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("egui terminal test"),
+            size: wgpu::Extent3d {
+                width: size[0],
+                height: size[1],
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&Default::default());
+        let stride = (size[0] * 4).div_ceil(256) * 256;
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("egui terminal readback"),
+            size: u64::from(stride * size[1]),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let commands = self.renderer.update_buffers(&self.device, &self.queue, &mut encoder, &jobs, &screen);
+        let prepared = std::time::Instant::now();
+        {
+            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("egui terminal test pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                ..Default::default()
+            });
+            self.renderer.render(&mut pass.forget_lifetime(), &jobs, &screen);
+        }
+        encoder.copy_texture_to_buffer(
+            texture.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(stride),
+                    rows_per_image: None,
+                },
+            },
+            texture.size(),
+        );
+        self.queue.submit(commands.into_iter().chain([encoder.finish()]));
+        let (sender, receiver) = std::sync::mpsc::channel();
+        buffer.slice(..).map_async(wgpu::MapMode::Read, move |result| sender.send(result).unwrap());
+        self.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        receiver.recv().unwrap().unwrap();
+        if std::env::var_os("ICY_EGUI_TIMINGS").is_some() {
+            eprintln!(
+                "{name} {size:?}: ui={:?} prepare={:?} gpu/readback={:?}",
+                ui_finished - started,
+                prepared - ui_finished,
+                prepared.elapsed()
+            );
+        }
+        let pixels: Vec<u8> = buffer
+            .slice(..)
+            .get_mapped_range()
+            .chunks(stride as usize)
+            .flat_map(|row| row[..size[0] as usize * 4].iter().copied())
+            .collect();
+        buffer.unmap();
+        for id in output.textures_delta.free {
+            self.renderer.free_texture(&id);
+        }
+        if let Some(directory) = std::env::var_os("ICY_EGUI_SCREENSHOTS") {
+            let directory = PathBuf::from(directory);
+            std::fs::create_dir_all(&directory).unwrap();
+            image::save_buffer(directory.join(format!("{name}.png")), &pixels, size[0], size[1], image::ColorType::Rgba8).unwrap();
+        }
+        pixels
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_auto_resize_reuses_tiles_and_settles_after_one_frame() {
+    use egui_wgpu::CallbackTrait;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let mut harness = Harness::new().await;
+    let screen = FileFormat::IcyDraw
+        .from_bytes(include_bytes!("../../../data/welcome_screen.1.icy"), None)
+        .unwrap()
+        .screen;
+    let mut app = TerminalApp::new(screen, "resize".into());
+    let mut previous_tiles: Vec<Arc<Vec<u8>>> = Vec::new();
+    let mut previous_generation = None;
+    let mut previous_scale = 0.0;
+    for size in [[1000, 720], [1004, 724], [1100, 800], [640, 480], [1920, 1200], [360, 240]] {
+        harness.capture(&mut app, size, 1.0, vec![], "resize-cache");
+        let info = app.terminal.render_info.read().clone();
+        let bounds = egui::Rect::from_min_size(egui::pos2(info.bounds_x, info.bounds_y), egui::vec2(info.bounds_width, info.bounds_height));
+        let frame = CRTShaderProgram::new(&app.terminal, Arc::new(app.settings.clone()), None).frame(&app.shader_state, [bounds.width(), bounds.height()], 1.0);
+        if !previous_tiles.is_empty() {
+            assert_eq!(previous_tiles.len(), frame.slices_blink_off.len());
+            for (previous, current) in previous_tiles.iter().zip(&frame.slices_blink_off) {
+                assert!(Arc::ptr_eq(previous, &current.rgba_data), "resize rerasterized terminal content");
+            }
+            assert_eq!(previous_generation, Some(frame.render_generation));
+        }
+        previous_tiles = frame.slices_blink_off.iter().map(|slice| slice.rgba_data.clone()).collect();
+        previous_generation = Some(frame.render_generation);
+        // A pristine context makes the very first repaint request observable.
+        let probe = egui::Context::default();
+        let repaints = Arc::new(AtomicUsize::new(0));
+        let counter = repaints.clone();
+        probe.set_request_repaint_callback(move |_| {
+            counter.fetch_add(1, Ordering::Relaxed);
+        });
+        let callback = TerminalCallback { frame, bounds, context: probe };
+        app.terminal.render_info.write().display_scale = previous_scale;
+        let mut encoder = harness.device.create_command_encoder(&Default::default());
+        let mut prepare = |callback: &TerminalCallback, encoder: &mut wgpu::CommandEncoder| {
+            callback.prepare(
+                &harness.device,
+                &harness.queue,
+                &egui_wgpu::ScreenDescriptor {
+                    size_in_pixels: size,
+                    pixels_per_point: 1.0,
+                },
+                encoder,
+                &mut harness.renderer.callback_resources,
+            );
+        };
+        prepare(&callback, &mut encoder);
+        let settled_scale = app.terminal.render_info.read().display_scale;
+        if settled_scale != previous_scale {
+            assert!(repaints.load(Ordering::Relaxed) > 0, "a changed scale must schedule the frame that shows it");
+        }
+        repaints.store(0, Ordering::Relaxed);
+        prepare(&callback, &mut encoder);
+        assert_eq!(repaints.load(Ordering::Relaxed), 0, "a settled scale must not keep scheduling frames");
+        previous_scale = settled_scale;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_render_resize_scroll_and_effects() {
+    let mut harness = Harness::new().await;
+    let welcome = FileFormat::IcyDraw
+        .from_bytes(include_bytes!("../../../data/welcome_screen.1.icy"), None)
+        .unwrap()
+        .screen;
+    let mut app = TerminalApp::new(welcome, "Icy Term".into());
+    for (size, scale, name) in [([1000, 720], 1.0, "desktop"), ([360, 640], 1.0, "narrow"), ([1600, 1200], 2.0, "hidpi")] {
+        harness.capture(&mut app, size, scale, vec![], "warmup");
+        let pixels = harness.capture(&mut app, size, scale, vec![], name);
+        let center: Vec<_> = pixels
+            .chunks_exact((size[0] * 4) as usize)
+            .skip((size[1] / 4) as usize)
+            .take((size[1] / 2) as usize)
+            .flatten()
+            .copied()
+            .collect();
+        let colors: std::collections::HashSet<_> = center.chunks_exact(4).collect();
+        let colored_pixels = center
+            .chunks_exact(4)
+            .filter(|pixel| pixel[..3].iter().max().unwrap() - pixel[..3].iter().min().unwrap() > 80)
+            .count();
+        assert!(colors.len() > 4 && colored_pixels > 100, "blank or missing terminal at {size:?}");
+        let info = app.terminal.render_info.read();
+        assert!(
+            (info.viewport_width / info.viewport_height - info.terminal_width / info.terminal_height).abs() < 0.01,
+            "Fit must preserve aspect ratio"
+        );
+    }
+    app.settings.use_integer_scaling = false;
+    app.settings.use_bilinear_filtering = false;
+    app.settings.scaling_mode = ScalingMode::Manual(1.0);
+    harness.capture(&mut app, [1000, 720], 1.0, vec![], "neutral-warmup");
+    let neutral = harness.capture(&mut app, [1000, 720], 1.0, vec![], "neutral");
+    app.settings.use_scanlines = true;
+    app.settings.use_curvature = true;
+    let crt = harness.capture(&mut app, [1000, 720], 1.0, vec![], "crt");
+    assert!(neutral != crt, "CRT effects must change the rendered pixels");
+    assert!(neutral[..1000 * 20 * 4] == crt[..1000 * 20 * 4], "terminal must not paint over toolbar");
+    app.show_monitor = true;
+    harness.capture(&mut app, [1000, 720], 1.0, vec![], "dialog-warmup");
+    let dialog = harness.capture(&mut app, [1000, 720], 1.0, vec![], "dialog");
+    assert!(crt != dialog, "monitor window must paint above terminal");
+
+    let ansi: String = (0..300)
+        .map(|row| format!("\x1b[{}m{row:03} SCROLL TEST {}\x1b[0m\r\n", 41 + row % 6, "0123456789".repeat(5)))
+        .collect();
+    let screen = FileFormat::Ansi.from_bytes(ansi.as_bytes(), None).unwrap().screen;
+    let mut app = TerminalApp::new(screen, "Scroll test".into());
+    app.settings.scaling_mode = ScalingMode::Manual(2.0);
+    harness.capture(&mut app, [800, 600], 1.0, vec![], "scroll-warmup");
+    let top = harness.capture(&mut app, [800, 600], 1.0, vec![], "scroll-top");
+    let events = vec![
+        egui::Event::PointerMoved(egui::pos2(400.0, 300.0)),
+        egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(-200.0, -2400.0),
+            modifiers: egui::Modifiers::NONE,
+        },
+    ];
+    harness.capture(&mut app, [800, 600], 1.0, events, "scroll-event");
+    let scrolled = harness.capture(&mut app, [800, 600], 1.0, vec![], "scrolled");
+    assert!(app.terminal.scroll_y() > 0.0, "wheel must scroll vertically");
+    assert!(app.terminal.scroll_x() > 0.0, "wheel must scroll horizontally");
+    assert!(top != scrolled, "scrolling must change terminal pixels");
+    let info = app.terminal.render_info.read();
+    assert_eq!(info.display_scale, 2.0);
+    assert!(info.viewport_width <= 800.0 && info.viewport_height <= 600.0);
+}

@@ -1,3 +1,4 @@
+egui-view = Ansicht
 connect-to = Verbinde zu { $address }...
 
 settings-heading = Einstellungen
@@ -478,3 +479,414 @@ cmd-app-quit-menu = Beenden
 cmd-app-about-action = Über
 cmd-app-about-desc = Info-Dialog anzeigen
 cmd-app-about-menu = Über
+egui-file = Datei
+
+egui-new-window = Neues Fenster
+
+egui-save-screen = Bildschirm speichern...
+
+egui-close-window = Fenster schließen
+
+egui-directory = Wählverzeichnis
+
+egui-open-file = Öffnen...
+
+egui-fit = Einpassen
+
+egui-zoom = Zoom
+
+egui-zoom-out = Verkleinern
+
+egui-zoom-in = Vergrößern
+
+egui-fullscreen = Vollbild
+
+egui-history = Verlauf
+
+egui-edit = Bearbeiten
+
+egui-select-all = Alles auswählen
+
+egui-find-command = Suchen...
+
+egui-session = Sitzung
+
+egui-terminal-settings-command = Terminaleinstellungen...
+
+egui-audio = Audio
+
+egui-stop-sound = Ton stoppen
+
+egui-disconnect = Trennen
+
+egui-cancel = Abbrechen
+
+egui-connected = Verbunden
+
+egui-connecting = Verbinden...
+
+egui-offline = Offline
+
+egui-monitor-type = Monitortyp
+
+egui-integer-scaling = Ganzzahlige Skalierung
+
+egui-bilinear-filtering = Bilineare Filterung
+
+egui-thickness = Dicke
+
+egui-sharpness = Schärfe
+
+egui-phase = Phase
+
+egui-bloom = Leuchten
+
+egui-threshold = Schwelle
+
+egui-radius = Radius
+
+egui-glow = Nachleuchten
+
+egui-persistence = Leuchtdauer
+
+egui-curvature = Krümmung
+
+egui-horizontal = Horizontal
+
+egui-vertical = Vertikal
+
+egui-noise = Rauschen
+
+egui-noise-level = Rauschstärke
+
+egui-sync-wobble = Bildschwankung
+
+egui-reset-monitor = Monitor zurücksetzen
+
+egui-recording = Aufnahme
+
+egui-about-description = Ein Terminalprogramm zum Anrufen von BBS-Systemen, mit Unterstützung für klassische Terminalgrafik und Dateiübertragungen.
+
+egui-script-running = Skript läuft
+
+egui-host-pause = Host-Pause
+
+egui-dismiss = Schließen
+
+egui-find = Suchen
+
+egui-match-case = Groß-/Kleinschreibung
+
+egui-previous = Zurück
+
+egui-next = Weiter
+
+egui-close = Schließen
+
+egui-not-found = Nicht gefunden
+
+egui-open-link-question = Externen Link öffnen?
+
+egui-close-question = Fenster schließen?
+
+egui-close-warning = Aktive Sitzungen werden beendet und ungespeicherte Änderungen verworfen.
+
+egui-serial = Seriell
+
+egui-web-directories = Web-Verzeichnisse
+
+egui-connect-timeout = Verbindungszeitlimit (Sekunden)
+
+egui-scrollback-lines = Verlaufszeilen
+
+settings-terminal-invert-mouse-wheel = Mausrad umkehren
+
+settings-terminal-cursor-blinking = Blinkender Cursor
+
+egui-cursor = Cursor
+
+egui-appearance = Darstellung
+
+egui-system = System
+
+egui-dark = Dunkel
+
+egui-light = Hell
+
+egui-audio-enabled = Audio aktiv
+
+egui-volume = Lautstärke
+
+egui-dial-tone = Wählton
+
+settings-terminal-audio-device = Ausgabegerät
+
+egui-system-default = Systemstandard
+
+egui-captures = Aufnahmen
+
+egui-iemsi-login = IEMSI-Autologin
+
+settings-web-directory-url = HTTPS-URL
+
+settings-web-directory-add = Quelle hinzufügen
+
+egui-initialize = Initialisieren
+
+egui-dial-suffix = Wählsuffix
+
+egui-hang-up = Auflegen
+
+egui-remove-modem = Modem entfernen
+
+egui-add-modem = Modem hinzufügen
+
+egui-automatic-detection = Automatische Erkennung
+
+egui-multiple-files = Mehrere Dateien
+
+egui-ask-filename = Dateiname für Download abfragen
+
+egui-move-up = Nach oben
+
+egui-move-down = Nach unten
+
+egui-remove-protocol = Protokoll entfernen
+
+egui-add-external-protocol = Externes Protokoll hinzufügen
+
+egui-external-protocol = Externes Protokoll
+
+egui-save = Speichern
+
+egui-discard = Verwerfen
+
+egui-baud-rate = Baudrate
+
+egui-data-bits = Datenbits
+
+egui-parity = Parität
+
+egui-stop-bits = Stoppbits
+
+egui-transfer-cancelled = Übertragung abgebrochen
+
+egui-transfer-errors = Übertragung mit Fehlern beendet
+
+egui-transfer-finished = Übertragung beendet
+
+egui-transfer-complete = Übertragung abgeschlossen
+
+transfer-external-failed = Übertragung fehlgeschlagen
+
+egui-connection-closed = Verbindung geschlossen
+
+egui-upload-command = Hochladen...
+
+egui-download-command = Herunterladen...
+
+egui-capture-command = Aufnehmen...
+
+egui-external-warning = Startet ein lokal konfiguriertes externes Programm
+
+egui-cancel-transfer = Übertragung abbrechen
+
+egui-choose-files = Dateien auswählen...
+
+egui-script-finished = Skript beendet
+
+egui-serial-command = Serielle Verbindung...
+
+egui-stop-script = Skript stoppen
+
+egui-run-script = Skript ausführen...
+
+egui-lua-command = Lua-Konsole...
+
+egui-replay-file = Datei wiedergeben...
+
+egui-host-info = Host-Informationen
+
+egui-terminal-settings = Terminaleinstellungen
+
+egui-apply-reset = Anwenden und zurücksetzen
+
+egui-serial-connection = Serielle Verbindung
+
+egui-detect-baud = Baudrate erkennen
+
+egui-lua-console = Lua-Konsole
+
+egui-run = Ausführen
+
+egui-stop = Stoppen
+
+egui-connection = Verbindung
+
+egui-login = Anmeldung
+
+egui-colors = Farben
+
+egui-generate-password = Passwort erzeugen
+
+egui-system-name = Systemname
+
+egui-phone-number = Telefonnummer
+
+egui-favorite = Favorit
+
+egui-select-modem = Modem auswählen
+
+egui-no-modem-selected = Kein konfiguriertes Modem ausgewählt
+
+dialing_directory-proxy = Proxy
+
+egui-direct-connection = Direkte Verbindung
+
+egui-custom-socks = Eigener SOCKS5-Proxy
+
+dialing_directory-proxy-host = Proxy-Host
+
+egui-port = Port
+
+egui-proxy-user = Proxy-Benutzer
+
+egui-proxy-password = Proxy-Passwort
+
+egui-stored-password = Gespeichertes Passwort
+
+egui-clear-proxy-password = Proxy-Passwort löschen
+
+egui-proxy-command = Proxy-Befehl
+
+egui-websocket-proxy-error = SOCKS5 ist für WebSocket-Verbindungen nicht verfügbar
+
+egui-remove-proxy = Proxy entfernen
+
+egui-terminal-emulation = Terminalemulation
+
+egui-screen-size = Bildschirmgröße
+
+egui-columns = Spalten
+
+egui-rows = Zeilen
+
+egui-xep80-module = XEP80-Modul
+
+egui-resolution = Auflösung
+
+egui-igs-graphics = IGS-Grafik
+
+egui-ansi-music = ANSI-Musik
+
+egui-font = Schrift
+
+egui-terminal-default = Terminalstandard
+
+egui-lf-expand = LF fügt Wagenrücklauf hinzu
+
+egui-mouse-reporting = Mausereignisse senden
+
+egui-user-name = Benutzername
+
+egui-hide-password = Passwort verbergen
+
+egui-show-password = Passwort anzeigen
+
+dialing_directory-ssh-authentication = SSH-Authentifizierung
+
+dialing_directory-ssh-private-key = Privater Schlüssel
+
+egui-browse = Durchsuchen...
+
+egui-select-ssh-key = Privaten SSH-Schlüssel auswählen
+
+egui-key-passphrase = Schlüsselpassphrase (nicht gespeichert)
+
+egui-auto-login-expression = Autologin-Ausdruck
+
+egui-login-presets = Anmeldevorlagen
+
+egui-interactive = Interaktiv
+
+egui-name-password = Name, Passwort
+
+egui-escapes-name-password = Escape, Name, Passwort
+
+egui-disable-iemsi = IEMSI deaktivieren
+
+egui-ice-colors = iCE-Farben
+
+dialing_directory-custom-palette = Eigene Palette
+
+egui-reset-palette = Palette zurücksetzen
+
+egui-quick-connect-hint = Schnellverbindung: telnet://host:port
+
+egui-quick-connect = Schnell verbinden
+
+egui-add-to-directory = Zum Verzeichnis hinzufügen
+
+egui-directory-tab = Verzeichnis
+
+egui-entry = Eintrag
+
+egui-new-entry = Neuer Eintrag
+
+egui-reload = Neu laden
+
+egui-directory-search = Name, Adresse, Notizen suchen
+
+egui-all = Alle
+
+egui-favorites = Favoriten
+
+egui-most-called = Am häufigsten gewählt
+
+egui-last-called = Zuletzt gewählt
+
+egui-all-sources = Alle Quellen
+
+egui-local-phonebook = Lokales Telefonbuch
+
+egui-remove-favorite = Favorit entfernen
+
+egui-add-favorite = Favorit hinzufügen
+
+egui-phonebook-read-only = Neueres Telefonbuchformat: schreibgeschützt
+
+egui-edit-entry = Eintrag bearbeiten
+
+egui-no-entry-selected = Kein Eintrag ausgewählt
+
+egui-baud = Baud
+
+egui-direct = Direkt
+
+egui-calls = Anrufe
+
+egui-last-call = Letzter Anruf
+
+egui-never = Nie
+
+egui-total-time = Gesamtzeit
+
+egui-last-duration = Letzte Dauer
+
+egui-uploaded = Hochgeladen
+
+egui-downloaded = Heruntergeladen
+
+egui-strict-host-key = Hostschlüssel: ~/.ssh/known_hosts (strenge Prüfung)
+
+dialing_directory-duplicate = Duplizieren
+
+egui-delete-entry = Eintrag löschen
+
+egui-delete-question = Diesen Eintrag löschen?
+
+egui-discard-question = Ungespeicherte Änderungen verwerfen?
+
+egui-delete = Löschen
+
+egui-discard-close = Verwerfen und schließen

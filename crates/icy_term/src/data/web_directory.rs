@@ -25,11 +25,39 @@ fn cache_file(source: &WebDirectorySource) -> Option<PathBuf> {
 
 fn parse_directory(input: &str, source_name: &str) -> Result<Vec<Address>, toml::de::Error> {
     let mut book: AddressBook = toml::from_str(input)?;
+    book.addresses.retain(|address| {
+        matches!(
+            address.protocol,
+            icy_net::ConnectionType::Telnet
+                | icy_net::ConnectionType::Raw
+                | icy_net::ConnectionType::SSH
+                | icy_net::ConnectionType::Websocket
+                | icy_net::ConnectionType::SecureWebsocket
+                | icy_net::ConnectionType::Rlogin
+                | icy_net::ConnectionType::RloginSwapped
+        )
+    });
     for address in &mut book.addresses {
         address.web_source = Some(source_name.to_string());
         address.user_name.clear();
         address.password.clear();
         address.auto_login.clear();
+        address.proxy_command.clear();
+        address.proxy = None;
+        address.ssh_authentication = Default::default();
+        address.ssh_private_key.clear();
+        address.ssh_key_passphrase.clear();
+        address.modem_id.clear();
+        if let Some(mut url) = url::Url::parse(&address.address).ok().filter(|url| url.has_host()) {
+            let _ = url.set_username("");
+            let _ = url.set_password(None);
+            address.address = url.to_string();
+        } else if let Ok(mut info) = crate::ConnectionInformation::parse(&address.address) {
+            if info.protocol.is_none() {
+                info.protocol = Some(address.protocol);
+            }
+            address.address = info.endpoint();
+        }
     }
     Ok(book.addresses)
 }
@@ -101,6 +129,8 @@ address = "bbs.example.org:23"
 user_name = "should-not-import"
 password = "secret"
 auto_login = "login script"
+proxy_command = "untrusted command"
+ssh_private_key = "/private/key"
 "#;
 
         let addresses = parse_directory(input, "Community").unwrap();
@@ -109,5 +139,14 @@ auto_login = "login script"
         assert!(addresses[0].user_name.is_empty());
         assert!(addresses[0].password.is_empty());
         assert!(addresses[0].auto_login.is_empty());
+        assert!(addresses[0].proxy_command.is_empty());
+        assert!(addresses[0].ssh_private_key.is_empty());
+        let input = input.replace("bbs.example.org:23", "telnet://remote:secret@bbs.example.org:23");
+        let addresses = parse_directory(&input, "Community").unwrap();
+        let info = crate::ConnectionInformation::parse(&addresses[0].address).unwrap();
+        assert!(info.user_name().is_none() && info.password().is_none());
+        let input = input.replace("telnet://remote:secret@bbs.example.org:23", "remote:secret@bbs.example.org") + "\nprotocol = \"SSH\"\n";
+        let addresses = parse_directory(&input, "Community").unwrap();
+        assert_eq!(addresses[0].address, "bbs.example.org:22");
     }
 }

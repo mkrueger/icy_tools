@@ -239,43 +239,7 @@ impl AddressBook {
         }
 
         if let Some(file_name) = Address::get_dialing_directory_file() {
-            // Create a copy for serialization (skip the first empty address)
-            let mut save_book = self.clone();
-            save_book.addresses.retain(|address| address.web_source.is_none());
-            save_book.version = Version::new(1, 1, 0);
-
-            // Remove the first empty address if it exists
-            if !save_book.addresses.is_empty() && save_book.addresses[0].system_name.is_empty() {
-                save_book.addresses.remove(0);
-            }
-
-            // Serialize to TOML using serde
-            let toml_string = toml::to_string_pretty(&save_book)?;
-
-            // Create temp file to write the new dialing directory
-            let mut write_name: PathBuf = file_name.clone();
-            write_name.set_extension("new");
-            fs::write(&write_name, toml_string)?;
-            secure_phonebook_file(&write_name)?;
-
-            let mut backup_file: PathBuf = file_name.clone();
-            backup_file.set_extension("bak");
-
-            // Backup old file, if it has contents
-            // NOTE: just backup once per session, otherwise it gets overwritten too easily
-            if !self.created_backup {
-                self.created_backup = true;
-                if let Ok(data) = fs::metadata(&file_name) {
-                    if data.len() > 0 {
-                        std::fs::rename(&file_name, &backup_file)?;
-                        secure_phonebook_file(&backup_file)?;
-                    }
-                }
-            }
-
-            // Move temp file to the real file
-            std::fs::rename(&write_name, &file_name)?;
-            secure_phonebook_file(&file_name)?;
+            self.store_to_file(&file_name)?;
             if let Some(cache_root) = Address::cache_root() {
                 if let Err(err) = self.prune_orphaned_cache_dirs(&cache_root) {
                     log::warn!("Unable to prune orphaned BBS caches: {err}");
@@ -283,6 +247,57 @@ impl AddressBook {
             }
         }
         Ok(())
+    }
+
+    pub fn load_from_file(path: &Path) -> TerminalResult<Self> {
+        secure_phonebook_file(path)?;
+        let mut book = Self::new();
+        book.load_string(&fs::read_to_string(path)?)?;
+        Ok(book)
+    }
+
+    pub fn store_to_file(&mut self, path: &Path) -> TerminalResult<()> {
+        if self.write_lock || unsafe { PHONE_LOCK } {
+            return Err("Phonebook is read-only".into());
+        }
+        let mut save_book = self.clone();
+        save_book.addresses.retain(|address| address.web_source.is_none());
+        save_book.version = Version::new(1, 1, 0);
+        if save_book.addresses.first().is_some_and(|address| address.system_name.is_empty()) {
+            save_book.addresses.remove(0);
+        }
+        let toml_string = toml::to_string_pretty(&save_book)?;
+        let write_name = path.with_extension("new");
+        {
+            use std::io::Write;
+            let mut options = fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = options.open(&write_name)?;
+            if let Err(error) = file.write_all(toml_string.as_bytes()).and_then(|()| file.sync_all()) {
+                let _ = fs::remove_file(&write_name);
+                return Err(error.into());
+            }
+        }
+        let result = (|| -> TerminalResult<()> {
+            if !self.created_backup && fs::metadata(path).is_ok_and(|data| data.len() > 0) {
+                let backup = path.with_extension("bak");
+                fs::copy(path, &backup)?;
+                secure_phonebook_file(&backup)?;
+            }
+            fs::rename(&write_name, path)?;
+            secure_phonebook_file(path)?;
+            self.created_backup = true;
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(write_name);
+        }
+        result
     }
 }
 
@@ -629,7 +644,7 @@ impl Address {
         }
     }
 
-    pub(crate) fn get_screen_mode(&self) -> ScreenMode {
+    pub fn get_screen_mode(&self) -> ScreenMode {
         normalize_screen_mode(self.terminal_type, self.screen_mode)
     }
 }

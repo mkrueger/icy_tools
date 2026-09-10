@@ -1,8 +1,8 @@
+use super::BAUD_RATES;
 use crate::auto_login::{AutoLoginCommand, AutoLoginParser};
 use crate::emulated_modem::{EmulatedModem, ModemCommand};
 use crate::features::AutoTransferScanner;
 use crate::scripting::ScriptRunner;
-use crate::ui::open_serial_dialog::BAUD_RATES;
 use crate::TransferProtocol;
 use crate::{normalize_screen_mode, ConnectionInformation, SshAuthenticationMode};
 use base64::{engine::general_purpose, Engine as _};
@@ -351,6 +351,10 @@ pub enum TerminalCommand {
     CancelTransfer,
     Resize(u16, u16),
     SetBaudEmulation(BaudEmulation),
+    SetTerminalProfile {
+        profile: crate::Address,
+        scrollback: usize,
+    },
     StartCapture(String),
     StopCapture,
     SetDownloadDirectory(PathBuf),
@@ -375,6 +379,7 @@ pub enum TerminalCommand {
 pub enum TerminalEvent {
     Connected,
     Disconnected(Option<String>), // Optional error message
+    CaptureState(Option<String>),
     TransferStarted(TransferState, bool),
     TransferProgress(TransferState),
     TransferCompleted(TransferState),
@@ -460,6 +465,8 @@ pub struct ConnectionConfig {
     pub ssh_authentication: SshAuthenticationMode,
     pub ssh_private_key: Option<PathBuf>,
     pub ssh_key_passphrase: Option<String>,
+    pub ssh_host_key_policy: Option<icy_net::ssh::HostKeyPolicy>,
+    pub websocket_address: Option<String>,
 
     pub proxy_command: Option<String>,
     /// Optional SOCKS5 proxy for TCP-based connections (Tor/I2P).
@@ -478,11 +485,14 @@ pub struct ConnectionConfig {
 
     /// Transfer protocols for auto-transfer detection
     pub transfer_protocols: Vec<crate::TransferProtocol>,
+    pub confirm_auto_transfer: bool,
 
     /// Whether mouse reporting is enabled for this connection
     pub mouse_reporting_enabled: bool,
     pub lf_expand: bool,
     pub custom_palette: Option<Vec<[u8; 3]>>,
+    pub font: Option<icy_engine::BitFont>,
+    pub ice_mode: Option<icy_engine::IceMode>,
     pub default_cursor_shape: CaretShape,
     pub default_cursor_blinking: bool,
     pub cache_directory: Option<PathBuf>,
@@ -515,6 +525,7 @@ pub struct TerminalThread {
     iemsi_user_settings: Option<ICIUserSettings>,
     auto_transfer: Option<(String, bool, Option<String>)>, // For pending auto-transfers (protocol_id, is_download, filename)
     transfer_protocols: Vec<TransferProtocol>,             // Stored protocol list for auto-transfer lookup
+    confirm_auto_transfer: bool,
 
     // Capture state with buffering
     capture_writer: Option<BufWriter<tokio::fs::File>>,
@@ -578,6 +589,7 @@ impl TerminalThread {
             utf8_buffer: Vec::new(),
             auto_transfer_scanner: AutoTransferScanner::default(),
             transfer_protocols: Vec::new(),
+            confirm_auto_transfer: false,
             baud_emulator: BaudEmulator::new(),
             iemsi_scanner: None,
             iemsi_user_settings: None,
@@ -606,8 +618,22 @@ impl TerminalThread {
         parser: Box<dyn CommandParser + Send>,
         address_book: Arc<Mutex<crate::data::AddressBook>>,
     ) -> (mpsc::UnboundedSender<TerminalCommand>, mpsc::UnboundedReceiver<TerminalEvent>) {
+        let (command_tx, event_rx, _shutdown) = Self::spawn_cancellable(edit_screen, parser, address_book);
+        (command_tx, event_rx)
+    }
+
+    pub fn spawn_cancellable(
+        edit_screen: Arc<Mutex<Box<dyn Screen>>>,
+        parser: Box<dyn CommandParser + Send>,
+        address_book: Arc<Mutex<crate::data::AddressBook>>,
+    ) -> (
+        mpsc::UnboundedSender<TerminalCommand>,
+        mpsc::UnboundedReceiver<TerminalEvent>,
+        tokio::sync::oneshot::Sender<()>,
+    ) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
 
         let mut thread = Self::new(edit_screen, parser, address_book, command_tx.clone(), command_rx, event_tx.clone());
 
@@ -619,11 +645,25 @@ impl TerminalThread {
                 .expect("Failed to create tokio runtime");
 
             runtime.block_on(async move {
-                thread.run().await;
+                tokio::select! {
+                    biased;
+                    _ = async {
+                        if shutdown_rx.await.is_err() {
+                            std::future::pending::<()>().await;
+                        }
+                    } => {}
+                    _ = event_tx.closed() => {}
+                    _ = thread.run() => {}
+                }
+                thread.stop_script();
+                if let Some(mut writer) = thread.capture_writer.take() {
+                    let _ = tokio::time::timeout(Duration::from_secs(1), writer.flush()).await;
+                }
+                let _ = tokio::time::timeout(Duration::from_secs(1), thread.disconnect()).await;
             });
         });
 
-        (command_tx, event_rx)
+        (command_tx, event_rx, shutdown_tx)
     }
 
     /// Initialize mutable copy of all 20 IGS sound effects
@@ -683,7 +723,7 @@ impl TerminalThread {
                             .or_else(|| TransferProtocol::from_internal_id(&protocol_id));
 
                         if let Some(protocol) = protocol {
-                            if is_download {
+                            if is_download && !self.confirm_auto_transfer {
                                 self.start_download(protocol, filename).await;
                             } else {
                                 // For uploads, we'd need file selection - just notify UI
@@ -841,9 +881,47 @@ impl TerminalThread {
             TerminalCommand::SetBaudEmulation(bps) => {
                 self.baud_emulator.set_baud_rate(bps);
             }
+            TerminalCommand::SetTerminalProfile { profile, scrollback } => {
+                let font = match profile.font_name.as_deref().map(icy_engine::BitFont::from_sauce_name).transpose() {
+                    Ok(font) => font,
+                    Err(error) => {
+                        self.send_event(TerminalEvent::Error("Terminal font".into(), error.to_string()));
+                        return;
+                    }
+                };
+                self.set_terminal_settings(profile.terminal_type, profile.get_screen_mode(), profile.ansi_music, false);
+                self.baud_emulator.set_baud_rate(profile.baud_emulation);
+                let mut screen = self.edit_screen.lock();
+                if let Some(screen) = screen.as_editable() {
+                    screen.set_scrollback_buffer_size(scrollback);
+                    if let Some(font) = font {
+                        screen.set_font(0, font);
+                    }
+                    *screen.ice_mode_mut() = if profile.ice_mode {
+                        icy_engine::IceMode::Ice
+                    } else {
+                        icy_engine::IceMode::Blink
+                    };
+                    if let Some(colors) = profile.custom_palette.as_ref().filter(|colors| colors.len() == 16) {
+                        let colors: Vec<_> = colors.iter().map(|[red, green, blue]| icy_engine::Color::new(*red, *green, *blue)).collect();
+                        *screen.palette_mut() = icy_engine::Palette::from_slice(&colors);
+                    }
+                    screen.terminal_state_mut().lf_expand = profile.lf_expand();
+                    screen.terminal_state_mut().mouse_state.mouse_tracking_enabled = profile.mouse_reporting_enabled;
+                    screen.mark_dirty();
+                }
+                drop(screen);
+                self.send_event(TerminalEvent::TerminalSettingsChanged {
+                    terminal_type: profile.terminal_type,
+                    screen_mode: profile.get_screen_mode(),
+                    ansi_music: profile.ansi_music,
+                });
+            }
             TerminalCommand::StartCapture(file_name) => match tokio::fs::File::create(&file_name).await {
                 Ok(file) => {
+                    self.stop_capture().await;
                     self.capture_writer = Some(BufWriter::new(file));
+                    self.send_event(TerminalEvent::CaptureState(Some(file_name)));
                 }
                 Err(e) => {
                     log::error!("Failed to create capture file {file_name}: {e}");
@@ -851,9 +929,7 @@ impl TerminalThread {
                 }
             },
             TerminalCommand::StopCapture => {
-                if let Some(mut writer) = self.capture_writer.take() {
-                    let _ = writer.flush().await; // Ensure final flush
-                }
+                self.stop_capture().await;
             }
             TerminalCommand::PlayFile(path) => match tokio::fs::read(&path).await {
                 Ok(data) => {
@@ -882,7 +958,7 @@ impl TerminalThread {
                 screen_mode,
                 ansi_music,
             } => {
-                self.set_terminal_settings(terminal_type, screen_mode, ansi_music);
+                self.set_terminal_settings(terminal_type, screen_mode, ansi_music, true);
             }
         }
     }
@@ -948,6 +1024,10 @@ impl TerminalThread {
                     proxy_command: config.proxy_command.clone(),
                 };
                 let mut options = SshConnectionOptions::insecure_compatibility(creds);
+                if let Some(policy) = config.ssh_host_key_policy {
+                    options.host_key_policy = policy;
+                    options.connect_timeout = config.timeout;
+                }
                 options.proxy = config.proxy.clone();
                 Box::new(SSHConnection::open_with_options(&config.connection_info.endpoint(), term_caps, options).await?)
             }
@@ -983,7 +1063,7 @@ impl TerminalThread {
                 }
 
                 // Send dial command and wait for CONNECT
-                let phone_number = config.connection_info.endpoint();
+                let phone_number = &config.connection_info.host;
                 modem_config.dial_prefix.send(modem_conn.as_mut()).await?;
                 modem_conn.send(phone_number.as_bytes()).await?;
                 modem_config.dial_suffix.send(modem_conn.as_mut()).await?;
@@ -1016,8 +1096,10 @@ impl TerminalThread {
                 self.modem_config = Some(modem_config);
                 modem_conn
             }
-            ConnectionType::Websocket => Box::new(icy_net::websocket::connect(&config.connection_info.endpoint(), false).await?),
-            ConnectionType::SecureWebsocket => Box::new(icy_net::websocket::connect(&config.connection_info.endpoint(), true).await?),
+            ConnectionType::Websocket | ConnectionType::SecureWebsocket => {
+                let address = config.websocket_address.clone().unwrap_or_else(|| config.connection_info.endpoint());
+                Box::new(icy_net::websocket::connect(&address, config.connection_info.protocol() == ConnectionType::SecureWebsocket).await?)
+            }
             ConnectionType::Rlogin => {
                 let rlogin_config = RloginConfig {
                     user_name: config.user_name.clone().unwrap_or_default(),
@@ -1026,7 +1108,15 @@ impl TerminalThread {
                     swapped: false,
                     escape_sequence: None,
                 };
-                Box::new(icy_net::rlogin::RloginConnection::open_with_proxy(&config.connection_info.endpoint(), rlogin_config, config.timeout, config.proxy.as_ref()).await?)
+                Box::new(
+                    icy_net::rlogin::RloginConnection::open_with_proxy(
+                        &config.connection_info.endpoint(),
+                        rlogin_config,
+                        config.timeout,
+                        config.proxy.as_ref(),
+                    )
+                    .await?,
+                )
             }
             ConnectionType::RloginSwapped => {
                 let rlogin_config = RloginConfig {
@@ -1036,7 +1126,15 @@ impl TerminalThread {
                     swapped: true,
                     escape_sequence: None,
                 };
-                Box::new(icy_net::rlogin::RloginConnection::open_with_proxy(&config.connection_info.endpoint(), rlogin_config, config.timeout, config.proxy.as_ref()).await?)
+                Box::new(
+                    icy_net::rlogin::RloginConnection::open_with_proxy(
+                        &config.connection_info.endpoint(),
+                        rlogin_config,
+                        config.timeout,
+                        config.proxy.as_ref(),
+                    )
+                    .await?,
+                )
             }
             other => {
                 return Err(format!("Unsupported connection type: {other:?}").into());
@@ -1052,6 +1150,12 @@ impl TerminalThread {
             new_screen.set_scrollback_buffer_size(config.max_scrollback_lines);
             new_screen.caret_mut().shape = config.default_cursor_shape;
             new_screen.caret_mut().blinking = config.default_cursor_blinking;
+            if let Some(font) = config.font {
+                new_screen.set_font(0, font);
+            }
+            if let Some(ice_mode) = config.ice_mode {
+                *new_screen.ice_mode_mut() = ice_mode;
+            }
             if let Some(colors) = config.custom_palette.as_ref().filter(|colors| colors.len() == 16) {
                 let colors: Vec<icy_engine::Color> = colors.iter().map(|[r, g, b]| icy_engine::Color::new(*r, *g, *b)).collect();
                 *new_screen.palette_mut() = icy_engine::Palette::from_slice(&colors);
@@ -1067,6 +1171,7 @@ impl TerminalThread {
         *self.terminal_emulation.lock() = config.terminal_type;
         // Build auto-transfer scanner from protocol list and store protocols for later lookup
         self.transfer_protocols.clone_from(&config.transfer_protocols);
+        self.confirm_auto_transfer = config.confirm_auto_transfer;
         self.auto_transfer_scanner = AutoTransferScanner::from_protocols(&self.transfer_protocols);
         self.send_event(TerminalEvent::Connected);
 
@@ -1905,6 +2010,71 @@ impl TerminalThread {
     }
 
     async fn start_upload(&mut self, protocol: TransferProtocol, files: Vec<PathBuf>) {
+        if protocol.id == "@text" {
+            let mut state = TransferState::new(protocol.get_name());
+            let mut deferred = Vec::new();
+            self.send_event(TerminalEvent::TransferStarted(state.clone(), false));
+            for path in files {
+                let opened = async {
+                    let file = tokio::fs::File::open(&path).await?;
+                    let size = file.metadata().await?.len();
+                    Ok::<_, std::io::Error>((file, size))
+                };
+                let (mut file, size) = match wait_for_transfer(opened, &mut self.command_rx, &mut deferred).await {
+                    Some(Ok(opened)) => opened,
+                    Some(Err(error)) => {
+                        state.send_state.log_error(error.to_string());
+                        break;
+                    }
+                    None => {
+                        state.request_cancel = true;
+                        break;
+                    }
+                };
+                state.send_state.file_name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                state.send_state.file_size = size;
+                state.send_state.cur_bytes_transfered = 0;
+                let mut buffer = [0; 16 * 1024];
+                loop {
+                    let send_chunk = async {
+                        let count = tokio::io::AsyncReadExt::read(&mut file, &mut buffer).await?;
+                        let connection = self
+                            .connection
+                            .as_mut()
+                            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotConnected, "Not connected"))?;
+                        if count != 0 {
+                            connection.send(&buffer[..count]).await?;
+                        }
+                        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(count)
+                    };
+                    match wait_for_transfer(send_chunk, &mut self.command_rx, &mut deferred).await {
+                        Some(Ok(0)) => break,
+                        Some(Ok(count)) => {
+                            state.send_state.cur_bytes_transfered += count as u64;
+                            state.send_state.total_bytes_transfered += count as u64;
+                            self.send_event(TerminalEvent::TransferProgress(state.clone()));
+                        }
+                        Some(Err(error)) => {
+                            state.send_state.log_error(error.to_string());
+                            break;
+                        }
+                        None => {
+                            state.request_cancel = true;
+                            break;
+                        }
+                    }
+                }
+                if state.request_cancel || state.send_state.errors > 0 {
+                    break;
+                }
+            }
+            state.is_finished = true;
+            self.send_event(TerminalEvent::TransferCompleted(state));
+            for command in deferred {
+                let _ = self.command_tx.send(command);
+            }
+            return;
+        }
         let download_dir = self.download_directory.clone().unwrap_or_else(|| PathBuf::from("."));
         let is_external = !protocol.is_internal();
         let protocol_name = protocol.get_name();
@@ -1922,11 +2092,17 @@ impl TerminalThread {
             self.send_event(TerminalEvent::ExternalTransferStarted(protocol_name.clone(), false));
         }
 
+        let mut deferred = Vec::new();
         let result = if let Some(conn) = &mut self.connection {
-            prot.initiate_send(&mut **conn, &files).await
+            wait_for_transfer(prot.initiate_send(&mut **conn, &files), &mut self.command_rx, &mut deferred)
+                .await
+                .unwrap_or_else(|| Err("Transfer cancelled".into()))
         } else {
             return;
         };
+        for command in deferred {
+            let _ = self.command_tx.send(command);
+        }
 
         match result {
             Ok(state) => {
@@ -1955,6 +2131,13 @@ impl TerminalThread {
     }
 
     async fn start_download(&mut self, protocol: TransferProtocol, filename: Option<String>) {
+        if protocol.id == "@text" {
+            self.send_event(TerminalEvent::Error(
+                "Text download".into(),
+                "Use Capture to record an incoming text stream".into(),
+            ));
+            return;
+        }
         let download_dir = self.download_directory.clone().unwrap_or_else(|| PathBuf::from("."));
         let is_external = !protocol.is_internal();
         let protocol_name = protocol.get_name();
@@ -1972,11 +2155,17 @@ impl TerminalThread {
             self.send_event(TerminalEvent::ExternalTransferStarted(protocol_name.clone(), true));
         }
 
+        let mut deferred = Vec::new();
         let result = if let Some(conn) = &mut self.connection {
-            prot.initiate_recv(&mut **conn).await
+            wait_for_transfer(prot.initiate_recv(&mut **conn), &mut self.command_rx, &mut deferred)
+                .await
+                .unwrap_or_else(|| Err("Transfer cancelled".into()))
         } else {
             return;
         };
+        for command in deferred {
+            let _ = self.command_tx.send(command);
+        }
 
         match result {
             Ok(mut state) => {
@@ -2009,6 +2198,7 @@ impl TerminalThread {
 
     async fn run_file_transfer(&mut self, prot: &mut dyn Protocol, mut transfer_state: TransferState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut last_progress_update = Instant::now();
+        let mut deferred = Vec::new();
 
         // Temporarily disable baud emulation for file transfers if desired
         // Or keep it enabled for authentic experience
@@ -2019,17 +2209,6 @@ impl TerminalThread {
         // closer to the theoretical maximum rate
 
         while !transfer_state.is_finished {
-            // Check for cancel command
-            if let Ok(command) = self.command_rx.try_recv() {
-                if matches!(command, TerminalCommand::CancelTransfer) {
-                    transfer_state.is_finished = true;
-                    if let Some(conn) = &mut self.connection {
-                        prot.cancel_transfer(&mut **conn).await?;
-                    }
-                    break;
-                }
-            }
-
             // Update transfer
             if let Some(conn) = &mut self.connection {
                 // If baud emulation is active, we might want to slow down the transfer
@@ -2047,7 +2226,24 @@ impl TerminalThread {
                     }
                 }
 
-                prot.update_transfer(&mut **conn, &mut transfer_state).await?;
+                match wait_for_transfer(prot.update_transfer(&mut **conn, &mut transfer_state), &mut self.command_rx, &mut deferred).await {
+                    Some(Ok(())) => {}
+                    Some(Err(error)) => {
+                        self.current_transfer = None;
+                        for command in deferred {
+                            let _ = self.command_tx.send(command);
+                        }
+                        return Err(error);
+                    }
+                    None => {
+                        let _ = tokio::time::timeout(Duration::from_secs(2), prot.cancel_transfer(&mut **conn)).await;
+                        transfer_state.is_finished = true;
+                        transfer_state.request_cancel = true;
+                        transfer_state.recieve_state.log_warning("Transfer cancelled");
+                        transfer_state.send_state.log_warning("Transfer cancelled");
+                        break;
+                    }
+                }
 
                 // Send progress updates every 500ms
                 if last_progress_update.elapsed() > Duration::from_millis(500) {
@@ -2061,12 +2257,16 @@ impl TerminalThread {
         // Copy downloaded files to the download
         if let Err(e) = copy_downloaded_files(&mut transfer_state, self.download_directory.as_ref()) {
             log::error!("Failed to copy downloaded files: {e}");
+            transfer_state.recieve_state.log_error(e.to_string());
             self.send_event(TerminalEvent::Error("File copy failed".to_string(), format!("{e}")));
         }
 
         self.current_transfer = Some(transfer_state.clone());
         self.send_event(TerminalEvent::TransferCompleted(transfer_state));
         self.current_transfer = None;
+        for command in deferred {
+            let _ = self.command_tx.send(command);
+        }
 
         Ok(())
     }
@@ -2077,12 +2277,23 @@ impl TerminalThread {
         }
     }
 
+    async fn stop_capture(&mut self) {
+        if let Some(mut writer) = self.capture_writer.take() {
+            if let Err(error) = writer.flush().await {
+                self.send_event(TerminalEvent::Error("Capture failed".into(), error.to_string()));
+            }
+        }
+        self.send_event(TerminalEvent::CaptureState(None));
+    }
+
     async fn write_to_capture(&mut self, data: &[u8]) {
         if let Some(writer) = &mut self.capture_writer {
-            if let Err(e) = writer.write(data).await {
+            if let Err(e) = writer.write_all(data).await {
                 log::error!("Failed to write to capture file: {e}");
                 // Close the capture file on error
                 self.capture_writer = None;
+                self.send_event(TerminalEvent::CaptureState(None));
+                self.send_event(TerminalEvent::Error("Capture failed".into(), e.to_string()));
             }
         }
     }
@@ -2483,6 +2694,24 @@ pub fn create_terminal_thread(
     TerminalThread::spawn(edit_screen, Box::new(parser), address_book)
 }
 
+async fn wait_for_transfer<Future: std::future::Future>(
+    future: Future,
+    commands: &mut tokio::sync::mpsc::UnboundedReceiver<TerminalCommand>,
+    deferred: &mut Vec<TerminalCommand>,
+) -> Option<Future::Output> {
+    tokio::pin!(future);
+    loop {
+        tokio::select! {
+            result = &mut future => return Some(result),
+            command = commands.recv() => match command {
+                Some(TerminalCommand::CancelTransfer) | None => return None,
+                Some(command @ TerminalCommand::Disconnect) => { deferred.push(command); return None; }
+                Some(command) => deferred.push(command),
+            }
+        }
+    }
+}
+
 fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Option<&PathBuf>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let upload_location = if let Some(dir) = download_dir {
         dir.clone()
@@ -2498,28 +2727,39 @@ fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Optio
 
     let mut lines = Vec::new();
     for (name, path) in &transfer_state.recieve_state.finished_files {
-        let mut dest = upload_location.join(name);
-
-        if dest.exists() {
-            let new_name = PathBuf::from(name);
-            let stem = new_name.file_stem().map_or_else(|| "download".to_string(), |s| s.to_string_lossy().to_string());
-            let ext = new_name.extension().map(|e| e.to_string_lossy().to_string());
-
-            let mut i = 1;
-            loop {
-                let new_file_name = if let Some(ref e) = ext {
-                    format!("{stem}.{i}.{e}")
-                } else {
-                    format!("{stem}.{i}")
-                };
-                dest = upload_location.join(&new_file_name);
-                if !dest.exists() {
-                    break;
-                }
-                i += 1;
+        let name = name
+            .rsplit(['/', '\\'])
+            .next()
+            .filter(|name| !name.is_empty() && *name != "." && *name != ".." && !name.contains(':'))
+            .ok_or("Invalid download filename")?;
+        let file_name = PathBuf::from(name);
+        let stem = file_name.file_stem().unwrap_or_default().to_string_lossy();
+        let extension = file_name.extension().map(|extension| extension.to_string_lossy());
+        let mut index = 0;
+        let (dest, mut output) = loop {
+            let candidate = if index == 0 {
+                name.to_string()
+            } else if let Some(extension) = &extension {
+                format!("{stem}.{index}.{extension}")
+            } else {
+                format!("{stem}.{index}")
+            };
+            let dest = upload_location.join(candidate);
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&dest) {
+                Ok(output) => break (dest, output),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => index += 1,
+                Err(error) => return Err(error.into()),
             }
+        };
+        let result = (|| -> std::io::Result<()> {
+            let mut source = std::fs::File::open(path)?;
+            std::io::copy(&mut source, &mut output)?;
+            output.sync_all()
+        })();
+        if let Err(error) = result {
+            let _ = std::fs::remove_file(&dest);
+            return Err(error.into());
         }
-        std::fs::copy(path, &dest)?;
         std::fs::remove_file(path)?;
         lines.push(format!("File copied to: {}", dest.display()));
     }
@@ -2528,6 +2768,42 @@ fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Optio
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod download_destination_tests {
+    use super::*;
+
+    #[test]
+    fn downloads_stay_in_chosen_directory_without_overwriting() {
+        let directory = std::env::temp_dir().join(format!("icy-download-{}-{}", std::process::id(), fastrand::u64(..)));
+        std::fs::create_dir(&directory).unwrap();
+        let source = directory.join("incoming");
+        std::fs::write(&source, b"new").unwrap();
+        std::fs::write(directory.join("file.txt"), b"old").unwrap();
+        let mut state = TransferState::new("test".into());
+        state.recieve_state.finished_files.push(("../../file.txt".into(), source));
+        copy_downloaded_files(&mut state, Some(&directory)).unwrap();
+        assert_eq!(std::fs::read(directory.join("file.txt")).unwrap(), b"old");
+        assert_eq!(std::fs::read(directory.join("file.1.txt")).unwrap(), b"new");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn pending_transfer_can_cancel_without_dropping_other_commands() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        sender.send(TerminalCommand::StopCapture).unwrap();
+        sender.send(TerminalCommand::CancelTransfer).unwrap();
+        let mut deferred = Vec::new();
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            wait_for_transfer(std::future::pending::<()>(), &mut receiver, &mut deferred),
+        )
+        .await
+        .unwrap();
+        assert!(result.is_none());
+        assert!(matches!(&deferred[..], [TerminalCommand::StopCapture]));
+    }
 }
 
 impl TerminalThread {
@@ -2606,7 +2882,7 @@ impl TerminalThread {
 
     /// Set terminal settings (terminal type, screen mode, ansi music) during session
     /// This reinitializes the screen and parser similar to `connect()`
-    fn set_terminal_settings(&mut self, terminal_type: TerminalEmulation, screen_mode: ScreenMode, ansi_music: MusicOption) {
+    fn set_terminal_settings(&mut self, terminal_type: TerminalEmulation, screen_mode: ScreenMode, ansi_music: MusicOption, notify: bool) {
         self.use_utf8 = terminal_type == TerminalEmulation::Utf8Ansi;
         let screen_mode = normalize_screen_mode(terminal_type, screen_mode);
         let lf_expand = self.edit_screen.lock().terminal_state().lf_expand;
@@ -2633,11 +2909,13 @@ impl TerminalThread {
         *self.terminal_emulation.lock() = terminal_type;
 
         // Notify UI of the change
-        self.send_event(TerminalEvent::TerminalSettingsChanged {
-            terminal_type,
-            screen_mode,
-            ansi_music,
-        });
+        if notify {
+            self.send_event(TerminalEvent::TerminalSettingsChanged {
+                terminal_type,
+                screen_mode,
+                ansi_music,
+            });
+        }
     }
 }
 

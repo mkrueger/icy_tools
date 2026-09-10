@@ -4,12 +4,22 @@
 
 pub mod shader;
 pub use shader::*;
+#[cfg(feature = "legacy-ui")]
+mod shader_adapter;
 
+#[cfg(feature = "egui")]
+pub mod egui;
+
+#[cfg(feature = "legacy-ui")]
 pub mod view;
+#[cfg(feature = "legacy-ui")]
 pub use view::*;
 
+pub mod frame;
+pub use frame::*;
+
+#[cfg(feature = "legacy-ui")]
 pub mod crt_program;
-pub use crt_program::*;
 
 pub mod crt_state;
 pub use crt_state::*;
@@ -29,6 +39,7 @@ use std::sync::Arc;
 
 use crate::EditorMarkers;
 use icy_engine::Screen;
+#[cfg(feature = "legacy-ui")]
 use icy_ui::{mouse, widget, Color, Rectangle, Task};
 
 /// Scroll state for the terminal, sourced from `scroll_area().show_viewport()`.
@@ -51,6 +62,7 @@ pub struct Terminal {
     pub screen: Arc<Mutex<Box<dyn Screen>>>,
     pub original_screen: Option<Arc<Mutex<Box<dyn Screen>>>>,
     scroll_state: Arc<RwLock<TerminalScrollState>>,
+    #[cfg(feature = "legacy-ui")]
     scroll_area_id: widget::Id,
     pub scrollbar_hover_state: Arc<AtomicBool>,  // Shared atomic hover state for vertical scrollbar
     pub hscrollbar_hover_state: Arc<AtomicBool>, // Shared atomic hover state for horizontal scrollbar
@@ -59,10 +71,12 @@ pub struct Terminal {
     pub render_info: Arc<RwLock<RenderInfo>>,
     /// Cursor icon to display (set by shader based on hover state)
     /// None = default cursor, Some(Interaction) = custom cursor (e.g. hand for links)
+    #[cfg(feature = "legacy-ui")]
     pub cursor_icon: Arc<RwLock<Option<mouse::Interaction>>>,
     pub font_size: f32,
     pub char_width: f32,
     pub char_height: f32,
+    #[cfg(feature = "legacy-ui")]
     pub id: widget::Id,
     pub has_focus: bool,
     pub background_color: Arc<RwLock<[f32; 4]>>,
@@ -85,14 +99,17 @@ impl Terminal {
             screen,
             original_screen: None,
             scroll_state: Arc::new(RwLock::new(TerminalScrollState::default())),
+            #[cfg(feature = "legacy-ui")]
             scroll_area_id: widget::Id::unique(),
             scrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             hscrollbar_hover_state: Arc::new(AtomicBool::new(false)),
             render_info: RenderInfo::new_shared(),
+            #[cfg(feature = "legacy-ui")]
             cursor_icon: Arc::new(RwLock::new(None)),
             font_size: 16.0,
             char_width: 9.6, // Approximate for monospace
             char_height: 20.0,
+            #[cfg(feature = "legacy-ui")]
             id: widget::Id::unique(),
             has_focus: false,
             background_color: Arc::new(RwLock::new([0.1, 0.1, 0.12, 1.0])), // Default dark background
@@ -105,6 +122,7 @@ impl Terminal {
 
     /// Id of the surrounding `scroll_area` that should own scrolling for this terminal.
     /// Use this for programmatic scrolling via `icy_ui::widget::operation::scroll_to(_animated)`.
+    #[cfg(feature = "legacy-ui")]
     pub fn scroll_area_id(&self) -> widget::Id {
         self.scroll_area_id.clone()
     }
@@ -113,6 +131,7 @@ impl Terminal {
     ///
     /// `x`/`y` are in content pixels at zoom 1.0. The task converts to the scroll area's
     /// coordinate system (zoomed pixels) using the last effective zoom.
+    #[cfg(feature = "legacy-ui")]
     pub fn scroll_to_content<T>(&self, x: Option<f32>, y: Option<f32>) -> Task<T> {
         let zoom = self.get_zoom().max(0.001);
         let offset = icy_ui::widget::operation::AbsoluteOffset {
@@ -124,6 +143,7 @@ impl Terminal {
     }
 
     /// Like `scroll_to_content`, but animated.
+    #[cfg(feature = "legacy-ui")]
     pub fn scroll_to_content_animated<T>(&self, x: Option<f32>, y: Option<f32>) -> Task<T> {
         let zoom = self.get_zoom().max(0.001);
         let offset = icy_ui::widget::operation::AbsoluteOffset {
@@ -138,13 +158,19 @@ impl Terminal {
     ///
     /// `viewport` is in the same coordinate system as the content size passed to
     /// `show_viewport` (typically *zoomed* pixels). `zoom` is the effective scale.
+    #[cfg(feature = "legacy-ui")]
     pub fn update_scroll_from_viewport(&self, viewport: Rectangle, zoom: f32) {
+        self.update_scroll_viewport([viewport.x, viewport.y, viewport.width, viewport.height], zoom);
+    }
+
+    pub fn update_scroll_viewport(&self, viewport: [f32; 4], zoom: f32) {
+        let [offset_x, offset_y, width, height] = viewport;
         let zoom = zoom.max(0.001);
         let mut state = self.scroll_state.write();
-        state.viewport_width_px = viewport.width.max(1.0);
-        state.viewport_height_px = viewport.height.max(1.0);
-        state.scroll_x = (viewport.x / zoom).max(0.0);
-        state.scroll_y = (viewport.y / zoom).max(0.0);
+        state.viewport_width_px = width.max(1.0);
+        state.viewport_height_px = height.max(1.0);
+        state.scroll_x = (offset_x / zoom).max(0.0);
+        state.scroll_y = (offset_y / zoom).max(0.0);
     }
 
     /// Current cached scroll state (content coordinates).
@@ -308,17 +334,20 @@ impl Terminal {
     pub fn reset_caret_blink(&mut self) {}
 
     // Helper function to convert buffer color to iced Color
+    #[cfg(feature = "legacy-ui")]
     pub fn buffer_color_to_iced(color: icy_engine::Color) -> Color {
         let (r, g, b) = color.get_rgb_f32();
         Color::from_rgb(r, g, b)
     }
 
     /// Set the background color for out-of-bounds areas in CRT shader
+    #[cfg(feature = "legacy-ui")]
     pub fn set_background_color(&self, color: Color) {
         *self.background_color.write() = [color.r, color.g, color.b, color.a];
     }
 
     /// Get the current background color
+    #[cfg(feature = "legacy-ui")]
     pub fn get_background_color(&self) -> Color {
         let bg = *self.background_color.read();
         Color::from_rgba(bg[0], bg[1], bg[2], bg[3])

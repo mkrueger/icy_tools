@@ -1,4 +1,5 @@
 connect-to = Connect to { $address }...
+egui-view = View
 
 settings-heading = Settings
 settings-enabled-checkbox = Enabled
@@ -509,3 +510,390 @@ cmd-app-quit-menu = Quit
 cmd-app-about-action = About
 cmd-app-about-desc = Show about dialog
 cmd-app-about-menu = About
+egui-file = File
+
+egui-new-window = New window
+
+egui-save-screen = Save screen...
+
+egui-close-window = Close window
+
+egui-directory = Dialing Directory
+
+egui-open-file = Open...
+
+egui-fit = Fit
+
+egui-zoom = Zoom
+
+egui-zoom-out = Zoom out
+
+egui-zoom-in = Zoom in
+
+egui-fullscreen = Fullscreen
+
+egui-history = History
+
+egui-edit = Edit
+
+egui-select-all = Select all
+
+egui-find-command = Find...
+
+egui-session = Session
+
+egui-terminal-settings-command = Terminal settings...
+
+egui-audio = Audio
+
+egui-stop-sound = Stop sound
+
+egui-disconnect = Disconnect
+
+egui-cancel = Cancel
+
+egui-connected = Connected
+
+egui-connecting = Connecting...
+
+egui-offline = Offline
+
+egui-monitor-type = Monitor type
+
+egui-integer-scaling = Integer scaling
+
+egui-bilinear-filtering = Bilinear filtering
+
+egui-thickness = Thickness
+
+egui-sharpness = Sharpness
+
+egui-phase = Phase
+
+egui-bloom = Bloom
+
+egui-threshold = Threshold
+
+egui-radius = Radius
+
+egui-glow = Glow
+
+egui-persistence = Persistence
+
+egui-curvature = Curvature
+
+egui-horizontal = Horizontal
+
+egui-vertical = Vertical
+
+egui-noise = Noise
+
+egui-noise-level = Noise level
+
+egui-sync-wobble = Sync wobble
+
+egui-reset-monitor = Reset monitor
+
+egui-recording = Recording
+
+egui-about-description = A terminal program for calling BBS systems, with support for classic terminal art and file transfers.
+
+egui-script-running = Script running
+
+egui-host-pause = Host pause
+
+egui-dismiss = Dismiss
+
+egui-find = Find
+
+egui-match-case = Match case
+
+egui-previous = Previous
+
+egui-next = Next
+
+egui-close = Close
+
+egui-not-found = Not found
+
+egui-open-link-question = Open external link?
+
+egui-close-question = Close window?
+
+egui-close-warning = Active sessions will close and unsaved changes will be discarded.
+
+egui-serial = Serial
+
+egui-web-directories = Web directories
+
+egui-connect-timeout = Connection timeout (seconds)
+
+egui-scrollback-lines = Scrollback lines
+
+egui-cursor = Cursor
+
+egui-appearance = Appearance
+
+egui-system = System
+
+egui-dark = Dark
+
+egui-light = Light
+
+egui-audio-enabled = Audio enabled
+
+egui-volume = Volume
+
+egui-dial-tone = Dial tone
+
+egui-system-default = System default
+
+egui-captures = Captures
+
+egui-iemsi-login = IEMSI auto-login
+
+egui-initialize = Initialize
+
+egui-dial-suffix = Dial suffix
+
+egui-hang-up = Hang up
+
+egui-remove-modem = Remove modem
+
+egui-add-modem = Add modem
+
+egui-automatic-detection = Automatic detection
+
+egui-multiple-files = Multiple files
+
+egui-ask-filename = Ask for download filename
+
+egui-move-up = Move up
+
+egui-move-down = Move down
+
+egui-remove-protocol = Remove protocol
+
+egui-add-external-protocol = Add external protocol
+
+egui-external-protocol = External protocol
+
+egui-save = Save
+
+egui-discard = Discard
+
+egui-baud-rate = Baud rate
+
+egui-data-bits = Data bits
+
+egui-parity = Parity
+
+egui-stop-bits = Stop bits
+
+egui-transfer-cancelled = Transfer cancelled
+
+egui-transfer-errors = Transfer finished with errors
+
+egui-transfer-finished = Transfer finished
+
+egui-transfer-complete = Transfer complete
+
+egui-connection-closed = Connection closed
+
+egui-upload-command = Upload...
+
+egui-download-command = Download...
+
+egui-capture-command = Capture...
+
+egui-external-warning = Starts a locally configured external program
+
+egui-cancel-transfer = Cancel transfer
+
+egui-choose-files = Choose files...
+
+egui-script-finished = Script finished
+
+egui-serial-command = Serial connection...
+
+egui-stop-script = Stop script
+
+egui-run-script = Run script...
+
+egui-lua-command = Lua console...
+
+egui-replay-file = Replay file...
+
+egui-host-info = Host information
+
+egui-terminal-settings = Terminal settings
+
+egui-apply-reset = Apply and reset
+
+egui-serial-connection = Serial connection
+
+egui-detect-baud = Detect baud
+
+egui-lua-console = Lua console
+
+egui-run = Run
+
+egui-stop = Stop
+
+egui-connection = Connection
+
+egui-login = Login
+
+egui-colors = Colors
+
+egui-generate-password = Generate password
+
+egui-system-name = System name
+
+egui-phone-number = Phone number
+
+egui-favorite = Favorite
+
+egui-select-modem = Select modem
+
+egui-no-modem-selected = No configured modem selected
+
+egui-direct-connection = Direct connection
+
+egui-custom-socks = Custom SOCKS5
+
+egui-port = Port
+
+egui-proxy-user = Proxy user
+
+egui-proxy-password = Proxy password
+
+egui-stored-password = Stored password
+
+egui-clear-proxy-password = Clear proxy password
+
+egui-proxy-command = Proxy command
+
+egui-websocket-proxy-error = SOCKS5 is unavailable for WebSocket connections
+
+egui-remove-proxy = Remove proxy
+
+egui-terminal-emulation = Terminal emulation
+
+egui-screen-size = Screen size
+
+egui-columns = Columns
+
+egui-rows = Rows
+
+egui-xep80-module = XEP80 module
+
+egui-resolution = Resolution
+
+egui-igs-graphics = IGS graphics
+
+egui-ansi-music = ANSI music
+
+egui-font = Font
+
+egui-terminal-default = Terminal default
+
+egui-lf-expand = LF adds carriage return
+
+egui-mouse-reporting = Mouse reporting
+
+egui-user-name = User name
+
+egui-hide-password = Hide password
+
+egui-show-password = Show password
+
+egui-browse = Browse...
+
+egui-select-ssh-key = Select SSH private key
+
+egui-key-passphrase = Key passphrase (not stored)
+
+egui-auto-login-expression = Auto-login expression
+
+egui-login-presets = Login presets
+
+egui-interactive = Interactive
+
+egui-name-password = Name, password
+
+egui-escapes-name-password = Escapes, name, password
+
+egui-disable-iemsi = Disable IEMSI
+
+egui-ice-colors = iCE colors
+
+egui-reset-palette = Reset palette
+
+egui-quick-connect-hint = Quick connect: telnet://host:port
+
+egui-quick-connect = Quick Connect
+
+egui-add-to-directory = Add to directory
+
+egui-directory-tab = Directory
+
+egui-entry = Entry
+
+egui-new-entry = New entry
+
+egui-reload = Reload
+
+egui-directory-search = Search name, address, notes
+
+egui-all = All
+
+egui-favorites = Favorites
+
+egui-most-called = Most called
+
+egui-last-called = Last called
+
+egui-all-sources = All sources
+
+egui-local-phonebook = Local phonebook
+
+egui-remove-favorite = Remove favorite
+
+egui-add-favorite = Add favorite
+
+egui-phonebook-read-only = Newer phonebook format: read-only
+
+egui-edit-entry = Edit entry
+
+egui-no-entry-selected = No entry selected
+
+egui-baud = Baud
+
+egui-direct = Direct
+
+egui-calls = Calls
+
+egui-last-call = Last call
+
+egui-never = Never
+
+egui-total-time = Total time
+
+egui-last-duration = Last duration
+
+egui-uploaded = Uploaded
+
+egui-downloaded = Downloaded
+
+egui-strict-host-key = Host key: ~/.ssh/known_hosts (strict)
+
+egui-delete-entry = Delete entry
+
+egui-delete-question = Delete this entry?
+
+egui-discard-question = Discard unsaved changes?
+
+egui-delete = Delete
+
+egui-discard-close = Discard and close

@@ -62,33 +62,6 @@ impl fmt::Display for ThemeOption {
     }
 }
 
-impl MonitorType {
-    pub fn from_index(index: usize) -> Self {
-        match index {
-            0 => MonitorType::Color,
-            1 => MonitorType::Grayscale,
-            2 => MonitorType::Amber,
-            3 => MonitorType::Green,
-            4 => MonitorType::Apple2,
-            5 => MonitorType::Futuristic,
-            6 => MonitorType::CustomMonochrome,
-            _ => MonitorType::Color,
-        }
-    }
-
-    pub fn to_index(&self) -> usize {
-        match self {
-            MonitorType::Color => 0,
-            MonitorType::Grayscale => 1,
-            MonitorType::Amber => 2,
-            MonitorType::Green => 3,
-            MonitorType::Apple2 => 4,
-            MonitorType::Futuristic => 5,
-            MonitorType::CustomMonochrome => 6,
-        }
-    }
-}
-
 // Color picker button with preview
 fn color_button<'a, Message: Clone + 'a>(color: Color, on_press: Message) -> Element<'a, Message> {
     button("")

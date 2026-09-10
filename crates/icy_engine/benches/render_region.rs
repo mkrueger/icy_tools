@@ -76,6 +76,7 @@ fn create_scrollback_buffer(chunk_count: usize, chunk_width: i32, chunk_height: 
     buffer.cur_screen = ScrollbackChunk {
         rgba_data: cur_rgba,
         size: cur_size,
+        ..Default::default()
     };
 
     buffer

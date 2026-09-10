@@ -13,7 +13,7 @@ use icy_ui::{
 use crate::ui::MainWindowMode;
 
 /// Standard baud rates for serial connections
-pub const BAUD_RATES: [u32; 11] = [300, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115_200];
+pub use crate::terminal::BAUD_RATES;
 
 pub struct OpenSerialDialog {
     pub serial: Serial,

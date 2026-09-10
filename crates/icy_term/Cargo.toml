@@ -6,14 +6,40 @@ edition.workspace = true
 license.workspace = true
 description = "A BBS terminal with CP437, PETSCII, Viewdata, RIP, SkyPix, and SyncTERM door graphics/audio"
 repository = "https://github.com/mkrueger/icy_tools"
+default-run = "icy_term"
+autobins = false
+
+[[bin]]
+name = "icy_term"
+path = "src/bin/icy_term.rs"
+required-features = ["egui"]
+
+[[bin]]
+name = "icy_term_legacy"
+path = "src/main.rs"
+required-features = ["legacy-ui"]
+
+[[bin]]
+name = "icy_term_egui"
+path = "src/bin/icy_term_egui.rs"
+required-features = ["egui"]
+
+[features]
+default = ["egui"]
+legacy-ui = ["dep:icy_ui", "dep:rfd", "icy_engine_gui/legacy-ui", "icy_engine_gui/opus-audio"]
+egui = ["dep:eframe", "dep:rfd", "dep:resvg", "dep:getrandom", "dep:rustls", "icy_engine_gui/egui", "icy_engine_gui/opus-audio"]
 
 [dependencies]
+eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
+resvg = { workspace = true, optional = true }
+getrandom = { version = "0.3.4", optional = true }
+rustls = { version = "0.23.43", optional = true }
 icy_net = { workspace = true }
 icy_engine = { workspace = true }
 icy_engine_scripting = { workspace = true }
 icy_parser_core = { workspace = true }
 mlua = { workspace = true }
-icy_ui = { workspace = true, features = ["tokio", "svg", "image", "wgpu"] }
+icy_ui = { workspace = true, optional = true, features = ["tokio", "svg", "image", "wgpu"] }
 
 clap-i18n-richformatter = { workspace = true }
 image = { workspace = true }
@@ -23,7 +49,7 @@ versions = { workspace = true }
 regex = { workspace = true }
 semver = { workspace = true }
 webbrowser = { workspace = true }
-icy_engine_gui = { workspace = true }
+icy_engine_gui = { path = "../icy_engine_gui", default-features = false }
 fastrand = { workspace = true }
 clap = { workspace = true }
 serde_json = { workspace = true }
@@ -56,7 +82,7 @@ flexi_logger = { workspace = true }
 
 directories = { workspace = true }
 open = { workspace = true }
-rfd = { workspace = true }
+rfd = { workspace = true, optional = true }
 
 async-recursion = "1.1.1"
 async-trait = "0.1"

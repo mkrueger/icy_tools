@@ -208,7 +208,7 @@ impl Options {
         let _ = OPTIONS_FILE_OVERRIDE.set(path);
     }
 
-    fn options_file() -> Option<PathBuf> {
+    pub fn options_file() -> Option<PathBuf> {
         OPTIONS_FILE_OVERRIDE
             .get()
             .cloned()
@@ -332,7 +332,7 @@ impl Options {
         Ok(())
     }
 
-    pub(crate) fn reset_monitor_settings(&mut self) {
+    pub fn reset_monitor_settings(&mut self) {
         self.monitor_settings = MonitorSettings::default();
     }
     /*

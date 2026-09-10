@@ -367,6 +367,8 @@ impl MainWindow {
                     ssh_authentication: address.ssh_authentication,
                     ssh_private_key: (!address.ssh_private_key.is_empty()).then(|| address.ssh_private_key.clone().into()),
                     ssh_key_passphrase: (!address.ssh_key_passphrase.is_empty()).then(|| address.ssh_key_passphrase.clone()),
+                    ssh_host_key_policy: None,
+                    websocket_address: None,
 
                     proxy_command: None, // fill from settings if needed
                     proxy: address.proxy.clone(),
@@ -377,9 +379,12 @@ impl MainWindow {
                     auto_login_exp: address.auto_login.clone(),
                     max_scrollback_lines: options.max_scrollback_lines,
                     transfer_protocols: options.transfer_protocols.clone(),
+                    confirm_auto_transfer: false,
                     mouse_reporting_enabled: address.mouse_reporting_enabled,
                     lf_expand: address.lf_expand(),
                     custom_palette: address.custom_palette.clone(),
+                    font: None,
+                    ice_mode: None,
                     default_cursor_shape: options.default_cursor_shape,
                     default_cursor_blinking: options.default_cursor_blinking,
                     cache_directory: address.get_cache_directory(),
@@ -1363,6 +1368,7 @@ impl MainWindow {
 
     fn handle_terminal_event(&mut self, event: TerminalEvent) -> Task<Message> {
         match event {
+            TerminalEvent::CaptureState(_) => Task::none(),
             TerminalEvent::Connected => {
                 self.is_connected = true;
                 self.last_address = self.current_address.clone();
@@ -2272,11 +2278,9 @@ mod alt_numeric_tests {
 
     #[test]
     fn composes_login_data_in_one_payload() {
-        let address = crate::Address {
-            user_name: "user".to_string(),
-            password: "secret".to_string(),
-            ..Default::default()
-        };
+        let mut address = crate::Address::default();
+        address.user_name = "user".to_string();
+        address.password = "secret".to_string();
 
         assert_eq!(
             MainWindow::build_login_data(&address, icy_net::telnet::TerminalEmulation::Ansi, true, true),
