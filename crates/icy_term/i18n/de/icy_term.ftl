@@ -367,6 +367,31 @@ terminal-info-dialog-shape-tooltip-block = Voller Zeichenzellen-Cursor
 terminal-info-dialog-shape-tooltip-underline = Dünne Linie am unteren Rand
 terminal-info-dialog-shape-tooltip-bar = Vertikaler Balken zwischen Zeichen
 terminal-info-dialog-apply-button = Übernehmen
+egui-info-origin = Origin / DECSLRM
+egui-info-insert = Einfügen
+egui-info-overwrite = Überschreiben
+egui-info-input-protocols = Eingabeprotokolle
+egui-info-graphics-protocols = Grafik und Audio
+egui-info-mouse-encoding = Maus-Kodierung
+egui-info-focus-scroll = Fokus / Alt-Scrollen
+egui-info-kitty = Kitty-Flags (Tiefe)
+egui-info-lf = Zeilenumbruch
+egui-info-sixel-position = Sixel-Position
+egui-info-sixel-palette = Sixel-Palette
+egui-info-screen-origin = Ursprung
+egui-info-shared = Gemeinsam
+egui-info-private = Privat
+egui-info-audio-channels = Audiokanäle
+egui-info-sync-output = Synchronisierte Ausgabe
+egui-transfer-bytes = Übertragene Bytes
+egui-transfer-rate = Übertragungsrate
+egui-transfer-time = Vergangene Zeit
+egui-message-error = Aktion fehlgeschlagen
+egui-message-settings = Einstellungen konnten nicht gespeichert werden
+egui-message-directory = Telefonbuch
+egui-message-unsaved = Es gibt ungespeicherte Änderungen. Vor dem Schließen speichern?
+egui-message-delete = Dieser Eintrag wird dauerhaft aus dem lokalen Telefonbuch entfernt.
+egui-message-link = Diese Adresse in der Standardanwendung öffnen?
 
 help-action-switch-window = Fenster wechseln
 help-action-smart-paste = Smart-Einfügen
@@ -832,6 +857,11 @@ egui-directory-tab = Verzeichnis
 egui-entry = Eintrag
 
 egui-new-entry = Neuer Eintrag
+
+egui-refresh = Aktualisieren
+egui-filters = Filter und Sortierung
+egui-sort = Sortieren nach
+egui-source = Quelle
 
 egui-reload = Neu laden
 

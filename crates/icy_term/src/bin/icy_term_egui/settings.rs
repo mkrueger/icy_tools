@@ -114,7 +114,7 @@ impl Settings {
                 let top = ui.cursor().top();
                 ui.set_width((context.content_rect().width() - 48.0).clamp(240.0, 760.0));
                 ui.set_min_height(height);
-                ui.heading(&*tr!("settings-heading"));
+                self.closed |= super::appearance::dialog_header(ui, &tr!("settings-heading"));
                 let pages = [
                     (Page::Terminal, tr!("settings-terminal-category")),
                     (Page::Audio, tr!("egui-audio")),
@@ -194,23 +194,24 @@ impl Settings {
                             Page::Audio => {
                                 ui.checkbox(&mut options.audio_enabled, &*tr!("egui-audio-enabled"));
                                 ui.checkbox(&mut options.console_beep, &*tr!("settings-terminal-console-beep-checkbox"));
-                                ui.add(egui::Slider::new(&mut options.master_volume, 0.0..=1.0).text(&*tr!("egui-volume")));
+                                super::appearance::slider_row(ui, &tr!("egui-volume"), &mut options.master_volume, 0.0..=1.0);
                                 use icy_engine_gui::music::music::DialTone;
-                                egui::ComboBox::from_label(&*tr!("egui-dial-tone"))
-                                    .selected_text(format!("{:?}", options.dial_tone))
-                                    .show_ui(ui, |ui| {
-                                        for tone in [DialTone::US, DialTone::UK, DialTone::Europe, DialTone::France, DialTone::Japan] {
-                                            ui.selectable_value(&mut options.dial_tone, tone, format!("{tone:?}"));
-                                        }
-                                    });
-                                egui::ComboBox::from_label(&*tr!("settings-terminal-audio-device"))
-                                    .selected_text(options.audio_device.as_deref().unwrap_or(&*tr!("egui-system-default")))
-                                    .show_ui(ui, |ui| {
+                                super::appearance::combo_row(ui, &tr!("egui-dial-tone"), format!("{:?}", options.dial_tone), |ui| {
+                                    for tone in [DialTone::US, DialTone::UK, DialTone::Europe, DialTone::France, DialTone::Japan] {
+                                        ui.selectable_value(&mut options.dial_tone, tone, format!("{tone:?}"));
+                                    }
+                                });
+                                super::appearance::combo_row(
+                                    ui,
+                                    &tr!("settings-terminal-audio-device"),
+                                    options.audio_device.clone().unwrap_or_else(|| tr!("egui-system-default")),
+                                    |ui| {
                                         ui.selectable_value(&mut options.audio_device, None, &*tr!("egui-system-default"));
                                         for name in icy_engine_gui::music::music::SoundThread::output_devices() {
                                             ui.selectable_value(&mut options.audio_device, Some(name.clone()), name);
                                         }
-                                    });
+                                    },
+                                );
                             }
                             Page::Paths => {
                                 path_field(ui, &*tr!("settings-paths-download-dir"), &mut options.download_path);
@@ -385,10 +386,7 @@ impl Settings {
                         }
                     });
                 ui.separator();
-                if let Some(error) = &self.error {
-                    ui.colored_label(ui.visuals().error_fg_color, error);
-                }
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     if ui.add(super::appearance::primary_button(tr!("egui-save"))).clicked() {
                         match self.save() {
                             Ok(options) => saved = Some(options),
@@ -400,6 +398,14 @@ impl Settings {
                     }
                 });
             });
+        if let Some(error) = &self.error {
+            if super::messages::MessageBox::error("settings-error", &tr!("egui-message-settings"), error)
+                .show(context)
+                .is_some()
+            {
+                self.error = None;
+            }
+        }
         saved
     }
 }
@@ -423,8 +429,9 @@ fn preserve_unknown(original: &toml::Value, known: &toml::Value, updated: &mut t
 
 pub fn text_field(ui: &mut egui::Ui, label: &str, value: &mut String) {
     ui.push_id(label, |ui| {
-        ui.label(label);
-        ui.add(egui::TextEdit::singleline(value).desired_width(f32::INFINITY));
+        super::appearance::form_row(ui, label, |ui| {
+            ui.add(egui::TextEdit::singleline(value).desired_width(f32::INFINITY));
+        });
     });
 }
 
@@ -437,63 +444,75 @@ fn command_field(
 ) {
     let id = ui.id().with(label);
     let value = drafts.entry(id).or_insert_with(|| command.to_string());
-    text_field(ui, label, value);
+    ui.push_id(id, |ui| {
+        super::appearance::form_row(ui, label, |ui| {
+            ui.horizontal(|ui| {
+                let response = ui.add(egui::TextEdit::singleline(value).desired_width((ui.available_width() - 30.0).max(40.0)));
+                if let Err(error) = icy_net::modem::ModemCommand::try_parse(value) {
+                    let detail = format!("{error:?}");
+                    response.on_hover_text(&detail);
+                    ui.add(egui::Label::new(egui::RichText::new("!").strong().color(ui.visuals().error_fg_color)).sense(egui::Sense::hover()))
+                        .on_hover_ui(|ui| {
+                            ui.set_max_width((ui.ctx().content_rect().width() - 48.0).min(360.0));
+                            ui.strong(label);
+                            ui.add(egui::Label::new(detail).wrap());
+                        });
+                }
+            });
+        });
+    });
     match icy_net::modem::ModemCommand::try_parse(value) {
         Ok(parsed) => {
             *command = parsed;
             invalid.remove(&id);
         }
-        Err(error) => {
+        Err(_) => {
             invalid.insert(id);
-            ui.colored_label(ui.visuals().error_fg_color, format!("{error:?}"));
         }
     }
 }
 
 fn path_field(ui: &mut egui::Ui, label: &str, value: &mut String) {
-    text_field(ui, label, value);
-    if ui.button(format!("Browse {label}...")).clicked() {
-        if let Some(path) = rfd::FileDialog::new().set_directory(&*value).pick_folder() {
-            *value = path.to_string_lossy().into_owned();
-        }
-    }
+    ui.push_id(label, |ui| {
+        super::appearance::form_row(ui, label, |ui| {
+            ui.horizontal(|ui| {
+                ui.add(egui::TextEdit::singleline(value).desired_width((ui.available_width() - 36.0).max(40.0)));
+                if ui.button("...").on_hover_text(tr!("egui-browse")).clicked() && !ui.ctx().will_discard() {
+                    if let Some(path) = rfd::FileDialog::new().set_directory(&*value).pick_folder() {
+                        *value = path.to_string_lossy().into_owned();
+                    }
+                }
+            });
+        })
+    });
 }
 
 pub fn serial_fields(ui: &mut egui::Ui, serial: &mut icy_net::serial::Serial) {
     use icy_net::serial::{CharSize, FlowControl, Parity, StopBits};
     text_field(ui, &*tr!("settings-modem-device"), &mut serial.device);
-    ui.horizontal(|ui| {
-        ui.label(&*tr!("egui-baud-rate"));
+    super::appearance::form_row(ui, &tr!("egui-baud-rate"), |ui| {
         ui.add(egui::DragValue::new(&mut serial.baud_rate).range(50..=4_000_000));
     });
-    egui::ComboBox::from_label(&*tr!("egui-data-bits"))
-        .selected_text(char::from(serial.format.char_size).to_string())
-        .show_ui(ui, |ui| {
-            for size in [CharSize::Bits5, CharSize::Bits6, CharSize::Bits7, CharSize::Bits8] {
-                ui.selectable_value(&mut serial.format.char_size, size, char::from(size).to_string());
-            }
-        });
-    egui::ComboBox::from_label(&*tr!("egui-parity"))
-        .selected_text(format!("{:?}", serial.format.parity))
-        .show_ui(ui, |ui| {
-            for parity in [Parity::None, Parity::Odd, Parity::Even] {
-                ui.selectable_value(&mut serial.format.parity, parity, format!("{parity:?}"));
-            }
-        });
-    egui::ComboBox::from_label(&*tr!("egui-stop-bits"))
-        .selected_text(char::from(serial.format.stop_bits).to_string())
-        .show_ui(ui, |ui| {
-            for bits in [StopBits::One, StopBits::Two] {
-                ui.selectable_value(&mut serial.format.stop_bits, bits, char::from(bits).to_string());
-            }
-        });
-    egui::ComboBox::from_label(&*tr!("settings-modem-flow_control"))
-        .selected_text(format!("{:?}", serial.flow_control))
-        .show_ui(ui, |ui| {
-            for flow in [FlowControl::None, FlowControl::XonXoff, FlowControl::RtsCts] {
-                ui.selectable_value(&mut serial.flow_control, flow, format!("{flow:?}"));
-            }
-        });
+    super::appearance::combo_row(ui, &tr!("egui-data-bits"), char::from(serial.format.char_size).to_string(), |ui| {
+        for size in [CharSize::Bits5, CharSize::Bits6, CharSize::Bits7, CharSize::Bits8] {
+            ui.selectable_value(&mut serial.format.char_size, size, char::from(size).to_string());
+        }
+    });
+    super::appearance::combo_row(ui, &tr!("egui-parity"), format!("{:?}", serial.format.parity), |ui| {
+        for parity in [Parity::None, Parity::Odd, Parity::Even] {
+            ui.selectable_value(&mut serial.format.parity, parity, format!("{parity:?}"));
+        }
+    });
+    super::appearance::combo_row(ui, &tr!("egui-stop-bits"), char::from(serial.format.stop_bits).to_string(), |ui| {
+        for bits in [StopBits::One, StopBits::Two] {
+            ui.selectable_value(&mut serial.format.stop_bits, bits, char::from(bits).to_string());
+        }
+    });
+    super::appearance::combo_row(ui, &tr!("settings-modem-flow_control"), format!("{:?}", serial.flow_control), |ui| {
+        for flow in [FlowControl::None, FlowControl::XonXoff, FlowControl::RtsCts] {
+            ui.selectable_value(&mut serial.flow_control, flow, format!("{flow:?}"));
+        }
+    });
 }
 
 fn validate(options: &Options) -> Result<(), String> {
@@ -536,6 +555,29 @@ fn validate(options: &Options) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_command_hover_preserves_the_last_valid_value() {
+        let context = egui::Context::default();
+        let mut command = icy_net::modem::ModemCommand::try_parse("ATZ^M").unwrap();
+        let original = command.to_string();
+        let mut drafts = std::collections::HashMap::new();
+        let mut invalid = std::collections::HashSet::new();
+        for (text, is_invalid) in [("^", true), ("AT^M", false)] {
+            let _ = context.run(egui::RawInput::default(), |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    drafts.insert(ui.id().with("Init"), text.into());
+                    command_field(ui, "Init", &mut command, &mut drafts, &mut invalid);
+                });
+            });
+            assert_eq!(!invalid.is_empty(), is_invalid);
+            if is_invalid {
+                assert_eq!(command.to_string(), original);
+            } else {
+                assert_eq!(command.to_string(), "AT^M");
+            }
+        }
+    }
 
     #[test]
     fn settings_save_is_explicit_and_preserves_external_changes() {

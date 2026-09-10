@@ -428,6 +428,31 @@ terminal-info-dialog-shape-tooltip-block = Full character cell cursor
 terminal-info-dialog-shape-tooltip-underline = Thin line at bottom of cell
 terminal-info-dialog-shape-tooltip-bar = Vertical bar between characters
 terminal-info-dialog-apply-button = Apply
+egui-info-origin = Origin / DECSLRM
+egui-info-insert = Insert
+egui-info-overwrite = Overwrite
+egui-info-input-protocols = Input protocols
+egui-info-graphics-protocols = Graphics and audio
+egui-info-mouse-encoding = Mouse encoding
+egui-info-focus-scroll = Focus / Alt scroll
+egui-info-kitty = Kitty flags (depth)
+egui-info-lf = LF handling
+egui-info-sixel-position = Sixel position
+egui-info-sixel-palette = Sixel palette
+egui-info-screen-origin = Origin
+egui-info-shared = Shared
+egui-info-private = Private
+egui-info-audio-channels = Audio channels
+egui-info-sync-output = Synchronized output
+egui-transfer-bytes = Bytes transferred
+egui-transfer-rate = Transfer rate
+egui-transfer-time = Elapsed time
+egui-message-error = Action failed
+egui-message-settings = Settings could not be saved
+egui-message-directory = Dialing directory
+egui-message-unsaved = There are unsaved changes. Save them before closing?
+egui-message-delete = This entry will be permanently removed from the local directory.
+egui-message-link = Open this address in the default application?
 
 # Command translations
 # Format: cmd-{command.id}-{action|desc|menu}
@@ -841,6 +866,11 @@ egui-directory-tab = Directory
 egui-entry = Entry
 
 egui-new-entry = New entry
+
+egui-refresh = Refresh
+egui-filters = Filter and sorting
+egui-sort = Sort by
+egui-source = Source
 
 egui-reload = Reload
 

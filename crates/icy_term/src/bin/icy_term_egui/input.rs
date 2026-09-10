@@ -232,7 +232,11 @@ pub fn encode_protocol_events(events: &[egui::Event], buffer_type: BufferType, b
                 }
             }
             egui::Event::Key {
-                key, pressed: true, modifiers, ..
+                key,
+                physical_key,
+                pressed: true,
+                modifiers,
+                ..
             } => {
                 if modifiers.mac_cmd || (modifiers.ctrl && modifiers.alt) {
                     continue;
@@ -240,10 +244,12 @@ pub fn encode_protocol_events(events: &[egui::Event], buffer_type: BufferType, b
                 if clipboard_event && modifiers.command && matches!(key, egui::Key::C | egui::Key::X | egui::Key::V) {
                     continue;
                 }
-                let Some(key) = mapped_key(*key) else {
+                let shifted_c64_key = terminal == TerminalEmulation::PETscii && modifiers.shift && !modifiers.ctrl && !modifiers.alt;
+                let key = if shifted_c64_key { physical_key.unwrap_or(*key) } else { *key };
+                let Some(key) = mapped_key(key) else {
                     continue;
                 };
-                if matches!(key, Key::Character(_)) && (!modifiers.ctrl || modifiers.alt) {
+                if matches!(key, Key::Character(_)) && (!modifiers.ctrl || modifiers.alt) && !shifted_c64_key {
                     continue;
                 }
                 let modifiers = KeyModifiers {
@@ -254,6 +260,17 @@ pub fn encode_protocol_events(events: &[egui::Event], buffer_type: BufferType, b
                 };
                 if let Some(bytes) = lookup_key(&key, &None, modifiers, map) {
                     output.extend(bytes);
+                    if shifted_c64_key && matches!(key, Key::Character(_)) {
+                        if let Some((text_index, _)) = events
+                            .iter()
+                            .enumerate()
+                            .skip(index + 1)
+                            .take_while(|(_, event)| !matches!(event, egui::Event::Key { .. }))
+                            .find(|(_, event)| matches!(event, egui::Event::Text(_)))
+                        {
+                            consumed_text[text_index] = true;
+                        }
+                    }
                 }
             }
             _ => {}
@@ -386,6 +403,100 @@ mod tests {
             egui::Event::Ime(egui::ImeEvent::Commit("\u{65e5}".into())),
         ];
         assert_eq!(encode_events(&events, BufferType::Unicode, false), "\u{65e5}".as_bytes());
+    }
+
+    #[test]
+    fn c64_shift_numbers_use_the_key_map_without_duplicate_text() {
+        for (number, texts, expected) in [
+            (egui::Key::Num1, ["!", "!"], b'!'),
+            (egui::Key::Num2, ["@", "\""], b'"'),
+            (egui::Key::Num3, ["#", "\u{a7}"], b'#'),
+            (egui::Key::Num4, ["$", "$"], b'$'),
+            (egui::Key::Num5, ["%", "%"], b'%'),
+            (egui::Key::Num6, ["^", "&"], b'&'),
+            (egui::Key::Num7, ["&", "/"], b'\''),
+            (egui::Key::Num8, ["*", "("], b'('),
+            (egui::Key::Num9, ["(", ")"], b')'),
+        ] {
+            for text in texts {
+                for physical_key in [None, Some(number)] {
+                    let press = egui::Event::Key {
+                        key: if physical_key.is_some() {
+                            egui::Key::from_name(text).unwrap_or(number)
+                        } else {
+                            number
+                        },
+                        physical_key,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: egui::Modifiers::SHIFT,
+                    };
+                    let events = [press.clone(), egui::Event::Text(text.into())];
+                    assert_eq!(
+                        encode_terminal_events(&events, BufferType::Petscii, false, TerminalEmulation::PETscii),
+                        [expected],
+                        "{number:?}: {text:?}, {physical_key:?}"
+                    );
+                    assert_eq!(encode_events(&events, BufferType::Unicode, false), text.as_bytes());
+                    assert_eq!(
+                        encode_terminal_events(&[press], BufferType::Petscii, false, TerminalEmulation::PETscii),
+                        [expected]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn c64_shift_mapping_preserves_text_fallback_and_key_lifecycle() {
+        let mut repeated = key(egui::Key::Num2, egui::Modifiers::SHIFT);
+        if let egui::Event::Key { repeat, .. } = &mut repeated {
+            *repeat = true;
+        }
+        let mut released = key(egui::Key::Num2, egui::Modifiers::SHIFT);
+        if let egui::Event::Key { pressed, .. } = &mut released {
+            *pressed = false;
+        }
+        let events = [
+            key(egui::Key::Num2, egui::Modifiers::SHIFT),
+            egui::Event::Text("@".into()),
+            repeated,
+            egui::Event::Text("@".into()),
+            released,
+            key(egui::Key::Num2, egui::Modifiers::NONE),
+            egui::Event::Text("2".into()),
+            key(egui::Key::Num0, egui::Modifiers::SHIFT),
+            egui::Event::Text(")".into()),
+            key(egui::Key::A, egui::Modifiers::SHIFT),
+            egui::Event::Text("A".into()),
+            key(
+                egui::Key::Num2,
+                egui::Modifiers {
+                    shift: true,
+                    ctrl: true,
+                    alt: true,
+                    ..Default::default()
+                },
+            ),
+            egui::Event::Text("@".into()),
+            key(
+                egui::Key::Num2,
+                egui::Modifiers {
+                    shift: true,
+                    alt: true,
+                    ..Default::default()
+                },
+            ),
+            egui::Event::Text("@".into()),
+            egui::Event::Paste("@".into()),
+            egui::Event::Ime(egui::ImeEvent::Commit("@".into())),
+        ];
+        let mut expected = b"\"\"2)".to_vec();
+        expected.extend(text_bytes("A@@@@", BufferType::Petscii));
+        assert_eq!(
+            encode_terminal_events(&events, BufferType::Petscii, false, TerminalEmulation::PETscii),
+            expected
+        );
     }
 }
 

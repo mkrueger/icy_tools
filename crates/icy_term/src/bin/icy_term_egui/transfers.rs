@@ -152,20 +152,27 @@ impl Transfers {
                 .frame(super::appearance::dialog_frame(context))
                 .show(context, |ui| {
                     ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 520.0));
-                    ui.heading(if self.download { tr!("terminal-download") } else { tr!("terminal-upload") });
+                    if super::appearance::dialog_header(ui, &if self.download { tr!("terminal-download") } else { tr!("terminal-upload") }) {
+                        if self.active {
+                            self.commands.push(TerminalCommand::CancelTransfer);
+                        } else {
+                            self.open = false;
+                        }
+                    }
                     egui::ScrollArea::vertical()
                         .max_height((context.content_rect().height() - 150.0).max(80.0))
                         .show(ui, |ui| {
                             if let Some(state) = &self.state {
                                 let info = if self.download { &state.recieve_state } else { &state.send_state };
-                                ui.label(&state.protocol_name);
-                                ui.label(&info.file_name);
+                                super::appearance::value_row(ui, &tr!("dialing_directory-protocol"), &state.protocol_name);
+                                ui.add(egui::Label::new(egui::RichText::new(&info.file_name).strong()).wrap());
                                 ui.add(
                                     egui::ProgressBar::new((info.cur_bytes_transfered as f32 / info.file_size.max(1) as f32).clamp(0.0, 1.0)).show_percentage(),
                                 );
-                                ui.label(format!("{} / {} bytes", info.cur_bytes_transfered, info.file_size));
-                                ui.label(format!("{} bytes/s", state.get_current_bps(self.download)));
-                                ui.label(format!("{}s", info.start_time.elapsed().as_secs()));
+                                super::appearance::value_row(ui, &tr!("egui-transfer-bytes"), &format!("{} / {}", info.cur_bytes_transfered, info.file_size));
+                                super::appearance::value_row(ui, &tr!("egui-transfer-rate"), &format!("{} B/s", state.get_current_bps(self.download)));
+                                super::appearance::value_row(ui, &tr!("egui-transfer-time"), &format!("{} s", info.start_time.elapsed().as_secs()));
+                                ui.separator();
                                 for message in &info.output_log {
                                     use icy_net::protocol::OutputLogMessage;
                                     match message {
@@ -181,6 +188,7 @@ impl Transfers {
                                     }
                                 }
                             } else if !self.active && self.result.is_none() {
+                                super::appearance::section(ui, &tr!("dialing_directory-protocol"));
                                 for protocol in options
                                     .transfer_protocols
                                     .iter()
@@ -203,7 +211,7 @@ impl Transfers {
                             }
                         });
                     ui.separator();
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         if self.active {
                             if ui.button(&*tr!("egui-cancel-transfer")).clicked() {
                                 self.commands.push(TerminalCommand::CancelTransfer);

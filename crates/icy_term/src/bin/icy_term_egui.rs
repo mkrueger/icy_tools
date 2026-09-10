@@ -19,6 +19,7 @@ macro_rules! tr {
 
 #[path = "icy_term_egui/appearance.rs"]
 mod appearance;
+use icy_engine::TextPane;
 #[path = "icy_term_egui/audio.rs"]
 mod audio;
 #[path = "icy_term_egui/dialing_directory.rs"]
@@ -29,6 +30,8 @@ mod hotkeys;
 mod input;
 #[path = "icy_term_egui/mcp.rs"]
 mod mcp;
+#[path = "icy_term_egui/messages.rs"]
+mod messages;
 #[path = "icy_term_egui/navigation.rs"]
 mod navigation;
 #[path = "icy_term_egui/overlays.rs"]
@@ -39,6 +42,8 @@ mod phonebook;
 mod session;
 #[path = "icy_term_egui/settings.rs"]
 mod settings;
+#[path = "icy_term_egui/terminal_info.rs"]
+mod terminal_info;
 #[path = "icy_term_egui/tools.rs"]
 mod tools;
 #[path = "icy_term_egui/transfers.rs"]
@@ -71,6 +76,7 @@ struct TerminalApp {
     settings: MonitorSettings,
     document_name: String,
     error: Option<String>,
+    messages: messages::Messages,
     show_monitor: bool,
     address: String,
     utf8: bool,
@@ -104,6 +110,8 @@ struct TerminalApp {
     help_open: bool,
     bps_open: bool,
     baud: icy_parser_core::BaudEmulation,
+    screen_mode: icy_engine::ScreenMode,
+    ansi_music: icy_parser_core::MusicOption,
     latest_version: Option<semver::Version>,
     version_check: Option<std::sync::mpsc::Receiver<semver::Version>>,
 }
@@ -111,12 +119,14 @@ struct TerminalApp {
 impl TerminalApp {
     fn new(screen: TextScreen, document_name: String) -> Self {
         let shader_state = CRTShaderState::from_screen(&screen);
+        let screen_mode = icy_engine::ScreenMode::Vga(screen.width(), screen.height());
         Self {
             terminal: Terminal::new(Arc::new(Mutex::new(Box::new(screen)))),
             shader_state,
             settings: MonitorSettings::default(),
             document_name,
             error: None,
+            messages: Default::default(),
             show_monitor: false,
             address: String::new(),
             utf8: false,
@@ -150,6 +160,8 @@ impl TerminalApp {
             help_open: false,
             bps_open: false,
             baud: icy_parser_core::BaudEmulation::Off,
+            screen_mode,
+            ansi_music: icy_parser_core::MusicOption::Off,
             latest_version: None,
             version_check: None,
         }
@@ -364,14 +376,7 @@ impl TerminalApp {
                     ui.close();
                 }
                 if ui.button(&*tr!("egui-terminal-settings-command")).clicked() {
-                    let mut profile = self.active_profile.clone().unwrap_or_default();
-                    profile.terminal_type = self.terminal_emulation;
-                    let screen = self.terminal.original_screen.as_ref().unwrap_or(&self.terminal.screen).lock();
-                    profile.screen_mode = icy_term::normalize_screen_mode(profile.terminal_type, icy_engine::ScreenMode::Vga(screen.width(), screen.height()));
-                    profile.ice_mode = screen.ice_mode() == icy_engine::IceMode::Ice;
-                    profile.set_lf_expand(screen.terminal_state().lf_expand);
-                    profile.mouse_reporting_enabled = screen.terminal_state().mouse_state.mouse_tracking_enabled;
-                    self.tools.terminal = Some(profile);
+                    self.tools.terminal = Some(self.terminal_profile());
                     self.tools.scrollback = self.dialing_directory.options.max_scrollback_lines;
                     ui.close();
                 }
@@ -573,9 +578,13 @@ impl TerminalApp {
                     }
                     Ok(icy_term::TerminalEvent::Error(title, detail)) => self.error = Some(format!("{title}: {detail}")),
                     Ok(icy_term::TerminalEvent::TerminalSettingsChanged {
-                        terminal_type, screen_mode, ..
+                        terminal_type,
+                        screen_mode,
+                        ansi_music,
                     }) => {
                         self.terminal_emulation = terminal_type;
+                        self.screen_mode = screen_mode;
+                        self.ansi_music = ansi_music;
                         let size = screen_mode.window_size();
                         self.connected_size = (size.width as u16, size.height as u16);
                     }
@@ -647,76 +656,91 @@ impl TerminalApp {
         if !self.show_monitor {
             return;
         }
+        let mut close = false;
+        let width = (context.content_rect().width() - 48.0).clamp(220.0, 480.0);
+        let height = (context.content_rect().height() - 120.0).clamp(110.0, 620.0);
         egui::Window::new(&*tr!("settings-monitor-category"))
-            .open(&mut self.show_monitor)
-            .default_width(280.0)
-            .max_width((context.content_rect().width() - 40.0).max(220.0))
+            .id(egui::Id::new("monitor-settings"))
+            .title_bar(false)
+            .resizable(false)
+            .fixed_size(egui::vec2(width, height))
+            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-8.0, 48.0))
+            .frame(appearance::dialog_frame(context))
             .show(context, |ui| {
+                ui.set_width(width);
+                ui.set_min_height(height);
+                close |= appearance::dialog_header(ui, &tr!("settings-monitor-category"));
                 egui::ScrollArea::vertical()
-                    .max_height((context.content_rect().height() - 90.0).max(80.0))
+                    .min_scrolled_height(0.0)
+                    .max_height((height - 104.0).max(0.0))
+                    .auto_shrink([false, false])
                     .show(ui, |ui| {
                         use icy_engine_gui::MonitorType;
-                        egui::ComboBox::from_label(&*tr!("egui-monitor-type"))
-                            .selected_text(format!("{:?}", self.settings.monitor_type))
-                            .show_ui(ui, |ui| {
-                                for mode in [
-                                    MonitorType::Color,
-                                    MonitorType::Grayscale,
-                                    MonitorType::Amber,
-                                    MonitorType::Green,
-                                    MonitorType::Apple2,
-                                    MonitorType::Futuristic,
-                                    MonitorType::CustomMonochrome,
-                                ] {
-                                    ui.selectable_value(&mut self.settings.monitor_type, mode, format!("{mode:?}"));
-                                }
-                            });
+                        appearance::combo_row(ui, &tr!("egui-monitor-type"), format!("{:?}", self.settings.monitor_type), |ui| {
+                            for mode in [
+                                MonitorType::Color,
+                                MonitorType::Grayscale,
+                                MonitorType::Amber,
+                                MonitorType::Green,
+                                MonitorType::Apple2,
+                                MonitorType::Futuristic,
+                                MonitorType::CustomMonochrome,
+                            ] {
+                                ui.selectable_value(&mut self.settings.monitor_type, mode, format!("{mode:?}"));
+                            }
+                        });
                         if self.settings.monitor_type == MonitorType::CustomMonochrome {
                             let (red, green, blue) = self.settings.custom_monitor_color.rgb();
                             let mut color = [red, green, blue];
-                            if ui.color_edit_button_srgb(&mut color).changed() {
-                                self.settings.custom_monitor_color = icy_engine::Color::new(color[0], color[1], color[2]);
-                            }
+                            appearance::form_row(ui, &tr!("egui-colors"), |ui| {
+                                if ui.color_edit_button_srgb(&mut color).changed() {
+                                    self.settings.custom_monitor_color = icy_engine::Color::new(color[0], color[1], color[2]);
+                                }
+                            });
                         }
                         ui.checkbox(&mut self.settings.use_integer_scaling, &*tr!("egui-integer-scaling"));
                         ui.checkbox(&mut self.settings.use_bilinear_filtering, &*tr!("egui-bilinear-filtering"));
                         ui.separator();
-                        ui.add(egui::Slider::new(&mut self.settings.brightness, 0.0..=200.0).text(&*tr!("settings-monitor-brightness")));
-                        ui.add(egui::Slider::new(&mut self.settings.contrast, 0.0..=200.0).text(&*tr!("settings-monitor-contrast")));
-                        ui.add(egui::Slider::new(&mut self.settings.gamma, 0.1..=4.0).text(&*tr!("settings-monitor-gamma")));
-                        ui.add(egui::Slider::new(&mut self.settings.saturation, 0.0..=200.0).text(&*tr!("settings-monitor-saturation")));
+                        appearance::slider_row(ui, &tr!("settings-monitor-brightness"), &mut self.settings.brightness, 0.0..=200.0);
+                        appearance::slider_row(ui, &tr!("settings-monitor-contrast"), &mut self.settings.contrast, 0.0..=200.0);
+                        appearance::slider_row(ui, &tr!("settings-monitor-gamma"), &mut self.settings.gamma, 0.1..=4.0);
+                        appearance::slider_row(ui, &tr!("settings-monitor-saturation"), &mut self.settings.saturation, 0.0..=200.0);
+                        ui.separator();
                         ui.checkbox(&mut self.settings.use_scanlines, &*tr!("settings-monitor-scanlines"));
-                        ui.add_enabled_ui(self.settings.use_scanlines, |ui| {
-                            ui.add(egui::Slider::new(&mut self.settings.scanline_thickness, 0.0..=1.0).text(&*tr!("egui-thickness")));
-                            ui.add(egui::Slider::new(&mut self.settings.scanline_sharpness, 0.0..=1.0).text(&*tr!("egui-sharpness")));
-                            ui.add(egui::Slider::new(&mut self.settings.scanline_phase, 0.0..=1.0).text(&*tr!("egui-phase")));
-                        });
+                        if self.settings.use_scanlines {
+                            appearance::slider_row(ui, &tr!("egui-thickness"), &mut self.settings.scanline_thickness, 0.0..=1.0);
+                            appearance::slider_row(ui, &tr!("egui-sharpness"), &mut self.settings.scanline_sharpness, 0.0..=1.0);
+                            appearance::slider_row(ui, &tr!("egui-phase"), &mut self.settings.scanline_phase, 0.0..=1.0);
+                        }
                         ui.checkbox(&mut self.settings.use_bloom, &*tr!("egui-bloom"));
-                        ui.add_enabled_ui(self.settings.use_bloom, |ui| {
-                            ui.add(egui::Slider::new(&mut self.settings.bloom_threshold, 0.0..=100.0).text(&*tr!("egui-threshold")));
-                            ui.add(egui::Slider::new(&mut self.settings.bloom_radius, 0.0..=50.0).text(&*tr!("egui-radius")));
-                            ui.add(egui::Slider::new(&mut self.settings.glow_strength, 0.0..=100.0).text(&*tr!("egui-glow")));
-                            ui.add(egui::Slider::new(&mut self.settings.phosphor_persistence, 0.0..=100.0).text(&*tr!("egui-persistence")));
-                        });
+                        if self.settings.use_bloom {
+                            appearance::slider_row(ui, &tr!("egui-threshold"), &mut self.settings.bloom_threshold, 0.0..=100.0);
+                            appearance::slider_row(ui, &tr!("egui-radius"), &mut self.settings.bloom_radius, 0.0..=50.0);
+                            appearance::slider_row(ui, &tr!("egui-glow"), &mut self.settings.glow_strength, 0.0..=100.0);
+                            appearance::slider_row(ui, &tr!("egui-persistence"), &mut self.settings.phosphor_persistence, 0.0..=100.0);
+                        }
                         ui.checkbox(&mut self.settings.use_curvature, &*tr!("egui-curvature"));
-                        ui.add_enabled(
-                            self.settings.use_curvature,
-                            egui::Slider::new(&mut self.settings.curvature_x, 0.0..=100.0).text(&*tr!("egui-horizontal")),
-                        );
-                        ui.add_enabled(
-                            self.settings.use_curvature,
-                            egui::Slider::new(&mut self.settings.curvature_y, 0.0..=100.0).text(&*tr!("egui-vertical")),
-                        );
+                        if self.settings.use_curvature {
+                            appearance::slider_row(ui, &tr!("egui-horizontal"), &mut self.settings.curvature_x, 0.0..=100.0);
+                            appearance::slider_row(ui, &tr!("egui-vertical"), &mut self.settings.curvature_y, 0.0..=100.0);
+                        }
                         ui.checkbox(&mut self.settings.use_noise, &*tr!("egui-noise"));
-                        ui.add_enabled_ui(self.settings.use_noise, |ui| {
-                            ui.add(egui::Slider::new(&mut self.settings.noise_level, 0.0..=100.0).text(&*tr!("egui-noise-level")));
-                            ui.add(egui::Slider::new(&mut self.settings.sync_wobble, 0.0..=100.0).text(&*tr!("egui-sync-wobble")));
-                        });
-                        if ui.button(&*tr!("egui-reset-monitor")).clicked() {
-                            self.settings = MonitorSettings::default();
+                        if self.settings.use_noise {
+                            appearance::slider_row(ui, &tr!("egui-noise-level"), &mut self.settings.noise_level, 0.0..=100.0);
+                            appearance::slider_row(ui, &tr!("egui-sync-wobble"), &mut self.settings.sync_wobble, 0.0..=100.0);
                         }
                     });
+                ui.separator();
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button(tr!("egui-reset-monitor")).clicked() {
+                        self.settings = MonitorSettings::default();
+                    }
+                    close |= ui.button(tr!("egui-close")).clicked();
+                });
             });
+        if close {
+            self.show_monitor = false;
+        }
     }
 
     fn schedule_frame(&mut self, context: &egui::Context) {
@@ -923,6 +947,9 @@ impl TerminalApp {
         }
         self.receive_mcp(context);
         self.receive_events(context);
+        if let Some(error) = self.error.take() {
+            self.messages.error(tr!("egui-message-error"), error);
+        }
         if let Some(receiver) = &self.version_check {
             if let Ok(latest) = receiver.try_recv() {
                 self.latest_version = Some(latest);
@@ -971,174 +998,233 @@ impl TerminalApp {
         if let Some(path) = context.input(|input| input.raw.dropped_files.iter().find_map(|file| file.path.clone())) {
             self.load(path);
         }
-        egui::TopBottomPanel::top("toolbar")
-            .frame(
-                egui::Frame::NONE
-                    .fill(context.style().visuals.panel_fill)
-                    .inner_margin(egui::Margin::symmetric(10, 5)),
-            )
-            .show(context, |ui| self.toolbar(ui));
-        egui::TopBottomPanel::bottom("status")
-            .frame(
-                egui::Frame::NONE
-                    .fill(context.style().visuals.panel_fill)
-                    .inner_margin(egui::Margin::symmetric(12, 5)),
-            )
-            .show(context, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().interact_size.y = 20.0;
-                    let wide = ui.available_width() > 640.0;
-                    let status = if self.connected {
-                        tr!("egui-connected")
-                    } else if self.connecting {
-                        tr!("egui-connecting")
-                    } else {
-                        tr!("egui-offline")
-                    };
-                    let color = if self.connected {
-                        egui::Color32::from_rgb(78, 173, 118)
-                    } else if self.connecting {
-                        ui.visuals().warn_fg_color
-                    } else {
-                        ui.visuals().weak_text_color()
-                    };
-                    let (indicator, _) = ui.allocate_exact_size(egui::vec2(8.0, 20.0), egui::Sense::hover());
-                    ui.painter().circle_filled(indicator.center(), 3.0, color);
-                    ui.label(egui::RichText::new(status).small().color(color));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if let Some(started) = self.connected_at {
-                            let seconds = started.elapsed().as_secs();
-                            ui.label(
-                                egui::RichText::new(format!("{:02}:{:02}:{:02}", seconds / 3600, seconds / 60 % 60, seconds % 60))
-                                    .monospace()
-                                    .small(),
-                            );
-                            context.request_repaint_after(Duration::from_secs(1));
-                        }
-                        let info = {
-                            let screen = self.terminal.screen.lock();
-                            format!(
-                                "{} • {}x{}",
-                                icy_term::fmt_terminal_emulation(&self.terminal_emulation),
-                                screen.width(),
-                                screen.height()
-                            )
-                        };
-                        if wide
-                            && ui
-                                .add(egui::Button::new(egui::RichText::new(info).small()).frame(false))
-                                .on_hover_text(tr!("terminal-menu-info"))
-                                .clicked()
-                        {
-                            self.terminal_info();
-                        }
-                        if self.tools.host_info.is_some() && ui.add(egui::Button::new(egui::RichText::new("IEMSI").small())).clicked() {
-                            self.tools.info_open = true;
-                        }
-                        let baud = if self.connected {
-                            match self.baud {
-                                icy_parser_core::BaudEmulation::Off => tr!("select-bps-dialog-bps-max"),
-                                icy_parser_core::BaudEmulation::Rate(rate) => tr!("select-bps-dialog-bps", bps = rate),
-                            }
+        if !directory_was_open {
+            egui::TopBottomPanel::top("toolbar")
+                .frame(
+                    egui::Frame::NONE
+                        .fill(context.style().visuals.panel_fill)
+                        .inner_margin(egui::Margin::symmetric(10, 5)),
+                )
+                .show(context, |ui| self.toolbar(ui));
+            egui::TopBottomPanel::bottom("status")
+                .frame(
+                    egui::Frame::NONE
+                        .fill(context.style().visuals.panel_fill)
+                        .inner_margin(egui::Margin::symmetric(12, 5)),
+                )
+                .show(context, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().interact_size.y = 20.0;
+                        let wide = ui.available_width() > 640.0;
+                        let status = if self.connected {
+                            tr!("egui-connected")
+                        } else if self.connecting {
+                            tr!("egui-connecting")
                         } else {
-                            "LOCAL".into()
+                            tr!("egui-offline")
                         };
-                        if ui
-                            .add_enabled(self.connected, egui::Button::new(egui::RichText::new(baud).small()))
-                            .on_hover_text(tr!("select-bps-dialog-heading"))
-                            .clicked()
-                        {
-                            self.bps_open = true;
-                        }
-                        if self.transfers.capture.is_some()
-                            && ui
-                                .add(egui::Button::new(
-                                    egui::RichText::new(tr!("toolbar-stop-capture")).small().color(ui.visuals().error_fg_color),
-                                ))
+                        let color = if self.connected {
+                            egui::Color32::from_rgb(78, 173, 118)
+                        } else if self.connecting {
+                            ui.visuals().warn_fg_color
+                        } else {
+                            ui.visuals().weak_text_color()
+                        };
+                        let (indicator, _) = ui.allocate_exact_size(egui::vec2(8.0, 20.0), egui::Sense::hover());
+                        ui.painter().circle_filled(indicator.center(), 3.0, color);
+                        ui.label(egui::RichText::new(status).small().color(color));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if let Some(started) = self.connected_at {
+                                let seconds = started.elapsed().as_secs();
+                                ui.label(
+                                    egui::RichText::new(format!("{:02}:{:02}:{:02}", seconds / 3600, seconds / 60 % 60, seconds % 60))
+                                        .monospace()
+                                        .small(),
+                                );
+                                context.request_repaint_after(Duration::from_secs(1));
+                            }
+                            let info = {
+                                let screen = self.terminal.screen.lock();
+                                format!(
+                                    "{} • {}x{}",
+                                    icy_term::fmt_terminal_emulation(&self.terminal_emulation),
+                                    screen.width(),
+                                    screen.height()
+                                )
+                            };
+                            if wide
+                                && ui
+                                    .add(egui::Button::new(egui::RichText::new(info).small()).frame(false))
+                                    .on_hover_text(tr!("terminal-menu-info"))
+                                    .clicked()
+                            {
+                                self.terminal_info();
+                            }
+                            if self.tools.host_info.is_some() && ui.add(egui::Button::new(egui::RichText::new("IEMSI").small())).clicked() {
+                                self.tools.info_open = true;
+                            }
+                            let baud = if self.connected {
+                                match self.baud {
+                                    icy_parser_core::BaudEmulation::Off => tr!("select-bps-dialog-bps-max"),
+                                    icy_parser_core::BaudEmulation::Rate(rate) => tr!("select-bps-dialog-bps", bps = rate),
+                                }
+                            } else {
+                                "LOCAL".into()
+                            };
+                            if ui
+                                .add_enabled(self.connected, egui::Button::new(egui::RichText::new(baud).small()))
+                                .on_hover_text(tr!("select-bps-dialog-heading"))
                                 .clicked()
-                        {
-                            self.command(icy_term::TerminalCommand::StopCapture, context);
+                            {
+                                self.bps_open = true;
+                            }
+                            if self.transfers.capture.is_some()
+                                && ui
+                                    .add(egui::Button::new(
+                                        egui::RichText::new(tr!("toolbar-stop-capture")).small().color(ui.visuals().error_fg_color),
+                                    ))
+                                    .clicked()
+                            {
+                                self.command(icy_term::TerminalCommand::StopCapture, context);
+                            }
+                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                ui.add(egui::Label::new(egui::RichText::new(&self.document_name).small()).truncate())
+                                    .on_hover_text(&self.document_name);
+                            });
+                        });
+                    });
+                    if self.transfers.capture.is_some() || self.tools.script_running || self.tools.pause.is_some() {
+                        ui.horizontal_wrapped(|ui| {
+                            if self.transfers.capture.is_some() {
+                                ui.colored_label(ui.visuals().warn_fg_color, &*tr!("egui-recording"));
+                            }
+                            if self.tools.script_running {
+                                ui.separator();
+                                ui.label(&*tr!("egui-script-running"));
+                            }
+                            if self.tools.pause.is_some() {
+                                ui.separator();
+                                ui.label(&*tr!("egui-host-pause"));
+                            }
+                        });
+                    }
+                });
+        }
+        self.schedule_frame(context);
+        if self.navigation.find_open && !directory_was_open {
+            let search_blocked = self.messages.is_open()
+                || self.error.is_some()
+                || self.confirm_close
+                || self.pending_link.is_some()
+                || self.preferences.is_some()
+                || self.tools.blocks_input()
+                || self.transfers.open;
+            let terminal_bounds = context.available_rect();
+            egui::Area::new(egui::Id::new("find-overlay"))
+                .order(egui::Order::Foreground)
+                .pivot(egui::Align2::RIGHT_TOP)
+                .fixed_pos(terminal_bounds.right_top() + egui::vec2(-8.0, 8.0))
+                .constrain_to(terminal_bounds)
+                .movable(false)
+                .show(context, |ui| {
+                    egui::Frame::popup(ui.style()).corner_radius(4).inner_margin(12).show(ui, |ui| {
+                        if search_blocked {
+                            ui.disable();
                         }
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            ui.add(egui::Label::new(egui::RichText::new(&self.document_name).small()).truncate())
-                                .on_hover_text(&self.document_name);
+                        ui.set_width((terminal_bounds.width() - 40.0).clamp(220.0, 360.0));
+                        ui.spacing_mut().item_spacing = egui::vec2(4.0, 6.0);
+                        ui.spacing_mut().button_padding = egui::vec2(6.0, 4.0);
+                        ui.spacing_mut().interact_size = egui::vec2(28.0, 28.0);
+                        ui.horizontal_wrapped(|ui| {
+                            let response = ui.add(
+                                egui::TextEdit::singleline(&mut self.navigation.query)
+                                    .desired_width((ui.available_width() - 108.0).max(100.0))
+                                    .hint_text(&*tr!("egui-find")),
+                            );
+                            if !search_blocked && !self.navigation.find_initialized {
+                                response.request_focus();
+                                self.navigation.find_initialized = true;
+                                self.focus_terminal = false;
+                            }
+                            if response.changed() {
+                                self.navigation.refresh_search(&self.terminal);
+                            }
+                            let enter = !search_blocked
+                                && (response.has_focus() || response.lost_focus())
+                                && ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+                            if enter {
+                                response.request_focus();
+                            }
+                            let backwards = ui.input(|input| input.modifiers.shift);
+                            if ui
+                                .add_enabled(!self.navigation.query.is_empty(), egui::Button::new("\u{2191}"))
+                                .on_hover_text(tr!("egui-previous"))
+                                .clicked()
+                                || (enter && backwards)
+                            {
+                                self.navigation.find(&self.terminal, true);
+                            }
+                            if ui
+                                .add_enabled(!self.navigation.query.is_empty(), egui::Button::new("\u{2193}"))
+                                .on_hover_text(tr!("egui-next"))
+                                .clicked()
+                                || (enter && !backwards)
+                            {
+                                self.navigation.find(&self.terminal, false);
+                            }
+                            if ui.button("\u{00d7}").on_hover_text(tr!("egui-close")).clicked()
+                                || (!search_blocked && ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)))
+                            {
+                                self.navigation.find_open = false;
+                                self.navigation.find_initialized = false;
+                                self.focus_terminal = true;
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            if ui
+                                .toggle_value(&mut self.navigation.case_sensitive, "Aa")
+                                .on_hover_text(tr!("egui-match-case"))
+                                .changed()
+                            {
+                                self.navigation.refresh_search(&self.terminal);
+                            }
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if self.navigation.search_failed {
+                                    ui.colored_label(ui.visuals().warn_fg_color, tr!("egui-not-found"));
+                                } else if let Some((current, total)) = self.navigation.search_result {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(tr!("terminal-find-results", cur = current.to_string(), total = total.to_string())).weak(),
+                                        )
+                                        .truncate(),
+                                    );
+                                }
+                            });
                         });
                     });
                 });
-                if self.transfers.capture.is_some() || self.tools.script_running || self.tools.pause.is_some() {
-                    ui.horizontal_wrapped(|ui| {
-                        if self.transfers.capture.is_some() {
-                            ui.colored_label(ui.visuals().warn_fg_color, &*tr!("egui-recording"));
-                        }
-                        if self.tools.script_running {
-                            ui.separator();
-                            ui.label(&*tr!("egui-script-running"));
-                        }
-                        if self.tools.pause.is_some() {
-                            ui.separator();
-                            ui.label(&*tr!("egui-host-pause"));
-                        }
-                    });
-                }
-                if let Some(error) = self.error.clone() {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.colored_label(ui.visuals().error_fg_color, error);
-                        if ui.button(&*tr!("egui-dismiss")).clicked() {
-                            self.error = None;
-                        }
-                    });
-                }
-            });
-        self.schedule_frame(context);
-        if self.navigation.find_open {
-            egui::TopBottomPanel::bottom("find").show(context, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    let response = ui.add(
-                        egui::TextEdit::singleline(&mut self.navigation.query)
-                            .desired_width(160.0)
-                            .hint_text(&*tr!("egui-find")),
-                    );
-                    let enter = response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
-                    ui.checkbox(&mut self.navigation.case_sensitive, &*tr!("egui-match-case"));
-                    if ui.button(&*tr!("egui-previous")).clicked() {
-                        self.navigation.find(&self.terminal, true);
-                    }
-                    if ui.button(&*tr!("egui-next")).clicked() || enter {
-                        self.navigation.find(&self.terminal, false);
-                    }
-                    if ui.button(&*tr!("egui-close")).clicked() {
-                        self.navigation.find_open = false;
-                        self.focus_terminal = true;
-                    }
-                    if self.navigation.search_failed {
-                        ui.label(&*tr!("egui-not-found"));
-                    }
-                });
-            });
         }
-        egui::CentralPanel::default()
-            .frame(egui::Frame::NONE)
-            .show(context, |ui| self.terminal_view(ui));
         if !self.dialing_directory.open {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE)
+                .show(context, |ui| self.terminal_view(ui));
             self.monitor(context);
         }
+        self.dialing_directory.message_blocked = self.messages.is_open() || self.error.is_some() || self.confirm_close || self.pending_link.is_some();
         if let Some(request) = self.dialing_directory.show(context, self.connected || self.connecting) {
             match request {
-                dialing_directory::DialRequest::Quick(address, utf8) => {
-                    self.address = address;
-                    self.utf8 = utf8;
-                    self.connect(context);
-                }
-                dialing_directory::DialRequest::Entry(entry, options) => match session::entry_connection_config(&entry, &options) {
-                    Ok(config) => {
-                        self.address = phonebook::display_address(&entry);
-                        self.utf8 = entry.terminal_type == icy_net::telnet::TerminalEmulation::Utf8Ansi;
-                        self.active_profile = Some(entry.clone());
-                        self.baud = entry.baud_emulation;
-                        self.start_connection(config, entry.system_name, context);
+                dialing_directory::DialRequest::Quick(entry, options) | dialing_directory::DialRequest::Entry(entry, options) => {
+                    match session::entry_connection_config(&entry, &options) {
+                        Ok(config) => {
+                            self.address = phonebook::display_address(&entry);
+                            self.utf8 = entry.terminal_type == icy_net::telnet::TerminalEmulation::Utf8Ansi;
+                            self.active_profile = Some(entry.clone());
+                            self.baud = entry.baud_emulation;
+                            self.start_connection(config, entry.system_name, context);
+                        }
+                        Err(error) => self.error = Some(error),
                     }
-                    Err(error) => self.error = Some(error),
-                },
+                }
             }
         }
         if directory_was_open && !self.dialing_directory.open {
@@ -1197,26 +1283,34 @@ impl TerminalApp {
                 self.command(icy_term::TerminalCommand::SetBaudEmulation(baud), context);
             }
         }
-        if let Some(url) = self.pending_link.clone() {
-            egui::Modal::new(egui::Id::new("external-link")).show(context, |ui| {
-                ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 520.0));
-                ui.heading(&*tr!("egui-open-link-question"));
-                ui.label(&url);
+        if !self.confirm_close && !self.messages.is_open() {
+            if let Some(url) = self.pending_link.clone() {
                 let allowed = url::Url::parse(&url).is_ok_and(|url| matches!(url.scheme(), "https" | "http" | "mailto"));
-                ui.horizontal(|ui| {
-                    if ui.add_enabled(allowed, egui::Button::new(&*tr!("settings-paths-open"))).clicked() {
+                if let Some(response) = messages::MessageBox::question(
+                    "external-link",
+                    &tr!("egui-open-link-question"),
+                    &tr!("egui-message-link"),
+                    &tr!("settings-paths-open"),
+                )
+                .details(&url)
+                .enabled(allowed)
+                .show(context)
+                {
+                    if response == messages::Response::Accept && allowed {
                         if let Err(error) = webbrowser::open(&url) {
                             self.error = Some(error.to_string());
                         }
-                        self.pending_link = None;
                     }
-                    if ui.button(&*tr!("egui-cancel")).clicked() {
-                        self.pending_link = None;
-                    }
-                });
-            });
+                    self.pending_link = None;
+                }
+            }
         }
-        self.send_input(context, blocked_at_start);
+        if let Some(error) = self.error.take() {
+            self.messages.error(tr!("egui-message-error"), error);
+        }
+        let message_was_open = self.messages.is_open();
+        self.messages.show(context);
+        self.send_input(context, blocked_at_start || message_was_open);
     }
 
     fn send_input(&mut self, context: &egui::Context, blocked_at_start: bool) {
@@ -1376,36 +1470,35 @@ impl TerminalApp {
     }
 
     fn terminal_info(&mut self) {
+        let profile = self.terminal_profile();
         let screen = self.terminal.original_screen.as_ref().unwrap_or(&self.terminal.screen).lock();
-        let state = screen.terminal_state();
-        let mouse = &state.mouse_state;
-        self.tools.terminal_info = Some(vec![
-            (
-                tr!("egui-terminal-emulation"),
-                icy_term::fmt_terminal_emulation(&self.terminal_emulation).into(),
-            ),
-            (tr!("egui-screen-size"), format!("{} x {}", screen.width(), screen.height())),
-            (
-                tr!("egui-resolution"),
-                format!("{} x {}", screen.resolution().width, screen.resolution().height),
-            ),
-            (
-                tr!("egui-font"),
-                format!("{} x {}", screen.font_dimensions().width, screen.font_dimensions().height),
-            ),
-            (tr!("egui-cursor"), format!("{}, {}", screen.caret_position().x, screen.caret_position().y)),
-            (
-                tr!("egui-mouse-reporting"),
-                format!("{:?}, {:?}, focus={}", mouse.mouse_mode, mouse.extended_mode, mouse.focus_out_event_enabled),
-            ),
-            ("Kitty".into(), format!("0x{:02x}", state.kitty_keyboard.flags())),
-            ("Bracketed paste".into(), state.bracketed_paste_mode.to_string()),
-            (tr!("egui-lf-expand"), state.lf_expand.to_string()),
-        ]);
+        self.tools.terminal_info = Some(terminal_info::Dialog::new(&**screen, profile, self.terminal_emulation, self.baud));
+        self.tools.scrollback = self.dialing_directory.options.max_scrollback_lines;
+    }
+
+    fn terminal_profile(&self) -> icy_term::Address {
+        let screen = self.terminal.original_screen.as_ref().unwrap_or(&self.terminal.screen).lock();
+        let mut profile = self.active_profile.clone().unwrap_or_default();
+        profile.terminal_type = self.terminal_emulation;
+        profile.screen_mode = match self.screen_mode {
+            icy_engine::ScreenMode::Vga(_, _) => icy_engine::ScreenMode::Vga(screen.width(), screen.height()),
+            icy_engine::ScreenMode::Unicode(_, _) => icy_engine::ScreenMode::Unicode(screen.width(), screen.height()),
+            mode => mode,
+        };
+        profile.screen_mode = icy_term::normalize_screen_mode(profile.terminal_type, profile.screen_mode);
+        profile.ansi_music = self.ansi_music;
+        profile.baud_emulation = self.baud;
+        profile.ice_mode = screen.ice_mode() == icy_engine::IceMode::Ice;
+        profile.set_lf_expand(screen.terminal_state().lf_expand);
+        profile.mouse_reporting_enabled = screen.terminal_state().mouse_state.mouse_tracking_enabled;
+        profile
     }
 
     fn blocks_terminal(&self) -> bool {
-        self.show_monitor
+        self.navigation.find_open
+            || self.messages.is_open()
+            || self.error.is_some()
+            || self.show_monitor
             || self.dialing_directory.open
             || self.transfers.open
             || self.preferences.is_some()
@@ -1649,10 +1742,7 @@ impl TerminalApp {
     fn windows(&mut self, context: &egui::Context) {
         if self.new_window && !context.will_discard() {
             self.new_window = false;
-            let screen = FileFormat::IcyDraw
-                .from_bytes(include_bytes!("../../data/welcome_screen.1.icy"), None)
-                .expect("bundled welcome screen")
-                .screen;
+            let screen = icy_term::welcome_screen::create_welcome_screen(None);
             let mut child = Self::new(screen, "Icy Term".into());
             child.settings = self.settings.clone();
             child.dialing_directory.options = self.dialing_directory.options.clone();
@@ -1699,21 +1789,23 @@ impl TerminalApp {
                 self.shutdown_window();
             }
         }
-        if self.confirm_close {
-            egui::Modal::new(egui::Id::new("close-window")).show(context, |ui| {
-                ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 480.0));
-                ui.heading(&*tr!("egui-close-question"));
-                ui.label(&*tr!("egui-close-warning"));
-                ui.horizontal(|ui| {
-                    if ui.button(&*tr!("egui-close-window")).clicked() {
-                        self.shutdown_window();
-                        context.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                    if ui.button(&*tr!("egui-cancel")).clicked() {
-                        self.confirm_close = false;
-                    }
-                });
-            });
+        if self.confirm_close && !self.messages.is_open() {
+            if let Some(response) = messages::MessageBox::question(
+                "close-window",
+                &tr!("egui-close-question"),
+                &tr!("egui-close-warning"),
+                &tr!("egui-close-window"),
+            )
+            .destructive()
+            .show(context)
+            {
+                if response == messages::Response::Accept {
+                    self.shutdown_window();
+                    context.send_viewport_cmd(egui::ViewportCommand::Close);
+                } else {
+                    self.confirm_close = false;
+                }
+            }
         }
     }
 
@@ -1767,9 +1859,7 @@ fn main() -> anyhow::Result<()> {
     let (screen, name) = if let Some(path) = file {
         (load_screen(&path)?, path.display().to_string())
     } else {
-        let mut screen = FileFormat::IcyDraw.from_bytes(include_bytes!("../../data/welcome_screen.1.icy"), None)?.screen;
-        icy_engine_gui::version_helper::replace_version_marker(&mut screen.buffer, &semver::Version::parse(env!("CARGO_PKG_VERSION"))?, None);
-        (screen, "Icy Term".to_string())
+        (icy_term::welcome_screen::create_welcome_screen(None), "Icy Term".to_string())
     };
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../../build/linux/128x128.png"))?;
     let options = eframe::NativeOptions {
@@ -1851,7 +1941,9 @@ mod tests {
         context.set_request_repaint_callback(move |_| {
             let _ = wake_tx.send(());
         });
-        let mut app = TerminalApp::new(TextScreen::default(), "offline".into());
+        let screen = icy_term::welcome_screen::create_welcome_screen(None);
+        let input_row = screen.caret.position().y;
+        let mut app = TerminalApp::new(screen, "offline".into());
         let run = |app: &mut TerminalApp, events| {
             let _ = context.run(
                 egui::RawInput {
@@ -1885,12 +1977,12 @@ mod tests {
                 modifiers: egui::Modifiers::NONE,
             }],
         );
-        let wait_for_ok = |app: &mut TerminalApp| {
+        let wait_for_ok = |app: &mut TerminalApp, row: i32| {
             let deadline = std::time::Instant::now() + Duration::from_secs(5);
             loop {
                 let screen = app.terminal.screen.lock();
-                let first: String = (0..2).map(|column| screen.char_at((column, 0).into()).ch).collect();
-                let second: String = (0..2).map(|column| screen.char_at((column, 1).into()).ch).collect();
+                let first: String = (0..2).map(|column| screen.char_at((column, row).into()).ch).collect();
+                let second: String = (0..2).map(|column| screen.char_at((column, row + 1).into()).ch).collect();
                 if first == "AT" && second == "OK" {
                     break;
                 }
@@ -1905,7 +1997,7 @@ mod tests {
                 run(app, vec![]);
             }
         };
-        wait_for_ok(&mut app);
+        wait_for_ok(&mut app, input_row);
         assert!(!app.connected && !app.connecting);
         let previous_events = std::mem::replace(&mut app.session.as_mut().unwrap().events, std::sync::mpsc::channel().1);
         app.disconnect();
@@ -1939,7 +2031,7 @@ mod tests {
             }],
         );
         assert!(app.session.is_some(), "offline typing must work again after disconnect");
-        wait_for_ok(&mut app);
+        wait_for_ok(&mut app, 0);
     }
 
     #[test]
@@ -1953,6 +2045,7 @@ mod tests {
         let (id, child) = &app.children[0];
         assert!(output.viewport_output.contains_key(id));
         let mut child = child.lock();
+        assert!(child.terminal.screen.lock().caret().position().y > 1);
         assert!(!Arc::ptr_eq(&app.terminal.screen, &child.terminal.screen));
         assert_ne!(app.shader_state.instance_id, child.shader_state.instance_id);
         child.command(icy_term::TerminalCommand::RunScriptCode("assert(true)".into()), &context);
@@ -2058,10 +2151,10 @@ mod tests {
 
     #[test]
     fn welcome_frame_survives_resize_and_hidpi() {
-        let screen = FileFormat::IcyDraw
-            .from_bytes(include_bytes!("../../data/welcome_screen.1.icy"), None)
-            .unwrap()
-            .screen;
+        let screen = icy_term::welcome_screen::create_welcome_screen(None);
+        let caret_position = screen.caret.position();
+        assert_eq!(caret_position.x, 0);
+        assert!(caret_position.y > 1);
         let mut app = TerminalApp::new(screen, "Icy Term".into());
         let context = egui::Context::default();
         for (width, height, pixels_per_point) in [(1000.0, 720.0, 1.0), (360.0, 640.0, 1.0), (800.0, 600.0, 2.0)] {
@@ -2083,6 +2176,7 @@ mod tests {
             assert!(frame.text_slice_count > 0);
             assert!(app.terminal.visible_width_px() <= width);
             assert!(app.terminal.visible_height_px() < height);
+            assert_eq!(app.terminal.screen.lock().caret().position(), caret_position);
         }
     }
 

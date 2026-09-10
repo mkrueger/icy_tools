@@ -6,21 +6,82 @@ pub fn dialog_frame(context: &egui::Context) -> egui::Frame {
     egui::Frame::window(&context.style()).inner_margin(16)
 }
 
+pub fn dialog_header(ui: &mut egui::Ui, title: &str) -> bool {
+    let mut close = false;
+    ui.horizontal(|ui| {
+        let width = ui.available_width() - 32.0;
+        ui.allocate_ui_with_layout(egui::vec2(width, 28.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.set_min_width(width);
+            ui.add(egui::Label::new(egui::RichText::new(title).strong().size(17.0)).wrap());
+        });
+        close = ui
+            .add_sized([24.0, 24.0], egui::Button::new(egui::RichText::new("\u{00d7}").size(20.0)).frame(false))
+            .on_hover_text(tr!("egui-close"))
+            .clicked();
+    });
+    ui.separator();
+    close
+}
+
+pub fn section(ui: &mut egui::Ui, title: &str) {
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new(title).strong().size(14.0));
+    ui.add_space(2.0);
+}
+
+pub fn combo_row(ui: &mut egui::Ui, label: &str, selected: impl Into<egui::WidgetText>, choices: impl FnOnce(&mut egui::Ui)) {
+    ui.push_id(label, |ui| {
+        form_row(ui, label, |ui| {
+            egui::ComboBox::from_id_salt("value")
+                .width(ui.available_width().min(280.0))
+                .selected_text(selected)
+                .show_ui(ui, choices);
+        });
+    });
+}
+
+pub fn slider_row(ui: &mut egui::Ui, label: &str, value: &mut f32, range: std::ops::RangeInclusive<f32>) {
+    form_row(ui, label, |ui| {
+        ui.spacing_mut().slider_width = (ui.available_width() - 60.0).max(48.0);
+        ui.add(egui::Slider::new(value, range));
+    });
+}
+
 pub fn primary_button(label: impl Into<String>) -> egui::Button<'static> {
     egui::Button::new(egui::RichText::new(label.into()).color(Color32::WHITE)).fill(PRIMARY)
 }
 
+pub fn value_row(ui: &mut egui::Ui, label: &str, value: &str) {
+    value_row_with_note(ui, label, value, "");
+}
+
+pub fn value_row_with_note(ui: &mut egui::Ui, label: &str, value: &str, note: &str) {
+    let label_width = (ui.available_width() * 0.48).min(180.0);
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = 5.0;
+        ui.allocate_ui_with_layout(egui::vec2(label_width, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+            ui.set_min_width(label_width);
+            ui.add(egui::Label::new(egui::RichText::new(label).weak()).wrap());
+        });
+        ui.add(egui::Label::new(value).wrap().selectable(true));
+        if !note.is_empty() {
+            ui.add(egui::Label::new(egui::RichText::new(note).weak().size(12.0)).wrap().selectable(true));
+        }
+    });
+}
+
 pub fn form_row(ui: &mut egui::Ui, label: &str, control: impl FnOnce(&mut egui::Ui)) {
-    if ui.available_width() < 420.0 {
+    if ui.available_width() < 280.0 {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
             ui.add(egui::Label::new(label).wrap());
             control(ui);
         });
     } else {
+        let label_width = (ui.available_width() * 0.42).min(210.0);
         ui.horizontal(|ui| {
-            ui.allocate_ui_with_layout(egui::vec2(240.0, 30.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                ui.set_min_width(240.0);
+            ui.allocate_ui_with_layout(egui::vec2(label_width, 28.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_width(label_width);
                 ui.add(egui::Label::new(label).wrap());
             });
             control(ui);
@@ -59,12 +120,12 @@ pub fn apply(context: &egui::Context) {
     fonts.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "icy-sans".into());
     context.set_fonts(fonts);
     context.all_styles_mut(|style| {
-        style.text_styles.insert(TextStyle::Heading, FontId::proportional(20.0));
+        style.text_styles.insert(TextStyle::Heading, FontId::proportional(17.0));
         style.text_styles.insert(TextStyle::Body, FontId::proportional(14.0));
         style.text_styles.insert(TextStyle::Button, FontId::proportional(14.0));
         style.text_styles.insert(TextStyle::Small, FontId::proportional(12.0));
         style.spacing.interact_size = egui::vec2(28.0, 30.0);
-        style.spacing.item_spacing = egui::vec2(8.0, 8.0);
+        style.spacing.item_spacing = egui::vec2(8.0, 6.0);
         style.spacing.button_padding = egui::vec2(12.0, 6.0);
         style.spacing.window_margin = egui::Margin::same(16);
         style.spacing.menu_margin = egui::Margin::same(6);
@@ -95,6 +156,7 @@ pub fn apply(context: &egui::Context) {
             )
         };
         let visuals = &mut style.visuals;
+        visuals.window_highlight_topmost = false;
         visuals.panel_fill = surface;
         visuals.window_fill = surface;
         visuals.extreme_bg_color = input;

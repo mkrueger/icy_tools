@@ -7,6 +7,7 @@ pub mod protocol;
 pub mod scripting;
 pub mod terminal;
 pub mod util;
+pub mod welcome_screen;
 
 pub use data::*;
 pub use terminal::*;

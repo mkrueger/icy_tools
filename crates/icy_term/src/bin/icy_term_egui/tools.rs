@@ -10,7 +10,7 @@ pub struct Tools {
     pub script_code: Option<String>,
     pub pause: Option<u64>,
     pub host_info: Option<Vec<(String, String)>>,
-    pub terminal_info: Option<Vec<(String, String)>>,
+    pub terminal_info: Option<super::terminal_info::Dialog>,
     pub info_open: bool,
     pub terminal: Option<icy_term::Address>,
     pub scrollback: usize,
@@ -96,7 +96,7 @@ impl Tools {
                 .frame(super::appearance::dialog_frame(context))
                 .show(context, |ui| {
                     ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 560.0));
-                    ui.heading(&*tr!("egui-terminal-settings"));
+                    close |= super::appearance::dialog_header(ui, &tr!("egui-terminal-settings"));
                     egui::ScrollArea::vertical()
                         .max_height((context.content_rect().height() - 180.0).max(80.0))
                         .show(ui, |ui| {
@@ -105,7 +105,7 @@ impl Tools {
                             super::dialing_directory::profile_editor::colors(ui, profile);
                         });
                     ui.separator();
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         if ui.add(super::appearance::primary_button(tr!("egui-apply-reset"))).clicked() {
                             self.commands.push(TerminalCommand::SetTerminalProfile {
                                 profile: profile.clone(),
@@ -127,14 +127,16 @@ impl Tools {
                 .frame(super::appearance::dialog_frame(context))
                 .show(context, |ui| {
                     ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 480.0));
-                    ui.heading(&*tr!("egui-serial-connection"));
+                    if super::appearance::dialog_header(ui, &tr!("egui-serial-connection")) {
+                        self.serial_open = false;
+                    }
                     egui::ScrollArea::vertical()
                         .max_height((context.content_rect().height() - 160.0).max(80.0))
                         .show(ui, |ui| {
                             super::settings::serial_fields(ui, &mut self.serial);
                         });
                     ui.separator();
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         if ui
                             .add_enabled(
                                 !self.serial.device.trim().is_empty(),
@@ -164,13 +166,18 @@ impl Tools {
                 .frame(super::appearance::dialog_frame(context))
                 .show(context, |ui| {
                     ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 680.0));
-                    ui.heading(&*tr!("egui-lua-console"));
+                    close |= super::appearance::dialog_header(ui, &tr!("egui-lua-console"));
                     egui::ScrollArea::vertical()
                         .max_height((context.content_rect().height() - 180.0).max(80.0))
                         .show(ui, |ui| {
                             ui.add(egui::TextEdit::multiline(code).code_editor().desired_rows(14).desired_width(f32::INFINITY));
+                            if let Some(result) = &self.script_result {
+                                ui.separator();
+                                ui.add(egui::Label::new(result).wrap());
+                            }
                         });
-                    ui.horizontal(|ui| {
+                    ui.separator();
+                    ui.horizontal_wrapped(|ui| {
                         if ui
                             .add_enabled(
                                 !self.script_running && !code.trim().is_empty(),
@@ -188,9 +195,6 @@ impl Tools {
                             close = true;
                         }
                     });
-                    if let Some(result) = &self.script_result {
-                        ui.label(result);
-                    }
                 });
             if close {
                 self.script_code = None;
@@ -205,10 +209,11 @@ impl Tools {
                 self.host_info.as_deref().unwrap_or_default(),
             );
         }
-        if let Some(info) = &self.terminal_info {
-            let mut open = true;
-            information(context, "terminal-information", tr!("terminal-menu-info"), &mut open, info);
-            if !open {
+        if let Some(info) = &mut self.terminal_info {
+            if let Some(command) = info.show(context, self.scrollback) {
+                self.commands.push(command);
+            }
+            if info.closed {
                 self.terminal_info = None;
             }
         }
@@ -221,19 +226,29 @@ impl Tools {
 }
 
 fn information(context: &egui::Context, id: &str, title: String, open: &mut bool, fields: &[(String, String)]) {
-    egui::Window::new(title).id(egui::Id::new(id)).open(open).show(context, |ui| {
-        ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 480.0));
-        egui::ScrollArea::vertical()
-            .max_height((context.content_rect().height() - 140.0).max(60.0))
-            .show(ui, |ui| {
-                for (name, value) in fields {
-                    ui.strong(name);
-                    ui.label(value);
-                    ui.separator();
+    egui::Modal::new(egui::Id::new(id))
+        .frame(super::appearance::dialog_frame(context))
+        .show(context, |ui| {
+            ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 480.0));
+            if super::appearance::dialog_header(ui, &title) {
+                *open = false;
+            }
+            egui::ScrollArea::vertical()
+                .max_height((context.content_rect().height() - 140.0).max(60.0))
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 5.0;
+                    for (name, value) in fields {
+                        super::appearance::value_row(ui, name, value);
+                    }
+                });
+            ui.separator();
+            ui.horizontal_wrapped(|ui| {
+                if ui.button(tr!("terminal-menu-copy")).clicked() {
+                    context.copy_text(fields.iter().map(|(name, value)| format!("{name}: {value}")).collect::<Vec<_>>().join("\n"));
+                }
+                if ui.button(tr!("egui-close")).clicked() {
+                    *open = false;
                 }
             });
-        if ui.button(tr!("terminal-menu-copy")).clicked() {
-            context.copy_text(fields.iter().map(|(name, value)| format!("{name}: {value}")).collect::<Vec<_>>().join("\n"));
-        }
-    });
+        });
 }

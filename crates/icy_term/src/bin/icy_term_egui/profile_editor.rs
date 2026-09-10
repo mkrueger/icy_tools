@@ -4,6 +4,7 @@ use icy_net::{proxy::ProxyConfig, telnet::TerminalEmulation, ConnectionType};
 use icy_parser_core::{BaudEmulation, MusicOption};
 use icy_term::{Address, Options, SshAuthenticationMode};
 
+use super::super::appearance;
 use super::{icon_button, text_field};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -21,35 +22,61 @@ pub struct ProfileEditor {
     pub page: Page,
     proxy_password: String,
     error: Option<String>,
+    connect_requested: bool,
 }
 
 impl ProfileEditor {
     pub fn show(&mut self, ui: &mut egui::Ui, entry: &mut Address, options: &Options, show_password: &mut bool, eye: &egui::TextureHandle) {
-        ui.horizontal_wrapped(|ui| {
-            for (page, label) in [
-                (Page::Connection, &*tr!("egui-connection")),
-                (Page::Terminal, &*tr!("settings-terminal-category")),
-                (Page::Login, &*tr!("egui-login")),
-                (Page::Colors, &*tr!("egui-colors")),
-                (Page::Notes, &*tr!("dialing_directory-notes")),
-            ] {
-                super::super::appearance::tab(ui, &mut self.page, page, label);
-            }
-        });
+        self.show_inner(ui, entry, options, show_password, eye, false);
+    }
+
+    pub fn show_quick(&mut self, ui: &mut egui::Ui, entry: &mut Address, options: &Options, show_password: &mut bool, eye: &egui::TextureHandle) -> bool {
+        self.connect_requested = false;
+        self.show_inner(ui, entry, options, show_password, eye, true);
+        self.connect_requested
+    }
+
+    fn show_inner(&mut self, ui: &mut egui::Ui, entry: &mut Address, options: &Options, show_password: &mut bool, eye: &egui::TextureHandle, quick: bool) {
+        let pages = [
+            (Page::Connection, &*tr!("egui-connection")),
+            (Page::Terminal, &*tr!("settings-terminal-category")),
+            (Page::Login, &*tr!("egui-login")),
+            (Page::Colors, &*tr!("egui-colors")),
+            (Page::Notes, &*tr!("dialing_directory-notes")),
+        ];
+        if ui.available_height() < 300.0 {
+            egui::ComboBox::from_id_salt("profile-category")
+                .width(ui.available_width())
+                .selected_text(pages.iter().find(|(page, _)| *page == self.page).unwrap().1)
+                .show_ui(ui, |ui| {
+                    for (page, label) in pages {
+                        ui.selectable_value(&mut self.page, page, label);
+                    }
+                });
+        } else {
+            ui.horizontal_wrapped(|ui| {
+                for (page, label) in pages {
+                    super::super::appearance::tab(ui, &mut self.page, page, label);
+                }
+            });
+        }
         ui.separator();
         egui::ScrollArea::vertical()
             .id_salt(("profile-page", self.page as u8))
-            .max_height((ui.available_height() - 56.0).max(120.0))
+            .min_scrolled_height(0.0)
+            .max_height((ui.available_height() - 56.0).max(0.0))
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
                 match self.page {
-                    Page::Connection => self.connection(ui, entry, options, *show_password),
+                    Page::Connection => self.connection(ui, entry, options, *show_password, quick),
                     Page::Terminal => terminal(ui, entry),
                     Page::Login => {
                         login(ui, entry, show_password, eye);
                         if ui
                             .add_enabled(entry.password.is_empty(), egui::Button::new(&*tr!("egui-generate-password")))
+                            .on_hover_text(tr!("dialing_directory-generate-tooltip"))
+                            .on_disabled_hover_text(tr!("dialing_directory-generate-disabled-tooltip"))
                             .clicked()
                             && !ui.ctx().will_discard()
                         {
@@ -74,39 +101,57 @@ impl ProfileEditor {
             });
     }
 
-    fn connection(&mut self, ui: &mut egui::Ui, entry: &mut Address, options: &Options, show_password: bool) {
-        text_field(ui, &*tr!("egui-system-name"), &mut entry.system_name);
-        text_field(
+    fn connection(&mut self, ui: &mut egui::Ui, entry: &mut Address, options: &Options, show_password: bool, quick: bool) {
+        if !quick {
+            text_field(ui, &*tr!("egui-system-name"), &mut entry.system_name);
+        }
+        let address_id = ui.make_persistent_id("profile-address");
+        self.connect_requested =
+            quick && ui.is_enabled() && ui.memory(|memory| memory.has_focus(address_id)) && ui.input(|input| input.key_pressed(egui::Key::Enter));
+        appearance::form_row(
             ui,
             &if entry.protocol == ConnectionType::Modem {
                 tr!("egui-phone-number")
             } else {
                 tr!("dialing_directory-address")
             },
-            &mut entry.address,
-        );
-        ui.label(&*tr!("dialing_directory-protocol"));
-        egui::ComboBox::from_id_salt("protocol")
-            .selected_text(protocol_name(entry.protocol))
-            .show_ui(ui, |ui| {
-                for protocol in icy_term::data::addresses::ALL {
-                    ui.selectable_value(&mut entry.protocol, protocol, protocol_name(protocol));
+            |ui| {
+                if ui
+                    .add(egui::TextEdit::singleline(&mut entry.address).id(address_id).desired_width(f32::INFINITY))
+                    .changed()
+                    && quick
+                {
+                    if let Ok(info) = icy_term::ConnectionInformation::parse(&entry.address) {
+                        if let Some(protocol) = info.protocol {
+                            entry.protocol = protocol;
+                        }
+                    }
                 }
-            });
-        ui.checkbox(&mut entry.is_favored, &*tr!("egui-favorite"));
+            },
+        );
+        appearance::combo_row(ui, &tr!("dialing_directory-protocol"), protocol_name(entry.protocol), |ui| {
+            for protocol in icy_term::data::addresses::ALL {
+                ui.selectable_value(&mut entry.protocol, protocol, protocol_name(protocol));
+            }
+        });
+        if !quick {
+            ui.checkbox(&mut entry.is_favored, &*tr!("egui-favorite"));
+        }
         if entry.protocol == ConnectionType::Modem {
-            ui.label(&*tr!("dialing_directory-modem"));
-            egui::ComboBox::from_id_salt("modem")
-                .selected_text(if entry.modem_id.is_empty() {
+            appearance::combo_row(
+                ui,
+                &tr!("dialing_directory-modem"),
+                if entry.modem_id.is_empty() {
                     tr!("egui-select-modem")
                 } else {
                     entry.modem_id.clone()
-                })
-                .show_ui(ui, |ui| {
+                },
+                |ui| {
                     for modem in &options.modems {
                         ui.selectable_value(&mut entry.modem_id, modem.name.clone(), &modem.name);
                     }
-                });
+                },
+            );
             if !options.modems.iter().any(|modem| modem.name == entry.modem_id) {
                 ui.colored_label(ui.visuals().warn_fg_color, &*tr!("egui-no-modem-selected"));
             }
@@ -116,7 +161,7 @@ impl ProfileEditor {
             ConnectionType::Telnet | ConnectionType::Raw | ConnectionType::SSH | ConnectionType::Rlogin | ConnectionType::RloginSwapped
         ) {
             ui.separator();
-            ui.strong(&*tr!("dialing_directory-proxy"));
+            appearance::section(ui, &tr!("dialing_directory-proxy"));
             let mut preset = match &entry.proxy {
                 None => 0,
                 Some(proxy) if proxy.host == "127.0.0.1" && proxy.port == 9050 => 1,
@@ -125,7 +170,7 @@ impl ProfileEditor {
             };
             let previous = preset;
             let labels = [&*tr!("egui-direct-connection"), "Tor (SOCKS5)", "I2P (SOCKS5)", &*tr!("egui-custom-socks")];
-            egui::ComboBox::from_id_salt("proxy").selected_text(labels[preset]).show_ui(ui, |ui| {
+            appearance::combo_row(ui, &tr!("egui-connection"), labels[preset], |ui| {
                 for (index, label) in labels.iter().enumerate() {
                     ui.selectable_value(&mut preset, index, *label);
                 }
@@ -141,8 +186,7 @@ impl ProfileEditor {
             }
             if let Some(proxy) = &mut entry.proxy {
                 text_field(ui, &*tr!("dialing_directory-proxy-host"), &mut proxy.host);
-                ui.horizontal(|ui| {
-                    ui.label(&*tr!("egui-port"));
+                appearance::form_row(ui, &tr!("egui-port"), |ui| {
                     ui.add(egui::DragValue::new(&mut proxy.port).range(1..=65535));
                 });
                 let mut user = proxy.username.clone().unwrap_or_default();
@@ -199,38 +243,32 @@ pub fn protocol_name(protocol: ConnectionType) -> &'static str {
 }
 
 pub(crate) fn terminal(ui: &mut egui::Ui, entry: &mut Address) {
-    ui.label(&*tr!("egui-terminal-emulation"));
     let previous = entry.terminal_type;
-    egui::ComboBox::from_id_salt("emulation")
-        .selected_text(icy_term::fmt_terminal_emulation(&entry.terminal_type))
-        .show_ui(ui, |ui| {
-            for terminal in icy_term::ALL_TERMINALS {
-                ui.selectable_value(&mut entry.terminal_type, terminal, icy_term::fmt_terminal_emulation(&terminal));
-            }
-        });
+    appearance::combo_row(ui, &tr!("egui-terminal-emulation"), icy_term::fmt_terminal_emulation(&previous), |ui| {
+        for terminal in icy_term::ALL_TERMINALS {
+            ui.selectable_value(&mut entry.terminal_type, terminal, icy_term::fmt_terminal_emulation(&terminal));
+        }
+    });
     if previous != entry.terminal_type {
         entry.screen_mode = icy_term::normalize_screen_mode(entry.terminal_type, ScreenMode::default());
     }
     match &mut entry.screen_mode {
         ScreenMode::Vga(width, height) | ScreenMode::Unicode(width, height) => {
-            ui.label(&*tr!("egui-screen-size"));
-            egui::ComboBox::from_id_salt("size-preset")
-                .selected_text(format!("{width} x {height}"))
-                .show_ui(ui, |ui| {
-                    for (columns, rows) in [(80, 25), (80, 50), (132, 37), (132, 52)] {
-                        if ui
-                            .selectable_label(*width == columns && *height == rows, format!("{columns} x {rows}"))
-                            .clicked()
-                        {
-                            *width = columns;
-                            *height = rows;
-                        }
+            appearance::combo_row(ui, &tr!("egui-screen-size"), format!("{width} x {height}"), |ui| {
+                for (columns, rows) in [(80, 25), (80, 50), (132, 37), (132, 52)] {
+                    if ui
+                        .selectable_label(*width == columns && *height == rows, format!("{columns} x {rows}"))
+                        .clicked()
+                    {
+                        *width = columns;
+                        *height = rows;
                     }
-                });
-            ui.horizontal_wrapped(|ui| {
-                ui.label(&*tr!("egui-columns"));
+                }
+            });
+            appearance::form_row(ui, &tr!("egui-columns"), |ui| {
                 ui.add(egui::DragValue::new(width).range(1..=500));
-                ui.label(&*tr!("egui-rows"));
+            });
+            appearance::form_row(ui, &tr!("egui-rows"), |ui| {
                 ui.add(egui::DragValue::new(height).range(1..=200));
             });
         }
@@ -241,48 +279,41 @@ pub(crate) fn terminal(ui: &mut egui::Ui, entry: &mut Address) {
             }
         }
         ScreenMode::AtariST(resolution, igs) => {
-            ui.label(&*tr!("egui-resolution"));
-            egui::ComboBox::from_id_salt("st-resolution")
-                .selected_text(format!("{resolution:?}"))
-                .show_ui(ui, |ui| {
-                    for value in [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High] {
-                        ui.selectable_value(resolution, value, format!("{value:?}"));
-                    }
-                });
+            appearance::combo_row(ui, &tr!("egui-resolution"), format!("{resolution:?}"), |ui| {
+                for value in [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High] {
+                    ui.selectable_value(resolution, value, format!("{value:?}"));
+                }
+            });
             ui.checkbox(igs, &*tr!("egui-igs-graphics"));
         }
         mode => {
-            ui.label(format!("Screen: {mode}"));
+            appearance::value_row(ui, &tr!("dialing_directory-screen_mode"), &mode.to_string());
         }
     }
-    ui.label(&*tr!("dialing_directory-baud-emulation"));
-    egui::ComboBox::from_id_salt("baud")
-        .selected_text(entry.baud_emulation.to_string())
-        .show_ui(ui, |ui| {
-            for baud in BaudEmulation::OPTIONS {
-                ui.selectable_value(&mut entry.baud_emulation, baud, baud.to_string());
+    ui.separator();
+    appearance::combo_row(ui, &tr!("dialing_directory-baud-emulation"), entry.baud_emulation.to_string(), |ui| {
+        for baud in BaudEmulation::OPTIONS {
+            ui.selectable_value(&mut entry.baud_emulation, baud, baud.to_string());
+        }
+    });
+    if matches!(entry.terminal_type, TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi) {
+        appearance::combo_row(ui, &tr!("egui-ansi-music"), entry.ansi_music.to_string(), |ui| {
+            for music in [MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both] {
+                ui.selectable_value(&mut entry.ansi_music, music, music.to_string());
             }
         });
-    if matches!(entry.terminal_type, TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi) {
-        ui.label(&*tr!("egui-ansi-music"));
-        egui::ComboBox::from_id_salt("music")
-            .selected_text(entry.ansi_music.to_string())
-            .show_ui(ui, |ui| {
-                for music in [MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both] {
-                    ui.selectable_value(&mut entry.ansi_music, music, music.to_string());
-                }
-            });
     }
-    ui.label(&*tr!("egui-font"));
-    egui::ComboBox::from_id_salt("font")
-        .width(ui.available_width().min(280.0))
-        .selected_text(entry.font_name.as_deref().unwrap_or(&*tr!("egui-terminal-default")))
-        .show_ui(ui, |ui| {
+    appearance::combo_row(
+        ui,
+        &tr!("egui-font"),
+        entry.font_name.clone().unwrap_or_else(|| tr!("egui-terminal-default")),
+        |ui| {
             ui.selectable_value(&mut entry.font_name, None, &*tr!("egui-terminal-default"));
             for name in icy_engine::get_sauce_font_names() {
                 ui.selectable_value(&mut entry.font_name, Some(name.into()), name);
             }
-        });
+        },
+    );
     let mut lf_expand = entry.lf_expand();
     if ui.checkbox(&mut lf_expand, &*tr!("egui-lf-expand")).changed() {
         entry.set_lf_expand(lf_expand);
@@ -292,40 +323,38 @@ pub(crate) fn terminal(ui: &mut egui::Ui, entry: &mut Address) {
 
 fn login(ui: &mut egui::Ui, entry: &mut Address, show_password: &mut bool, eye: &egui::TextureHandle) {
     text_field(ui, &*tr!("egui-user-name"), &mut entry.user_name);
-    ui.label(&*tr!("dialing_directory-password"));
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            [(ui.available_width() - 36.0).max(40.0), 28.0],
-            egui::TextEdit::singleline(&mut entry.password).password(!*show_password),
-        );
-        if icon_button(
-            ui,
-            eye,
-            &if *show_password {
-                tr!("egui-hide-password")
-            } else {
-                tr!("egui-show-password")
-            },
-        )
-        .clicked()
-        {
-            *show_password = !*show_password;
-        }
+    appearance::form_row(ui, &tr!("dialing_directory-password"), |ui| {
+        ui.horizontal(|ui| {
+            ui.add_sized(
+                [(ui.available_width() - 36.0).max(40.0), 28.0],
+                egui::TextEdit::singleline(&mut entry.password).password(!*show_password),
+            );
+            if icon_button(
+                ui,
+                eye,
+                &if *show_password {
+                    tr!("egui-hide-password")
+                } else {
+                    tr!("egui-show-password")
+                },
+            )
+            .clicked()
+            {
+                *show_password = !*show_password;
+            }
+        });
     });
     if entry.protocol == ConnectionType::SSH {
-        ui.label(&*tr!("dialing_directory-ssh-authentication"));
-        egui::ComboBox::from_id_salt("ssh-auth")
-            .selected_text(entry.ssh_authentication.to_string())
-            .show_ui(ui, |ui| {
-                for mode in [
-                    SshAuthenticationMode::Password,
-                    SshAuthenticationMode::PrivateKey,
-                    SshAuthenticationMode::Agent,
-                    SshAuthenticationMode::Auto,
-                ] {
-                    ui.selectable_value(&mut entry.ssh_authentication, mode, mode.to_string());
-                }
-            });
+        appearance::combo_row(ui, &tr!("dialing_directory-ssh-authentication"), entry.ssh_authentication.to_string(), |ui| {
+            for mode in [
+                SshAuthenticationMode::Password,
+                SshAuthenticationMode::PrivateKey,
+                SshAuthenticationMode::Agent,
+                SshAuthenticationMode::Auto,
+            ] {
+                ui.selectable_value(&mut entry.ssh_authentication, mode, mode.to_string());
+            }
+        });
         if matches!(entry.ssh_authentication, SshAuthenticationMode::PrivateKey | SshAuthenticationMode::Auto) {
             text_field(ui, &*tr!("dialing_directory-ssh-private-key"), &mut entry.ssh_private_key);
             if ui.button(&*tr!("egui-browse")).clicked() && !ui.ctx().will_discard() {
@@ -333,12 +362,13 @@ fn login(ui: &mut egui::Ui, entry: &mut Address, show_password: &mut bool, eye: 
                     entry.ssh_private_key = path.to_string_lossy().into();
                 }
             }
-            ui.label(&*tr!("egui-key-passphrase"));
-            ui.add(
-                egui::TextEdit::singleline(&mut entry.ssh_key_passphrase)
-                    .password(!*show_password)
-                    .desired_width(f32::INFINITY),
-            );
+            appearance::form_row(ui, &tr!("egui-key-passphrase"), |ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut entry.ssh_key_passphrase)
+                        .password(!*show_password)
+                        .desired_width(f32::INFINITY),
+                );
+            });
         }
     }
     ui.separator();

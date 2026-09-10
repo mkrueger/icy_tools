@@ -13,6 +13,439 @@ struct Harness {
 
 #[tokio::test]
 #[ignore = "requires a working wgpu adapter"]
+async fn gpu_welcome_screen_startup() {
+    let mut harness = Harness::new().await;
+    let screen = icy_term::welcome_screen::create_welcome_screen(None);
+    let position = screen.caret.position();
+    assert_eq!(position.x, 0);
+    assert!(position.y > 1);
+    let mut app = TerminalApp::new(screen, "Icy Term".into());
+    for (size, scale, name) in [([1000, 720], 1.0, "desktop"), ([360, 640], 1.0, "narrow"), ([1600, 1200], 2.0, "hidpi")] {
+        harness.capture(&mut app, size, scale, vec![], "welcome-warmup");
+        let pixels = harness.capture(&mut app, size, scale, vec![], &format!("welcome-{name}"));
+        assert!(pixels.chunks_exact(4).collect::<std::collections::HashSet<_>>().len() > 20);
+        assert_eq!(app.terminal.screen.lock().caret().position(), position);
+        assert!(app.session.is_none());
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_messages_layout_and_keyboard() {
+    let mut harness = Harness::new().await;
+    for (theme, theme_name) in [(egui::ThemePreference::Dark, "dark"), (egui::ThemePreference::Light, "light")] {
+        harness.context.set_theme(theme);
+        let mut app = TerminalApp::new(TextScreen::default(), "Icy Term".into());
+        app.error = Some("Could not save the connection profile.\n".repeat(30));
+        for (size, scale, name) in [
+            ([1000, 800], 1.0, "desktop"),
+            ([360, 640], 1.0, "narrow"),
+            ([1600, 1200], 2.0, "hidpi"),
+            ([360, 240], 1.0, "short"),
+        ] {
+            harness.capture(&mut app, size, scale, vec![], "message-warmup");
+            harness.capture(&mut app, size, scale, vec![], &format!("message-{theme_name}-{name}"));
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(size[0] as f32 / scale, size[1] as f32 / scale));
+            for label in [tr!("egui-message-error"), "OK".into(), tr!("terminal-menu-copy")] {
+                assert!(harness.controls.contains_key(&label), "missing {label} on {name}");
+                assert!(screen.contains_rect(harness.text_bounds[&label]), "clipped {label} on {name}");
+            }
+            assert!(app.blocks_terminal());
+        }
+        let fixture = phonebook::tests::Fixture::new();
+        app.dialing_directory.phonebook = Some(fixture.load());
+        app.dialing_directory.open = true;
+        harness.capture(&mut app, [1000, 800], 1.0, vec![], "message-directory");
+        harness.capture(&mut app, [1000, 800], 1.0, vec![key_event(egui::Key::Escape, true)], "message-dismiss");
+        assert!(!app.messages.is_open());
+        assert!(app.dialing_directory.open, "Escape closed the directory behind the message");
+        assert!(app.session.is_none(), "message input leaked into modem");
+        app.dialing_directory.open = false;
+        harness.capture(&mut app, [1000, 800], 1.0, vec![key_event(egui::Key::Escape, false)], "message-release");
+        app.confirm_close = true;
+        harness.capture(&mut app, [1000, 800], 1.0, vec![], "question-focus");
+        harness.capture(&mut app, [1000, 800], 1.0, vec![], &format!("question-{theme_name}"));
+        harness.capture(&mut app, [1000, 800], 1.0, vec![key_event(egui::Key::Enter, true)], "question-enter");
+        assert!(!app.closed, "Enter must not confirm destructive action by default");
+        assert!(!app.confirm_close, "default action must cancel");
+        assert!(app.session.is_none(), "question input leaked into modem");
+    }
+}
+
+fn key_event(key: egui::Key, pressed: bool) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_quick_connect_layout() {
+    let mut harness = Harness::new().await;
+    let fixture = phonebook::tests::Fixture::new();
+    let mut app = TerminalApp::new(TextScreen::default(), "Icy Term".into());
+    app.dialing_directory.phonebook = Some(fixture.load());
+    app.dialing_directory.open = true;
+    harness.capture(&mut app, [1000, 800], 1.0, vec![], "quick-list-warmup");
+    harness.capture(&mut app, [1000, 800], 1.0, vec![], "quick-list");
+    let position = harness.controls[&tr!("dialing_directory-connect-to-address")];
+    for pressed in [true, false] {
+        harness.capture(
+            &mut app,
+            [1000, 800],
+            1.0,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+            "quick-select",
+        );
+    }
+    for (size, scale, name) in [
+        ([1000, 800], 1.0, "desktop"),
+        ([360, 640], 1.0, "narrow"),
+        ([1600, 1200], 2.0, "hidpi"),
+        ([360, 240], 1.0, "short"),
+    ] {
+        harness.capture(&mut app, size, scale, vec![], "quick-warmup");
+        harness.capture(&mut app, size, scale, vec![], &format!("quick-{name}"));
+        for label in [tr!("egui-quick-connect"), tr!("dialing_directory-add-bbs-button")] {
+            assert!(harness.controls.contains_key(&label), "missing {label} on {name}");
+        }
+    }
+    assert!(app.dialing_directory.phonebook.as_ref().unwrap().book.addresses.is_empty());
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_diagnostic_hover_details() {
+    let mut harness = Harness::new().await;
+    for (theme, theme_name) in [(egui::ThemePreference::Dark, "dark"), (egui::ThemePreference::Light, "light")] {
+        harness.context.set_theme(theme);
+        let mut app = TerminalApp::new(TextScreen::default(), "Icy Term".into());
+        app.terminal_info();
+        for (label, detail) in [
+            (tr!("terminal-info-dialog-mouse-tracking"), tr!("terminal-info-dialog-mouse-mode-tooltip-off")),
+            (tr!("terminal-info-dialog-caret-shape"), tr!("terminal-info-dialog-shape-tooltip-block")),
+            (tr!("egui-info-kitty"), tr!("terminal-info-dialog-not-set")),
+        ] {
+            harness.capture(&mut app, [1000, 768], 1.0, vec![egui::Event::PointerGone], "hover-clear");
+            harness.capture(&mut app, [1000, 768], 1.0, vec![], "hover-layout");
+            let position = harness.controls[&label];
+            harness.capture(&mut app, [1000, 768], 1.0, vec![egui::Event::PointerMoved(position)], "hover-enter");
+            harness.time += 1.0;
+            harness.capture(&mut app, [1000, 768], 1.0, vec![], "hover-warmup");
+            harness.capture(&mut app, [1000, 768], 1.0, vec![], &format!("hover-{theme_name}-{label}"));
+            assert!(harness.controls.contains_key(&detail), "missing hover detail: {detail}");
+            assert!(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 768.0)).contains_rect(harness.text_bounds[&detail]));
+            assert!(app.tools.terminal_info.is_some() && app.session.is_none());
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_find_overlay_preserves_terminal_area() {
+    use icy_engine::EditableScreen;
+    let mut harness = Harness::new().await;
+    for (size, scale, name) in [([1000, 720], 1.0, "desktop"), ([360, 240], 1.0, "short"), ([1600, 1200], 2.0, "hidpi")] {
+        let mut screen = TextScreen::default();
+        for (column, character) in "FIND FIND FIND".chars().enumerate() {
+            screen.set_char((column as i32, 0).into(), icy_engine::AttributedChar::new(character, Default::default()));
+        }
+        let mut app = TerminalApp::new(screen, "Icy Term".into());
+        harness.capture(&mut app, size, scale, vec![], "find-baseline-warmup");
+        harness.capture(&mut app, size, scale, vec![], "find-baseline");
+        let before = app.terminal.render_info.read().clone();
+        app.navigation.find_open = true;
+        harness.capture(&mut app, size, scale, vec![], "find-open");
+        harness.capture(&mut app, size, scale, vec![egui::Event::Text("FIND".into())], "find-typing");
+        harness.capture(&mut app, size, scale, vec![], &format!("find-overlay-{name}"));
+        let after = app.terminal.render_info.read().clone();
+        assert_eq!(
+            (before.bounds_width, before.bounds_height, before.display_scale),
+            (after.bounds_width, after.bounds_height, after.display_scale)
+        );
+        let search = harness.text_bounds["FIND"];
+        assert!(search.top() < after.bounds_y + 40.0, "search is not at top of terminal: {search:?}");
+        if name == "desktop" {
+            assert!(search.left() > 500.0, "search must float at right");
+        }
+        assert_eq!(app.navigation.search_result, Some((1, 3)));
+        let counter = tr!("terminal-find-results", cur = "1".to_string(), total = "3".to_string());
+        assert!(
+            harness.controls.contains_key(&counter),
+            "missing {counter:?}: {:?}",
+            harness.controls.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            (harness.text_bounds["\u{00d7}"].center().y - search.center().y).abs() < 3.0,
+            "find buttons wrapped"
+        );
+        app.error = Some("A message over the search".into());
+        harness.capture(&mut app, size, scale, vec![], "find-message");
+        harness.capture(&mut app, size, scale, vec![key_event(egui::Key::Escape, true)], "find-message-close");
+        assert!(app.navigation.find_open, "Escape leaked behind message");
+        assert!(!app.messages.is_open());
+        assert!(app.session.is_none());
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_find_bar_keyboard_and_layout() {
+    use icy_engine::EditableScreen;
+    let mut harness = Harness::new().await;
+    let mut screen = TextScreen::default();
+    for (column, character) in "FIND FIND FIND".chars().enumerate() {
+        screen.set_char((column as i32, 0).into(), icy_engine::AttributedChar::new(character, Default::default()));
+    }
+    let mut app = TerminalApp::new(screen, "Icy Term".into());
+    app.navigation.find_open = true;
+    app.navigation.query = "FIND".into();
+    harness.capture(&mut app, [360, 240], 1.0, vec![], "find-warmup");
+    harness.capture(&mut app, [360, 240], 1.0, vec![], "find-narrow");
+    for label in ["FIND", "Aa", "\u{2191}", "\u{2193}", "\u{00d7}"] {
+        assert!(harness.controls.contains_key(label), "missing find control {label}");
+    }
+    for (key, modifiers, expected) in [
+        (egui::Key::Enter, egui::Modifiers::NONE, 0),
+        (egui::Key::Enter, egui::Modifiers::NONE, 5),
+        (egui::Key::Enter, egui::Modifiers::SHIFT, 0),
+    ] {
+        harness.capture(
+            &mut app,
+            [360, 240],
+            1.0,
+            vec![egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers,
+            }],
+            "find-enter",
+        );
+        assert_eq!(app.terminal.screen.lock().selection().unwrap().anchor.x, expected);
+        harness.capture(
+            &mut app,
+            [360, 240],
+            1.0,
+            vec![egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: false,
+                repeat: false,
+                modifiers,
+            }],
+            "find-release",
+        );
+    }
+    harness.capture(
+        &mut app,
+        [360, 240],
+        1.0,
+        vec![egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        "find-close",
+    );
+    assert!(!app.navigation.find_open);
+    assert!(app.session.is_none(), "find keys leaked into the offline modem");
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_remaining_dialogs_fit_viewport() {
+    let mut harness = Harness::new().await;
+    for (theme, theme_name) in [(egui::ThemePreference::Dark, "dark"), (egui::ThemePreference::Light, "light")] {
+        harness.context.set_theme(theme);
+        for name in ["monitor", "live-terminal", "lua", "iemsi", "about", "help", "bps", "link", "close", "transfer"] {
+            let mut app = TerminalApp::new(TextScreen::default(), "Icy Term".into());
+            let footer = match name {
+                "monitor" => {
+                    app.show_monitor = true;
+                    tr!("egui-reset-monitor")
+                }
+                "live-terminal" => {
+                    app.tools.terminal = Some(icy_term::Address::default());
+                    tr!("egui-discard")
+                }
+                "lua" => {
+                    app.tools.script_code = Some("print('Icy Term')".into());
+                    app.tools.script_result = Some("Ready".into());
+                    tr!("egui-close")
+                }
+                "iemsi" => {
+                    app.tools.info_open = true;
+                    app.tools.host_info = Some(vec![
+                        (tr!("show-iemsi-dialog-name"), "Northern Lights BBS".into()),
+                        (
+                            tr!("show-iemsi-dialog-notice"),
+                            "A long system notice that wraps across multiple lines without obscuring the actions below.".into(),
+                        ),
+                    ]);
+                    tr!("egui-close")
+                }
+                "about" => {
+                    app.about_open = true;
+                    tr!("egui-close")
+                }
+                "help" => {
+                    app.help_open = true;
+                    tr!("egui-close")
+                }
+                "bps" => {
+                    app.bps_open = true;
+                    tr!("egui-close")
+                }
+                "link" => {
+                    app.pending_link = Some("https://example.com/a-long-path-to-a-bbs-directory-entry-and-other-information".into());
+                    tr!("egui-cancel")
+                }
+                "close" => {
+                    app.confirm_close = true;
+                    tr!("egui-cancel")
+                }
+                "transfer" => {
+                    app.transfers.choose(true);
+                    tr!("egui-close")
+                }
+                _ => unreachable!(),
+            };
+            for (size, scale, viewport) in [
+                ([1000, 768], 1.0, "desktop"),
+                ([360, 640], 1.0, "narrow"),
+                ([1600, 1200], 2.0, "hidpi"),
+                ([360, 240], 1.0, "short"),
+            ] {
+                harness.capture(&mut app, size, scale, vec![], "dialog-warmup");
+                harness.capture(&mut app, size, scale, vec![], &format!("{theme_name}-{viewport}-{name}"));
+                assert!(harness.controls.contains_key(&footer), "missing {footer}: {theme_name}-{viewport}-{name}");
+                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(size[0] as f32 / scale, size[1] as f32 / scale));
+                assert!(screen.contains_rect(harness.text_bounds[&footer]), "footer outside viewport: {name}");
+                if name == "bps" && viewport == "desktop" {
+                    assert!(
+                        harness.controls.contains_key(&tr!("select-bps-dialog-bps-custom")),
+                        "custom BPS field is clipped"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_terminal_information_applies_mode() {
+    let mut harness = Harness::new().await;
+    let mut app = TerminalApp::new(TextScreen::default(), "Icy Term".into());
+    app.terminal_info();
+    harness.capture(&mut app, [1014, 768], 1.0, vec![], "apply-warmup");
+    harness.capture(&mut app, [1014, 768], 1.0, vec![], "apply-info");
+    for label in ["VGA 80x25".to_string(), "VGA 80x50".into(), tr!("terminal-info-dialog-apply-button")] {
+        let position = *harness.controls.get(&label).unwrap_or_else(|| panic!("missing {label}"));
+        for pressed in [true, false] {
+            harness.capture(
+                &mut app,
+                [1014, 768],
+                1.0,
+                vec![
+                    egui::Event::PointerMoved(position),
+                    egui::Event::PointerButton {
+                        pos: position,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                "apply-click",
+            );
+        }
+        harness.capture(&mut app, [1014, 768], 1.0, vec![], "apply-settle");
+    }
+    assert!(app.tools.terminal_info.is_none());
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while app.terminal.screen.lock().height() != 50 {
+        assert!(std::time::Instant::now() < deadline, "mode change was not applied: {:?}", app.error);
+        app.receive_events(&harness.context);
+        std::thread::yield_now();
+    }
+    assert_eq!(app.terminal.screen.lock().width(), 80);
+    app.receive_events(&harness.context);
+    assert_eq!(app.terminal_profile().screen_mode, icy_engine::ScreenMode::Vga(80, 50));
+    app.screen_mode = icy_engine::ScreenMode::AtariST(icy_engine::TerminalResolution::High, true);
+    app.terminal_emulation = icy_net::telnet::TerminalEmulation::AtariST;
+    app.ansi_music = icy_parser_core::MusicOption::Both;
+    let profile = app.terminal_profile();
+    assert_eq!(profile.screen_mode, app.screen_mode);
+    assert_eq!(profile.ansi_music, app.ansi_music);
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
+async fn gpu_terminal_information_layout() {
+    let mut harness = Harness::new().await;
+    let mut app = TerminalApp::new(TextScreen::default(), "Icy Term".into());
+    for (theme, theme_name) in [(egui::ThemePreference::Dark, "dark"), (egui::ThemePreference::Light, "light")] {
+        harness.context.set_theme(theme);
+        app.terminal_info();
+        for (size, scale, name) in [
+            ([1014, 768], 1.0, "desktop"),
+            ([360, 640], 1.0, "narrow"),
+            ([1600, 1200], 2.0, "hidpi"),
+            ([360, 240], 1.0, "short"),
+        ] {
+            harness.capture(&mut app, size, scale, vec![], "info-warmup");
+            harness.capture(&mut app, size, scale, vec![], &format!("{theme_name}-{name}-terminal-info"));
+            for label in [
+                tr!("terminal-menu-info"),
+                tr!("egui-close"),
+                tr!("terminal-info-dialog-apply-button"),
+                tr!("terminal-menu-copy"),
+            ] {
+                assert!(harness.controls.contains_key(&label), "missing {label}: {name}");
+            }
+            if name == "desktop" {
+                for label in [
+                    tr!("terminal-info-dialog-caret-section"),
+                    tr!("terminal-info-dialog-auto-wrap"),
+                    tr!("egui-info-input-protocols"),
+                    tr!("egui-info-graphics-protocols"),
+                    tr!("egui-info-sync-output"),
+                    tr!("egui-terminal-emulation"),
+                    "VGA 80x25".into(),
+                ] {
+                    assert!(harness.controls.contains_key(&label), "missing {label}");
+                }
+                let size = harness.text_bounds[&tr!("terminal-info-dialog-resolution")];
+                let value = harness.text_bounds["80x25"];
+                let note = harness.text_bounds["(640x400 px)"];
+                let cursor = harness.text_bounds[&tr!("terminal-info-dialog-caret-position")];
+                assert!(note.left() >= value.right() && note.height() < value.height());
+                assert!((size.top() - value.top()).abs() < 2.0 && size.right() < value.left());
+                assert!(cursor.left() > value.right() && (cursor.top() - size.top()).abs() < 2.0);
+                assert!(!harness.controls.contains_key("false") && !harness.controls.contains_key("true"));
+            }
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
 async fn gpu_overlays_and_shortcut_actions() {
     use icy_engine::{EditableScreen, Screen};
     let mut harness = Harness::new().await;
@@ -363,6 +796,7 @@ async fn gpu_dialing_directory_layout() {
         harness.capture(&mut app, size, scale, vec![], "dial-warmup");
         let pixels = harness.capture(&mut app, size, scale, vec![], name);
         let bounds = app.dialing_directory.bounds.unwrap();
+        assert!(bounds.width() >= size[0] as f32 / scale - 34.0, "directory does not fill window: {bounds:?}");
         assert!(bounds.min.x >= -1.0 && bounds.min.y >= -1.0, "{bounds:?}");
         assert!(
             bounds.max.x <= size[0] as f32 / scale + 1.0 && bounds.max.y <= size[1] as f32 / scale + 1.0,
@@ -489,6 +923,15 @@ impl Harness {
             ..Default::default()
         };
         input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().native_pixels_per_point = Some(scale);
+        input.modifiers = input
+            .events
+            .iter()
+            .rev()
+            .find_map(|event| match event {
+                egui::Event::Key { modifiers, .. } | egui::Event::PointerButton { modifiers, .. } => Some(*modifiers),
+                _ => None,
+            })
+            .unwrap_or_default();
         let output = self.context.run(input, |context| app.show(context));
         let ui_finished = std::time::Instant::now();
         assert_eq!(output.pixels_per_point, scale);
@@ -496,7 +939,7 @@ impl Harness {
         self.text_bounds.clear();
         for shape in &output.shapes {
             if let egui::Shape::Text(text) = &shape.shape {
-                let rect = egui::Rect::from_min_size(text.pos, text.galley.size());
+                let rect = text.galley.rect.translate(text.pos.to_vec2());
                 if shape.clip_rect.contains_rect(rect) {
                     self.controls.insert(text.galley.text().to_string(), rect.center());
                     self.text_bounds.insert(text.galley.text().to_string(), rect);

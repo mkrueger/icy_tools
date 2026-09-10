@@ -26,24 +26,47 @@ pub fn click_action(screen: &dyn Screen, position: icy_engine::Position) -> Opti
 #[derive(Default)]
 pub struct Navigation {
     pub find_open: bool,
+    pub find_initialized: bool,
     pub query: String,
     pub case_sensitive: bool,
     pub scroll_to: Option<f32>,
     pub scroll_x: Option<f32>,
     pub saved_scaling: Option<icy_engine_gui::ScalingMode>,
     pub search_failed: bool,
+    pub search_result: Option<(usize, usize)>,
     dragging: bool,
 }
 
 impl Navigation {
     pub fn find(&mut self, terminal: &Terminal, backwards: bool) {
         let mut screen = terminal.screen.lock();
-        if let Some(selection) = find(&**screen, &self.query, self.case_sensitive, backwards) {
+        let results = matches(&**screen, &self.query, self.case_sensitive);
+        if let Some(selection) = next_match(&results, screen.selection().map(|selection| selection.anchor), backwards) {
+            self.search_result = Some((results.iter().position(|result| result.anchor == selection.anchor).unwrap() + 1, results.len()));
             self.scroll_to = Some(selection.anchor.y as f32 * terminal.render_info.read().font_height);
             let _ = screen.set_selection(selection);
             self.search_failed = false;
         } else {
-            self.search_failed = true;
+            self.search_result = None;
+            self.search_failed = !self.query.is_empty();
+        }
+    }
+
+    pub fn refresh_search(&mut self, terminal: &Terminal) {
+        let mut screen = terminal.screen.lock();
+        let results = matches(&**screen, &self.query, self.case_sensitive);
+        let current = screen
+            .selection()
+            .and_then(|selection| results.iter().position(|result| result.anchor == selection.anchor))
+            .unwrap_or(0);
+        self.search_result = results.get(current).map(|selection| {
+            self.scroll_to = Some(selection.anchor.y as f32 * terminal.render_info.read().font_height);
+            let _ = screen.set_selection(*selection);
+            (current + 1, results.len())
+        });
+        self.search_failed = !self.query.is_empty() && results.is_empty();
+        if results.is_empty() {
+            let _ = screen.clear_selection();
         }
     }
 
@@ -113,15 +136,38 @@ impl Navigation {
     }
 }
 
+#[cfg(test)]
 pub fn find(screen: &dyn Screen, query: &str, case_sensitive: bool, backwards: bool) -> Option<Selection> {
+    next_match(
+        &matches(screen, query, case_sensitive),
+        screen.selection().map(|selection| selection.anchor),
+        backwards,
+    )
+}
+
+fn next_match(results: &[Selection], previous: Option<icy_engine::Position>, backwards: bool) -> Option<Selection> {
+    if backwards {
+        results
+            .iter()
+            .rev()
+            .find(|selection| previous.is_none_or(|position| selection.anchor < position))
+            .or(results.last())
+            .copied()
+    } else {
+        results
+            .iter()
+            .find(|selection| previous.is_none_or(|position| selection.anchor > position))
+            .or(results.first())
+            .copied()
+    }
+}
+
+fn matches(screen: &dyn Screen, query: &str, case_sensitive: bool) -> Vec<Selection> {
     if query.is_empty() {
-        return None;
+        return Vec::new();
     }
     let query: Vec<char> = query.chars().collect();
-    let previous = screen.selection().map(|selection| selection.anchor);
-    let mut first = None;
-    let mut last = None;
-    let mut next = None;
+    let mut results = Vec::new();
     for row in 0..screen.height() {
         let line: Vec<char> = (0..screen.width())
             .map(|column| screen.buffer_type().convert_to_unicode(screen.char_at((column, row).into()).ch))
@@ -139,21 +185,10 @@ pub fn find(screen: &dyn Screen, query: &str, case_sensitive: bool, backwards: b
             }
             let mut selection = Selection::new((column as i32, row));
             selection.lead = (column as i32 + query.len() as i32 - 1, row).into();
-            first.get_or_insert(selection);
-            last = Some(selection);
-            let eligible = previous.is_none_or(|position| {
-                if backwards {
-                    selection.anchor < position
-                } else {
-                    selection.anchor > position
-                }
-            });
-            if eligible && (backwards || next.is_none()) {
-                next = Some(selection);
-            }
+            results.push(selection);
         }
     }
-    next.or(if backwards { last } else { first })
+    results
 }
 
 pub fn toggle_scrollback(terminal: &mut Terminal) -> bool {
@@ -264,5 +299,33 @@ mod tests {
         assert_eq!(find(&screen, "one", false, false).unwrap().anchor.x, 0);
         assert_eq!(find(&screen, "One", true, true).unwrap().anchor.x, 0);
         assert!(find(&screen, "missing", false, false).is_none());
+    }
+
+    #[test]
+    fn live_search_counts_matches_and_refreshes_case_changes() {
+        let mut screen = TextScreen::default();
+        for (column, character) in "One one".chars().enumerate() {
+            screen.set_char((column as i32, 0).into(), AttributedChar::new(character, Default::default()));
+        }
+        let terminal = Terminal::new(Arc::new(Mutex::new(Box::new(screen))));
+        let mut navigation = Navigation {
+            query: "one".into(),
+            ..Default::default()
+        };
+        navigation.refresh_search(&terminal);
+        assert_eq!(navigation.search_result, Some((1, 2)));
+        navigation.find(&terminal, false);
+        assert_eq!(navigation.search_result, Some((2, 2)));
+        navigation.case_sensitive = true;
+        navigation.refresh_search(&terminal);
+        assert_eq!(navigation.search_result, Some((1, 1)));
+        assert_eq!(terminal.screen.lock().selection().unwrap().anchor.x, 4);
+        navigation.query = "missing".into();
+        navigation.refresh_search(&terminal);
+        assert!(navigation.search_failed && navigation.search_result.is_none());
+        navigation.query.clear();
+        navigation.refresh_search(&terminal);
+        assert!(!navigation.search_failed);
+        assert!(terminal.screen.lock().selection().is_none());
     }
 }
