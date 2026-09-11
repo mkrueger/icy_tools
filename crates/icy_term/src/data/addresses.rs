@@ -312,6 +312,10 @@ pub struct Address {
     #[serde(default, skip_serializing_if = "is_default_bool")]
     pub is_favored: bool,
 
+    /// Path to an image shown instead of the generated monogram.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub user_name: String,
 

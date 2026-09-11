@@ -48,6 +48,7 @@ fn parse_directory(input: &str, source_name: &str) -> Result<Vec<Address>, toml:
         address.ssh_private_key.clear();
         address.ssh_key_passphrase.clear();
         address.modem_id.clear();
+        address.icon = None;
         if let Some(mut url) = url::Url::parse(&address.address).ok().filter(|url| url.has_host()) {
             let _ = url.set_username("");
             let _ = url.set_password(None);
@@ -131,6 +132,7 @@ password = "secret"
 auto_login = "login script"
 proxy_command = "untrusted command"
 ssh_private_key = "/private/key"
+icon = "/home/user/.ssh/id_rsa"
 "#;
 
         let addresses = parse_directory(input, "Community").unwrap();
@@ -141,6 +143,7 @@ ssh_private_key = "/private/key"
         assert!(addresses[0].auto_login.is_empty());
         assert!(addresses[0].proxy_command.is_empty());
         assert!(addresses[0].ssh_private_key.is_empty());
+        assert!(addresses[0].icon.is_none());
         let input = input.replace("bbs.example.org:23", "telnet://remote:secret@bbs.example.org:23");
         let addresses = parse_directory(&input, "Community").unwrap();
         let info = crate::ConnectionInformation::parse(&addresses[0].address).unwrap();

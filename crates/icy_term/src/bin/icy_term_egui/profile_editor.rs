@@ -26,17 +26,43 @@ pub struct ProfileEditor {
 }
 
 impl ProfileEditor {
-    pub fn show(&mut self, ui: &mut egui::Ui, entry: &mut Address, options: &Options, show_password: &mut bool, eye: &egui::TextureHandle) {
-        self.show_inner(ui, entry, options, show_password, eye, false);
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        entry: &mut Address,
+        options: &Options,
+        show_password: &mut bool,
+        eye: &egui::TextureHandle,
+        icons: &mut super::IconCache,
+    ) {
+        self.show_inner(ui, entry, options, show_password, eye, icons, false);
     }
 
-    pub fn show_quick(&mut self, ui: &mut egui::Ui, entry: &mut Address, options: &Options, show_password: &mut bool, eye: &egui::TextureHandle) -> bool {
+    pub fn show_quick(
+        &mut self,
+        ui: &mut egui::Ui,
+        entry: &mut Address,
+        options: &Options,
+        show_password: &mut bool,
+        eye: &egui::TextureHandle,
+        icons: &mut super::IconCache,
+    ) -> bool {
         self.connect_requested = false;
-        self.show_inner(ui, entry, options, show_password, eye, true);
+        self.show_inner(ui, entry, options, show_password, eye, icons, true);
         self.connect_requested
     }
 
-    fn show_inner(&mut self, ui: &mut egui::Ui, entry: &mut Address, options: &Options, show_password: &mut bool, eye: &egui::TextureHandle, quick: bool) {
+    #[allow(clippy::too_many_arguments)]
+    fn show_inner(
+        &mut self,
+        ui: &mut egui::Ui,
+        entry: &mut Address,
+        options: &Options,
+        show_password: &mut bool,
+        eye: &egui::TextureHandle,
+        icons: &mut super::IconCache,
+        quick: bool,
+    ) {
         let pages = [
             (Page::Connection, &*tr!("egui-connection")),
             (Page::Terminal, &*tr!("settings-terminal-category")),
@@ -69,7 +95,7 @@ impl ProfileEditor {
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
                 match self.page {
-                    Page::Connection => self.connection(ui, entry, options, *show_password, quick),
+                    Page::Connection => self.connection(ui, entry, options, *show_password, icons, quick),
                     Page::Terminal => terminal(ui, entry),
                     Page::Login => {
                         login(ui, entry, show_password, eye);
@@ -101,9 +127,10 @@ impl ProfileEditor {
             });
     }
 
-    fn connection(&mut self, ui: &mut egui::Ui, entry: &mut Address, options: &Options, show_password: bool, quick: bool) {
+    fn connection(&mut self, ui: &mut egui::Ui, entry: &mut Address, options: &Options, show_password: bool, icons: &mut super::IconCache, quick: bool) {
         if !quick {
             text_field(ui, &*tr!("egui-system-name"), &mut entry.system_name);
+            icon_row(ui, entry, icons);
         }
         let address_id = ui.make_persistent_id("profile-address");
         self.connect_requested =
@@ -117,7 +144,7 @@ impl ProfileEditor {
             },
             |ui| {
                 if ui
-                    .add(egui::TextEdit::singleline(&mut entry.address).id(address_id).desired_width(f32::INFINITY))
+                    .add(appearance::text_edit(&mut entry.address).id(address_id).desired_width(f32::INFINITY))
                     .changed()
                     && quick
                 {
@@ -195,7 +222,7 @@ impl ProfileEditor {
                 ui.label(&*tr!("egui-proxy-password"));
                 if ui
                     .add(
-                        egui::TextEdit::singleline(&mut self.proxy_password)
+                        appearance::text_edit(&mut self.proxy_password)
                             .password(!show_password)
                             .desired_width(f32::INFINITY)
                             .hint_text(if proxy.password.is_some() {
@@ -225,6 +252,30 @@ impl ProfileEditor {
             }
         }
     }
+}
+
+fn icon_row(ui: &mut egui::Ui, entry: &mut Address, icons: &mut super::IconCache) {
+    appearance::form_row(ui, &tr!("egui-icon"), |ui| {
+        ui.horizontal_wrapped(|ui| {
+            let texture = entry.icon.clone().and_then(|path| icons.get(ui.ctx(), &path).cloned());
+            let (preview, _) = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
+            match &texture {
+                Some(texture) => egui::Image::new(texture).corner_radius(6).paint_at(ui, preview),
+                None => super::paint_monogram(ui, preview, &entry.system_name),
+            }
+            if ui.button(&*tr!("egui-icon-choose")).on_hover_text(tr!("egui-icon-tooltip")).clicked() && !ui.ctx().will_discard() {
+                if let Some(path) = rfd::FileDialog::new().add_filter("Image", &super::ICON_EXTENSIONS).pick_file() {
+                    entry.icon = Some(path.to_string_lossy().into_owned());
+                }
+            }
+            if ui.add_enabled(entry.icon.is_some(), egui::Button::new(&*tr!("egui-icon-remove"))).clicked() {
+                entry.icon = None;
+            }
+            if entry.icon.is_some() && texture.is_none() {
+                ui.colored_label(ui.visuals().error_fg_color, &*tr!("egui-icon-missing"));
+            }
+        });
+    });
 }
 
 pub fn protocol_name(protocol: ConnectionType) -> &'static str {
@@ -325,10 +376,9 @@ fn login(ui: &mut egui::Ui, entry: &mut Address, show_password: &mut bool, eye: 
     text_field(ui, &*tr!("egui-user-name"), &mut entry.user_name);
     appearance::form_row(ui, &tr!("dialing_directory-password"), |ui| {
         ui.horizontal(|ui| {
-            ui.add_sized(
-                [(ui.available_width() - 36.0).max(40.0), 28.0],
-                egui::TextEdit::singleline(&mut entry.password).password(!*show_password),
-            );
+            // desired_width covers the text area only, so leave room for the field's own padding.
+            let width = (ui.available_width() - 36.0 - 2.0 * appearance::FIELD_MARGIN.x).max(40.0);
+            ui.add(appearance::text_edit(&mut entry.password).password(!*show_password).desired_width(width));
             if icon_button(
                 ui,
                 eye,
@@ -364,7 +414,7 @@ fn login(ui: &mut egui::Ui, entry: &mut Address, show_password: &mut bool, eye: 
             }
             appearance::form_row(ui, &tr!("egui-key-passphrase"), |ui| {
                 ui.add(
-                    egui::TextEdit::singleline(&mut entry.ssh_key_passphrase)
+                    appearance::text_edit(&mut entry.ssh_key_passphrase)
                         .password(!*show_password)
                         .desired_width(f32::INFINITY),
                 );

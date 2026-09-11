@@ -86,6 +86,15 @@ impl Phonebook {
         self.selected.and_then(|index| self.book.addresses.get(index))
     }
 
+    /// Total and favorite counts, using the same placeholder exclusion as [`Self::filtered`].
+    pub fn totals(&self) -> (usize, usize) {
+        self.book
+            .addresses
+            .iter()
+            .filter(|entry| !(entry.system_name.is_empty() && entry.address.is_empty()))
+            .fold((0, 0), |(total, favorites), entry| (total + 1, favorites + usize::from(entry.is_favored)))
+    }
+
     pub fn begin_edit(&mut self) {
         self.draft = self.selection().filter(|entry| entry.web_source.is_none()).cloned();
     }

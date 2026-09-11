@@ -774,6 +774,32 @@ egui-colors = Colors
 egui-generate-password = Generate password
 
 egui-system-name = System name
+egui-statistics = Statistics
+egui-read-only = Read-only
+egui-time-just-now = just now
+egui-time-minutes-ago = { $count ->
+    [one] 1 minute ago
+   *[other] { $count } minutes ago
+}
+egui-time-hours-ago = { $count ->
+    [one] 1 hour ago
+   *[other] { $count } hours ago
+}
+egui-time-days-ago = { $count ->
+    [one] 1 day ago
+   *[other] { $count } days ago
+}
+egui-duration-hours = { $hours } h { $minutes } min
+egui-duration-minutes = { $minutes } min
+egui-duration-seconds = { $seconds } s
+egui-directory-summary = { $total } entries · { $favorites } favorites
+egui-directory-count-filtered = { $shown } of { $total }
+egui-clear-search = Clear search
+egui-icon = Icon
+egui-icon-choose = Choose…
+egui-icon-remove = Remove
+egui-icon-tooltip = Use a local image instead of the generated monogram
+egui-icon-missing = Image cannot be loaded
 
 egui-phone-number = Phone number
 

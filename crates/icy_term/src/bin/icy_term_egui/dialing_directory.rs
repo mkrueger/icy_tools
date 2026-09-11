@@ -34,11 +34,14 @@ pub struct DialingDirectory {
     confirmation: Option<Confirmation>,
     focus_search: bool,
     icons: Option<Icons>,
+    icon_cache: IconCache,
     editor: profile_editor::ProfileEditor,
     load_sources: bool,
     source_result: Option<std::sync::mpsc::Receiver<Vec<Address>>>,
     #[cfg(test)]
     pub bounds: Option<egui::Rect>,
+    #[cfg(test)]
+    pub control_heights: Vec<f32>,
 }
 
 pub(super) struct Icons {
@@ -208,6 +211,7 @@ impl DialingDirectory {
                     ui.style_mut().text_styles.insert(style, egui::FontId::proportional(size));
                 }
                 egui::ScrollArea::vertical().id_salt("directory-overflow").max_height(height).show(ui, |ui| {
+                    let summary = self.phonebook.as_ref().map(Phonebook::totals);
                     ui.horizontal(|ui| {
                         ui.add(
                             egui::Image::new(&self.icons.as_ref().unwrap().call)
@@ -215,6 +219,11 @@ impl DialingDirectory {
                                 .tint(ui.visuals().selection.stroke.color),
                         );
                         ui.heading(&*tr!("egui-directory"));
+                        if let Some((total, favorites)) = summary.filter(|_| !narrow) {
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(tr!("egui-directory-summary", total = total, favorites = favorites)).weak()).truncate(),
+                            );
+                        }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if icon_button(ui, &self.icons.as_ref().unwrap().close, &*tr!("egui-close")).clicked() {
                                 self.close();
@@ -298,6 +307,8 @@ impl DialingDirectory {
     }
 
     fn list_ui(&mut self, ui: &mut egui::Ui, connected: bool, height: f32) -> Option<DialRequest> {
+        #[cfg(test)]
+        self.control_heights.clear();
         let top = ui.cursor().top();
         let editing = self.phonebook.as_ref().is_some_and(|book| book.draft.is_some());
         let mut request = None;
@@ -307,14 +318,53 @@ impl DialingDirectory {
                 return;
             };
             let search_id = ui.make_persistent_id("dial-search");
-            let search_enter = ui.is_enabled() && ui.memory(|memory| memory.has_focus(search_id)) && ui.input(|input| input.key_pressed(egui::Key::Enter));
-            let search = ui.add(
-                egui::TextEdit::singleline(&mut book.query)
-                    .id(search_id)
-                    .margin(egui::vec2(8.0, 6.0))
-                    .hint_text(&*tr!("dialing_directory-filter-placeholder"))
-                    .desired_width(f32::INFINITY),
-            );
+            let focused = ui.memory(|memory| memory.has_focus(search_id));
+            let search_enter = ui.is_enabled() && focused && ui.input(|input| input.key_pressed(egui::Key::Enter));
+            let mut clear = false;
+            let mut search = None;
+            let _field = egui::Frame::new()
+                .fill(ui.visuals().extreme_bg_color)
+                .stroke(if focused {
+                    ui.visuals().selection.stroke
+                } else {
+                    ui.visuals().widgets.inactive.bg_stroke
+                })
+                .corner_radius(4)
+                .inner_margin(egui::Margin::symmetric(8, 0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.set_min_height(CONTROL_HEIGHT);
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        let weak = ui.visuals().weak_text_color();
+                        let (glyph, _) = ui.allocate_exact_size(egui::vec2(13.0, 20.0), egui::Sense::hover());
+                        let stroke = egui::Stroke::new(1.4, weak);
+                        ui.painter().circle_stroke(glyph.center() - egui::vec2(1.0, 1.0), 4.5, stroke);
+                        ui.painter()
+                            .line_segment([glyph.center() + egui::vec2(2.0, 2.0), glyph.center() + egui::vec2(5.0, 5.0)], stroke);
+                        let reserved = if book.query.is_empty() { 0.0 } else { 26.0 };
+                        search = Some(
+                            ui.add(
+                                egui::TextEdit::singleline(&mut book.query)
+                                    .id(search_id)
+                                    .frame(false)
+                                    .hint_text(&*tr!("dialing_directory-filter-placeholder"))
+                                    .desired_width((ui.available_width() - reserved).max(40.0)),
+                            ),
+                        );
+                        if !book.query.is_empty() {
+                            clear = ui
+                                .add(egui::Button::new(egui::RichText::new("\u{00d7}").size(16.0)).frame(false))
+                                .on_hover_text(tr!("egui-clear-search"))
+                                .clicked();
+                        }
+                    });
+                });
+            let search = search.expect("search field");
+            #[cfg(test)]
+            self.control_heights.push(_field.response.rect.height());
+            if clear {
+                book.query.clear();
+            }
             if self.focus_search {
                 search.request_focus();
                 self.focus_search = false;
@@ -330,7 +380,17 @@ impl DialingDirectory {
             });
             ui.horizontal(|ui| {
                 ui.add_enabled_ui(!book.book.write_lock, |ui| {
-                    if icon_button(ui, &self.icons.as_ref().unwrap().add, &tr!("egui-new-entry")).clicked() {
+                    let image = egui::Image::new(&self.icons.as_ref().unwrap().add)
+                        .fit_to_exact_size(egui::vec2(16.0, 16.0))
+                        .tint(egui::Color32::WHITE);
+                    let response = ui.add(
+                        egui::Button::image_and_text(image, egui::RichText::new(tr!("egui-new-entry")).color(egui::Color32::WHITE))
+                            .fill(super::appearance::PRIMARY)
+                            .min_size(egui::vec2(0.0, CONTROL_HEIGHT)),
+                    );
+                    #[cfg(test)]
+                    self.control_heights.push(response.rect.height());
+                    if response.clicked() {
                         book.begin_new(false);
                         self.quick_selected = false;
                         self.editor = Default::default();
@@ -338,51 +398,71 @@ impl DialingDirectory {
                         self.show_password = false;
                     }
                 });
-                if ui
+                let response = ui
                     .add(
-                        egui::Button::new(egui::RichText::new("\u{2605}").size(18.0))
+                        egui::Button::new(egui::RichText::new("\u{2605}").size(16.0))
                             .selected(book.favorites_only)
-                            .min_size(egui::vec2(28.0, 28.0)),
+                            .min_size(egui::vec2(CONTROL_HEIGHT + 4.0, CONTROL_HEIGHT)),
                     )
-                    .on_hover_text(tr!("dialing_directory-starred-items"))
-                    .clicked()
-                {
+                    .on_hover_text(tr!("dialing_directory-starred-items"));
+                #[cfg(test)]
+                self.control_heights.push(response.rect.height());
+                if response.clicked() {
                     book.favorites_only = !book.favorites_only;
                 }
                 let image = egui::Image::new(&self.icons.as_ref().unwrap().menu)
                     .fit_to_exact_size(egui::vec2(16.0, 16.0))
                     .tint(ui.visuals().text_color());
-                ui.menu_image_button(image, |ui| {
-                    ui.strong(tr!("egui-sort"));
-                    ui.selectable_value(&mut book.sort, SortOrder::Name, &*tr!("settings-modem-name"));
-                    ui.selectable_value(&mut book.sort, SortOrder::MostCalled, &*tr!("egui-most-called"));
-                    ui.selectable_value(&mut book.sort, SortOrder::LastCalled, &*tr!("egui-last-called"));
-                    let sources: std::collections::BTreeSet<_> = book.book.addresses.iter().filter_map(|entry| entry.web_source.clone()).collect();
-                    if !sources.is_empty() {
-                        ui.separator();
-                        ui.strong(tr!("egui-source"));
-                        ui.selectable_value(&mut book.source, None, &*tr!("egui-all-sources"));
-                        ui.selectable_value(&mut book.source, Some(String::new()), &*tr!("egui-local-phonebook"));
-                        for source in sources {
-                            ui.selectable_value(&mut book.source, Some(source.clone()), source);
-                        }
-                    }
-                    ui.separator();
-                    if ui.add_enabled(self.source_result.is_none(), egui::Button::new(tr!("egui-refresh"))).clicked() {
-                        reload = true;
-                        ui.close();
-                    }
-                })
-                .response
-                .on_hover_text(tr!("egui-filters"));
+                let response =
+                    egui::containers::menu::MenuButton::from_button(egui::Button::image(image).min_size(egui::vec2(CONTROL_HEIGHT + 4.0, CONTROL_HEIGHT)))
+                        .ui(ui, |ui| {
+                            ui.strong(tr!("egui-sort"));
+                            ui.selectable_value(&mut book.sort, SortOrder::Name, &*tr!("settings-modem-name"));
+                            ui.selectable_value(&mut book.sort, SortOrder::MostCalled, &*tr!("egui-most-called"));
+                            ui.selectable_value(&mut book.sort, SortOrder::LastCalled, &*tr!("egui-last-called"));
+                            let sources: std::collections::BTreeSet<_> = book.book.addresses.iter().filter_map(|entry| entry.web_source.clone()).collect();
+                            if !sources.is_empty() {
+                                ui.separator();
+                                ui.strong(tr!("egui-source"));
+                                ui.selectable_value(&mut book.source, None, &*tr!("egui-all-sources"));
+                                ui.selectable_value(&mut book.source, Some(String::new()), &*tr!("egui-local-phonebook"));
+                                for source in sources {
+                                    ui.selectable_value(&mut book.source, Some(source.clone()), source);
+                                }
+                            }
+                            ui.separator();
+                            if ui.add_enabled(self.source_result.is_none(), egui::Button::new(tr!("egui-refresh"))).clicked() {
+                                reload = true;
+                                ui.close();
+                            }
+                        })
+                        .0;
+                #[cfg(test)]
+                self.control_heights.push(response.rect.height());
+                response.on_hover_text(tr!("egui-filters"));
                 if self.source_result.is_some() {
                     ui.spinner();
                 }
-                if let Some(source) = &book.source {
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(if source.is_empty() { tr!("egui-local-phonebook") } else { source.clone() }).weak()).truncate(),
-                    );
-                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let shown = book.filtered().len();
+                    let (total, _) = book.totals();
+                    if shown != total {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(tr!("egui-directory-count-filtered", shown = shown, total = total))
+                                    .weak()
+                                    .small(),
+                            )
+                            .truncate(),
+                        );
+                    }
+                    if let Some(source) = &book.source {
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(if source.is_empty() { tr!("egui-local-phonebook") } else { source.clone() }).weak())
+                                .truncate(),
+                        );
+                    }
+                });
             });
             let indices = book.filtered();
             let show_quick = book.query.is_empty() && !book.favorites_only && book.source.is_none();
@@ -451,14 +531,33 @@ impl DialingDirectory {
                                 let favorite = entry.is_favored;
                                 let remote = entry.web_source.is_some();
                                 let calls = entry.number_of_calls;
+                                let protocol = entry.protocol;
+                                let icon = entry.icon.clone();
+                                let can_favorite = !book.book.write_lock && !remote;
+                                let icon = icon.and_then(|path| self.icon_cache.get(ui.ctx(), &path).cloned());
+                                let query = book.query.clone();
                                 ui.push_id(index, |ui| {
-                                    let response = address_row(
+                                    let row = address_row(
                                         ui,
                                         &name,
                                         &address,
+                                        &query,
                                         book.selected == Some(index) && !self.quick_selected,
-                                        Some((favorite, calls)),
+                                        Some(RowMeta {
+                                            favorite,
+                                            can_favorite,
+                                            calls,
+                                            remote,
+                                            protocol,
+                                        }),
+                                        icon.as_ref(),
                                     );
+                                    let response = row.response;
+                                    if row.favorite_clicked && !ui.ctx().will_discard() {
+                                        if let Err(error) = book.toggle_favorite(index) {
+                                            self.error = Some(error);
+                                        }
+                                    }
                                     response.context_menu(|ui| {
                                         if ui
                                             .add_enabled(
@@ -477,13 +576,13 @@ impl DialingDirectory {
                                     if scroll_selection && book.selected == Some(index) && !self.quick_selected {
                                         response.scroll_to_me(Some(egui::Align::Center));
                                     }
-                                    if response.clicked() {
+                                    if response.clicked() && !row.favorite_clicked {
                                         book.selected = Some(index);
                                         self.quick_selected = false;
                                         self.details = true;
                                         self.show_password = false;
                                     }
-                                    if response.double_clicked() && !connected && !ui.ctx().will_discard() {
+                                    if response.double_clicked() && !row.favorite_clicked && !connected && !ui.ctx().will_discard() {
                                         let entry = &book.book.addresses[index];
                                         match session::entry_connection_config(entry, &self.options) {
                                             Ok(_) => request = Some(DialRequest::Entry(entry.clone(), self.options.clone())),
@@ -517,8 +616,14 @@ impl DialingDirectory {
             } else {
                 tr!("egui-new-entry")
             });
-            self.editor
-                .show(ui, draft, &self.options, &mut self.show_password, &self.icons.as_ref().unwrap().eye);
+            self.editor.show(
+                ui,
+                draft,
+                &self.options,
+                &mut self.show_password,
+                &self.icons.as_ref().unwrap().eye,
+                &mut self.icon_cache,
+            );
             ui.separator();
             ui.horizontal(|ui| {
                 if ui.add(super::appearance::primary_button(tr!("egui-save"))).clicked() && !ui.ctx().will_discard() {
@@ -541,91 +646,104 @@ impl DialingDirectory {
             return None;
         };
         let remote = entry.web_source.is_some();
-        if let Some(source) = &entry.web_source {
-            ui.weak(format!("{source} / Read-only"));
+        let eligible = session::entry_connection_config(&entry, &self.options);
+        let mut request = None;
+        let weak = ui.visuals().weak_text_color();
+        let icon = entry.icon.clone().and_then(|path| self.icon_cache.get(ui.ctx(), &path).cloned());
+        ui.horizontal(|ui| {
+            let (avatar, _) = ui.allocate_exact_size(egui::vec2(40.0, 40.0), egui::Sense::hover());
+            match &icon {
+                Some(texture) => egui::Image::new(texture).corner_radius(8).paint_at(ui, avatar),
+                None => paint_monogram(ui, avatar, &entry.system_name),
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let image = egui::Image::new(&self.icons.as_ref().unwrap().call)
+                    .fit_to_exact_size(egui::vec2(16.0, 16.0))
+                    .tint(egui::Color32::WHITE);
+                if ui
+                    .add_enabled(
+                        !connected && eligible.is_ok(),
+                        egui::Button::image_and_text(
+                            image,
+                            egui::RichText::new(&*tr!("dialing_directory-connect-button")).color(egui::Color32::WHITE),
+                        )
+                        .fill(super::appearance::PRIMARY)
+                        .min_size(egui::vec2(0.0, 32.0)),
+                    )
+                    .clicked()
+                    && !ui.ctx().will_discard()
+                {
+                    request = Some(DialRequest::Entry(entry.clone(), self.options.clone()));
+                }
+                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.add(egui::Label::new(egui::RichText::new(&entry.system_name).strong().size(18.0)).truncate());
+                    ui.add(egui::Label::new(egui::RichText::new(display_address(&entry)).monospace().size(12.0).color(weak)).truncate());
+                });
+            });
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 5.0;
+            let (label, color) = protocol_badge(entry.protocol);
+            badge(ui, label, color);
+            badge(ui, icy_term::fmt_terminal_emulation(&entry.terminal_type), weak);
+            if let Some(source) = &entry.web_source {
+                badge(ui, "WEB", weak);
+                ui.add(egui::Label::new(egui::RichText::new(format!("{source} \u{00b7} {}", tr!("egui-read-only"))).weak()).truncate());
+            }
+        });
+        if let Err(reason) = &eligible {
+            ui.colored_label(ui.visuals().warn_fg_color, reason);
         }
-        ui.add(egui::Label::new(egui::RichText::new(&entry.system_name).strong().size(18.0)).wrap());
-        ui.add(egui::Label::new(egui::RichText::new(display_address(&entry)).monospace()).wrap());
-        ui.weak(format!(
-            "{} / {}",
-            profile_editor::protocol_name(entry.protocol),
-            icy_term::fmt_terminal_emulation(&entry.terminal_type)
-        ));
         ui.separator();
         egui::ScrollArea::vertical()
             .id_salt("profile-summary")
             .max_height((ui.available_height() - 110.0).max(50.0))
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                ui.vertical(|ui| {
-                    ui.spacing_mut().interact_size.y = 20.0;
-                    ui.spacing_mut().item_spacing.y = 4.0;
-                    let date = |time: chrono::DateTime<chrono::Utc>| time.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string();
-                    for (label, value) in [
-                        (
-                            &*tr!("dialing_directory-user"),
-                            if entry.user_name.is_empty() { "-".into() } else { entry.user_name.clone() },
-                        ),
-                        (&*tr!("dialing_directory-screen_mode"), entry.get_screen_mode().to_string()),
-                        (&*tr!("egui-font"), entry.font_name.clone().unwrap_or_else(|| tr!("egui-terminal-default"))),
-                        (&*tr!("egui-baud"), entry.baud_emulation.to_string()),
-                        (
-                            &*tr!("dialing_directory-proxy"),
-                            entry
-                                .proxy
-                                .as_ref()
-                                .map(|proxy| format!("{}:{}", proxy.host, proxy.port))
-                                .unwrap_or_else(|| tr!("egui-direct")),
-                        ),
-                        (&*tr!("egui-calls"), entry.number_of_calls.to_string()),
-                        (&*tr!("egui-last-call"), entry.last_call.map(date).unwrap_or_else(|| tr!("egui-never"))),
-                        (&*tr!("egui-total-time"), format!("{} min", entry.overall_duration.num_minutes())),
-                        (&*tr!("egui-last-duration"), format!("{} sec", entry.last_call_duration.num_seconds())),
-                        (&*tr!("egui-uploaded"), human_bytes::human_bytes(entry.uploaded_bytes as f64)),
-                        (&*tr!("egui-downloaded"), human_bytes::human_bytes(entry.downloaded_bytes as f64)),
-                    ] {
-                        ui.horizontal_top(|ui| {
-                            ui.allocate_ui_with_layout(egui::vec2(112.0, 20.0), egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                                ui.set_min_width(112.0);
-                                ui.weak(label);
-                            });
-                            ui.add(egui::Label::new(value).wrap());
-                        });
-                    }
-                });
+                super::appearance::section(ui, &tr!("egui-connection"));
+                for (label, value) in [
+                    (
+                        &*tr!("dialing_directory-user"),
+                        if entry.user_name.is_empty() { "-".into() } else { entry.user_name.clone() },
+                    ),
+                    (&*tr!("dialing_directory-screen_mode"), entry.get_screen_mode().to_string()),
+                    (&*tr!("egui-font"), entry.font_name.clone().unwrap_or_else(|| tr!("egui-terminal-default"))),
+                    (&*tr!("egui-baud"), entry.baud_emulation.to_string()),
+                    (
+                        &*tr!("dialing_directory-proxy"),
+                        entry
+                            .proxy
+                            .as_ref()
+                            .map(|proxy| format!("{}:{}", proxy.host, proxy.port))
+                            .unwrap_or_else(|| tr!("egui-direct")),
+                    ),
+                ] {
+                    super::appearance::value_row(ui, label, &value);
+                }
                 if entry.protocol == icy_net::ConnectionType::SSH {
                     ui.label(&*tr!("egui-strict-host-key"));
                 }
+                super::appearance::section(ui, &tr!("egui-statistics"));
+                ui.horizontal_wrapped(|ui| {
+                    metric_tile(ui, &tr!("egui-calls"), &entry.number_of_calls.to_string());
+                    metric_tile(ui, &tr!("egui-uploaded"), &human_bytes::human_bytes(entry.uploaded_bytes as f64));
+                    metric_tile(ui, &tr!("egui-downloaded"), &human_bytes::human_bytes(entry.downloaded_bytes as f64));
+                });
+                ui.add_space(4.0);
+                for (label, value) in [
+                    (&*tr!("egui-last-call"), entry.last_call.map(relative_time).unwrap_or_else(|| tr!("egui-never"))),
+                    (&*tr!("egui-total-time"), readable_duration(entry.overall_duration)),
+                    (&*tr!("egui-last-duration"), readable_duration(entry.last_call_duration)),
+                ] {
+                    super::appearance::value_row(ui, label, &value);
+                }
                 if !entry.comment.is_empty() {
-                    ui.separator();
-                    ui.strong(&*tr!("dialing_directory-notes"));
+                    super::appearance::section(ui, &tr!("dialing_directory-notes"));
                     ui.add(egui::Label::new(&entry.comment).wrap());
                 }
             });
         ui.separator();
-        let eligible = session::entry_connection_config(&entry, &self.options);
-        if let Err(reason) = &eligible {
-            ui.colored_label(ui.visuals().warn_fg_color, reason);
-        }
-        let mut request = None;
         ui.horizontal_wrapped(|ui| {
-            let image = egui::Image::new(&self.icons.as_ref().unwrap().call)
-                .fit_to_exact_size(egui::vec2(16.0, 16.0))
-                .tint(egui::Color32::WHITE);
-            if ui
-                .add_enabled(
-                    !connected && eligible.is_ok(),
-                    egui::Button::image_and_text(
-                        image,
-                        egui::RichText::new(&*tr!("dialing_directory-connect-button")).color(egui::Color32::WHITE),
-                    )
-                    .fill(super::appearance::PRIMARY),
-                )
-                .clicked()
-                && !ui.ctx().will_discard()
-            {
-                request = Some(DialRequest::Entry(entry.clone(), self.options.clone()));
-            }
             ui.add_enabled_ui(!book.book.write_lock, |ui| {
                 if ui.add_enabled(!remote, egui::Button::new(&*tr!("egui-edit"))).clicked() {
                     book.begin_edit();
@@ -660,6 +778,7 @@ impl DialingDirectory {
                 &self.options,
                 &mut self.show_password,
                 &self.icons.as_ref().unwrap().eye,
+                &mut self.icon_cache,
             );
             ui.separator();
             ui.horizontal_wrapped(|ui| {
@@ -758,16 +877,257 @@ impl DialingDirectory {
 fn text_field(ui: &mut egui::Ui, label: &str, value: &mut String) {
     ui.push_id(label, |ui| {
         super::appearance::form_row(ui, label, |ui| {
-            ui.add(egui::TextEdit::singleline(value).margin(egui::vec2(8.0, 6.0)).desired_width(f32::INFINITY));
+            ui.add(super::appearance::text_edit(value).desired_width(f32::INFINITY));
         })
     });
 }
 
-fn directory_row(ui: &mut egui::Ui, name: &str, address: &str, selected: bool) -> egui::Response {
-    address_row(ui, name, address, selected, None)
+#[derive(Clone, Copy)]
+struct RowMeta {
+    favorite: bool,
+    can_favorite: bool,
+    calls: usize,
+    remote: bool,
+    protocol: icy_net::ConnectionType,
 }
 
-fn address_row(ui: &mut egui::Ui, name: &str, address: &str, selected: bool, metadata: Option<(bool, usize)>) -> egui::Response {
+struct RowResponse {
+    response: egui::Response,
+    favorite_clicked: bool,
+}
+
+pub(super) const ICON_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg"];
+/// Shared height for the filter controls; `Button` would otherwise size each one by its own content.
+const CONTROL_HEIGHT: f32 = 30.0;
+const ICON_SIZE: usize = 64;
+const MAX_ICON_BYTES: u64 = 4 * 1024 * 1024;
+
+#[derive(Default)]
+pub(super) struct IconCache(std::collections::HashMap<String, Option<egui::TextureHandle>>);
+
+impl IconCache {
+    pub(super) fn get(&mut self, context: &egui::Context, path: &str) -> Option<&egui::TextureHandle> {
+        if !self.0.contains_key(path) {
+            self.0.insert(path.to_owned(), load_icon(context, path));
+        }
+        self.0.get(path).and_then(Option::as_ref)
+    }
+}
+
+fn load_icon(context: &egui::Context, path: &str) -> Option<egui::TextureHandle> {
+    if std::fs::metadata(path).ok()?.len() > MAX_ICON_BYTES {
+        log::warn!("Directory icon '{path}' exceeds the size limit");
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    let image = if std::path::Path::new(path)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
+    {
+        let tree = resvg::usvg::Tree::from_data(&bytes, &Default::default()).ok()?;
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(ICON_SIZE as u32, ICON_SIZE as u32)?;
+        let size = tree.size();
+        resvg::render(
+            &tree,
+            resvg::tiny_skia::Transform::from_scale(ICON_SIZE as f32 / size.width(), ICON_SIZE as f32 / size.height()),
+            &mut pixmap.as_mut(),
+        );
+        egui::ColorImage::from_rgba_premultiplied([ICON_SIZE, ICON_SIZE], pixmap.data())
+    } else {
+        let decoded = image::load_from_memory(&bytes)
+            .ok()?
+            .resize_to_fill(ICON_SIZE as u32, ICON_SIZE as u32, image::imageops::FilterType::CatmullRom)
+            .to_rgba8();
+        egui::ColorImage::from_rgba_unmultiplied([ICON_SIZE, ICON_SIZE], decoded.as_raw())
+    };
+    Some(context.load_texture(format!("dial-icon-{path}"), image, Default::default()))
+}
+
+const MONOGRAM_COLORS: [egui::Color32; 8] = [
+    egui::Color32::from_rgb(86, 148, 214),
+    egui::Color32::from_rgb(94, 178, 122),
+    egui::Color32::from_rgb(214, 152, 76),
+    egui::Color32::from_rgb(160, 132, 214),
+    egui::Color32::from_rgb(198, 132, 168),
+    egui::Color32::from_rgb(96, 174, 176),
+    egui::Color32::from_rgb(206, 122, 108),
+    egui::Color32::from_rgb(140, 160, 96),
+];
+
+fn protocol_badge(protocol: icy_net::ConnectionType) -> (&'static str, egui::Color32) {
+    use icy_net::ConnectionType;
+    match protocol {
+        ConnectionType::Telnet => ("TELNET", MONOGRAM_COLORS[0]),
+        ConnectionType::SSH => ("SSH", MONOGRAM_COLORS[1]),
+        ConnectionType::Modem => ("MODEM", MONOGRAM_COLORS[2]),
+        ConnectionType::Websocket => ("WS", MONOGRAM_COLORS[3]),
+        ConnectionType::SecureWebsocket => ("WSS", MONOGRAM_COLORS[3]),
+        ConnectionType::Rlogin | ConnectionType::RloginSwapped => ("RLOGIN", MONOGRAM_COLORS[4]),
+        ConnectionType::Serial => ("SERIAL", MONOGRAM_COLORS[5]),
+        ConnectionType::Raw => ("RAW", MONOGRAM_COLORS[6]),
+        ConnectionType::Channel => ("CHANNEL", MONOGRAM_COLORS[7]),
+    }
+}
+
+fn monogram(name: &str) -> String {
+    let initials: String = name
+        .split_whitespace()
+        .filter_map(|word| word.chars().find(|character| character.is_alphanumeric()))
+        .take(2)
+        .collect();
+    if initials.is_empty() {
+        "?".into()
+    } else {
+        initials.to_uppercase()
+    }
+}
+
+fn monogram_color(name: &str) -> egui::Color32 {
+    let hash = name
+        .bytes()
+        .fold(2_166_136_261_u32, |hash, byte| (hash ^ u32::from(byte)).wrapping_mul(16_777_619));
+    MONOGRAM_COLORS[(hash % MONOGRAM_COLORS.len() as u32) as usize]
+}
+
+fn badge(ui: &mut egui::Ui, label: &str, color: egui::Color32) {
+    let font = egui::FontId::proportional(10.0);
+    let width = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.to_owned(), font.clone(), color).size().x);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width + 10.0, 15.0), egui::Sense::hover());
+    ui.painter().rect_filled(rect, 3.0, color.gamma_multiply(0.22));
+    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, label, font, color);
+}
+
+/// Byte ranges of `text` matching `query` case-insensitively.
+///
+/// Lowercasing can change byte lengths, so every lowercase byte keeps the bounds of the
+/// original character it came from; slicing `text` directly would break on those.
+fn match_ranges(text: &str, query: &str) -> Vec<(usize, usize)> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return Vec::new();
+    }
+    let mut lower = String::with_capacity(text.len());
+    let mut starts = Vec::with_capacity(text.len());
+    let mut ends = Vec::with_capacity(text.len());
+    for (index, character) in text.char_indices() {
+        let end = index + character.len_utf8();
+        for lowered in character.to_lowercase() {
+            lower.push(lowered);
+            for _ in 0..lowered.len_utf8() {
+                starts.push(index);
+                ends.push(end);
+            }
+        }
+    }
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    for (position, _) in lower.match_indices(&query) {
+        let start = starts[position];
+        let end = ends[position + query.len() - 1];
+        if ranges.last().is_none_or(|(_, previous)| start >= *previous) {
+            ranges.push((start, end));
+        }
+    }
+    ranges
+}
+
+fn highlighted(text: &str, query: &str, font: egui::FontId, color: egui::Color32, highlight: egui::Color32) -> egui::text::LayoutJob {
+    let format = |background| egui::TextFormat {
+        font_id: font.clone(),
+        color,
+        background,
+        ..Default::default()
+    };
+    let mut job = egui::text::LayoutJob::default();
+    let mut cursor = 0;
+    for (start, end) in match_ranges(text, query) {
+        if start > cursor {
+            job.append(&text[cursor..start], 0.0, format(egui::Color32::TRANSPARENT));
+        }
+        job.append(&text[start..end], 0.0, format(highlight));
+        cursor = end;
+    }
+    job.append(&text[cursor..], 0.0, format(egui::Color32::TRANSPARENT));
+    job
+}
+
+fn metric_tile(ui: &mut egui::Ui, label: &str, value: &str) {
+    egui::Frame::new()
+        .fill(ui.visuals().faint_bg_color)
+        .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+        .corner_radius(6)
+        .inner_margin(egui::Margin::symmetric(10, 6))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.set_min_width(64.0);
+                ui.add(egui::Label::new(egui::RichText::new(value).strong().size(15.0)).truncate());
+                ui.add(egui::Label::new(egui::RichText::new(label).weak().size(11.0)).truncate());
+            });
+        });
+}
+
+/// Falls back to an absolute date once an entry is older than a month.
+fn relative_time(time: chrono::DateTime<chrono::Utc>) -> String {
+    let absolute = || time.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string();
+    let elapsed = chrono::Utc::now().signed_duration_since(time);
+    if elapsed < chrono::Duration::zero() {
+        return absolute();
+    }
+    let (minutes, hours, days) = (elapsed.num_minutes(), elapsed.num_hours(), elapsed.num_days());
+    if minutes < 1 {
+        tr!("egui-time-just-now")
+    } else if hours < 1 {
+        tr!("egui-time-minutes-ago", count = minutes)
+    } else if days < 1 {
+        tr!("egui-time-hours-ago", count = hours)
+    } else if days < 30 {
+        tr!("egui-time-days-ago", count = days)
+    } else {
+        absolute()
+    }
+}
+
+fn readable_duration(duration: chrono::Duration) -> String {
+    let seconds = duration.num_seconds().max(0);
+    if seconds == 0 {
+        return "\u{2013}".into();
+    }
+    let (hours, minutes) = (seconds / 3600, (seconds % 3600) / 60);
+    if hours > 0 {
+        tr!("egui-duration-hours", hours = hours, minutes = minutes)
+    } else if minutes > 0 {
+        tr!("egui-duration-minutes", minutes = minutes)
+    } else {
+        tr!("egui-duration-seconds", seconds = seconds)
+    }
+}
+
+fn directory_row(ui: &mut egui::Ui, name: &str, address: &str, selected: bool) -> egui::Response {
+    address_row(ui, name, address, "", selected, None, None).response
+}
+
+pub(super) fn paint_monogram(ui: &egui::Ui, rect: egui::Rect, name: &str) {
+    let tint = monogram_color(name);
+    ui.painter().rect_filled(rect, 6.0, tint.gamma_multiply(0.25));
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        monogram(name),
+        egui::FontId::proportional(13.0),
+        tint,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn address_row(
+    ui: &mut egui::Ui,
+    name: &str,
+    address: &str,
+    query: &str,
+    selected: bool,
+    metadata: Option<RowMeta>,
+    icon: Option<&egui::TextureHandle>,
+) -> RowResponse {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 52.0), egui::Sense::click());
     let visuals = ui.style().interact_selectable(&response, selected);
     let fill = if selected || response.hovered() {
@@ -775,48 +1135,93 @@ fn address_row(ui: &mut egui::Ui, name: &str, address: &str, selected: bool, met
     } else {
         egui::Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, 3.0, fill);
+    ui.painter().rect_filled(rect, 4.0, fill);
     if selected {
-        ui.painter().rect_stroke(rect, 3.0, ui.visuals().selection.stroke, egui::StrokeKind::Inside);
+        let bar = egui::Rect::from_min_size(rect.left_top() + egui::vec2(0.0, 4.0), egui::vec2(3.0, rect.height() - 8.0));
+        ui.painter().rect_filled(bar, 2.0, ui.visuals().selection.stroke.color);
     }
+    let avatar = egui::Rect::from_center_size(egui::pos2(rect.left() + 27.0, rect.center().y), egui::vec2(30.0, 30.0));
+    match (metadata, icon) {
+        (Some(_), Some(texture)) => {
+            egui::Image::new(texture).corner_radius(6).paint_at(ui, avatar);
+        }
+        (Some(_), None) => paint_monogram(ui, avatar, name),
+        (None, _) => {
+            let tint = ui.visuals().selection.stroke.color;
+            ui.painter().rect_filled(avatar, 6.0, tint.gamma_multiply(0.25));
+            ui.painter()
+                .text(avatar.center(), egui::Align2::CENTER_CENTER, "+", egui::FontId::proportional(13.0), tint);
+        }
+    }
+    let weak = ui.visuals().weak_text_color();
+    let highlight = egui::Color32::from_rgb(211, 163, 57).gamma_multiply(0.45);
     let mut child = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(egui::Rect::from_min_max(
-                rect.min + egui::vec2(10.0, 6.0),
-                rect.max - egui::vec2(if metadata.is_some() { 60.0 } else { 10.0 }, 6.0),
+                egui::pos2(rect.left() + 50.0, rect.top() + 7.0),
+                egui::pos2(rect.right() - if metadata.is_some() { 56.0 } else { 10.0 }, rect.bottom() - 7.0),
             ))
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
-    child.spacing_mut().item_spacing.y = 2.0;
+    child.spacing_mut().item_spacing.y = 3.0;
     child.add(
-        egui::Label::new(egui::RichText::new(name).monospace().color(ui.visuals().text_color()))
+        egui::Label::new(highlighted(name, query, egui::FontId::proportional(14.0), ui.visuals().text_color(), highlight))
             .selectable(false)
             .truncate(),
     );
-    child.add(
-        egui::Label::new(egui::RichText::new(address).monospace().small().color(ui.visuals().weak_text_color()))
-            .selectable(false)
-            .truncate(),
-    );
-    if let Some((favorite, calls)) = metadata {
-        if favorite {
+    child.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 5.0;
+        if let Some(meta) = metadata {
+            let (label, color) = protocol_badge(meta.protocol);
+            badge(ui, label, color);
+            if meta.remote {
+                badge(ui, "WEB", weak);
+            }
+        }
+        ui.add(
+            egui::Label::new(highlighted(address, query, egui::FontId::monospace(11.0), weak, highlight))
+                .selectable(false)
+                .truncate(),
+        );
+    });
+    let mut favorite_clicked = false;
+    if let Some(meta) = metadata {
+        let star = egui::Rect::from_min_size(egui::pos2(rect.right() - 32.0, rect.top() + 4.0), egui::vec2(24.0, 24.0));
+        let gold = egui::Color32::from_rgb(211, 163, 57);
+        if meta.can_favorite {
+            let button = ui.interact(star, response.id.with("favorite"), egui::Sense::click());
+            favorite_clicked = button.clicked();
+            if meta.favorite || response.hovered() || button.hovered() {
+                if button.hovered() {
+                    ui.painter().circle_filled(star.center(), 11.0, ui.visuals().widgets.hovered.bg_fill);
+                }
+                let (glyph, color) = if meta.favorite { ("\u{2605}", gold) } else { ("\u{2606}", weak) };
+                ui.painter()
+                    .text(star.center(), egui::Align2::CENTER_CENTER, glyph, egui::FontId::proportional(16.0), color);
+            }
+            button.on_hover_text(if meta.favorite {
+                tr!("egui-remove-favorite")
+            } else {
+                tr!("egui-add-favorite")
+            });
+        } else if meta.favorite {
+            ui.painter()
+                .text(star.center(), egui::Align2::CENTER_CENTER, "\u{2605}", egui::FontId::proportional(16.0), gold);
+        }
+        if meta.calls > 0 {
             ui.painter().text(
-                rect.right_top() + egui::vec2(-10.0, 5.0),
-                egui::Align2::RIGHT_TOP,
-                "\u{2605}",
-                egui::FontId::proportional(16.0),
-                egui::Color32::from_rgb(211, 163, 57),
+                rect.right_bottom() - egui::vec2(10.0, 8.0),
+                egui::Align2::RIGHT_BOTTOM,
+                format!("{}\u{00d7}", meta.calls),
+                egui::FontId::proportional(11.0),
+                weak,
             );
         }
-        ui.painter().text(
-            rect.right_bottom() - egui::vec2(10.0, 7.0),
-            egui::Align2::RIGHT_BOTTOM,
-            format!("\u{2706} {calls}"),
-            egui::FontId::proportional(12.0),
-            ui.visuals().weak_text_color(),
-        );
     }
-    response.on_hover_text(format!("{name}\n{address}"))
+    RowResponse {
+        response: response.on_hover_text(format!("{name}\n{address}")),
+        favorite_clicked,
+    }
 }
 
 #[cfg(test)]
@@ -1132,6 +1537,219 @@ mod tests {
         let request = click(&mut dialog, &context, &*tr!("egui-quick-connect")).unwrap();
         assert!(matches!(request, DialRequest::Quick(entry, _) if entry.address == "raw://localhost:2323"));
         assert!(!dialog.open);
+    }
+
+    /// Searches in paint order, so the list row is found before the detail pane repeats the name.
+    fn find_text(output: &egui::FullOutput, label: &str) -> Option<egui::Pos2> {
+        output.shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.text() == label => Some(text.pos + text.galley.size() / 2.0),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn durations_and_timestamps_read_naturally() {
+        assert_eq!(readable_duration(chrono::Duration::zero()), "\u{2013}");
+        assert_eq!(readable_duration(chrono::Duration::seconds(45)), tr!("egui-duration-seconds", seconds = 45));
+        assert_eq!(readable_duration(chrono::Duration::seconds(600)), tr!("egui-duration-minutes", minutes = 10));
+        assert_eq!(
+            readable_duration(chrono::Duration::seconds(8100)),
+            tr!("egui-duration-hours", hours = 2, minutes = 15)
+        );
+        let now = chrono::Utc::now();
+        assert_eq!(relative_time(now), tr!("egui-time-just-now"));
+        assert_eq!(relative_time(now - chrono::Duration::minutes(5)), tr!("egui-time-minutes-ago", count = 5));
+        assert_eq!(relative_time(now - chrono::Duration::days(1)), tr!("egui-time-days-ago", count = 1));
+        assert_eq!(relative_time(now - chrono::Duration::days(3)), tr!("egui-time-days-ago", count = 3));
+        let old = now - chrono::Duration::days(400);
+        assert_eq!(relative_time(old), old.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string());
+    }
+
+    #[test]
+    fn the_detail_pane_groups_configuration_and_statistics() {
+        let fixture = Fixture::new();
+        let mut book = fixture.load();
+        add(&mut book, "Alpha");
+        let mut dialog = DialingDirectory {
+            phonebook: Some(book),
+            open: true,
+            ..Default::default()
+        };
+        let context = egui::Context::default();
+        frame(&mut dialog, &context, vec![]);
+        let (output, _) = frame(&mut dialog, &context, vec![]);
+        for label in [
+            &*tr!("egui-connection"),
+            &*tr!("egui-statistics"),
+            &*tr!("dialing_directory-connect-button"),
+            &*tr!("egui-calls"),
+        ] {
+            assert!(find_text(&output, label).is_some(), "missing '{label}' in the detail pane");
+        }
+    }
+
+    #[test]
+    fn editor_inputs_share_one_height() {
+        let fixture = Fixture::new();
+        let mut book = fixture.load();
+        add(&mut book, "Alpha");
+        book.begin_edit();
+        let mut dialog = DialingDirectory {
+            phonebook: Some(book),
+            open: true,
+            details: true,
+            ..Default::default()
+        };
+        let context = egui::Context::default();
+        frame(&mut dialog, &context, vec![]);
+        let (output, _) = frame(&mut dialog, &context, vec![]);
+        let fill = context.style().visuals.extreme_bg_color;
+        // The editor occupies the right column of the 1000px test viewport.
+        let heights: Vec<f32> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect) if rect.fill == fill && rect.rect.min.x > 380.0 && rect.rect.height() < 50.0 => Some(rect.rect.height()),
+                _ => None,
+            })
+            .collect();
+        assert!(heights.len() >= 2, "expected the editor input fields: {heights:?}");
+        assert!(
+            heights.windows(2).all(|pair| (pair[0] - pair[1]).abs() < 0.5),
+            "editor inputs must share one height: {heights:?}"
+        );
+    }
+
+    #[test]
+    fn the_filter_controls_share_one_height() {
+        let fixture = Fixture::new();
+        let mut book = fixture.load();
+        add(&mut book, "Alpha");
+        let mut dialog = DialingDirectory {
+            phonebook: Some(book),
+            open: true,
+            ..Default::default()
+        };
+        let context = egui::Context::default();
+        frame(&mut dialog, &context, vec![]);
+        frame(&mut dialog, &context, vec![]);
+        let heights = dialog.control_heights.clone();
+        assert_eq!(
+            heights.len(),
+            4,
+            "expected the search field plus the new entry, favorite and filter buttons: {heights:?}"
+        );
+        assert!(
+            heights.windows(2).all(|pair| (pair[0] - pair[1]).abs() < 0.5),
+            "the search field and filter controls must line up: {heights:?}"
+        );
+        assert!((heights[0] - CONTROL_HEIGHT).abs() < 0.5, "{heights:?}");
+    }
+
+    #[test]
+    fn match_ranges_map_back_to_original_bytes() {
+        assert_eq!(match_ranges("Alpha BBS", "alpha"), vec![(0, 5)]);
+        assert_eq!(match_ranges("Alpha", "z"), Vec::new());
+        assert_eq!(match_ranges("Alpha", "  "), Vec::new());
+        assert_eq!(match_ranges("aXa", "A"), vec![(0, 1), (2, 3)]);
+        // 'İ' lowercases into two characters, so naive slicing of the original would panic.
+        let text = "İstanbul BBS";
+        let ranges = match_ranges(text, "stanbul");
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(&text[ranges[0].0..ranges[0].1], "stanbul");
+        let ranges = match_ranges(text, "i");
+        assert_eq!(&text[ranges[0].0..ranges[0].1], "İ");
+    }
+
+    #[test]
+    fn filtered_rows_highlight_the_matching_text() {
+        let fixture = Fixture::new();
+        let mut book = fixture.load();
+        add(&mut book, "Alpha");
+        add(&mut book, "Beta");
+        book.query = "lph".into();
+        let mut dialog = DialingDirectory {
+            phonebook: Some(book),
+            open: true,
+            ..Default::default()
+        };
+        let context = egui::Context::default();
+        frame(&mut dialog, &context, vec![]);
+        let (output, _) = frame(&mut dialog, &context, vec![]);
+        let marked = |label: &str| {
+            output.shapes.iter().any(|shape| match &shape.shape {
+                egui::Shape::Text(text) => {
+                    text.galley.job.text == label
+                        && text
+                            .galley
+                            .job
+                            .sections
+                            .iter()
+                            .any(|section| section.format.background != egui::Color32::TRANSPARENT)
+                }
+                _ => false,
+            })
+        };
+        assert!(marked("Alpha"), "the matching part of the name must be highlighted");
+        assert!(!marked("localhost:2323"), "the address has no match and must stay plain");
+    }
+
+    #[test]
+    fn search_reports_the_result_count_and_can_be_cleared() {
+        let fixture = Fixture::new();
+        let mut book = fixture.load();
+        add(&mut book, "Alpha");
+        add(&mut book, "Beta");
+        book.query = "alp".into();
+        let mut dialog = DialingDirectory {
+            phonebook: Some(book),
+            open: true,
+            ..Default::default()
+        };
+        let context = egui::Context::default();
+        frame(&mut dialog, &context, vec![]);
+        let (output, _) = frame(&mut dialog, &context, vec![]);
+        assert!(find_text(&output, &tr!("egui-directory-summary", total = 2, favorites = 0)).is_some());
+        assert!(find_text(&output, &tr!("egui-directory-count-filtered", shown = 1, total = 2)).is_some());
+        click(&mut dialog, &context, "\u{00d7}");
+        assert!(dialog.phonebook.as_ref().unwrap().query.is_empty());
+        let (output, _) = frame(&mut dialog, &context, vec![]);
+        assert!(
+            find_text(&output, &tr!("egui-directory-count-filtered", shown = 2, total = 2)).is_none(),
+            "an unfiltered list must not repeat the count"
+        );
+    }
+
+    #[test]
+    fn hovering_a_row_reveals_a_star_that_toggles_the_favorite() {
+        let fixture = Fixture::new();
+        let mut book = fixture.load();
+        add(&mut book, "Alpha");
+        let path = book.path().to_path_buf();
+        let mut dialog = DialingDirectory {
+            phonebook: Some(book),
+            open: true,
+            ..Default::default()
+        };
+        let context = egui::Context::default();
+        frame(&mut dialog, &context, vec![]);
+        let (output, _) = frame(&mut dialog, &context, vec![]);
+        assert!(find_text(&output, "\u{2606}").is_none(), "the star must stay hidden until the row is hovered");
+        let row = find_text(&output, "Alpha").expect("missing row");
+        frame(&mut dialog, &context, vec![egui::Event::PointerMoved(row)]);
+        let (output, _) = frame(&mut dialog, &context, vec![]);
+        let star = find_text(&output, "\u{2606}").expect("hovering the row must reveal the star");
+        let button = |pressed| egui::Event::PointerButton {
+            pos: star,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(&mut dialog, &context, vec![egui::Event::PointerMoved(star), button(true)]);
+        frame(&mut dialog, &context, vec![button(false)]);
+        assert!(dialog.phonebook.as_ref().unwrap().book.addresses[0].is_favored);
+        assert!(Phonebook::load(path).unwrap().book.addresses[0].is_favored, "the favorite must be persisted");
+        assert!(!dialog.details, "toggling the favorite must not open the entry");
     }
 
     #[test]
