@@ -36,6 +36,125 @@ pub fn section(ui: &mut egui::Ui, title: &str) {
     ui.add_space(2.0);
 }
 
+pub struct DialogResponse {
+    pub closed: bool,
+}
+
+pub fn chip(ui: &mut egui::Ui, label: &str, color: Color32) {
+    let font = FontId::proportional(10.0);
+    let width = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.to_owned(), font.clone(), color).size().x);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width + 10.0, 15.0), egui::Sense::hover());
+    ui.painter().rect_filled(rect, 3.0, color.gamma_multiply(0.22));
+    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, label, font, color);
+}
+
+pub fn metric_tile(ui: &mut egui::Ui, label: &str, value: &str) {
+    egui::Frame::new()
+        .fill(ui.visuals().faint_bg_color)
+        .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+        .corner_radius(6)
+        .inner_margin(egui::Margin::symmetric(10, 6))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.set_min_width(64.0);
+                ui.add(egui::Label::new(egui::RichText::new(value).strong().size(15.0)).truncate());
+                ui.add(egui::Label::new(egui::RichText::new(label).weak().size(11.0)).truncate());
+            });
+        });
+}
+
+/// Rounded status pill with a leading dot, used for transfer and connection state.
+pub fn status_badge(ui: &mut egui::Ui, label: &str, color: Color32) {
+    let font = FontId::proportional(11.0);
+    let width = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.to_owned(), font.clone(), color).size().x);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width + 26.0, 20.0), egui::Sense::hover());
+    ui.painter().rect_filled(rect, 10.0, color.gamma_multiply(0.18));
+    ui.painter().circle_filled(egui::pos2(rect.left() + 10.0, rect.center().y), 3.5, color);
+    ui.painter()
+        .text(egui::pos2(rect.left() + 18.0, rect.center().y), egui::Align2::LEFT_CENTER, label, font, color);
+}
+
+/// Shared modal shell so every dialog gets the same frame, header, body and action row.
+pub struct Dialog {
+    id: &'static str,
+    title: String,
+    max_width: f32,
+    max_height: f32,
+    scroll: bool,
+}
+
+/// Body and action row of a [`Dialog`]. Call `content` first, then `actions`.
+pub struct DialogUi<'a> {
+    ui: &'a mut egui::Ui,
+    id: &'static str,
+    body_height: f32,
+    scroll: bool,
+}
+
+impl DialogUi<'_> {
+    pub fn content(&mut self, add: impl FnOnce(&mut egui::Ui)) {
+        if self.scroll {
+            egui::ScrollArea::vertical()
+                .id_salt((self.id, "dialog-body"))
+                .auto_shrink([false, true])
+                .min_scrolled_height(0.0)
+                .max_height(self.body_height)
+                .show(self.ui, add);
+        } else {
+            add(self.ui);
+        }
+    }
+
+    /// Laid out right to left, so add the primary button first.
+    pub fn actions(&mut self, add: impl FnOnce(&mut egui::Ui)) {
+        self.ui.separator();
+        self.ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add);
+        });
+    }
+}
+
+impl Dialog {
+    pub fn new(id: &'static str, title: impl Into<String>) -> Self {
+        Self {
+            id,
+            title: title.into(),
+            max_width: 620.0,
+            max_height: 560.0,
+            scroll: true,
+        }
+    }
+
+    pub fn max_width(mut self, width: f32) -> Self {
+        self.max_width = width;
+        self
+    }
+
+    pub fn scroll(mut self, scroll: bool) -> Self {
+        self.scroll = scroll;
+        self
+    }
+
+    pub fn show(self, context: &egui::Context, body: impl FnOnce(&mut DialogUi)) -> DialogResponse {
+        let mut closed = false;
+        egui::Modal::new(egui::Id::new(self.id)).frame(dialog_frame(context)).show(context, |ui| {
+            let width = (context.content_rect().width() - 48.0).clamp(240.0, self.max_width);
+            let height = (context.content_rect().height() - 64.0).clamp(140.0, self.max_height);
+            ui.set_width(width);
+            closed |= dialog_header(ui, &self.title);
+            let mut dialog = DialogUi {
+                ui,
+                id: self.id,
+                body_height: (height - 110.0).max(60.0),
+                scroll: self.scroll,
+            };
+            body(&mut dialog);
+        });
+        DialogResponse { closed }
+    }
+}
+
 pub fn combo_row(ui: &mut egui::Ui, label: &str, selected: impl Into<egui::WidgetText>, choices: impl FnOnce(&mut egui::Ui)) {
     ui.push_id(label, |ui| {
         form_row(ui, label, |ui| {

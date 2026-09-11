@@ -599,6 +599,8 @@ async fn gpu_ui_themes_and_text_layout() {
             assert!(app.terminal.render_info.read().bounds_y <= 44.0);
             let path = std::env::temp_dir().join(format!("icy-theme-{}.toml", fastrand::u64(..)));
             app.preferences = Some(settings::Settings::open(&icy_term::Options::default(), path).unwrap());
+            // The dialog opens on Monitor like the legacy client; this check targets the Terminal form.
+            app.preferences.as_mut().unwrap().page = settings::Page::Terminal;
             harness.capture(&mut app, size, scale, vec![], "form-warmup");
             harness.capture(&mut app, size, scale, vec![], &format!("{name}-{viewport}-form"));
             let labels = [

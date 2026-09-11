@@ -20,6 +20,8 @@ macro_rules! tr {
 #[path = "icy_term_egui/appearance.rs"]
 mod appearance;
 use icy_engine::TextPane;
+#[path = "icy_term_egui/about.rs"]
+mod about;
 #[path = "icy_term_egui/audio.rs"]
 mod audio;
 #[path = "icy_term_egui/dialing_directory.rs"]
@@ -32,6 +34,8 @@ mod input;
 mod mcp;
 #[path = "icy_term_egui/messages.rs"]
 mod messages;
+#[path = "icy_term_egui/monitor.rs"]
+mod monitor;
 #[path = "icy_term_egui/navigation.rs"]
 mod navigation;
 #[path = "icy_term_egui/overlays.rs"]
@@ -107,6 +111,7 @@ struct TerminalApp {
     styled: bool,
     icons: Option<dialing_directory::Icons>,
     about_open: bool,
+    about: Option<about::About>,
     help_open: bool,
     bps_open: bool,
     baud: icy_parser_core::BaudEmulation,
@@ -157,6 +162,7 @@ impl TerminalApp {
             styled: false,
             icons: None,
             about_open: false,
+            about: None,
             help_open: false,
             bps_open: false,
             baud: icy_parser_core::BaudEmulation::Off,
@@ -675,60 +681,7 @@ impl TerminalApp {
                     .max_height((height - 104.0).max(0.0))
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        use icy_engine_gui::MonitorType;
-                        appearance::combo_row(ui, &tr!("egui-monitor-type"), format!("{:?}", self.settings.monitor_type), |ui| {
-                            for mode in [
-                                MonitorType::Color,
-                                MonitorType::Grayscale,
-                                MonitorType::Amber,
-                                MonitorType::Green,
-                                MonitorType::Apple2,
-                                MonitorType::Futuristic,
-                                MonitorType::CustomMonochrome,
-                            ] {
-                                ui.selectable_value(&mut self.settings.monitor_type, mode, format!("{mode:?}"));
-                            }
-                        });
-                        if self.settings.monitor_type == MonitorType::CustomMonochrome {
-                            let (red, green, blue) = self.settings.custom_monitor_color.rgb();
-                            let mut color = [red, green, blue];
-                            appearance::form_row(ui, &tr!("egui-colors"), |ui| {
-                                if ui.color_edit_button_srgb(&mut color).changed() {
-                                    self.settings.custom_monitor_color = icy_engine::Color::new(color[0], color[1], color[2]);
-                                }
-                            });
-                        }
-                        ui.checkbox(&mut self.settings.use_integer_scaling, &*tr!("egui-integer-scaling"));
-                        ui.checkbox(&mut self.settings.use_bilinear_filtering, &*tr!("egui-bilinear-filtering"));
-                        ui.separator();
-                        appearance::slider_row(ui, &tr!("settings-monitor-brightness"), &mut self.settings.brightness, 0.0..=200.0);
-                        appearance::slider_row(ui, &tr!("settings-monitor-contrast"), &mut self.settings.contrast, 0.0..=200.0);
-                        appearance::slider_row(ui, &tr!("settings-monitor-gamma"), &mut self.settings.gamma, 0.1..=4.0);
-                        appearance::slider_row(ui, &tr!("settings-monitor-saturation"), &mut self.settings.saturation, 0.0..=200.0);
-                        ui.separator();
-                        ui.checkbox(&mut self.settings.use_scanlines, &*tr!("settings-monitor-scanlines"));
-                        if self.settings.use_scanlines {
-                            appearance::slider_row(ui, &tr!("egui-thickness"), &mut self.settings.scanline_thickness, 0.0..=1.0);
-                            appearance::slider_row(ui, &tr!("egui-sharpness"), &mut self.settings.scanline_sharpness, 0.0..=1.0);
-                            appearance::slider_row(ui, &tr!("egui-phase"), &mut self.settings.scanline_phase, 0.0..=1.0);
-                        }
-                        ui.checkbox(&mut self.settings.use_bloom, &*tr!("egui-bloom"));
-                        if self.settings.use_bloom {
-                            appearance::slider_row(ui, &tr!("egui-threshold"), &mut self.settings.bloom_threshold, 0.0..=100.0);
-                            appearance::slider_row(ui, &tr!("egui-radius"), &mut self.settings.bloom_radius, 0.0..=50.0);
-                            appearance::slider_row(ui, &tr!("egui-glow"), &mut self.settings.glow_strength, 0.0..=100.0);
-                            appearance::slider_row(ui, &tr!("egui-persistence"), &mut self.settings.phosphor_persistence, 0.0..=100.0);
-                        }
-                        ui.checkbox(&mut self.settings.use_curvature, &*tr!("egui-curvature"));
-                        if self.settings.use_curvature {
-                            appearance::slider_row(ui, &tr!("egui-horizontal"), &mut self.settings.curvature_x, 0.0..=100.0);
-                            appearance::slider_row(ui, &tr!("egui-vertical"), &mut self.settings.curvature_y, 0.0..=100.0);
-                        }
-                        ui.checkbox(&mut self.settings.use_noise, &*tr!("egui-noise"));
-                        if self.settings.use_noise {
-                            appearance::slider_row(ui, &tr!("egui-noise-level"), &mut self.settings.noise_level, 0.0..=100.0);
-                            appearance::slider_row(ui, &tr!("egui-sync-wobble"), &mut self.settings.sync_wobble, 0.0..=100.0);
-                        }
+                        monitor::fields(ui, &mut self.settings);
                     });
                 ui.separator();
                 ui.horizontal_wrapped(|ui| {
@@ -1273,8 +1226,19 @@ impl TerminalApp {
             overlays::help(context, &mut self.help_open);
         }
         if self.about_open {
-            if let Some(url) = overlays::about(context, &mut self.about_open) {
-                self.pending_link = Some(url);
+            if self.about.is_none() {
+                match about::About::load() {
+                    Ok(about) => self.about = Some(about),
+                    Err(error) => {
+                        self.error = Some(error);
+                        self.about_open = false;
+                    }
+                }
+            }
+            if let Some(about) = &mut self.about {
+                if let Some(url) = about.show(context, &mut self.about_open) {
+                    self.pending_link = Some(url);
+                }
             }
         }
         if self.bps_open {

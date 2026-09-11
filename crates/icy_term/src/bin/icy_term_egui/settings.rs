@@ -8,6 +8,7 @@ use std::{
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Page {
     #[default]
+    Monitor,
     Terminal,
     Audio,
     Paths,
@@ -105,6 +106,42 @@ impl Settings {
         Ok(self.draft.clone())
     }
 
+    /// Restores only the fields the current page edits, like the legacy per-category reset.
+    fn reset_page(&mut self) {
+        let defaults = Options::default();
+        match self.page {
+            Page::Monitor => self.draft.monitor_settings = defaults.monitor_settings,
+            Page::Terminal => {
+                self.draft.connect_timeout = defaults.connect_timeout;
+                self.draft.max_scrollback_lines = defaults.max_scrollback_lines;
+                self.draft.default_cursor_shape = defaults.default_cursor_shape;
+                self.draft.default_cursor_blinking = defaults.default_cursor_blinking;
+                self.draft.is_dark_mode = defaults.is_dark_mode;
+                self.draft.invert_mouse_wheel = defaults.invert_mouse_wheel;
+            }
+            Page::Audio => {
+                self.draft.audio_enabled = defaults.audio_enabled;
+                self.draft.console_beep = defaults.console_beep;
+                self.draft.master_volume = defaults.master_volume;
+                self.draft.dial_tone = defaults.dial_tone;
+                self.draft.audio_device = defaults.audio_device;
+            }
+            Page::Paths => {
+                self.draft.download_path = defaults.download_path;
+                self.draft.capture_path = defaults.capture_path;
+            }
+            Page::Login => self.draft.iemsi = defaults.iemsi,
+            Page::Serial => self.draft.serial = defaults.serial,
+            Page::Sources => self.draft.web_directories = defaults.web_directories,
+            Page::Modems => self.draft.modems = defaults.modems,
+            Page::Protocols => {
+                self.draft.transfer_protocols = defaults.transfer_protocols;
+                self.commands.clear();
+                self.invalid_commands.clear();
+            }
+        }
+    }
+
     pub fn show(&mut self, context: &egui::Context) -> Option<Options> {
         let mut saved = None;
         egui::Modal::new(egui::Id::new("settings"))
@@ -116,6 +153,7 @@ impl Settings {
                 ui.set_min_height(height);
                 self.closed |= super::appearance::dialog_header(ui, &tr!("settings-heading"));
                 let pages = [
+                    (Page::Monitor, tr!("settings-monitor-category")),
                     (Page::Terminal, tr!("settings-terminal-category")),
                     (Page::Audio, tr!("egui-audio")),
                     (Page::Paths, tr!("settings-paths-category")),
@@ -150,6 +188,9 @@ impl Settings {
                     .show(ui, |ui| {
                         let options = &mut self.draft;
                         match self.page {
+                            Page::Monitor => {
+                                super::monitor::fields(ui, &mut options.monitor_settings);
+                            }
                             Page::Terminal => {
                                 let mut timeout = options.connect_timeout.as_secs();
                                 super::appearance::form_row(ui, &tr!("egui-connect-timeout"), |ui| {
@@ -214,8 +255,27 @@ impl Settings {
                                 );
                             }
                             Page::Paths => {
+                                super::appearance::section(ui, &tr!("settings-paths-header"));
+                                let config = directories::ProjectDirs::from("com", "GitHub", "icy_term");
+                                let directory = config.as_ref().map(|dirs| dirs.config_dir().to_path_buf());
+                                location_row(ui, &tr!("settings-paths-config-dir"), directory.as_deref(), directory.as_deref());
+                                location_row(
+                                    ui,
+                                    &tr!("settings-paths-config-file"),
+                                    directory.as_ref().map(|dir| dir.join("options.toml")).as_deref(),
+                                    None,
+                                );
+                                location_row(
+                                    ui,
+                                    &tr!("settings-paths-phonebook"),
+                                    directory.as_ref().map(|dir| dir.join("phonebook.toml")).as_deref(),
+                                    None,
+                                );
+                                let log = Options::get_log_file();
+                                location_row(ui, &tr!("settings-paths-log-file"), log.as_deref(), log.as_deref());
+                                super::appearance::section(ui, &tr!("settings-paths-editable-header"));
                                 path_field(ui, &*tr!("settings-paths-download-dir"), &mut options.download_path);
-                                path_field(ui, &*tr!("egui-captures"), &mut options.capture_path);
+                                path_field(ui, &*tr!("settings-paths-capture-path"), &mut options.capture_path);
                             }
                             Page::Login => {
                                 ui.checkbox(&mut options.iemsi.autologin, &*tr!("egui-iemsi-login"));
@@ -396,6 +456,11 @@ impl Settings {
                     if ui.button(&*tr!("egui-discard")).clicked() {
                         self.closed = true;
                     }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button(&*tr!("egui-reset-page")).clicked() {
+                            self.reset_page();
+                        }
+                    });
                 });
             });
         if let Some(error) = &self.error {
@@ -470,6 +535,26 @@ fn command_field(
             invalid.insert(id);
         }
     }
+}
+
+/// Read-only location with an optional button that reveals it in the file manager.
+fn location_row(ui: &mut egui::Ui, label: &str, path: Option<&Path>, open: Option<&Path>) {
+    let text = path.map_or_else(|| "N/A".to_string(), |path| path.display().to_string());
+    super::appearance::form_row(ui, label, |ui| {
+        ui.horizontal(|ui| {
+            let reserved = if open.is_some() { 70.0 } else { 0.0 };
+            ui.add(egui::Label::new(egui::RichText::new(&text).monospace().size(11.0)).truncate().selectable(true))
+                .on_hover_text(&text);
+            if let Some(target) = open {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.set_min_width(reserved);
+                    if ui.button(&*tr!("settings-paths-open")).clicked() && !ui.ctx().will_discard() {
+                        let _ = open::that(target);
+                    }
+                });
+            }
+        });
+    });
 }
 
 fn path_field(ui: &mut egui::Ui, label: &str, value: &mut String) {

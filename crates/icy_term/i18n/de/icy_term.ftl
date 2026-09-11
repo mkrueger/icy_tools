@@ -755,6 +755,9 @@ egui-colors = Farben
 egui-generate-password = Passwort erzeugen
 
 egui-system-name = Systemname
+egui-picture = Bild
+egui-effects = Effekte
+egui-reset-page = Seite zurücksetzen
 egui-statistics = Statistik
 egui-read-only = Schreibgeschützt
 egui-time-just-now = gerade eben

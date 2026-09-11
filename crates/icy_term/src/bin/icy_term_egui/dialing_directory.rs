@@ -684,10 +684,10 @@ impl DialingDirectory {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 5.0;
             let (label, color) = protocol_badge(entry.protocol);
-            badge(ui, label, color);
-            badge(ui, icy_term::fmt_terminal_emulation(&entry.terminal_type), weak);
+            super::appearance::chip(ui, label, color);
+            super::appearance::chip(ui, icy_term::fmt_terminal_emulation(&entry.terminal_type), weak);
             if let Some(source) = &entry.web_source {
-                badge(ui, "WEB", weak);
+                super::appearance::chip(ui, "WEB", weak);
                 ui.add(egui::Label::new(egui::RichText::new(format!("{source} \u{00b7} {}", tr!("egui-read-only"))).weak()).truncate());
             }
         });
@@ -725,9 +725,9 @@ impl DialingDirectory {
                 }
                 super::appearance::section(ui, &tr!("egui-statistics"));
                 ui.horizontal_wrapped(|ui| {
-                    metric_tile(ui, &tr!("egui-calls"), &entry.number_of_calls.to_string());
-                    metric_tile(ui, &tr!("egui-uploaded"), &human_bytes::human_bytes(entry.uploaded_bytes as f64));
-                    metric_tile(ui, &tr!("egui-downloaded"), &human_bytes::human_bytes(entry.downloaded_bytes as f64));
+                    super::appearance::metric_tile(ui, &tr!("egui-calls"), &entry.number_of_calls.to_string());
+                    super::appearance::metric_tile(ui, &tr!("egui-uploaded"), &human_bytes::human_bytes(entry.uploaded_bytes as f64));
+                    super::appearance::metric_tile(ui, &tr!("egui-downloaded"), &human_bytes::human_bytes(entry.downloaded_bytes as f64));
                 });
                 ui.add_space(4.0);
                 for (label, value) in [
@@ -989,14 +989,6 @@ fn monogram_color(name: &str) -> egui::Color32 {
     MONOGRAM_COLORS[(hash % MONOGRAM_COLORS.len() as u32) as usize]
 }
 
-fn badge(ui: &mut egui::Ui, label: &str, color: egui::Color32) {
-    let font = egui::FontId::proportional(10.0);
-    let width = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.to_owned(), font.clone(), color).size().x);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width + 10.0, 15.0), egui::Sense::hover());
-    ui.painter().rect_filled(rect, 3.0, color.gamma_multiply(0.22));
-    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, label, font, color);
-}
-
 /// Byte ranges of `text` matching `query` case-insensitively.
 ///
 /// Lowercasing can change byte lengths, so every lowercase byte keeps the bounds of the
@@ -1048,22 +1040,6 @@ fn highlighted(text: &str, query: &str, font: egui::FontId, color: egui::Color32
     }
     job.append(&text[cursor..], 0.0, format(egui::Color32::TRANSPARENT));
     job
-}
-
-fn metric_tile(ui: &mut egui::Ui, label: &str, value: &str) {
-    egui::Frame::new()
-        .fill(ui.visuals().faint_bg_color)
-        .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
-        .corner_radius(6)
-        .inner_margin(egui::Margin::symmetric(10, 6))
-        .show(ui, |ui| {
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 1.0;
-                ui.set_min_width(64.0);
-                ui.add(egui::Label::new(egui::RichText::new(value).strong().size(15.0)).truncate());
-                ui.add(egui::Label::new(egui::RichText::new(label).weak().size(11.0)).truncate());
-            });
-        });
 }
 
 /// Falls back to an absolute date once an entry is older than a month.
@@ -1173,9 +1149,9 @@ fn address_row(
         ui.spacing_mut().item_spacing.x = 5.0;
         if let Some(meta) = metadata {
             let (label, color) = protocol_badge(meta.protocol);
-            badge(ui, label, color);
+            super::appearance::chip(ui, label, color);
             if meta.remote {
-                badge(ui, "WEB", weak);
+                super::appearance::chip(ui, "WEB", weak);
             }
         }
         ui.add(

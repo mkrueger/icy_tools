@@ -115,44 +115,6 @@ pub fn help(context: &egui::Context, open: &mut bool) {
     }
 }
 
-pub fn about(context: &egui::Context, open: &mut bool) -> Option<String> {
-    let mut link = None;
-    let mut close = false;
-    egui::Modal::new(egui::Id::new("about"))
-        .frame(appearance::dialog_frame(context))
-        .show(context, |ui| {
-            ui.set_width((context.content_rect().width() - 48.0).clamp(240.0, 460.0));
-            close |= appearance::dialog_header(ui, "Icy Term");
-            egui::ScrollArea::vertical()
-                .min_scrolled_height(0.0)
-                .max_height((context.content_rect().height() - 160.0).max(0.0))
-                .show(ui, |ui| {
-                    ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
-                    if let Some(date) = option_env!("ICY_BUILD_DATE") {
-                        ui.weak(date);
-                    }
-                    ui.separator();
-                    ui.label(&*tr!("egui-about-description"));
-                    ui.add_space(4.0);
-                    for (label, url) in [
-                        ("github.com/mkrueger/icy_tools", "https://github.com/mkrueger/icy_tools"),
-                        (&*tr!("menu-item-discuss"), "https://github.com/mkrueger/icy_tools/discussions"),
-                        (&*tr!("menu-item-report-bug"), "https://github.com/mkrueger/icy_tools/issues"),
-                    ] {
-                        if ui.link(label).clicked() {
-                            link = Some(url.to_string());
-                        }
-                    }
-                });
-            ui.separator();
-            close |= ui.button(tr!("egui-close")).clicked();
-        });
-    if close {
-        *open = false;
-    }
-    link
-}
-
 pub fn baud(context: &egui::Context, open: &mut bool, current: BaudEmulation) -> Option<BaudEmulation> {
     let id = egui::Id::new("bps-custom");
     let mut selected = None;
