@@ -6,17 +6,40 @@ edition.workspace = true
 license.workspace = true
 repository = "https://github.com/mkrueger/icy_tools"
 description = "A file viewer for ANSI & ASCII art and other text-based art forms."
+autobins = false
+default-run = "icy_view"
+
+[[bin]]
+name = "icy_view"
+path = "src/bin/icy_view.rs"
+required-features = ["egui"]
+
+[[bin]]
+name = "icy_view_legacy"
+path = "src/main.rs"
+required-features = ["legacy-ui"]
+
+[[bin]]
+name = "icy_view_egui"
+path = "src/bin/icy_view_egui.rs"
+required-features = ["egui"]
+
+[features]
+default = ["egui"]
+legacy-ui = ["dep:icy_ui", "dep:rfd", "icy_engine_gui/legacy-ui"]
+egui = ["dep:eframe", "dep:rfd", "icy_engine_gui/egui"]
 
 [dependencies]
+eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
 icy_engine = { workspace = true }
-icy_engine_gui = { workspace = true }
+icy_engine_gui = { path = "../icy_engine_gui", default-features = false, features = ["opus-audio"] }
 icy_sauce = { workspace = true }
 icy_parser_core = { workspace = true }
 icy_net = { workspace = true }
 icy_sixel = { workspace = true }
 unarc-rs = { workspace = true }
 
-icy_ui = { workspace = true, features = ["tokio", "svg", "image", "wgpu"] }
+icy_ui = { workspace = true, optional = true, features = ["tokio", "svg", "image", "wgpu"] }
 image = { workspace = true }
 clap = { workspace = true }
 directories = { workspace = true }
@@ -43,7 +66,7 @@ tokio-util = "0.7"
 async-trait = "0.1"
 bytemuck = { workspace = true, features = ["derive"] }
 retrofont = { workspace = true }
-rfd = { workspace = true }
+rfd = { workspace = true, optional = true }
 string-interner = { workspace = true }
 
 # SVG and font rendering for shader-based list
@@ -62,6 +85,9 @@ futures = "0.3"
 [build-dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 winres = "0.1"
+
+[dev-dependencies]
+zip = { workspace = true }
 
 [package.metadata.bundle]
 name = "Icy View"

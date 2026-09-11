@@ -13,7 +13,6 @@ mod image_content_view;
 mod image_viewer;
 mod preview_view;
 mod terminal_content_view;
-mod view_thread;
+use icy_view::view_thread;
 
 pub use preview_view::{is_image_file, is_sixel_file, PreviewMessage, PreviewView};
-pub use view_thread::prepare_parser_data;

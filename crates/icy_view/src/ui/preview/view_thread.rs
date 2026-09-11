@@ -39,6 +39,7 @@ pub enum ScrollMode {
 pub enum ViewCommand {
     /// Load data for viewing (path, data, auto_scroll_enabled)
     LoadData(PathBuf, Vec<u8>, bool),
+    LoadDataTagged(u64, PathBuf, Vec<u8>, bool),
     /// Stop current loading/playback
     Stop,
     /// Set baud emulation rate
@@ -50,10 +51,12 @@ pub enum ViewCommand {
 /// Events sent from the view thread to the UI
 #[derive(Clone)]
 pub enum ViewEvent {
+    ForRequest(u64, Box<ViewEvent>),
     /// File loading started
     LoadingStarted(PathBuf),
     /// File loading completed
     LoadingCompleted,
+    LoadFailed(String),
     /// Sauce information extracted from file, with content size (file size without SAUCE)
     SauceInfo(Option<SauceRecord>, usize),
     /// Set scroll mode (determined by background thread)
@@ -210,19 +213,33 @@ pub struct ViewThread {
     /// Baud rate emulator
     baud_emulator: BaudEmulator,
     /// Event sender
-    event_tx: mpsc::UnboundedSender<ViewEvent>,
+    event_tx: ViewEvents,
     /// Sound thread for audio playback
     sound_thread: SoundThread,
     /// Load generation counter - incremented for each new load
     /// Background threads compare their generation to this to know if their result is still wanted
     load_generation: Arc<AtomicU64>,
     /// Pending format load task (will be ignored if load_generation changed)
-    pending_format_load: Option<tokio::task::JoinHandle<Option<FormatLoadResult>>>,
+    pending_format_load: Option<tokio::task::JoinHandle<Result<FormatLoadResult, String>>>,
     /// Auto-scroll enabled setting from UI (preserved across loads)
     auto_scroll_enabled: bool,
     /// Current load operation - None if no file is loaded
     /// Replacing this automatically cancels the previous operation via Drop
     current_load: Option<LoadOperation>,
+}
+
+struct ViewEvents {
+    sender: mpsc::UnboundedSender<ViewEvent>,
+    request: Option<u64>,
+}
+
+impl ViewEvents {
+    fn send(&self, event: ViewEvent) -> Result<(), mpsc::error::SendError<ViewEvent>> {
+        self.sender.send(match self.request {
+            Some(request) => ViewEvent::ForRequest(request, Box::new(event)),
+            None => event,
+        })
+    }
 }
 
 impl ViewThread {
@@ -233,7 +250,10 @@ impl ViewThread {
         let mut thread = Self {
             screen,
             baud_emulator: BaudEmulator::new(),
-            event_tx,
+            event_tx: ViewEvents {
+                sender: event_tx,
+                request: None,
+            },
             sound_thread: SoundThread::new(),
             load_generation: Arc::new(AtomicU64::new(0)),
             pending_format_load: None,
@@ -302,11 +322,13 @@ impl ViewThread {
 
                     result = async { self.pending_format_load.as_mut().unwrap().await } => {
                         self.pending_format_load = None;
-                        if let Ok(Some(load_result)) = result {
-                            let current_gen = self.load_generation.load(Ordering::SeqCst);
-                            if load_result.generation == current_gen {
-                                self.apply_format_load_result(load_result);
+                        match result {
+                            Ok(Ok(load_result)) => {
+                                let current_gen = self.load_generation.load(Ordering::SeqCst);
+                                if load_result.generation == current_gen { self.apply_format_load_result(load_result); }
                             }
+                            Ok(Err(error)) => { let _ = self.event_tx.send(ViewEvent::LoadFailed(error)); }
+                            Err(error) => { let _ = self.event_tx.send(ViewEvent::LoadFailed(error.to_string())); }
                         }
                     }
                 }
@@ -339,6 +361,12 @@ impl ViewThread {
     async fn handle_command(&mut self, command: ViewCommand) -> bool {
         match command {
             ViewCommand::LoadData(path, data, auto_scroll) => {
+                self.event_tx.request = None;
+                self.auto_scroll_enabled = auto_scroll;
+                self.load_data(path, data).await;
+            }
+            ViewCommand::LoadDataTagged(request, path, data, auto_scroll) => {
+                self.event_tx.request = Some(request);
                 self.auto_scroll_enabled = auto_scroll;
                 self.load_data(path, data).await;
             }
@@ -504,10 +532,9 @@ impl ViewThread {
                         let buffer = loaded_doc.screen.buffer;
                         // Validate buffer before returning
                         if buffer.width() == 0 || buffer.height() == 0 {
-                            log::error!("Format produced invalid buffer dimensions: {}x{}", buffer.width(), buffer.height());
-                            None
+                            Err(format!("Invalid buffer dimensions: {}x{}", buffer.width(), buffer.height()))
                         } else {
-                            Some(FormatLoadResult {
+                            Ok(FormatLoadResult {
                                 buffer,
                                 path: path_clone,
                                 stripped_data: stripped_data_clone,
@@ -517,7 +544,7 @@ impl ViewThread {
                     }
                     Err(e) => {
                         log::error!("Format loading failed: {}", e);
-                        None
+                        Err(e.to_string())
                     }
                 }
             });

@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use icy_sauce::SauceRecord;
+#[cfg(feature = "legacy-ui")]
 use icy_ui::Task;
 use thiserror::Error;
 
@@ -17,7 +18,7 @@ pub use sixteencolors::*;
 use crate::thumbnail::{RgbaData, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH};
 use async_trait::async_trait;
 use icy_engine::{formats::FileFormat, AttributedChar, Position, Rectangle, RenderOptions, Selection, TextAttribute, TextBuffer, TextPane};
-pub use icy_engine_gui::ui::FileIcon;
+pub use icy_engine_gui::file_icons::FileIcon;
 use tokio_util::sync::CancellationToken;
 
 // ============================================================================
@@ -255,6 +256,7 @@ pub type SubitemsResult = Result<Vec<Box<dyn Item>>, ItemError>;
 
 /// Load item data asynchronously using Iced's Task system.
 /// Returns a Task that resolves to either (path, data) or (path, error_message).
+#[cfg(feature = "legacy-ui")]
 pub fn load_item_data<M>(
     item: Box<dyn Item>,
     path: String,
@@ -280,6 +282,7 @@ where
 
 /// Load subitems asynchronously using Iced's Task system.
 /// Returns a Task that resolves to Result<Vec<Item>, ItemError>.
+#[cfg(feature = "legacy-ui")]
 pub fn load_subitems<M>(item: Box<dyn Item>, cancel_token: CancellationToken, on_complete: impl FnOnce(SubitemsResult) -> M + Send + 'static) -> Task<M>
 where
     M: Send + 'static,

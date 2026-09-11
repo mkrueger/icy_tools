@@ -2,7 +2,7 @@ use i18n_embed_fl::fl;
 use icy_ui::widget::{button, column, container, row, space, text, tooltip, Space};
 use icy_ui::{Background, Border, Color, Element, Length, Padding, Shadow, Theme};
 
-mod icons;
+pub use crate::file_icons as icons;
 pub use icons::*;
 
 mod dialog;

@@ -4103,6 +4103,7 @@ dependencies = [
  "clap",
  "clap-i18n-richformatter",
  "directories",
+ "eframe",
  "fastrand",
  "flexi_logger",
  "futures",
@@ -4136,6 +4137,7 @@ dependencies = [
  "toml 1.1.5+spec-1.1.0",
  "unarc-rs",
  "winres",
+ "zip",
 ]
 
 [[package]]

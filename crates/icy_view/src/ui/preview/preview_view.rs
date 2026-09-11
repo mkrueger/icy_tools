@@ -607,6 +607,10 @@ impl PreviewView {
 
                 for event in events {
                     match event {
+                        ViewEvent::ForRequest(_, _) => {}
+                        ViewEvent::LoadFailed(error) => {
+                            self.preview_mode = PreviewMode::Error(error);
+                        }
                         ViewEvent::LoadingStarted(_path) => {
                             self.is_loading = true;
 

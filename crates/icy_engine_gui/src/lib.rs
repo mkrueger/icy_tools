@@ -40,6 +40,8 @@ pub use focus::{
     default_style, focus, list_focus_style, no_border_style, Catalog as FocusCatalog, Focus, OnEvent, Style as FocusStyle, StyleFn as FocusStyleFn,
 };
 
+#[cfg(feature = "egui")]
+pub mod egui;
 pub mod terminal;
 use icy_engine::Color;
 pub use terminal::*;
@@ -101,6 +103,9 @@ pub mod util;
 pub mod music;
 
 pub mod release_check;
+
+#[path = "ui/icons.rs"]
+pub mod file_icons;
 
 #[path = "ui/version_helper.rs"]
 pub mod version_helper;
@@ -276,17 +281,13 @@ impl ScalingMode {
                 // Scale based on width to fill horizontal space
                 let scale_x = viewport_width / content_width.max(1.0);
 
-                // But clamp so that min_visible_height rows are always visible
-                // (prevents cutting off content vertically)
-                let max_scale_for_min_rows = if let Some(min_h) = min_visible_height {
-                    viewport_height / min_h.max(1.0)
-                } else {
-                    // If no min specified, use content_height (show all)
-                    viewport_height / content_height.max(1.0)
-                };
-
-                // Use the smaller of width-based scale and max allowed scale
-                let fit_scale = scale_x.min(max_scale_for_min_rows).max(0.1);
+                // Taller content scrolls vertically instead of being squeezed, so only an
+                // explicitly requested minimum visible height clamps the width-based scale.
+                let fit_scale = match min_visible_height {
+                    Some(min_h) => scale_x.min(viewport_height / min_h.max(1.0)),
+                    None => scale_x,
+                }
+                .max(0.1);
 
                 if use_integer_scaling {
                     fit_scale.floor().max(1.0)

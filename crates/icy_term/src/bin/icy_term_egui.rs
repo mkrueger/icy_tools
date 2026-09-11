@@ -3,9 +3,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use clap::Parser;
 use eframe::{egui, egui_wgpu};
 use icy_engine::{formats::FileFormat, TextScreen};
-use icy_engine_gui::{
-    terminal::egui::TerminalCallback, Blink, CRTShaderProgram, CRTShaderState, MonitorSettings, ScalingMode, Terminal, TerminalShaderRenderer,
-};
+use icy_engine_gui::{terminal::egui::TerminalCallback, CRTShaderProgram, CRTShaderState, MonitorSettings, ScalingMode, Terminal, TerminalShaderRenderer};
 use parking_lot::Mutex;
 
 macro_rules! tr {
@@ -703,32 +701,7 @@ impl TerminalApp {
     }
 
     fn schedule_frame(&mut self, context: &egui::Context) {
-        let now = Blink::now_ms();
-        let screen = self.terminal.screen.lock();
-        let buffer_type = screen.buffer_type();
-        let caret = screen.caret();
-        let mut delay = screen.terminal_state().synchronized_output_remaining();
-        for (blink, enabled, rate) in [
-            (
-                &mut self.shader_state.caret_blink,
-                caret.visible && caret.blinking && self.terminal.has_focus,
-                buffer_type.caret_blink_rate(),
-            ),
-            (&mut self.shader_state.character_blink, screen.ice_mode().has_blink(), buffer_type.blink_rate()),
-        ] {
-            if enabled {
-                blink.set_rate(rate as u128);
-                blink.update(now);
-                let remaining = Duration::from_millis(blink.time_until_next(now) as u64 + 1);
-                delay = Some(delay.map_or(remaining, |current| current.min(remaining)));
-            }
-        }
-        if self.settings.use_noise {
-            delay = Some(delay.map_or(Duration::from_millis(33), |current| current.min(Duration::from_millis(33))));
-        }
-        if let Some(delay) = delay {
-            context.request_repaint_after(delay);
-        }
+        icy_engine_gui::egui::screen::schedule_frame(context, &self.terminal, &mut self.shader_state, &self.settings);
     }
 
     fn terminal_view(&mut self, ui: &mut egui::Ui) {

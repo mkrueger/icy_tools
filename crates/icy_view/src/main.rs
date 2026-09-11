@@ -90,6 +90,7 @@ mod items;
 mod sort_order;
 mod thumbnail;
 mod ui;
+pub use icy_view::view_thread;
 
 mod options;
 mod window_manager;

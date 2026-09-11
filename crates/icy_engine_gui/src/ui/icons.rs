@@ -1,4 +1,7 @@
+#![cfg_attr(not(feature = "legacy-ui"), allow(dead_code))]
+
 use icy_engine::formats::FileFormat;
+#[cfg(feature = "legacy-ui")]
 use icy_ui::{widget::svg, Length, Theme};
 
 // Status icons
@@ -42,19 +45,27 @@ const FOLDER_PARENT_SVG: &[u8] = include_bytes!("icons/files/folder_parent.svg")
 const FOLDER_ZIP_SVG: &[u8] = include_bytes!("icons/files/folder_zip.svg");
 const FOLDER_DATA_SVG: &[u8] = include_bytes!("icons/files/folder_data.svg");
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn warning_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(WARNING_SVG))
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn error_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(ERROR_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn info_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(INFO_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn settings_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(SETTINGS_SVG))
@@ -62,9 +73,13 @@ pub fn settings_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
         .height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn delete_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(DELETE_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn content_copy_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(CONTENT_COPY_SVG))
@@ -72,11 +87,15 @@ pub fn content_copy_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
         .height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn arrow_upward_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(ARROW_UPWARD_SVG))
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn arrow_downward_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(ARROW_DOWNWARD_SVG))
@@ -84,24 +103,33 @@ pub fn arrow_downward_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
         .height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn add_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(ADD_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn edit_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(EDIT_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
 }
 
 // Paste tool icons
+#[cfg(feature = "legacy-ui")]
 pub fn rotate_right_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(ROTATE_RIGHT_SVG))
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn flip_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FLIP_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn flip_vertical_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FLIP_VERTICAL_SVG))
@@ -109,9 +137,13 @@ pub fn flip_vertical_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
         .height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn stamp_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(STAMP_SVG)).width(Length::Fixed(size)).height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn opacity_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(OPACITY_SVG))
@@ -120,11 +152,14 @@ pub fn opacity_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
 }
 
 // File type icons
+#[cfg(feature = "legacy-ui")]
 pub fn file_text_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FILE_TEXT_SVG))
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn file_image_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FILE_IMAGE_SVG))
@@ -132,11 +167,15 @@ pub fn file_image_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
         .height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn file_music_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FILE_MUSIC_SVG))
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn file_movie_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FILE_MOVIE_SVG))
@@ -144,11 +183,15 @@ pub fn file_movie_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
         .height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn file_folder_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FILE_FOLDER_SVG))
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn file_generic_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FILE_GENERIC_SVG))
@@ -156,11 +199,15 @@ pub fn file_generic_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
         .height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn file_ansi_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FILE_ANSI_SVG))
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn file_binary_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FILE_BINARY_SVG))
@@ -168,11 +215,15 @@ pub fn file_binary_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
         .height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn file_terminal_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FILE_TERMINAL_SVG))
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn file_graphics_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FILE_GRAPHICS_SVG))
@@ -180,11 +231,15 @@ pub fn file_graphics_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
         .height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn file_game_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FILE_GAME_SVG))
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn file_native_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FILE_NATIVE_SVG))
@@ -193,11 +248,14 @@ pub fn file_native_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
 }
 
 // Folder icons
+#[cfg(feature = "legacy-ui")]
 pub fn folder_open_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FOLDER_OPEN_SVG))
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn folder_parent_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FOLDER_PARENT_SVG))
@@ -205,11 +263,15 @@ pub fn folder_parent_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
         .height(Length::Fixed(size))
 }
 
+#[cfg(feature = "legacy-ui")]
+
 pub fn folder_zip_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FOLDER_ZIP_SVG))
         .width(Length::Fixed(size))
         .height(Length::Fixed(size))
 }
+
+#[cfg(feature = "legacy-ui")]
 
 pub fn folder_data_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
     svg(svg::Handle::from_memory(FOLDER_DATA_SVG))
@@ -218,7 +280,7 @@ pub fn folder_data_icon<'a>(size: f32) -> svg::Svg<'a, Theme> {
 }
 
 /// Icon type for file format representation
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FileIcon {
     /// ANSI art file (.ans, .diz, .nfo, .ice)
     Ansi,
@@ -305,6 +367,7 @@ impl FileIcon {
     }
 
     /// Create an SVG icon widget for this file icon
+    #[cfg(feature = "legacy-ui")]
     pub fn to_svg<'a>(self, size: f32) -> svg::Svg<'a, Theme> {
         match self {
             FileIcon::Ansi => file_ansi_icon(size),
@@ -329,6 +392,7 @@ impl FileIcon {
 }
 
 /// Get an SVG icon for a FileFormat
+#[cfg(feature = "legacy-ui")]
 pub fn get_format_icon<'a>(format: &FileFormat, size: f32) -> svg::Svg<'a, Theme> {
     FileIcon::from_format(format).to_svg(size)
 }

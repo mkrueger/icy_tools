@@ -1,6 +1,40 @@
 # IcyView main application translations
 
 app-about = A viewer for ANSI art, ASCII art and other text-based artwork
+egui-save = Save
+egui-overwrite = Overwrite
+egui-overwrite-question = This file already exists. Replace it?
+egui-settings-conflict = Settings changed on disk. Reopen the dialog before saving.
+egui-no-sauce = This file has no SAUCE record.
+egui-format = Format
+egui-optimize-colors = Optimize colors
+egui-normalize-spaces = Normalize whitespace
+egui-compatibility = Compatibility
+egui-invalid-name = Enter a file name without directory separators.
+egui-command-invalid = The external command is empty or contains invalid quotes.
+egui-menu = Menu
+egui-sort = Sort
+egui-open-folder = Open folder
+egui-line-default = Document width
+egui-line-min = Minimum
+egui-line-max = Maximum
+egui-line-length = Line length
+egui-columns = Columns
+egui-line-wrap = Wrap
+egui-line-force = Force line breaks
+egui-line-break = Line breaks
+egui-line-ending = Line ending
+egui-controls-keep = Keep
+egui-controls-filter = Replace
+egui-controls-escape = IcyTerm escape
+egui-control-chars = Control characters
+egui-colors = Colors
+egui-diffusion = Diffusion
+egui-compress = Compression
+egui-screen-preparation = Screen preparation
+egui-prep-none = None
+egui-prep-clear = Clear screen
+egui-prep-home = Home cursor
 
 # Command line arguments
 arg-path-help = Path to file or directory to open

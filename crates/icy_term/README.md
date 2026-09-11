@@ -212,7 +212,7 @@ stop-sound, and update-notification controls.
 The frontend uses locally bundled Fira Sans, neutral light/dark surfaces, and
 consistent dialog actions. Settings use tabs on wide windows and a category
 selector on narrow windows. The font is distributed under the
-[SIL Open Font License](data/fonts/OFL.txt).
+[SIL Open Font License](../icy_engine_gui/data/fonts/OFL.txt).
 
 Shift+PageUp enters history, Shift+PageDown advances or returns
 to live output, and Escape leaves history. Shift bypasses host mouse reporting.

@@ -1,65 +1,60 @@
 # icy_view
 
-**The Ultimate ANSI Art Viewer** — A powerful, modern viewer for ANSI art files in the spirit of the legendary AcidView.
+ANSI, ASCII and text-art viewer with a native egui frontend and the existing wgpu CRT renderer.
 
-![Screenshot](assets/screenshot.png)
+## Running From Source
 
-## ✨ What's New (December 2024 Rewrite)
+The regular binary now uses egui:
 
-After a complete reimplementation, icy_view is back and better than ever! Here's what we've built:
+```sh
+cargo run -p icy_view -- [FILE_OR_DIRECTORY]
+cargo run -p icy_view -- --config-dir /tmp/icy-view-test [FILE_OR_DIRECTORY]
+```
 
-### 🎨 Modern UI with Three View Modes
+`--auto`, `--bps RATE`, `--portable` and `--config-dir DIR` remain available.
+The `icy_view_egui` alias runs the same frontend. The previous icy_ui frontend is retained explicitly:
 
-- **Thumbnail Grid View** — Browse your collection with beautifully rendered previews
-- **List View** — Classic file listing with SAUCE info columns (Title, Author, Group)
-- **Full Preview Mode** — Immersive viewing with auto-hiding toolbar
+```sh
+cargo run -p icy_view --no-default-features --features legacy-ui --bin icy_view_legacy
+```
 
-### 🌐 sixteencolors.net Integration
+An isolated default build does not depend on icy_ui. Building the entire workspace may still enable it through other applications.
 
-Browse the world's largest ANSI art archive directly from icy_view! Navigate years, packs, and files as if they were local folders. Thumbnails are cached for instant browsing.
+## egui Frontend
 
-### 🎬 Shuffle Mode (Slideshow)
+- List, thumbnail grid and full preview, with responsive navigation for small windows.
+- Custom masonry tiles reuse the original layout algorithm: variable aspect-ratio heights, one to three columns per thumbnail, shortest-column placement, spatial arrow navigation and scrolling to the selected tile.
+- The tile view has the original overlay toolbar with up, sort, list and slideshow buttons; it hides itself after five seconds (1.5 seconds later on) and returns when the top left corner is touched.
+- Compact 24-pixel file rows with filter highlighting, clickable name/size headers, direct sort controls and SAUCE mode with separate name, title, author and group columns. SAUCE mode expands the list; narrow windows can scroll the columns horizontally.
+- The original colour coding: file names by type, SAUCE title in yellow, author in green and group in blue, with a placeholder for empty fields.
+- A colour-coded status bar summary of title, author, group, date, content size, buffer size and capabilities; clicking it opens the SAUCE dialog.
+- Local directories, nested archives and the existing Sixteen Colors provider.
+- Background loading, cancellation, filtering, sorting and navigation history.
+- Text-art, image and Sixel previews; tiled uploads support images taller than a GPU texture.
+- Art fills the window width and scrolls vertically instead of being shrunk to fit the height, as in the original viewer.
+- Zoom, mouse panning, automatic scrolling and baud-rate emulation.
+- Slideshow mode with the original timing (minimum display time and a pause after scrolling), a title/author/group overlay, SAUCE comments that scroll up and fade, Space/Enter for the next file, Escape or a click to leave, and background preloading of the next file.
+- Text selection, rectangular selection with Alt, word/line selection, copy and hyperlinks.
+- SAUCE inspection, export with format-specific options, and overwrite confirmation.
+- Monitor settings, external commands F5-F8, export directory, help and ANSI About dialog.
+- Existing command definitions and translations; new labels have English/German translations with fallback for other locales.
 
-Press `S` to enter a mesmerizing slideshow experience:
-- Random file selection from current folder/archive
-- **Auto-scrolling** for tall artwork
-- **SAUCE comments** fade in with smooth animations
-- **Title/Author/Group overlay** with elegant styling
-- **Background preloading** — next image is decoded while you're viewing the current one
-- Exit anytime with Escape, Enter, or mouse click
+`icy_engine_gui::egui` now owns the shared dialog layout, typography, fonts, monitor controls, shortcuts, screen widget and blink scheduling. icy_term uses the same appearance, monitor and frame-scheduling infrastructure. Both viewer frontends reuse the file providers, format/parser worker, audio backend, thumbnail loader, masonry layout and background SAUCE loader. The custom egui widgets paint thumbnails in GPU-sized slices without the former 512-pixel reduction; texture eviction preserves layout metadata.
 
-### 📺 CRT Monitor Effects
+Settings are saved explicitly from the settings dialog. Unknown TOML fields are retained; a changed configuration file blocks saving an older draft. This check is not a cross-process lock.
 
-Authentic retro feel with configurable:
-- Scanlines
-- Curvature
-- Blur
-- Saturation
-- Brightness/Contrast
-- Background color matching the screen
+### Migration Notes
 
-### 🖼️ Enhanced Image Support
+The core browsing and viewing workflows are ported, but the frontend is not pixel-identical to the legacy UI. Image previews show the first frame of animated image files. New windows run as independent processes.
 
-- **Native image viewer** with smooth zoom and pan
-- **Sixel image support** — view retro graphics formats
-- **Auto-scroll for images** in shuffle mode
-- **Preloaded image decoding** for instant transitions
-### ⚡ Performance Features
+Automated tests cover local/ZIP navigation, folder/archive double-clicks, cancellation, text/image/error loading, export, configuration conflicts, masonry navigation, thumbnail-cache eviction, the auto-hiding tile toolbar, slideshow timing and comment fading, and vertical scrolling of tall art. Real wgpu tests cover selection/copy, long image tiles, 80/160/240-column XBin thumbnails, SAUCE columns and sorting, the colour-coded status bar with its SAUCE dialog, the slideshow overlay, and dialogs in light/dark themes at desktop, narrow, short and HiDPI sizes:
 
-- **Baud rate emulation** — watch files render like the old days (300 to 115200 baud)
-- **Background file preloading** in shuffle mode
-- **Efficient thumbnail caching** with GPU-accelerated rendering
-- **Smart viewport scrolling** with smooth animations
+```sh
+cargo test -p icy_view --bin icy_view
+cargo test -p icy_view --bin icy_view -- --include-ignored
+```
 
-### 🔧 Quality of Life
-
-- **Unified command system** with customizable keyboard shortcuts
-- **Filter popup** — quickly search files with `/` or `Ctrl+F`
-- **Navigation history** with back/forward support
-- **Drag-and-drop** file opening
-- **Copy to clipboard** functionality
-- **Full-screen mode** with `F11`
-- **Multi-language support** (EN, DE, FR, ES, IT, PT, PL, HU, RO, CS, CA)
+The second command requires a working GPU adapter and network access for the optional live Sixteen Colors pack-list test. Run just that web test with `cargo test -p icy_view --bin icy_view live_web_pack_populates_tiles_after_loading -- --include-ignored`. A separate offline regression covers directory results arriving after an empty tile layout has already been rendered. Native file dialogs, audible output, full online browsing workflows and macOS/Windows window behavior still need testing on their target environments.
 
 ---
 

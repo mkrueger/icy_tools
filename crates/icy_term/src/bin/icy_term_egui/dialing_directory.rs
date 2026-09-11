@@ -76,7 +76,7 @@ impl Icons {
             call: load(context, "dial-call", include_bytes!("../../../data/icons/call.svg")),
             upload: load(context, "terminal-upload", include_bytes!("../../../data/icons/upload.svg")),
             download: load(context, "terminal-download", include_bytes!("../../../data/icons/download.svg")),
-            menu: load(context, "terminal-menu", include_bytes!("../../../data/icons/menu.svg")),
+            menu: load(context, "terminal-menu", include_bytes!("../../../../icy_engine_gui/data/icons/menu.svg")),
             logout: load(context, "terminal-logout", include_bytes!("../../../data/icons/logout.svg")),
             close: load(context, "dial-close", include_bytes!("../../../data/icons/close.svg")),
             eye: load(context, "dial-eye", include_bytes!("../../../data/icons/visibility.svg")),

@@ -299,7 +299,9 @@ macro_rules! command_handlers {
 
 #[cfg(test)]
 mod tests {
-    use crate::commands::{cmd, create_common_commands, macros::CommandId, Hotkey};
+    use crate::commands::{cmd, macros::CommandId};
+    #[cfg(feature = "legacy-ui")]
+    use crate::commands::{create_common_commands, Hotkey};
 
     #[derive(Debug, Clone, PartialEq)]
     enum TestMessage {
@@ -357,20 +359,24 @@ mod tests {
 
     // Tests for command_handler! macro (struct generation)
 
+    #[cfg(feature = "legacy-ui")]
     command_handler!(SingleParamCommands, create_common_commands(), window_id: u32 => TestMessage {
         cmd::WINDOW_NEW => TestMessage::Open,
         cmd::WINDOW_CLOSE => TestMessage::Close(window_id),
     });
 
+    #[cfg(feature = "legacy-ui")]
     command_handler!(TupleParamCommands, create_common_commands(), (window_id, offset): (u32, i32) => TestMessage {
         cmd::WINDOW_NEW => TestMessage::Move(window_id, offset, 0),
     });
 
+    #[cfg(feature = "legacy-ui")]
     command_handler!(NoParamCommands, create_common_commands(), => TestMessage {
         cmd::FILE_OPEN => TestMessage::Open,
     });
 
     #[test]
+    #[cfg(feature = "legacy-ui")]
     fn test_command_handler_single_param() {
         let handler = SingleParamCommands::new();
 
@@ -382,6 +388,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "legacy-ui")]
     fn test_command_handler_tuple_param() {
         let handler = TupleParamCommands::new();
 
@@ -390,6 +397,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "legacy-ui")]
     fn test_command_handler_no_param() {
         let handler = NoParamCommands::new();
 

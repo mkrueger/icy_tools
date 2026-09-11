@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::items::Item;
-use crate::ui::preview::prepare_parser_data;
+use crate::view_thread::prepare_parser_data;
 
 use super::thumbnail::{get_width_multiplier, RgbaData, ThumbnailResult, ThumbnailState, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH};
 

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use i18n_embed_fl::fl;
 use icy_engine::char_set::TdfBufferRenderer;
 use icy_engine::TextBuffer;
-use icy_engine_gui::ui::FileIcon;
+use icy_engine_gui::file_icons::FileIcon;
 use retrofont::{Font, RenderOptions};
 use tokio_util::sync::CancellationToken;
 
