@@ -554,11 +554,19 @@ async fn gpu_overlays_and_shortcut_actions() {
         hotkeys::shortcut(hotkeys::Action::Hangup),
         hotkeys::shortcut(hotkeys::Action::Upload),
     ] {
-        assert!(harness.controls.contains_key(&shortcut), "help is missing {shortcut}");
+        // Each key is drawn as its own pill, so look for the individual keys.
+        for key in hotkeys::key_parts(&shortcut) {
+            assert!(harness.controls.contains_key(&key), "help is missing {key} of {shortcut}");
+        }
     }
     for (_, entries) in hotkeys::help_entries() {
-        for (name, _) in entries {
-            assert!(!name.contains("No localization"), "untranslated shortcut label: {name}");
+        for entry in entries {
+            assert!(!entry.action.contains("No localization"), "untranslated shortcut label: {}", entry.action);
+            assert!(
+                !entry.description.contains("No localization"),
+                "untranslated shortcut description: {}",
+                entry.description
+            );
         }
     }
     app.help_open = false;

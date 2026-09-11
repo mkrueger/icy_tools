@@ -229,26 +229,63 @@ fn translate(key: &str) -> Option<String> {
     None
 }
 
+pub struct HelpEntry {
+    pub shortcut: String,
+    pub action: String,
+    pub description: String,
+}
+
+/// Splits "Ctrl+Shift+N" into single keys; a trailing "++" means the literal plus key.
+pub fn key_parts(shortcut: &str) -> Vec<String> {
+    shortcut
+        .split(' ')
+        .filter(|chunk| !chunk.is_empty())
+        .flat_map(|chunk| {
+            if chunk == "+" {
+                return vec!["+".to_string()];
+            }
+            let literal_plus = chunk.ends_with("++");
+            let keys = if literal_plus { &chunk[..chunk.len() - 1] } else { chunk };
+            let mut parts: Vec<String> = keys.split('+').filter(|part| !part.is_empty()).map(str::to_string).collect();
+            if literal_plus {
+                parts.push("+".to_string());
+            }
+            parts
+        })
+        .collect()
+}
+
 /// Grouped for the shortcut overview, following the legacy help dialog.
-pub fn help_entries() -> Vec<(String, Vec<(String, String)>)> {
-    let mut categories: Vec<(String, Vec<(String, String)>)> = Vec::new();
+pub fn help_entries() -> Vec<(String, Vec<HelpEntry>)> {
+    let mut categories: Vec<(String, Vec<HelpEntry>)> = Vec::new();
     for (action, _) in bindings() {
         let command = command(action);
         let Some(shortcut) = command.primary_hotkey_display() else {
             continue;
         };
-        let name = if command.label_action.is_empty() {
-            translate(&command.fluent_action_key()).unwrap_or_else(|| command.id.clone())
-        } else {
-            command.label_action.clone()
+        let label = |value: &String, key: String| {
+            if value.is_empty() {
+                translate(&key)
+            } else {
+                Some(value.clone())
+            }
         };
+        let name = label(&command.label_menu, command.fluent_menu_key())
+            .or_else(|| label(&command.label_action, command.fluent_action_key()))
+            .unwrap_or_else(|| command.id.clone());
+        let description = label(&command.label_description, command.fluent_desc_key()).unwrap_or_default();
         let category = command
             .fluent_category_key()
             .and_then(|key| translate(&key))
             .unwrap_or_else(|| tr!("egui-session"));
+        let entry = HelpEntry {
+            shortcut,
+            action: name,
+            description,
+        };
         match categories.iter_mut().find(|(existing, _)| *existing == category) {
-            Some((_, entries)) => entries.push((name, shortcut)),
-            None => categories.push((category, vec![(name, shortcut)])),
+            Some((_, entries)) => entries.push(entry),
+            None => categories.push((category, vec![entry])),
         }
     }
     categories
