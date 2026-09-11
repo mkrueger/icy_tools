@@ -59,7 +59,7 @@ use clap_i18n_richformatter::clap_i18n;
 use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use semver::Version;
 
-mod mcp;
+pub use icy_draw::mcp;
 mod session;
 mod ui;
 mod util;
@@ -70,6 +70,7 @@ pub use ui::settings::*;
 pub use window_manager::*;
 
 pub use util::*;
+pub use icy_draw::brush;
 
 pub static VERSION: std::sync::LazyLock<Version> = std::sync::LazyLock::new(|| Version::parse(env!("CARGO_PKG_VERSION")).unwrap());
 

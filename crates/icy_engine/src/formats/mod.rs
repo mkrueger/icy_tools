@@ -137,6 +137,8 @@ pub fn apply_sauce_to_buffer(buf: &mut TextBuffer, sauce: &SauceRecord) {
             lines,
             font_opt,
             ice_colors,
+            letter_spacing,
+            aspect_ratio,
             ..
         })
         | Capabilities::Binary(BinaryCapabilities {
@@ -144,6 +146,8 @@ pub fn apply_sauce_to_buffer(buf: &mut TextBuffer, sauce: &SauceRecord) {
             lines,
             font_opt,
             ice_colors,
+            letter_spacing,
+            aspect_ratio,
             ..
         }),
     ) = sauce.capabilities()
@@ -178,6 +182,8 @@ pub fn apply_sauce_to_buffer(buf: &mut TextBuffer, sauce: &SauceRecord) {
             buf.ice_mode = IceMode::Ice;
         }
         buf.terminal_state.ice_colors = ice_colors;
+        buf.set_use_letter_spacing(letter_spacing == LetterSpacing::NinePixel);
+        buf.set_use_aspect_ratio(aspect_ratio == AspectRatio::LegacyDevice);
     } else {
         // No character/binary capabilities - nothing to apply
     }
@@ -190,7 +196,20 @@ pub fn apply_sauce_to_buffer(buf: &mut TextBuffer, sauce: &SauceRecord) {
 /// otherwise inflate the scrollable area (e.g. 120x110 art with SAUCE lines=200).
 pub fn apply_sauce_to_buffer_without_resize(buf: &mut TextBuffer, sauce: &SauceRecord) {
     if let Some(
-        Capabilities::Character(CharacterCapabilities { font_opt, ice_colors, .. }) | Capabilities::Binary(BinaryCapabilities { font_opt, ice_colors, .. }),
+        Capabilities::Character(CharacterCapabilities {
+            font_opt,
+            ice_colors,
+            letter_spacing,
+            aspect_ratio,
+            ..
+        })
+        | Capabilities::Binary(BinaryCapabilities {
+            font_opt,
+            ice_colors,
+            letter_spacing,
+            aspect_ratio,
+            ..
+        }),
     ) = sauce.capabilities()
     {
         // Apply font if specified
@@ -205,6 +224,8 @@ pub fn apply_sauce_to_buffer_without_resize(buf: &mut TextBuffer, sauce: &SauceR
             buf.ice_mode = IceMode::Ice;
         }
         buf.terminal_state.ice_colors = ice_colors;
+        buf.set_use_letter_spacing(letter_spacing == LetterSpacing::NinePixel);
+        buf.set_use_aspect_ratio(aspect_ratio == AspectRatio::LegacyDevice);
     }
 }
 

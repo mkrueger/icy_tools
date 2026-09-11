@@ -17,7 +17,9 @@ mod undo_operation;
 mod undo_stack;
 
 // Re-export clipboard types for convenience
-pub use clipboard::{copy_to_clipboard, get_from_clipboard, has_bitfont_data, BitFontClipboardData, BitFontClipboardError, BITFONT_CLIPBOARD_TYPE};
+#[cfg(feature = "legacy-ui")]
+pub use clipboard::{copy_to_clipboard, get_from_clipboard, has_bitfont_data};
+pub use clipboard::{BitFontClipboardData, BitFontClipboardError, BITFONT_CLIPBOARD_TYPE};
 
 /// Maximum allowed font height (rows per glyph)
 pub const MAX_FONT_HEIGHT: i32 = 32;

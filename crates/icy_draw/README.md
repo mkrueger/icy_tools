@@ -16,6 +16,61 @@
 
 ---
 
+## Frontend Migration
+
+The normal `icy_draw` binary now uses egui/eframe with the shared wgpu terminal
+renderer used by IcyTerm, IcyView, and IcyMail. The `icy_draw_egui` alias is also
+available. Original drawing icons, bitmap glyphs, painting helpers, document
+formats, undo operations, font loading, Lua plugins, and the MCP HTTP server are
+reused.
+
+```sh
+cargo run -p icy_draw -- art.icy
+cargo run -p icy_draw -- --mcp-port 8080
+cargo run -p icy_draw -- host --bind 127.0.0.1 --port 8000 art.icy
+```
+
+The egui frontend currently includes:
+
+- ANSI/ASCII editing, brushes, shapes, half-block drawing, flood fill, rectangular
+  selection, layers, palette editing, tags, SAUCE, and undo/redo.
+- Bitmap font editing and PSF saving; TDF collection/glyph editing; TDF/FIGlet
+  text drawing with the existing watched font library.
+- Lua animation editing, frame preview/playback, GIF and Asciicast export.
+- Existing Lua plugins, direct Lua scripts, MCP automation, and the headless
+  collaboration server.
+- Shared monitor controls and GPU rendering, manual/fit zoom, scrolling,
+  character grid, native file dialogs, and independent editor-window processes.
+- Atomic native document/font/script saves with external-change checks and
+  explicit overwrite confirmation. Save uses `.icy`, `.tdf`, or `.psf` as
+  appropriate; ANSI and image formats use Export.
+
+This is **not yet full legacy UI parity**. Use the legacy frontend for graphical
+collaboration sessions, session/autosave recovery, AV1 export, advanced bitmap
+font import/export and font-slot management, free-form selections, reference
+images, guides, and the minimap. The egui controls currently use English labels.
+Rich clipboard data is retained inside one editor instance; copying between
+instances uses plain text. New windows do not share live documents. Existing
+legacy session files are not migrated or modified by the egui frontend. Lua
+execution retains the existing backend's lack of a runtime cancellation limit.
+
+```sh
+cargo run -p icy_draw --no-default-features --features legacy-ui --bin icy_draw_legacy -- art.icy
+```
+
+Focused validation commands:
+
+```sh
+cargo test -p icy_draw --no-default-features --lib
+cargo test -p icy_draw --bin icy_draw
+# Requires a working native wgpu adapter; writes optional screenshots:
+ICY_EGUI_SCREENSHOTS="$PWD/target/egui-draw" cargo test -p icy_draw --bin icy_draw gpu_ -- --ignored
+cargo check -p icy_draw --features legacy-ui --bins
+```
+
+The feature overview below describes the complete application, including
+features that still require the legacy frontend.
+
 ## ✨ Overview
 
 IcyDraw is the spiritual successor to **MysticDraw** (1996–2003), completely reimagined for the modern era. Unlike traditional ANSI editors, IcyDraw brings a contemporary graphics editor workflow to the world of text-mode art.

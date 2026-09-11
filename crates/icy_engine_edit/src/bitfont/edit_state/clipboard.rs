@@ -8,13 +8,14 @@
 
 use crate::bitfont::BitFontUndoOp;
 use crate::Result;
+#[cfg(feature = "legacy-ui")]
 use icy_ui::Task;
 
 use super::{BitFontEditState, BitFontFocusedPanel};
 
 impl BitFontEditState {
     /// Get pixel data to copy (selection or entire glyph)
-    fn get_copy_data(&self) -> Vec<Vec<bool>> {
+    pub fn get_copy_data(&self) -> Vec<Vec<bool>> {
         let glyph_data = self.get_glyph_pixels(self.selected_char);
 
         if let Some(selection) = &self.edit_selection {
@@ -43,6 +44,7 @@ impl BitFontEditState {
     ///
     /// Returns a Task that performs the clipboard write.
     /// Clears edit and charset selections after copying.
+    #[cfg(feature = "legacy-ui")]
     pub fn copy<Message: Send + 'static>(
         &mut self,
         on_complete: impl Fn(std::result::Result<(), crate::bitfont::BitFontClipboardError>) -> Message + Send + 'static,
@@ -64,6 +66,7 @@ impl BitFontEditState {
     /// Returns a Task that performs the clipboard write.
     /// Copies to clipboard then erases the selection.
     /// Clears edit and charset selections after cutting.
+    #[cfg(feature = "legacy-ui")]
     pub fn cut<Message: Send + 'static>(
         &mut self,
         on_complete: impl Fn(std::result::Result<(), crate::bitfont::BitFontClipboardError>) -> Message + Send + 'static,
@@ -88,6 +91,7 @@ impl BitFontEditState {
     ///
     /// Returns a Task that reads the clipboard and calls the callback with the result.
     /// The callback receives the parsed BitFontClipboardData or an error.
+    #[cfg(feature = "legacy-ui")]
     pub fn paste<Message: Send + 'static>(
         on_result: impl Fn(std::result::Result<crate::bitfont::BitFontClipboardData, crate::bitfont::BitFontClipboardError>) -> Message + Send + 'static,
     ) -> Task<Message> {
@@ -164,6 +168,7 @@ impl BitFontEditState {
     /// Check if clipboard contains BitFont data
     ///
     /// Returns a Task that checks clipboard availability.
+    #[cfg(feature = "legacy-ui")]
     pub fn can_paste<Message: Send + 'static>(on_result: impl Fn(bool) -> Message + Send + 'static) -> Task<Message> {
         crate::bitfont::has_bitfont_data(on_result)
     }

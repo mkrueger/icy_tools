@@ -2,7 +2,7 @@ use icy_engine_gui::{ExportSettings, MonitorSettings};
 use serde::{Deserialize, Serialize};
 use std::{fs, io::Write, path::PathBuf};
 
-use crate::{ui::FKeySets, MostRecentlyUsedFiles};
+use crate::{FKeySets, MostRecentlyUsedFiles};
 
 // =============================================================================
 // Project directory constants

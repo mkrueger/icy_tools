@@ -652,6 +652,19 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         (width, height, image_empty)
     };
 
+    let (width, height, preview) = if image_empty {
+        (width, height, vec![0, 0, 0, 0])
+    } else {
+        let (size, data) = buf.render_to_rgba(
+            &crate::Rectangle {
+                start: Position::new(0, first_line),
+                size: Size::new(buf.width(), last_line - first_line),
+            }
+            .into(),
+            false,
+        );
+        (size.width, size.height, data)
+    };
     let mut encoder: png::Encoder<'_, &mut Vec<u8>> = png::Encoder::new(&mut png_bytes, width as u32, height as u32);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
@@ -836,19 +849,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
 
     write_icyd_record(&mut writer, "END", &[])?;
 
-    if image_empty {
-        writer.write_image_data(&[0, 0, 0, 0])?;
-    } else {
-        let (_, data) = buf.render_to_rgba(
-            &crate::Rectangle {
-                start: Position::new(0, first_line),
-                size: Size::new(buf.width(), last_line - first_line),
-            }
-            .into(),
-            false,
-        );
-        writer.write_image_data(&data)?;
-    }
+    writer.write_image_data(&preview)?;
     writer.finish()?;
 
     Ok(png_bytes)

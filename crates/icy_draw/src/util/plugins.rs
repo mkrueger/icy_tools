@@ -128,14 +128,14 @@ impl Plugin {
         globals.set("end_y", end_y).map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
         // Begin atomic undo
-        {
+        let _undo = {
             let mut screen_guard = screen.lock();
             let edit_state = screen_guard
                 .as_any_mut()
                 .downcast_mut::<EditState>()
                 .ok_or_else(|| anyhow::anyhow!("Screen is not EditState"))?;
-            let _ = edit_state.begin_atomic_undo(fl!(LANGUAGE_LOADER, "undo-plugin", title = self.title.clone()));
-        }
+            edit_state.begin_atomic_undo(fl!(LANGUAGE_LOADER, "undo-plugin", title = self.title.clone()))
+        };
 
         lua.load(&self.text).exec().map_err(|error| anyhow::anyhow!(error.to_string()))?;
         Ok(())
@@ -202,14 +202,14 @@ impl Plugin {
         globals.set("end_y", end_y).map_err(|error| error.to_string())?;
 
         // Begin atomic undo
-        {
+        let _undo = {
             let mut screen_guard = screen.lock();
             let edit_state = screen_guard
                 .as_any_mut()
                 .downcast_mut::<EditState>()
                 .ok_or_else(|| "Screen is not EditState".to_string())?;
-            let _ = edit_state.begin_atomic_undo(undo_description.to_string());
-        }
+            edit_state.begin_atomic_undo(undo_description.to_string())
+        };
 
         lua.load(script).exec().map_err(|error| error.to_string())?;
 

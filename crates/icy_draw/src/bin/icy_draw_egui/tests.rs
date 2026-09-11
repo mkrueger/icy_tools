@@ -1,0 +1,505 @@
+use super::*;
+use eframe::{egui_wgpu, wgpu};
+use icy_engine_gui::TerminalShaderRenderer;
+
+fn frame(context: &egui::Context, app: &mut DrawApp, size: egui::Vec2, events: Vec<egui::Event>) -> egui::FullOutput {
+    let time = context.input(|input| input.time) + 0.05;
+    context.run(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            events,
+            time: Some(time),
+            ..Default::default()
+        },
+        |context| app.show(context),
+    )
+}
+
+#[test]
+fn typing_modal_and_locked_layer_routes() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    frame(&context, &mut app, size, vec![egui::Event::Text("HELLO".into())]);
+    assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch), 'H');
+    app.document.undo().unwrap();
+    app.dialog = Some(Dialog::New);
+    frame(&context, &mut app, size, vec![egui::Event::Text("BAD".into())]);
+    assert!(!app.document.modified());
+    app.dialog = None;
+    app.document.with_state(|state| state.get_cur_layer_mut().unwrap().properties.is_locked = true);
+    frame(&context, &mut app, size, vec![egui::Event::Text("BAD".into())]);
+    assert!(!app.document.modified());
+}
+
+#[test]
+fn failed_open_keeps_original_document() {
+    let mut app = DrawApp::new();
+    let original = app.document.screen.clone();
+    app.open(PathBuf::from("/nonexistent/icy-draw/missing.icy"));
+    assert!(std::sync::Arc::ptr_eq(&original, &app.document.screen));
+    assert!(matches!(app.dialog, Some(Dialog::Error(_))));
+}
+
+#[test]
+fn dirty_open_prompts_before_replacing() {
+    let mut app = DrawApp::new();
+    app.document.type_text("KEEP").unwrap();
+    let original = app.document.screen.clone();
+    app.open(PathBuf::from("next.icy"));
+    assert!(matches!(app.dialog, Some(Dialog::Close)));
+    assert!(std::sync::Arc::ptr_eq(&original, &app.document.screen));
+}
+
+#[test]
+fn pending_shape_is_committed_before_new_or_open() {
+    for open in [false, true] {
+        let mut app = DrawApp::new();
+        app.document.tool = Tool::Line;
+        app.document.brush.primary = BrushPrimaryMode::Char;
+        app.document.begin(Position::new(0, 0), icy_engine::MouseButton::Left);
+        app.document.update(Position::new(4, 0));
+        assert!(!app.document.modified());
+        if open {
+            app.open(PathBuf::from("next.icy"));
+        } else {
+            app.request_new();
+        }
+        assert!(app.document.modified());
+        assert!(matches!(app.dialog, Some(Dialog::Close)));
+    }
+}
+
+#[test]
+fn native_close_commits_shape_and_waits_for_picker() {
+    for picker in [false, true] {
+        let context = egui::Context::default();
+        let mut app = DrawApp::new();
+        app.document.tool = Tool::Line;
+        app.document.begin(Position::new(0, 0), icy_engine::MouseButton::Left);
+        app.document.update(Position::new(4, 0));
+        app.picker = picker;
+        let mut input = egui::RawInput::default();
+        input
+            .viewports
+            .get_mut(&egui::ViewportId::ROOT)
+            .unwrap()
+            .events
+            .push(egui::ViewportEvent::Close);
+        let output = context.run(input, |context| app.show(context));
+        assert!(app.document.modified());
+        assert!(output.viewport_output[&egui::ViewportId::ROOT]
+            .commands
+            .contains(&egui::ViewportCommand::CancelClose));
+        assert_eq!(matches!(app.dialog, Some(Dialog::Close)), !picker);
+    }
+}
+
+#[test]
+fn internal_copy_paste_preserves_colors() {
+    let mut app = DrawApp::new();
+    app.document.with_state(|state| state.set_caret_foreground(12));
+    app.document.type_text("COLOR").unwrap();
+    let mut selection = Selection::new(Position::new(0, 0));
+    selection.lead = Position::new(4, 0);
+    app.document.with_state(|state| state.set_selection(selection)).unwrap();
+    app.copy(&egui::Context::default());
+    let text = app.clipboard.as_ref().unwrap().0.clone();
+    app.document.with_state(|state| {
+        state.set_caret_position(Position::new(0, 2));
+        state.set_caret_foreground(7);
+    });
+    app.paste(&text);
+    let character = app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 2)));
+    assert_eq!(character.ch, 'C');
+    assert_eq!(character.attribute.foreground(), 12);
+}
+
+#[test]
+fn failed_open_after_discard_keeps_the_unsaved_buffer() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.document.type_text("KEEP").unwrap();
+    let original = app.document.screen.clone();
+    app.open(PathBuf::from("/nonexistent/next.icy"));
+    app.complete_close(&context);
+    assert!(matches!(app.dialog, Some(Dialog::Error(_))));
+    assert!(std::sync::Arc::ptr_eq(&original, &app.document.screen));
+    assert!(app.document.modified());
+}
+
+#[test]
+fn save_then_open_completes_the_pending_action() {
+    let directory = tempfile::tempdir().unwrap();
+    let next_path = directory.path().join("next.icy");
+    Document::new(Size::new(40, 12)).save(&next_path, false).unwrap();
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.document.type_text("KEEP").unwrap();
+    app.open(next_path.clone());
+    app.continue_after_save = true;
+    let saved = directory.path().join("saved.icy");
+    app.save_path(&context, saved.clone(), false);
+    assert_eq!(app.document.path, Some(next_path));
+    assert!(!app.continue_after_save);
+    assert_eq!(
+        Document::load(&saved)
+            .unwrap()
+            .with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch),
+        'K'
+    );
+}
+
+#[test]
+fn native_and_ansi_exports_preserve_sauce_without_clearing_dirty_state() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = DrawApp::new();
+    app.document.type_text("ART").unwrap();
+    app.document
+        .with_state(|state| {
+            state.update_sauce_data(icy_engine::formats::SauceMetaData {
+                title: "Roundtrip".into(),
+                author: "Artist".into(),
+                group: "Group".into(),
+                comments: vec!["Comment".into()],
+            })
+        })
+        .unwrap();
+    let native = directory.path().join("art.icy");
+    app.document.save(&native, false).unwrap();
+    let reopened = Document::load(&native).unwrap();
+    assert_eq!(reopened.with_state(|state| state.get_sauce_meta().title.to_string()), "Roundtrip");
+    app.document.type_text("!").unwrap();
+    let output = directory.path().join("art.ans");
+    app.export_path(output.clone());
+    assert!(app.document.modified());
+    assert_eq!(app.document.path, Some(native));
+    let reopened = Document::load(&output).unwrap();
+    assert_eq!(reopened.with_state(|state| state.get_sauce_meta().author.to_string()), "Artist");
+    assert_eq!(reopened.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch), 'A');
+    app.export_format = FileFormat::Image(icy_engine::formats::ImageFormat::Png);
+    let image = directory.path().join("art.png");
+    app.export_path(image.clone());
+    assert!(image::open(image).unwrap().width() > 0);
+}
+
+#[test]
+fn responsive_canvas_keeps_usable_bounds() {
+    for size in [egui::vec2(1280.0, 820.0), egui::vec2(440.0, 700.0), egui::vec2(440.0, 300.0)] {
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let mut app = DrawApp::new();
+        for tool in [Tool::Click, Tool::Pencil] {
+            app.document.tool = tool;
+            frame(&context, &mut app, size, vec![]);
+            frame(&context, &mut app, size, vec![]);
+            assert!(
+                app.canvas_rect.width() > 150.0 && app.canvas_rect.height() > 60.0,
+                "{size:?}: {:?}",
+                app.canvas_rect
+            );
+            assert!(egui::Rect::from_min_size(egui::Pos2::ZERO, size).contains_rect(app.canvas_rect));
+        }
+    }
+}
+
+#[test]
+fn tdf_changes_switch_and_save_through_the_app() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("test.tdf");
+    let mut app = DrawApp::new();
+    let font = icy_draw::charfont::CharFontDocument::new(icy_engine_edit::charset::TdfFontType::Color);
+    app.replace(font.document());
+    app.charfont = Some(font);
+    app.document.type_text("A").unwrap();
+    app.change_charfont(|state| state.select_char('B'));
+    app.document.type_text("B").unwrap();
+    app.save_path(&egui::Context::default(), path.clone(), false);
+    assert!(!app.modified());
+    std::fs::write(&path, b"external").unwrap();
+    app.document.type_text("!").unwrap();
+    app.save_path(&egui::Context::default(), path.clone(), false);
+    assert!(matches!(app.dialog, Some(Dialog::Error(_))));
+    assert_eq!(std::fs::read(path).unwrap(), b"external");
+}
+
+#[test]
+fn characters_dialog_shrinks_after_desktop_layout() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    context.style_mut(|style| style.animation_time = 0.0);
+    let mut app = DrawApp::new();
+    app.dialog = Some(Dialog::Characters);
+    for size in [egui::vec2(1280.0, 820.0), egui::vec2(440.0, 700.0)] {
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        let output = frame(&context, &mut app, size, vec![]);
+        for label in ["Characters", "Cancel"] {
+            let text = output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) if text.galley.text() == label => Some(text),
+                    _ => None,
+                })
+                .last()
+                .unwrap();
+            let bounds = text.galley.rect.translate(text.pos.to_vec2());
+            assert!(egui::Rect::from_min_size(egui::Pos2::ZERO, size).contains_rect(bounds), "{label}: {bounds:?}");
+        }
+    }
+}
+
+#[test]
+fn tdf_undo_after_character_switch_reaches_font_history() {
+    let mut app = DrawApp::new();
+    let font = icy_draw::charfont::CharFontDocument::new(icy_engine_edit::charset::TdfFontType::Color);
+    app.replace(font.document());
+    app.charfont = Some(font);
+    app.document.type_text("A").unwrap();
+    app.change_charfont(|state| state.select_char('B'));
+    assert!(app.charfont.as_ref().unwrap().state.has_glyph('A'));
+    app.undo(false);
+    assert!(!app.charfont.as_ref().unwrap().state.has_glyph('A'));
+    app.undo(true);
+    assert!(app.charfont.as_ref().unwrap().state.has_glyph('A'));
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_editor_modes_and_dialogs_render() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        let sample = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../cosmos_db_shell_logo.ans");
+        app.open(sample);
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "art-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "art");
+        app.dialog = Some(Dialog::Characters);
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "characters-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "characters");
+        gpu.capture(&mut app, [440, 700], 1.0, vec![], "characters-compact-warmup");
+        gpu.capture(&mut app, [440, 700], 1.0, vec![], "characters-compact");
+        let font = app.document.with_state(|state| state.get_buffer().font(0).unwrap().clone());
+        app.font_editor = Some(super::super::font::FontEditor::new(font)); app.dialog = Some(Dialog::Font);
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "font-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "font");
+        app.dialog = None; app.font_editor = None;
+        let font = icy_draw::charfont::CharFontDocument::new(icy_engine_edit::charset::TdfFontType::Color);
+        app.replace(font.document()); app.charfont = Some(font);
+        app.document.type_text("TDF").unwrap();
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "tdf-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "tdf");
+        app.replace(Document::new(Size::new(80, 25)));
+        let mut animation = super::super::animation::AnimationEditor::new();
+        animation.source = "local screen = new_buffer(40, 12)\nscreen:print('ANIMATION FRAME ONE')\nnext_frame(screen)\nscreen:clear()\nscreen:print('FRAME TWO')\nnext_frame(screen)".into();
+        animation.compile_for_test();
+        app.animation = Some(animation);
+        for (size, name) in [([1280, 820], "animation"), ([440, 700], "animation-compact")] {
+            app.animation.as_mut().unwrap().select_frame_for_test(0);
+            gpu.capture(&mut app, size, 1.0, vec![], "animation-warmup");
+            let first = gpu.capture(&mut app, size, 1.0, vec![], name);
+            let rect = app.animation.as_ref().unwrap().preview_rect_for_test();
+            assert!(rect.width() > 150.0 && rect.height() > 80.0, "{rect:?}");
+            app.animation.as_mut().unwrap().select_frame_for_test(1);
+            gpu.capture(&mut app, size, 1.0, vec![], "animation-frame2-warmup");
+            let second = gpu.capture(&mut app, size, 1.0, vec![], &format!("{name}-frame2"));
+            let changed = first.chunks_exact(4).zip(second.chunks_exact(4)).enumerate().filter(|(index, (first, second))| {
+                let point = egui::pos2((*index % size[0] as usize) as f32, (*index / size[0] as usize) as f32);
+                rect.contains(point) && first != second
+            }).count();
+            assert!(changed > 30, "animation preview must change visible pixels: {changed}");
+        }
+    });
+}
+
+struct Gpu {
+    context: egui::Context,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    renderer: egui_wgpu::Renderer,
+}
+
+impl Gpu {
+    async fn new() -> Self {
+        let adapter = wgpu::Instance::default().request_adapter(&Default::default()).await.unwrap();
+        let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
+        let mut renderer = egui_wgpu::Renderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, Default::default());
+        renderer
+            .callback_resources
+            .insert(TerminalShaderRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm));
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        context.style_mut(|style| style.animation_time = 0.0);
+        Self {
+            context,
+            device,
+            queue,
+            renderer,
+        }
+    }
+
+    fn capture(&mut self, app: &mut DrawApp, size: [u32; 2], scale: f32, events: Vec<egui::Event>, name: &str) -> Vec<u8> {
+        let time = self.context.input(|input| input.time) + 0.05;
+        let mut input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(size[0] as f32 / scale, size[1] as f32 / scale),
+            )),
+            time: Some(time),
+            events,
+            ..Default::default()
+        };
+        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().native_pixels_per_point = Some(scale);
+        let output = self.context.run(input, |context| app.show(context));
+        let jobs = self.context.tessellate(output.shapes, output.pixels_per_point);
+        for (id, delta) in &output.textures_delta.set {
+            self.renderer.update_texture(&self.device, &self.queue, *id, delta);
+        }
+        let descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: size,
+            pixels_per_point: scale,
+        };
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("draw capture"),
+            size: wgpu::Extent3d {
+                width: size[0],
+                height: size[1],
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let stride = (size[0] * 4).div_ceil(256) * 256;
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: u64::from(stride * size[1]),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let commands = self.renderer.update_buffers(&self.device, &self.queue, &mut encoder, &jobs, &descriptor);
+        {
+            let view = texture.create_view(&Default::default());
+            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                ..Default::default()
+            });
+            self.renderer.render(&mut pass.forget_lifetime(), &jobs, &descriptor);
+        }
+        encoder.copy_texture_to_buffer(
+            texture.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(stride),
+                    rows_per_image: None,
+                },
+            },
+            texture.size(),
+        );
+        self.queue.submit(commands.into_iter().chain([encoder.finish()]));
+        let (sender, receiver) = mpsc::channel();
+        buffer.slice(..).map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        self.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        receiver.recv().unwrap().unwrap();
+        let pixels: Vec<_> = buffer
+            .slice(..)
+            .get_mapped_range()
+            .chunks(stride as usize)
+            .flat_map(|row| row[..size[0] as usize * 4].iter().copied())
+            .collect();
+        buffer.unmap();
+        for id in &output.textures_delta.free {
+            self.renderer.free_texture(id);
+        }
+        if let Some(directory) = std::env::var_os("ICY_EGUI_SCREENSHOTS") {
+            std::fs::create_dir_all(&directory).unwrap();
+            image::save_buffer(
+                PathBuf::from(directory).join(format!("{name}.png")),
+                &pixels,
+                size[0],
+                size[1],
+                image::ColorType::Rgba8,
+            )
+            .unwrap();
+        }
+        pixels
+    }
+}
+
+fn pointer(position: egui::Pos2, pressed: bool) -> Vec<egui::Event> {
+    vec![
+        egui::Event::PointerMoved(position),
+        egui::Event::PointerButton {
+            pos: position,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        },
+    ]
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_canvas_draws_at_pointer_and_scrolls() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        app.replace(Document::new(Size::new(80, 100)));
+        app.document.tool = Tool::Pencil;
+        app.document.brush.primary = BrushPrimaryMode::Char;
+        app.document.brush.paint_char = '#';
+        app.document.with_state(|state| state.set_caret_foreground(14));
+        for (size, scale, name) in [([1280, 820], 1.0, "desktop"), ([1760, 1200], 2.0, "hidpi"), ([440, 700], 1.0, "compact")] {
+            gpu.capture(&mut app, size, scale, vec![], "warmup");
+            gpu.capture(&mut app, size, scale, vec![], "warmup");
+            let info = app.view.terminal.render_info.read().clone();
+            let point = egui::pos2(
+                info.bounds_x + info.viewport_x + info.font_width * info.display_scale * 2.5,
+                info.bounds_y + info.viewport_y + info.font_height * info.display_scale * 2.5,
+            );
+            let cell = app.position(point).unwrap();
+            let before = gpu.capture(&mut app, size, scale, vec![], "before");
+            gpu.capture(&mut app, size, scale, pointer(point, true), "press");
+            let after = gpu.capture(&mut app, size, scale, pointer(point, false), name);
+            assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(cell).ch), '#');
+            let changed = before
+                .chunks_exact(4)
+                .zip(after.chunks_exact(4))
+                .filter(|(before, after)| before != after)
+                .count();
+            assert!(changed > 20, "canvas should change visible pixels: {name}");
+            app.document.undo().unwrap();
+            assert_ne!(app.document.with_state(|state| state.get_buffer().char_at(cell).ch), '#');
+        }
+        app.view.scroll_to = Some(egui::vec2(0.0, 500.0));
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "scrolled");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "scrolled");
+        assert!(app.view.offset.y > 400.0);
+        let info = app.view.terminal.render_info.read().clone();
+        let point = egui::pos2(info.bounds_x + info.viewport_x + 24.0, info.bounds_y + info.viewport_y + 24.0);
+        let cell = app.position(point).unwrap();
+        assert!(cell.y > 10);
+        gpu.capture(&mut app, [1280, 820], 1.0, pointer(point, true), "scroll-press");
+        gpu.capture(&mut app, [1280, 820], 1.0, pointer(point, false), "scroll-draw");
+        assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(cell).ch), '#');
+    });
+}

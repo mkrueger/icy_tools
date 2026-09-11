@@ -13,6 +13,7 @@ use std::thread;
 use icy_engine::char_set::TdfBufferRenderer;
 use icy_engine::formats::FileFormat;
 use icy_engine::{Rectangle, TextBuffer, TextPane};
+#[cfg(feature = "legacy-ui")]
 use icy_ui::widget::image;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::RwLock;
@@ -34,7 +35,9 @@ pub type SharedFontLibrary = Arc<RwLock<TextArtFontLibrary>>;
 /// Cached font preview
 #[derive(Clone)]
 pub struct FontPreview {
+    #[cfg(feature = "legacy-ui")]
     pub handle: image::Handle,
+    pub rgba: Arc<[u8]>,
     pub width: u32,
     pub height: u32,
 }
@@ -210,9 +213,13 @@ impl TextArtFontLibrary {
             return None;
         }
 
-        let handle = image::Handle::from_rgba(size.width as u32, size.height as u32, rgba);
+        let rgba: Arc<[u8]> = rgba.into();
+        #[cfg(feature = "legacy-ui")]
+        let handle = image::Handle::from_rgba(size.width as u32, size.height as u32, rgba.to_vec());
         let preview = FontPreview {
+            #[cfg(feature = "legacy-ui")]
             handle,
+            rgba,
             width: size.width as u32,
             height: size.height as u32,
         };
@@ -252,9 +259,13 @@ impl TextArtFontLibrary {
             return None;
         }
 
-        let handle = image::Handle::from_rgba(size.width as u32, size.height as u32, rgba);
+        let rgba: Arc<[u8]> = rgba.into();
+        #[cfg(feature = "legacy-ui")]
+        let handle = image::Handle::from_rgba(size.width as u32, size.height as u32, rgba.to_vec());
         Some(FontPreview {
+            #[cfg(feature = "legacy-ui")]
             handle,
+            rgba,
             width: size.width as u32,
             height: size.height as u32,
         })

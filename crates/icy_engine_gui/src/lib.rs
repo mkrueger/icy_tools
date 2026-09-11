@@ -47,6 +47,8 @@ use icy_engine::Color;
 pub use terminal::*;
 
 pub mod commands;
+mod export_settings;
+pub use export_settings::ExportSettings;
 pub use commands::{
     cmd, create_common_commands, load_commands_from_file, load_commands_from_str, CommandDef, CommandLoadError, CommandSet, Hotkey, KeyCode, Modifiers,
 };

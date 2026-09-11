@@ -4,6 +4,7 @@
 //! Enables AI assistants to interact with the editor programmatically.
 
 pub mod handlers;
+pub mod edit;
 pub mod server;
 pub mod types;
 

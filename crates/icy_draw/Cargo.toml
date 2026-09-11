@@ -6,12 +6,30 @@ authors = ["Mike Krüger <mkrueger@posteo.de>"]
 description = "A drawing program for ANSI & ASCII art and other text-based art forms."
 license = "Apache-2.0"
 repository = "https://github.com/mkrueger/icy_tools"
+autobins = false
+default-run = "icy_draw"
+
+[[bin]]
+name = "icy_draw"
+path = "src/bin/icy_draw.rs"
+required-features = ["egui"]
+
+[[bin]]
+name = "icy_draw_egui"
+path = "src/bin/icy_draw_egui.rs"
+required-features = ["egui"]
+
+[[bin]]
+name = "icy_draw_legacy"
+path = "src/main.rs"
+required-features = ["legacy-ui"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# UI Framework - iced based
-icy_ui = { workspace = true, features = ["wgpu", "highlighter"] }
+# Frontends
+icy_ui = { workspace = true, optional = true, features = ["wgpu", "highlighter"] }
+eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
 
 # GPU/Shader support
 bytemuck = { workspace = true, features = ["derive"] }
@@ -34,8 +52,8 @@ clap-i18n-richformatter = { workspace = true }
 
 # Core icy_* crates
 icy_engine = { workspace = true }
-icy_engine_edit = { workspace = true }
-icy_engine_gui = { workspace = true }
+icy_engine_edit = { path = "../icy_engine_edit", default-features = false }
+icy_engine_gui = { path = "../icy_engine_gui", default-features = false, features = ["opus-audio"] }
 icy_engine_scripting = { workspace = true }
 
 # WebSocket for collaboration
@@ -94,8 +112,9 @@ fontdue = "0.9"
 
 # File handling
 walkdir = { workspace = true }
+tempfile = "3"
 notify = { workspace = true }
-rfd = { workspace = true }
+rfd = { workspace = true, optional = true }
 open = { workspace = true }
 
 # MCP (rmcp + HTTP server)
@@ -104,7 +123,9 @@ axum = "0.8"
 schemars = "1.2"
 
 [features]
-default = []
+default = ["egui"]
+legacy-ui = ["dep:icy_ui", "dep:rfd", "icy_engine_edit/legacy-ui", "icy_engine_gui/legacy-ui"]
+egui = ["dep:eframe", "dep:rfd", "icy_engine_gui/egui"]
 
 # Opt-in: enable rav1e's NASM-based assembly optimizations.
 rav1e-asm = ["rav1e/asm"]

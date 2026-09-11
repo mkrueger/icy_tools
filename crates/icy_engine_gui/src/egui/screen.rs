@@ -17,8 +17,12 @@ pub struct ScreenView {
 
 impl ScreenView {
     pub fn new(screen: TextScreen) -> Self {
-        let shader_state = CRTShaderState::from_screen(&screen);
-        let terminal = Terminal::new(Arc::new(Mutex::new(Box::new(screen) as Box<dyn Screen>)));
+        Self::from_shared(Arc::new(Mutex::new(Box::new(screen) as Box<dyn Screen>)))
+    }
+
+    pub fn from_shared(screen: Arc<Mutex<Box<dyn Screen>>>) -> Self {
+        let shader_state = CRTShaderState::from_screen(&**screen.lock());
+        let terminal = Terminal::new(screen);
         Self {
             terminal,
             shader_state,

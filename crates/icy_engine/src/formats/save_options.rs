@@ -439,8 +439,16 @@ impl SauceBuilder for TextBuffer {
             self.width() as u16,
             self.height() as u16,
             ice_colors,
-            LetterSpacing::EightPixel,
-            AspectRatio::Square,
+            if self.use_letter_spacing() {
+                LetterSpacing::NinePixel
+            } else {
+                LetterSpacing::EightPixel
+            },
+            if self.use_aspect_ratio() {
+                AspectRatio::LegacyDevice
+            } else {
+                AspectRatio::Square
+            },
             font_name,
         )
         .unwrap_or_else(|_| CharacterCapabilities::new(format));
