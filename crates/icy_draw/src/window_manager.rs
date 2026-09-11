@@ -159,8 +159,14 @@ mod tests {
 
     #[test]
     fn converts_macos_document_urls_to_paths() {
-        assert_eq!(file_uri_to_pathbuf("file:///Users/test/My%20File.pcb"), Some(PathBuf::from("/Users/test/My File.pcb")));
-        assert_eq!(file_uri_to_pathbuf("file://localhost/Users/test/foo.pcb"), Some(PathBuf::from("/Users/test/foo.pcb")));
+        assert_eq!(
+            file_uri_to_pathbuf("file:///Users/test/My%20File.pcb"),
+            Some(PathBuf::from("/Users/test/My File.pcb"))
+        );
+        assert_eq!(
+            file_uri_to_pathbuf("file://localhost/Users/test/foo.pcb"),
+            Some(PathBuf::from("/Users/test/foo.pcb"))
+        );
         assert_eq!(file_uri_to_pathbuf("https://example.com/foo.pcb"), None);
 
         for extension in ["pcb", "PCB", "ans", "ANS", "icy", "icyanim", "xb", "tdf", "f16"] {
@@ -993,15 +999,15 @@ impl WindowManager {
                 // been launched by Finder. Otherwise, preserve the current
                 // document and open the requested file in a new window.
                 if self.windows.len() == 1 {
-                    let (&window_id, window) = self.windows.first_key_value().expect("one window");
+                    let (&window_id, window) = self.windows.iter_mut().next().expect("one window");
                     if window.file_path().is_none() && !window.is_modified() {
-                        return Task::done(WindowManagerMessage::WindowMessage(
-                            window_id,
-                            crate::ui::Message::FileOpened(path),
-                        ));
+                        return window
+                            .update(crate::ui::Message::FileOpened(path))
+                            .map(move |message| WindowManagerMessage::WindowMessage(window_id, message));
                     }
                 }
 
+                let start_opening = self.pending_restores.is_empty() && !self.windows.is_empty();
                 self.pending_restores.push(WindowRestoreInfo {
                     original_path: Some(path),
                     load_path: None,
@@ -1010,7 +1016,11 @@ impl WindowManager {
                     size: (DEFAULT_SIZE.width, DEFAULT_SIZE.height),
                     session_data_path: None,
                 });
-                return Task::done(WindowManagerMessage::OpenWindow);
+                return if start_opening {
+                    Task::done(WindowManagerMessage::OpenWindow)
+                } else {
+                    Task::none()
+                };
             }
         };
 
@@ -1075,10 +1085,7 @@ impl WindowManager {
                     Event::Mouse(_) => None,
                     // Keyboard events are handled below
                     Event::Keyboard(keyboard::Event::KeyPressed {
-                        key,
-                        modified_key,
-                        modifiers,
-                        ..
+                        key, modified_key, modifiers, ..
                     }) => {
                         // Handle window manager keyboard shortcuts (Tab, Alt+Number, etc.)
                         if let Some(action) = icy_engine_gui::handle_window_manager_keyboard_press(key, modified_key, modifiers) {
