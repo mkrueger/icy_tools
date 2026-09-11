@@ -162,6 +162,40 @@ mod tests {
         assert_eq!(file_uri_to_pathbuf("file:///Users/test/My%20File.pcb"), Some(PathBuf::from("/Users/test/My File.pcb")));
         assert_eq!(file_uri_to_pathbuf("file://localhost/Users/test/foo.pcb"), Some(PathBuf::from("/Users/test/foo.pcb")));
         assert_eq!(file_uri_to_pathbuf("https://example.com/foo.pcb"), None);
+
+        for extension in ["pcb", "PCB", "ans", "ANS", "icy", "icyanim", "xb", "tdf", "f16"] {
+            let uri = format!("file:///Users/test/My%20Art%20%23%25%20%C3%A4.{extension}");
+            let expected = PathBuf::from(format!("/Users/test/My Art #% \u{e4}.{extension}"));
+            let path = file_uri_to_pathbuf(&uri).expect("local document URL");
+            assert_eq!(path, expected);
+            assert!(icy_engine::FileFormat::from_path(&path).is_some(), "unrecognized extension: {extension}");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn finder_registers_supported_document_extensions() {
+        let output = std::process::Command::new("/usr/bin/plutil")
+            .args(["-extract", "CFBundleDocumentTypes", "json", "-o", "-"])
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/build/mac/Info.plist"))
+            .output()
+            .expect("run macOS plist parser");
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        let document_types: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid document types");
+        let mut extensions = std::collections::BTreeSet::new();
+        for document_type in document_types.as_array().expect("document types array") {
+            assert_eq!(document_type["CFBundleTypeRole"], "Editor");
+            for extension in document_type["CFBundleTypeExtensions"].as_array().expect("extensions array") {
+                let extension = extension.as_str().expect("extension string");
+                assert!(extensions.insert(extension), "duplicate Finder extension: {extension}");
+                assert!(icy_engine::FileFormat::from_path(&PathBuf::from(format!("test.{extension}"))).is_some());
+            }
+        }
+        for format in icy_engine::FileFormat::ALL.iter().filter(|format| format.is_supported() && !format.is_image()) {
+            for extension in format.all_extensions() {
+                assert!(extensions.contains(extension), "missing Finder extension: {extension}");
+            }
+        }
     }
 }
 

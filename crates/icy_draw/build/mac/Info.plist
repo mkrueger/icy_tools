@@ -33,10 +33,110 @@
 		<dict>
 			<key>CFBundleTypeExtensions</key>
 			<array>
+				<string>icy</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Icy Draw Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>icyanim</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Icy Draw Animation</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
 				<string>pcb</string>
 			</array>
 			<key>CFBundleTypeName</key>
 			<string>PCBoard Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>ans</string>
+				<string>diz</string>
+				<string>nfo</string>
+				<string>ice</string>
+				<string>ams</string>
+				<string>mus</string>
+				<string>asc</string>
+				<string>txt</string>
+				<string>avt</string>
+				<string>msg</string>
+				<string>an1</string>
+				<string>an2</string>
+				<string>an3</string>
+				<string>an4</string>
+				<string>an5</string>
+				<string>an6</string>
+				<string>an7</string>
+				<string>an8</string>
+				<string>an9</string>
+				<string>pet</string>
+				<string>seq</string>
+				<string>ata</string>
+				<string>xep</string>
+				<string>vtx</string>
+				<string>m7</string>
+				<string>rip</string>
+				<string>spx</string>
+				<string>vt52</string>
+				<string>v52</string>
+				<string>vt5</string>
+				<string>ig</string>
+				<string>idf</string>
+				<string>bin</string>
+				<string>xb</string>
+				<string>tnd</string>
+				<string>adf</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Text Art Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>yaff</string>
+				<string>psf</string>
+				<string>f04</string>
+				<string>f05</string>
+				<string>f06</string>
+				<string>f07</string>
+				<string>f08</string>
+				<string>f09</string>
+				<string>f10</string>
+				<string>f12</string>
+				<string>f14</string>
+				<string>f16</string>
+				<string>f19</string>
+				<string>f20</string>
+				<string>f24</string>
+				<string>f32</string>
+				<string>flf</string>
+				<string>tdf</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Text Art Font</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
