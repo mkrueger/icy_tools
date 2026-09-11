@@ -13,6 +13,9 @@ pub use line::*;
 pub mod text_screen;
 pub use text_screen::*;
 
+mod unicode;
+pub use unicode::MAX_GRAPHEME_BYTES;
+
 pub mod layer;
 pub use layer::*;
 
@@ -194,6 +197,7 @@ pub struct TextBuffer {
     pub terminal_state: TerminalState,
 
     pub buffer_type: BufferType,
+    pub(crate) unicode_width: bool,
     pub ice_mode: IceMode,
     pub font_mode: FontMode,
 
@@ -269,6 +273,7 @@ impl Clone for TextBuffer {
             size: self.size,
             terminal_state: self.terminal_state.clone(),
             buffer_type: self.buffer_type,
+            unicode_width: self.unicode_width,
             ice_mode: self.ice_mode,
             font_mode: self.font_mode,
             palette: self.palette.clone(),
@@ -291,6 +296,28 @@ impl Clone for TextBuffer {
 }
 
 impl TextBuffer {
+    fn text_layer_at(&self, pos: Position) -> Option<(&Layer, Position)> {
+        if pos.x < 0 || pos.y < 0 || pos.x >= self.width() || pos.y >= self.height() {
+            return None;
+        }
+        if self.show_tags && self.tags.iter().any(|tag| tag.is_enabled && tag.contains(pos)) {
+            return None;
+        }
+        self.layers.iter().rev().find_map(|layer| {
+            let local = pos - layer.offset();
+            if !layer.is_visible() || local.x < 0 || local.y < 0 || local.x >= layer.width() || local.y >= layer.height() {
+                return None;
+            }
+            let character = layer.char_at(local);
+            let supplies_text = match layer.properties.mode {
+                Mode::Normal => character.is_visible(),
+                Mode::Chars => !character.is_transparent(),
+                Mode::Attributes => false,
+            };
+            supplies_text.then_some((layer, local))
+        })
+    }
+
     /// Check if a line contains only transparent/empty characters
     pub fn is_line_empty(&self, line: i32) -> bool {
         for i in 0..self.width() {
@@ -569,6 +596,7 @@ impl TextBuffer {
             terminal_state: TerminalState::from(size),
 
             buffer_type: BufferType::CP437,
+            unicode_width: false,
             ice_mode: IceMode::Unlimited,
             font_mode: FontMode::Sauce,
 
@@ -845,6 +873,11 @@ impl TextBuffer {
     /// Panics if .
     pub fn set_size(&mut self, size: impl Into<Size>) {
         let size = size.into();
+        if self.unicode_width {
+            for layer in &mut self.layers {
+                layer.set_size(size);
+            }
+        }
         self.size = size;
         // For non-terminal (editor/art) buffers the terminal window equals the whole
         // buffer, so `resolution()` (which reads `terminal_state.size`) must track resizes.
@@ -860,6 +893,11 @@ impl TextBuffer {
     }
 
     pub fn set_width(&mut self, width: i32) {
+        if self.unicode_width {
+            for layer in &mut self.layers {
+                layer.set_width(width);
+            }
+        }
         self.size.width = width;
         if !self.terminal_state.is_terminal_buffer {
             self.terminal_state.set_width(width);
@@ -867,6 +905,11 @@ impl TextBuffer {
     }
 
     pub fn set_height(&mut self, height: i32) {
+        if self.unicode_width {
+            for layer in &mut self.layers {
+                layer.set_height(height);
+            }
+        }
         self.size.height = height;
         if !self.terminal_state.is_terminal_buffer {
             self.terminal_state.set_height(height);
@@ -1071,6 +1114,15 @@ impl Default for TextBuffer {
 }
 
 impl TextPane for TextBuffer {
+    fn grapheme_at(&self, pos: Position) -> Option<(&str, usize)> {
+        let (layer, local) = self.text_layer_at(pos)?;
+        layer.grapheme_at(local)
+    }
+
+    fn is_grapheme_continuation(&self, pos: Position) -> bool {
+        self.text_layer_at(pos).is_some_and(|(layer, local)| layer.is_grapheme_continuation(local))
+    }
+
     fn width(&self) -> i32 {
         self.size.width
     }

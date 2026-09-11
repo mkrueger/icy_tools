@@ -420,7 +420,13 @@ pub trait EditableScreen: Screen {
     // Character operations
     fn set_char(&mut self, pos: Position, ch: AttributedChar);
 
+    fn end_grapheme(&mut self) {}
+
     fn print_char(&mut self, ch: AttributedChar) {
+        self.print_single_cell(ch);
+    }
+
+    fn print_single_cell(&mut self, ch: AttributedChar) {
         if self.terminal_state().wrap_pending {
             self.terminal_state_mut().wrap_pending = false;
             self.lf();
@@ -551,6 +557,7 @@ pub trait EditableScreen: Screen {
 
     // Terminal control sequences
     fn lf(&mut self) {
+        self.end_grapheme();
         self.terminal_state_mut().wrap_pending = false;
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         let in_scroll_region = self.terminal_state().in_scroll_region(self.caret().position());
@@ -586,6 +593,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn cr(&mut self) {
+        self.end_grapheme();
         self.terminal_state_mut().wrap_pending = false;
         let in_margin = self.terminal_state().in_margin(self.caret().position());
         self.caret_mut().x = 0;
@@ -593,17 +601,23 @@ pub trait EditableScreen: Screen {
     }
 
     fn eol(&mut self) {
+        self.end_grapheme();
         let x = self.width() - 1;
         self.caret_mut().x = x;
     }
 
     fn home(&mut self) {
+        self.end_grapheme();
         self.terminal_state_mut().wrap_pending = false;
         let pos = self.upper_left_position();
         self.set_caret_position(pos);
     }
 
     fn del(&mut self) {
+        self.delete_single_cell();
+    }
+
+    fn delete_single_cell(&mut self) {
         let caret_position = self.caret_position();
         let pos = caret_position;
         let line_len = self.last_editable_column();
@@ -625,6 +639,10 @@ pub trait EditableScreen: Screen {
     }
 
     fn ins(&mut self) {
+        self.insert_single_cell();
+    }
+
+    fn insert_single_cell(&mut self) {
         let pos = self.caret_position();
         if pos.x < 0 || pos.y < 0 {
             return;
@@ -650,6 +668,7 @@ pub trait EditableScreen: Screen {
     }
 
     fn bs(&mut self) {
+        self.end_grapheme();
         self.terminal_state_mut().wrap_pending = false;
         // BS (0x08): Non-destructive backspace
         let min_x = if self.terminal_state().in_margin(self.caret().position()) {

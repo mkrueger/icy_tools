@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use crate::{BufferType, Color, Line, Position, Rectangle, Sixel, Size, TextPane};
 
@@ -41,6 +42,9 @@ pub struct Layer {
     size: Size,
     pub lines: Vec<Line>,
 
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) graphemes: BTreeMap<i32, BTreeMap<i32, super::unicode::Grapheme>>,
+
     #[serde(skip)]
     pub sixels: Vec<Sixel>,
     pub hyperlinks: Vec<HyperLink>,
@@ -80,6 +84,14 @@ impl HyperLink {
 }
 
 impl TextPane for Layer {
+    fn grapheme_at(&self, pos: Position) -> Option<(&str, usize)> {
+        Layer::grapheme_at(self, pos)
+    }
+
+    fn is_grapheme_continuation(&self, pos: Position) -> bool {
+        Layer::is_grapheme_continuation(self, pos)
+    }
+
     fn char_at(&self, pos: Position) -> AttributedChar {
         if pos.x < 0 || pos.y < 0 || pos.x >= self.width() || pos.y >= self.height() {
             return AttributedChar::invisible();
@@ -185,7 +197,12 @@ impl Layer {
             for x in 0..line.chars.len() {
                 let ch = line.chars[x];
                 if ch.is_visible() {
-                    self.set_char((x as i32, y as i32), ch);
+                    let position = Position::new(x as i32, y as i32);
+                    if let Some((text, width)) = layer.grapheme_at(position) {
+                        self.put_grapheme(position, text.to_owned(), width, ch.attribute);
+                    } else if !layer.is_grapheme_continuation(position) {
+                        self.set_char(position, ch);
+                    }
                 }
             }
         }
@@ -193,6 +210,7 @@ impl Layer {
 
     pub fn clear(&mut self) {
         self.lines.clear();
+        self.graphemes.clear();
         self.hyperlinks.clear();
         self.sixels.clear();
     }
@@ -216,6 +234,7 @@ impl Layer {
             }
         }
 
+        self.clear_grapheme_at(pos, attributed_char.attribute);
         let cur_line = &mut self.lines[pos.y as usize];
         cur_line.set_char(pos.x, attributed_char);
         let font_dims = Size::new(8, 16);
@@ -233,6 +252,10 @@ impl Layer {
         }
         assert!(!(index < 0 || index >= self.lines.len() as i32), "line out of range");
         self.lines.remove(index as usize);
+        self.graphemes = std::mem::take(&mut self.graphemes)
+            .into_iter()
+            .filter_map(|(row, cells)| (row != index).then_some((if row > index { row - 1 } else { row }, cells)))
+            .collect();
     }
 
     /// .
@@ -250,6 +273,11 @@ impl Layer {
         }
 
         self.lines.insert(index as usize, line);
+        self.graphemes = std::mem::take(&mut self.graphemes)
+            .into_iter()
+            .map(|(row, cells)| (if row >= index { row + 1 } else { row }, cells))
+            .collect();
+        self.clip_graphemes(self.size);
     }
 
     pub fn swap_char(&mut self, pos1: impl Into<Position>, pos2: impl Into<Position>) {
@@ -269,10 +297,12 @@ impl Layer {
     }
 
     pub fn set_width(&mut self, width: i32) {
+        self.clip_graphemes(Size::new(width, self.size.height));
         self.size.width = width;
     }
 
     pub fn set_height(&mut self, height: i32) {
+        self.clip_graphemes(Size::new(self.size.width, height));
         self.size.height = height;
     }
 
@@ -285,13 +315,16 @@ impl Layer {
     }
 
     pub fn set_size(&mut self, size: impl Into<Size>) {
-        self.size = size.into();
+        let size = size.into();
+        self.clip_graphemes(size);
+        self.size = size;
     }
 
     /// Pre-allocate lines for the given size with invisible chars
     /// This is an optimization for formats like `XBin` where size is known upfront
     /// Allows direct access to chars without bounds checks
     pub fn preallocate_lines(&mut self, width: i32, height: i32) {
+        self.graphemes.clear();
         self.size = Size::new(width, height);
         self.lines.clear();
         self.lines.reserve_exact(height as usize);
@@ -309,6 +342,7 @@ impl Layer {
     /// - pos.x < self.lines[pos.y].`chars.len()`
     #[inline(always)]
     pub fn set_char_unchecked(&mut self, pos: Position, attributed_char: AttributedChar) {
+        self.clear_grapheme_at(pos, attributed_char.attribute);
         // SAFETY: Caller guarantees bounds are valid
         unsafe {
             let line = self.lines.get_unchecked_mut(pos.y as usize);

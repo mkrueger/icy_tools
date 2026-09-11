@@ -436,6 +436,16 @@ pub trait TextPane {
     /// Gets the character at the specified position
     fn char_at(&self, pos: Position) -> AttributedChar;
 
+    /// Returns display text and cell width at a stored grapheme's leading cell.
+    fn grapheme_at(&self, _pos: Position) -> Option<(&str, usize)> {
+        None
+    }
+
+    /// Continuation cells are covered by the leading grapheme and must not be drawn again.
+    fn is_grapheme_continuation(&self, _pos: Position) -> bool {
+        false
+    }
+
     /// Gets the number of lines
     fn line_count(&self) -> i32;
 

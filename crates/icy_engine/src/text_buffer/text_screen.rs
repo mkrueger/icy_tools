@@ -24,6 +24,8 @@ pub struct TextScreen {
     pub scan_lines: bool,
 
     pub scrollback_buffer: ScrollbackBuffer,
+
+    pub(crate) unicode: super::unicode::UnicodeState,
 }
 
 impl TextScreen {
@@ -38,6 +40,7 @@ impl TextScreen {
             saved_caret_state: SavedCaretState::default(),
             scan_lines: false,
             scrollback_buffer: ScrollbackBuffer::new(),
+            unicode: Default::default(),
         }
     }
 
@@ -52,11 +55,20 @@ impl TextScreen {
             saved_caret_state: SavedCaretState::default(),
             scan_lines: false,
             scrollback_buffer: ScrollbackBuffer::new(),
+            unicode: Default::default(),
         }
     }
 }
 
 impl TextPane for TextScreen {
+    fn grapheme_at(&self, pos: Position) -> Option<(&str, usize)> {
+        self.buffer.grapheme_at(pos)
+    }
+
+    fn is_grapheme_continuation(&self, pos: Position) -> bool {
+        self.buffer.is_grapheme_continuation(pos)
+    }
+
     fn char_at(&self, pos: crate::Position) -> AttributedChar {
         self.buffer.char_at(pos)
     }
@@ -377,9 +389,22 @@ impl EditableScreen for TextScreen {
             attribute: self.caret().attribute,
             ..Default::default()
         };
-        for x in 0..pos.x {
+        let end = pos.x + i32::from(self.unicode_width());
+        for x in 0..end {
             pos.x = x;
             self.set_char(pos, ch);
+        }
+    }
+
+    fn clear_buffer_down(&mut self) {
+        self.finish_grapheme();
+        let position = self.caret.position();
+        let blank = AttributedChar::new(' ', self.caret.attribute);
+        for row in position.y..=self.last_visible_line() {
+            let start = if self.unicode_width() && row == position.y { position.x } else { 0 };
+            for column in start..self.width() {
+                self.set_char(Position::new(column, row), blank);
+            }
         }
     }
 
@@ -412,19 +437,56 @@ impl EditableScreen for TextScreen {
     }
 
     fn reset_terminal(&mut self) {
+        self.finish_grapheme();
         self.buffer.reset_terminal();
         self.caret.reset();
     }
 
     fn set_char(&mut self, pos: Position, ch: AttributedChar) {
+        self.finish_grapheme();
         self.buffer.layers[self.current_layer].set_char(pos, ch);
     }
 
+    fn end_grapheme(&mut self) {
+        self.finish_grapheme();
+    }
+
+    fn set_caret_position(&mut self, pos: Position) {
+        self.finish_grapheme();
+        self.caret.set_position(pos);
+    }
+
+    fn del(&mut self) {
+        if self.unicode_width() {
+            self.shift_unicode_row(-1);
+        } else {
+            self.delete_single_cell();
+        }
+    }
+
+    fn ins(&mut self) {
+        if self.unicode_width() {
+            self.shift_unicode_row(1);
+        } else {
+            self.insert_single_cell();
+        }
+    }
+
+    fn print_char(&mut self, ch: AttributedChar) {
+        if self.unicode_width() {
+            self.print_unicode(ch);
+        } else {
+            self.print_single_cell(ch);
+        }
+    }
+
     fn set_size(&mut self, size: Size) {
+        self.finish_grapheme();
         self.buffer.set_size(size);
     }
 
     fn scroll_up(&mut self) {
+        self.finish_grapheme();
         // Add top line to scrollback before scrolling (while data is still there)
         if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state().is_terminal_buffer {
             let font_height = self.font_dimensions().height;
@@ -443,12 +505,21 @@ impl EditableScreen for TextScreen {
 
         {
             let layer_ref = &mut self.buffer.layers[self.current_layer];
-            for x in start_column..=end_column {
-                (start_line..end_line).for_each(|y| {
-                    let ch = layer_ref.char_at((x, y + 1).into());
-                    layer_ref.set_char((x, y), ch);
-                });
-                layer_ref.set_char((x, end_line), blank);
+            if self.buffer.unicode_width {
+                layer_ref.shift_cells(
+                    Position::new(start_column, start_line),
+                    Position::new(end_column, end_line),
+                    Position::new(0, -1),
+                    self.caret.attribute,
+                );
+            } else {
+                for x in start_column..=end_column {
+                    (start_line..end_line).for_each(|y| {
+                        let ch = layer_ref.char_at((x, y + 1).into());
+                        layer_ref.set_char((x, y), ch);
+                    });
+                    layer_ref.set_char((x, end_line), blank);
+                }
             }
         }
         let layer_ref = &mut self.buffer.layers[self.current_layer];
@@ -476,6 +547,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn scroll_down(&mut self) {
+        self.finish_grapheme();
         let font_dims = self.font_dimensions();
 
         let start_line: i32 = self.first_editable_line();
@@ -487,12 +559,21 @@ impl EditableScreen for TextScreen {
 
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data downward
-        for x in start_column..=end_column {
-            ((start_line + 1)..=end_line).rev().for_each(|y: i32| {
-                let ch = layer_ref.char_at((x, y - 1).into());
-                layer_ref.set_char((x, y), ch);
-            });
-            layer_ref.set_char((x, start_line), blank);
+        if self.buffer.unicode_width {
+            layer_ref.shift_cells(
+                Position::new(start_column, start_line),
+                Position::new(end_column, end_line),
+                Position::new(0, 1),
+                self.caret.attribute,
+            );
+        } else {
+            for x in start_column..=end_column {
+                ((start_line + 1)..=end_line).rev().for_each(|y: i32| {
+                    let ch = layer_ref.char_at((x, y - 1).into());
+                    layer_ref.set_char((x, y), ch);
+                });
+                layer_ref.set_char((x, start_line), blank);
+            }
         }
 
         // === NEW: vertical sixel scroll (down) ===
@@ -517,6 +598,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn scroll_left(&mut self) {
+        self.finish_grapheme();
         let font_dims = self.font_dimensions();
 
         let start_line: i32 = self.first_editable_line();
@@ -528,11 +610,20 @@ impl EditableScreen for TextScreen {
 
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data left
-        for y in start_line..=end_line {
-            let line = &mut layer_ref.lines[y as usize];
-            if line.chars.len() > start_column {
-                line.chars.insert(end_column as usize, blank);
-                line.chars.remove(start_column);
+        if self.buffer.unicode_width {
+            layer_ref.shift_cells(
+                Position::new(start_column as i32, start_line),
+                Position::new(end_column - 1, end_line),
+                Position::new(-1, 0),
+                self.caret.attribute,
+            );
+        } else {
+            for y in start_line..=end_line {
+                let line = &mut layer_ref.lines[y as usize];
+                if line.chars.len() > start_column {
+                    line.chars.insert(end_column as usize, blank);
+                    line.chars.remove(start_column);
+                }
             }
         }
 
@@ -560,6 +651,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn scroll_right(&mut self) {
+        self.finish_grapheme();
         let font_dims = self.font_dimensions();
 
         let start_line: i32 = self.first_editable_line();
@@ -570,11 +662,20 @@ impl EditableScreen for TextScreen {
         let blank = AttributedChar::new(' ', self.caret.attribute);
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data right
-        for y in start_line..=end_line {
-            let line: &mut Line = &mut layer_ref.lines[y as usize];
-            if line.chars.len() > start_column {
-                line.chars.insert(start_column, blank);
-                line.chars.remove(end_column + 1);
+        if self.buffer.unicode_width {
+            layer_ref.shift_cells(
+                Position::new(start_column as i32, start_line),
+                Position::new(end_column as i32, end_line),
+                Position::new(1, 0),
+                self.caret.attribute,
+            );
+        } else {
+            for y in start_line..=end_line {
+                let line: &mut Line = &mut layer_ref.lines[y as usize];
+                if line.chars.len() > start_column {
+                    line.chars.insert(start_column, blank);
+                    line.chars.remove(end_column + 1);
+                }
             }
         }
 
@@ -626,6 +727,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn set_width(&mut self, width: i32) {
+        self.finish_grapheme();
         let height = width.min(limits::MAX_BUFFER_WIDTH);
         self.buffer.set_width(height);
         for layer in &mut self.buffer.layers {
@@ -634,6 +736,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn set_height(&mut self, height: i32) {
+        self.finish_grapheme();
         let height = height.min(limits::MAX_BUFFER_HEIGHT);
         self.buffer.set_height(height);
         for layer in &mut self.buffer.layers {
@@ -662,6 +765,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn remove_terminal_line(&mut self, line: i32) {
+        self.finish_grapheme();
         // DL (Delete Line) - Delete lines at cursor position
         // Lines are scrolled up within the scroll region, blank line added at bottom
         // If cursor is outside scroll region, the operation has no effect.
@@ -670,6 +774,18 @@ impl EditableScreen for TextScreen {
 
         let top = self.first_editable_line();
         let bottom = self.last_editable_line();
+
+        if self.unicode_width() {
+            if line >= top && line <= bottom {
+                self.buffer.layers[self.current_layer].shift_cells(
+                    Position::new(start_column, line),
+                    Position::new(end_column, bottom),
+                    Position::new(0, -1),
+                    self.caret.attribute,
+                );
+            }
+            return;
+        }
 
         if self.terminal_state().margins_top_bottom().is_some() {
             // If cursor is outside scroll region, do nothing
@@ -698,6 +814,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn insert_terminal_line(&mut self, line: i32) {
+        self.finish_grapheme();
         // IL (Insert Line) - Insert blank lines at cursor position
         // Lines are scrolled down within the scroll region, bottom line is lost
         // If cursor is outside scroll region, the operation has no effect.
@@ -706,6 +823,18 @@ impl EditableScreen for TextScreen {
 
         let top = self.first_editable_line();
         let bottom = self.last_editable_line();
+
+        if self.unicode_width() {
+            if line >= top && line <= bottom {
+                self.buffer.layers[self.current_layer].shift_cells(
+                    Position::new(start_column, line),
+                    Position::new(end_column, bottom),
+                    Position::new(0, 1),
+                    self.caret.attribute,
+                );
+            }
+            return;
+        }
 
         if self.terminal_state().margins_top_bottom().is_some() {
             // If cursor is outside scroll region, do nothing
@@ -770,6 +899,7 @@ impl EditableScreen for TextScreen {
     }
 
     fn set_current_layer(&mut self, layer: usize) -> Result<()> {
+        self.finish_grapheme();
         if layer < self.buffer.layers.len() {
             self.current_layer = layer;
             Ok(())

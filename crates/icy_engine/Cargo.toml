@@ -33,6 +33,8 @@ icy_sixel = { workspace = true }
 icy_parser_core = { workspace = true }
 bitflags = { workspace = true }
 utf8parse = "0.2"
+unicode-segmentation = "1.13.3"
+unicode-width = "0.2.2"
 unarc-rs = { workspace = true }
 
 zip = { workspace = true }

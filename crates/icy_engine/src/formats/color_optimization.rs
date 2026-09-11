@@ -39,6 +39,10 @@ impl ColorOptimizer {
             for y in 0..layer.height() {
                 for x in 0..layer.width() {
                     let attr_ch = layer.char_at((x, y).into());
+                    if layer.grapheme_at((x, y).into()).is_some() || layer.is_grapheme_continuation((x, y).into()) {
+                        cur_attr = attr_ch.attribute;
+                        continue;
+                    }
                     let map = self.shape_map.get(&attr_ch.font_page()).unwrap();
                     let mut ch = attr_ch.ch;
                     let mut attribute = attr_ch.attribute;

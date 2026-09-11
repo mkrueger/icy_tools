@@ -28,6 +28,10 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
         let line_length = buf.line_length(pos.y);
 
         while pos.x < line_length {
+            if char_opts.unicode && buf.is_grapheme_continuation(pos) {
+                pos.x += 1;
+                continue;
+            }
             let mut found_tag = false;
             for tag in &buf.tags {
                 if tag.is_enabled && tag.tag_placement == TagPlacement::InText && tag.position.y == pos.y && tag.position.x == pos.x {
@@ -54,7 +58,12 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
             }
 
             if char_opts.unicode {
-                if ch.ch == '\0' {
+                if let Some((text, width)) = buf.grapheme_at(pos) {
+                    result.extend_from_slice(text.as_bytes());
+                    pos.x += width as i32;
+                    first_char = false;
+                    continue;
+                } else if ch.ch == '\0' {
                     result.push(b' ');
                 } else {
                     let uni_ch = buf.buffer_type.convert_to_unicode(ch.ch);

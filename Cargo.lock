@@ -3302,6 +3302,8 @@ dependencies = [
  "serde",
  "thiserror 2.0.20",
  "unarc-rs",
+ "unicode-segmentation",
+ "unicode-width",
  "utf8parse",
  "walkdir",
  "zip",

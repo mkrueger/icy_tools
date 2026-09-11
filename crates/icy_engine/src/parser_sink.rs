@@ -589,6 +589,9 @@ impl CommandSink for ScreenSink<'_> {
     }
 
     fn emit(&mut self, cmd: TerminalCommand) {
+        if !matches!(&cmd, TerminalCommand::CsiSelectGraphicRendition(_) | TerminalCommand::Bell) {
+            self.screen.end_grapheme();
+        }
         match cmd {
             // Basic control characters
             TerminalCommand::CarriageReturn => {
