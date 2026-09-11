@@ -6,12 +6,36 @@ edition.workspace = true
 license.workspace = true
 description = "An offline QWK mail reader"
 repository = "https://github.com/mkrueger/icy_tools"
+autobins = false
+default-run = "icy_mail"
+
+[[bin]]
+name = "icy_mail"
+path = "src/bin/icy_mail.rs"
+required-features = ["egui"]
+
+[[bin]]
+name = "icy_mail_egui"
+path = "src/bin/icy_mail_egui.rs"
+required-features = ["egui"]
+
+[[bin]]
+name = "icy_mail_legacy"
+path = "src/main.rs"
+required-features = ["legacy-ui"]
+
+[features]
+default = ["egui"]
+legacy-ui = ["dep:icy_ui", "dep:rfd", "icy_engine_gui/legacy-ui"]
+egui = ["dep:eframe", "dep:rfd", "dep:resvg", "icy_engine_gui/egui"]
 
 [dependencies]
 jamjam = { git = "https://github.com/mkrueger/icy_board", rev = "0c679e79bbd4a3a98c9352a124b512d7712609a5" }
 #jamjam = { path ="../../../icy_board/crates/jamjam" }
 
-icy_ui = { workspace = true, features = [ "tokio", "svg", "image", "wgpu" ]  }
+icy_ui = { workspace = true, optional = true, features = [ "tokio", "svg", "image", "wgpu" ] }
+eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
+resvg = { version = "0.48.1", optional = true, default-features = false }
 
 tokio = { workspace = true }
 serde = { workspace = true }
@@ -19,7 +43,7 @@ versions = { workspace = true }
 regex = { workspace = true }
 semver = { workspace = true }
 webbrowser = { workspace = true }
-icy_engine_gui = { workspace = true }
+icy_engine_gui = { path = "../icy_engine_gui", default-features = false, features = ["opus-audio"] }
 icy_parser_core = { workspace = true }
 parking_lot = { workspace = true }
 bstr = { workspace = true }
@@ -66,7 +90,7 @@ getrandom =  { version = "0.4.3" }
 
 directories = { workspace = true }
 open =  { workspace = true }
-rfd =  { workspace = true }
+rfd =  { workspace = true, optional = true }
 
 tracing-subscriber = "0.3"
 async-recursion = "1.1.1"

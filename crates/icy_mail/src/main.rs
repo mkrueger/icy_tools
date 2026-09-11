@@ -20,8 +20,12 @@
 )]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-pub mod perf;
-pub mod qwk;
+pub use icy_mail::{perf, qwk, Res};
+#[cfg(test)]
+#[path = "qwk/tests.rs"]
+mod qwk_tests;
+#[cfg(test)]
+pub use icy_mail::threading;
 mod ui;
 
 use std::path::PathBuf;
@@ -44,16 +48,13 @@ use semver::Version;
 
 use crate::ui::window_manager::WindowManager;
 
-pub type Res<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
 static VERSION: LazyLock<Version> = LazyLock::new(|| Version::parse(env!("CARGO_PKG_VERSION")).unwrap());
 #[allow(dead_code)] // reserved for a future uptime display; previously hidden from dead_code analysis by the lazy_static macro
 static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 #[allow(dead_code)] // reserved for a future update-check UI; previously hidden from dead_code analysis by the lazy_static macro
-static LATEST_VERSION: LazyLock<Version> = LazyLock::new(|| {
-    icy_engine_gui::release_check::latest_release("mkrueger/icy_tools", "IcyMail").unwrap_or_else(|| VERSION.clone())
-});
+static LATEST_VERSION: LazyLock<Version> =
+    LazyLock::new(|| icy_engine_gui::release_check::latest_release("mkrueger/icy_tools", "IcyMail").unwrap_or_else(|| VERSION.clone()));
 /*
 #[derive(rust_embed::RustEmbed)]
 #[folder = "i18n"] // path to the compiled localization resources

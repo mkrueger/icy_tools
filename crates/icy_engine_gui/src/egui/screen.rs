@@ -56,6 +56,8 @@ impl ScreenView {
         let mut scroll = egui::ScrollArea::both()
             .id_salt(self.shader_state.instance_id)
             .auto_shrink([false, false])
+            .min_scrolled_height(0.0)
+            .min_scrolled_width(0.0)
             .scroll_source(egui::scroll_area::ScrollSource {
                 drag: false,
                 ..Default::default()

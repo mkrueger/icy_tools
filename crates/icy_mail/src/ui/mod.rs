@@ -7,4 +7,4 @@ pub use message::*;
 pub mod window_manager;
 
 pub mod mail_reader;
-pub mod threading;
+pub use icy_mail::threading;

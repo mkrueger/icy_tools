@@ -3,70 +3,7 @@ use icy_engine_gui::TerminalMessage;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NavigateDirection {
-    Up,
-    Down,
-    First,
-    Last,
-    PageUp,
-    PageDown,
-}
-
-/// Which list the keyboard is driving.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Pane {
-    Conferences,
-    #[default]
-    Messages,
-    Content,
-}
-
-/// Flat list vs. reply threads - the message list renders one or the other.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ViewMode {
-    #[default]
-    List,
-    Threads,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MessageColumn {
-    From,
-    Date,
-    Subject,
-    Lines,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConferenceColumn {
-    Area,
-    Name,
-    Count,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SortDirection {
-    Ascending,
-    Descending,
-}
-
-impl SortDirection {
-    pub fn toggled(self) -> Self {
-        match self {
-            Self::Ascending => Self::Descending,
-            Self::Descending => Self::Ascending,
-        }
-    }
-
-    /// Arrow shown in the column header.
-    pub fn arrow(self) -> &'static str {
-        match self {
-            Self::Ascending => "\u{25B2}",
-            Self::Descending => "\u{25BC}",
-        }
-    }
-}
+pub use icy_mail::reader::{ConferenceColumn, MessageColumn, NavigateDirection, Pane, SortDirection, ViewMode};
 
 #[derive(Clone)]
 pub enum Message {

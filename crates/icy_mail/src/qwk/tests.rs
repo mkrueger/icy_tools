@@ -117,7 +117,7 @@ impl TempDir {
         Self(path)
     }
 
-    fn path(&self) -> &std::path::Path {
+    pub fn path(&self) -> &std::path::Path {
         &self.0
     }
 }
@@ -177,7 +177,7 @@ fn threading_groups_replies_under_their_root() {
     let retro: Vec<&crate::qwk::MessageInfo> = package.infos.iter().filter(|info| info.conference == 2).collect();
 
     // #13 has no ref number, so it must attach via the normalized subject.
-    let rows = crate::ui::threading::build_threads(&retro);
+    let rows = crate::threading::build_threads(&retro);
     assert_eq!(rows.iter().map(|r| r.depth).collect::<Vec<_>>(), vec![0, 1]);
     assert_eq!(package.infos[rows[0].index].number, 12);
     assert_eq!(package.infos[rows[1].index].number, 13);

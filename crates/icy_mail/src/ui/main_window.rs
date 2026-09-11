@@ -3,8 +3,9 @@ use std::sync::Arc;
 use crate::qwk::QwkPackage;
 use crate::ui::threading::{self, Row};
 use crate::ui::{ConferenceColumn, Message, MessageColumn, NavigateDirection, Pane, SortDirection, ViewMode};
-use icy_engine::{EditableScreen, Screen, Size, TextScreen};
+use icy_engine::{Screen, Size, TextScreen};
 use icy_engine_gui::{MonitorSettings, Terminal};
+use icy_mail::reader::step;
 use icy_ui::widget::{button, column, container, operation, progress_bar, text, Space};
 use icy_ui::{window, Alignment, Element, Length, Task, Theme};
 use parking_lot::Mutex;
@@ -449,25 +450,11 @@ impl MainWindow {
 
     /// Renders the message body through the ANSI parser into a terminal screen.
     fn load_message_to_screen(&mut self, data: &[u8]) {
-        use icy_engine::load_with_parser;
-        use icy_parser_core::AnsiParser;
         let _timer = crate::perf::Timer::with("load_message_to_screen", format!("{} bytes", data.len()));
-
-        // QWK stores bare LF line ends; the ANSI parser needs the CR to return to column 0.
-        let mut normalized = Vec::with_capacity(data.len() + data.len() / 8);
-        for byte in data {
-            if *byte == b'\n' {
-                normalized.push(b'\r');
-            }
-            normalized.push(*byte);
-        }
-
-        let height = normalized.iter().filter(|b| **b == b'\n').count().max(24) + 1;
-        let mut text_screen = TextScreen::new(Size::new(80, height as i32));
-        text_screen.terminal_state_mut().is_terminal_buffer = false;
-
-        let mut parser = AnsiParser::new();
-        let _ = load_with_parser(&mut text_screen, &mut parser, &normalized, true, -1);
+        let Ok(text_screen) = icy_mail::reader::render_body(data) else {
+            self.terminal = empty_terminal();
+            return;
+        };
 
         let screen: Box<dyn Screen> = Box::new(text_screen);
         self.terminal = Terminal::new(Arc::new(Mutex::new(screen)));
@@ -568,19 +555,6 @@ impl MainWindow {
     }
 }
 
-/// Moves `current` by `direction` inside a list of `len` entries.
-fn step(current: usize, direction: NavigateDirection, len: usize) -> usize {
-    let last = len.saturating_sub(1);
-    match direction {
-        NavigateDirection::Up => current.saturating_sub(1),
-        NavigateDirection::Down => (current + 1).min(last),
-        NavigateDirection::First => 0,
-        NavigateDirection::Last => last,
-        NavigateDirection::PageUp => current.saturating_sub(10),
-        NavigateDirection::PageDown => (current + 10).min(last),
-    }
-}
-
 /// Scrolls just far enough to reveal `position`, so arrow keys do not yank the list around.
 fn scroll_into_view(id: icy_ui::widget::Id, position: usize, view: (f32, f32)) -> Task<Message> {
     let Some(target) = scroll_target(position, view) else {
@@ -675,8 +649,8 @@ mod tests {
     }
 
     /// A window with the synthetic test packet already loaded.
-    fn loaded() -> (crate::qwk::tests::TempDir, MainWindow) {
-        let (dir, package) = crate::qwk::tests::load();
+    fn loaded() -> (crate::qwk_tests::TempDir, MainWindow) {
+        let (dir, package) = crate::qwk_tests::load();
         let mut window = MainWindow::new(window::Id::unique(), MainWindowMode::ShowWelcomeScreen);
         let _ = window.update(Message::PackageLoaded(Arc::new(package)));
         (dir, window)
