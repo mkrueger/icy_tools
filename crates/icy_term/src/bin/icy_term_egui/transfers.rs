@@ -11,6 +11,7 @@ pub struct Transfers {
     pub state: Option<TransferState>,
     pub result: Option<String>,
     pub capture: Option<String>,
+    pub request_capture: bool,
     commands: Vec<TerminalCommand>,
 }
 
@@ -86,7 +87,7 @@ impl Transfers {
         }
     }
 
-    pub fn menu(&mut self, ui: &mut egui::Ui, connected: bool, options: &Options) {
+    pub fn menu(&mut self, ui: &mut egui::Ui, connected: bool) {
         ui.add_enabled_ui(connected && !self.active, |ui| {
             if ui.button(&*tr!("egui-upload-command")).clicked() {
                 self.choose(false);
@@ -103,14 +104,7 @@ impl Transfers {
                     ui.close();
                 }
             } else if ui.button(&*tr!("egui-capture-command")).clicked() {
-                if let Some(path) = rfd::FileDialog::new()
-                    .set_directory(&options.capture_path)
-                    .set_file_name("capture.ans")
-                    .save_file()
-                {
-                    let path = path.to_string_lossy().into_owned();
-                    self.commands.push(TerminalCommand::StartCapture(path));
-                }
+                self.request_capture = true;
                 ui.close();
             }
         });

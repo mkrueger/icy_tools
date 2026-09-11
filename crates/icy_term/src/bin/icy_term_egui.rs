@@ -26,6 +26,8 @@ mod about;
 mod audio;
 #[path = "icy_term_egui/dialing_directory.rs"]
 mod dialing_directory;
+#[path = "icy_term_egui/export.rs"]
+mod export;
 #[path = "icy_term_egui/hotkeys.rs"]
 mod hotkeys;
 #[path = "icy_term_egui/input.rs"]
@@ -112,6 +114,8 @@ struct TerminalApp {
     icons: Option<dialing_directory::Icons>,
     about_open: bool,
     about: Option<about::About>,
+    save_screen: Option<export::SaveScreen>,
+    capture: Option<export::Capture>,
     help_open: bool,
     bps_open: bool,
     baud: icy_parser_core::BaudEmulation,
@@ -163,6 +167,8 @@ impl TerminalApp {
             icons: None,
             about_open: false,
             about: None,
+            save_screen: None,
+            capture: None,
             help_open: false,
             bps_open: false,
             baud: icy_parser_core::BaudEmulation::Off,
@@ -374,7 +380,7 @@ impl TerminalApp {
                 }
             });
             ui.menu_button(&*tr!("egui-session"), |ui| {
-                self.transfers.menu(ui, self.connected, &self.dialing_directory.options);
+                self.transfers.menu(ui, self.connected);
                 ui.separator();
                 self.tools.menu(ui, self.connected || self.connecting, &self.dialing_directory.options);
                 if ui.button(tr!("terminal-menu-info")).clicked() {
@@ -1241,6 +1247,36 @@ impl TerminalApp {
                 }
             }
         }
+        if let Some(dialog) = &mut self.save_screen {
+            let mut open = true;
+            let target = dialog.show(context, &mut open);
+            if !open {
+                self.save_screen = None;
+            }
+            if let Some((path, extension)) = target {
+                self.write_screen(path, extension);
+            }
+        }
+        if std::mem::take(&mut self.transfers.request_capture) {
+            self.capture = Some(export::Capture::new(
+                &self.dialing_directory.options.capture_path,
+                self.transfers.capture.is_some(),
+            ));
+        }
+        if let Some(dialog) = &mut self.capture {
+            let mut open = true;
+            let target = dialog.show(context, &mut open);
+            let running = dialog.running;
+            if !open {
+                self.capture = None;
+                if running {
+                    self.command(icy_term::TerminalCommand::StopCapture, context);
+                }
+            }
+            if let Some(path) = target {
+                self.command(icy_term::TerminalCommand::StartCapture(path.to_string_lossy().into_owned()), context);
+            }
+        }
         if self.bps_open {
             if let Some(baud) = overlays::baud(context, &mut self.bps_open, self.baud) {
                 self.baud = baud;
@@ -1646,15 +1682,10 @@ impl TerminalApp {
     }
 
     fn save_screen(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
-            .add_filter("ANSI", &["ans"])
-            .add_filter("Text", &["asc"])
-            .set_file_name("screen.ans")
-            .save_file()
-        else {
-            return;
-        };
-        let extension = path.extension().and_then(|extension| extension.to_str()).unwrap_or("ans");
+        self.save_screen = Some(export::SaveScreen::new(&self.dialing_directory.options.capture_path));
+    }
+
+    fn write_screen(&mut self, path: PathBuf, extension: &str) {
         let options = icy_engine::SaveOptions::ansi(icy_engine::AnsiCompatibilityLevel::Utf8Terminal);
         let data = self.terminal.screen.lock().to_bytes(extension, &options);
         match data {

@@ -168,8 +168,11 @@ pub fn combo_row(ui: &mut egui::Ui, label: &str, selected: impl Into<egui::Widge
 
 pub fn slider_row(ui: &mut egui::Ui, label: &str, value: &mut f32, range: std::ops::RangeInclusive<f32>) {
     form_row(ui, label, |ui| {
-        ui.spacing_mut().slider_width = (ui.available_width() - 60.0).max(48.0);
-        ui.add(egui::Slider::new(value, range));
+        // The slider's value box grows with the number of digits, so cap the decimals and
+        // reserve room for it; otherwise a long value widens the whole dialog.
+        let width = ui.available_width();
+        ui.spacing_mut().slider_width = (width - 96.0).max(40.0);
+        ui.add(egui::Slider::new(value, range).max_decimals(2));
     });
 }
 

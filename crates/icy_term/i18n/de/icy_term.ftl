@@ -755,6 +755,10 @@ egui-colors = Farben
 egui-generate-password = Passwort erzeugen
 
 egui-system-name = Systemname
+egui-format = Format
+egui-overwrite = Überschreiben
+egui-overwrite-question = Diese Datei existiert bereits. Überschreiben?
+egui-capture-start = Aufzeichnung starten
 egui-picture = Bild
 egui-effects = Effekte
 egui-reset-page = Seite zurücksetzen

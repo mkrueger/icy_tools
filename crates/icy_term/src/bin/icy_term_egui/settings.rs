@@ -28,6 +28,8 @@ pub struct Settings {
     pub closed: bool,
     commands: std::collections::HashMap<egui::Id, String>,
     invalid_commands: std::collections::HashSet<egui::Id>,
+    #[cfg(test)]
+    pub bounds: Option<egui::Rect>,
 }
 
 fn read_existing(path: &Path) -> Result<Option<Vec<u8>>, String> {
@@ -56,6 +58,8 @@ impl Settings {
             closed: false,
             commands: Default::default(),
             invalid_commands: Default::default(),
+            #[cfg(test)]
+            bounds: None,
         })
     }
 
@@ -144,7 +148,7 @@ impl Settings {
 
     pub fn show(&mut self, context: &egui::Context) -> Option<Options> {
         let mut saved = None;
-        egui::Modal::new(egui::Id::new("settings"))
+        let _modal = egui::Modal::new(egui::Id::new("settings"))
             .frame(super::appearance::dialog_frame(context))
             .show(context, |ui| {
                 let height = (context.content_rect().height() - 64.0).clamp(140.0, 560.0);
@@ -463,6 +467,10 @@ impl Settings {
                     });
                 });
             });
+        #[cfg(test)]
+        {
+            self.bounds = Some(_modal.response.rect);
+        }
         if let Some(error) = &self.error {
             if super::messages::MessageBox::error("settings-error", &tr!("egui-message-settings"), error)
                 .show(context)
@@ -495,7 +503,7 @@ fn preserve_unknown(original: &toml::Value, known: &toml::Value, updated: &mut t
 pub fn text_field(ui: &mut egui::Ui, label: &str, value: &mut String) {
     ui.push_id(label, |ui| {
         super::appearance::form_row(ui, label, |ui| {
-            ui.add(egui::TextEdit::singleline(value).desired_width(f32::INFINITY));
+            ui.add(super::appearance::text_edit(value).desired_width(f32::INFINITY));
         });
     });
 }
@@ -512,7 +520,8 @@ fn command_field(
     ui.push_id(id, |ui| {
         super::appearance::form_row(ui, label, |ui| {
             ui.horizontal(|ui| {
-                let response = ui.add(egui::TextEdit::singleline(value).desired_width((ui.available_width() - 30.0).max(40.0)));
+                let width = (ui.available_width() - 30.0 - ui.spacing().item_spacing.x - 2.0 * super::appearance::FIELD_MARGIN.x).max(40.0);
+                let response = ui.add(super::appearance::text_edit(value).desired_width(width));
                 if let Err(error) = icy_net::modem::ModemCommand::try_parse(value) {
                     let detail = format!("{error:?}");
                     response.on_hover_text(&detail);
@@ -541,18 +550,15 @@ fn command_field(
 fn location_row(ui: &mut egui::Ui, label: &str, path: Option<&Path>, open: Option<&Path>) {
     let text = path.map_or_else(|| "N/A".to_string(), |path| path.display().to_string());
     super::appearance::form_row(ui, label, |ui| {
-        ui.horizontal(|ui| {
-            let reserved = if open.is_some() { 70.0 } else { 0.0 };
+        // Right to left so the button claims its width first and the path truncates instead.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if let Some(target) = open {
+                if ui.button(&*tr!("settings-paths-open")).clicked() && !ui.ctx().will_discard() {
+                    let _ = open::that(target);
+                }
+            }
             ui.add(egui::Label::new(egui::RichText::new(&text).monospace().size(11.0)).truncate().selectable(true))
                 .on_hover_text(&text);
-            if let Some(target) = open {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.set_min_width(reserved);
-                    if ui.button(&*tr!("settings-paths-open")).clicked() && !ui.ctx().will_discard() {
-                        let _ = open::that(target);
-                    }
-                });
-            }
         });
     });
 }
@@ -560,13 +566,13 @@ fn location_row(ui: &mut egui::Ui, label: &str, path: Option<&Path>, open: Optio
 fn path_field(ui: &mut egui::Ui, label: &str, value: &mut String) {
     ui.push_id(label, |ui| {
         super::appearance::form_row(ui, label, |ui| {
-            ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(value).desired_width((ui.available_width() - 36.0).max(40.0)));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("...").on_hover_text(tr!("egui-browse")).clicked() && !ui.ctx().will_discard() {
                     if let Some(path) = rfd::FileDialog::new().set_directory(&*value).pick_folder() {
                         *value = path.to_string_lossy().into_owned();
                     }
                 }
+                ui.add(super::appearance::text_edit(value).desired_width(f32::INFINITY));
             });
         })
     });
@@ -640,6 +646,87 @@ fn validate(options: &Options) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_page_keeps_the_same_dialog_size() {
+        for viewport in [egui::vec2(1000.0, 800.0), egui::vec2(760.0, 620.0), egui::vec2(420.0, 560.0)] {
+            let path = std::env::temp_dir().join(format!("icy-size-{}-{}.toml", std::process::id(), fastrand::u64(..)));
+            let mut settings = Settings::open(&Options::default(), path).unwrap();
+            let context = egui::Context::default();
+            super::super::appearance::apply(&context);
+            let mut sizes = Vec::new();
+            for page in [
+                Page::Monitor,
+                Page::Terminal,
+                Page::Audio,
+                Page::Paths,
+                Page::Login,
+                Page::Serial,
+                Page::Sources,
+                Page::Modems,
+                Page::Protocols,
+            ] {
+                settings.page = page;
+                for _ in 0..3 {
+                    let _ = context.run(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, viewport)),
+                            ..Default::default()
+                        },
+                        |context| {
+                            settings.show(context);
+                        },
+                    );
+                }
+                sizes.push((page, settings.bounds.unwrap().size()));
+            }
+            let (_, first) = sizes[0];
+            for (page, size) in &sizes {
+                assert!(
+                    (size.x - first.x).abs() < 0.5 && (size.y - first.y).abs() < 0.5,
+                    "{page:?} changes the dialog size at {viewport:?}: {size:?} vs {first:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_input_shares_one_height() {
+        let context = egui::Context::default();
+        super::super::appearance::apply(&context);
+        let mut plain = String::new();
+        let mut path = "/tmp".to_string();
+        let mut command = icy_net::modem::ModemCommand::try_parse("ATZ^M").unwrap();
+        let mut drafts = std::collections::HashMap::new();
+        let mut invalid = std::collections::HashSet::new();
+        let mut heights = Vec::new();
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))),
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    ui.set_width(600.0);
+                    let mut row = |name: &str, add: &mut dyn FnMut(&mut egui::Ui)| {
+                        let before = ui.cursor().top();
+                        add(ui);
+                        heights.push((name.to_owned(), ui.cursor().top() - before));
+                    };
+                    row("text", &mut |ui| text_field(ui, "A", &mut plain));
+                    row("path", &mut |ui| path_field(ui, "B", &mut path));
+                    row("command", &mut |ui| command_field(ui, "C", &mut command, &mut drafts, &mut invalid));
+                });
+            },
+        );
+        let (_, first) = &heights[0];
+        for (name, height) in &heights {
+            assert!(
+                (height - first).abs() < 0.5,
+                "the {name} field is {height} high, expected {first} ({heights:?})"
+            );
+        }
+    }
 
     #[test]
     fn invalid_command_hover_preserves_the_last_valid_value() {
