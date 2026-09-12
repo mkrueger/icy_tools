@@ -13,6 +13,8 @@ use std::{
 };
 
 use super::widgets::{self, Icons};
+#[path = "chrome.rs"]
+mod chrome;
 #[path = "mcp.rs"]
 mod mcp;
 
@@ -85,6 +87,7 @@ pub struct DrawApp {
     script: String,
     script_output: String,
     mcp: Option<mcp::Bridge>,
+    chrome: chrome::Chrome,
     pub persist_settings: bool,
     new_bitmap: bool,
     show_grid: bool,
@@ -133,6 +136,7 @@ impl DrawApp {
             script: String::new(),
             script_output: String::new(),
             mcp: None,
+            chrome: chrome::Chrome::default(),
             persist_settings: false,
             new_bitmap: false,
             show_grid: false,
@@ -574,7 +578,7 @@ impl DrawApp {
                     }
                 });
                 ui.menu_button("View", |ui| {
-                    ui.checkbox(&mut self.show_inspector, "Inspector");
+                    ui.checkbox(&mut self.show_inspector, "Minimap & Layers");
                     ui.checkbox(&mut self.show_grid, "Character Grid");
                     if ui.button("Monitor...").clicked() {
                         self.dialog = Some(Dialog::Monitor);
@@ -631,133 +635,98 @@ impl DrawApp {
                 });
             });
         });
-        if self.animation.is_some() {
-            return;
-        }
-        egui::TopBottomPanel::top("tools").show(context, |ui| {
-            if blocked {
-                ui.disable();
-            }
-            egui::ScrollArea::horizontal().id_salt("tool-icons").show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    for tool in [
-                        Tool::Click,
-                        Tool::Select,
-                        Tool::Pencil,
-                        Tool::Line,
-                        Tool::RectangleOutline,
-                        Tool::RectangleFilled,
-                        Tool::EllipseOutline,
-                        Tool::EllipseFilled,
-                        Tool::Fill,
-                        Tool::Pipette,
-                        Tool::Font,
-                        Tool::Tag,
-                    ] {
-                        if self.icons.button(ui, tool.icon(), tool.name(), self.document.tool == tool).clicked() {
-                            self.document.finish();
-                            self.document.tool = tool;
-                            self.canvas_focus = true;
-                            if tool == Tool::Tag {
-                                self.dialog = Some(Dialog::Tags);
-                            }
-                            if tool == Tool::Font && self.text_fonts.is_none() {
-                                self.text_fonts = Some(icy_draw::text_art_fonts::TextArtFontLibrary::create_shared());
-                            }
-                        }
-                    }
-                    ui.separator();
-                    if self.icons.button(ui, "arrow_left", "Undo", false).clicked() {
-                        self.undo(false);
-                    }
-                    if self.icons.button(ui, "arrow_right", "Redo", false).clicked() {
-                        self.undo(true);
-                    }
-                });
-            });
-            if self.document.tool == Tool::Pencil || self.document.tool == Tool::Fill || self.document.tool.is_shape_tool() {
-                ui.horizontal_wrapped(|ui| {
-                    egui::ComboBox::from_id_salt("brush-mode")
-                        .selected_text(format!("{:?}", self.document.brush.primary))
-                        .show_ui(ui, |ui| {
-                            for mode in [
-                                BrushPrimaryMode::Char,
-                                BrushPrimaryMode::HalfBlock,
-                                BrushPrimaryMode::Shading,
-                                BrushPrimaryMode::Replace,
-                                BrushPrimaryMode::Blink,
-                                BrushPrimaryMode::Colorize,
-                            ] {
-                                ui.selectable_value(&mut self.document.brush.primary, mode, format!("{mode:?}"));
-                            }
-                        });
-                    ui.add(egui::DragValue::new(&mut self.document.brush.brush_size).range(1..=20).prefix("Size "));
-                    ui.checkbox(&mut self.document.brush.colorize_fg, "FG");
-                    ui.checkbox(&mut self.document.brush.colorize_bg, "BG");
-                    if self.document.tool == Tool::Fill {
-                        ui.checkbox(&mut self.document.brush.exact, "Exact");
-                    }
-                    if ui.button("Character...").clicked() {
-                        self.dialog = Some(Dialog::Characters);
-                    }
-                });
-            }
-            if self.document.tool == Tool::Font {
-                if let Some(library) = &self.text_fonts {
-                    let mut library = library.write();
-                    ui.horizontal_wrapped(|ui| {
-                        egui::ComboBox::from_id_salt("text-art-font")
-                            .selected_text(library.font_name(self.text_font).unwrap_or("No fonts"))
-                            .show_ui(ui, |ui| {
-                                for (index, name) in library.font_names().iter().enumerate() {
-                                    ui.selectable_value(&mut self.text_font, index, name);
-                                }
-                            });
-                        ui.add(egui::DragValue::new(&mut self.settings.font_outline_style).range(0..=18).prefix("Outline "));
-                    });
-                    if self.text_preview.as_ref().is_none_or(|(index, _)| *index != self.text_font) {
-                        if let Some(preview) = library.generate_preview(self.text_font) {
-                            let texture = context.load_texture(
-                                "text-art-preview",
-                                egui::ColorImage::from_rgba_unmultiplied([preview.width as usize, preview.height as usize], &preview.rgba),
-                                egui::TextureOptions::NEAREST,
-                            );
-                            self.text_preview = Some((self.text_font, texture));
-                        }
-                    }
-                    if let Some((_, preview)) = &self.text_preview {
-                        ui.add(egui::Image::new(preview).max_height(60.0));
+    }
+
+    fn tool_options(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        if self.document.tool == Tool::Pencil || self.document.tool == Tool::Fill || self.document.tool.is_shape_tool() {
+            ui.horizontal_wrapped(|ui| {
+                for (mode, label) in [
+                    (BrushPrimaryMode::Char, "Char"),
+                    (BrushPrimaryMode::HalfBlock, "Half Block"),
+                    (BrushPrimaryMode::Shading, "Shade"),
+                    (BrushPrimaryMode::Replace, "Replace"),
+                    (BrushPrimaryMode::Blink, "Blink"),
+                    (BrushPrimaryMode::Colorize, "Colorize"),
+                ] {
+                    if ui.selectable_label(self.document.brush.primary == mode, label).clicked() {
+                        self.document.brush.primary = mode;
                     }
                 }
-                context.request_repaint_after(std::time::Duration::from_millis(250));
-            }
-            if self.document.tool == Tool::Click {
+                ui.separator();
                 let font = self
                     .document
                     .with_state(|state| state.get_buffer().font(state.get_caret().attribute.font_page()).cloned());
                 if let Some(font) = font {
-                    ui.horizontal_wrapped(|ui| {
-                        if self.icons.button(ui, "navigate_prev", "Previous Character Set", false).clicked() {
-                            self.settings.fkeys.current_set =
-                                (self.settings.fkeys.current_set + self.settings.fkeys.set_count() - 1) % self.settings.fkeys.set_count();
-                        }
-                        for (index, code) in self.settings.fkeys.current_set_codes().into_iter().enumerate() {
-                            if widgets::glyph(ui, &font, char::from_u32(code as u32).unwrap_or(' '), false, 24.0)
-                                .on_hover_text(format!("F{}", index + 1))
-                                .clicked()
-                                && self.document.can_paint()
-                            {
-                                self.edit(|state| state.type_key(char::from_u32(code as u32).unwrap_or(' ')));
-                                self.canvas_focus = true;
+                    if widgets::glyph(ui, &font, self.document.brush.paint_char, false, 26.0)
+                        .on_hover_text("Select Character")
+                        .clicked()
+                    {
+                        self.dialog = Some(Dialog::Characters);
+                    }
+                }
+                ui.add(egui::DragValue::new(&mut self.document.brush.brush_size).range(1..=20).prefix("Size "));
+                ui.checkbox(&mut self.document.brush.colorize_fg, "FG");
+                ui.checkbox(&mut self.document.brush.colorize_bg, "BG");
+                if self.document.tool == Tool::Fill {
+                    ui.checkbox(&mut self.document.brush.exact, "Exact");
+                }
+            });
+        }
+        if self.document.tool == Tool::Font {
+            if let Some(library) = &self.text_fonts {
+                let mut library = library.write();
+                ui.horizontal_wrapped(|ui| {
+                    egui::ComboBox::from_id_salt("text-art-font")
+                        .selected_text(library.font_name(self.text_font).unwrap_or("No fonts"))
+                        .show_ui(ui, |ui| {
+                            for (index, name) in library.font_names().iter().enumerate() {
+                                ui.selectable_value(&mut self.text_font, index, name);
                             }
-                        }
-                        if self.icons.button(ui, "navigate_next", "Next Character Set", false).clicked() {
-                            self.settings.fkeys.current_set = (self.settings.fkeys.current_set + 1) % self.settings.fkeys.set_count();
-                        }
-                    });
+                        });
+                    ui.add(egui::DragValue::new(&mut self.settings.font_outline_style).range(0..=18).prefix("Outline "));
+                });
+                if self.text_preview.as_ref().is_none_or(|(index, _)| *index != self.text_font) {
+                    if let Some(preview) = library.generate_preview(self.text_font) {
+                        let texture = context.load_texture(
+                            "text-art-preview",
+                            egui::ColorImage::from_rgba_unmultiplied([preview.width as usize, preview.height as usize], &preview.rgba),
+                            egui::TextureOptions::NEAREST,
+                        );
+                        self.text_preview = Some((self.text_font, texture));
+                    }
+                }
+                if let Some((_, preview)) = &self.text_preview {
+                    ui.add(egui::Image::new(preview).max_height(60.0));
                 }
             }
-        });
+            context.request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        if self.document.tool == Tool::Click {
+            let font = self
+                .document
+                .with_state(|state| state.get_buffer().font(state.get_caret().attribute.font_page()).cloned());
+            if let Some(font) = font {
+                ui.horizontal_wrapped(|ui| {
+                    if self.icons.button(ui, "navigate_prev", "Previous Character Set", false).clicked() {
+                        self.settings.fkeys.current_set =
+                            (self.settings.fkeys.current_set + self.settings.fkeys.set_count() - 1) % self.settings.fkeys.set_count();
+                    }
+                    for (index, code) in self.settings.fkeys.current_set_codes().into_iter().enumerate() {
+                        if widgets::glyph(ui, &font, char::from_u32(code as u32).unwrap_or(' '), false, 24.0)
+                            .on_hover_text(format!("F{}", index + 1))
+                            .clicked()
+                            && self.document.can_paint()
+                        {
+                            self.edit(|state| state.type_key(char::from_u32(code as u32).unwrap_or(' ')));
+                            self.canvas_focus = true;
+                        }
+                    }
+                    if self.icons.button(ui, "navigate_next", "Next Character Set", false).clicked() {
+                        self.settings.fkeys.current_set = (self.settings.fkeys.current_set + 1) % self.settings.fkeys.set_count();
+                    }
+                });
+            }
+        }
     }
 
     fn palette(&mut self, ui: &mut egui::Ui) {
@@ -1946,38 +1915,38 @@ impl DrawApp {
             return;
         }
         self.charfont_bar(context);
-        egui::TopBottomPanel::bottom("status").show(context, |ui| {
-            let (size, position) = self.document.with_state(|state| (state.get_buffer().size(), state.get_caret().position()));
-            ui.horizontal_wrapped(|ui| {
-                ui.label(format!("{} x {}", size.width, size.height));
-                ui.separator();
-                ui.label(format!("{}, {}", position.x + 1, position.y + 1));
-                ui.separator();
-                ui.label(format!("{:.0}%", self.view.zoom * 100.0));
-                ui.label(self.document.tool.name());
-                if self.picker {
-                    ui.spinner();
-                }
-            });
+        egui::TopBottomPanel::bottom("status").exact_height(26.0).show(context, |ui| {
+            if blocked {
+                ui.disable();
+            }
+            self.status_bar(ui);
         });
         if self.show_inspector && context.content_rect().width() >= 850.0 {
-            egui::SidePanel::right("inspector")
-                .default_width(240.0)
-                .width_range(220.0..=360.0)
+            egui::SidePanel::right("panel")
+                .exact_width(chrome::PANEL_WIDTH)
+                .resizable(false)
                 .show(context, |ui| {
                     if blocked {
                         ui.disable();
                     }
-                    egui::ScrollArea::vertical().show(ui, |ui| self.inspector(ui));
+                    self.panel(ui);
                 });
-        } else {
-            egui::TopBottomPanel::bottom("compact-palette").show(context, |ui| {
+        }
+        egui::TopBottomPanel::top("toolbar").min_height(chrome::TOOLBAR_HEIGHT).show(context, |ui| {
+            if blocked {
+                ui.disable();
+            }
+            self.toolbar(ui, context);
+        });
+        egui::SidePanel::left("sidebar")
+            .exact_width(chrome::SIDEBAR_WIDTH + 14.0)
+            .resizable(false)
+            .show(context, |ui| {
                 if blocked {
                     ui.disable();
                 }
-                self.palette(ui);
+                self.sidebar(ui);
             });
-        }
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(Color32::from_gray(28)))
             .show(context, |ui| self.canvas(ui, blocked || self.dialog.is_some() || self.picker));

@@ -10,6 +10,10 @@ pub struct Icons(HashMap<String, egui::TextureHandle>);
 
 impl Icons {
     pub fn button(&mut self, ui: &mut egui::Ui, name: &str, label: &str, selected: bool) -> Response {
+        self.button_sized(ui, name, label, selected, 30.0)
+    }
+
+    pub fn button_sized(&mut self, ui: &mut egui::Ui, name: &str, label: &str, selected: bool, size: f32) -> Response {
         let texture = self.0.entry(name.to_owned()).or_insert_with(|| {
             let data = Assets::get(&format!("{name}.svg")).expect("bundled draw icon");
             let tree = resvg::usvg::Tree::from_data(&data.data, &Default::default()).expect("valid draw icon");
@@ -25,10 +29,10 @@ impl Icons {
                 egui::TextureOptions::LINEAR,
             )
         });
-        let image = egui::Image::new((texture.id(), egui::Vec2::splat(20.0))).tint(ui.visuals().text_color());
+        let image = egui::Image::new((texture.id(), egui::Vec2::splat(size * 2.0 / 3.0))).tint(ui.visuals().text_color());
         ui.scope(|ui| {
             ui.spacing_mut().button_padding = egui::vec2(4.0, 4.0);
-            ui.add_sized([30.0, 30.0], egui::Button::image(image).selected(selected))
+            ui.add_sized([size, size], egui::Button::image(image).selected(selected))
         })
         .inner
         .on_hover_text(label)

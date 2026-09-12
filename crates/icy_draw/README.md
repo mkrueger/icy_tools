@@ -32,6 +32,10 @@ cargo run -p icy_draw -- host --bind 127.0.0.1 --port 8000 art.icy
 
 The egui frontend currently includes:
 
+- The original window layout: colour switcher and 8×2 palette above the tool
+  column on the left, tool options on top, minimap and layer list on the right,
+  and the moebius status bar with iCE/letter-spacing/aspect toggles, tool hint,
+  caret or selection, and font selection.
 - ANSI/ASCII editing, brushes, shapes, half-block drawing, flood fill, rectangular
   selection, layers, palette editing, tags, SAUCE, and undo/redo.
 - Bitmap font editing and PSF saving; TDF collection/glyph editing; TDF/FIGlet
@@ -48,7 +52,7 @@ The egui frontend currently includes:
 This is **not yet full legacy UI parity**. Use the legacy frontend for graphical
 collaboration sessions, session/autosave recovery, AV1 export, advanced bitmap
 font import/export and font-slot management, free-form selections, reference
-images, guides, and the minimap. The egui controls currently use English labels.
+images, and guides. The egui controls currently use English labels.
 Rich clipboard data is retained inside one editor instance; copying between
 instances uses plain text. New windows do not share live documents. Existing
 legacy session files are not migrated or modified by the egui frontend. Lua

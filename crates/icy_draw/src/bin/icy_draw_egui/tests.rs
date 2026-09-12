@@ -205,6 +205,33 @@ fn responsive_canvas_keeps_usable_bounds() {
 }
 
 #[test]
+fn editor_chrome_matches_the_original_panel_layout() {
+    for (size, panel) in [(egui::vec2(1280.0, 820.0), true), (egui::vec2(440.0, 700.0), false)] {
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let mut app = DrawApp::new();
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        let output = frame(&context, &mut app, size, vec![]);
+        let rendered = |label: &str| {
+            output.shapes.iter().any(|shape| match &shape.shape {
+                egui::Shape::Text(text) => text.galley.text().contains(label),
+                _ => false,
+            })
+        };
+        assert!(app.canvas_rect.left() >= chrome::SIDEBAR_WIDTH, "{size:?}: tool column missing");
+        assert_eq!(rendered("Minimap"), panel, "{size:?}: minimap");
+        assert_eq!(rendered("Layers"), panel, "{size:?}: layers");
+        if panel {
+            assert!(app.canvas_rect.right() <= size.x - chrome::PANEL_WIDTH, "{size:?}: right panel missing");
+            assert!(rendered("Type characters"), "{size:?}: status hint missing");
+        }
+        assert!(rendered("ICE") && rendered("SQUARE"), "{size:?}: status toggles missing");
+    }
+}
+
+#[test]
 fn tdf_changes_switch_and_save_through_the_app() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("test.tdf");
