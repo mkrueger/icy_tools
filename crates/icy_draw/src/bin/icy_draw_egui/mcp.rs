@@ -63,7 +63,7 @@ impl DrawApp {
             Some("A native file dialog is open")
         } else if self.animation.is_some() || self.font_editor.is_some() {
             Some("Not in ANSI editor mode")
-        } else if self.dialog.is_some() {
+        } else if self.dialog.is_some() || self.layer_properties_open() || self.document.paste_active() {
             Some("Close the editor dialog before using ANSI automation")
         } else {
             None
@@ -71,7 +71,10 @@ impl DrawApp {
         if icy_draw::mcp::edit::handle(&mut self.document, &command, unavailable) {
             return;
         }
-        let busy = self.picker || self.dialog.as_ref().is_some_and(|dialog| !matches!(dialog, Dialog::Font));
+        let busy = self.picker
+            || self.layer_properties_open()
+            || self.document.paste_active()
+            || self.dialog.as_ref().is_some_and(|dialog| !matches!(dialog, Dialog::Font));
         match command {
             McpCommand::GetHelp { editor_type, response } => respond(
                 &response,

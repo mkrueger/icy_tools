@@ -811,14 +811,13 @@ impl EditorUndoOp {
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
-            EditorUndoOp::AddTag { new_tag, .. } => {
-                edit_state.get_buffer_mut().tags.retain(|t| t != new_tag);
+            EditorUndoOp::AddTag { .. } => {
+                edit_state.get_buffer_mut().tags.pop();
                 Ok(())
             }
-            EditorUndoOp::EditTag { tag_index, old_tag, new_tag } => {
-                std::mem::swap(old_tag, new_tag);
+            EditorUndoOp::EditTag { tag_index, old_tag, .. } => {
                 if let Some(tag) = edit_state.get_buffer_mut().tags.get_mut(*tag_index) {
-                    *tag = new_tag.clone();
+                    *tag = old_tag.clone();
                 } else {
                     log::warn!(
                         "EditTag undo: tag index {} out of bounds (len={})",
@@ -828,10 +827,9 @@ impl EditorUndoOp {
                 }
                 Ok(())
             }
-            EditorUndoOp::MoveTag { tag, old_pos, new_pos } => {
-                std::mem::swap(old_pos, new_pos);
+            EditorUndoOp::MoveTag { tag, old_pos, .. } => {
                 if let Some(t) = edit_state.get_buffer_mut().tags.get_mut(*tag) {
-                    t.position = *new_pos;
+                    t.position = *old_pos;
                 } else {
                     log::warn!("MoveTag undo: tag index {} out of bounds (len={})", tag, edit_state.get_buffer().tags.len());
                 }
@@ -1152,7 +1150,11 @@ impl EditorUndoOp {
             }
             EditorUndoOp::AddSelectionToMask { old, selection } => {
                 *old = edit_state.selection_mask.clone();
-                edit_state.selection_mask.add_selection(*selection);
+                if matches!(selection.add_type, crate::AddType::Subtract) {
+                    edit_state.selection_mask.remove_selection(*selection);
+                } else {
+                    edit_state.selection_mask.add_selection(*selection);
+                }
                 edit_state.mark_overlay_dirty_mut();
                 Ok(())
             }
@@ -1294,8 +1296,7 @@ impl EditorUndoOp {
                 edit_state.get_buffer_mut().tags.push(new_tag.clone());
                 Ok(())
             }
-            EditorUndoOp::EditTag { tag_index, old_tag, new_tag } => {
-                // Set tag first, then swap for undo symmetry
+            EditorUndoOp::EditTag { tag_index, new_tag, .. } => {
                 if let Some(tag) = edit_state.get_buffer_mut().tags.get_mut(*tag_index) {
                     *tag = new_tag.clone();
                 } else {
@@ -1305,17 +1306,14 @@ impl EditorUndoOp {
                         edit_state.get_buffer().tags.len()
                     );
                 }
-                std::mem::swap(old_tag, new_tag);
                 Ok(())
             }
-            EditorUndoOp::MoveTag { tag, old_pos, new_pos } => {
-                // Move tag first, then swap for undo symmetry
+            EditorUndoOp::MoveTag { tag, new_pos, .. } => {
                 if let Some(t) = edit_state.get_buffer_mut().tags.get_mut(*tag) {
                     t.position = *new_pos;
                 } else {
                     log::warn!("MoveTag redo: tag index {} out of bounds (len={})", tag, edit_state.get_buffer().tags.len());
                 }
-                std::mem::swap(old_pos, new_pos);
                 Ok(())
             }
             EditorUndoOp::RemoveTag { tag_index, .. } => {

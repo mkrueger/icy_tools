@@ -59,8 +59,12 @@ impl CharFontDocument {
     }
 
     pub fn document(&self) -> Document {
-        let document = Document::new(Size::new(30, 12));
+        let mut document = Document::new(Size::new(30, 12));
+        document.outline_font = self.state.selected_font().is_some_and(|font| font.font_type == TdfFontType::Outline);
         document.with_state(|state| {
+            let font = icy_engine::BitFont::from_bytes("TDF_FONT", include_bytes!("ui/editor/charfont/TDF_FONT.psf")).expect("bundled TDF font");
+            state.get_buffer_mut().set_font(0, font);
+            state.get_buffer_mut().layers[0].properties.is_position_locked = true;
             if let Some(glyph) = self.state.selected_char().and_then(|character| self.state.get_glyph(character)) {
                 let buffer = state.get_buffer_mut();
                 let size = Size::new((glyph.width as i32).max(30), (glyph.height as i32).max(12));
@@ -85,6 +89,7 @@ impl CharFontDocument {
     }
 
     pub fn save_with_overwrite(&mut self, document: &mut Document, path: &Path, overwrite: bool) -> DrawResult<()> {
+        document.paste_action(crate::document::PasteAction::Keep)?;
         self.commit(document);
         if !path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("tdf")) {
             return Err("Save TheDraw font collections with a .tdf extension.".into());
@@ -97,6 +102,26 @@ impl CharFontDocument {
         self.disk_bytes = Some(self.baseline.clone());
         Ok(())
     }
+}
+
+pub fn outline_preview(document: &Document, style: usize) -> TextBuffer {
+    let mut buffer = document.with_state(|state| state.get_buffer().clone());
+    for layer in &mut buffer.layers {
+        for row in 0..layer.height() {
+            for column in 0..layer.width() {
+                let mut cell = layer.char_at(Position::new(column, row));
+                if cell.ch == '\u{00ff}' {
+                    cell.ch = ' ';
+                } else if matches!(cell.ch, 'A'..='Q' | '@' | '&') {
+                    let character = retrofont::transform_outline(style.min(18), cell.ch as u8);
+                    cell.ch = codepages::tables::UNICODE_TO_CP437.get(&character).map_or(character, |code| char::from(*code));
+                }
+                layer.set_char(Position::new(column, row), cell);
+            }
+        }
+    }
+    buffer.mark_dirty();
+    buffer
 }
 
 pub fn buffer_to_glyph(buffer: &TextBuffer, font_type: TdfFontType) -> Option<Glyph> {
@@ -194,5 +219,27 @@ mod tests {
         let loaded = CharFontDocument::load(&path).unwrap();
         assert!(loaded.state.has_glyph('A'));
         assert!(loaded.state.has_glyph('B'));
+    }
+
+    #[test]
+    fn outline_editor_uses_original_font_and_preserves_codes() {
+        let mut font = CharFontDocument::new(TdfFontType::Outline);
+        let mut document = font.document();
+        let expected = icy_engine::BitFont::from_bytes("TDF_FONT", include_bytes!("ui/editor/charfont/TDF_FONT.psf")).unwrap();
+        assert_eq!(document.with_state(|state| state.get_buffer().font(0).cloned()), Some(expected));
+        assert!(document.with_state(|state| state.get_cur_layer().unwrap().properties.is_position_locked));
+        document.type_text("aqz@&").unwrap();
+        let preview = outline_preview(&document, 0);
+        let alternate = outline_preview(&document, 1);
+        assert_ne!(preview.char_at(Position::default()).ch, 'A');
+        assert_ne!(preview.char_at(Position::default()).ch, alternate.char_at(Position::default()).ch);
+        assert_eq!(document.with_state(|state| state.get_buffer().char_at(Position::default()).ch), 'A');
+        font.commit(&mut document);
+        let reopened = font.document();
+        assert!(reopened.outline_font);
+        assert_eq!(
+            reopened.with_state(|state| (0..4).map(|column| state.get_buffer().char_at(Position::new(column, 0)).ch).collect::<String>()),
+            "AQ@&"
+        );
     }
 }

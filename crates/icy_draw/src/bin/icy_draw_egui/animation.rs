@@ -289,6 +289,22 @@ impl AnimationEditor {
     }
 
     pub fn show(&mut self, context: &egui::Context, blocked: bool) {
+        if !blocked {
+            let history = context.input_mut(|input| {
+                if input.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Z)
+                    || input.consume_key(egui::Modifiers::COMMAND, egui::Key::Y)
+                {
+                    Some(true)
+                } else if input.consume_key(egui::Modifiers::COMMAND, egui::Key::Z) {
+                    Some(false)
+                } else {
+                    None
+                }
+            });
+            if let Some(redo) = history {
+                self.undo_source(redo);
+            }
+        }
         self.poll();
         if let Some(job) = &self.export_job {
             if let Ok(result) = job.result.try_recv() {
@@ -389,6 +405,7 @@ impl AnimationEditor {
             if ui
                 .add(
                     egui::TextEdit::multiline(&mut self.source)
+                        .id(egui::Id::new("animation-source-editor"))
                         .code_editor()
                         .desired_width(f32::INFINITY)
                         .desired_rows(30),

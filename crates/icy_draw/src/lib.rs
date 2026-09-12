@@ -9,6 +9,8 @@ pub mod mcp;
 pub mod paint;
 #[path = "util/plugins.rs"]
 pub mod plugins;
+#[path = "ui/editor/ansi/selection_drag.rs"]
+pub mod selection_drag;
 #[path = "ui/settings/mod.rs"]
 pub mod settings;
 #[path = "ui/editor/ansi/shape_points.rs"]

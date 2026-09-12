@@ -14,6 +14,16 @@ impl Icons {
     }
 
     pub fn button_sized(&mut self, ui: &mut egui::Ui, name: &str, label: &str, selected: bool, size: f32) -> Response {
+        let image = self.image(ui, name, size * 2.0 / 3.0);
+        ui.scope(|ui| {
+            ui.spacing_mut().button_padding = egui::vec2(4.0, 4.0);
+            ui.add_sized([size, size], egui::Button::image(image).selected(selected))
+        })
+        .inner
+        .on_hover_text(label)
+    }
+
+    pub fn image(&mut self, ui: &egui::Ui, name: &str, size: f32) -> egui::Image<'static> {
         let texture = self.0.entry(name.to_owned()).or_insert_with(|| {
             let data = Assets::get(&format!("{name}.svg")).expect("bundled draw icon");
             let tree = resvg::usvg::Tree::from_data(&data.data, &Default::default()).expect("valid draw icon");
@@ -29,14 +39,51 @@ impl Icons {
                 egui::TextureOptions::LINEAR,
             )
         });
-        let image = egui::Image::new((texture.id(), egui::Vec2::splat(size * 2.0 / 3.0))).tint(ui.visuals().text_color());
-        ui.scope(|ui| {
-            ui.spacing_mut().button_padding = egui::vec2(4.0, 4.0);
-            ui.add_sized([size, size], egui::Button::image(image).selected(selected))
-        })
-        .inner
-        .on_hover_text(label)
+        egui::Image::new((texture.id(), egui::Vec2::splat(size))).tint(ui.visuals().text_color())
     }
+}
+
+pub fn segment(ui: &mut egui::Ui, label: &str, selected: bool, width: f32) -> Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 36.0), egui::Sense::click());
+    let visuals = ui.style().interact_selectable(&response, selected);
+    ui.painter().rect_filled(rect, 0, visuals.bg_fill);
+    ui.painter().rect_stroke(rect, 0, visuals.bg_stroke, egui::StrokeKind::Inside);
+    if selected {
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(rect.left_bottom() - egui::vec2(0.0, 2.0), egui::vec2(rect.width(), 2.0)),
+            0,
+            ui.visuals().selection.stroke.color,
+        );
+    }
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        egui::TextStyle::Body.resolve(ui.style()),
+        visuals.text_color(),
+    );
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), selected, label));
+    response
+}
+
+pub fn fkey(ui: &mut egui::Ui, font: &icy_engine::BitFont, code: char, index: usize) -> Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(32.0, 44.0), egui::Sense::click());
+    let visuals = *ui.style().interact(&response);
+    ui.painter().rect_filled(rect, 2, visuals.bg_fill);
+    let glyph_rect = egui::Rect::from_center_size(rect.center_top() + egui::vec2(0.0, 14.0), egui::Vec2::splat(26.0));
+    let glyph_response = ui
+        .scope_builder(egui::UiBuilder::new().max_rect(glyph_rect), |ui| glyph(ui, font, code, false, 26.0))
+        .inner;
+    let label = format!("F{}", index + 1);
+    ui.painter().text(
+        rect.center_bottom() - egui::vec2(0.0, 3.0),
+        egui::Align2::CENTER_BOTTOM,
+        &label,
+        egui::TextStyle::Small.resolve(ui.style()),
+        visuals.text_color(),
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &label));
+    response.union(glyph_response).on_hover_text(format!("{label}: character {}", code as u32))
 }
 
 pub fn swatch(ui: &mut egui::Ui, color: Color32, selected: bool, size: f32) -> Response {

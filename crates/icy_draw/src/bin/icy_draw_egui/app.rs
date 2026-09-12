@@ -23,6 +23,7 @@ enum Dialog {
     Resize,
     Close,
     Characters,
+    FKeyCharacter(usize, usize),
     Inspector,
     Sauce,
     Export,
@@ -30,6 +31,7 @@ enum Dialog {
     FontSelect,
     Palette,
     Tags,
+    TagProperties(Option<usize>, Box<icy_engine::Tag>),
     Script,
     Monitor,
     Overwrite(PathBuf),
@@ -91,6 +93,7 @@ pub struct DrawApp {
     pub persist_settings: bool,
     new_bitmap: bool,
     show_grid: bool,
+    show_layer_bounds: bool,
     pub canvas_rect: egui::Rect,
 }
 
@@ -140,6 +143,7 @@ impl DrawApp {
             persist_settings: false,
             new_bitmap: false,
             show_grid: false,
+            show_layer_bounds: false,
             canvas_rect: egui::Rect::NOTHING,
         }
     }
@@ -152,6 +156,7 @@ impl DrawApp {
             self.dialog = None;
         }
         self.document = document;
+        self.chrome = chrome::Chrome::default();
         self.view = ScreenView::from_shared(self.document.screen.clone());
         self.canvas_focus = true;
     }
@@ -362,8 +367,12 @@ impl DrawApp {
     }
 
     fn undo(&mut self, redo: bool) {
+        if let Some(animation) = &mut self.animation {
+            animation.undo_source(redo);
+            return;
+        }
         self.document.finish();
-        if self.document.with_state(|state| if redo { state.can_redo() } else { state.can_undo() }) || self.charfont.is_none() {
+        if self.document.paste_active() || self.document.with_state(|state| if redo { state.can_redo() } else { state.can_undo() }) || self.charfont.is_none() {
             let result = if redo { self.document.redo() } else { self.document.undo() };
             self.result(result);
         } else if let Some(font) = &mut self.charfont {
@@ -373,9 +382,10 @@ impl DrawApp {
                 font.state.undo();
             }
             let mut document = font.document();
-            document.tool = self.document.tool;
+            document.tool = if document.outline_font { Tool::Click } else { self.document.tool };
             document.brush = self.document.brush;
             self.document = document;
+            self.chrome = chrome::Chrome::default();
             self.view = ScreenView::from_shared(self.document.screen.clone());
         }
     }
@@ -386,10 +396,11 @@ impl DrawApp {
             action(&mut font.state);
             let mut document = font.document();
             document.brush = self.document.brush;
-            document.tool = self.document.tool;
+            document.tool = if document.outline_font { Tool::Click } else { self.document.tool };
             let attribute = self.document.with_state(|state| state.get_caret().attribute);
             document.with_state(|state| state.set_caret_attribute(attribute));
             self.document = document;
+            self.chrome = chrome::Chrome::default();
             self.view = ScreenView::from_shared(self.document.screen.clone());
         }
     }
@@ -404,7 +415,7 @@ impl DrawApp {
         let mut name = font.state.selected_font().map(|font| font.name.clone()).unwrap_or_default();
         let mut spacing = font.state.selected_font().map_or(0, |font| font.spacing);
         egui::TopBottomPanel::top("tdf-fonts").show(context, |ui| {
-            if self.dialog.is_some() || self.picker {
+            if self.dialog.is_some() || self.picker || self.layer_properties_open() || self.document.paste_active() {
                 ui.disable();
             }
             ui.horizontal_wrapped(|ui| {
@@ -461,7 +472,7 @@ impl DrawApp {
     }
 
     fn menu(&mut self, context: &egui::Context) {
-        let blocked = self.dialog.is_some() || self.picker;
+        let blocked = self.dialog.is_some() || self.picker || self.layer_properties_open() || self.document.paste_active();
         egui::TopBottomPanel::top("menu").show(context, |ui| {
             if blocked {
                 ui.disable();
@@ -529,9 +540,6 @@ impl DrawApp {
                         ui.close();
                     }
                 });
-                if self.animation.is_some() {
-                    return;
-                }
                 ui.menu_button("Edit", |ui| {
                     if ui.button("Undo").clicked() {
                         self.undo(false);
@@ -547,17 +555,41 @@ impl DrawApp {
                         ui.close();
                     }
                     if ui.button("Cut").clicked() && self.document.can_paint() {
-                        self.copy(context);
-                        self.edit(|state| state.erase_selection());
+                        if self.animation.is_some() {
+                            context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
+                            context.input_mut(|input| input.events.push(egui::Event::Cut));
+                        } else {
+                            self.copy(context);
+                            self.edit(|state| state.erase_selection());
+                        }
                         ui.close();
                     }
                     if ui.button("Paste").clicked() {
+                        if self.animation.is_some() {
+                            context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
+                        }
                         context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
                         ui.close();
                     }
                     if ui.button("Select All").clicked() {
-                        self.select_all();
+                        if self.animation.is_some() {
+                            context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
+                            context.input_mut(|input| {
+                                input.events.push(egui::Event::Key {
+                                    key: Key::A,
+                                    physical_key: None,
+                                    pressed: true,
+                                    repeat: false,
+                                    modifiers: egui::Modifiers::COMMAND,
+                                })
+                            });
+                        } else {
+                            self.select_all();
+                        }
                         ui.close();
+                    }
+                    if self.animation.is_some() {
+                        return;
                     }
                     if ui.button("Deselect").clicked() {
                         self.edit(|state| state.clear_selection());
@@ -577,9 +609,13 @@ impl DrawApp {
                         ui.close();
                     }
                 });
+                if self.animation.is_some() {
+                    return;
+                }
                 ui.menu_button("View", |ui| {
                     ui.checkbox(&mut self.show_inspector, "Minimap & Layers");
                     ui.checkbox(&mut self.show_grid, "Character Grid");
+                    ui.checkbox(&mut self.show_layer_bounds, "Layer Borders");
                     if ui.button("Monitor...").clicked() {
                         self.dialog = Some(Dialog::Monitor);
                         ui.close();
@@ -638,8 +674,55 @@ impl DrawApp {
     }
 
     fn tool_options(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        if self.document.paste_active() {
+            use icy_draw::document::PasteAction;
+            ui.horizontal_centered(|ui| {
+                for (icon, label, action) in [
+                    ("anchor", "Anchor (Enter)", PasteAction::Anchor),
+                    ("add_layer", "Keep as Layer", PasteAction::Keep),
+                    ("file_copy", "Stamp (S)", PasteAction::Stamp),
+                    ("replay", "Rotate (R)", PasteAction::Rotate),
+                    ("flip_tool", "Flip Horizontal (X)", PasteAction::FlipX),
+                    ("swap", "Flip Vertical (Y)", PasteAction::FlipY),
+                    ("invisible", "Make Transparent (T)", PasteAction::Transparent),
+                    ("delete", "Cancel Paste (Escape)", PasteAction::Cancel),
+                ] {
+                    if self.icons.button(ui, icon, label, false).clicked() {
+                        let result = self.document.paste_action(action);
+                        self.result(result);
+                        self.canvas_focus = true;
+                    }
+                }
+            });
+            return;
+        }
+        if self.document.outline_font && self.document.tool == Tool::Click {
+            ui.horizontal_centered(|ui| {
+                let font = self.document.with_state(|state| state.get_buffer().font(0).cloned());
+                if let Some(font) = font {
+                    for index in 0..10 {
+                        let code = char::from_u32('A' as u32 + index as u32).unwrap();
+                        if widgets::fkey(ui, &font, code, index).clicked() {
+                            let result = self.document.type_text(&code.to_string());
+                            self.result(result);
+                            self.canvas_focus = true;
+                        }
+                    }
+                    ui.separator();
+                    for code in ['K', 'L', 'M', 'N', 'O', 'P', 'Q', '@', '&', ' ', '\u{00ff}'] {
+                        if widgets::glyph(ui, &font, code, false, 30.0).clicked() {
+                            let result = self.document.type_text(&code.to_string());
+                            self.result(result);
+                            self.canvas_focus = true;
+                        }
+                    }
+                }
+            });
+            return;
+        }
         if self.document.tool == Tool::Pencil || self.document.tool == Tool::Fill || self.document.tool.is_shape_tool() {
-            ui.horizontal_wrapped(|ui| {
+            ui.horizontal_centered(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
                 for (mode, label) in [
                     (BrushPrimaryMode::Char, "Char"),
                     (BrushPrimaryMode::HalfBlock, "Half Block"),
@@ -648,35 +731,63 @@ impl DrawApp {
                     (BrushPrimaryMode::Blink, "Blink"),
                     (BrushPrimaryMode::Colorize, "Colorize"),
                 ] {
-                    if ui.selectable_label(self.document.brush.primary == mode, label).clicked() {
+                    let width = if mode == BrushPrimaryMode::HalfBlock { 76.0 } else { 60.0 };
+                    if widgets::segment(ui, label, self.document.brush.primary == mode, width).clicked() {
                         self.document.brush.primary = mode;
                     }
                 }
+                ui.spacing_mut().item_spacing.x = 6.0;
                 ui.separator();
                 let font = self
                     .document
                     .with_state(|state| state.get_buffer().font(state.get_caret().attribute.font_page()).cloned());
                 if let Some(font) = font {
-                    if widgets::glyph(ui, &font, self.document.brush.paint_char, false, 26.0)
+                    if widgets::glyph(ui, &font, self.document.brush.paint_char, false, 36.0)
                         .on_hover_text("Select Character")
                         .clicked()
                     {
                         self.dialog = Some(Dialog::Characters);
                     }
                 }
-                ui.add(egui::DragValue::new(&mut self.document.brush.brush_size).range(1..=20).prefix("Size "));
+                if self.document.tool == Tool::Pencil {
+                    if self.icons.button(ui, "arrow_left", "Smaller Brush", false).clicked() {
+                        self.document.brush.brush_size = self.document.brush.brush_size.saturating_sub(1).max(1);
+                    }
+                    ui.add(egui::DragValue::new(&mut self.document.brush.brush_size).range(1..=9).suffix(" px"));
+                    if self.icons.button(ui, "arrow_right", "Larger Brush", false).clicked() {
+                        self.document.brush.brush_size = (self.document.brush.brush_size + 1).min(9);
+                    }
+                }
                 ui.checkbox(&mut self.document.brush.colorize_fg, "FG");
                 ui.checkbox(&mut self.document.brush.colorize_bg, "BG");
                 if self.document.tool == Tool::Fill {
                     ui.checkbox(&mut self.document.brush.exact, "Exact");
+                }
+                let variants = match self.document.tool {
+                    Tool::RectangleOutline | Tool::RectangleFilled => Some([Tool::RectangleOutline, Tool::RectangleFilled]),
+                    Tool::EllipseOutline | Tool::EllipseFilled => Some([Tool::EllipseOutline, Tool::EllipseFilled]),
+                    _ => None,
+                };
+                if let Some(variants) = variants {
+                    ui.separator();
+                    for tool in variants {
+                        if self
+                            .icons
+                            .button_sized(ui, tool.icon(), tool.name(), self.document.tool == tool, 36.0)
+                            .clicked()
+                        {
+                            self.select_tool(tool);
+                        }
+                    }
                 }
             });
         }
         if self.document.tool == Tool::Font {
             if let Some(library) = &self.text_fonts {
                 let mut library = library.write();
-                ui.horizontal_wrapped(|ui| {
+                ui.horizontal_centered(|ui| {
                     egui::ComboBox::from_id_salt("text-art-font")
+                        .width(200.0)
                         .selected_text(library.font_name(self.text_font).unwrap_or("No fonts"))
                         .show_ui(ui, |ui| {
                             for (index, name) in library.font_names().iter().enumerate() {
@@ -684,20 +795,20 @@ impl DrawApp {
                             }
                         });
                     ui.add(egui::DragValue::new(&mut self.settings.font_outline_style).range(0..=18).prefix("Outline "));
-                });
-                if self.text_preview.as_ref().is_none_or(|(index, _)| *index != self.text_font) {
-                    if let Some(preview) = library.generate_preview(self.text_font) {
-                        let texture = context.load_texture(
-                            "text-art-preview",
-                            egui::ColorImage::from_rgba_unmultiplied([preview.width as usize, preview.height as usize], &preview.rgba),
-                            egui::TextureOptions::NEAREST,
-                        );
-                        self.text_preview = Some((self.text_font, texture));
+                    if self.text_preview.as_ref().is_none_or(|(index, _)| *index != self.text_font) {
+                        if let Some(preview) = library.generate_preview(self.text_font) {
+                            let texture = context.load_texture(
+                                "text-art-preview",
+                                egui::ColorImage::from_rgba_unmultiplied([preview.width as usize, preview.height as usize], &preview.rgba),
+                                egui::TextureOptions::NEAREST,
+                            );
+                            self.text_preview = Some((self.text_font, texture));
+                        }
                     }
-                }
-                if let Some((_, preview)) = &self.text_preview {
-                    ui.add(egui::Image::new(preview).max_height(60.0));
-                }
+                    if let Some((_, preview)) = &self.text_preview {
+                        ui.add(egui::Image::new(preview).max_height(40.0).max_width(240.0));
+                    }
+                });
             }
             context.request_repaint_after(std::time::Duration::from_millis(250));
         }
@@ -706,17 +817,18 @@ impl DrawApp {
                 .document
                 .with_state(|state| state.get_buffer().font(state.get_caret().attribute.font_page()).cloned());
             if let Some(font) = font {
-                ui.horizontal_wrapped(|ui| {
+                ui.horizontal_centered(|ui| {
+                    ui.spacing_mut().item_spacing.x = 3.0;
                     if self.icons.button(ui, "navigate_prev", "Previous Character Set", false).clicked() {
                         self.settings.fkeys.current_set =
                             (self.settings.fkeys.current_set + self.settings.fkeys.set_count() - 1) % self.settings.fkeys.set_count();
                     }
                     for (index, code) in self.settings.fkeys.current_set_codes().into_iter().enumerate() {
-                        if widgets::glyph(ui, &font, char::from_u32(code as u32).unwrap_or(' '), false, 24.0)
-                            .on_hover_text(format!("F{}", index + 1))
-                            .clicked()
-                            && self.document.can_paint()
-                        {
+                        let response = widgets::fkey(ui, &font, char::from_u32(code as u32).unwrap_or(' '), index);
+                        if response.secondary_clicked() {
+                            self.dialog = Some(Dialog::FKeyCharacter(self.settings.fkeys.current_set, index));
+                        }
+                        if response.clicked() && self.document.can_paint() {
                             self.edit(|state| state.type_key(char::from_u32(code as u32).unwrap_or(' ')));
                             self.canvas_focus = true;
                         }
@@ -724,8 +836,77 @@ impl DrawApp {
                     if self.icons.button(ui, "navigate_next", "Next Character Set", false).clicked() {
                         self.settings.fkeys.current_set = (self.settings.fkeys.current_set + 1) % self.settings.fkeys.set_count();
                     }
+                    ui.small(format!("{} / {}", self.settings.fkeys.current_set + 1, self.settings.fkeys.set_count()));
+                    ui.separator();
+                    if self.icons.button(ui, "font", "Character Table", false).clicked() {
+                        self.dialog = Some(Dialog::Characters);
+                    }
                 });
             }
+        }
+        if self.document.tool == Tool::Select {
+            ui.horizontal_centered(|ui| {
+                use icy_draw::document::SelectionMode;
+                ui.spacing_mut().item_spacing.x = 0.0;
+                for (mode, label, width) in [
+                    (SelectionMode::Rectangle, "Rect", 54.0),
+                    (SelectionMode::Character, "Char", 54.0),
+                    (SelectionMode::Attribute, "Attr", 54.0),
+                    (SelectionMode::Foreground, "Fg", 40.0),
+                    (SelectionMode::Background, "Bg", 40.0),
+                ] {
+                    if widgets::segment(ui, label, self.document.selection_mode == mode, width).clicked() {
+                        self.document.finish();
+                        self.document.selection_mode = mode;
+                    }
+                }
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.separator();
+                let selected = self.document.with_state(|state| state.is_something_selected());
+                if self.icons.button(ui, "select", "Select All", false).clicked() {
+                    self.select_all();
+                }
+                ui.add_enabled_ui(selected, |ui| {
+                    if self.icons.button(ui, "file_copy", "Copy Selection", false).clicked() {
+                        self.copy(context);
+                    }
+                    ui.add_enabled_ui(self.document.can_paint(), |ui| {
+                        if self.icons.button(ui, "flip_tool", "Flip Horizontally", false).clicked() {
+                            self.edit(|state| state.flip_x());
+                        }
+                        if self.icons.button(ui, "flip_tool", "Flip Vertically", false).clicked() {
+                            self.edit(|state| state.flip_y());
+                        }
+                    });
+                    if self.icons.button(ui, "delete", "Deselect", false).clicked() {
+                        self.edit(|state| state.clear_selection());
+                    }
+                });
+                if let Some(bounds) = self.document.with_state(|state| state.selection().map(|selection| selection.as_rectangle())) {
+                    ui.separator();
+                    ui.label(format!("{}, {}   {} x {}", bounds.left(), bounds.top(), bounds.width(), bounds.height()));
+                }
+            });
+        }
+        if self.document.tool == Tool::Tag {
+            ui.horizontal_centered(|ui| {
+                if self.icons.button(ui, "tag", "Tag List", false).clicked() {
+                    self.dialog = Some(Dialog::Tags);
+                }
+                if self.icons.button(ui, "add", "New Tag", false).clicked() {
+                    self.open_tag_properties(None);
+                }
+                ui.add_enabled_ui(!self.document.selected_tags.is_empty(), |ui| {
+                    if self.icons.button(ui, "text", "Edit Tag", false).clicked() {
+                        self.open_tag_properties(self.document.selected_tags.first().copied());
+                    }
+                    if self.icons.button(ui, "delete", "Delete Selected Tags", false).clicked() {
+                        let result = self.document.delete_selected_tags();
+                        self.result(result);
+                    }
+                });
+                ui.label(format!("{} selected", self.document.selected_tags.len()));
+            });
         }
     }
 
@@ -907,7 +1088,7 @@ impl DrawApp {
     fn canvas(&mut self, ui: &mut egui::Ui, blocked: bool) {
         self.view.terminal.has_focus = self.canvas_focus && !blocked;
         self.document
-            .with_state(|state| state.set_caret_visible(matches!(self.document.tool, Tool::Click | Tool::Font)));
+            .with_state(|state| state.set_caret_visible(!self.document.paste_active() && matches!(self.document.tool, Tool::Click | Tool::Font)));
         let zoom_delta = ui.input_mut(|input| {
             if !blocked && input.modifiers.command && input.pointer.hover_pos().is_some_and(|point| ui.max_rect().contains(point)) {
                 let delta = input.smooth_scroll_delta.y;
@@ -921,6 +1102,7 @@ impl DrawApp {
         if zoom_delta != 0.0 {
             self.settings.monitor_settings.scaling_mode = ScalingMode::Manual((self.view.zoom * (zoom_delta * 0.002).exp()).clamp(0.25, 8.0));
         }
+        self.view.markers = Some(self.editor_markers());
         let response = self.view.show(ui, &self.settings.monitor_settings);
         self.canvas_rect = response.rect;
         if ui.ctx().wants_keyboard_input() && !response.has_focus() {
@@ -964,6 +1146,29 @@ impl DrawApp {
             );
             painter.rect_filled(rect, 0, Color32::from_rgba_unmultiplied(red, green, blue, 160));
         }
+        if self.document.tool == Tool::Tag {
+            if let Some(selection) = self.document.tag_selection_rectangle() {
+                let rect = egui::Rect::from_min_size(
+                    origin + egui::vec2(selection.left() as f32 * cell_size.x, selection.top() as f32 * cell_size.y) * info.display_scale,
+                    egui::vec2(selection.width() as f32 * cell_size.x, selection.height() as f32 * cell_size.y) * info.display_scale,
+                );
+                painter.rect_stroke(rect, 0, ui.visuals().selection.stroke, egui::StrokeKind::Inside);
+            }
+            let tags = self.document.with_state(|state| state.get_buffer().tags.clone());
+            for (index, tag) in tags.iter().enumerate() {
+                let position = self.document.tag_preview_position(index, tag.position);
+                let rect = egui::Rect::from_min_size(
+                    origin + egui::vec2(position.x as f32 * cell_size.x, position.y as f32 * cell_size.y) * info.display_scale,
+                    egui::vec2(tag.length.max(1) as f32 * cell_size.x, cell_size.y) * info.display_scale,
+                );
+                let color = if self.document.selected_tags.contains(&index) {
+                    ui.visuals().selection.stroke.color
+                } else {
+                    Color32::from_rgb(90, 190, 160)
+                };
+                painter.rect_stroke(rect, 0, egui::Stroke::new(2.0, color), egui::StrokeKind::Inside);
+            }
+        }
         if blocked {
             return;
         }
@@ -973,20 +1178,39 @@ impl DrawApp {
             self.canvas_focus = true;
             response.request_focus();
             if let Some(position) = pointer.interact_pos().and_then(|point| self.position(point)) {
-                if self.document.tool == Tool::Tag {
-                    self.document.with_state(|state| state.set_caret_from_document_position(position));
-                    self.dialog = Some(Dialog::Tags);
-                } else if self.document.tool == Tool::Pipette {
-                    let character = self.document.with_state(|state| state.get_buffer().char_at(position));
-                    self.document.brush.paint_char = character.ch;
-                    self.document.with_state(|state| state.set_caret_attribute(character.attribute));
+                if self.document.tool == Tool::Pipette {
+                    let modifiers = ui.input(|input| input.modifiers);
+                    self.document.begin_with_modifiers(
+                        position,
+                        if pointer.secondary_down() {
+                            icy_engine::MouseButton::Right
+                        } else {
+                            icy_engine::MouseButton::Left
+                        },
+                        icy_engine::KeyModifiers {
+                            shift: modifiers.shift,
+                            ctrl: modifiers.ctrl,
+                            alt: modifiers.alt,
+                            meta: modifiers.mac_cmd,
+                        },
+                    );
                 } else {
                     let button = if pointer.button_pressed(egui::PointerButton::Secondary) {
                         icy_engine::MouseButton::Right
                     } else {
                         icy_engine::MouseButton::Left
                     };
-                    self.document.begin_with_shift(position, button, ui.input(|input| input.modifiers.shift));
+                    let modifiers = ui.input(|input| input.modifiers);
+                    self.document.begin_with_modifiers(
+                        position,
+                        button,
+                        icy_engine::KeyModifiers {
+                            shift: modifiers.shift,
+                            ctrl: modifiers.ctrl,
+                            alt: modifiers.alt,
+                            meta: modifiers.mac_cmd,
+                        },
+                    );
                 }
             }
         }
@@ -998,12 +1222,52 @@ impl DrawApp {
                 self.document.finish();
             }
         }
+        if self.document.tool == Tool::Tag && response.double_clicked() && !self.document.selected_tags.is_empty() {
+            self.document.finish();
+            self.open_tag_properties(self.document.selected_tags.first().copied());
+        }
+        if self.document.tool == Tool::Tag {
+            response.context_menu(|ui| {
+                if ui.button("New Tag...").clicked() {
+                    self.open_tag_properties(None);
+                    ui.close();
+                }
+                ui.add_enabled_ui(!self.document.selected_tags.is_empty(), |ui| {
+                    if ui.button("Properties...").clicked() {
+                        self.open_tag_properties(self.document.selected_tags.first().copied());
+                        ui.close();
+                    }
+                    if ui.button("Duplicate").clicked() {
+                        self.document.finish();
+                        let selected = self.document.selected_tags.clone();
+                        self.edit(|state| {
+                            let _undo = state.begin_atomic_undo("Duplicate tags");
+                            for index in selected {
+                                state.clone_tag(index)?;
+                            }
+                            Ok(())
+                        });
+                        ui.close();
+                    }
+                    if ui.button("Delete").clicked() {
+                        let result = self.document.delete_selected_tags();
+                        self.result(result);
+                        ui.close();
+                    }
+                });
+            });
+        }
         if pointer.any_pressed() && !response.hovered() {
             self.canvas_focus = false;
         }
     }
 
     fn copy(&mut self, context: &egui::Context) {
+        if self.animation.is_some() {
+            context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
+            context.input_mut(|input| input.events.push(egui::Event::Copy));
+            return;
+        }
         let screen = self.document.screen.lock();
         if let Some(text) = screen.copy_text() {
             self.clipboard = screen.clipboard_data().map(|data| (text.clone(), data));
@@ -1011,13 +1275,31 @@ impl DrawApp {
         }
     }
 
+    fn open_tag_properties(&mut self, index: Option<usize>) {
+        self.document.finish();
+        let tag = self.document.with_state(|state| {
+            index
+                .and_then(|index| state.get_buffer().tags.get(index).cloned())
+                .unwrap_or_else(|| icy_engine::Tag {
+                    is_enabled: true,
+                    preview: "TAG".into(),
+                    replacement_value: String::new(),
+                    position: state.layer_to_document_position(state.get_caret().position()),
+                    length: 3,
+                    alignment: std::fmt::Alignment::Left,
+                    tag_placement: icy_engine::TagPlacement::InText,
+                    tag_role: icy_engine::TagRole::Displaycode,
+                    attribute: state.get_caret().attribute,
+                })
+        });
+        self.dialog = Some(Dialog::TagProperties(index, Box::new(tag)));
+        self.canvas_focus = false;
+    }
+
     fn paste(&mut self, text: &str) {
-        if let Some((_, data)) = self.clipboard.as_ref().filter(|(copied, _)| copied == text) {
-            let data = data.clone();
-            self.edit(|state| state.paste_clipboard_data(&data));
-        } else {
-            self.edit(|state| state.paste_text(text));
-        }
+        let data = self.clipboard.as_ref().filter(|(copied, _)| copied == text).map(|(_, data)| data.as_slice());
+        let result = self.document.start_paste(text, data);
+        self.result(result);
     }
 
     fn select_all(&mut self) {
@@ -1037,11 +1319,16 @@ impl DrawApp {
     }
 
     fn keys(&mut self, context: &egui::Context) {
-        if self.dialog.is_some() || self.picker {
+        if self.dialog.is_some() || self.picker || self.layer_properties_open() {
             return;
         }
         let before = self.document.with_state(|state| state.layer_to_document_position(state.get_caret().position()));
         let events = context.input(|input| input.events.clone());
+        let hard_blank = events.iter().any(|event| {
+            matches!(event, egui::Event::Key {
+            key: Key::Space, pressed: true, modifiers, ..
+        } if modifiers.shift && !modifiers.alt && if self.document.outline_font { modifiers.command || modifiers.ctrl } else { !modifiers.command })
+        });
         for event in events {
             match event {
                 egui::Event::Key {
@@ -1052,7 +1339,11 @@ impl DrawApp {
                     Key::S if !modifiers.alt => self.save(context, modifiers.shift),
                     Key::Z if self.canvas_focus => self.undo(modifiers.shift),
                     Key::Y if self.canvas_focus => self.undo(true),
-                    Key::A if self.canvas_focus => self.select_all(),
+                    Key::A if self.canvas_focus && !self.document.paste_active() => self.select_all(),
+                    _ if self.canvas_focus => {
+                        let result = super::input::key(&mut self.document, &mut self.settings.fkeys, key, modifiers);
+                        self.result(result.map(|_| ()));
+                    }
                     _ => {}
                 },
                 egui::Event::Copy if self.canvas_focus => self.copy(context),
@@ -1061,9 +1352,11 @@ impl DrawApp {
                     self.edit(|state| state.erase_selection());
                 }
                 egui::Event::Paste(text) if self.canvas_focus && self.document.can_paint() => self.paste(&text),
-                egui::Event::Text(text) if self.canvas_focus && self.document.tool == Tool::Click => {
-                    let result = self.document.type_text(&text);
-                    self.result(result);
+                egui::Event::Text(text) if self.canvas_focus && self.document.tool == Tool::Click && !self.document.paste_active() => {
+                    if !(hard_blank && text == " ") {
+                        let result = self.document.type_text(&text);
+                        self.result(result);
+                    }
                 }
                 egui::Event::Text(text) if self.canvas_focus && self.document.tool == Tool::Font => {
                     let result = self.type_art_text(&text);
@@ -1071,83 +1364,18 @@ impl DrawApp {
                 }
                 egui::Event::Key {
                     key, pressed: true, modifiers, ..
-                } if self.canvas_focus && !modifiers.alt => match key {
-                    Key::Escape => {
-                        self.document.cancel();
-                        self.edit(|state| state.clear_selection());
+                } if self.canvas_focus => {
+                    if key == Key::Enter && self.document.tool == Tool::Font && !modifiers.alt {
+                        let result = self.type_art_text("\n");
+                        self.result(result);
+                    } else {
+                        let result = super::input::key(&mut self.document, &mut self.settings.fkeys, key, modifiers);
+                        self.result(result.map(|_| ()));
                     }
-                    Key::Delete if self.document.can_paint() => self.edit(|state| {
-                        if state.selection().is_some() {
-                            state.erase_selection()
-                        } else {
-                            state.delete_key()
-                        }
-                    }),
-                    Key::Backspace if self.document.can_paint() => {
-                        if self.document.tool == Tool::Font {
-                            self.undo(false);
-                        } else {
-                            self.edit(|state| state.backspace());
-                        }
-                    }
-                    Key::Enter if self.document.can_paint() => {
-                        if self.document.tool == Tool::Font {
-                            let result = self.type_art_text("\n");
-                            self.result(result);
-                        } else {
-                            self.edit(|state| state.new_line());
-                        }
-                    }
-                    Key::Insert => self.document.with_state(|state| state.toggle_insert_mode()),
-                    Key::F1 | Key::F2 | Key::F3 | Key::F4 | Key::F5 | Key::F6 | Key::F7 | Key::F8 | Key::F9 | Key::F10 | Key::F11 | Key::F12
-                        if self.document.can_paint() =>
-                    {
-                        let keys = [
-                            Key::F1,
-                            Key::F2,
-                            Key::F3,
-                            Key::F4,
-                            Key::F5,
-                            Key::F6,
-                            Key::F7,
-                            Key::F8,
-                            Key::F9,
-                            Key::F10,
-                            Key::F11,
-                            Key::F12,
-                        ];
-                        let index = keys.iter().position(|candidate| *candidate == key).unwrap();
-                        let code = self.settings.fkeys.code_at(self.settings.fkeys.current_set(), index);
-                        self.edit(|state| state.type_key(char::from_u32(code as u32).unwrap_or(' ')));
-                    }
-                    Key::Tab => self.document.with_state(|state| {
-                        if modifiers.shift {
-                            state.handle_reverse_tab();
-                        } else {
-                            state.handle_tab();
-                        }
-                    }),
-                    Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown | Key::Home | Key::End => {
-                        self.document.with_state(|state| {
-                            let mut position = state.get_caret().position();
-                            let size = state.get_cur_layer().map(|layer| layer.size()).unwrap_or(Size::new(1, 1));
-                            match key {
-                                Key::ArrowLeft => position.x -= 1,
-                                Key::ArrowRight => position.x += 1,
-                                Key::ArrowUp => position.y -= 1,
-                                Key::ArrowDown => position.y += 1,
-                                Key::Home => position.x = 0,
-                                Key::End => position.x = size.width - 1,
-                                _ => {}
-                            }
-                            state.set_caret_position(Position::new(position.x.clamp(0, size.width - 1), position.y.clamp(0, size.height - 1)));
-                        });
-                    }
-                    _ => {}
-                },
+                }
                 _ => {}
             }
-            if self.dialog.is_some() || self.picker {
+            if self.dialog.is_some() || self.picker || self.layer_properties_open() {
                 break;
             }
         }
@@ -1192,6 +1420,21 @@ impl DrawApp {
         let Some(dialog) = self.dialog.take() else {
             return;
         };
+        if !matches!(dialog, Dialog::Font) && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Escape)) {
+            if matches!(dialog, Dialog::Close) {
+                self.pending = None;
+                self.quitting = false;
+                self.continue_after_save = false;
+            }
+            if matches!(dialog, Dialog::Characters | Dialog::FKeyCharacter(_, _)) {
+                context.data_mut(|data| data.remove::<u32>(egui::Id::new("character-dialog-cursor")));
+            }
+            if matches!(dialog, Dialog::Error(_)) && self.font_editor.is_some() {
+                self.dialog = Some(Dialog::Font);
+            }
+            self.canvas_focus = true;
+            return;
+        }
         let mut keep = true;
         match &dialog {
             Dialog::Monitor => {
@@ -1272,56 +1515,36 @@ impl DrawApp {
                 keep &= !response.closed;
             }
             Dialog::Tags => {
+                let mut edit = None;
+                let mut delete = None;
+                let mut add = false;
                 let response = appearance::Dialog::new("tags", "Tags").show(context, |dialog| {
                     dialog.content(|ui| {
                         let tags = self.document.with_state(|state| state.get_buffer().tags.clone());
-                        for (index, mut tag) in tags.into_iter().enumerate() {
-                            ui.push_id(index, |ui| {
-                                let original = tag.clone();
-                                ui.horizontal_wrapped(|ui| {
-                                    ui.checkbox(&mut tag.is_enabled, "Enabled");
-                                    ui.add(egui::DragValue::new(&mut tag.position.x).range(0..=10000).prefix("X "));
-                                    ui.add(egui::DragValue::new(&mut tag.position.y).range(0..=10000).prefix("Y "));
-                                    if self.icons.button(ui, "delete", "Delete Tag", false).clicked() {
-                                        self.edit(|state| state.remove_tag(index));
-                                    }
+                        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                            for (index, tag) in tags.iter().enumerate() {
+                                ui.push_id(index, |ui| {
+                                    ui.horizontal_wrapped(|ui| {
+                                        let response = ui.selectable_label(self.document.selected_tags.contains(&index), &tag.preview);
+                                        if response.clicked() {
+                                            self.document.selected_tags = vec![index];
+                                        }
+                                        if response.double_clicked() {
+                                            edit = Some(index);
+                                        }
+                                        ui.weak(format!("{}, {}", tag.position.x, tag.position.y));
+                                        if self.icons.button(ui, "text", "Edit Tag", false).clicked() {
+                                            edit = Some(index);
+                                        }
+                                        if self.icons.button(ui, "delete", "Delete Tag", false).clicked() {
+                                            delete = Some(index);
+                                        }
+                                    });
                                 });
-                                ui.label("Preview");
-                                ui.add(egui::TextEdit::singleline(&mut tag.preview).desired_width(f32::INFINITY));
-                                ui.label("Replacement");
-                                ui.add(egui::TextEdit::singleline(&mut tag.replacement_value).desired_width(f32::INFINITY));
-                                egui::ComboBox::from_id_salt("role")
-                                    .selected_text(format!("{:?}", tag.tag_role))
-                                    .show_ui(ui, |ui| {
-                                        ui.selectable_value(&mut tag.tag_role, icy_engine::TagRole::Displaycode, "Display Code");
-                                        ui.selectable_value(&mut tag.tag_role, icy_engine::TagRole::Hyperlink, "Hyperlink");
-                                    });
-                                egui::ComboBox::from_id_salt("placement")
-                                    .selected_text(format!("{:?}", tag.tag_placement))
-                                    .show_ui(ui, |ui| {
-                                        ui.selectable_value(&mut tag.tag_placement, icy_engine::TagPlacement::InText, "In Text");
-                                        ui.selectable_value(&mut tag.tag_placement, icy_engine::TagPlacement::WithGotoXY, "Cursor Position");
-                                    });
-                                if tag != original {
-                                    self.edit(|state| state.update_tag(tag, index));
-                                }
-                                ui.separator();
-                            });
-                        }
+                            }
+                        });
                         if self.icons.button(ui, "add", "Add Tag", false).clicked() {
-                            self.edit(|state| {
-                                state.add_new_tag(icy_engine::Tag {
-                                    is_enabled: true,
-                                    preview: "TAG".into(),
-                                    replacement_value: String::new(),
-                                    position: state.layer_to_document_position(state.get_caret().position()),
-                                    length: 3,
-                                    alignment: std::fmt::Alignment::Left,
-                                    tag_placement: icy_engine::TagPlacement::InText,
-                                    tag_role: icy_engine::TagRole::Displaycode,
-                                    attribute: state.get_caret().attribute,
-                                })
-                            });
+                            add = true;
                         }
                     });
                     dialog.actions(|ui| {
@@ -1331,6 +1554,73 @@ impl DrawApp {
                     });
                 });
                 keep &= !response.closed;
+                if let Some(index) = delete {
+                    self.document.selected_tags = vec![index];
+                    let result = self.document.delete_selected_tags();
+                    self.result(result);
+                } else if add || edit.is_some() {
+                    self.open_tag_properties(edit);
+                    keep = false;
+                }
+            }
+            Dialog::TagProperties(index, draft) => {
+                let mut tag = *draft.clone();
+                let mut apply = false;
+                let response = appearance::Dialog::new("tag-properties", "Tag Properties")
+                    .max_width(440.0)
+                    .show(context, |dialog| {
+                        dialog.content(|ui| {
+                            ui.checkbox(&mut tag.is_enabled, "Enabled");
+                            ui.horizontal_wrapped(|ui| {
+                                ui.add(egui::DragValue::new(&mut tag.position.x).range(0..=10000).prefix("X "));
+                                ui.add(egui::DragValue::new(&mut tag.position.y).range(0..=10000).prefix("Y "));
+                                ui.add(egui::DragValue::new(&mut tag.length).range(1..=1000).prefix("Length "));
+                            });
+                            ui.label("Preview");
+                            ui.add(egui::TextEdit::singleline(&mut tag.preview).desired_width(f32::INFINITY));
+                            ui.label("Replacement");
+                            ui.add(egui::TextEdit::singleline(&mut tag.replacement_value).desired_width(f32::INFINITY));
+                            egui::ComboBox::from_label("Alignment")
+                                .selected_text(format!("{:?}", tag.alignment))
+                                .show_ui(ui, |ui| {
+                                    for alignment in [std::fmt::Alignment::Left, std::fmt::Alignment::Center, std::fmt::Alignment::Right] {
+                                        ui.selectable_value(&mut tag.alignment, alignment, format!("{alignment:?}"));
+                                    }
+                                });
+                            egui::ComboBox::from_label("Role")
+                                .selected_text(format!("{:?}", tag.tag_role))
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut tag.tag_role, icy_engine::TagRole::Displaycode, "Display Code");
+                                    ui.selectable_value(&mut tag.tag_role, icy_engine::TagRole::Hyperlink, "Hyperlink");
+                                });
+                            egui::ComboBox::from_label("Placement")
+                                .selected_text(format!("{:?}", tag.tag_placement))
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut tag.tag_placement, icy_engine::TagPlacement::InText, "In Text");
+                                    ui.selectable_value(&mut tag.tag_placement, icy_engine::TagPlacement::WithGotoXY, "Cursor Position");
+                                });
+                        });
+                        dialog.actions(|ui| {
+                            apply = ui.button("Apply").clicked();
+                            if ui.button("Cancel").clicked() {
+                                keep = false;
+                            }
+                        });
+                    });
+                keep &= !response.closed;
+                if apply {
+                    if let Some(index) = index {
+                        self.edit(|state| state.update_tag(tag, *index));
+                    } else {
+                        self.edit(|state| state.add_new_tag(tag));
+                    }
+                    keep = false;
+                } else if keep {
+                    self.dialog = Some(Dialog::TagProperties(*index, Box::new(tag)));
+                }
+                if !keep {
+                    self.canvas_focus = true;
+                }
             }
             Dialog::FontSelect => {
                 let response = appearance::Dialog::new("font-select", "Font").show(context, |dialog| {
@@ -1616,11 +1906,42 @@ impl DrawApp {
                 });
                 keep &= !response.closed && self.dialog.is_none();
             }
-            Dialog::Characters => {
+            Dialog::Characters | Dialog::FKeyCharacter(_, _) => {
+                let target = match dialog {
+                    Dialog::FKeyCharacter(set, slot) => Some((set, slot)),
+                    _ => None,
+                };
                 let font = self
                     .document
                     .with_state(|state| state.get_buffer().font(state.get_caret().attribute.font_page()).cloned());
-                let response = appearance::Dialog::new("characters", "Characters").max_width(500.0).show(context, |dialog| {
+                let initial = target
+                    .map(|(set, slot)| char::from_u32(self.settings.fkeys.code_at(set, slot) as u32).unwrap_or(' '))
+                    .unwrap_or(self.document.brush.paint_char);
+                let cursor_id = egui::Id::new("character-dialog-cursor");
+                let mut cursor = context.data(|data| data.get_temp::<u32>(cursor_id)).unwrap_or(initial as u32).min(255);
+                let mut chosen = None;
+                for event in context.input(|input| input.events.clone()) {
+                    if let egui::Event::Key {
+                        key, pressed: true, modifiers, ..
+                    } = event
+                    {
+                        if modifiers.command || modifiers.alt {
+                            continue;
+                        }
+                        match key {
+                            Key::ArrowLeft => cursor = cursor.saturating_sub(1),
+                            Key::ArrowRight => cursor = (cursor + 1).min(255),
+                            Key::ArrowUp => cursor = cursor.saturating_sub(16),
+                            Key::ArrowDown => cursor = (cursor + 16).min(255),
+                            Key::Home => cursor = 0,
+                            Key::End => cursor = 255,
+                            Key::Enter => chosen = char::from_u32(cursor),
+                            _ => {}
+                        }
+                    }
+                }
+                let title = target.map_or("Characters".to_owned(), |(_, slot)| format!("Assign F{}", slot + 1));
+                let response = appearance::Dialog::new("characters", &title).max_width(500.0).show(context, |dialog| {
                     dialog.content(|ui| {
                         if let Some(font) = font {
                             let size = (((context.content_rect().width() - 48.0).min(500.0) - 30.0) / 16.0).min(28.0);
@@ -1630,9 +1951,8 @@ impl DrawApp {
                                     ui.horizontal(|ui| {
                                         for column in 0..16 {
                                             let character = char::from_u32(row * 16 + column).unwrap();
-                                            if widgets::glyph(ui, &font, character, character == self.document.brush.paint_char, size).clicked() {
-                                                self.document.brush.paint_char = character;
-                                                keep = false;
+                                            if widgets::glyph(ui, &font, character, character as u32 == cursor, size).clicked() {
+                                                chosen = Some(character);
                                             }
                                         }
                                     });
@@ -1641,12 +1961,34 @@ impl DrawApp {
                         }
                     });
                     dialog.actions(|ui| {
+                        ui.label(format!("{} / 0x{cursor:02X}", cursor));
+                        if ui.button("Select").clicked() {
+                            chosen = char::from_u32(cursor);
+                        }
                         if ui.button("Cancel").clicked() {
                             keep = false;
                         }
                     });
                 });
                 keep &= !response.closed;
+                if let Some(character) = chosen {
+                    if let Some((set, slot)) = target {
+                        self.settings.fkeys.set_code_at(set, slot, character as u16);
+                        if self.persist_settings {
+                            let result = self.settings.fkeys.save().map_err(|error| error.to_string());
+                            self.result(result);
+                        }
+                    } else {
+                        self.document.brush.paint_char = character;
+                    }
+                    keep = false;
+                }
+                if keep {
+                    context.data_mut(|data| data.insert_temp(cursor_id, cursor));
+                } else {
+                    context.data_mut(|data| data.remove::<u32>(cursor_id));
+                    self.canvas_focus = true;
+                }
             }
             Dialog::Error(error) => {
                 let response = appearance::Dialog::new("error", "Icy Draw").show(context, |dialog| {
@@ -1884,7 +2226,7 @@ impl DrawApp {
                 }
             }
         }
-        let blocked = self.dialog.is_some() || self.picker;
+        let blocked = self.dialog.is_some() || self.picker || self.layer_properties_open();
         let path = self
             .animation
             .as_ref()
@@ -1926,33 +2268,40 @@ impl DrawApp {
                 .exact_width(chrome::PANEL_WIDTH)
                 .resizable(false)
                 .show(context, |ui| {
-                    if blocked {
+                    if blocked || self.document.paste_active() {
                         ui.disable();
                     }
                     self.panel(ui);
                 });
         }
-        egui::TopBottomPanel::top("toolbar").min_height(chrome::TOOLBAR_HEIGHT).show(context, |ui| {
-            if blocked {
-                ui.disable();
-            }
-            self.toolbar(ui, context);
-        });
-        egui::SidePanel::left("sidebar")
-            .exact_width(chrome::SIDEBAR_WIDTH + 14.0)
-            .resizable(false)
+        egui::TopBottomPanel::top("toolbar")
+            .exact_height(chrome::TOOLBAR_HEIGHT)
+            .frame(egui::Frame::new().fill(context.style().visuals.panel_fill))
             .show(context, |ui| {
                 if blocked {
+                    ui.disable();
+                }
+                self.toolbar(ui, context);
+            });
+        egui::SidePanel::left("sidebar")
+            .exact_width(chrome::SIDEBAR_WIDTH)
+            .frame(egui::Frame::new().fill(context.style().visuals.panel_fill))
+            .resizable(false)
+            .show(context, |ui| {
+                if blocked || self.document.paste_active() {
                     ui.disable();
                 }
                 self.sidebar(ui);
             });
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(Color32::from_gray(28)))
-            .show(context, |ui| self.canvas(ui, blocked || self.dialog.is_some() || self.picker));
-        if !blocked {
+            .show(context, |ui| {
+                self.canvas(ui, blocked || self.dialog.is_some() || self.picker || self.layer_properties_open())
+            });
+        if !blocked && !self.layer_properties_open() {
             self.keys(context);
         }
+        self.layer_properties_dialog(context);
         self.dialogs(context);
     }
 }

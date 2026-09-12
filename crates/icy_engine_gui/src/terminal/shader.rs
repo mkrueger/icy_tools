@@ -161,14 +161,16 @@ struct CRTUniforms {
     /// 12 bytes of implicit padding before the vec3. We must mirror that here or all
     /// following fields (incl. `terminal_rect`) are read at the wrong offsets.
     _brush_preview_padding0: [f32; 3],
-    /// The WGSL vec3 consumes 16 bytes in uniforms, so we store 4 floats.
-    _brush_preview_padding: [f32; 4],
+    /// The WGSL vec3 itself occupies 12 bytes, so `font_width` starts right after it.
+    _brush_preview_padding: [f32; 3],
 
     // Font dimensions for selection mask sampling
     /// Font width in pixels
     font_width: f32,
     /// Font height in pixels  
     font_height: f32,
+    /// WGSL aligns the following `vec2<f32>` to 8 bytes.
+    _font_padding: f32,
     /// Selection mask size in cells (width, height)
     selection_mask_size: [f32; 2],
 
@@ -1540,11 +1542,12 @@ impl TerminalShader {
             brush_preview_rect: self.brush_preview_rect.unwrap_or([0.0, 0.0, 0.0, 0.0]),
             brush_preview_enabled: if self.brush_preview_rect.is_some() { 1.0 } else { 0.0 },
             _brush_preview_padding0: [0.0; 3],
-            _brush_preview_padding: [0.0; 4],
+            _brush_preview_padding: [0.0; 3],
 
             // Font dimensions for selection mask
             font_width: mask_font_w,
             font_height: effective_mask_font_h,
+            _font_padding: 0.0,
             selection_mask_size: if let Some((_, w, h)) = &self.selection_mask_data {
                 [*w as f32, *h as f32]
             } else {

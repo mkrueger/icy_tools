@@ -27,6 +27,7 @@ pub enum SelectionDrag {
 
 impl SelectionDrag {
     /// Convert to mouse cursor interaction for resize handles
+    #[cfg(feature = "legacy-ui")]
     pub fn to_cursor_interaction(self) -> Option<icy_ui::mouse::Interaction> {
         use icy_ui::mouse::Interaction;
         match self {

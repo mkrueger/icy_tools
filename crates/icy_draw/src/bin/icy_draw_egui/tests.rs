@@ -114,6 +114,24 @@ fn internal_copy_paste_preserves_colors() {
     let character = app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 2)));
     assert_eq!(character.ch, 'C');
     assert_eq!(character.attribute.foreground(), 12);
+    assert!(app.document.paste_active());
+    let context = egui::Context::default();
+    frame(
+        &context,
+        &mut app,
+        egui::vec2(1280.0, 820.0),
+        vec![key_event(Key::ArrowRight, egui::Modifiers::NONE), egui::Event::Text("R".into())],
+    );
+    assert_eq!(app.document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::new(1, 2));
+    frame(
+        &context,
+        &mut app,
+        egui::vec2(1280.0, 820.0),
+        vec![key_event(Key::Enter, egui::Modifiers::NONE)],
+    );
+    assert!(!app.document.paste_active());
+    assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(1, 2)).ch), 'C');
+    assert_eq!(app.document.with_state(|state| state.get_buffer().layers.len()), 1);
 }
 
 #[test]
@@ -225,10 +243,217 @@ fn editor_chrome_matches_the_original_panel_layout() {
         assert_eq!(rendered("Layers"), panel, "{size:?}: layers");
         if panel {
             assert!(app.canvas_rect.right() <= size.x - chrome::PANEL_WIDTH, "{size:?}: right panel missing");
-            assert!(rendered("Type characters"), "{size:?}: status hint missing");
+            assert!(rendered("80 x 25"), "{size:?}: document dimensions missing");
         }
         assert!(rendered("ICE") && rendered("SQUARE"), "{size:?}: status toggles missing");
     }
+}
+
+#[test]
+fn toolbar_height_stays_fixed_across_tools_and_window_sizes() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    for size in [egui::vec2(1280.0, 820.0), egui::vec2(440.0, 300.0), egui::vec2(1280.0, 820.0)] {
+        let mut top = None;
+        for tool in [
+            Tool::Click,
+            Tool::Pencil,
+            Tool::Fill,
+            Tool::RectangleFilled,
+            Tool::Select,
+            Tool::Font,
+            Tool::Tag,
+        ] {
+            app.document.tool = tool;
+            for _ in 0..3 {
+                frame(&context, &mut app, size, vec![]);
+            }
+            let expected = *top.get_or_insert(app.canvas_rect.top());
+            assert!((app.canvas_rect.top() - expected).abs() <= 1.0, "{size:?} {tool:?}: {:?}", app.canvas_rect);
+            assert!((app.canvas_rect.left() - chrome::SIDEBAR_WIDTH).abs() <= 1.0);
+            assert!(app.canvas_rect.height() > 150.0);
+        }
+    }
+}
+
+#[test]
+fn fkey_strip_has_labels_and_types_from_label_and_glyph() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    frame(&context, &mut app, size, vec![]);
+    let output = frame(&context, &mut app, size, vec![]);
+    let position = |label: &str| {
+        output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == label => Some(text.pos + text.galley.size() / 2.0),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing {label}"))
+    };
+    position("F12");
+    let point = position("F1");
+    let code = char::from_u32(app.settings.fkeys.current_set_codes()[0] as u32).unwrap();
+    for (column, point) in [point, point - egui::vec2(0.0, 20.0)].into_iter().enumerate() {
+        frame(&context, &mut app, size, pointer(point, true));
+        frame(&context, &mut app, size, pointer(point, false));
+        assert_eq!(
+            app.document.with_state(|state| state.get_buffer().char_at(Position::new(column as i32, 0)).ch),
+            code
+        );
+    }
+}
+
+fn key_event(key: Key, modifiers: egui::Modifiers) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    }
+}
+
+#[test]
+fn canvas_reports_editor_selection_markers_instead_of_terminal_selection() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    frame(&context, &mut app, size, vec![]);
+    let markers = app.view.markers.clone().expect("canvas must drive the editor overlays");
+    assert!(markers.selection_rect.is_none() && markers.selection_mask_data.is_none());
+
+    app.document.tool = Tool::Select;
+    app.document.begin(Position::new(2, 1), icy_engine::MouseButton::Left);
+    app.document.update(Position::new(5, 3));
+    frame(&context, &mut app, size, vec![]);
+    let font = app.document.with_state(|state| state.get_buffer().font_dimensions());
+    let markers = app.view.markers.clone().unwrap();
+    assert_eq!(
+        markers.selection_rect,
+        Some((
+            2.0 * font.width as f32,
+            1.0 * font.height as f32,
+            4.0 * font.width as f32,
+            3.0 * font.height as f32
+        ))
+    );
+    assert_eq!(markers.selection_color, icy_engine_gui::selection_colors::DEFAULT);
+
+    app.document.finish();
+    app.document.begin_with_modifiers(
+        Position::new(10, 1),
+        icy_engine::MouseButton::Left,
+        icy_engine::KeyModifiers {
+            shift: true,
+            ..Default::default()
+        },
+    );
+    app.document.update(Position::new(12, 2));
+    frame(&context, &mut app, size, vec![]);
+    assert_eq!(app.view.markers.as_ref().unwrap().selection_color, icy_engine_gui::selection_colors::ADD);
+    app.document.finish();
+    frame(&context, &mut app, size, vec![]);
+    let markers = app.view.markers.clone().unwrap();
+    let (mask, width, _) = markers.selection_mask_data.expect("committed masks are uploaded for the shader");
+    let selected = |x: usize, y: usize| mask[(y * width as usize + x) * 4] == 255;
+    assert!(selected(11, 1) && !selected(0, 0));
+    assert!(selected(3, 2), "the replaced rectangle must be committed into the mask");
+}
+
+#[test]
+fn character_assignment_keyboard_commits_or_cancels_without_typing() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    context.style_mut(|style| style.animation_time = 0.0);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    let set = app.settings.fkeys.current_set;
+    app.settings.fkeys.set_code_at(set, 0, 65);
+    app.dialog = Some(Dialog::FKeyCharacter(set, 0));
+    frame(&context, &mut app, size, vec![]);
+    frame(&context, &mut app, size, vec![key_event(Key::ArrowRight, egui::Modifiers::NONE)]);
+    frame(&context, &mut app, size, vec![key_event(Key::Escape, egui::Modifiers::NONE)]);
+    assert_eq!(app.settings.fkeys.code_at(set, 0), 65);
+    app.dialog = Some(Dialog::FKeyCharacter(set, 0));
+    frame(&context, &mut app, size, vec![]);
+    frame(&context, &mut app, size, vec![key_event(Key::ArrowRight, egui::Modifiers::NONE)]);
+    frame(&context, &mut app, size, vec![key_event(Key::Enter, egui::Modifiers::NONE)]);
+    assert_eq!(app.settings.fkeys.code_at(set, 0), 66);
+    assert!(app.dialog.is_none());
+    assert!(!app.document.modified());
+}
+
+#[test]
+fn app_keyboard_respects_tool_and_document_modes() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    app.document.tool = Tool::Pencil;
+    frame(
+        &context,
+        &mut app,
+        size,
+        vec![key_event(Key::F1, egui::Modifiers::NONE), key_event(Key::Enter, egui::Modifiers::NONE)],
+    );
+    assert!(!app.document.modified());
+    app.document.tool = Tool::Click;
+    frame(
+        &context,
+        &mut app,
+        size,
+        vec![key_event(Key::Space, egui::Modifiers::SHIFT), egui::Event::Text(" ".into())],
+    );
+    assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::default()).ch), '\u{00ff}');
+    assert_eq!(app.document.with_state(|state| state.get_caret().position()), Position::new(1, 0));
+    let font = icy_draw::charfont::CharFontDocument::new(icy_engine_edit::charset::TdfFontType::Outline);
+    app.replace(font.document());
+    app.charfont = Some(font);
+    frame(
+        &context,
+        &mut app,
+        size,
+        vec![egui::Event::Text("az@".into()), key_event(Key::F2, egui::Modifiers::NONE)],
+    );
+    assert_eq!(
+        app.document
+            .with_state(|state| (0..3).map(|column| state.get_buffer().char_at(Position::new(column, 0)).ch).collect::<String>()),
+        "A@B"
+    );
+    app.select_tool(Tool::Pencil);
+    assert_eq!(app.document.tool, Tool::Click);
+}
+
+#[test]
+fn animation_menu_undo_never_changes_the_ansi_document() {
+    let mut app = DrawApp::new();
+    app.document.type_text("ANSI").unwrap();
+    let mut animation = super::super::animation::AnimationEditor::new();
+    let original = animation.source.clone();
+    animation.replace_text(0, 0, "-- edit\n").unwrap();
+    app.animation = Some(animation);
+    app.undo(false);
+    assert_eq!(app.animation.as_ref().unwrap().source, original);
+    assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::default()).ch), 'A');
+    app.undo(true);
+    assert!(app.animation.as_ref().unwrap().source.starts_with("-- edit\n"));
+}
+
+#[test]
+fn tag_draft_cancel_does_not_create_or_change_a_tag() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    app.open_tag_properties(None);
+    frame(&context, &mut app, size, vec![]);
+    frame(&context, &mut app, size, vec![key_event(Key::Escape, egui::Modifiers::NONE)]);
+    assert!(app.dialog.is_none());
+    assert!(app.document.with_state(|state| state.get_buffer().tags.is_empty()));
+    assert!(!app.document.modified());
 }
 
 #[test]
@@ -296,6 +521,61 @@ fn tdf_undo_after_character_switch_reaches_font_history() {
 
 #[test]
 #[ignore = "requires a working wgpu adapter"]
+fn gpu_selection_mask_covers_the_same_cells_as_a_rectangle() {
+    fn marked_area(pixels: &[u8], size: [u32; 2]) -> (u32, u32, u32, u32) {
+        let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
+        for y in 80..size[1] - 40 {
+            for x in 60..size[0] - 330 {
+                let offset = ((y * size[0] + x) * 4) as usize;
+                if pixels[offset..offset + 3].iter().copied().max().unwrap_or(0) > 200 {
+                    left = left.min(x);
+                    top = top.min(y);
+                    right = right.max(x);
+                    bottom = bottom.max(y);
+                }
+            }
+        }
+        (left, top, right, bottom)
+    }
+
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let size = [1280, 820];
+        let mut app = DrawApp::new();
+        app.document.tool = Tool::Select;
+        app.document.begin(Position::new(20, 5), icy_engine::MouseButton::Left);
+        app.document.update(Position::new(29, 8));
+        gpu.capture(&mut app, size, 1.0, vec![], "rect-selection-warmup");
+        let rectangle = marked_area(&gpu.capture(&mut app, size, 1.0, vec![], "rect-selection"), size);
+        assert!(rectangle.0 < rectangle.2 && rectangle.1 < rectangle.3, "{rectangle:?}");
+
+        app.document.finish();
+        app.document.begin_with_modifiers(
+            Position::new(20, 5),
+            icy_engine::MouseButton::Left,
+            icy_engine::KeyModifiers {
+                shift: true,
+                ..Default::default()
+            },
+        );
+        app.document.update(Position::new(29, 8));
+        app.document.finish();
+        assert!(app
+            .document
+            .with_state(|state| state.selection().is_none() && state.get_is_mask_selected(Position::new(25, 6))));
+        gpu.capture(&mut app, size, 1.0, vec![], "mask-selection-warmup");
+        let mask = marked_area(&gpu.capture(&mut app, size, 1.0, vec![], "mask-selection"), size);
+        for (rect_edge, mask_edge) in [(rectangle.0, mask.0), (rectangle.1, mask.1), (rectangle.2, mask.2), (rectangle.3, mask.3)] {
+            assert!(
+                rect_edge.abs_diff(mask_edge) <= 2,
+                "mask selection must cover the same cells as the rectangle: {rectangle:?} vs {mask:?}"
+            );
+        }
+    });
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
 fn gpu_editor_modes_and_dialogs_render() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         let mut gpu = Gpu::new().await;
@@ -319,6 +599,41 @@ fn gpu_editor_modes_and_dialogs_render() {
         app.document.type_text("TDF").unwrap();
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "tdf-warmup");
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "tdf");
+        let font = icy_draw::charfont::CharFontDocument::new(icy_engine_edit::charset::TdfFontType::Outline);
+        app.replace(font.document()); app.charfont = Some(font);
+        app.document.type_text("AB@&").unwrap();
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "outline-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "outline");
+        app.replace(Document::new(Size::new(80, 25)));
+        app.document.type_text("SELECTION AND TAGS").unwrap();
+        app.document.tool = Tool::Select;
+        app.document.begin(Position::new(0, 0), icy_engine::MouseButton::Left);
+        app.document.update(Position::new(8, 2));
+        app.document.finish();
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "selection-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "selection");
+        app.document.begin_with_modifiers(
+            Position::new(12, 0),
+            icy_engine::MouseButton::Left,
+            icy_engine::KeyModifiers {
+                shift: true,
+                ..Default::default()
+            },
+        );
+        app.document.update(Position::new(17, 1));
+        app.document.finish();
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "selection-mask-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "selection-mask");
+        app.document.tool = Tool::Tag;
+        app.open_tag_properties(None);
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "tag-properties-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "tag-properties");
+        gpu.capture(&mut app, [440, 700], 1.0, vec![], "tag-properties-compact-warmup");
+        gpu.capture(&mut app, [440, 700], 1.0, vec![], "tag-properties-compact");
+        app.dialog = None;
+        app.paste("PASTE");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "paste-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "paste");
         app.replace(Document::new(Size::new(80, 25)));
         let mut animation = super::super::animation::AnimationEditor::new();
         animation.source = "local screen = new_buffer(40, 12)\nscreen:print('ANIMATION FRAME ONE')\nnext_frame(screen)\nscreen:clear()\nscreen:print('FRAME TWO')\nnext_frame(screen)".into();

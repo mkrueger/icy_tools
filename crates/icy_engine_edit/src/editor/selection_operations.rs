@@ -49,7 +49,7 @@ impl EditState {
     }
 
     pub fn deselect(&mut self) -> Result<()> {
-        if let Some(sel) = self.selection_opt.take() {
+        if let Some(sel) = self.selection_opt {
             self.push_undo_action(EditorUndoOp::Deselect { sel })
         } else {
             Ok(())

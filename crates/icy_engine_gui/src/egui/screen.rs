@@ -4,7 +4,7 @@ use ::egui::{self, Vec2};
 use icy_engine::{Screen, TextScreen};
 use parking_lot::Mutex;
 
-use crate::{terminal::egui::TerminalCallback, CRTShaderProgram, CRTShaderState, MonitorSettings, Terminal};
+use crate::{terminal::egui::TerminalCallback, CRTShaderProgram, CRTShaderState, EditorMarkers, MonitorSettings, Terminal};
 
 pub struct ScreenView {
     pub terminal: Terminal,
@@ -13,6 +13,8 @@ pub struct ScreenView {
     pub offset: Vec2,
     pub max_offset: Vec2,
     pub zoom: f32,
+    /// Editor overlays (selection, layer bounds, caret origin). `None` keeps the terminal selection rendering.
+    pub markers: Option<EditorMarkers>,
 }
 
 impl ScreenView {
@@ -30,6 +32,7 @@ impl ScreenView {
             offset: Vec2::ZERO,
             max_offset: Vec2::ZERO,
             zoom: 1.0,
+            markers: None,
         }
     }
 
@@ -82,7 +85,7 @@ impl ScreenView {
                 if self.zoom < 1.0 {
                     settings.use_integer_scaling = false;
                 }
-                let frame = CRTShaderProgram::new(&self.terminal, Arc::new(settings), None).frame(
+                let frame = CRTShaderProgram::new(&self.terminal, Arc::new(settings), self.markers.clone()).frame(
                     &self.shader_state,
                     [bounds.width(), bounds.height()],
                     ui.ctx().pixels_per_point(),
