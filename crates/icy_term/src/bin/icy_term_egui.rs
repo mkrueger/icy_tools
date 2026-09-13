@@ -271,59 +271,122 @@ impl TerminalApp {
     }
 
     fn menus(&mut self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
-            ui.menu_button(&*tr!("egui-file"), |ui| {
-                if ui.button(&*tr!("egui-new-window")).clicked() {
-                    self.new_window = true;
-                    ui.close();
+        // Menus are laid out cross-justified by egui; wrapping them in another layout
+        // would shrink the items and pull the submenu arrows next to the label.
+        menu_width(ui);
+        ui.menu_button(&*tr!("egui-file"), |ui| {
+            menu_width(ui);
+            if ui
+                .add(egui::Button::new(&*tr!("egui-new-window")).shortcut_text(hotkeys::shortcut(hotkeys::Action::NewWindow)))
+                .clicked()
+            {
+                self.new_window = true;
+                ui.close();
+            }
+            if ui
+                .add_enabled(
+                    !self.connected && !self.connecting && !self.tools.script_running,
+                    egui::Button::new(tr!("egui-open-file")),
+                )
+                .clicked()
+            {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Terminal art", &["ans", "asc", "txt", "icy", "xb", "bin", "pcb", "avt"])
+                    .pick_file()
+                {
+                    self.load(path);
                 }
+                ui.close();
+            }
+            if ui
+                .add(egui::Button::new(&*tr!("egui-save-screen")).shortcut_text(hotkeys::shortcut(hotkeys::Action::ExportScreen)))
+                .clicked()
+            {
+                self.save_screen();
+                ui.close();
+            }
+            ui.separator();
+            if ui
+                .add(egui::Button::new(tr!("settings-heading")).shortcut_text(hotkeys::shortcut(hotkeys::Action::Settings)))
+                .clicked()
+            {
+                self.open_settings();
+                ui.close();
+            }
+            if ui
+                .add(egui::Button::new(&*tr!("egui-close-window")).shortcut_text(hotkeys::shortcut(hotkeys::Action::CloseWindow)))
+                .clicked()
+            {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                ui.close();
+            }
+        });
+        ui.menu_button(&*tr!("egui-edit"), |ui| {
+            menu_width(ui);
+            if ui
+                .add_enabled(
+                    self.terminal.screen.lock().selection().is_some(),
+                    egui::Button::new(&*tr!("terminal-menu-copy")).shortcut_text(hotkeys::shortcut(hotkeys::Action::Copy)),
+                )
+                .clicked()
+            {
+                self.copy_selection(ui.ctx());
+                ui.close();
+            }
+            if ui
+                .add(egui::Button::new(&*tr!("terminal-menu-paste")).shortcut_text(hotkeys::shortcut(hotkeys::Action::Paste)))
+                .clicked()
+            {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                self.focus_terminal = true;
+                ui.close();
+            }
+            if ui.button(&*tr!("egui-select-all")).clicked() {
+                navigation::select_all(&mut **self.terminal.screen.lock());
+                ui.close();
+            }
+            ui.separator();
+            if ui
+                .add(egui::Button::new(&*tr!("egui-find-command")).shortcut_text(hotkeys::shortcut(hotkeys::Action::Find)))
+                .clicked()
+            {
+                self.navigation.find_open = true;
+                ui.close();
+            }
+        });
+        ui.menu_button(tr!("egui-view"), |ui| {
+            menu_width(ui);
+            let mut zoom = match self.settings.scaling_mode {
+                ScalingMode::Manual(zoom) => zoom,
+                _ => self.terminal.get_zoom(),
+            };
+            if ui
+                .add(
+                    egui::Button::new(&*tr!("egui-fit"))
+                        .selected(self.settings.scaling_mode.is_auto())
+                        .shortcut_text(hotkeys::shortcut(hotkeys::Action::ZoomFit)),
+                )
+                .clicked()
+            {
+                self.settings.scaling_mode = ScalingMode::Auto;
+            }
+            if ui
+                .add(
+                    egui::Button::new(&*tr!("egui-zoom"))
+                        .selected(!self.settings.scaling_mode.is_auto())
+                        .shortcut_text(hotkeys::shortcut(hotkeys::Action::ZoomReset)),
+                )
+                .clicked()
+            {
+                self.settings.scaling_mode = ScalingMode::Manual(1.0);
+            }
+            ui.horizontal(|ui| {
+                ui.add_space(ui.spacing().button_padding.x);
                 if ui
-                    .add_enabled(
-                        !self.connected && !self.connecting && !self.tools.script_running,
-                        egui::Button::new(tr!("egui-open-file")),
-                    )
+                    .add(egui::Button::new("\u{2013}").min_size(egui::vec2(30.0, 0.0)))
+                    .on_hover_text(format!("{} ({})", tr!("egui-zoom-out"), hotkeys::shortcut(hotkeys::Action::ZoomOut)))
                     .clicked()
                 {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("Terminal art", &["ans", "asc", "txt", "icy", "xb", "bin", "pcb", "avt"])
-                        .pick_file()
-                    {
-                        self.load(path);
-                    }
-                    ui.close();
-                }
-                if ui
-                    .add(egui::Button::new(&*tr!("egui-save-screen")).shortcut_text(hotkeys::shortcut(hotkeys::Action::ExportScreen)))
-                    .clicked()
-                {
-                    self.save_screen();
-                    ui.close();
-                }
-                if ui
-                    .add(egui::Button::new(tr!("settings-heading")).shortcut_text(hotkeys::shortcut(hotkeys::Action::Settings)))
-                    .clicked()
-                {
-                    self.open_settings();
-                    ui.close();
-                }
-                if ui
-                    .add(egui::Button::new(&*tr!("egui-close-window")).shortcut_text(hotkeys::shortcut(hotkeys::Action::CloseWindow)))
-                    .clicked()
-                {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                    ui.close();
-                }
-            });
-            ui.menu_button(tr!("egui-view"), |ui| {
-                ui.selectable_value(&mut self.settings.scaling_mode, ScalingMode::Auto, &*tr!("egui-fit"));
-                if ui.selectable_label(!self.settings.scaling_mode.is_auto(), &*tr!("egui-zoom")).clicked() {
-                    self.settings.scaling_mode = ScalingMode::Manual(1.0);
-                }
-                let mut zoom = match self.settings.scaling_mode {
-                    ScalingMode::Manual(zoom) => zoom,
-                    _ => self.terminal.get_zoom(),
-                };
-                if ui.button("-").on_hover_text(&*tr!("egui-zoom-out")).clicked() {
                     zoom = ScalingMode::zoom_out(zoom, self.settings.use_integer_scaling);
                     self.settings.scaling_mode = ScalingMode::Manual(zoom);
                 }
@@ -337,71 +400,67 @@ impl TerminalApp {
                 {
                     self.settings.scaling_mode = ScalingMode::Manual(zoom);
                 }
-                if ui.button("+").on_hover_text(&*tr!("egui-zoom-in")).clicked() {
-                    self.settings.scaling_mode = ScalingMode::Manual(ScalingMode::zoom_in(zoom, self.settings.use_integer_scaling));
-                }
-                ui.separator();
-                ui.toggle_value(&mut self.show_monitor, &*tr!("settings-monitor-category"));
-                if ui.button(&*tr!("egui-fullscreen")).clicked() {
-                    let fullscreen = ui.input(|input| input.viewport().fullscreen.unwrap_or(false));
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fullscreen));
-                }
-                if ui.selectable_label(self.terminal.is_in_scrollback_mode(), &*tr!("egui-history")).clicked() {
-                    self.toggle_scrollback();
-                    ui.close();
-                }
-            });
-            ui.menu_button(tr!("egui-quick-connect"), |ui| self.connection_bar(ui));
-            ui.menu_button(&*tr!("egui-edit"), |ui| {
                 if ui
-                    .add_enabled(
-                        self.terminal.screen.lock().selection().is_some(),
-                        egui::Button::new(&*tr!("terminal-menu-copy")),
-                    )
+                    .add(egui::Button::new("+").min_size(egui::vec2(30.0, 0.0)))
+                    .on_hover_text(format!("{} ({})", tr!("egui-zoom-in"), hotkeys::shortcut(hotkeys::Action::ZoomIn)))
                     .clicked()
                 {
-                    self.copy_selection(ui.ctx());
-                    ui.close();
-                }
-                if ui.button(&*tr!("terminal-menu-paste")).clicked() {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);
-                    self.focus_terminal = true;
-                    ui.close();
-                }
-                if ui.button(&*tr!("egui-select-all")).clicked() {
-                    navigation::select_all(&mut **self.terminal.screen.lock());
-                    ui.close();
-                }
-                if ui.button(&*tr!("egui-find-command")).clicked() {
-                    self.navigation.find_open = true;
-                    ui.close();
+                    self.settings.scaling_mode = ScalingMode::Manual(ScalingMode::zoom_in(zoom, self.settings.use_integer_scaling));
                 }
             });
-            ui.menu_button(&*tr!("egui-session"), |ui| {
-                self.transfers.menu(ui, self.connected);
-                ui.separator();
-                self.tools.menu(ui, self.connected || self.connecting, &self.dialing_directory.options);
-                if ui.button(tr!("terminal-menu-info")).clicked() {
-                    self.terminal_info();
-                    ui.close();
-                }
-                if ui.button(&*tr!("egui-terminal-settings-command")).clicked() {
-                    self.tools.terminal = Some(self.terminal_profile());
-                    self.tools.scrollback = self.dialing_directory.options.max_scrollback_lines;
-                    ui.close();
-                }
-                if let Some(sound) = &mut self.sound {
-                    let options = &mut self.dialing_directory.options;
-                    if ui.toggle_value(&mut options.audio_enabled, &*tr!("egui-audio")).changed() {
-                        if let Err(error) = sound.configure(options.audio_enabled, options.master_volume, options.audio_device.clone()) {
-                            self.error = Some(error.to_string());
-                        }
+            ui.separator();
+            if ui
+                .add(egui::Button::new(&*tr!("egui-fullscreen")).shortcut_text(hotkeys::shortcut(hotkeys::Action::Fullscreen)))
+                .clicked()
+            {
+                let fullscreen = ui.input(|input| input.viewport().fullscreen.unwrap_or(false));
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fullscreen));
+            }
+            if ui
+                .add(
+                    egui::Button::new(&*tr!("egui-history"))
+                        .selected(self.terminal.is_in_scrollback_mode())
+                        .shortcut_text(hotkeys::shortcut(hotkeys::Action::Scrollback)),
+                )
+                .clicked()
+            {
+                self.toggle_scrollback();
+                ui.close();
+            }
+            if ui
+                .add(egui::Button::new(&*tr!("settings-monitor-category")).selected(self.show_monitor))
+                .clicked()
+            {
+                self.show_monitor = !self.show_monitor;
+            }
+        });
+        ui.menu_button(&*tr!("egui-session"), |ui| {
+            menu_width(ui);
+            self.transfers.menu(ui, self.connected);
+            ui.separator();
+            self.tools.menu(ui, self.connected || self.connecting, &self.dialing_directory.options);
+            ui.separator();
+            if ui.button(tr!("terminal-menu-info")).clicked() {
+                self.terminal_info();
+                ui.close();
+            }
+            if ui.button(&*tr!("egui-terminal-settings-command")).clicked() {
+                self.tools.terminal = Some(self.terminal_profile());
+                self.tools.scrollback = self.dialing_directory.options.max_scrollback_lines;
+                ui.close();
+            }
+            if let Some(sound) = &mut self.sound {
+                let options = &mut self.dialing_directory.options;
+                if ui.add(egui::Button::new(&*tr!("egui-audio")).selected(options.audio_enabled)).clicked() {
+                    options.audio_enabled = !options.audio_enabled;
+                    if let Err(error) = sound.configure(options.audio_enabled, options.master_volume, options.audio_device.clone()) {
+                        self.error = Some(error.to_string());
                     }
-                    if sound.is_playing() && ui.button(&*tr!("egui-stop-sound")).clicked() {
-                        sound.clear();
-                    }
                 }
-            });
+                if sound.is_playing() && ui.button(&*tr!("egui-stop-sound")).clicked() {
+                    sound.clear();
+                }
+            }
         });
     }
 
@@ -425,6 +484,8 @@ impl TerminalApp {
         self.focus_terminal = true;
     }
 
+    /// Only reachable from tests now that the menu bar no longer hosts a quick connect field.
+    #[allow(dead_code)]
     fn connect(&mut self, context: &egui::Context) {
         let entry = match icy_term::ConnectionInformation::parse(self.address.trim()) {
             Ok(info) => {
@@ -459,7 +520,7 @@ impl TerminalApp {
         self.connected = false;
         self.connecting = false;
         self.remote_focus = false;
-        self.transfers.event(&icy_term::TerminalEvent::Disconnected(None));
+        self.transfers.event(&icy_term::TerminalEvent::Disconnected(None), &self.dialing_directory.options);
         self.tools.event(&icy_term::TerminalEvent::Disconnected(None));
         if let Some(sound) = &self.sound {
             sound.clear();
@@ -516,44 +577,6 @@ impl TerminalApp {
         self.error = None;
     }
 
-    fn connection_bar(&mut self, ui: &mut egui::Ui) {
-        let active = self.connected || self.connecting;
-        let mut connect = false;
-        ui.add_enabled_ui(!active, |ui| {
-            ui.horizontal(|ui| {
-                let response = ui.add(
-                    egui::TextEdit::singleline(&mut self.address)
-                        .id_salt("address")
-                        .desired_width((ui.available_width() - 75.0).max(100.0))
-                        .hint_text("telnet://host:port"),
-                );
-                connect = response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
-                ui.checkbox(&mut self.utf8, "UTF-8");
-            });
-        });
-        ui.horizontal(|ui| {
-            if active {
-                if ui.button(if self.connected { tr!("egui-disconnect") } else { tr!("egui-cancel") }).clicked() {
-                    self.disconnect();
-                }
-            } else {
-                connect |= ui
-                    .add_enabled(!self.address.trim().is_empty(), egui::Button::new(&*tr!("dialing_directory-connect-button")))
-                    .clicked();
-            }
-            ui.label(if self.connected {
-                tr!("egui-connected")
-            } else if active {
-                tr!("egui-connecting")
-            } else {
-                tr!("egui-offline")
-            });
-        });
-        if connect && !active {
-            self.connect(ui.ctx());
-        }
-    }
-
     fn receive_events(&mut self, context: &egui::Context) {
         let mut stopped = false;
         let mut target = None;
@@ -561,7 +584,7 @@ impl TerminalApp {
             loop {
                 let event = session.events.try_recv();
                 if let Ok(event) = &event {
-                    self.transfers.event(event);
+                    self.transfers.event(event, &self.dialing_directory.options);
                     self.tools.event(event);
                     if let Some(sound) = &mut self.sound {
                         if let Err(error) = audio::dispatch(sound, event, &self.dialing_directory.options) {
@@ -1804,6 +1827,11 @@ impl Drop for TerminalApp {
 fn load_screen(path: &std::path::Path) -> anyhow::Result<TextScreen> {
     let format = FileFormat::from_path(path).ok_or_else(|| anyhow::anyhow!("Unsupported file extension"))?;
     Ok(format.load(path, None)?.screen)
+}
+
+/// Keeps menu rows wide enough that submenu arrows and shortcuts align on the right edge.
+fn menu_width(ui: &mut egui::Ui) {
+    ui.set_min_width(260.0);
 }
 
 fn main() -> anyhow::Result<()> {

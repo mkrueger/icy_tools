@@ -372,7 +372,8 @@ impl Settings {
                                     ui.push_id(("protocol", index), |ui| {
                                         egui::CollapsingHeader::new(protocol.get_name()).id_salt(index).show(ui, |ui| {
                                             ui.checkbox(&mut protocol.enabled, &*tr!("settings-enabled-checkbox"));
-                                            ui.checkbox(&mut protocol.auto_transfer, &*tr!("egui-automatic-detection"));
+                                            ui.checkbox(&mut protocol.auto_transfer, &*tr!("egui-automatic-detection"))
+                                                .on_hover_text(&*tr!("egui-automatic-detection-hint"));
                                             ui.checkbox(&mut protocol.batch, &*tr!("egui-multiple-files"));
                                             ui.checkbox(&mut protocol.ask_for_download_location, &*tr!("egui-ask-filename"));
                                             if !protocol.is_internal() {

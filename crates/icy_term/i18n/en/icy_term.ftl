@@ -723,6 +723,22 @@ egui-transfer-finished = Transfer finished
 
 egui-transfer-complete = Transfer complete
 
+egui-transfer-automatic = AUTOMATIC
+
+egui-automatic-detection-hint = Downloads announced by the remote system start on their own, uploads open the file selection.
+
+egui-transfer-remote-request = The remote system started a file transfer. Choose the files to send.
+
+egui-transfer-unknown-protocol = The remote system requested the unknown protocol { $protocol }.
+
+egui-transfer-remaining = Time left
+
+egui-transfer-files = Completed files
+
+egui-transfer-saved-to = Saved to
+
+egui-open-download-folder = Open folder
+
 egui-connection-closed = Connection closed
 
 egui-upload-command = Upload...

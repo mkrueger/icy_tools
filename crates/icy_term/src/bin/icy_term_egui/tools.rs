@@ -54,7 +54,14 @@ impl Tools {
     }
 
     pub fn menu(&mut self, ui: &mut egui::Ui, connected: bool, options: &icy_term::Options) {
-        if ui.add_enabled(!connected, egui::Button::new(&*tr!("egui-serial-command"))).clicked() {
+        use super::hotkeys::{shortcut, Action};
+        if ui
+            .add_enabled(
+                !connected,
+                egui::Button::new(&*tr!("egui-serial-command")).shortcut_text(shortcut(Action::Serial)),
+            )
+            .clicked()
+        {
             self.serial = options.serial.clone();
             self.serial_open = true;
             ui.close();
@@ -65,7 +72,10 @@ impl Tools {
                 ui.close();
             }
         } else {
-            if ui.button(&*tr!("egui-run-script")).clicked() {
+            if ui
+                .add(egui::Button::new(&*tr!("egui-run-script")).shortcut_text(shortcut(Action::RunScript)))
+                .clicked()
+            {
                 if let Some(path) = rfd::FileDialog::new().add_filter("Lua", &["lua"]).pick_file() {
                     self.commands.push(TerminalCommand::RunScript(path));
                     self.script_running = true;

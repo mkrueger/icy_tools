@@ -700,6 +700,22 @@ egui-transfer-errors = Übertragung mit Fehlern beendet
 
 egui-transfer-finished = Übertragung beendet
 
+egui-transfer-automatic = AUTOMATISCH
+
+egui-automatic-detection-hint = Von der Gegenstelle angekündigte Downloads starten von selbst, Uploads öffnen die Dateiauswahl.
+
+egui-transfer-remote-request = Die Gegenstelle hat eine Dateiübertragung gestartet. Wähle die zu sendenden Dateien.
+
+egui-transfer-unknown-protocol = Die Gegenstelle fordert das unbekannte Protokoll { $protocol } an.
+
+egui-transfer-remaining = Restzeit
+
+egui-transfer-files = Fertige Dateien
+
+egui-transfer-saved-to = Gespeichert in
+
+egui-open-download-folder = Ordner öffnen
+
 egui-transfer-complete = Übertragung abgeschlossen
 
 transfer-external-failed = Übertragung fehlgeschlagen

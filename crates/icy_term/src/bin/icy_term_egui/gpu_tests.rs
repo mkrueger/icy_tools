@@ -154,6 +154,57 @@ async fn gpu_diagnostic_hover_details() {
 
 #[tokio::test]
 #[ignore = "requires a working wgpu adapter"]
+async fn gpu_main_menu_shows_shortcuts() {
+    let size = [1000, 720];
+    let mut harness = Harness::new().await;
+    let mut app = TerminalApp::new(TextScreen::default(), "Icy Term".into());
+    harness.capture(&mut app, size, 1.0, vec![], "menu-warmup");
+    harness.capture(&mut app, size, 1.0, vec![], "menu-toolbar");
+    let toolbar_y = harness.controls[&tr!("egui-directory")].y;
+    let hamburger = egui::pos2(size[0] as f32 - 22.0, toolbar_y);
+    for pressed in [true, false] {
+        harness.capture(
+            &mut app,
+            size,
+            1.0,
+            vec![
+                egui::Event::PointerMoved(hamburger),
+                egui::Event::PointerButton {
+                    pos: hamburger,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+            "menu-click",
+        );
+    }
+    harness.capture(&mut app, size, 1.0, vec![], "menu-root");
+    assert!(
+        !harness.controls.contains_key(&tr!("egui-quick-connect")),
+        "quick connect must not be part of the main menu"
+    );
+    for entry in [tr!("egui-file"), tr!("egui-edit"), tr!("egui-view"), tr!("egui-session")] {
+        assert!(harness.controls.contains_key(&entry), "missing menu {entry}");
+    }
+    for (submenu, shortcut) in [
+        (tr!("egui-file"), hotkeys::shortcut(hotkeys::Action::Settings)),
+        (tr!("egui-edit"), hotkeys::shortcut(hotkeys::Action::Find)),
+        (tr!("egui-view"), hotkeys::shortcut(hotkeys::Action::Fullscreen)),
+        (tr!("egui-session"), hotkeys::shortcut(hotkeys::Action::Upload)),
+    ] {
+        let position = harness.controls[&submenu];
+        harness.capture(&mut app, size, 1.0, vec![egui::Event::PointerMoved(position)], "menu-hover");
+        harness.time += 1.0;
+        harness.capture(&mut app, size, 1.0, vec![], "menu-submenu-warmup");
+        harness.capture(&mut app, size, 1.0, vec![], &format!("menu-{submenu}"));
+        assert!(harness.controls.contains_key(&shortcut), "missing shortcut {shortcut} in {submenu}");
+    }
+    assert!(app.session.is_none());
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
 async fn gpu_find_overlay_preserves_terminal_area() {
     use icy_engine::EditableScreen;
     let mut harness = Harness::new().await;
@@ -666,13 +717,7 @@ async fn gpu_ui_themes_and_text_layout() {
             );
         }
         harness.capture(&mut app, [360, 640], 1.0, vec![], &format!("{name}-menu"));
-        for label in [
-            tr!("egui-file"),
-            tr!("egui-view"),
-            tr!("egui-quick-connect"),
-            tr!("egui-edit"),
-            tr!("egui-session"),
-        ] {
+        for label in [tr!("egui-file"), tr!("egui-view"), tr!("egui-edit"), tr!("egui-session")] {
             assert!(harness.controls.contains_key(&label), "Missing menu {label}");
         }
         harness.capture(
