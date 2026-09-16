@@ -735,6 +735,12 @@ egui-transfer-remaining = Time left
 
 egui-transfer-files = Completed files
 
+egui-transfer-log = Log
+
+egui-transfer-no-files = No completed files yet
+
+egui-transfer-no-log = No messages yet
+
 egui-transfer-saved-to = Saved to
 
 egui-open-download-folder = Open folder

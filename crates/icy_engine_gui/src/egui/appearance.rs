@@ -49,15 +49,30 @@ pub fn chip(ui: &mut egui::Ui, label: &str, color: Color32) {
 }
 
 pub fn metric_tile(ui: &mut egui::Ui, label: &str, value: &str) {
+    tile(ui, label, value, None);
+}
+
+/// Metric tile with an exact outer width so a row of tiles keeps its size while the values change.
+pub fn metric_tile_sized(ui: &mut egui::Ui, label: &str, value: &str, width: f32) {
+    tile(ui, label, value, Some(width));
+}
+
+fn tile(ui: &mut egui::Ui, label: &str, value: &str, outer_width: Option<f32>) {
+    let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
+    // A frame reserves its margins and its stroke around the content.
+    let content_width = outer_width.map(|width| (width - 20.0 - stroke.width * 2.0).max(8.0));
     egui::Frame::new()
         .fill(ui.visuals().faint_bg_color)
-        .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+        .stroke(stroke)
         .corner_radius(6)
         .inner_margin(egui::Margin::symmetric(10, 6))
         .show(ui, |ui| {
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
-                ui.set_min_width(64.0);
+                ui.set_min_width(content_width.unwrap_or(64.0));
+                if let Some(width) = content_width {
+                    ui.set_max_width(width);
+                }
                 ui.add(egui::Label::new(egui::RichText::new(value).strong().size(15.0)).truncate());
                 ui.add(egui::Label::new(egui::RichText::new(label).weak().size(11.0)).truncate());
             });
