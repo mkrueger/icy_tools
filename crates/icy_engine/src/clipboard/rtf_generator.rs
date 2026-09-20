@@ -207,10 +207,17 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
             for x in start.x..=end.x {
                 let ch = buffer.char_at((x, y).into());
                 let unicode_ch = buffer.buffer_type.convert_to_unicode(ch.ch);
-                let fg_rgb = palette.rgb(ch.attribute.foreground());
+                let mut fg = ch.attribute.foreground();
+                if buffer.buffer_type == BufferType::CP437 && ch.attribute.is_bold() && fg < 8 {
+                    fg += 8;
+                }
+                let fg_rgb = palette.rgb(fg);
                 let fg_idx = *color_map.get(&fg_rgb).unwrap();
 
-                let bg_raw = ch.attribute.background();
+                let mut bg_raw = ch.attribute.background();
+                if buffer.ice_mode == IceMode::Ice && ch.attribute.is_blinking() && bg_raw < 8 {
+                    bg_raw += 8;
+                }
                 let bg_idx = if bg_raw & (1 << 31) != 0 {
                     None
                 } else {
@@ -337,4 +344,26 @@ pub fn get_rich_text(buffer: &TextBuffer, selection: &Selection) -> Option<Strin
     rtf.push('}');
 
     Some(rtf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{AttributedChar, Rectangle};
+
+    #[test]
+    fn rectangular_selection_uses_effective_bold_and_ice_colors() {
+        let mut buffer = TextBuffer::new((1, 1));
+        buffer.ice_mode = IceMode::Ice;
+
+        let mut attribute = TextAttribute::default();
+        attribute.set_is_bold(true);
+        attribute.set_is_blinking(true);
+        buffer.layers[0].set_char((0, 0), AttributedChar::new('A', attribute));
+
+        let selection = Selection::from(Rectangle::from(0, 0, 1, 1));
+        let rtf = get_rich_text(&buffer, &selection).expect("RTF should be generated");
+
+        assert!(rtf.contains('A'));
+    }
 }
