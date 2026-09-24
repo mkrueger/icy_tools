@@ -755,6 +755,29 @@ fn gpu_status_bar_sauce_info_and_shuffle_overlay() {
     assert!(!summary.contains("0000"), "an empty SAUCE date must stay hidden: {summary}");
     gpu.click(&mut app, size, 1.0, &summary);
     assert_eq!(app.dialogs.mode, Some(dialogs::Mode::Sauce), "clicking the SAUCE summary must open the dialog");
+    for _ in 0..2 {
+        gpu.capture(&mut app, size, 1.0, vec![], "sauce-dialog");
+    }
+    for label in ["FIRST ART", "Test Artist  •  TEST GROUP", "80 × 25"] {
+        assert!(gpu.labels.contains_key(label), "SAUCE dialog misses {label}: {:?}", gpu.labels.keys());
+    }
+    assert!(
+        gpu.labels
+            .keys()
+            .any(|label| label.contains("FIRST COMMENT LINE") && label.contains("SECOND COMMENT LINE")),
+        "SAUCE dialog misses the comments: {:?}",
+        gpu.labels.keys()
+    );
+    gpu.click(&mut app, size, 1.0, &text("sauce-btn-raw"));
+    for _ in 0..2 {
+        gpu.capture(&mut app, size, 1.0, vec![], "sauce-dialog-raw");
+    }
+    assert!(
+        gpu.labels.contains_key(&text("sauce-section-technical")) && gpu.labels.contains_key(&text("sauce-btn-formatted")),
+        "raw SAUCE view: {:?}",
+        gpu.labels.keys()
+    );
+    gpu.click(&mut app, size, 1.0, &text("sauce-btn-formatted"));
     app.dialogs.mode = None;
 
     app.shuffle_start(&gpu.context);

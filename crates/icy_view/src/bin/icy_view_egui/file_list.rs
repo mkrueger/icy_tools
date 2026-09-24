@@ -90,9 +90,39 @@ impl FileList {
                             SortOrder::SizeAsc
                         });
                     }
-                    cell(ui, rect, egui::RichText::new(&headers[column]).size(12.0).strong());
+                    let ascending = match (column, browser.sort) {
+                        (0, SortOrder::NameAsc) => Some(true),
+                        (0, SortOrder::NameDesc) => Some(false),
+                        (1, SortOrder::SizeAsc) if !sauce_mode => Some(true),
+                        (1, SortOrder::SizeDesc) if !sauce_mode => Some(false),
+                        _ => None,
+                    };
+                    let color = if clicked.hovered() && sortable {
+                        ui.visuals().text_color()
+                    } else {
+                        ui.visuals().weak_text_color()
+                    };
+                    let label = cell(ui, rect, egui::RichText::new(&headers[column]).size(12.0).strong().color(color));
+                    if let Some(ascending) = ascending {
+                        let center = egui::pos2((label.right() + 8.0).min(rect.right() - 6.0), rect.center().y);
+                        let (tip, base) = if ascending { (-3.0, 2.0) } else { (3.0, -2.0) };
+                        ui.painter().add(egui::Shape::convex_polygon(
+                            vec![center + egui::vec2(0.0, tip), center + egui::vec2(4.0, base), center + egui::vec2(-4.0, base)],
+                            color,
+                            egui::Stroke::NONE,
+                        ));
+                    }
+                    if column > 0 {
+                        ui.painter().vline(
+                            rect.left(),
+                            rect.y_range().shrink(5.0),
+                            egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+                        );
+                    }
                     left += width;
                 }
+                ui.painter()
+                    .hline(header.x_range(), header.bottom() - 0.5, ui.visuals().widgets.noninteractive.bg_stroke);
                 self.viewport_height = ui.available_height();
                 let mut scroll = egui::ScrollArea::vertical()
                     .id_salt(("file-rows", &browser.location.point.path, &browser.filter))
@@ -197,11 +227,11 @@ impl Drop for FileList {
     }
 }
 
-fn cell(ui: &mut egui::Ui, rect: egui::Rect, value: impl Into<egui::WidgetText>) {
+fn cell(ui: &mut egui::Ui, rect: egui::Rect, value: impl Into<egui::WidgetText>) -> egui::Rect {
     let rect = rect.shrink2(egui::vec2(4.0, 2.0));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     child.set_clip_rect(ui.clip_rect().intersect(rect));
-    child.add(egui::Label::new(value).truncate().selectable(false));
+    child.add(egui::Label::new(value).truncate().selectable(false)).rect
 }
 
 fn highlighted(label: &str, filter: &str, color: egui::Color32, highlight: egui::Color32) -> egui::text::LayoutJob {

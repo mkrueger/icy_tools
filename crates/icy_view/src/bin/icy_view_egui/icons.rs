@@ -14,6 +14,7 @@ pub enum Icon {
     Tiles,
     Shuffle,
     Menu,
+    Search,
     SortName,
     SortSize,
     SortDate,
@@ -36,6 +37,7 @@ impl Icons {
             Icon::Tiles => ("tiles", include_bytes!("../../../data/icons/grid_view.svg")),
             Icon::Shuffle => ("shuffle", include_bytes!("../../../data/icons/shuffle.svg")),
             Icon::Menu => ("menu", include_bytes!("../../../../icy_engine_gui/data/icons/menu.svg")),
+            Icon::Search => ("search", include_bytes!("../../../data/icons/search.svg")),
             Icon::SortName => ("sort-name", include_bytes!("../../../data/icons/sort_by_alpha.svg")),
             Icon::SortSize => ("sort-size", include_bytes!("../../../data/icons/straighten.svg")),
             Icon::SortDate => ("sort-date", include_bytes!("../../../data/icons/calendar_today.svg")),
@@ -81,9 +83,31 @@ impl Icons {
         egui::Image::new((texture.id(), egui::Vec2::splat(size))).tint(context.style().visuals.text_color())
     }
 
+    /// Flat toolbar button: only hovered, pressed or selected buttons get a background.
     pub fn button(&mut self, ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool, selected: bool) -> egui::Response {
         let image = self.image(ui.ctx(), icon, 18.0);
-        ui.add_enabled(enabled, egui::Button::image(image).selected(selected).min_size(egui::vec2(32.0, 30.0)))
-            .on_hover_text(label)
+        ui.scope(|ui| {
+            compact(ui);
+            ui.add_enabled(enabled, tool_button(image, selected))
+        })
+        .inner
+        .on_hover_text(label)
     }
+}
+
+/// Button padding that keeps icon buttons square instead of the wide text button default.
+pub fn compact(ui: &mut egui::Ui) {
+    ui.spacing_mut().button_padding = egui::vec2(6.0, 5.0);
+}
+
+pub const TOOL_SIZE: egui::Vec2 = egui::vec2(30.0, 28.0);
+
+pub fn tool_button<'a>(image: egui::Image<'a>, selected: bool) -> egui::Button<'a> {
+    egui::Button::image(image)
+        .selected(selected)
+        .frame_when_inactive(selected)
+        .image_tint_follows_text_color(true)
+        .stroke(egui::Stroke::NONE)
+        .corner_radius(6)
+        .min_size(TOOL_SIZE)
 }

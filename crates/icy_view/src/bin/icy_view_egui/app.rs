@@ -111,12 +111,22 @@ impl Viewer {
             }
         }
         let narrow = context.content_rect().width() < 680.0;
-        egui::TopBottomPanel::top("navigation").show(context, |ui| {
-            ui.add_enabled_ui(!blocked, |ui| self.toolbar(ui, narrow));
-        });
-        egui::TopBottomPanel::bottom("status").show(context, |ui| {
-            ui.add_enabled_ui(!blocked, |ui| self.status(ui));
-        });
+        let style = context.style();
+        egui::TopBottomPanel::top("navigation")
+            .frame(egui::Frame::side_top_panel(&style).inner_margin(egui::Margin::symmetric(8, 6)))
+            .show(context, |ui| {
+                ui.add_enabled_ui(!blocked, |ui| self.toolbar(ui, narrow));
+            });
+        let status_fill = style.visuals.panel_fill.lerp_to_gamma(style.visuals.faint_bg_color, 0.45);
+        egui::TopBottomPanel::bottom("status")
+            .frame(
+                egui::Frame::side_top_panel(&style)
+                    .fill(status_fill)
+                    .inner_margin(egui::Margin::symmetric(10, 3)),
+            )
+            .show(context, |ui| {
+                ui.add_enabled_ui(!blocked, |ui| self.status(ui, narrow));
+            });
         let preview_only = self.shuffle.is_some() || (self.show_preview && (narrow || self.options.view_mode == ViewMode::Tiles));
         if !narrow && !preview_only && self.options.view_mode == ViewMode::List {
             egui::SidePanel::left(egui::Id::new(("files", self.options.sauce_mode)))
@@ -194,107 +204,189 @@ impl Viewer {
 
     fn toolbar(&mut self, ui: &mut egui::Ui, narrow: bool) {
         let context = ui.ctx().clone();
+        ui.spacing_mut().item_spacing.x = 4.0;
         ui.horizontal(|ui| {
-            let return_to_list = self.show_preview && (narrow || self.options.view_mode == ViewMode::Tiles) || self.shuffle.is_some();
-            if self
-                .icons
-                .button(ui, Icon::Back, &text("tooltip-back"), return_to_list || !self.browser.back.is_empty(), false)
-                .clicked()
-            {
-                if return_to_list {
+            self.navigation_buttons(ui, &context);
+            ui.add_space(4.0);
+            if narrow {
+                self.location_field(ui, ui.available_width(), &context);
+                return;
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.view_buttons(ui, &context);
+                ui.add_space(4.0);
+                let filter = (ui.available_width() * 0.3).clamp(140.0, 240.0);
+                self.filter_field(ui, filter, &context);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    self.location_field(ui, ui.available_width(), &context);
+                });
+            });
+        });
+        if narrow {
+            ui.add_space(2.0);
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    self.view_buttons(ui, &context);
+                    ui.add_space(4.0);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        self.filter_field(ui, ui.available_width(), &context);
+                    });
+                });
+            });
+        }
+    }
+
+    fn navigation_buttons(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        let return_to_list =
+            self.show_preview && (ui.ctx().content_rect().width() < 680.0 || self.options.view_mode == ViewMode::Tiles) || self.shuffle.is_some();
+        if self
+            .icons
+            .button(ui, Icon::Back, &text("tooltip-back"), return_to_list || !self.browser.back.is_empty(), false)
+            .clicked()
+        {
+            if return_to_list {
+                self.show_preview = false;
+                self.shuffle = None;
+            } else {
+                self.browser.history(false, context);
+            }
+        }
+        if self
+            .icons
+            .button(ui, Icon::Forward, &text("tooltip-forward"), !self.browser.forward.is_empty(), false)
+            .clicked()
+        {
+            self.browser.history(true, context);
+        }
+        if self
+            .icons
+            .button(ui, Icon::Up, &text("tooltip-up"), self.browser.location.point.can_navigate_up(), false)
+            .clicked()
+        {
+            self.browser.up(context);
+        }
+        if self.icons.button(ui, Icon::Refresh, &text("tooltip-refresh"), true, false).clicked() {
+            self.browser.refresh(context);
+        }
+    }
+
+    /// Address field with the 16colors toggle in front of the path, like the location bar of a browser.
+    fn location_field(&mut self, ui: &mut egui::Ui, width: f32, context: &egui::Context) {
+        let id = egui::Id::new("location-input");
+        let web = self.browser.location.point.is_web();
+        let mut toggle_web = false;
+        let response = field(ui, width, id, |ui| {
+            let image = self.icons.image(context, Icon::Web, 16.0);
+            toggle_web = ui
+                .scope(|ui| {
+                    super::icons::compact(ui);
+                    ui.spacing_mut().button_padding = egui::vec2(4.0, 3.0);
+                    ui.add(super::icons::tool_button(image, web).min_size(egui::vec2(24.0, 22.0)))
+                })
+                .inner
+                .on_hover_text(text("tooltip-browse-16colors"))
+                .clicked();
+            ui.add(
+                egui::TextEdit::singleline(&mut self.path_input)
+                    .id(id)
+                    .frame(false)
+                    .margin(egui::vec2(2.0, 4.0))
+                    .desired_width(f32::INFINITY),
+            )
+        });
+        if toggle_web {
+            let point = if web {
+                NavPoint::file(std::env::current_dir().unwrap_or_default().to_string_lossy())
+            } else {
+                NavPoint::web("")
+            };
+            self.browser.navigate(Location { point, container: None }, context);
+        }
+        if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+            if web {
+                self.browser.navigate(
+                    Location {
+                        point: NavPoint::web(self.path_input.trim_matches('/')),
+                        container: None,
+                    },
+                    context,
+                );
+            } else {
+                self.open_path(PathBuf::from(&self.path_input), context);
+            }
+        }
+    }
+
+    fn filter_field(&mut self, ui: &mut egui::Ui, width: f32, context: &egui::Context) {
+        let id = egui::Id::new("filter-input");
+        let response = field(ui, width, id, |ui| {
+            ui.add_space(4.0);
+            let tint = ui.visuals().weak_text_color();
+            ui.add(self.icons.image(context, Icon::Search, 16.0).tint(tint));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.browser.filter)
+                    .id(id)
+                    .frame(false)
+                    .margin(egui::vec2(2.0, 4.0))
+                    .hint_text(text("filter-entries-hint-text"))
+                    .desired_width(f32::INFINITY),
+            )
+        });
+        if self.focus_filter {
+            response.request_focus();
+            self.focus_filter = false;
+        }
+        if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+            if let Some(index) = self.browser.visible().first().copied() {
+                self.activate(index, true, context);
+            }
+        }
+    }
+
+    /// Right-to-left: the menu, the slideshow toggle and the list/tiles switch.
+    fn view_buttons(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        let menu = super::icons::tool_button(self.icons.image(context, Icon::Menu, 18.0), false);
+        ui.scope(|ui| {
+            super::icons::compact(ui);
+            egui::containers::menu::MenuButton::from_button(menu).ui(ui, |ui| self.menu(ui)).0
+        })
+        .inner
+        .on_hover_text(text("egui-menu"));
+        if self
+            .icons
+            .button(
+                ui,
+                Icon::Shuffle,
+                &text("tooltip-shuffle-mode"),
+                !self.browser.items.is_empty(),
+                self.shuffle.is_some(),
+            )
+            .clicked()
+        {
+            if self.shuffle.is_some() {
+                self.shuffle = None;
+            } else {
+                self.shuffle_start(context);
+            }
+        }
+        ui.add_space(2.0);
+        let tiles = self.options.view_mode == ViewMode::Tiles;
+        egui::Frame::new()
+            .fill(ui.visuals().faint_bg_color)
+            .corner_radius(7)
+            .inner_margin(1)
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                if self.icons.button(ui, Icon::Tiles, &text("tooltip-view-mode-tiles"), true, tiles).clicked() && !tiles {
+                    self.options.view_mode = ViewMode::Tiles;
                     self.show_preview = false;
-                    self.shuffle = None;
-                } else {
-                    self.browser.history(false, &context);
+                    self.tile_toolbar.reset();
                 }
-            }
-            if self
-                .icons
-                .button(ui, Icon::Forward, &text("tooltip-forward"), !self.browser.forward.is_empty(), false)
-                .clicked()
-            {
-                self.browser.history(true, &context);
-            }
-            if self
-                .icons
-                .button(ui, Icon::Up, &text("tooltip-up"), self.browser.location.point.can_navigate_up(), false)
-                .clicked()
-            {
-                self.browser.up(&context);
-            }
-            if self
-                .icons
-                .button(ui, Icon::Web, &text("tooltip-browse-16colors"), true, self.browser.location.point.is_web())
-                .clicked()
-            {
-                let point = if self.browser.location.point.is_web() {
-                    NavPoint::file(std::env::current_dir().unwrap_or_default().to_string_lossy())
-                } else {
-                    NavPoint::web("")
-                };
-                self.browser.navigate(Location { point, container: None }, &context);
-            }
-            let response = ui.add_sized([ui.available_width(), 30.0], appearance::text_edit(&mut self.path_input));
-            if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-                if self.browser.location.point.is_web() {
-                    self.browser.navigate(
-                        Location {
-                            point: NavPoint::web(self.path_input.trim_matches('/')),
-                            container: None,
-                        },
-                        &context,
-                    );
-                } else {
-                    self.open_path(PathBuf::from(&self.path_input), &context);
+                if self.icons.button(ui, Icon::List, &text("tooltip-view-mode-list"), true, !tiles).clicked() {
+                    self.options.view_mode = ViewMode::List;
+                    self.show_preview = false;
                 }
-            }
-        });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.menu_image_button(self.icons.image(&context, Icon::Menu, 18.0), |ui| {
-                self.menu(ui);
-            })
-            .response
-            .on_hover_text(text("egui-menu"));
-            if self
-                .icons
-                .button(
-                    ui,
-                    Icon::Tiles,
-                    &text("tooltip-view-mode-tiles"),
-                    true,
-                    self.options.view_mode == ViewMode::Tiles,
-                )
-                .clicked()
-            {
-                self.options.view_mode = ViewMode::Tiles;
-                self.show_preview = false;
-                self.tile_toolbar.reset();
-            }
-            if self
-                .icons
-                .button(ui, Icon::List, &text("tooltip-view-mode-list"), true, self.options.view_mode == ViewMode::List)
-                .clicked()
-            {
-                self.options.view_mode = ViewMode::List;
-                self.show_preview = false;
-            }
-            if self.icons.button(ui, Icon::Refresh, &text("tooltip-refresh"), true, false).clicked() {
-                self.browser.refresh(&context);
-            }
-            let response = ui.add_sized(
-                [ui.available_width(), 30.0],
-                appearance::text_edit(&mut self.browser.filter).hint_text(text("filter-entries-hint-text")),
-            );
-            if self.focus_filter {
-                response.request_focus();
-                self.focus_filter = false;
-            }
-            if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-                if let Some(index) = self.browser.visible().first().copied() {
-                    self.activate(index, true, &context);
-                }
-            }
-        });
+            });
     }
 
     fn menu(&mut self, ui: &mut egui::Ui) {
@@ -352,10 +444,8 @@ impl Viewer {
 
     fn list(&mut self, ui: &mut egui::Ui) {
         let context = ui.ctx().clone();
-        self.browse_controls(ui, true);
-        if self.browser.loading {
-            ui.spinner();
-        }
+        self.browse_controls(ui);
+        ui.add_space(2.0);
         let response = self
             .file_list
             .show(ui, &self.browser, &mut self.icons, self.options.sauce_mode, self.selected_scroll);
@@ -369,12 +459,22 @@ impl Viewer {
         }
     }
 
-    fn browse_controls(&mut self, ui: &mut egui::Ui, list: bool) {
+    /// Sort controls on the left, the loading spinner and the SAUCE column toggle on the right.
+    fn browse_controls(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
             self.sort_controls(ui);
-            if list {
-                ui.checkbox(&mut self.options.sauce_mode, "SAUCE").on_hover_text(text("tooltip-sauce-mode-on"));
-            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                let sauce = self.options.sauce_mode;
+                let tooltip = text(if sauce { "tooltip-sauce-mode-off" } else { "tooltip-sauce-mode-on" });
+                if pill(ui, sauce, "SAUCE", 22.0).on_hover_text(tooltip).clicked() {
+                    self.options.sauce_mode = !sauce;
+                }
+                if self.browser.loading {
+                    ui.add(egui::Spinner::new().size(14.0));
+                }
+            });
         });
     }
 
@@ -385,22 +485,28 @@ impl Viewer {
             SortOrder::SizeAsc | SortOrder::SizeDesc => Icon::SortSize,
             SortOrder::DateAsc | SortOrder::DateDesc => Icon::SortDate,
         };
-        ui.menu_image_button(self.icons.image(ui.ctx(), icon, 18.0), |ui| {
-            for (order, key) in [
-                (SortOrder::NameAsc, "tooltip-sort-name-asc"),
-                (SortOrder::NameDesc, "tooltip-sort-name-desc"),
-                (SortOrder::SizeAsc, "tooltip-sort-size-asc"),
-                (SortOrder::SizeDesc, "tooltip-sort-size-desc"),
-                (SortOrder::DateAsc, "tooltip-sort-date-asc"),
-                (SortOrder::DateDesc, "tooltip-sort-date-desc"),
-            ] {
-                if ui.selectable_label(self.browser.sort == order, text(key)).clicked() {
-                    self.sort(order);
-                    ui.close();
-                }
-            }
+        let button = super::icons::tool_button(self.icons.image(ui.ctx(), icon, 18.0), false);
+        ui.scope(|ui| {
+            super::icons::compact(ui);
+            egui::containers::menu::MenuButton::from_button(button)
+                .ui(ui, |ui| {
+                    for (order, key) in [
+                        (SortOrder::NameAsc, "tooltip-sort-name-asc"),
+                        (SortOrder::NameDesc, "tooltip-sort-name-desc"),
+                        (SortOrder::SizeAsc, "tooltip-sort-size-asc"),
+                        (SortOrder::SizeDesc, "tooltip-sort-size-desc"),
+                        (SortOrder::DateAsc, "tooltip-sort-date-asc"),
+                        (SortOrder::DateDesc, "tooltip-sort-date-desc"),
+                    ] {
+                        if ui.selectable_label(self.browser.sort == order, text(key)).clicked() {
+                            self.sort(order);
+                            ui.close();
+                        }
+                    }
+                })
+                .0
         })
-        .response
+        .inner
         .on_hover_text(text("egui-sort"));
         let ascending = matches!(self.browser.sort, SortOrder::NameAsc | SortOrder::SizeAsc | SortOrder::DateAsc);
         if self
@@ -432,13 +538,25 @@ impl Viewer {
         let context = ui.ctx().clone();
         let response = egui::Area::new("tile-toolbar".into())
             .order(egui::Order::Middle)
-            .fixed_pos(area.min)
+            .fixed_pos(area.min + egui::vec2(4.0, 4.0))
             .show(&context, |ui| {
+                let visuals = ui.visuals();
                 egui::Frame::new()
-                    .fill(ui.visuals().panel_fill.gamma_multiply(0.9))
-                    .inner_margin(egui::Margin::symmetric(4, 2))
+                    .fill(visuals.window_fill.gamma_multiply(0.96))
+                    .stroke(visuals.window_stroke)
+                    .corner_radius(8)
+                    .shadow(egui::Shadow {
+                        offset: [0, 2],
+                        blur: 10,
+                        spread: 0,
+                        color: egui::Color32::from_black_alpha(if visuals.dark_mode { 110 } else { 40 }),
+                    })
+                    .inner_margin(4)
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| self.tile_controls(ui));
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 2.0;
+                            self.tile_controls(ui)
+                        });
                     });
             })
             .response;
@@ -456,28 +574,8 @@ impl Viewer {
         {
             self.browser.up(&context);
         }
+        ui.separator();
         self.sort_controls(ui);
-        if self.icons.button(ui, Icon::List, &text("tooltip-view-mode-list"), true, false).clicked() {
-            self.options.view_mode = ViewMode::List;
-            self.show_preview = false;
-        }
-        if self
-            .icons
-            .button(
-                ui,
-                Icon::Shuffle,
-                &text("tooltip-shuffle-mode"),
-                !self.browser.items.is_empty(),
-                self.shuffle.is_some(),
-            )
-            .clicked()
-        {
-            if self.shuffle.is_some() {
-                self.shuffle = None;
-            } else {
-                self.shuffle_start(&context);
-            }
-        }
     }
 
     fn sort(&mut self, order: icy_view::sort_order::SortOrder) {
@@ -560,69 +658,79 @@ impl Viewer {
         }
     }
 
-    fn status(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            let context = ui.ctx().clone();
-            if self
-                .icons
-                .button(
-                    ui,
-                    Icon::Shuffle,
-                    &text("tooltip-shuffle-mode"),
-                    !self.browser.items.is_empty(),
-                    self.shuffle.is_some(),
+    /// File information on the left, playback and zoom controls on the right.
+    fn status(&mut self, ui: &mut egui::Ui, narrow: bool) {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        if narrow {
+            ui.horizontal(|ui| self.status_info(ui));
+        }
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.status_controls(ui);
+                if !narrow {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| self.status_info(ui));
+                }
+            });
+        });
+    }
+
+    fn status_info(&mut self, ui: &mut egui::Ui) {
+        if self.preview.loading || self.browser.loading {
+            ui.add(egui::Spinner::new().size(14.0));
+        }
+        self.file_info(ui);
+    }
+
+    /// Right-to-left: zoom, baud rate, auto scroll and the position in the folder.
+    fn status_controls(&mut self, ui: &mut egui::Ui) {
+        let small = |value: String| egui::RichText::new(value).size(12.0);
+        let zoom = match self.options.monitor_settings.scaling_mode {
+            ScalingMode::Manual(zoom) => format!("{:.0}%", zoom * 100.0),
+            _ => text("egui-zoom-fit"),
+        };
+        status_menu(ui, small(zoom), &text("egui-zoom"), |ui| {
+            if ui
+                .selectable_label(
+                    matches!(self.options.monitor_settings.scaling_mode, ScalingMode::FitWidth),
+                    text("cmd-view-zoom_fit-action"),
                 )
                 .clicked()
             {
-                if self.shuffle.is_some() {
-                    self.shuffle = None;
-                } else {
-                    self.shuffle_start(&context);
+                self.options.monitor_settings.scaling_mode = ScalingMode::FitWidth;
+            }
+            ui.separator();
+            for zoom in [0.5, 1.0, 1.5, 2.0, 3.0, 4.0] {
+                let selected = matches!(self.options.monitor_settings.scaling_mode, ScalingMode::Manual(current) if current == zoom);
+                if ui.selectable_label(selected, format!("{:.0}%", zoom * 100.0)).clicked() {
+                    self.options.monitor_settings.scaling_mode = ScalingMode::Manual(zoom);
                 }
             }
-            ui.checkbox(&mut self.options.auto_scroll_enabled, text("menu-item-auto-scroll"));
-            egui::ComboBox::from_id_salt("baud")
-                .width(88.0)
-                .selected_text(if self.preview.baud == 0 {
-                    "BPS: OFF".into()
-                } else {
-                    format!("{} BPS", self.preview.baud)
-                })
-                .show_ui(ui, |ui| {
-                    for rate in BAUD_RATES {
-                        if ui
-                            .selectable_label(self.preview.baud == *rate, if *rate == 0 { "OFF".into() } else { rate.to_string() })
-                            .clicked()
-                        {
-                            self.preview.set_baud(*rate);
-                        }
-                    }
-                });
-            egui::ComboBox::from_id_salt("zoom")
-                .width(76.0)
-                .selected_text(format!("{:.0}%", self.preview.screen.zoom * 100.0))
-                .show_ui(ui, |ui| {
-                    if ui
-                        .selectable_label(
-                            matches!(self.options.monitor_settings.scaling_mode, ScalingMode::FitWidth),
-                            text("cmd-view-zoom_fit-action"),
-                        )
-                        .clicked()
-                    {
-                        self.options.monitor_settings.scaling_mode = ScalingMode::FitWidth;
-                    }
-                    for zoom in [0.5, 1.0, 1.5, 2.0, 3.0, 4.0] {
-                        if ui.selectable_label(false, format!("{:.0}%", zoom * 100.0)).clicked() {
-                            self.options.monitor_settings.scaling_mode = ScalingMode::Manual(zoom);
-                        }
-                    }
-                });
-            if self.preview.loading || self.browser.loading {
-                ui.spinner();
-            }
-            ui.add(egui::Label::new(format!("{} / {}", self.browser.selected.map_or(0, |index| index + 1), self.browser.items.len())).truncate());
-            self.file_info(ui);
         });
+        let baud = if self.preview.baud == 0 {
+            small("BPS: OFF".into()).color(ui.visuals().weak_text_color())
+        } else {
+            small(format!("{} BPS", self.preview.baud)).color(ui.visuals().hyperlink_color)
+        };
+        status_menu(ui, baud, &text("egui-baud-emulation"), |ui| {
+            for rate in BAUD_RATES {
+                if ui
+                    .selectable_label(self.preview.baud == *rate, if *rate == 0 { "OFF".into() } else { format!("{rate} BPS") })
+                    .clicked()
+                {
+                    self.preview.set_baud(*rate);
+                }
+            }
+        });
+        let scroll = self.options.auto_scroll_enabled;
+        if pill(ui, scroll, &text("egui-auto-scroll"), 20.0)
+            .on_hover_text(text(if scroll { "toast-auto-scroll-on" } else { "toast-auto-scroll-off" }))
+            .clicked()
+        {
+            self.options.auto_scroll_enabled = !scroll;
+        }
+        ui.separator();
+        let position = format!("{} / {}", self.browser.selected.map_or(0, |index| index + 1), self.browser.items.len());
+        ui.label(small(position).color(ui.visuals().weak_text_color()));
     }
 
     /// Colour-coded SAUCE summary of the shown file; clicking it opens the SAUCE dialog.
@@ -659,6 +767,7 @@ impl Viewer {
         if job.text.is_empty() {
             append(&mut job, &text("statusbar-ready"), palette.separator, palette.separator);
         }
+        let background = ui.painter().add(egui::Shape::Noop);
         let response =
             ui.add(
                 egui::Label::new(job)
@@ -667,7 +776,17 @@ impl Viewer {
                     .sense(if sauce.is_some() { egui::Sense::click() } else { egui::Sense::hover() }),
             );
         if sauce.is_some() {
-            if response.on_hover_text(text("cmd-dialog-sauce-action")).clicked() {
+            if response.hovered() {
+                ui.painter().set(
+                    background,
+                    egui::Shape::rect_filled(response.rect.expand2(egui::vec2(6.0, 3.0)), 4.0, ui.visuals().widgets.hovered.weak_bg_fill),
+                );
+            }
+            if response
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text(text("cmd-dialog-sauce-action"))
+                .clicked()
+            {
                 self.dialogs.open(Mode::Sauce, &self.options, &self.preview);
             }
         }
@@ -940,6 +1059,71 @@ fn append(job: &mut egui::text::LayoutJob, value: &str, color: egui::Color32, se
     );
 }
 
+/// Rounded toggle chip, filled with the selection colour when on.
+fn pill(ui: &mut egui::Ui, on: bool, label: &str, height: f32) -> egui::Response {
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = egui::vec2(10.0, 2.0);
+        let color = if on {
+            ui.visuals().selection.stroke.color
+        } else {
+            ui.visuals().weak_text_color()
+        };
+        let button = egui::Button::new(egui::RichText::new(label).size(12.0).color(color))
+            .selected(on)
+            .corner_radius(height / 2.0)
+            .min_size(egui::vec2(0.0, height));
+        let response = ui.add(button);
+        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), on, label));
+        response
+    })
+    .inner
+}
+
+/// Frameless drop-down for the status bar.
+fn status_menu(ui: &mut egui::Ui, label: egui::RichText, tooltip: &str, content: impl FnOnce(&mut egui::Ui)) {
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = egui::vec2(8.0, 2.0);
+        let button = egui::Button::new(label)
+            .right_text(egui::RichText::new("⏷").size(10.0))
+            .frame_when_inactive(false)
+            .stroke(egui::Stroke::NONE)
+            .min_size(egui::vec2(0.0, 20.0));
+        egui::containers::menu::MenuButton::from_button(button).ui(ui, content).0
+    })
+    .inner
+    .on_hover_text(tooltip);
+}
+
+/// Rounded input surface holding an icon and a frameless text edit; the border follows the focus.
+fn field(ui: &mut egui::Ui, width: f32, id: egui::Id, add: impl FnOnce(&mut egui::Ui) -> egui::Response) -> egui::Response {
+    let focused = ui.memory(|memory| memory.has_focus(id));
+    let visuals = ui.visuals().clone();
+    let stroke = if focused {
+        egui::Stroke::new(1.0, visuals.selection.stroke.color)
+    } else {
+        visuals.widgets.inactive.bg_stroke
+    };
+    ui.allocate_ui_with_layout(egui::vec2(width, 30.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        egui::Frame::new()
+            .fill(visuals.extreme_bg_color)
+            .stroke(stroke)
+            .corner_radius(6)
+            .inner_margin(egui::Margin {
+                left: 3,
+                right: 6,
+                top: 0,
+                bottom: 0,
+            })
+            .show(ui, |ui| {
+                ui.set_min_size(egui::vec2(ui.available_width(), 28.0));
+                ui.spacing_mut().item_spacing.x = 2.0;
+                add(ui)
+            })
+            .inner
+    })
+    .inner
+}
+
 /// Title, author, group, date, size and capabilities in the colours of the original status bar.
 pub(super) fn sauce_summary(
     dark: bool,
@@ -953,9 +1137,7 @@ pub(super) fn sauce_summary(
         append(&mut job, &sauce.title().to_string(), palette.title, palette.separator);
         append(&mut job, &sauce.author().to_string(), palette.author, palette.separator);
         append(&mut job, &sauce.group().to_string(), palette.group, palette.separator);
-        let date = sauce.date().to_string();
-        // A record without a date reads as all zeroes.
-        if date.contains(|character: char| ('1'..='9').contains(&character)) {
+        if let Some(date) = super::dialogs::sauce_date(sauce) {
             append(&mut job, &date, palette.date, palette.separator);
         }
     }
