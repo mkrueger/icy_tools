@@ -193,13 +193,32 @@ struct CRTUniforms {
 
 #[cfg(test)]
 mod tests {
-    use super::CRTUniforms;
+    use std::sync::Arc;
+
+    use super::{texture_array_extent, CRTUniforms, TextureSliceData};
 
     #[test]
     fn crt_uniforms_size_matches_shader_expectations() {
         // Keep in sync with `crates/icy_engine_gui/src/shaders/crt.wgsl` (`Uniforms`).
         assert_eq!(std::mem::align_of::<CRTUniforms>(), 16);
         assert_eq!(std::mem::size_of::<CRTUniforms>(), 624);
+    }
+
+    #[test]
+    fn texture_array_extent_follows_the_largest_slice() {
+        let slice = |width: u32, height: u32| TextureSliceData {
+            rgba_data: Arc::new(Vec::new()),
+            width,
+            height,
+        };
+        assert_eq!(texture_array_extent(&[]), (1, 1));
+        // Same total height, redistributed slices: the array must grow for the in-place upload.
+        assert_eq!(texture_array_extent(&[slice(640, 528), slice(640, 1536)]), (640, 1536));
+        assert_eq!(texture_array_extent(&[slice(640, 1536), slice(640, 528)]), (640, 1536));
+        assert_ne!(
+            texture_array_extent(&[slice(640, 1536), slice(640, 528)]),
+            texture_array_extent(&[slice(640, 528), slice(640, 528)])
+        );
     }
 }
 
@@ -396,6 +415,16 @@ fn create_texture_with_data(
     }
 }
 
+/// Size of the texture array layers needed for `slices` (max width x max height).
+fn texture_array_extent(slices: &[TextureSliceData]) -> (u32, u32) {
+    if slices.is_empty() {
+        return (1, 1);
+    }
+    let width = slices.iter().map(|s| s.width).max().unwrap_or(1).clamp(1, MAX_TEXTURE_DIMENSION);
+    let height = slices.iter().map(|s| s.height).max().unwrap_or(1).clamp(1, MAX_TEXTURE_DIMENSION);
+    (width, height)
+}
+
 /// Creates a GPU texture array from multiple texture slices.
 /// All slices are padded to have the same dimensions (max width x max height).
 fn create_texture_array(device: &wgpu::Device, queue: &wgpu::Queue, label: &str, slices: &[TextureSliceData]) -> TextureArray {
@@ -419,12 +448,16 @@ fn create_texture_array(device: &wgpu::Device, queue: &wgpu::Queue, label: &str,
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
-        return TextureArray { texture, texture_view };
+        return TextureArray {
+            texture,
+            texture_view,
+            width: 1,
+            height: 1,
+            layers: 0,
+        };
     }
 
-    // Find the maximum dimensions across all slices
-    let max_width = slices.iter().map(|s| s.width).max().unwrap_or(1).min(MAX_TEXTURE_DIMENSION);
-    let max_height = slices.iter().map(|s| s.height).max().unwrap_or(1).min(MAX_TEXTURE_DIMENSION);
+    let (max_width, max_height) = texture_array_extent(slices);
     let layer_count = slices.len() as u32;
 
     // Create the texture array
@@ -476,7 +509,13 @@ fn create_texture_array(device: &wgpu::Device, queue: &wgpu::Queue, label: &str,
         ..Default::default()
     });
 
-    TextureArray { texture, texture_view }
+    TextureArray {
+        texture,
+        texture_view,
+        width: max_width,
+        height: max_height,
+        layers: layer_count,
+    }
 }
 
 fn update_texture_array(queue: &wgpu::Queue, array: &TextureArray, slices: &[TextureSliceData], previous: &[Arc<Vec<u8>>]) {
@@ -520,6 +559,15 @@ struct TextureSlice {
 struct TextureArray {
     texture: wgpu::Texture,
     texture_view: wgpu::TextureView,
+    width: u32,
+    height: u32,
+    layers: u32,
+}
+
+impl TextureArray {
+    fn fits(&self, slices: &[TextureSliceData]) -> bool {
+        self.layers == slices.len() as u32 && texture_array_extent(slices) == (self.width, self.height)
+    }
 }
 
 /// Per-instance GPU resources with texture slicing
@@ -867,8 +915,12 @@ impl TerminalShader {
                 let slices_changed = resources.num_slices != num_slices;
                 let width_changed = resources.texture_width != texture_width;
                 let height_changed = resources.total_height != total_height;
+                // Slice heights can be redistributed without changing the total height;
+                // in-place uploads must never exceed the existing array layers.
+                let extent_changed =
+                    !resources.texture_array_blink_off.fits(&self.slices_blink_off) || !resources.texture_array_blink_on.fits(&self.slices_blink_on);
 
-                slices_changed || width_changed || height_changed
+                slices_changed || width_changed || height_changed || extent_changed
             }
         };
 
