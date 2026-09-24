@@ -616,20 +616,21 @@ impl DialingDirectory {
             } else {
                 tr!("egui-new-entry")
             });
-            self.editor.show(
-                ui,
-                draft,
-                &self.options,
-                &mut self.show_password,
-                &self.icons.as_ref().unwrap().eye,
-                &mut self.icon_cache,
-            );
-            ui.separator();
+            pane_content(ui, |ui| {
+                self.editor.show(
+                    ui,
+                    draft,
+                    &self.options,
+                    &mut self.show_password,
+                    &self.icons.as_ref().unwrap().eye,
+                    &mut self.icon_cache,
+                );
+            });
             let buttons = [
                 super::appearance::DialogButton::secondary(tr!("egui-discard"), false),
                 super::appearance::DialogButton::primary(tr!("egui-save"), true),
             ];
-            match super::appearance::button_row(ui, buttons.into()) {
+            match pane_bar(ui, |ui| super::appearance::button_row(ui, buttons.into())) {
                 Some(true) if !ui.ctx().will_discard() => {
                     match book.save() {
                         Ok(()) => self.error = None,
@@ -700,70 +701,72 @@ impl DialingDirectory {
             ui.colored_label(ui.visuals().warn_fg_color, reason);
         }
         ui.separator();
-        egui::ScrollArea::vertical()
-            .id_salt("profile-summary")
-            .max_height((ui.available_height() - 110.0).max(50.0))
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                super::appearance::section(ui, &tr!("egui-connection"));
-                for (label, value) in [
-                    (
-                        &*tr!("dialing_directory-user"),
-                        if entry.user_name.is_empty() { "-".into() } else { entry.user_name.clone() },
-                    ),
-                    (&*tr!("dialing_directory-screen_mode"), entry.get_screen_mode().to_string()),
-                    (&*tr!("egui-font"), entry.font_name.clone().unwrap_or_else(|| tr!("egui-terminal-default"))),
-                    (&*tr!("egui-baud"), entry.baud_emulation.to_string()),
-                    (
-                        &*tr!("dialing_directory-proxy"),
-                        entry
-                            .proxy
-                            .as_ref()
-                            .map(|proxy| format!("{}:{}", proxy.host, proxy.port))
-                            .unwrap_or_else(|| tr!("egui-direct")),
-                    ),
-                ] {
-                    super::appearance::value_row(ui, label, &value);
-                }
-                if entry.protocol == icy_net::ConnectionType::SSH {
-                    ui.label(&*tr!("egui-strict-host-key"));
-                }
-                super::appearance::section(ui, &tr!("egui-statistics"));
-                ui.horizontal_wrapped(|ui| {
-                    super::appearance::metric_tile(ui, &tr!("egui-calls"), &entry.number_of_calls.to_string());
-                    super::appearance::metric_tile(ui, &tr!("egui-uploaded"), &human_bytes::human_bytes(entry.uploaded_bytes as f64));
-                    super::appearance::metric_tile(ui, &tr!("egui-downloaded"), &human_bytes::human_bytes(entry.downloaded_bytes as f64));
-                });
-                ui.add_space(4.0);
-                for (label, value) in [
-                    (&*tr!("egui-last-call"), entry.last_call.map(relative_time).unwrap_or_else(|| tr!("egui-never"))),
-                    (&*tr!("egui-total-time"), readable_duration(entry.overall_duration)),
-                    (&*tr!("egui-last-duration"), readable_duration(entry.last_call_duration)),
-                ] {
-                    super::appearance::value_row(ui, label, &value);
-                }
-                if !entry.comment.is_empty() {
-                    super::appearance::section(ui, &tr!("dialing_directory-notes"));
-                    ui.add(egui::Label::new(&entry.comment).wrap());
-                }
-            });
-        ui.separator();
-        ui.horizontal_wrapped(|ui| {
-            ui.add_enabled_ui(!book.book.write_lock, |ui| {
-                if ui.add_enabled(!remote, egui::Button::new(&*tr!("egui-edit"))).clicked() {
-                    book.begin_edit();
-                    self.editor = Default::default();
-                    self.show_password = false;
-                }
-                if ui.button(&*tr!("dialing_directory-duplicate")).clicked() {
-                    book.begin_new(true);
-                    self.editor = Default::default();
-                    self.show_password = false;
-                }
-                ui.add_enabled_ui(!remote, |ui| {
-                    if icon_button(ui, &self.icons.as_ref().unwrap().delete, &*tr!("egui-delete-entry")).clicked() {
-                        self.confirmation = Some(Confirmation::Delete);
+        pane_content(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("profile-summary")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    super::appearance::section(ui, &tr!("egui-connection"));
+                    for (label, value) in [
+                        (
+                            &*tr!("dialing_directory-user"),
+                            if entry.user_name.is_empty() { "-".into() } else { entry.user_name.clone() },
+                        ),
+                        (&*tr!("dialing_directory-screen_mode"), entry.get_screen_mode().to_string()),
+                        (&*tr!("egui-font"), entry.font_name.clone().unwrap_or_else(|| tr!("egui-terminal-default"))),
+                        (&*tr!("egui-baud"), entry.baud_emulation.to_string()),
+                        (
+                            &*tr!("dialing_directory-proxy"),
+                            entry
+                                .proxy
+                                .as_ref()
+                                .map(|proxy| format!("{}:{}", proxy.host, proxy.port))
+                                .unwrap_or_else(|| tr!("egui-direct")),
+                        ),
+                    ] {
+                        super::appearance::value_row(ui, label, &value);
                     }
+                    if entry.protocol == icy_net::ConnectionType::SSH {
+                        ui.label(&*tr!("egui-strict-host-key"));
+                    }
+                    super::appearance::section(ui, &tr!("egui-statistics"));
+                    ui.horizontal_wrapped(|ui| {
+                        super::appearance::metric_tile(ui, &tr!("egui-calls"), &entry.number_of_calls.to_string());
+                        super::appearance::metric_tile(ui, &tr!("egui-uploaded"), &human_bytes::human_bytes(entry.uploaded_bytes as f64));
+                        super::appearance::metric_tile(ui, &tr!("egui-downloaded"), &human_bytes::human_bytes(entry.downloaded_bytes as f64));
+                    });
+                    ui.add_space(4.0);
+                    for (label, value) in [
+                        (&*tr!("egui-last-call"), entry.last_call.map(relative_time).unwrap_or_else(|| tr!("egui-never"))),
+                        (&*tr!("egui-total-time"), readable_duration(entry.overall_duration)),
+                        (&*tr!("egui-last-duration"), readable_duration(entry.last_call_duration)),
+                    ] {
+                        super::appearance::value_row(ui, label, &value);
+                    }
+                    if !entry.comment.is_empty() {
+                        super::appearance::section(ui, &tr!("dialing_directory-notes"));
+                        ui.add(egui::Label::new(&entry.comment).wrap());
+                    }
+                });
+        });
+        pane_bar(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.add_enabled_ui(!book.book.write_lock, |ui| {
+                    if ui.add_enabled(!remote, egui::Button::new(&*tr!("egui-edit"))).clicked() {
+                        book.begin_edit();
+                        self.editor = Default::default();
+                        self.show_password = false;
+                    }
+                    if ui.button(&*tr!("dialing_directory-duplicate")).clicked() {
+                        book.begin_new(true);
+                        self.editor = Default::default();
+                        self.show_password = false;
+                    }
+                    ui.add_enabled_ui(!remote, |ui| {
+                        if icon_button(ui, &self.icons.as_ref().unwrap().delete, &*tr!("egui-delete-entry")).clicked() {
+                            self.confirmation = Some(Confirmation::Delete);
+                        }
+                    });
                 });
             });
         });
@@ -777,48 +780,51 @@ impl DialingDirectory {
             ui.separator();
         }
         ui.add_enabled_ui(!connected, |ui| {
-            let enter = self.editor.show_quick(
-                ui,
-                &mut self.quick_profile,
-                &self.options,
-                &mut self.show_password,
-                &self.icons.as_ref().unwrap().eye,
-                &mut self.icon_cache,
-            );
-            ui.separator();
-            ui.horizontal_wrapped(|ui| {
-                let mut entry = self.quick_profile.clone();
-                entry.system_name = display_address(&entry);
-                let dial = ui
-                    .add_enabled(!entry.address.trim().is_empty(), super::appearance::primary_button(tr!("egui-quick-connect")))
-                    .clicked()
-                    || enter;
-                if dial && !ui.ctx().will_discard() {
-                    match session::entry_connection_config(&entry, &self.options) {
-                        Ok(_) => request = Some(DialRequest::Quick(entry.clone(), self.options.clone())),
-                        Err(error) => self.error = Some(error),
-                    }
-                }
-                let writable = self.phonebook.as_ref().is_some_and(|book| !book.book.write_lock);
-                if ui
-                    .add_enabled(
-                        writable && !entry.address.trim().is_empty(),
-                        egui::Button::new(tr!("dialing_directory-add-bbs-button")),
-                    )
-                    .clicked()
-                    && !ui.ctx().will_discard()
-                {
-                    match session::entry_connection_config(&entry, &self.options) {
-                        Ok(_) => {
-                            let book = self.phonebook.as_mut().unwrap();
-                            book.begin_new(false);
-                            book.draft = Some(entry);
-                            self.editor = Default::default();
-                            self.quick_selected = false;
+            let enter = pane_content(ui, |ui| {
+                self.editor.show_quick(
+                    ui,
+                    &mut self.quick_profile,
+                    &self.options,
+                    &mut self.show_password,
+                    &self.icons.as_ref().unwrap().eye,
+                    &mut self.icon_cache,
+                )
+            });
+            pane_bar(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    let mut entry = self.quick_profile.clone();
+                    entry.system_name = display_address(&entry);
+                    let dial = ui
+                        .add_enabled(!entry.address.trim().is_empty(), super::appearance::primary_button(tr!("egui-quick-connect")))
+                        .clicked()
+                        || enter;
+                    if dial && !ui.ctx().will_discard() {
+                        match session::entry_connection_config(&entry, &self.options) {
+                            Ok(_) => request = Some(DialRequest::Quick(entry.clone(), self.options.clone())),
+                            Err(error) => self.error = Some(error),
                         }
-                        Err(error) => self.error = Some(error),
                     }
-                }
+                    let writable = self.phonebook.as_ref().is_some_and(|book| !book.book.write_lock);
+                    if ui
+                        .add_enabled(
+                            writable && !entry.address.trim().is_empty(),
+                            egui::Button::new(tr!("dialing_directory-add-bbs-button")),
+                        )
+                        .clicked()
+                        && !ui.ctx().will_discard()
+                    {
+                        match session::entry_connection_config(&entry, &self.options) {
+                            Ok(_) => {
+                                let book = self.phonebook.as_mut().unwrap();
+                                book.begin_new(false);
+                                book.draft = Some(entry);
+                                self.editor = Default::default();
+                                self.quick_selected = false;
+                            }
+                            Err(error) => self.error = Some(error),
+                        }
+                    }
+                })
             });
         });
         request
@@ -877,6 +883,41 @@ impl DialingDirectory {
             None => {}
         }
     }
+}
+
+fn pane_bar_id(ui: &egui::Ui) -> egui::Id {
+    ui.id().with("pane-bottom-bar")
+}
+
+/// Content of the entry pane, sized so the following [`pane_bar`] sits at the bottom edge.
+///
+/// Every entry view (details, editor, quick connect) uses this pair, which keeps the
+/// button bar at the same position regardless of how much content the view has.
+fn pane_content<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let spacing = ui.spacing();
+    let fallback = spacing.interact_size.y + 2.0 * spacing.item_spacing.y + 6.0;
+    let reserved = ui.data(|data| data.get_temp::<f32>(pane_bar_id(ui))).unwrap_or(fallback);
+    let height = (ui.available_height() - reserved).max(0.0);
+    ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), height), egui::Layout::top_down(egui::Align::Min), |ui| {
+        ui.set_min_height(height);
+        add(ui)
+    })
+    .inner
+}
+
+/// Separator and button bar below [`pane_content`]; remembers its height for the next frame.
+fn pane_bar<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let id = pane_bar_id(ui);
+    let top = ui.cursor().min.y;
+    ui.separator();
+    let result = add(ui);
+    let used = ui.cursor().min.y - top;
+    let previous = ui.data(|data| data.get_temp::<f32>(id));
+    if previous.is_none_or(|previous| (previous - used).abs() > 0.5) {
+        ui.data_mut(|data| data.insert_temp(id, used));
+        ui.ctx().request_repaint();
+    }
+    result
 }
 
 fn text_field(ui: &mut egui::Ui, label: &str, value: &mut String) {
@@ -1567,6 +1608,33 @@ mod tests {
         ] {
             assert!(find_text(&output, label).is_some(), "missing '{label}' in the detail pane");
         }
+    }
+
+    #[test]
+    fn the_button_bar_stays_at_the_bottom_in_every_view() {
+        let fixture = Fixture::new();
+        let mut book = fixture.load();
+        add(&mut book, "Alpha");
+        let mut dialog = DialingDirectory {
+            phonebook: Some(book),
+            open: true,
+            ..Default::default()
+        };
+        let context = egui::Context::default();
+        let bar_y = |dialog: &mut DialingDirectory, label: &str| {
+            frame(dialog, &context, vec![]);
+            let (output, _) = frame(dialog, &context, vec![]);
+            find_text(&output, label).unwrap_or_else(|| panic!("missing '{label}'")).y
+        };
+        let details = bar_y(&mut dialog, &tr!("egui-edit"));
+        assert!(details > 700.0, "details bar is not at the bottom: {details}");
+        click(&mut dialog, &context, &*tr!("egui-edit"));
+        let editor = bar_y(&mut dialog, &tr!("egui-save"));
+        dialog.phonebook.as_mut().unwrap().draft = None;
+        dialog.quick_selected = true;
+        let quick = bar_y(&mut dialog, &tr!("egui-quick-connect"));
+        assert!((details - editor).abs() < 1.0, "details {details} vs editor {editor}");
+        assert!((details - quick).abs() < 1.0, "details {details} vs quick connect {quick}");
     }
 
     #[test]

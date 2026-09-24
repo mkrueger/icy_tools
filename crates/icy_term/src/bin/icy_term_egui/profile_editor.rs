@@ -90,7 +90,7 @@ impl ProfileEditor {
         egui::ScrollArea::vertical()
             .id_salt(("profile-page", self.page as u8))
             .min_scrolled_height(0.0)
-            .max_height((ui.available_height() - 56.0).max(0.0))
+            .max_height(ui.available_height())
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
