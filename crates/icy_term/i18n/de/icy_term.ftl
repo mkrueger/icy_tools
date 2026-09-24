@@ -506,6 +506,7 @@ cmd-app-about-action = Über
 cmd-app-about-desc = Info-Dialog anzeigen
 cmd-app-about-menu = Über
 egui-file = Datei
+egui-output-folder = Ausgabeordner
 
 egui-new-window = Neues Fenster
 
