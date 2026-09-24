@@ -166,81 +166,77 @@ impl Dialog {
     }
 
     pub fn show(&mut self, context: &egui::Context, scrollback: usize) -> Option<TerminalCommand> {
-        let mut command = None;
-        egui::Modal::new(egui::Id::new("terminal-information"))
-            .frame(appearance::dialog_frame(context))
-            .show(context, |ui| {
-                let height = (context.content_rect().height() - 64.0).clamp(140.0, 680.0);
-                ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 740.0));
-                ui.set_min_height(height);
-                self.closed |= appearance::dialog_header(ui, &tr!("terminal-menu-info"));
-                egui::ScrollArea::vertical()
-                    .max_height((height - 104.0).max(0.0))
-                    .auto_shrink([false, false])
-                    .min_scrolled_height(0.0)
-                    .show(ui, |ui| {
-                        for pair in self.groups.chunks(2) {
-                            if ui.available_width() >= 600.0 {
-                                let scope = ui.scope(|ui| {
-                                    ui.columns(2, |columns| {
-                                        for (column, (title, fields)) in columns.iter_mut().zip(pair) {
-                                            self.group(column, title, fields);
-                                        }
-                                    });
+        #[derive(Clone, Copy)]
+        enum Info {
+            Copy,
+            Close,
+            Apply,
+        }
+        let response = appearance::Dialog::new("terminal-information")
+            .size(appearance::DialogSize::Width(740.0))
+            .fixed_height(680.0)
+            .show(context, |dialog| {
+                dialog.content(|ui| {
+                    for pair in self.groups.chunks(2) {
+                        if ui.available_width() >= 600.0 {
+                            let scope = ui.scope(|ui| {
+                                ui.columns(2, |columns| {
+                                    for (column, (title, fields)) in columns.iter_mut().zip(pair) {
+                                        self.group(column, title, fields);
+                                    }
                                 });
-                                if pair.len() == 2 {
-                                    let rect = scope.response.rect;
-                                    ui.painter().line_segment(
-                                        [egui::pos2(rect.center().x, rect.top()), egui::pos2(rect.center().x, rect.bottom())],
-                                        ui.visuals().widgets.noninteractive.bg_stroke,
-                                    );
-                                }
-                            } else {
-                                for (title, fields) in pair {
-                                    self.group(ui, title, fields);
-                                }
+                            });
+                            if pair.len() == 2 {
+                                let rect = scope.response.rect;
+                                ui.painter().line_segment(
+                                    [egui::pos2(rect.center().x, rect.top()), egui::pos2(rect.center().x, rect.bottom())],
+                                    ui.visuals().widgets.noninteractive.bg_stroke,
+                                );
                             }
-                            ui.add_space(8.0);
+                        } else {
+                            for (title, fields) in pair {
+                                self.group(ui, title, fields);
+                            }
                         }
-                        ui.separator();
-                        appearance::section(ui, &tr!("settings-heading"));
-                        ui.group(|ui| self.settings(ui));
-                    });
-                ui.separator();
-                ui.horizontal_wrapped(|ui| {
-                    if ui.button(tr!("terminal-menu-copy")).clicked() {
-                        context.copy_text(
-                            self.groups
-                                .iter()
-                                .map(|(title, fields)| {
-                                    format!(
-                                        "{title}\n{}",
-                                        fields
-                                            .iter()
-                                            .map(|(name, value, note)| format!("{name}: {value} {note}").trim_end().to_owned())
-                                            .collect::<Vec<_>>()
-                                            .join("\n")
-                                    )
-                                })
-                                .collect::<Vec<_>>()
-                                .join("\n\n"),
-                        );
+                        ui.add_space(8.0);
                     }
-                    let changed = self.original != (self.profile.terminal_type, self.profile.screen_mode, self.profile.ansi_music);
-                    if ui
-                        .add_enabled(changed, appearance::primary_button(tr!("terminal-info-dialog-apply-button")))
-                        .clicked()
-                    {
-                        command = Some(TerminalCommand::SetTerminalProfile {
-                            profile: self.profile.clone(),
-                            scrollback,
-                        });
-                        self.closed = true;
-                    }
-                    self.closed |= ui.button(tr!("egui-close")).clicked();
+                    appearance::group(ui, &tr!("settings-heading"), |ui| self.settings(ui));
                 });
+                let changed = self.original != (self.profile.terminal_type, self.profile.screen_mode, self.profile.ansi_music);
+                dialog.buttons([
+                    appearance::DialogButton::secondary(tr!("terminal-menu-copy"), Info::Copy).leading(),
+                    appearance::DialogButton::cancel(tr!("egui-close"), Info::Close),
+                    appearance::DialogButton::primary(tr!("terminal-info-dialog-apply-button"), Info::Apply).enabled(changed),
+                ]);
             });
-        command
+        match response.action {
+            Some(Info::Copy) => context.copy_text(
+                self.groups
+                    .iter()
+                    .map(|(title, fields)| {
+                        format!(
+                            "{title}\n{}",
+                            fields
+                                .iter()
+                                .map(|(name, value, note)| format!("{name}: {value} {note}").trim_end().to_owned())
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n\n"),
+            ),
+            Some(Info::Apply) => {
+                self.closed = true;
+                return Some(TerminalCommand::SetTerminalProfile {
+                    profile: self.profile.clone(),
+                    scrollback,
+                });
+            }
+            Some(Info::Close) => self.closed = true,
+            None => self.closed |= response.dismissed,
+        }
+        None
     }
 
     fn settings(&mut self, ui: &mut egui::Ui) {
@@ -306,9 +302,7 @@ impl Dialog {
     }
 
     fn group(&self, ui: &mut egui::Ui, title: &str, fields: &[(String, String, String)]) {
-        appearance::section(ui, title);
-        ui.scope(|ui| {
-            ui.spacing_mut().item_spacing.y = 4.0;
+        appearance::compact_group(ui, title, |ui| {
             for (name, value, note) in fields {
                 let descriptions = if name == &tr!("terminal-info-dialog-mouse-tracking") {
                     vec![

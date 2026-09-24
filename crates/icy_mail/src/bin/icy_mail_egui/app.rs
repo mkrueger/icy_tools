@@ -203,18 +203,11 @@ impl MailApp {
             self.sync_body(context);
         }
         if let Some(error) = self.error.clone() {
-            let mut close = false;
-            let response = appearance::Dialog::new("mail-error", "Unable to Open Message")
-                .max_width(560.0)
-                .show(context, |dialog| {
-                    dialog.content(|ui| {
-                        ui.add(egui::Label::new(&error).wrap().selectable(true));
-                    });
-                    dialog.actions(|ui| {
-                        close = ui.button("Close").clicked();
-                    });
-                });
-            if close || response.closed || key(context, Key::Escape, false, false) {
+            let response = appearance::MessageBox::new("mail-error", appearance::MessageKind::Error, "Unable to Open Message", error)
+                .copyable()
+                .buttons([appearance::DialogButton::primary(appearance::labels::close(), ()).cancels()])
+                .show(context);
+            if response.action.is_some() || response.dismissed {
                 self.error = None;
             }
         }

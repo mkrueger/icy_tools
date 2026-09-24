@@ -37,12 +37,11 @@ impl About {
     /// Returns a URL when one of the artwork's hyperlinks was clicked.
     pub fn show(&mut self, context: &egui::Context, open: &mut bool) -> Option<String> {
         let mut link = None;
-        let mut close = false;
         let artwork = {
             let screen = self.terminal.screen.lock();
             screen.resolution()
         };
-        let response = appearance::Dialog::new("about", "Icy Term")
+        let response = appearance::Dialog::new("about")
             .max_width(artwork.width as f32 + 48.0)
             .scroll(false)
             .show(context, |dialog| {
@@ -78,11 +77,9 @@ impl About {
                         }
                     });
                 });
-                dialog.actions(|ui| {
-                    close |= ui.add(appearance::primary_button(tr!("egui-close"))).clicked();
-                });
+                dialog.buttons([appearance::DialogButton::primary(tr!("egui-close"), ()).cancels()]);
             });
-        if close || response.closed {
+        if response.action.is_some() || response.dismissed {
             *open = false;
         }
         link

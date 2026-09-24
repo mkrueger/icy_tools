@@ -625,20 +625,25 @@ impl DialingDirectory {
                 &mut self.icon_cache,
             );
             ui.separator();
-            ui.horizontal(|ui| {
-                if ui.add(super::appearance::primary_button(tr!("egui-save"))).clicked() && !ui.ctx().will_discard() {
+            let buttons = [
+                super::appearance::DialogButton::secondary(tr!("egui-discard"), false),
+                super::appearance::DialogButton::primary(tr!("egui-save"), true),
+            ];
+            match super::appearance::button_row(ui, buttons.into()) {
+                Some(true) if !ui.ctx().will_discard() => {
                     match book.save() {
                         Ok(()) => self.error = None,
                         Err(error) => self.error = Some(error),
                     }
                     self.show_password = false;
                 }
-                if ui.button(&*tr!("egui-discard")).clicked() {
+                Some(false) => {
                     book.draft = None;
                     self.show_password = false;
                     self.error = None;
                 }
-            });
+                _ => {}
+            }
             return None;
         }
         let Some(entry) = book.selection().cloned() else {

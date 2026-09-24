@@ -815,12 +815,75 @@ fn gpu_viewer_and_dialogs_fit_desktop_narrow_short_and_hidpi() {
                 app.dialogs.open(mode, &app.options, &app.preview);
                 gpu.capture(&mut app, size, scale, vec![], "warmup");
                 gpu.capture(&mut app, size, scale, vec![], &format!("{name}-{dark}-{}", mode as u8));
-                let action = text(if matches!(mode, dialogs::Mode::Settings | dialogs::Mode::Export) {
-                    "egui-save"
-                } else {
-                    "dialog-close-button"
+                let action = text(match mode {
+                    dialogs::Mode::Settings => "dialog-ok-button",
+                    dialogs::Mode::Export => "egui-save",
+                    _ => "dialog-close-button",
                 });
                 assert!(gpu.labels.contains_key(&action), "{name}, mode {}: hidden {action}", mode as u8);
+                if mode == dialogs::Mode::Export {
+                    assert!(!gpu.labels.contains_key(&text("cmd-file-export-action")), "{name}: redundant export heading");
+                    assert!(!gpu.labels.contains_key("×"), "{name}: export dialog has a close glyph");
+                    if name == "narrow" {
+                        gpu.capture(
+                            &mut app,
+                            size,
+                            scale,
+                            vec![
+                                egui::Event::PointerMoved(egui::pos2(180.0, 300.0)),
+                                egui::Event::MouseWheel {
+                                    unit: egui::MouseWheelUnit::Point,
+                                    delta: egui::vec2(0.0, 4000.0),
+                                    modifiers: egui::Modifiers::NONE,
+                                },
+                            ],
+                            "export-scroll-top",
+                        );
+                        for _ in 0..5 {
+                            gpu.capture(&mut app, size, scale, vec![], "export-scroll-top-settle");
+                        }
+                        let path = *gpu
+                            .labels
+                            .get(&text("settings-paths-export-path"))
+                            .unwrap_or_else(|| panic!("missing export path {dark}: {:?}", gpu.labels.keys()));
+                        let filename = *gpu
+                            .labels
+                            .get(&text("header-name"))
+                            .unwrap_or_else(|| panic!("missing filename {dark}: {:?}", gpu.labels.keys()));
+                        let footer = gpu.labels[&action];
+                        assert!(filename.top() > path.top(), "{name}: filename must follow export path");
+                        assert!(
+                            filename.top() - path.bottom() < 100.0,
+                            "{name}: gap between path and filename: {path:?} -> {filename:?}"
+                        );
+                        assert!(
+                            filename.bottom() < footer.top(),
+                            "{name}: filename must be visible above footer: {filename:?} / {footer:?}"
+                        );
+                        gpu.capture(
+                            &mut app,
+                            size,
+                            scale,
+                            vec![
+                                egui::Event::PointerMoved(filename.center()),
+                                egui::Event::MouseWheel {
+                                    unit: egui::MouseWheelUnit::Point,
+                                    delta: egui::vec2(0.0, -400.0),
+                                    modifiers: egui::Modifiers::NONE,
+                                },
+                            ],
+                            "export-scroll",
+                        );
+                        for _ in 0..5 {
+                            gpu.capture(&mut app, size, scale, vec![], "export-scroll-settle");
+                        }
+                        assert!(
+                            gpu.labels.contains_key(&text("egui-normalize-spaces")),
+                            "{name}: export options must scroll into view"
+                        );
+                        assert_eq!(gpu.labels[&action], footer, "{name}: scrolling must not move the footer");
+                    }
+                }
                 if mode == dialogs::Mode::Settings {
                     let before = gpu.labels[&action];
                     for tab in ["settings-commands-category", "settings-paths-category", "settings-monitor-category"] {

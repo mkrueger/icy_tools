@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use eframe::egui;
 
-use super::appearance;
+use super::appearance::{labels, DialogButton, MessageBox as SharedMessageBox, MessageKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Response {
@@ -41,7 +41,7 @@ impl<'a> MessageBox<'a> {
     pub fn error(id: &'a str, title: &'a str, body: &'a str) -> Self {
         Self {
             error: true,
-            ..Self::question(id, title, body, "OK")
+            ..Self::question(id, title, body, "")
         }
     }
 
@@ -63,110 +63,36 @@ impl<'a> MessageBox<'a> {
     }
 
     pub fn show(self, context: &egui::Context) -> Option<Response> {
-        let mut answer = None;
-        let focus_id = egui::Id::new((self.id, "message-focus"));
-        let first = !context.data(|data| data.get_temp::<bool>(focus_id).unwrap_or(false));
-        let result = egui::Modal::new(egui::Id::new(self.id))
-            .frame(appearance::dialog_frame(context))
-            .show(context, |ui| {
-                let width = (context.content_rect().width() - 48.0).clamp(220.0, 520.0);
-                let text_height = |text: &str| {
-                    ui.painter()
-                        .layout(
-                            text.to_owned(),
-                            egui::TextStyle::Body.resolve(ui.style()),
-                            ui.visuals().text_color(),
-                            width - 44.0,
-                        )
-                        .size()
-                        .y
-                };
-                let content_height = text_height(self.body) + if self.details.is_empty() { 0.0 } else { 8.0 + text_height(self.details) };
-                let footer_space = if self.save && width < 400.0 { 142.0 } else { 112.0 };
-                let height = (content_height + footer_space).clamp(140.0, (context.content_rect().height() - 64.0).clamp(140.0, 340.0));
-                ui.set_width(width);
-                ui.set_height(height);
-                if appearance::dialog_header(ui, self.title) {
-                    answer = Some(Response::Cancel);
-                }
-                egui::ScrollArea::vertical()
-                    .id_salt((self.id, "body"))
-                    .auto_shrink([false, false])
-                    .min_scrolled_height(0.0)
-                    .max_height((height - footer_space).max(0.0))
-                    .show(ui, |ui| {
-                        ui.horizontal_top(|ui| {
-                            let color = if self.error {
-                                ui.visuals().error_fg_color
-                            } else if self.destructive {
-                                ui.visuals().warn_fg_color
-                            } else {
-                                ui.visuals().selection.stroke.color
-                            };
-                            let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
-                            ui.painter().circle_stroke(rect.center(), 11.0, egui::Stroke::new(1.5, color));
-                            ui.painter().text(
-                                rect.center(),
-                                egui::Align2::CENTER_CENTER,
-                                if self.error || self.destructive { "!" } else { "?" },
-                                egui::FontId::proportional(18.0),
-                                color,
-                            );
-                            ui.vertical(|ui| {
-                                ui.add(egui::Label::new(self.body).wrap().selectable(true));
-                                if !self.details.is_empty() {
-                                    ui.add_space(8.0);
-                                    ui.add(egui::Label::new(egui::RichText::new(self.details).weak()).wrap().selectable(true));
-                                }
-                            });
-                        });
-                    });
-                ui.separator();
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true), |ui| {
-                    if self.save {
-                        if ui.add(appearance::primary_button(tr!("egui-save"))).clicked() {
-                            answer = Some(Response::Save);
-                        }
-                    }
-                    let accept = if self.destructive {
-                        egui::Button::new(egui::RichText::new(self.accept).color(ui.visuals().error_fg_color))
-                    } else {
-                        appearance::primary_button(self.accept)
-                    };
-                    let accepted = ui.add_enabled(self.enabled, accept);
-                    if accepted.clicked() {
-                        answer = Some(Response::Accept);
-                    }
-                    if self.error {
-                        if first {
-                            accepted.request_focus();
-                        }
-                        if ui.button(tr!("terminal-menu-copy")).clicked() {
-                            context.copy_text(format!("{}\n{}\n{}", self.title, self.body, self.details));
-                        }
-                    } else {
-                        let cancel = ui.button(tr!("egui-cancel"));
-                        if first {
-                            cancel.request_focus();
-                        }
-                        if cancel.clicked() {
-                            answer = Some(Response::Cancel);
-                        }
-                    }
-                });
-            });
-        context.data_mut(|data| data.insert_temp(focus_id, true));
-        if result.should_close() {
-            answer = Some(Response::Cancel);
-        }
-        if answer.is_some() {
-            context.data_mut(|data| data.remove::<bool>(focus_id));
-        }
-        if context.will_discard() {
-            None
+        let kind = if self.error {
+            MessageKind::Error
+        } else if self.destructive {
+            MessageKind::Warning
         } else {
-            answer
-        }
+            MessageKind::Question
+        };
+        let message = SharedMessageBox::new(self.id, kind, self.title, self.body).details(self.details);
+        let message = if self.error {
+            message.copyable().buttons([DialogButton::primary(labels::ok(), Response::Accept).cancels()])
+        } else {
+            let accept = if self.destructive {
+                DialogButton::destructive(self.accept, Response::Accept)
+            } else {
+                DialogButton::primary(self.accept, Response::Accept)
+            };
+            let accept = accept.enabled(self.enabled);
+            if self.save {
+                // Save dialogs follow "Don't Save" | Cancel, Save.
+                message.buttons([
+                    accept.leading(),
+                    DialogButton::cancel(tr!("egui-cancel"), Response::Cancel),
+                    DialogButton::primary(tr!("egui-save"), Response::Save),
+                ])
+            } else {
+                message.buttons([DialogButton::cancel(tr!("egui-cancel"), Response::Cancel), accept])
+            }
+        };
+        let response = message.show(context);
+        response.action.or(response.dismissed.then_some(Response::Cancel))
     }
 }
 

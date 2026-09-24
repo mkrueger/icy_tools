@@ -5,6 +5,7 @@ use super::{Dialog, DrawApp};
 use eframe::egui::{self, Color32};
 use icy_engine::{LayerProperties, Position, Rectangle, RenderOptions, Role, TextBuffer, TextPane};
 use icy_engine_edit::tools::{Tool, ToolPair};
+use icy_engine_gui::egui::appearance::{self, labels, Dialog as SharedDialog, DialogButton, DialogSize};
 
 /// Width of the original left bar (`LEFT_BAR_WIDTH`).
 pub const SIDEBAR_WIDTH: f32 = 52.0;
@@ -741,54 +742,61 @@ impl DrawApp {
         let Some((index, mut properties)) = self.chrome.layer_properties.take() else {
             return;
         };
-        let mut apply = false;
-        let mut cancel = false;
-        let response = egui::Modal::new(egui::Id::new("layer-properties")).show(context, |ui| {
-            ui.set_width(300.0_f32.min(context.content_rect().width() - 48.0));
-            ui.heading("Layer Properties");
-            ui.separator();
-            ui.label("Name");
-            ui.add(egui::TextEdit::singleline(&mut properties.title).desired_width(f32::INFINITY));
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut properties.is_visible, "Visible");
-                ui.checkbox(&mut properties.is_locked, "Locked");
-            });
-            ui.separator();
-            ui.checkbox(&mut properties.is_position_locked, "Lock Position");
-            ui.add_enabled_ui(!properties.is_position_locked, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut properties.offset.x).prefix("X "));
-                    ui.add(egui::DragValue::new(&mut properties.offset.y).prefix("Y "));
+        #[derive(Clone, Copy)]
+        enum Action {
+            Cancel,
+            Apply,
+        }
+        let response = SharedDialog::new("layer-properties")
+            .size(DialogSize::Small)
+            .confirm_on_enter(true)
+            .show(context, |dialog| {
+                dialog.content(|ui| {
+                    appearance::group(ui, "", |ui| {
+                        ui.label("Name");
+                        ui.add(egui::TextEdit::singleline(&mut properties.title).desired_width(f32::INFINITY));
+                        ui.horizontal(|ui| {
+                            ui.checkbox(&mut properties.is_visible, "Visible");
+                            ui.checkbox(&mut properties.is_locked, "Locked");
+                        });
+                        ui.separator();
+                        ui.checkbox(&mut properties.is_position_locked, "Lock Position");
+                        ui.add_enabled_ui(!properties.is_position_locked, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.add(egui::DragValue::new(&mut properties.offset.x).prefix("X "));
+                                ui.add(egui::DragValue::new(&mut properties.offset.y).prefix("Y "));
+                            });
+                        });
+                        ui.checkbox(&mut properties.has_alpha_channel, "Transparency");
+                        ui.add_enabled_ui(properties.has_alpha_channel, |ui| {
+                            ui.checkbox(&mut properties.is_alpha_channel_locked, "Lock Transparency");
+                        });
+                        egui::ComboBox::from_label("Mode")
+                            .selected_text(format!("{:?}", properties.mode))
+                            .show_ui(ui, |ui| {
+                                for (mode, label) in [
+                                    (icy_engine::Mode::Normal, "Normal"),
+                                    (icy_engine::Mode::Chars, "Characters"),
+                                    (icy_engine::Mode::Attributes, "Attributes"),
+                                ] {
+                                    ui.selectable_value(&mut properties.mode, mode, label);
+                                }
+                            });
+                    });
                 });
+                dialog.buttons([
+                    DialogButton::cancel(labels::cancel(), Action::Cancel),
+                    DialogButton::primary("Apply", Action::Apply),
+                ]);
             });
-            ui.checkbox(&mut properties.has_alpha_channel, "Transparency");
-            ui.add_enabled_ui(properties.has_alpha_channel, |ui| {
-                ui.checkbox(&mut properties.is_alpha_channel_locked, "Lock Transparency");
-            });
-            egui::ComboBox::from_label("Mode")
-                .selected_text(format!("{:?}", properties.mode))
-                .show_ui(ui, |ui| {
-                    for (mode, label) in [
-                        (icy_engine::Mode::Normal, "Normal"),
-                        (icy_engine::Mode::Chars, "Characters"),
-                        (icy_engine::Mode::Attributes, "Attributes"),
-                    ] {
-                        ui.selectable_value(&mut properties.mode, mode, label);
-                    }
-                });
-            ui.separator();
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                apply = ui.button("Apply").clicked();
-                cancel = ui.button("Cancel").clicked();
-            });
-        });
-        if apply {
-            self.edit(|state| state.update_layer_properties(index, properties));
-            self.canvas_focus = true;
-        } else if !cancel && !response.should_close() {
-            self.chrome.layer_properties = Some((index, properties));
-        } else {
-            self.canvas_focus = true;
+        match response.action {
+            Some(Action::Apply) => {
+                self.edit(|state| state.update_layer_properties(index, properties));
+                self.canvas_focus = true;
+            }
+            Some(Action::Cancel) => self.canvas_focus = true,
+            None if !response.dismissed => self.chrome.layer_properties = Some((index, properties)),
+            None => self.canvas_focus = true,
         }
     }
 

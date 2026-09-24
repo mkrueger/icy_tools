@@ -487,8 +487,9 @@ fn characters_dialog_shrinks_after_desktop_layout() {
         for _ in 0..3 {
             frame(&context, &mut app, size, vec![]);
         }
+
         let output = frame(&context, &mut app, size, vec![]);
-        for label in ["Characters", "Cancel"] {
+        for label in ["Characters".to_owned(), labels::cancel()] {
             let text = output
                 .shapes
                 .iter()
@@ -502,6 +503,28 @@ fn characters_dialog_shrinks_after_desktop_layout() {
             assert!(egui::Rect::from_min_size(egui::Pos2::ZERO, size).contains_rect(bounds), "{label}: {bounds:?}");
         }
     }
+}
+
+#[test]
+fn export_dialog_has_no_header_or_close_glyph() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.dialog = Some(Dialog::Export);
+    for _ in 0..3 {
+        frame(&context, &mut app, egui::vec2(900.0, 700.0), vec![]);
+    }
+    let output = frame(&context, &mut app, egui::vec2(900.0, 700.0), vec![]);
+    let labels: Vec<_> = output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) => Some(text.galley.text()),
+            _ => None,
+        })
+        .collect();
+    assert!(labels.contains(&"Export..."));
+    assert!(!labels.contains(&"Export") && !labels.contains(&"×"));
 }
 
 #[test]

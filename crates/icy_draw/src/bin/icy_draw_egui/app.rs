@@ -4,7 +4,10 @@ use icy_engine::{FileFormat, Position, Selection, Size, TextPane};
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::UndoState;
 use icy_engine_gui::{
-    egui::{appearance, screen::ScreenView},
+    egui::{
+        appearance::{self, labels, DialogButton, DialogSize, MessageBox, MessageKind},
+        screen::ScreenView,
+    },
     ScalingMode,
 };
 use std::{
@@ -1420,140 +1423,114 @@ impl DrawApp {
         let Some(dialog) = self.dialog.take() else {
             return;
         };
-        if !matches!(dialog, Dialog::Font) && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Escape)) {
-            if matches!(dialog, Dialog::Close) {
-                self.pending = None;
-                self.quitting = false;
-                self.continue_after_save = false;
-            }
-            if matches!(dialog, Dialog::Characters | Dialog::FKeyCharacter(_, _)) {
-                context.data_mut(|data| data.remove::<u32>(egui::Id::new("character-dialog-cursor")));
-            }
-            if matches!(dialog, Dialog::Error(_)) && self.font_editor.is_some() {
-                self.dialog = Some(Dialog::Font);
-            }
-            self.canvas_focus = true;
-            return;
-        }
         let mut keep = true;
         match &dialog {
             Dialog::Monitor => {
-                let response = appearance::Dialog::new("monitor", "Monitor").show(context, |dialog| {
-                    dialog.content(|ui| {
-                        icy_engine_gui::egui::monitor::fields(ui, &mut self.settings.monitor_settings, |key| {
-                            match key {
-                                "egui-monitor-type" => "Monitor",
-                                "egui-colors" => "Color",
-                                "egui-integer-scaling" => "Integer Scaling",
-                                "egui-bilinear-filtering" => "Bilinear Filtering",
-                                "egui-picture" => "Picture",
-                                "settings-monitor-brightness" => "Brightness",
-                                "settings-monitor-contrast" => "Contrast",
-                                "settings-monitor-gamma" => "Gamma",
-                                "settings-monitor-saturation" => "Saturation",
-                                "egui-effects" => "Effects",
-                                "settings-monitor-scanlines" => "Scanlines",
-                                "egui-thickness" => "Thickness",
-                                "egui-sharpness" => "Sharpness",
-                                "egui-phase" => "Phase",
-                                "egui-bloom" => "Bloom",
-                                "egui-threshold" => "Threshold",
-                                "egui-radius" => "Radius",
-                                "egui-glow" => "Glow",
-                                "egui-persistence" => "Persistence",
-                                "egui-curvature" => "Curvature",
-                                "egui-horizontal" => "Horizontal",
-                                "egui-vertical" => "Vertical",
-                                "egui-noise" => "Noise",
-                                "egui-noise-level" => "Noise Level",
-                                "egui-sync-wobble" => "Sync Wobble",
-                                _ => key,
-                            }
-                            .to_owned()
-                        })
-                    });
-                    dialog.actions(|ui| {
-                        if ui.button("Close").clicked() {
-                            keep = false;
-                        }
-                        if ui.button("Save Defaults").clicked() && self.persist_settings {
-                            self.settings.store_persistent();
-                        }
-                        if ui.button("Reset").clicked() {
-                            self.settings.monitor_settings = icy_engine_gui::MonitorSettings::default();
-                            self.settings.monitor_settings.scaling_mode = ScalingMode::Manual(2.0);
-                        }
-                    });
+                #[derive(Clone, Copy)]
+                enum Action {
+                    SaveDefaults,
+                    Reset,
+                    Close,
+                }
+                let response = appearance::Dialog::new("monitor").size(DialogSize::Medium).show(context, |dialog| {
+                    dialog.content(|ui| icy_engine_gui::egui::monitor::fields(ui, &mut self.settings.monitor_settings));
+                    dialog.buttons([
+                        DialogButton::secondary("Save Defaults", Action::SaveDefaults)
+                            .leading()
+                            .enabled(self.persist_settings),
+                        DialogButton::secondary(labels::restore_defaults(), Action::Reset).leading(),
+                        DialogButton::primary(labels::close(), Action::Close).cancels(),
+                    ]);
                 });
-                keep &= !response.closed;
+                match response.action {
+                    Some(Action::SaveDefaults) => self.settings.store_persistent(),
+                    Some(Action::Reset) => {
+                        self.settings.monitor_settings = icy_engine_gui::MonitorSettings::default();
+                        self.settings.monitor_settings.scaling_mode = ScalingMode::Manual(2.0);
+                    }
+                    Some(Action::Close) => keep = false,
+                    None => keep &= !response.dismissed,
+                }
             }
             Dialog::Script => {
-                let response = appearance::Dialog::new("lua-script", "Lua Script").max_width(760.0).show(context, |dialog| {
-                    dialog.content(|ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut self.script)
-                                .code_editor()
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(12),
-                        );
-                        if !self.script_output.is_empty() {
-                            ui.separator();
-                            ui.add(egui::Label::new(&self.script_output).wrap().selectable(true));
-                        }
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Close,
+                    Run,
+                }
+                let response = appearance::Dialog::new("lua-script")
+                    .size(DialogSize::XLarge)
+                    .fixed_height(460.0)
+                    .show(context, |dialog| {
+                        dialog.content(|ui| {
+                            appearance::group(ui, "", |ui| {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.script)
+                                        .code_editor()
+                                        .desired_width(f32::INFINITY)
+                                        .desired_rows(12),
+                                );
+                                if !self.script_output.is_empty() {
+                                    ui.separator();
+                                    ui.add(egui::Label::new(&self.script_output).wrap().selectable(true));
+                                }
+                            });
+                        });
+                        dialog.buttons([
+                            DialogButton::cancel(labels::close(), Action::Close),
+                            DialogButton::primary("Run", Action::Run).enabled(self.document.can_paint() && !self.picker),
+                        ]);
                     });
-                    dialog.actions(|ui| {
-                        if ui.add_enabled(self.document.can_paint() && !self.picker, egui::Button::new("Run")).clicked() {
-                            self.document.finish();
-                            self.script_output =
-                                icy_draw::plugins::Plugin::run_script_string(&self.document.screen, &self.script, "Lua script").unwrap_or_else(|error| error);
-                        }
-                        if ui.button("Close").clicked() {
-                            keep = false;
-                        }
-                    });
-                });
-                keep &= !response.closed;
+                match response.action {
+                    Some(Action::Run) => {
+                        self.document.finish();
+                        self.script_output =
+                            icy_draw::plugins::Plugin::run_script_string(&self.document.screen, &self.script, "Lua script").unwrap_or_else(|error| error);
+                    }
+                    Some(Action::Close) => keep = false,
+                    None => keep &= !response.dismissed,
+                }
             }
             Dialog::Tags => {
                 let mut edit = None;
                 let mut delete = None;
                 let mut add = false;
-                let response = appearance::Dialog::new("tags", "Tags").show(context, |dialog| {
+                let response = appearance::Dialog::new("tags").size(DialogSize::Large).show(context, |dialog| {
                     dialog.content(|ui| {
-                        let tags = self.document.with_state(|state| state.get_buffer().tags.clone());
-                        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-                            for (index, tag) in tags.iter().enumerate() {
-                                ui.push_id(index, |ui| {
-                                    ui.horizontal_wrapped(|ui| {
-                                        let response = ui.selectable_label(self.document.selected_tags.contains(&index), &tag.preview);
-                                        if response.clicked() {
-                                            self.document.selected_tags = vec![index];
-                                        }
-                                        if response.double_clicked() {
-                                            edit = Some(index);
-                                        }
-                                        ui.weak(format!("{}, {}", tag.position.x, tag.position.y));
-                                        if self.icons.button(ui, "text", "Edit Tag", false).clicked() {
-                                            edit = Some(index);
-                                        }
-                                        if self.icons.button(ui, "delete", "Delete Tag", false).clicked() {
-                                            delete = Some(index);
-                                        }
+                        appearance::group(ui, "", |ui| {
+                            let tags = self.document.with_state(|state| state.get_buffer().tags.clone());
+                            egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                                for (index, tag) in tags.iter().enumerate() {
+                                    ui.push_id(index, |ui| {
+                                        ui.horizontal_wrapped(|ui| {
+                                            let response = ui.selectable_label(self.document.selected_tags.contains(&index), &tag.preview);
+                                            if response.clicked() {
+                                                self.document.selected_tags = vec![index];
+                                            }
+                                            if response.double_clicked() {
+                                                edit = Some(index);
+                                            }
+                                            ui.weak(format!("{}, {}", tag.position.x, tag.position.y));
+                                            if self.icons.button(ui, "text", "Edit Tag", false).clicked() {
+                                                edit = Some(index);
+                                            }
+                                            if self.icons.button(ui, "delete", "Delete Tag", false).clicked() {
+                                                delete = Some(index);
+                                            }
+                                        });
                                     });
-                                });
+                                }
+                            });
+                            if self.icons.button(ui, "add", "Add Tag", false).clicked() {
+                                add = true;
                             }
                         });
-                        if self.icons.button(ui, "add", "Add Tag", false).clicked() {
-                            add = true;
-                        }
                     });
-                    dialog.actions(|ui| {
-                        if ui.button("Close").clicked() {
-                            keep = false;
-                        }
-                    });
+                    dialog.buttons([DialogButton::primary(labels::close(), ()).cancels()]);
                 });
-                keep &= !response.closed;
+                if response.action.is_some() || response.dismissed {
+                    keep = false;
+                }
                 if let Some(index) = delete {
                     self.document.selected_tags = vec![index];
                     let result = self.document.delete_selected_tags();
@@ -1564,50 +1541,60 @@ impl DrawApp {
                 }
             }
             Dialog::TagProperties(index, draft) => {
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Cancel,
+                    Apply,
+                }
                 let mut tag = *draft.clone();
                 let mut apply = false;
-                let response = appearance::Dialog::new("tag-properties", "Tag Properties")
-                    .max_width(440.0)
+                let response = appearance::Dialog::new("tag-properties")
+                    .size(DialogSize::Width(440.0))
+                    .confirm_on_enter(true)
                     .show(context, |dialog| {
                         dialog.content(|ui| {
-                            ui.checkbox(&mut tag.is_enabled, "Enabled");
-                            ui.horizontal_wrapped(|ui| {
-                                ui.add(egui::DragValue::new(&mut tag.position.x).range(0..=10000).prefix("X "));
-                                ui.add(egui::DragValue::new(&mut tag.position.y).range(0..=10000).prefix("Y "));
-                                ui.add(egui::DragValue::new(&mut tag.length).range(1..=1000).prefix("Length "));
+                            appearance::group(ui, "", |ui| {
+                                ui.checkbox(&mut tag.is_enabled, "Enabled");
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.add(egui::DragValue::new(&mut tag.position.x).range(0..=10000).prefix("X "));
+                                    ui.add(egui::DragValue::new(&mut tag.position.y).range(0..=10000).prefix("Y "));
+                                    ui.add(egui::DragValue::new(&mut tag.length).range(1..=1000).prefix("Length "));
+                                });
+                                ui.label("Preview");
+                                ui.add(egui::TextEdit::singleline(&mut tag.preview).desired_width(f32::INFINITY));
+                                ui.label("Replacement");
+                                ui.add(egui::TextEdit::singleline(&mut tag.replacement_value).desired_width(f32::INFINITY));
+                                egui::ComboBox::from_label("Alignment")
+                                    .selected_text(format!("{:?}", tag.alignment))
+                                    .show_ui(ui, |ui| {
+                                        for alignment in [std::fmt::Alignment::Left, std::fmt::Alignment::Center, std::fmt::Alignment::Right] {
+                                            ui.selectable_value(&mut tag.alignment, alignment, format!("{alignment:?}"));
+                                        }
+                                    });
+                                egui::ComboBox::from_label("Role")
+                                    .selected_text(format!("{:?}", tag.tag_role))
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut tag.tag_role, icy_engine::TagRole::Displaycode, "Display Code");
+                                        ui.selectable_value(&mut tag.tag_role, icy_engine::TagRole::Hyperlink, "Hyperlink");
+                                    });
+                                egui::ComboBox::from_label("Placement")
+                                    .selected_text(format!("{:?}", tag.tag_placement))
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut tag.tag_placement, icy_engine::TagPlacement::InText, "In Text");
+                                        ui.selectable_value(&mut tag.tag_placement, icy_engine::TagPlacement::WithGotoXY, "Cursor Position");
+                                    });
                             });
-                            ui.label("Preview");
-                            ui.add(egui::TextEdit::singleline(&mut tag.preview).desired_width(f32::INFINITY));
-                            ui.label("Replacement");
-                            ui.add(egui::TextEdit::singleline(&mut tag.replacement_value).desired_width(f32::INFINITY));
-                            egui::ComboBox::from_label("Alignment")
-                                .selected_text(format!("{:?}", tag.alignment))
-                                .show_ui(ui, |ui| {
-                                    for alignment in [std::fmt::Alignment::Left, std::fmt::Alignment::Center, std::fmt::Alignment::Right] {
-                                        ui.selectable_value(&mut tag.alignment, alignment, format!("{alignment:?}"));
-                                    }
-                                });
-                            egui::ComboBox::from_label("Role")
-                                .selected_text(format!("{:?}", tag.tag_role))
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut tag.tag_role, icy_engine::TagRole::Displaycode, "Display Code");
-                                    ui.selectable_value(&mut tag.tag_role, icy_engine::TagRole::Hyperlink, "Hyperlink");
-                                });
-                            egui::ComboBox::from_label("Placement")
-                                .selected_text(format!("{:?}", tag.tag_placement))
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut tag.tag_placement, icy_engine::TagPlacement::InText, "In Text");
-                                    ui.selectable_value(&mut tag.tag_placement, icy_engine::TagPlacement::WithGotoXY, "Cursor Position");
-                                });
                         });
-                        dialog.actions(|ui| {
-                            apply = ui.button("Apply").clicked();
-                            if ui.button("Cancel").clicked() {
-                                keep = false;
-                            }
-                        });
+                        dialog.buttons([
+                            DialogButton::cancel(labels::cancel(), Action::Cancel),
+                            DialogButton::primary("Apply", Action::Apply),
+                        ]);
                     });
-                keep &= !response.closed;
+                match response.action {
+                    Some(Action::Apply) => apply = true,
+                    Some(Action::Cancel) => keep = false,
+                    None => keep &= !response.dismissed,
+                }
                 if apply {
                     if let Some(index) = index {
                         self.edit(|state| state.update_tag(tag, *index));
@@ -1623,102 +1610,120 @@ impl DrawApp {
                 }
             }
             Dialog::FontSelect => {
-                let response = appearance::Dialog::new("font-select", "Font").show(context, |dialog| {
-                    dialog.content(|ui| {
-                        ui.add(egui::TextEdit::singleline(&mut self.font_filter).hint_text("Filter"));
-                        let filter = self.font_filter.to_lowercase();
-                        let current = self.document.with_state(|state| {
-                            state
-                                .get_buffer()
-                                .font(state.get_caret().attribute.font_page())
-                                .map(|font| font.name().to_string())
-                                .unwrap_or_default()
+                let response = appearance::Dialog::new("font-select")
+                    .size(DialogSize::Medium)
+                    .fixed_height(380.0)
+                    .show(context, |dialog| {
+                        dialog.content(|ui| {
+                            appearance::group(ui, "", |ui| {
+                                ui.add(egui::TextEdit::singleline(&mut self.font_filter).hint_text("Filter"));
+                                let filter = self.font_filter.to_lowercase();
+                                let current = self.document.with_state(|state| {
+                                    state
+                                        .get_buffer()
+                                        .font(state.get_caret().attribute.font_page())
+                                        .map(|font| font.name().to_string())
+                                        .unwrap_or_default()
+                                });
+                                let names: Vec<_> = icy_engine::get_sauce_font_names()
+                                    .into_iter()
+                                    .filter(|name| name.to_lowercase().contains(&filter))
+                                    .collect();
+                                egui::ScrollArea::vertical().max_height(280.0).show_rows(ui, 24.0, names.len(), |ui, rows| {
+                                    for row in rows {
+                                        let name = names[row];
+                                        if ui.selectable_label(name == current, name).clicked() {
+                                            self.edit(|state| state.set_sauce_font(name));
+                                            keep = false;
+                                        }
+                                    }
+                                });
+                            });
                         });
-                        let names: Vec<_> = icy_engine::get_sauce_font_names()
-                            .into_iter()
-                            .filter(|name| name.to_lowercase().contains(&filter))
-                            .collect();
-                        egui::ScrollArea::vertical().max_height(280.0).show_rows(ui, 24.0, names.len(), |ui, rows| {
-                            for row in rows {
-                                let name = names[row];
-                                if ui.selectable_label(name == current, name).clicked() {
-                                    self.edit(|state| state.set_sauce_font(name));
-                                    keep = false;
-                                }
-                            }
-                        });
+                        dialog.buttons([DialogButton::cancel(labels::cancel(), ())]);
                     });
-                    dialog.actions(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                    });
-                });
-                keep &= !response.closed;
+                if response.action.is_some() || response.dismissed {
+                    keep = false;
+                }
             }
             Dialog::AnimationOverwrite(path, format) => {
-                let response = appearance::Dialog::new("animation-overwrite", "Replace Export File?").show(context, |dialog| {
-                    dialog.content(|ui| {
-                        ui.label(path.display().to_string());
-                    });
-                    dialog.actions(|ui| {
-                        if ui.button("Replace").clicked() {
-                            if let Some(editor) = &mut self.animation {
-                                editor.export(path.clone(), *format, context.clone());
-                            }
-                            keep = false;
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Cancel,
+                    Overwrite,
+                }
+                let response = MessageBox::new("animation-overwrite", MessageKind::Warning, "Replace Export File?", path.display().to_string())
+                    .buttons([
+                        DialogButton::cancel(labels::cancel(), Action::Cancel),
+                        DialogButton::destructive(labels::overwrite(), Action::Overwrite),
+                    ])
+                    .show(context);
+                match response.action {
+                    Some(Action::Overwrite) => {
+                        if let Some(editor) = &mut self.animation {
+                            editor.export(path.clone(), *format, context.clone());
                         }
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                    });
-                });
-                keep &= !response.closed;
+                        keep = false;
+                    }
+                    Some(Action::Cancel) => keep = false,
+                    None => keep &= !response.dismissed,
+                }
             }
             Dialog::Palette => {
-                let response = appearance::Dialog::new("palette-edit", "Palette").show(context, |dialog| {
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Restore,
+                    Cancel,
+                    Apply,
+                }
+                let response = appearance::Dialog::new("palette-edit").size(DialogSize::Large).show(context, |dialog| {
                     dialog.content(|ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            for index in 0..self.palette_edit.len().min(256) {
-                                let (red, green, blue) = self.palette_edit.rgb(index as u32);
-                                if widgets::swatch(ui, Color32::from_rgb(red, green, blue), index == self.palette_index, 28.0).clicked() {
-                                    self.palette_index = index;
+                        appearance::group(ui, "", |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                for index in 0..self.palette_edit.len().min(256) {
+                                    let (red, green, blue) = self.palette_edit.rgb(index as u32);
+                                    if widgets::swatch(ui, Color32::from_rgb(red, green, blue), index == self.palette_index, 28.0).clicked() {
+                                        self.palette_index = index;
+                                    }
                                 }
-                            }
-                        });
-                        let (red, green, blue) = self.palette_edit.rgb(self.palette_index as u32);
-                        let mut rgb = [red, green, blue];
-                        if ui.color_edit_button_srgb(&mut rgb).changed() {
-                            self.palette_edit
-                                .set_color(self.palette_index as u32, icy_engine::Color::new(rgb[0], rgb[1], rgb[2]));
-                        }
-                        ui.horizontal(|ui| {
-                            let mut changed = false;
-                            for (index, channel) in ["R ", "G ", "B "].into_iter().enumerate() {
-                                changed |= ui.add(egui::DragValue::new(&mut rgb[index]).range(0..=255).prefix(channel)).changed();
-                            }
-                            if changed {
+                            });
+                            let (red, green, blue) = self.palette_edit.rgb(self.palette_index as u32);
+                            let mut rgb = [red, green, blue];
+                            if ui.color_edit_button_srgb(&mut rgb).changed() {
                                 self.palette_edit
                                     .set_color(self.palette_index as u32, icy_engine::Color::new(rgb[0], rgb[1], rgb[2]));
                             }
+                            ui.horizontal(|ui| {
+                                let mut changed = false;
+                                for (index, channel) in ["R ", "G ", "B "].into_iter().enumerate() {
+                                    changed |= ui.add(egui::DragValue::new(&mut rgb[index]).range(0..=255).prefix(channel)).changed();
+                                }
+                                if changed {
+                                    self.palette_edit
+                                        .set_color(self.palette_index as u32, icy_engine::Color::new(rgb[0], rgb[1], rgb[2]));
+                                }
+                            });
                         });
-                        if ui.button("Restore DOS Palette").clicked() {
-                            self.palette_edit = icy_engine::Palette::default();
-                            self.palette_index = 0;
-                        }
                     });
-                    dialog.actions(|ui| {
-                        if ui.button("Apply").clicked() {
-                            let palette = self.palette_edit.clone();
-                            self.edit(|state| state.switch_to_palette(palette));
-                            keep = false;
-                        }
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                    });
+                    dialog.buttons([
+                        DialogButton::secondary("Restore DOS Palette", Action::Restore).leading(),
+                        DialogButton::cancel(labels::cancel(), Action::Cancel),
+                        DialogButton::primary("Apply", Action::Apply),
+                    ]);
                 });
-                keep &= !response.closed;
+                match response.action {
+                    Some(Action::Restore) => {
+                        self.palette_edit = icy_engine::Palette::default();
+                        self.palette_index = 0;
+                    }
+                    Some(Action::Apply) => {
+                        let palette = self.palette_edit.clone();
+                        self.edit(|state| state.switch_to_palette(palette));
+                        keep = false;
+                    }
+                    Some(Action::Cancel) => keep = false,
+                    None => keep &= !response.dismissed,
+                }
             }
             Dialog::Font => {
                 if let Some(editor) = &mut self.font_editor {
@@ -1744,169 +1749,200 @@ impl DrawApp {
                 }
             }
             Dialog::FontOverwrite(path) => {
-                let response = appearance::Dialog::new("font-overwrite", "Replace Font File?").show(context, |dialog| {
-                    dialog.content(|ui| {
-                        ui.label(path.display().to_string());
-                    });
-                    dialog.actions(|ui| {
-                        if ui.button("Replace").clicked() {
-                            if let Some(editor) = &mut self.font_editor {
-                                let result = editor.save(path, true);
-                                self.result(result);
-                            }
-                            if self.dialog.is_none() {
-                                self.dialog = Some(Dialog::Font);
-                            }
-                            keep = false;
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Cancel,
+                    Overwrite,
+                }
+                let response = MessageBox::new("font-overwrite", MessageKind::Warning, "Replace Font File?", path.display().to_string())
+                    .buttons([
+                        DialogButton::cancel(labels::cancel(), Action::Cancel),
+                        DialogButton::destructive(labels::overwrite(), Action::Overwrite),
+                    ])
+                    .show(context);
+                match response.action {
+                    Some(Action::Overwrite) => {
+                        if let Some(editor) = &mut self.font_editor {
+                            let result = editor.save(path, true);
+                            self.result(result);
                         }
-                        if ui.button("Cancel").clicked() {
+                        if self.dialog.is_none() {
+                            self.dialog = Some(Dialog::Font);
+                        }
+                        keep = false;
+                    }
+                    Some(Action::Cancel) | None => {
+                        if response.action.is_some() || response.dismissed {
                             self.dialog = Some(Dialog::Font);
                             keep = false;
                         }
-                    });
-                });
-                if response.closed {
-                    self.dialog = Some(Dialog::Font);
-                    keep = false;
+                    }
                 }
             }
             Dialog::ExportOverwrite(path) => {
-                let response = appearance::Dialog::new("export-overwrite", "Replace Export File?").show(context, |dialog| {
-                    dialog.content(|ui| {
-                        ui.label(path.display().to_string());
-                    });
-                    dialog.actions(|ui| {
-                        if ui.button("Replace").clicked() {
-                            self.export_path(path.clone());
-                            keep = false;
-                        }
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                    });
-                });
-                keep &= !response.closed;
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Cancel,
+                    Overwrite,
+                }
+                let response = MessageBox::new("export-overwrite", MessageKind::Warning, "Replace Export File?", path.display().to_string())
+                    .buttons([
+                        DialogButton::cancel(labels::cancel(), Action::Cancel),
+                        DialogButton::destructive(labels::overwrite(), Action::Overwrite),
+                    ])
+                    .show(context);
+                match response.action {
+                    Some(Action::Overwrite) => {
+                        self.export_path(path.clone());
+                        keep = false;
+                    }
+                    Some(Action::Cancel) => keep = false,
+                    None => keep &= !response.dismissed,
+                }
             }
             Dialog::Sauce => {
-                let response = appearance::Dialog::new("sauce", "SAUCE Metadata").show(context, |dialog| {
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Cancel,
+                    Apply,
+                }
+                let response = appearance::Dialog::new("sauce").size(DialogSize::Medium).show(context, |dialog| {
                     dialog.content(|ui| {
-                        for (index, label) in ["Title", "Author", "Group"].into_iter().enumerate() {
-                            ui.label(label);
+                        appearance::group(ui, "", |ui| {
+                            for (index, label) in ["Title", "Author", "Group"].into_iter().enumerate() {
+                                ui.label(label);
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut self.sauce_fields[index])
+                                        .char_limit(if index == 0 { 35 } else { 20 })
+                                        .desired_width(f32::INFINITY),
+                                );
+                            }
+                            ui.label("Comments");
                             ui.add(
-                                egui::TextEdit::singleline(&mut self.sauce_fields[index])
-                                    .char_limit(if index == 0 { 35 } else { 20 })
-                                    .desired_width(f32::INFINITY),
+                                egui::TextEdit::multiline(&mut self.sauce_fields[3])
+                                    .desired_width(f32::INFINITY)
+                                    .desired_rows(5),
                             );
-                        }
-                        ui.label("Comments");
-                        ui.add(
-                            egui::TextEdit::multiline(&mut self.sauce_fields[3])
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(5),
-                        );
+                        });
                     });
-                    dialog.actions(|ui| {
-                        if ui.button("Apply").clicked() {
-                            let metadata = icy_engine::formats::SauceMetaData {
-                                title: self.sauce_fields[0].clone().into(),
-                                author: self.sauce_fields[1].clone().into(),
-                                group: self.sauce_fields[2].clone().into(),
-                                comments: self.sauce_fields[3].lines().map(|line| line.to_string().into()).collect(),
-                            };
-                            self.edit(|state| state.update_sauce_data(metadata));
-                            keep = false;
-                        }
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                    });
+                    dialog.buttons([
+                        DialogButton::cancel(labels::cancel(), Action::Cancel),
+                        DialogButton::primary("Apply", Action::Apply),
+                    ]);
                 });
-                keep &= !response.closed;
+                match response.action {
+                    Some(Action::Apply) => {
+                        let metadata = icy_engine::formats::SauceMetaData {
+                            title: self.sauce_fields[0].clone().into(),
+                            author: self.sauce_fields[1].clone().into(),
+                            group: self.sauce_fields[2].clone().into(),
+                            comments: self.sauce_fields[3].lines().map(|line| line.to_string().into()).collect(),
+                        };
+                        self.edit(|state| state.update_sauce_data(metadata));
+                        keep = false;
+                    }
+                    Some(Action::Cancel) => keep = false,
+                    None => keep &= !response.dismissed,
+                }
             }
             Dialog::Export => {
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Cancel,
+                    Export,
+                }
                 let formats = self
                     .document
                     .with_state(|state| FileFormat::save_formats_with_images_for_buffer_type(state.get_buffer().buffer_type));
-                let response = appearance::Dialog::new("export", "Export").show(context, |dialog| {
+                let response = appearance::Dialog::new("export").size(DialogSize::Medium).show(context, |dialog| {
                     dialog.content(|ui| {
-                        egui::ComboBox::from_id_salt("export-format")
-                            .selected_text(self.export_format.name())
-                            .show_ui(ui, |ui| {
-                                for format in formats {
-                                    ui.selectable_value(&mut self.export_format, format, format.name());
-                                }
-                            });
-                        ui.checkbox(&mut self.export_sauce, "SAUCE metadata");
-                        let settings = &mut self.settings.export_settings;
-                        if matches!(self.export_format, FileFormat::Ansi | FileFormat::AnsiMusic) {
-                            egui::ComboBox::from_id_salt("ansi-level")
-                                .selected_text(settings.ansi_level.to_string())
+                        appearance::group(ui, "", |ui| {
+                            egui::ComboBox::from_id_salt("export-format")
+                                .selected_text(self.export_format.name())
                                 .show_ui(ui, |ui| {
-                                    for &level in icy_engine::AnsiCompatibilityLevel::all() {
-                                        ui.selectable_value(&mut settings.ansi_level, level, level.to_string());
+                                    for format in formats {
+                                        ui.selectable_value(&mut self.export_format, format, format.name());
                                     }
                                 });
-                            ui.checkbox(&mut settings.ansi_rgb_output, "RGB colors");
-                            ui.horizontal(|ui| {
-                                ui.checkbox(&mut settings.max_line_length_enabled, "Limit line length");
-                                ui.add(egui::DragValue::new(&mut settings.max_line_length).range(1..=65535));
-                            });
-                        }
-                        egui::ComboBox::from_id_salt("screen-prep")
-                            .selected_text(settings.screen_prep.to_string())
-                            .show_ui(ui, |ui| {
-                                for &preparation in icy_engine::ScreenPreperation::all() {
-                                    ui.selectable_value(&mut settings.screen_prep, preparation, preparation.to_string());
-                                }
-                            });
-                        ui.checkbox(&mut settings.utf8_output, "UTF-8 output");
-                        ui.checkbox(&mut settings.compress, "Compression");
+                            ui.checkbox(&mut self.export_sauce, "SAUCE metadata");
+                            let settings = &mut self.settings.export_settings;
+                            if matches!(self.export_format, FileFormat::Ansi | FileFormat::AnsiMusic) {
+                                egui::ComboBox::from_id_salt("ansi-level")
+                                    .selected_text(settings.ansi_level.to_string())
+                                    .show_ui(ui, |ui| {
+                                        for &level in icy_engine::AnsiCompatibilityLevel::all() {
+                                            ui.selectable_value(&mut settings.ansi_level, level, level.to_string());
+                                        }
+                                    });
+                                ui.checkbox(&mut settings.ansi_rgb_output, "RGB colors");
+                                ui.horizontal(|ui| {
+                                    ui.checkbox(&mut settings.max_line_length_enabled, "Limit line length");
+                                    ui.add(egui::DragValue::new(&mut settings.max_line_length).range(1..=65535));
+                                });
+                            }
+                            egui::ComboBox::from_id_salt("screen-prep")
+                                .selected_text(settings.screen_prep.to_string())
+                                .show_ui(ui, |ui| {
+                                    for &preparation in icy_engine::ScreenPreperation::all() {
+                                        ui.selectable_value(&mut settings.screen_prep, preparation, preparation.to_string());
+                                    }
+                                });
+                            ui.checkbox(&mut settings.utf8_output, "UTF-8 output");
+                            ui.checkbox(&mut settings.compress, "Compression");
+                        });
                     });
-                    dialog.actions(|ui| {
-                        if ui.button("Export...").clicked() {
-                            self.choose(context, FileAction::Export(self.export_format));
-                            keep = false;
-                        }
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                    });
+                    dialog.buttons([
+                        DialogButton::cancel(labels::cancel(), Action::Cancel),
+                        DialogButton::primary("Export...", Action::Export),
+                    ]);
                 });
-                keep &= !response.closed;
+                match response.action {
+                    Some(Action::Export) => {
+                        self.choose(context, FileAction::Export(self.export_format));
+                        keep = false;
+                    }
+                    Some(Action::Cancel) => keep = false,
+                    None => keep &= !response.dismissed,
+                }
             }
             Dialog::Overwrite(path) => {
-                let response = appearance::Dialog::new("overwrite", "Replace File?").show(context, |dialog| {
-                    dialog.content(|ui| {
-                        ui.label(path.display().to_string());
-                    });
-                    dialog.actions(|ui| {
-                        if ui.button("Replace").clicked() {
-                            self.save_path(context, path.clone(), true);
-                            keep = false;
-                        }
-                        if ui.button("Cancel").clicked() {
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Cancel,
+                    Overwrite,
+                }
+                let response = MessageBox::new("overwrite", MessageKind::Warning, "Replace File?", path.display().to_string())
+                    .buttons([
+                        DialogButton::cancel(labels::cancel(), Action::Cancel),
+                        DialogButton::destructive(labels::overwrite(), Action::Overwrite),
+                    ])
+                    .show(context);
+                match response.action {
+                    Some(Action::Overwrite) => {
+                        self.save_path(context, path.clone(), true);
+                        keep = false;
+                    }
+                    Some(Action::Cancel) | None => {
+                        if response.action.is_some() || response.dismissed {
                             self.continue_after_save = false;
                             keep = false;
                         }
-                    });
-                });
-                if response.closed {
-                    self.continue_after_save = false;
-                    keep = false;
+                    }
                 }
             }
             Dialog::Inspector => {
-                let response = appearance::Dialog::new("inspector-dialog", "Inspector").show(context, |dialog| {
-                    dialog.content(|ui| self.inspector(ui));
-                    dialog.actions(|ui| {
-                        if ui.button("Close").clicked() {
-                            keep = false;
-                        }
-                    });
+                let response = appearance::Dialog::new("inspector-dialog").size(DialogSize::Medium).show(context, |dialog| {
+                    dialog.content(|ui| appearance::group(ui, "", |ui| self.inspector(ui)));
+                    dialog.buttons([DialogButton::primary(labels::close(), ()).cancels()]);
                 });
-                keep &= !response.closed && self.dialog.is_none();
+                keep &= response.action.is_none() && !response.dismissed && self.dialog.is_none();
             }
             Dialog::Characters | Dialog::FKeyCharacter(_, _) => {
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Cancel,
+                    Select,
+                }
                 let target = match dialog {
                     Dialog::FKeyCharacter(set, slot) => Some((set, slot)),
                     _ => None,
@@ -1941,36 +1977,42 @@ impl DrawApp {
                     }
                 }
                 let title = target.map_or("Characters".to_owned(), |(_, slot)| format!("Assign F{}", slot + 1));
-                let response = appearance::Dialog::new("characters", &title).max_width(500.0).show(context, |dialog| {
-                    dialog.content(|ui| {
-                        if let Some(font) = font {
-                            let size = (((context.content_rect().width() - 48.0).min(500.0) - 30.0) / 16.0).min(28.0);
-                            ui.scope(|ui| {
-                                ui.spacing_mut().item_spacing = egui::Vec2::splat(2.0);
-                                for row in 0..16 {
-                                    ui.horizontal(|ui| {
-                                        for column in 0..16 {
-                                            let character = char::from_u32(row * 16 + column).unwrap();
-                                            if widgets::glyph(ui, &font, character, character as u32 == cursor, size).clicked() {
-                                                chosen = Some(character);
-                                            }
+                let response = appearance::Dialog::new("characters")
+                    .size(DialogSize::Width(500.0))
+                    .scroll(false)
+                    .show(context, |dialog| {
+                        dialog.content(|ui| {
+                            appearance::group(ui, &title, |ui| {
+                                if let Some(font) = font {
+                                    let size = ((ui.available_width() - 30.0) / 16.0).min(28.0);
+                                    ui.scope(|ui| {
+                                        ui.spacing_mut().item_spacing = egui::Vec2::splat(2.0);
+                                        for row in 0..16 {
+                                            ui.horizontal(|ui| {
+                                                for column in 0..16 {
+                                                    let character = char::from_u32(row * 16 + column).unwrap();
+                                                    if widgets::glyph(ui, &font, character, character as u32 == cursor, size).clicked() {
+                                                        chosen = Some(character);
+                                                    }
+                                                }
+                                            });
                                         }
                                     });
                                 }
+                                ui.add_space(6.0);
+                                ui.weak(format!("{} / 0x{cursor:02X}", cursor));
                             });
-                        }
+                        });
+                        dialog.buttons([
+                            DialogButton::cancel(labels::cancel(), Action::Cancel),
+                            DialogButton::primary("Select", Action::Select),
+                        ]);
                     });
-                    dialog.actions(|ui| {
-                        ui.label(format!("{} / 0x{cursor:02X}", cursor));
-                        if ui.button("Select").clicked() {
-                            chosen = char::from_u32(cursor);
-                        }
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                    });
-                });
-                keep &= !response.closed;
+                match response.action {
+                    Some(Action::Select) => chosen = char::from_u32(cursor),
+                    Some(Action::Cancel) => keep = false,
+                    None => keep &= !response.dismissed,
+                }
                 if let Some(character) = chosen {
                     if let Some((set, slot)) = target {
                         self.settings.fkeys.set_code_at(set, slot, character as u16);
@@ -1991,126 +2033,138 @@ impl DrawApp {
                 }
             }
             Dialog::Error(error) => {
-                let response = appearance::Dialog::new("error", "Icy Draw").show(context, |dialog| {
-                    dialog.content(|ui| {
-                        ui.label(error);
-                    });
-                    dialog.actions(|ui| {
-                        if ui.button("OK").clicked() {
-                            keep = false;
-                        }
-                    });
-                });
-                keep &= !response.closed;
+                let response = MessageBox::new("error", MessageKind::Error, "Icy Draw", error)
+                    .copyable()
+                    .buttons([DialogButton::primary(labels::ok(), ()).cancels()])
+                    .show(context);
+                keep &= response.action.is_none() && !response.dismissed;
                 if !keep && self.font_editor.is_some() {
                     self.dialog = Some(Dialog::Font);
                 }
             }
             Dialog::New | Dialog::Resize => {
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Cancel,
+                    Confirm,
+                }
                 let resize = matches!(dialog, Dialog::Resize);
-                let response = appearance::Dialog::new("new", if resize { "Resize Document" } else { "New Document" }).show(context, |dialog| {
-                    dialog.content(|ui| {
-                        if !resize {
-                            egui::ComboBox::from_id_salt("new-kind")
-                                .selected_text(if self.new_bitmap {
-                                    "Bitmap Font".into()
-                                } else if self.new_animation {
-                                    "Animation".into()
-                                } else {
-                                    self.new_font_type.map_or("ANSI / ASCII".into(), |kind| format!("TheDraw {kind:?}"))
-                                })
-                                .show_ui(ui, |ui| {
-                                    if ui
-                                        .selectable_label(!self.new_bitmap && !self.new_animation && self.new_font_type.is_none(), "ANSI / ASCII")
-                                        .clicked()
-                                    {
-                                        self.new_bitmap = false;
-                                        self.new_animation = false;
-                                        self.new_font_type = None;
-                                    }
-                                    if ui.selectable_label(self.new_animation, "Animation").clicked() {
-                                        self.new_bitmap = false;
-                                        self.new_animation = true;
-                                    }
-                                    if ui.selectable_label(self.new_bitmap, "Bitmap Font").clicked() {
-                                        self.new_bitmap = true;
-                                        self.new_animation = false;
-                                    }
-                                    for kind in [
-                                        icy_engine_edit::charset::TdfFontType::Color,
-                                        icy_engine_edit::charset::TdfFontType::Block,
-                                        icy_engine_edit::charset::TdfFontType::Outline,
-                                    ] {
-                                        if ui
-                                            .selectable_label(
-                                                !self.new_bitmap && !self.new_animation && self.new_font_type == Some(kind),
-                                                format!("TheDraw {kind:?}"),
-                                            )
-                                            .clicked()
-                                        {
-                                            self.new_bitmap = false;
-                                            self.new_animation = false;
-                                            self.new_font_type = Some(kind);
-                                        }
-                                    }
-                                });
-                        }
-                        ui.add(egui::DragValue::new(&mut self.new_size[0]).range(1..=1000).prefix("Columns "));
-                        ui.add(egui::DragValue::new(&mut self.new_size[1]).range(1..=10000).prefix("Rows "));
+                let response = appearance::Dialog::new("new")
+                    .size(DialogSize::Medium)
+                    .confirm_on_enter(true)
+                    .show(context, |dialog| {
+                        dialog.content(|ui| {
+                            appearance::group(ui, if resize { "Resize Document" } else { "New Document" }, |ui| {
+                                if !resize {
+                                    egui::ComboBox::from_id_salt("new-kind")
+                                        .selected_text(if self.new_bitmap {
+                                            "Bitmap Font".into()
+                                        } else if self.new_animation {
+                                            "Animation".into()
+                                        } else {
+                                            self.new_font_type.map_or("ANSI / ASCII".into(), |kind| format!("TheDraw {kind:?}"))
+                                        })
+                                        .show_ui(ui, |ui| {
+                                            if ui
+                                                .selectable_label(!self.new_bitmap && !self.new_animation && self.new_font_type.is_none(), "ANSI / ASCII")
+                                                .clicked()
+                                            {
+                                                self.new_bitmap = false;
+                                                self.new_animation = false;
+                                                self.new_font_type = None;
+                                            }
+                                            if ui.selectable_label(self.new_animation, "Animation").clicked() {
+                                                self.new_bitmap = false;
+                                                self.new_animation = true;
+                                            }
+                                            if ui.selectable_label(self.new_bitmap, "Bitmap Font").clicked() {
+                                                self.new_bitmap = true;
+                                                self.new_animation = false;
+                                            }
+                                            for kind in [
+                                                icy_engine_edit::charset::TdfFontType::Color,
+                                                icy_engine_edit::charset::TdfFontType::Block,
+                                                icy_engine_edit::charset::TdfFontType::Outline,
+                                            ] {
+                                                if ui
+                                                    .selectable_label(
+                                                        !self.new_bitmap && !self.new_animation && self.new_font_type == Some(kind),
+                                                        format!("TheDraw {kind:?}"),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    self.new_bitmap = false;
+                                                    self.new_animation = false;
+                                                    self.new_font_type = Some(kind);
+                                                }
+                                            }
+                                        });
+                                }
+                                ui.add(egui::DragValue::new(&mut self.new_size[0]).range(1..=1000).prefix("Columns "));
+                                ui.add(egui::DragValue::new(&mut self.new_size[1]).range(1..=10000).prefix("Rows "));
+                            });
+                        });
+                        dialog.buttons([
+                            DialogButton::cancel(labels::cancel(), Action::Cancel),
+                            DialogButton::primary(if resize { "Resize" } else { "Create" }, Action::Confirm),
+                        ]);
                     });
-                    dialog.actions(|ui| {
-                        if ui.button(if resize { "Resize" } else { "Create" }).clicked() {
-                            let size = Size::new(self.new_size[0], self.new_size[1]);
-                            if resize {
-                                self.edit(|state| state.resize_buffer(true, size));
-                            } else if self.new_bitmap {
-                                self.font_editor = Some(super::font::FontEditor::new(icy_engine::BitFont::create_8("Untitled", 8, 16, &[0; 4096])));
-                                self.dialog = Some(Dialog::Font);
-                            } else if self.new_animation {
-                                self.replace(Document::new(size));
-                                self.animation = Some(super::animation::AnimationEditor::new());
-                            } else if let Some(kind) = self.new_font_type {
-                                let font = icy_draw::charfont::CharFontDocument::new(kind);
-                                self.replace(font.document());
-                                self.charfont = Some(font);
-                            } else {
-                                self.replace(Document::new(size));
-                            }
-                            keep = false;
+                match response.action {
+                    Some(Action::Confirm) => {
+                        let size = Size::new(self.new_size[0], self.new_size[1]);
+                        if resize {
+                            self.edit(|state| state.resize_buffer(true, size));
+                        } else if self.new_bitmap {
+                            self.font_editor = Some(super::font::FontEditor::new(icy_engine::BitFont::create_8("Untitled", 8, 16, &[0; 4096])));
+                            self.dialog = Some(Dialog::Font);
+                        } else if self.new_animation {
+                            self.replace(Document::new(size));
+                            self.animation = Some(super::animation::AnimationEditor::new());
+                        } else if let Some(kind) = self.new_font_type {
+                            let font = icy_draw::charfont::CharFontDocument::new(kind);
+                            self.replace(font.document());
+                            self.charfont = Some(font);
+                        } else {
+                            self.replace(Document::new(size));
                         }
-                        if ui.button("Cancel").clicked() {
-                            keep = false;
-                        }
-                    });
-                });
-                keep &= !response.closed;
+                        keep = false;
+                    }
+                    Some(Action::Cancel) => keep = false,
+                    None => keep &= !response.dismissed,
+                }
             }
             Dialog::Close => {
-                let response = appearance::Dialog::new("close", "Unsaved Changes").show(context, |dialog| {
-                    dialog.content(|ui| {
-                        ui.label("Save changes before closing this document?");
-                    });
-                    dialog.actions(|ui| {
-                        if ui.button("Save").clicked() {
-                            self.continue_after_save = true;
-                            self.save(context, false);
-                            keep = false;
-                        }
-                        if ui.button("Discard").clicked() {
-                            self.complete_close(context);
-                            keep = false;
-                        }
-                        if ui.button("Cancel").clicked() {
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Discard,
+                    Cancel,
+                    Save,
+                }
+                let response = MessageBox::new("close", MessageKind::Question, "Unsaved Changes", "Save changes before closing this document?")
+                    .buttons([
+                        DialogButton::destructive("Discard", Action::Discard).leading(),
+                        DialogButton::cancel(labels::cancel(), Action::Cancel),
+                        DialogButton::primary("Save", Action::Save),
+                    ])
+                    .show(context);
+                match response.action {
+                    Some(Action::Save) => {
+                        self.continue_after_save = true;
+                        self.save(context, false);
+                        keep = false;
+                    }
+                    Some(Action::Discard) => {
+                        self.complete_close(context);
+                        keep = false;
+                    }
+                    Some(Action::Cancel) | None => {
+                        if response.action.is_some() || response.dismissed {
                             self.quitting = false;
                             self.pending = None;
+                            self.continue_after_save = false;
                             keep = false;
                         }
-                    });
-                });
-                if response.closed {
-                    self.quitting = false;
-                    self.pending = None;
-                    keep = false;
+                    }
                 }
             }
         }

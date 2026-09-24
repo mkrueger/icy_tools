@@ -324,7 +324,21 @@ async fn gpu_remaining_dialogs_fit_viewport() {
     let mut harness = Harness::new().await;
     for (theme, theme_name) in [(egui::ThemePreference::Dark, "dark"), (egui::ThemePreference::Light, "light")] {
         harness.context.set_theme(theme);
-        for name in ["monitor", "live-terminal", "lua", "iemsi", "about", "help", "bps", "link", "close", "transfer"] {
+        for name in [
+            "monitor",
+            "live-terminal",
+            "serial",
+            "lua",
+            "iemsi",
+            "about",
+            "help",
+            "bps",
+            "link",
+            "close",
+            "transfer",
+            "save-screen",
+            "capture",
+        ] {
             let mut app = TerminalApp::new(TextScreen::default(), "Icy Term".into());
             let footer = match name {
                 "monitor" => {
@@ -333,7 +347,11 @@ async fn gpu_remaining_dialogs_fit_viewport() {
                 }
                 "live-terminal" => {
                     app.tools.terminal = Some(icy_term::Address::default());
-                    tr!("egui-discard")
+                    tr!("egui-cancel")
+                }
+                "serial" => {
+                    app.tools.serial_open = true;
+                    tr!("dialing_directory-connect-button")
                 }
                 "lua" => {
                     app.tools.script_code = Some("print('Icy Term')".into());
@@ -375,6 +393,14 @@ async fn gpu_remaining_dialogs_fit_viewport() {
                     app.transfers.choose(true);
                     tr!("egui-close")
                 }
+                "save-screen" => {
+                    app.save_screen = Some(export::SaveScreen::new(""));
+                    tr!("egui-save")
+                }
+                "capture" => {
+                    app.capture = Some(export::Capture::new("", false));
+                    tr!("egui-capture-start")
+                }
                 _ => unreachable!(),
             };
             for (size, scale, viewport) in [
@@ -384,10 +410,40 @@ async fn gpu_remaining_dialogs_fit_viewport() {
                 ([360, 240], 1.0, "short"),
             ] {
                 harness.capture(&mut app, size, scale, vec![], "dialog-warmup");
+                if name == "serial" && viewport == "desktop" {
+                    harness.capture(&mut app, size, scale, vec![], "dialog-warmup");
+                }
                 harness.capture(&mut app, size, scale, vec![], &format!("{theme_name}-{viewport}-{name}"));
                 assert!(harness.controls.contains_key(&footer), "missing {footer}: {theme_name}-{viewport}-{name}");
                 let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(size[0] as f32 / scale, size[1] as f32 / scale));
                 assert!(screen.contains_rect(harness.text_bounds[&footer]), "footer outside viewport: {name}");
+                if matches!(name, "serial" | "live-terminal" | "save-screen" | "capture") && viewport == "desktop" {
+                    let former_title = match name {
+                        "serial" => tr!("egui-serial-connection"),
+                        "live-terminal" => tr!("egui-terminal-settings"),
+                        "save-screen" => tr!("egui-save-screen").trim_end_matches("...").to_owned(),
+                        _ => tr!("egui-captures"),
+                    };
+                    assert!(!harness.controls.contains_key(&former_title), "redundant dialog title: {name}");
+                    let first_field = match name {
+                        "serial" => tr!("settings-modem-device"),
+                        "live-terminal" => tr!("egui-terminal-emulation"),
+                        "save-screen" => tr!("egui-format"),
+                        _ => tr!("settings-paths-download-dir"),
+                    };
+                    let field = harness.text_bounds.get(&first_field).unwrap_or_else(|| panic!("missing {first_field}: {name}"));
+                    assert!(field.bottom() < harness.text_bounds[&footer].top(), "form overlaps footer: {name}");
+                    if name == "serial" {
+                        let last_field = tr!("settings-modem-flow_control");
+                        assert!(
+                            harness
+                                .text_bounds
+                                .get(&last_field)
+                                .is_some_and(|field| field.bottom() < harness.text_bounds[&footer].top()),
+                            "serial fields are clipped: {theme_name}"
+                        );
+                    }
+                }
                 if name == "bps" && viewport == "desktop" {
                     assert!(
                         harness.controls.contains_key(&tr!("select-bps-dialog-bps-custom")),
@@ -462,12 +518,7 @@ async fn gpu_terminal_information_layout() {
         ] {
             harness.capture(&mut app, size, scale, vec![], "info-warmup");
             harness.capture(&mut app, size, scale, vec![], &format!("{theme_name}-{name}-terminal-info"));
-            for label in [
-                tr!("terminal-menu-info"),
-                tr!("egui-close"),
-                tr!("terminal-info-dialog-apply-button"),
-                tr!("terminal-menu-copy"),
-            ] {
+            for label in [tr!("egui-close"), tr!("terminal-info-dialog-apply-button"), tr!("terminal-menu-copy")] {
                 assert!(harness.controls.contains_key(&label), "missing {label}: {name}");
             }
             if name == "desktop" {
@@ -588,7 +639,7 @@ async fn gpu_overlays_and_shortcut_actions() {
     );
 
     // Shortcuts open the shared dialogs and list the same keys as the command table.
-    for (action, expected) in [(hotkeys::Action::Help, tr!("help-title")), (hotkeys::Action::About, "Icy Term".to_string())] {
+    for (action, expected) in [(hotkeys::Action::Help, tr!("help-title")), (hotkeys::Action::About, tr!("egui-close"))] {
         app.shortcut(action, &harness.context.clone());
         harness.capture(&mut app, [360, 640], 1.0, vec![], "overlay-dialog-warmup");
         harness.capture(&mut app, [360, 640], 1.0, vec![], &format!("overlay-{action:?}"));
@@ -654,7 +705,7 @@ async fn gpu_ui_themes_and_text_layout() {
             app.preferences.as_mut().unwrap().page = settings::Page::Terminal;
             harness.capture(&mut app, size, scale, vec![], "form-warmup");
             harness.capture(&mut app, size, scale, vec![], &format!("{name}-{viewport}-form"));
-            let labels = [
+            let mut labels = vec![
                 tr!("egui-connect-timeout"),
                 tr!("egui-scrollback-lines"),
                 tr!("egui-cursor"),
@@ -664,14 +715,17 @@ async fn gpu_ui_themes_and_text_layout() {
                 "Block".into(),
                 tr!("egui-system"),
                 tr!("settings-terminal-invert-mouse-wheel"),
-                tr!("settings-terminal-cursor-blinking"),
-                tr!("egui-save"),
-                tr!("egui-discard"),
+                icy_engine_gui::LANGUAGE_LOADER.get("dialog-ok-button"),
+                tr!("egui-cancel"),
             ];
+            // Narrow windows stack the form rows, so the cursor options scroll below the fold.
+            if viewport != "narrow" {
+                labels.push(tr!("settings-terminal-cursor-blinking"));
+            }
             for (index, label) in labels.iter().enumerate() {
                 let bounds = harness.text_bounds.get(label).unwrap_or_else(|| panic!("Missing {label} in {name}-{viewport}"));
                 for other in &labels[index + 1..] {
-                    let other_bounds = harness.text_bounds.get(other).unwrap();
+                    let other_bounds = harness.text_bounds.get(other).unwrap_or_else(|| panic!("Missing {other} in {name}-{viewport}"));
                     assert!(!bounds.shrink(1.0).intersects(*other_bounds), "{label} overlaps {other}: {name}-{viewport}");
                 }
             }
@@ -794,6 +848,7 @@ async fn gpu_navigation_and_session_dialogs() {
         ([360, 240], 1.0, "short"),
     ] {
         for page in [
+            settings::Page::Monitor,
             settings::Page::Terminal,
             settings::Page::Audio,
             settings::Page::Paths,
@@ -807,7 +862,7 @@ async fn gpu_navigation_and_session_dialogs() {
             harness.capture(&mut app, size, scale, vec![], "settings-warmup");
             harness.capture(&mut app, size, scale, vec![], &format!("{prefix}-settings-{page:?}"));
             assert!(
-                harness.controls.contains_key(&*tr!("egui-save")) && harness.controls.contains_key(&*tr!("egui-discard")),
+                harness.controls.contains_key(&icy_engine_gui::LANGUAGE_LOADER.get("dialog-ok-button")) && harness.controls.contains_key(&*tr!("egui-cancel")),
                 "Missing settings actions {prefix} {page:?}"
             );
         }

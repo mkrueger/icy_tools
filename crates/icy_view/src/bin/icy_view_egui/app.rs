@@ -156,18 +156,11 @@ impl Viewer {
         self.dialogs.show(context, &mut self.options, &mut self.preview);
         if self.dialogs.mode.is_none() {
             if let Some(error) = self.dialogs.error.clone().or_else(|| self.browser.error.clone()) {
-                let mut close = context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
-                let response = appearance::Dialog::new("viewer-error", text("preview-error-title"))
-                    .max_width(520.0)
-                    .show(context, |dialog| {
-                        dialog.content(|ui| {
-                            ui.add(egui::Label::new(error).wrap().selectable(true));
-                        });
-                        dialog.actions(|ui| {
-                            close |= ui.add(appearance::primary_button(text("dialog-close-button"))).clicked();
-                        });
-                    });
-                if close || response.closed {
+                let response = appearance::MessageBox::new("viewer-error", appearance::MessageKind::Error, text("preview-error-title"), error)
+                    .copyable()
+                    .buttons([appearance::DialogButton::primary(appearance::labels::close(), ()).cancels()])
+                    .show(context);
+                if response.action.is_some() || response.dismissed {
                     self.dialogs.error = None;
                     self.browser.error = None;
                 }

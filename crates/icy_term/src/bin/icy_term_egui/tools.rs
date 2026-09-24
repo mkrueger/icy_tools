@@ -1,6 +1,8 @@
 use eframe::egui;
 use icy_term::{TerminalCommand, TerminalEvent};
 
+use super::appearance::{self, Dialog, DialogButton, DialogSize};
+
 #[derive(Default)]
 pub struct Tools {
     pub serial_open: bool,
@@ -101,112 +103,95 @@ impl Tools {
 
     pub fn show(&mut self, context: &egui::Context) -> Vec<TerminalCommand> {
         if let Some(profile) = &mut self.terminal {
-            let mut close = false;
-            egui::Modal::new(egui::Id::new("live-terminal-settings"))
-                .frame(super::appearance::dialog_frame(context))
-                .show(context, |ui| {
-                    ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 560.0));
-                    close |= super::appearance::dialog_header(ui, &tr!("egui-terminal-settings"));
-                    egui::ScrollArea::vertical()
-                        .max_height((context.content_rect().height() - 180.0).max(80.0))
-                        .show(ui, |ui| {
-                            super::dialing_directory::profile_editor::terminal(ui, profile);
-                            ui.separator();
-                            super::dialing_directory::profile_editor::colors(ui, profile);
-                        });
-                    ui.separator();
-                    ui.horizontal_wrapped(|ui| {
-                        if ui.add(super::appearance::primary_button(tr!("egui-apply-reset"))).clicked() {
-                            self.commands.push(TerminalCommand::SetTerminalProfile {
-                                profile: profile.clone(),
-                                scrollback: self.scrollback,
-                            });
-                            close = true;
-                        }
-                        if ui.button(&*tr!("egui-discard")).clicked() {
-                            close = true;
-                        }
+            let response = Dialog::new("live-terminal-settings").size(DialogSize::Large).show(context, |dialog| {
+                dialog.content(|ui| {
+                    appearance::group(ui, &tr!("settings-terminal-category"), |ui| {
+                        super::dialing_directory::profile_editor::terminal(ui, profile);
+                    });
+                    appearance::group(ui, &tr!("egui-colors"), |ui| {
+                        super::dialing_directory::profile_editor::colors(ui, profile);
                     });
                 });
-            if close {
+                dialog.buttons([
+                    DialogButton::cancel(tr!("egui-cancel"), false),
+                    DialogButton::primary(tr!("egui-apply-reset"), true),
+                ]);
+            });
+            if response.action == Some(true) {
+                self.commands.push(TerminalCommand::SetTerminalProfile {
+                    profile: profile.clone(),
+                    scrollback: self.scrollback,
+                });
+            }
+            if response.action.is_some() || response.dismissed {
                 self.terminal = None;
             }
         }
         if self.serial_open {
-            egui::Modal::new(egui::Id::new("serial"))
-                .frame(super::appearance::dialog_frame(context))
-                .show(context, |ui| {
-                    ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 480.0));
-                    if super::appearance::dialog_header(ui, &tr!("egui-serial-connection")) {
-                        self.serial_open = false;
-                    }
-                    egui::ScrollArea::vertical()
-                        .max_height((context.content_rect().height() - 160.0).max(80.0))
-                        .show(ui, |ui| {
-                            super::settings::serial_fields(ui, &mut self.serial);
-                        });
-                    ui.separator();
-                    ui.horizontal_wrapped(|ui| {
-                        if ui
-                            .add_enabled(
-                                !self.serial.device.trim().is_empty(),
-                                super::appearance::primary_button(tr!("dialing_directory-connect-button")),
-                            )
-                            .clicked()
-                        {
-                            self.commands.push(TerminalCommand::OpenSerial(self.serial.clone()));
-                            self.serial_open = false;
-                        }
-                        if ui
-                            .add_enabled(!self.serial.device.trim().is_empty(), egui::Button::new(&*tr!("egui-detect-baud")))
-                            .clicked()
-                        {
-                            self.commands.push(TerminalCommand::AutoDetectSerial(self.serial.clone()));
-                            self.serial_open = false;
-                        }
-                        if ui.button(&*tr!("egui-cancel")).clicked() {
-                            self.serial_open = false;
-                        }
+            #[derive(Clone, Copy)]
+            enum Serial {
+                Detect,
+                Cancel,
+                Connect,
+            }
+            let response = Dialog::new("serial").size(DialogSize::Medium).confirm_on_enter(true).show(context, |dialog| {
+                dialog.content(|ui| {
+                    appearance::group(ui, "", |ui| {
+                        super::settings::serial_fields(ui, &mut self.serial);
                     });
                 });
+                let device = !self.serial.device.trim().is_empty();
+                dialog.buttons([
+                    DialogButton::secondary(tr!("egui-detect-baud"), Serial::Detect).leading().enabled(device),
+                    DialogButton::cancel(tr!("egui-cancel"), Serial::Cancel),
+                    DialogButton::primary(tr!("dialing_directory-connect-button"), Serial::Connect).enabled(device),
+                ]);
+            });
+            match response.action {
+                Some(Serial::Detect) => self.commands.push(TerminalCommand::AutoDetectSerial(self.serial.clone())),
+                Some(Serial::Connect) => self.commands.push(TerminalCommand::OpenSerial(self.serial.clone())),
+                _ => {}
+            }
+            if response.action.is_some() || response.dismissed {
+                self.serial_open = false;
+            }
         }
         if let Some(code) = &mut self.script_code {
-            let mut close = false;
-            egui::Modal::new(egui::Id::new("script"))
-                .frame(super::appearance::dialog_frame(context))
-                .show(context, |ui| {
-                    ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 680.0));
-                    close |= super::appearance::dialog_header(ui, &tr!("egui-lua-console"));
-                    egui::ScrollArea::vertical()
-                        .max_height((context.content_rect().height() - 180.0).max(80.0))
-                        .show(ui, |ui| {
-                            ui.add(egui::TextEdit::multiline(code).code_editor().desired_rows(14).desired_width(f32::INFINITY));
-                            if let Some(result) = &self.script_result {
-                                ui.separator();
-                                ui.add(egui::Label::new(result).wrap());
-                            }
-                        });
-                    ui.separator();
-                    ui.horizontal_wrapped(|ui| {
-                        if ui
-                            .add_enabled(
-                                !self.script_running && !code.trim().is_empty(),
-                                super::appearance::primary_button(tr!("egui-run")),
-                            )
-                            .clicked()
-                        {
-                            self.commands.push(TerminalCommand::RunScriptCode(code.clone()));
-                            self.script_running = true;
-                        }
-                        if self.script_running && ui.button(&*tr!("egui-stop")).clicked() {
-                            self.commands.push(TerminalCommand::StopScript);
-                        }
-                        if ui.button(&*tr!("egui-close")).clicked() {
-                            close = true;
+            #[derive(Clone, Copy)]
+            enum Script {
+                Stop,
+                Close,
+                Run,
+            }
+            let running = self.script_running;
+            let result = self.script_result.as_deref();
+            let response = Dialog::new("script").size(DialogSize::Large).show(context, |dialog| {
+                dialog.content(|ui| {
+                    appearance::group(ui, "", |ui| {
+                        ui.add(egui::TextEdit::multiline(code).code_editor().desired_rows(14).desired_width(f32::INFINITY));
+                        if let Some(result) = result {
+                            ui.add_space(6.0);
+                            ui.add(egui::Label::new(egui::RichText::new(result).weak()).wrap());
                         }
                     });
                 });
-            if close {
+                let mut buttons = Vec::new();
+                if running {
+                    buttons.push(DialogButton::secondary(tr!("egui-stop"), Script::Stop).leading());
+                }
+                buttons.push(DialogButton::cancel(tr!("egui-close"), Script::Close));
+                buttons.push(DialogButton::primary(tr!("egui-run"), Script::Run).enabled(!running && !code.trim().is_empty()));
+                dialog.buttons(buttons);
+            });
+            match response.action {
+                Some(Script::Stop) => self.commands.push(TerminalCommand::StopScript),
+                Some(Script::Run) => {
+                    self.commands.push(TerminalCommand::RunScriptCode(code.clone()));
+                    self.script_running = true;
+                }
+                _ => {}
+            }
+            if matches!(response.action, Some(Script::Close)) || response.dismissed {
                 self.script_code = None;
             }
         }
@@ -236,29 +221,23 @@ impl Tools {
 }
 
 fn information(context: &egui::Context, id: &str, title: String, open: &mut bool, fields: &[(String, String)]) {
-    egui::Modal::new(egui::Id::new(id))
-        .frame(super::appearance::dialog_frame(context))
-        .show(context, |ui| {
-            ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 480.0));
-            if super::appearance::dialog_header(ui, &title) {
-                *open = false;
-            }
-            egui::ScrollArea::vertical()
-                .max_height((context.content_rect().height() - 140.0).max(60.0))
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 5.0;
-                    for (name, value) in fields {
-                        super::appearance::value_row(ui, name, value);
-                    }
-                });
-            ui.separator();
-            ui.horizontal_wrapped(|ui| {
-                if ui.button(tr!("terminal-menu-copy")).clicked() {
-                    context.copy_text(fields.iter().map(|(name, value)| format!("{name}: {value}")).collect::<Vec<_>>().join("\n"));
-                }
-                if ui.button(tr!("egui-close")).clicked() {
-                    *open = false;
+    let response = Dialog::new(id).size(DialogSize::Medium).show(context, |dialog| {
+        dialog.content(|ui| {
+            appearance::group(ui, &title, |ui| {
+                for (name, value) in fields {
+                    appearance::value_row(ui, name, value);
                 }
             });
         });
+        dialog.buttons([
+            DialogButton::secondary(tr!("terminal-menu-copy"), false).leading(),
+            DialogButton::primary(tr!("egui-close"), true).cancels(),
+        ]);
+    });
+    match response.action {
+        Some(false) => context.copy_text(fields.iter().map(|(name, value)| format!("{name}: {value}")).collect::<Vec<_>>().join("\n")),
+        Some(true) => *open = false,
+        None if response.dismissed => *open = false,
+        None => {}
+    }
 }

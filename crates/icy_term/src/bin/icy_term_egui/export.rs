@@ -72,41 +72,41 @@ impl SaveScreen {
     /// Returns the destination and its extension once the user confirms.
     pub fn show(&mut self, context: &egui::Context, open: &mut bool) -> Option<(PathBuf, &'static str)> {
         let mut accepted = None;
-        let mut close = false;
-        let response = appearance::Dialog::new("save-screen", tr!("egui-save-screen").trim_end_matches("...").to_owned())
-            .max_width(520.0)
+        let response = appearance::Dialog::new("save-screen")
+            .size(appearance::DialogSize::Medium)
+            .confirm_on_enter(true)
             .show(context, |dialog| {
                 dialog.content(|ui| {
-                    let (name, extension) = FORMATS[self.format];
-                    appearance::combo_row(ui, &tr!("egui-format"), format!("{name} (.{extension})"), |ui| {
-                        for (index, (name, extension)) in FORMATS.iter().enumerate() {
-                            if ui.selectable_label(self.format == index, format!("{name} (.{extension})")).clicked() {
-                                self.format = index;
-                                self.file = with_extension(&self.file, extension);
+                    appearance::group(ui, "", |ui| {
+                        let (name, extension) = FORMATS[self.format];
+                        appearance::combo_row(ui, &tr!("egui-format"), format!("{name} (.{extension})"), |ui| {
+                            for (index, (name, extension)) in FORMATS.iter().enumerate() {
+                                if ui.selectable_label(self.format == index, format!("{name} (.{extension})")).clicked() {
+                                    self.format = index;
+                                    self.file = with_extension(&self.file, extension);
+                                }
                             }
-                        }
+                        });
+                        destination_rows(ui, &mut self.directory, &mut self.file);
                     });
-                    destination_rows(ui, &mut self.directory, &mut self.file);
                     if self.confirm {
-                        ui.add_space(6.0);
                         ui.colored_label(ui.visuals().warn_fg_color, &*tr!("egui-overwrite-question"));
                     }
                 });
-                dialog.actions(|ui| {
-                    let label = if self.confirm { tr!("egui-overwrite") } else { tr!("egui-save") };
-                    if ui.add_enabled(!self.file.trim().is_empty(), appearance::primary_button(label)).clicked() && !ui.ctx().will_discard() {
-                        if self.target().exists() && !self.confirm {
-                            self.confirm = true;
-                        } else {
-                            accepted = Some((self.target(), FORMATS[self.format].1));
-                        }
-                    }
-                    if ui.button(&*tr!("egui-cancel")).clicked() {
-                        close = true;
-                    }
-                });
+                let enabled = !self.file.trim().is_empty();
+                let save = if self.confirm {
+                    appearance::DialogButton::destructive(tr!("egui-overwrite"), true)
+                } else {
+                    appearance::DialogButton::primary(tr!("egui-save"), true)
+                };
+                dialog.buttons([appearance::DialogButton::cancel(tr!("egui-cancel"), false), save.enabled(enabled)]);
             });
-        if close || response.closed || accepted.is_some() {
+        match response.action {
+            Some(true) if self.target().exists() && !self.confirm => self.confirm = true,
+            Some(true) => accepted = Some((self.target(), FORMATS[self.format].1)),
+            _ => {}
+        }
+        if response.action == Some(false) || response.dismissed || accepted.is_some() {
             *open = false;
         }
         accepted
@@ -131,39 +131,31 @@ impl Capture {
     /// Returns the destination when the capture should start.
     pub fn show(&mut self, context: &egui::Context, open: &mut bool) -> Option<PathBuf> {
         let mut started = None;
-        let mut close = false;
-        let response = appearance::Dialog::new("capture", tr!("egui-captures"))
-            .max_width(520.0)
-            .show(context, |dialog| {
-                dialog.content(|ui| {
-                    if self.running {
-                        ui.horizontal(|ui| {
-                            appearance::status_badge(ui, &tr!("egui-recording"), ui.visuals().error_fg_color);
-                        });
-                        ui.add_space(8.0);
-                    }
+        let response = appearance::Dialog::new("capture").size(appearance::DialogSize::Medium).show(context, |dialog| {
+            dialog.content(|ui| {
+                if self.running {
+                    ui.horizontal(|ui| {
+                        appearance::status_badge(ui, &tr!("egui-recording"), ui.visuals().error_fg_color);
+                    });
+                    ui.add_space(8.0);
+                }
+                appearance::group(ui, "", |ui| {
                     ui.add_enabled_ui(!self.running, |ui| {
                         destination_rows(ui, &mut self.directory, &mut self.file);
                     });
                 });
-                dialog.actions(|ui| {
-                    if self.running {
-                        if ui.add(appearance::primary_button(tr!("toolbar-stop-capture"))).clicked() {
-                            close = true;
-                        }
-                    } else if ui
-                        .add_enabled(!self.file.trim().is_empty(), appearance::primary_button(tr!("egui-capture-start")))
-                        .clicked()
-                        && !ui.ctx().will_discard()
-                    {
-                        started = Some(Path::new(&self.directory).join(&self.file));
-                    }
-                    if ui.button(&*tr!("egui-close")).clicked() {
-                        close = true;
-                    }
-                });
             });
-        if close || response.closed || started.is_some() {
+            let action = if self.running {
+                appearance::DialogButton::primary(tr!("toolbar-stop-capture"), true)
+            } else {
+                appearance::DialogButton::primary(tr!("egui-capture-start"), true).enabled(!self.file.trim().is_empty())
+            };
+            dialog.buttons([appearance::DialogButton::cancel(tr!("egui-close"), false), action]);
+        });
+        if response.action == Some(true) && !self.running {
+            started = Some(Path::new(&self.directory).join(&self.file));
+        }
+        if response.action.is_some() || response.dismissed {
             *open = false;
         }
         started

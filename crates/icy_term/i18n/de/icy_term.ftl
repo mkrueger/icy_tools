@@ -37,6 +37,7 @@ settings-terminal-general-section = Allgemein
 settings-terminal-console-beep-checkbox = Konsolen-Signalton
 settings-terminal-open-settings-dir-button = Einstellungsverzeichnis öffnen
 settings-terminal-dial-tone = Wählton
+settings-terminal-cursor-shape = Cursorform
 settings-terminal-scrollback-lines = Scrollback
 settings-terminal-scrollback-lines-unit = Zeilen
 

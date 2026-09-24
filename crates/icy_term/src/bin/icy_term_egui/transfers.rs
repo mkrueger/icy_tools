@@ -4,6 +4,8 @@ use eframe::egui;
 use icy_net::protocol::{OutputLogMessage, TransferInformation, TransferState};
 use icy_term::{Options, TerminalCommand, TerminalEvent, TransferProtocol};
 
+use super::appearance::{Dialog, DialogButton};
+
 /// The dialog keeps these measurements no matter what the transfer reports, so it never jumps around.
 const DIALOG_WIDTH: f32 = 560.0;
 const BODY_HEIGHT: f32 = 330.0;
@@ -458,82 +460,86 @@ impl Transfers {
                 self.choose_files(protocol, options);
             }
         }
+        #[derive(Clone, Copy)]
+        enum Transfer {
+            OpenFolder,
+            Close,
+            ChooseFiles,
+            CancelTransfer,
+        }
         let title = if self.download { tr!("transfer-download") } else { tr!("transfer-upload") };
         let finished = self.state.as_ref().is_some_and(|state| state.is_finished) || (!self.active && self.result.is_some());
-        let response = super::appearance::Dialog::new("transfer", format!("{} {title}", if self.download { "\u{2193}" } else { "\u{2191}" }))
-            .max_width(DIALOG_WIDTH)
-            .show(context, |dialog| {
-                dialog.content(|ui| {
-                    let width = ui.available_width();
-                    // Everything below lives in a fixed box, so a finishing transfer cannot resize the dialog.
-                    ui.allocate_ui(egui::vec2(width, BODY_HEIGHT), |ui| {
-                        ui.set_min_size(egui::vec2(width, BODY_HEIGHT));
-                        ui.horizontal(|ui| {
-                            ui.set_min_height(20.0);
-                            if self.state.is_some() || self.active || self.result.is_some() {
-                                let (label, color) = if finished {
-                                    (tr!("transfer-status-complete"), SUCCESS)
-                                } else {
-                                    (tr!("transfer-status-active"), ui.visuals().selection.stroke.color)
-                                };
-                                super::appearance::status_badge(ui, &label, color);
-                                if self.remote_request {
-                                    super::appearance::chip(ui, &tr!("egui-transfer-automatic"), ui.visuals().selection.stroke.color);
-                                }
+        let response = Dialog::new("transfer").max_width(DIALOG_WIDTH).show(context, |dialog| {
+            dialog.content(|ui| {
+                super::appearance::section(ui, &format!("{} {title}", if self.download { "\u{2193}" } else { "\u{2191}" }));
+                let width = ui.available_width();
+                // Everything below lives in a fixed box, so a finishing transfer cannot resize the dialog.
+                ui.allocate_ui(egui::vec2(width, BODY_HEIGHT), |ui| {
+                    ui.set_min_size(egui::vec2(width, BODY_HEIGHT));
+                    ui.horizontal(|ui| {
+                        ui.set_min_height(20.0);
+                        if self.state.is_some() || self.active || self.result.is_some() {
+                            let (label, color) = if finished {
+                                (tr!("transfer-status-complete"), SUCCESS)
+                            } else {
+                                (tr!("transfer-status-active"), ui.visuals().selection.stroke.color)
+                            };
+                            super::appearance::status_badge(ui, &label, color);
+                            if self.remote_request {
+                                super::appearance::chip(ui, &tr!("egui-transfer-automatic"), ui.visuals().selection.stroke.color);
                             }
-                        });
-                        ui.add_space(10.0);
-                        if let Some(state) = self.state.clone() {
-                            self.progress_view(ui, &state);
-                            self.note_view(ui, true);
-                        } else if self.active || self.result.is_some() {
-                            self.status_view(ui);
-                            self.note_view(ui, false);
-                        } else {
-                            self.protocol_view(ui, options);
-                            self.note_view(ui, false);
                         }
                     });
-                    if self.active {
-                        context.request_repaint_after(std::time::Duration::from_millis(250));
-                    }
-                });
-                dialog.actions(|ui| {
-                    if self.active {
-                        if ui.add(super::appearance::primary_button(tr!("egui-cancel-transfer"))).clicked() {
-                            self.commands.push(TerminalCommand::CancelTransfer);
-                        }
+                    ui.add_space(10.0);
+                    if let Some(state) = self.state.clone() {
+                        self.progress_view(ui, &state);
+                        self.note_view(ui, true);
+                    } else if self.active || self.result.is_some() {
+                        self.status_view(ui);
+                        self.note_view(ui, false);
                     } else {
-                        if self.state.is_none() && self.result.is_none() {
-                            let protocol = self.selected_protocol(options);
-                            if ui
-                                .add_enabled(connected && protocol.is_some(), super::appearance::primary_button(tr!("egui-choose-files")))
-                                .clicked()
-                            {
-                                self.choose_files(protocol.unwrap(), options);
-                            }
-                            if ui.button(&*tr!("egui-close")).clicked() {
-                                self.open = false;
-                            }
-                        } else if ui.add(super::appearance::primary_button(tr!("egui-close"))).clicked() {
-                            self.open = false;
-                        }
-                        if let Some(destination) = self.destination.as_ref().filter(|_| finished && self.download) {
-                            if ui.button(&*tr!("egui-open-download-folder")).clicked() {
-                                if let Err(error) = open::that(destination) {
-                                    self.result = Some(error.to_string());
-                                }
-                            }
-                        }
+                        self.protocol_view(ui, options);
+                        self.note_view(ui, false);
                     }
                 });
+                if self.active {
+                    context.request_repaint_after(std::time::Duration::from_millis(250));
+                }
             });
-        if response.closed {
+            let mut buttons = Vec::new();
             if self.active {
-                self.commands.push(TerminalCommand::CancelTransfer);
+                buttons.push(DialogButton::primary(tr!("egui-cancel-transfer"), Transfer::CancelTransfer).cancels());
             } else {
-                self.open = false;
+                if finished && self.download && self.destination.is_some() {
+                    buttons.push(DialogButton::secondary(tr!("egui-open-download-folder"), Transfer::OpenFolder).leading());
+                }
+                if self.state.is_none() && self.result.is_none() {
+                    let enabled = connected && self.selected_protocol(options).is_some();
+                    buttons.push(DialogButton::cancel(tr!("egui-close"), Transfer::Close));
+                    buttons.push(DialogButton::primary(tr!("egui-choose-files"), Transfer::ChooseFiles).enabled(enabled));
+                } else {
+                    buttons.push(DialogButton::primary(tr!("egui-close"), Transfer::Close).cancels());
+                }
             }
+            dialog.buttons(buttons);
+        });
+        match response.action {
+            Some(Transfer::CancelTransfer) => self.commands.push(TerminalCommand::CancelTransfer),
+            Some(Transfer::ChooseFiles) => {
+                if let Some(protocol) = self.selected_protocol(options) {
+                    self.choose_files(protocol, options);
+                }
+            }
+            Some(Transfer::OpenFolder) => {
+                if let Some(destination) = &self.destination {
+                    if let Err(error) = open::that(destination) {
+                        self.result = Some(error.to_string());
+                    }
+                }
+            }
+            Some(Transfer::Close) => self.open = false,
+            None if response.dismissed => self.open = false,
+            None => {}
         }
         std::mem::take(&mut self.commands)
     }

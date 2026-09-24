@@ -1,3 +1,4 @@
+use super::appearance::{labels, Dialog, DialogButton, DialogSize};
 use eframe::egui;
 use icy_term::Options;
 use std::{
@@ -147,330 +148,48 @@ impl Settings {
     }
 
     pub fn show(&mut self, context: &egui::Context) -> Option<Options> {
+        #[derive(Clone, Copy)]
+        enum Footer {
+            Restore,
+            Cancel,
+            Ok,
+        }
         let mut saved = None;
-        let _modal = egui::Modal::new(egui::Id::new("settings"))
-            .frame(super::appearance::dialog_frame(context))
-            .show(context, |ui| {
-                let height = (context.content_rect().height() - 64.0).clamp(140.0, 560.0);
-                let top = ui.cursor().top();
-                ui.set_width((context.content_rect().width() - 48.0).clamp(240.0, 760.0));
-                ui.set_min_height(height);
-                self.closed |= super::appearance::dialog_header(ui, &tr!("settings-heading"));
-                let pages = [
-                    (Page::Monitor, tr!("settings-monitor-category")),
-                    (Page::Terminal, tr!("settings-terminal-category")),
-                    (Page::Audio, tr!("egui-audio")),
-                    (Page::Paths, tr!("settings-paths-category")),
-                    (Page::Login, tr!("settings-iemsi-category")),
-                    (Page::Serial, tr!("egui-serial")),
-                    (Page::Sources, tr!("egui-web-directories")),
-                    (Page::Modems, tr!("settings-modem-list-section")),
-                    (Page::Protocols, tr!("settings-protocol-category")),
-                ];
-                if ui.available_width() < 640.0 || height < 300.0 {
-                    egui::ComboBox::from_id_salt("settings-category")
-                        .width(ui.available_width())
-                        .selected_text(&pages.iter().find(|(page, _)| *page == self.page).unwrap().1)
-                        .show_ui(ui, |ui| {
-                            for (page, name) in &pages {
-                                ui.selectable_value(&mut self.page, *page, name);
-                            }
-                        });
-                } else {
-                    ui.horizontal_wrapped(|ui| {
-                        for (page, name) in pages {
-                            super::appearance::tab(ui, &mut self.page, page, &name);
-                        }
-                    });
-                }
-                ui.separator();
-                egui::ScrollArea::vertical()
-                    .id_salt(("settings-page", self.page))
-                    .auto_shrink([false, false])
-                    .min_scrolled_height(0.0)
-                    .max_height((height - (ui.cursor().top() - top) - 48.0).max(0.0))
-                    .show(ui, |ui| {
-                        let options = &mut self.draft;
-                        match self.page {
-                            Page::Monitor => {
-                                super::monitor::fields(ui, &mut options.monitor_settings);
-                            }
-                            Page::Terminal => {
-                                let mut timeout = options.connect_timeout.as_secs();
-                                super::appearance::form_row(ui, &tr!("egui-connect-timeout"), |ui| {
-                                    if ui.add(egui::DragValue::new(&mut timeout).range(1..=3600)).changed() {
-                                        options.connect_timeout = std::time::Duration::from_secs(timeout);
-                                    }
-                                });
-                                super::appearance::form_row(ui, &tr!("egui-scrollback-lines"), |ui| {
-                                    ui.add(egui::DragValue::new(&mut options.max_scrollback_lines).range(0..=1_000_000));
-                                });
-                                super::appearance::form_row(ui, &tr!("egui-cursor"), |ui| {
-                                    egui::ComboBox::from_id_salt("cursor-shape")
-                                        .selected_text(format!("{:?}", options.default_cursor_shape))
-                                        .show_ui(ui, |ui| {
-                                            for shape in [
-                                                icy_parser_core::CaretShape::Block,
-                                                icy_parser_core::CaretShape::Underline,
-                                                icy_parser_core::CaretShape::Bar,
-                                            ] {
-                                                ui.selectable_value(&mut options.default_cursor_shape, shape, format!("{shape:?}"));
-                                            }
-                                        });
-                                });
-                                super::appearance::form_row(ui, &tr!("egui-appearance"), |ui| {
-                                    egui::ComboBox::from_id_salt("appearance")
-                                        .selected_text(match options.is_dark_mode {
-                                            None => tr!("egui-system"),
-                                            Some(true) => tr!("egui-dark"),
-                                            Some(false) => tr!("egui-light"),
-                                        })
-                                        .show_ui(ui, |ui| {
-                                            ui.selectable_value(&mut options.is_dark_mode, None, &*tr!("egui-system"));
-                                            ui.selectable_value(&mut options.is_dark_mode, Some(true), &*tr!("egui-dark"));
-                                            ui.selectable_value(&mut options.is_dark_mode, Some(false), &*tr!("egui-light"));
-                                        });
-                                });
-                                ui.add_space(12.0);
-                                ui.separator();
-                                ui.checkbox(&mut options.invert_mouse_wheel, &*tr!("settings-terminal-invert-mouse-wheel"));
-                                ui.checkbox(&mut options.default_cursor_blinking, &*tr!("settings-terminal-cursor-blinking"));
-                            }
-                            Page::Audio => {
-                                ui.checkbox(&mut options.audio_enabled, &*tr!("egui-audio-enabled"));
-                                ui.checkbox(&mut options.console_beep, &*tr!("settings-terminal-console-beep-checkbox"));
-                                super::appearance::slider_row(ui, &tr!("egui-volume"), &mut options.master_volume, 0.0..=1.0);
-                                use icy_engine_gui::music::music::DialTone;
-                                super::appearance::combo_row(ui, &tr!("egui-dial-tone"), format!("{:?}", options.dial_tone), |ui| {
-                                    for tone in [DialTone::US, DialTone::UK, DialTone::Europe, DialTone::France, DialTone::Japan] {
-                                        ui.selectable_value(&mut options.dial_tone, tone, format!("{tone:?}"));
-                                    }
-                                });
-                                super::appearance::combo_row(
-                                    ui,
-                                    &tr!("settings-terminal-audio-device"),
-                                    options.audio_device.clone().unwrap_or_else(|| tr!("egui-system-default")),
-                                    |ui| {
-                                        ui.selectable_value(&mut options.audio_device, None, &*tr!("egui-system-default"));
-                                        for name in icy_engine_gui::music::music::SoundThread::output_devices() {
-                                            ui.selectable_value(&mut options.audio_device, Some(name.clone()), name);
-                                        }
-                                    },
-                                );
-                            }
-                            Page::Paths => {
-                                super::appearance::section(ui, &tr!("settings-paths-header"));
-                                let config = directories::ProjectDirs::from("com", "GitHub", "icy_term");
-                                let directory = config.as_ref().map(|dirs| dirs.config_dir().to_path_buf());
-                                location_row(ui, &tr!("settings-paths-config-dir"), directory.as_deref(), directory.as_deref());
-                                location_row(
-                                    ui,
-                                    &tr!("settings-paths-config-file"),
-                                    directory.as_ref().map(|dir| dir.join("options.toml")).as_deref(),
-                                    None,
-                                );
-                                location_row(
-                                    ui,
-                                    &tr!("settings-paths-phonebook"),
-                                    directory.as_ref().map(|dir| dir.join("phonebook.toml")).as_deref(),
-                                    None,
-                                );
-                                let log = Options::get_log_file();
-                                location_row(ui, &tr!("settings-paths-log-file"), log.as_deref(), log.as_deref());
-                                super::appearance::section(ui, &tr!("settings-paths-editable-header"));
-                                path_field(ui, &*tr!("settings-paths-download-dir"), &mut options.download_path);
-                                path_field(ui, &*tr!("settings-paths-capture-path"), &mut options.capture_path);
-                            }
-                            Page::Login => {
-                                ui.checkbox(&mut options.iemsi.autologin, &*tr!("egui-iemsi-login"));
-                                text_field(ui, &*tr!("settings-iemsi-alias"), &mut options.iemsi.alias);
-                                text_field(ui, &*tr!("settings-iemsi-location"), &mut options.iemsi.location);
-                                text_field(ui, &*tr!("settings-iemsi-data-phone"), &mut options.iemsi.data_phone);
-                                text_field(ui, &*tr!("settings-iemsi-voice-phone"), &mut options.iemsi.voice_phone);
-                                text_field(ui, &*tr!("settings-iemsi-birth-date"), &mut options.iemsi.birth_date);
-                            }
-                            Page::Serial => {
-                                serial_fields(ui, &mut options.serial);
-                            }
-                            Page::Sources => {
-                                let mut remove = None;
-                                for (index, source) in options.web_directories.iter_mut().enumerate() {
-                                    ui.push_id(index, |ui| {
-                                        ui.horizontal(|ui| {
-                                            ui.checkbox(&mut source.enabled, &*tr!("settings-enabled-checkbox"));
-                                            if ui.small_button(&*tr!("settings-modem-remove-button")).clicked() {
-                                                remove = Some(index);
-                                            }
-                                        });
-                                        text_field(ui, &*tr!("settings-modem-name"), &mut source.name);
-                                        text_field(ui, &*tr!("settings-web-directory-url"), &mut source.url);
-                                        ui.separator();
-                                    });
-                                }
-                                if let Some(index) = remove {
-                                    options.web_directories.remove(index);
-                                }
-                                if ui.button(&*tr!("settings-web-directory-add")).clicked() {
-                                    options.web_directories.push(icy_term::WebDirectorySource {
-                                        name: String::new(),
-                                        url: String::new(),
-                                        enabled: true,
-                                    });
-                                }
-                            }
-                            Page::Modems => {
-                                let mut remove = None;
-                                for (index, modem) in options.modems.iter_mut().enumerate() {
-                                    ui.push_id(("modem", index), |ui| {
-                                        egui::CollapsingHeader::new(&modem.name).id_salt(index).default_open(true).show(ui, |ui| {
-                                            text_field(ui, &*tr!("settings-modem-name"), &mut modem.name);
-                                            let mut serial = icy_net::serial::Serial::from(modem.clone());
-                                            serial_fields(ui, &mut serial);
-                                            modem.device = serial.device;
-                                            modem.baud_rate = serial.baud_rate;
-                                            modem.format = serial.format;
-                                            modem.flow_control = serial.flow_control;
-                                            for (label, command) in [
-                                                (&*tr!("egui-initialize"), &mut modem.init_command),
-                                                (&*tr!("settings-modem-dial_prefix"), &mut modem.dial_prefix),
-                                                (&*tr!("egui-dial-suffix"), &mut modem.dial_suffix),
-                                                (&*tr!("egui-hang-up"), &mut modem.hangup_command),
-                                            ] {
-                                                command_field(ui, label, command, &mut self.commands, &mut self.invalid_commands);
-                                            }
-                                            let mut responses: Vec<_> = modem.modem_responses.iter_mut().collect();
-                                            responses.sort_by_key(|(response, _)| format!("{response:?}"));
-                                            for (response, command) in responses {
-                                                command_field(ui, &format!("{response:?}"), command, &mut self.commands, &mut self.invalid_commands);
-                                            }
-                                            if ui
-                                                .add_enabled(self.invalid_commands.is_empty(), egui::Button::new(tr!("egui-remove-modem")))
-                                                .clicked()
-                                            {
-                                                remove = Some(index);
-                                            }
-                                        });
-                                    });
-                                }
-                                if let Some(index) = remove {
-                                    options.modems.remove(index);
-                                    self.commands.clear();
-                                    self.invalid_commands.clear();
-                                }
-                                if ui.button(&*tr!("egui-add-modem")).clicked() {
-                                    let mut modem = icy_net::modem::ModemConfiguration::default();
-                                    modem.name = format!("Modem {}", options.modems.len() + 1);
-                                    options.modems.push(modem);
-                                }
-                            }
-                            Page::Protocols => {
-                                let mut remove = None;
-                                let mut move_up = None;
-                                let mut move_down = None;
-                                let count = options.transfer_protocols.len();
-                                for (index, protocol) in options.transfer_protocols.iter_mut().enumerate() {
-                                    ui.push_id(("protocol", index), |ui| {
-                                        egui::CollapsingHeader::new(protocol.get_name()).id_salt(index).show(ui, |ui| {
-                                            ui.checkbox(&mut protocol.enabled, &*tr!("settings-enabled-checkbox"));
-                                            ui.checkbox(&mut protocol.auto_transfer, &*tr!("egui-automatic-detection"))
-                                                .on_hover_text(&*tr!("egui-automatic-detection-hint"));
-                                            ui.checkbox(&mut protocol.batch, &*tr!("egui-multiple-files"));
-                                            ui.checkbox(&mut protocol.ask_for_download_location, &*tr!("egui-ask-filename"));
-                                            if !protocol.is_internal() {
-                                                text_field(ui, &*tr!("settings-protocol-id"), &mut protocol.id);
-                                                text_field(ui, &*tr!("settings-modem-name"), &mut protocol.name);
-                                                text_field(ui, &*tr!("settings-protocol-description"), &mut protocol.description);
-                                                text_field(ui, &*tr!("settings-protocol-send-command"), &mut protocol.send_command);
-                                                text_field(ui, &*tr!("settings-protocol-recv-command"), &mut protocol.recv_command);
-                                            }
-                                            command_field(
-                                                ui,
-                                                &*tr!("settings-protocol-download-signature"),
-                                                &mut protocol.download_signature,
-                                                &mut self.commands,
-                                                &mut self.invalid_commands,
-                                            );
-                                            command_field(
-                                                ui,
-                                                &*tr!("settings-protocol-upload-signature"),
-                                                &mut protocol.upload_signature,
-                                                &mut self.commands,
-                                                &mut self.invalid_commands,
-                                            );
-                                            ui.horizontal_wrapped(|ui| {
-                                                if ui
-                                                    .add_enabled(self.invalid_commands.is_empty() && index > 0, egui::Button::new(&*tr!("egui-move-up")))
-                                                    .clicked()
-                                                {
-                                                    move_up = Some(index);
-                                                }
-                                                if ui
-                                                    .add_enabled(
-                                                        self.invalid_commands.is_empty() && index + 1 < count,
-                                                        egui::Button::new(&*tr!("egui-move-down")),
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    move_down = Some(index);
-                                                }
-                                                if !protocol.is_internal()
-                                                    && ui
-                                                        .add_enabled(self.invalid_commands.is_empty(), egui::Button::new(tr!("egui-remove-protocol")))
-                                                        .clicked()
-                                                {
-                                                    remove = Some(index);
-                                                }
-                                            });
-                                        });
-                                    });
-                                }
-                                if let Some(index) = remove {
-                                    options.transfer_protocols.remove(index);
-                                    self.commands.clear();
-                                    self.invalid_commands.clear();
-                                }
-                                if let Some(index) = move_up {
-                                    options.transfer_protocols.swap(index, index - 1);
-                                    self.commands.clear();
-                                    self.invalid_commands.clear();
-                                }
-                                if let Some(index) = move_down {
-                                    options.transfer_protocols.swap(index, index + 1);
-                                    self.commands.clear();
-                                    self.invalid_commands.clear();
-                                }
-                                if ui.button(&*tr!("egui-add-external-protocol")).clicked() {
-                                    options.transfer_protocols.push(icy_term::TransferProtocol {
-                                        enabled: true,
-                                        id: format!("external-{}", options.transfer_protocols.len()),
-                                        name: tr!("egui-external-protocol"),
-                                        ..Default::default()
-                                    });
-                                }
-                            }
-                        }
-                    });
-                ui.separator();
-                ui.horizontal_wrapped(|ui| {
-                    if ui.add(super::appearance::primary_button(tr!("egui-save"))).clicked() {
-                        match self.save() {
-                            Ok(options) => saved = Some(options),
-                            Err(error) => self.error = Some(error),
-                        }
-                    }
-                    if ui.button(&*tr!("egui-discard")).clicked() {
-                        self.closed = true;
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(&*tr!("egui-reset-page")).clicked() {
-                            self.reset_page();
-                        }
-                    });
-                });
+        let pages = [
+            (Page::Monitor, tr!("settings-monitor-category")),
+            (Page::Terminal, tr!("settings-terminal-category")),
+            (Page::Audio, tr!("egui-audio")),
+            (Page::Paths, tr!("settings-paths-category")),
+            (Page::Login, tr!("settings-iemsi-category")),
+            (Page::Serial, tr!("egui-serial")),
+            (Page::Sources, tr!("egui-web-directories")),
+            (Page::Modems, tr!("settings-modem-list-section")),
+            (Page::Protocols, tr!("settings-protocol-category")),
+        ];
+        let response = Dialog::untitled("settings")
+            .size(DialogSize::XLarge)
+            .fixed_height(560.0)
+            .show(context, |dialog| {
+                dialog.tabs(&mut self.page, &pages);
+                dialog.content(|ui| self.page_contents(ui));
+                dialog.buttons([
+                    DialogButton::secondary(labels::restore_defaults(), Footer::Restore).leading(),
+                    DialogButton::cancel(tr!("egui-cancel"), Footer::Cancel),
+                    DialogButton::primary(labels::ok(), Footer::Ok),
+                ]);
             });
+        match response.action {
+            Some(Footer::Restore) => self.reset_page(),
+            Some(Footer::Cancel) => self.closed = true,
+            Some(Footer::Ok) => match self.save() {
+                Ok(options) => saved = Some(options),
+                Err(error) => self.error = Some(error),
+            },
+            None => {}
+        }
         #[cfg(test)]
         {
-            self.bounds = Some(_modal.response.rect);
+            self.bounds = Some(response.rect);
         }
         if let Some(error) = &self.error {
             if super::messages::MessageBox::error("settings-error", &tr!("egui-message-settings"), error)
@@ -482,6 +201,306 @@ impl Settings {
         }
         saved
     }
+
+    fn page_contents(&mut self, ui: &mut egui::Ui) {
+        use super::appearance::{check_row, combo_row, form_row, group};
+        let options = &mut self.draft;
+        match self.page {
+            Page::Monitor => {
+                super::monitor::fields(ui, &mut options.monitor_settings);
+            }
+            Page::Terminal => {
+                group(ui, &tr!("settings-terminal-general-section"), |ui| {
+                    let mut timeout = options.connect_timeout.as_secs();
+                    form_row(ui, &tr!("egui-connect-timeout"), |ui| {
+                        if number(ui, egui::DragValue::new(&mut timeout).range(1..=3600)).changed() {
+                            options.connect_timeout = std::time::Duration::from_secs(timeout);
+                        }
+                    });
+                    form_row(ui, &tr!("egui-scrollback-lines"), |ui| {
+                        number(ui, egui::DragValue::new(&mut options.max_scrollback_lines).range(0..=1_000_000));
+                    });
+                    combo_row(ui, &tr!("egui-appearance"), theme_name(options.is_dark_mode), |ui| {
+                        for mode in [None, Some(true), Some(false)] {
+                            ui.selectable_value(&mut options.is_dark_mode, mode, theme_name(mode));
+                        }
+                    });
+                    check_row(ui, &tr!("settings-terminal-invert-mouse-wheel"), &mut options.invert_mouse_wheel);
+                });
+                group(ui, &tr!("egui-cursor"), |ui| {
+                    combo_row(
+                        ui,
+                        &tr!("settings-terminal-cursor-shape"),
+                        format!("{:?}", options.default_cursor_shape),
+                        |ui| {
+                            for shape in [
+                                icy_parser_core::CaretShape::Block,
+                                icy_parser_core::CaretShape::Underline,
+                                icy_parser_core::CaretShape::Bar,
+                            ] {
+                                ui.selectable_value(&mut options.default_cursor_shape, shape, format!("{shape:?}"));
+                            }
+                        },
+                    );
+                    check_row(ui, &tr!("settings-terminal-cursor-blinking"), &mut options.default_cursor_blinking);
+                });
+            }
+            Page::Audio => {
+                group(ui, &tr!("egui-audio"), |ui| {
+                    check_row(ui, &tr!("egui-audio-enabled"), &mut options.audio_enabled);
+                    check_row(ui, &tr!("settings-terminal-console-beep-checkbox"), &mut options.console_beep);
+                    super::appearance::slider_row(ui, &tr!("egui-volume"), &mut options.master_volume, 0.0..=1.0);
+                    use icy_engine_gui::music::music::DialTone;
+                    combo_row(ui, &tr!("egui-dial-tone"), format!("{:?}", options.dial_tone), |ui| {
+                        for tone in [DialTone::US, DialTone::UK, DialTone::Europe, DialTone::France, DialTone::Japan] {
+                            ui.selectable_value(&mut options.dial_tone, tone, format!("{tone:?}"));
+                        }
+                    });
+                    combo_row(
+                        ui,
+                        &tr!("settings-terminal-audio-device"),
+                        options.audio_device.clone().unwrap_or_else(|| tr!("egui-system-default")),
+                        |ui| {
+                            ui.selectable_value(&mut options.audio_device, None, &*tr!("egui-system-default"));
+                            for name in icy_engine_gui::music::music::SoundThread::output_devices() {
+                                ui.selectable_value(&mut options.audio_device, Some(name.clone()), name);
+                            }
+                        },
+                    );
+                });
+            }
+            Page::Paths => {
+                group(ui, &tr!("settings-paths-header"), |ui| {
+                    let config = directories::ProjectDirs::from("com", "GitHub", "icy_term");
+                    let directory = config.as_ref().map(|dirs| dirs.config_dir().to_path_buf());
+                    location_row(ui, &tr!("settings-paths-config-dir"), directory.as_deref(), directory.as_deref());
+                    location_row(
+                        ui,
+                        &tr!("settings-paths-config-file"),
+                        directory.as_ref().map(|dir| dir.join("options.toml")).as_deref(),
+                        None,
+                    );
+                    location_row(
+                        ui,
+                        &tr!("settings-paths-phonebook"),
+                        directory.as_ref().map(|dir| dir.join("phonebook.toml")).as_deref(),
+                        None,
+                    );
+                    let log = Options::get_log_file();
+                    location_row(ui, &tr!("settings-paths-log-file"), log.as_deref(), log.as_deref());
+                });
+                group(ui, &tr!("settings-paths-editable-header"), |ui| {
+                    path_field(ui, &tr!("settings-paths-download-dir"), &mut options.download_path);
+                    path_field(ui, &tr!("settings-paths-capture-path"), &mut options.capture_path);
+                });
+            }
+            Page::Login => {
+                group(ui, &tr!("settings-iemsi-autologin-section"), |ui| {
+                    check_row(ui, &tr!("egui-iemsi-login"), &mut options.iemsi.autologin);
+                    text_field(ui, &tr!("settings-iemsi-alias"), &mut options.iemsi.alias);
+                    text_field(ui, &tr!("settings-iemsi-location"), &mut options.iemsi.location);
+                    text_field(ui, &tr!("settings-iemsi-data-phone"), &mut options.iemsi.data_phone);
+                    text_field(ui, &tr!("settings-iemsi-voice-phone"), &mut options.iemsi.voice_phone);
+                    text_field(ui, &tr!("settings-iemsi-birth-date"), &mut options.iemsi.birth_date);
+                });
+            }
+            Page::Serial => {
+                group(ui, &tr!("settings-modem-serial-section"), |ui| serial_fields(ui, &mut options.serial));
+            }
+            Page::Sources => {
+                let mut remove = None;
+                for (index, source) in options.web_directories.iter_mut().enumerate() {
+                    ui.push_id(index, |ui| {
+                        group(ui, &source.name.clone(), |ui| {
+                            check_row(ui, &tr!("settings-enabled-checkbox"), &mut source.enabled);
+                            text_field(ui, &tr!("settings-modem-name"), &mut source.name);
+                            text_field(ui, &tr!("settings-web-directory-url"), &mut source.url);
+                            item_actions(ui, |ui| {
+                                if ui.button(&*tr!("settings-modem-remove-button")).clicked() {
+                                    remove = Some(index);
+                                }
+                            });
+                        });
+                    });
+                }
+                if let Some(index) = remove {
+                    options.web_directories.remove(index);
+                }
+                if ui.button(&*tr!("settings-web-directory-add")).clicked() {
+                    options.web_directories.push(icy_term::WebDirectorySource {
+                        name: String::new(),
+                        url: String::new(),
+                        enabled: true,
+                    });
+                }
+            }
+            Page::Modems => {
+                let mut remove = None;
+                for (index, modem) in options.modems.iter_mut().enumerate() {
+                    ui.push_id(("modem", index), |ui| {
+                        group(ui, &modem.name.clone(), |ui| {
+                            text_field(ui, &tr!("settings-modem-name"), &mut modem.name);
+                            let mut serial = icy_net::serial::Serial::from(modem.clone());
+                            serial_fields(ui, &mut serial);
+                            modem.device = serial.device;
+                            modem.baud_rate = serial.baud_rate;
+                            modem.format = serial.format;
+                            modem.flow_control = serial.flow_control;
+                            subheading(ui, &tr!("settings-modem-commands-section"));
+                            for (label, command) in [
+                                (&*tr!("egui-initialize"), &mut modem.init_command),
+                                (&*tr!("settings-modem-dial_prefix"), &mut modem.dial_prefix),
+                                (&*tr!("egui-dial-suffix"), &mut modem.dial_suffix),
+                                (&*tr!("egui-hang-up"), &mut modem.hangup_command),
+                            ] {
+                                command_field(ui, label, command, &mut self.commands, &mut self.invalid_commands);
+                            }
+                            let mut responses: Vec<_> = modem.modem_responses.iter_mut().collect();
+                            responses.sort_by_key(|(response, _)| format!("{response:?}"));
+                            for (response, command) in responses {
+                                command_field(ui, &format!("{response:?}"), command, &mut self.commands, &mut self.invalid_commands);
+                            }
+                            item_actions(ui, |ui| {
+                                if ui
+                                    .add_enabled(self.invalid_commands.is_empty(), egui::Button::new(tr!("egui-remove-modem")))
+                                    .clicked()
+                                {
+                                    remove = Some(index);
+                                }
+                            });
+                        });
+                    });
+                }
+                if let Some(index) = remove {
+                    options.modems.remove(index);
+                    self.commands.clear();
+                    self.invalid_commands.clear();
+                }
+                if ui.button(&*tr!("egui-add-modem")).clicked() {
+                    let mut modem = icy_net::modem::ModemConfiguration::default();
+                    modem.name = format!("Modem {}", options.modems.len() + 1);
+                    options.modems.push(modem);
+                }
+            }
+            Page::Protocols => {
+                let mut remove = None;
+                let mut move_up = None;
+                let mut move_down = None;
+                let count = options.transfer_protocols.len();
+                group(ui, &tr!("settings-protocol-list-section"), |ui| {
+                    for (index, protocol) in options.transfer_protocols.iter_mut().enumerate() {
+                        if index > 0 {
+                            ui.separator();
+                        }
+                        ui.push_id(("protocol", index), |ui| {
+                            let title = super::appearance::bold(ui, protocol.get_name());
+                            egui::CollapsingHeader::new(title).id_salt(index).show(ui, |ui| {
+                                ui.add_space(4.0);
+                                check_row(ui, &tr!("settings-enabled-checkbox"), &mut protocol.enabled);
+                                check_row(ui, &tr!("egui-automatic-detection"), &mut protocol.auto_transfer)
+                                    .on_hover_text(&*tr!("egui-automatic-detection-hint"));
+                                check_row(ui, &tr!("egui-multiple-files"), &mut protocol.batch);
+                                check_row(ui, &tr!("egui-ask-filename"), &mut protocol.ask_for_download_location);
+                                if !protocol.is_internal() {
+                                    subheading(ui, &tr!("settings-protocol-commands-section"));
+                                    text_field(ui, &tr!("settings-protocol-id"), &mut protocol.id);
+                                    text_field(ui, &tr!("settings-modem-name"), &mut protocol.name);
+                                    text_field(ui, &tr!("settings-protocol-description"), &mut protocol.description);
+                                    text_field(ui, &tr!("settings-protocol-send-command"), &mut protocol.send_command);
+                                    text_field(ui, &tr!("settings-protocol-recv-command"), &mut protocol.recv_command);
+                                }
+                                command_field(
+                                    ui,
+                                    &tr!("settings-protocol-download-signature"),
+                                    &mut protocol.download_signature,
+                                    &mut self.commands,
+                                    &mut self.invalid_commands,
+                                );
+                                command_field(
+                                    ui,
+                                    &tr!("settings-protocol-upload-signature"),
+                                    &mut protocol.upload_signature,
+                                    &mut self.commands,
+                                    &mut self.invalid_commands,
+                                );
+                                item_actions(ui, |ui| {
+                                    if !protocol.is_internal()
+                                        && ui
+                                            .add_enabled(self.invalid_commands.is_empty(), egui::Button::new(tr!("egui-remove-protocol")))
+                                            .clicked()
+                                    {
+                                        remove = Some(index);
+                                    }
+                                    if ui
+                                        .add_enabled(
+                                            self.invalid_commands.is_empty() && index + 1 < count,
+                                            egui::Button::new(&*tr!("egui-move-down")),
+                                        )
+                                        .clicked()
+                                    {
+                                        move_down = Some(index);
+                                    }
+                                    if ui
+                                        .add_enabled(self.invalid_commands.is_empty() && index > 0, egui::Button::new(&*tr!("egui-move-up")))
+                                        .clicked()
+                                    {
+                                        move_up = Some(index);
+                                    }
+                                });
+                            });
+                        });
+                    }
+                });
+                if let Some(index) = remove {
+                    options.transfer_protocols.remove(index);
+                    self.commands.clear();
+                    self.invalid_commands.clear();
+                }
+                if let Some(index) = move_up {
+                    options.transfer_protocols.swap(index, index - 1);
+                    self.commands.clear();
+                    self.invalid_commands.clear();
+                }
+                if let Some(index) = move_down {
+                    options.transfer_protocols.swap(index, index + 1);
+                    self.commands.clear();
+                    self.invalid_commands.clear();
+                }
+                if ui.button(&*tr!("egui-add-external-protocol")).clicked() {
+                    options.transfer_protocols.push(icy_term::TransferProtocol {
+                        enabled: true,
+                        id: format!("external-{}", options.transfer_protocols.len()),
+                        name: tr!("egui-external-protocol"),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn theme_name(dark: Option<bool>) -> String {
+    match dark {
+        None => tr!("egui-system"),
+        Some(true) => tr!("egui-dark"),
+        Some(false) => tr!("egui-light"),
+    }
+}
+
+/// Numeric input sized like the other controls instead of shrinking to its digits.
+fn number(ui: &mut egui::Ui, value: egui::DragValue<'_>) -> egui::Response {
+    ui.add_sized([120.0, ui.spacing().interact_size.y], value)
+}
+
+fn subheading(ui: &mut egui::Ui, title: &str) {
+    ui.add_space(6.0);
+    ui.label(egui::RichText::new(title).weak().size(12.0));
+}
+
+/// Right aligned buttons at the bottom of a group; add them from right to left.
+fn item_actions(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(2.0);
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add);
 }
 
 fn preserve_unknown(original: &toml::Value, known: &toml::Value, updated: &mut toml::Value) {
@@ -689,6 +708,30 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn escape_cancels_without_saving() {
+        let path = std::env::temp_dir().join(format!("icy-escape-{}-{}.toml", std::process::id(), fastrand::u64(..)));
+        let mut settings = Settings::open(&Options::default(), path.clone()).unwrap();
+        let context = egui::Context::default();
+        let mut saved = None;
+        for events in [
+            vec![],
+            vec![egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        ] {
+            let _ = context.run(egui::RawInput { events, ..Default::default() }, |context| {
+                saved = saved.take().or(settings.show(context));
+            });
+        }
+        assert!(settings.closed, "Escape must close the dialog");
+        assert!(saved.is_none() && !path.exists(), "Escape must not save");
     }
 
     #[test]

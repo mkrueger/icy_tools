@@ -3,7 +3,8 @@
 use eframe::egui;
 use icy_parser_core::BaudEmulation;
 
-use super::{appearance, hotkeys};
+use super::appearance::{self, Dialog, DialogButton, DialogSize};
+use super::hotkeys;
 
 /// Same list the legacy BPS dialog offered.
 const RATES: [u32; 11] = [300, 1200, 2400, 4800, 9600, 14400, 19200, 28800, 38400, 57600, 115_200];
@@ -63,54 +64,27 @@ fn shortcut_row(ui: &mut egui::Ui, entry: &hotkeys::HelpEntry, shaded: bool, com
 }
 
 pub fn help(context: &egui::Context, open: &mut bool) {
-    let mut close = false;
-    egui::Modal::new(egui::Id::new("shortcuts"))
-        .frame(appearance::dialog_frame(context))
-        .show(context, |ui| {
-            let width = (context.content_rect().width() - 48.0).clamp(240.0, 700.0);
-            let height = (context.content_rect().height() - 64.0).clamp(140.0, 560.0);
-            let compact = width < 520.0;
-            ui.set_width(width);
-            ui.set_min_height(height);
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("\u{2328}").size(24.0));
-                ui.add_space(4.0);
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 1.0;
-                    ui.add(egui::Label::new(egui::RichText::new(tr!("help-title")).size(20.0).strong()).truncate());
-                    ui.add(egui::Label::new(egui::RichText::new(tr!("help-subtitle")).size(12.0).weak()).truncate());
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    close |= ui
-                        .add_sized([24.0, 24.0], egui::Button::new(egui::RichText::new("\u{00d7}").size(20.0)).frame(false))
-                        .on_hover_text(tr!("egui-close"))
-                        .clicked();
-                });
-            });
-            ui.separator();
-            egui::ScrollArea::vertical()
-                .id_salt("shortcut-list")
-                .auto_shrink([false, false])
-                .min_scrolled_height(0.0)
-                .max_height((height - 110.0).max(0.0))
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    for (category, entries) in hotkeys::help_entries() {
-                        category_band(ui, &category);
-                        for (index, entry) in entries.iter().enumerate() {
-                            shortcut_row(ui, entry, index % 2 == 0, compact);
-                        }
-                        ui.add_space(6.0);
+    let response = Dialog::new("shortcuts")
+        .title(tr!("help-title"))
+        .icon("\u{2328}")
+        .subtitle(tr!("help-subtitle"))
+        .size(DialogSize::Width(700.0))
+        .fixed_height(560.0)
+        .show(context, |dialog| {
+            let compact = dialog.ui().available_width() < 520.0;
+            dialog.content(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for (category, entries) in hotkeys::help_entries() {
+                    category_band(ui, &category);
+                    for (index, entry) in entries.iter().enumerate() {
+                        shortcut_row(ui, entry, index % 2 == 0, compact);
                     }
-                });
-            ui.separator();
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    close |= ui.add(appearance::primary_button(tr!("egui-close"))).clicked();
-                });
+                    ui.add_space(6.0);
+                }
             });
+            dialog.buttons([DialogButton::primary(tr!("egui-close"), ()).cancels()]);
         });
-    if close {
+    if response.action.is_some() || response.dismissed {
         *open = false;
     }
 }
@@ -118,56 +92,45 @@ pub fn help(context: &egui::Context, open: &mut bool) {
 pub fn baud(context: &egui::Context, open: &mut bool, current: BaudEmulation) -> Option<BaudEmulation> {
     let id = egui::Id::new("bps-custom");
     let mut selected = None;
-    let mut close = false;
-    egui::Modal::new(egui::Id::new("bps"))
-        .frame(appearance::dialog_frame(context))
-        .show(context, |ui| {
-            let height = (context.content_rect().height() - 64.0).clamp(140.0, 360.0);
-            ui.set_width((context.content_rect().width() - 48.0).clamp(220.0, 420.0));
-            ui.set_min_height(height);
-            close |= appearance::dialog_header(ui, &tr!("select-bps-dialog-heading"));
-            let mut custom = ui.data(|data| data.get_temp::<u32>(id)).unwrap_or(match current {
-                BaudEmulation::Rate(rate) if !RATES.contains(&rate) => rate,
-                _ => 2400,
-            });
-            egui::ScrollArea::vertical()
-                .id_salt("bps-list")
-                .auto_shrink([false, false])
-                .min_scrolled_height(0.0)
-                .max_height((height - 104.0).max(0.0))
-                .show(ui, |ui| {
-                    if ui.radio(current == BaudEmulation::Off, &*tr!("select-bps-dialog-bps-max")).clicked() {
-                        selected = Some(BaudEmulation::Off);
-                    }
-                    for row in RATES.chunks(3) {
-                        ui.columns(3, |columns| {
-                            for (column, rate) in columns.iter_mut().zip(row) {
-                                if column.selectable_label(current == BaudEmulation::Rate(*rate), rate.to_string()).clicked() {
-                                    selected = Some(BaudEmulation::Rate(*rate));
-                                }
+    let response = Dialog::new("bps").size(DialogSize::Small).fixed_height(390.0).show(context, |dialog| {
+        let mut custom = dialog.ui().data(|data| data.get_temp::<u32>(id)).unwrap_or(match current {
+            BaudEmulation::Rate(rate) if !RATES.contains(&rate) => rate,
+            _ => 2400,
+        });
+        dialog.content(|ui| {
+            appearance::group(ui, &tr!("select-bps-dialog-heading"), |ui| {
+                if ui.radio(current == BaudEmulation::Off, &*tr!("select-bps-dialog-bps-max")).clicked() {
+                    selected = Some(BaudEmulation::Off);
+                }
+                for row in RATES.chunks(3) {
+                    ui.columns(3, |columns| {
+                        for (column, rate) in columns.iter_mut().zip(row) {
+                            if column.selectable_label(current == BaudEmulation::Rate(*rate), rate.to_string()).clicked() {
+                                selected = Some(BaudEmulation::Rate(*rate));
                             }
-                        });
-                    }
-                    ui.separator();
-                    ui.horizontal_wrapped(|ui| {
-                        if ui
-                            .radio(
-                                matches!(current, BaudEmulation::Rate(rate) if !RATES.contains(&rate)),
-                                &*tr!("select-bps-dialog-bps-custom"),
-                            )
-                            .clicked()
-                        {
-                            selected = Some(BaudEmulation::Rate(custom));
-                        }
-                        if ui.add(egui::DragValue::new(&mut custom).range(50..=1_000_000)).changed() {
-                            ui.data_mut(|data| data.insert_temp(id, custom));
                         }
                     });
+                }
+                ui.separator();
+                ui.horizontal_wrapped(|ui| {
+                    if ui
+                        .radio(
+                            matches!(current, BaudEmulation::Rate(rate) if !RATES.contains(&rate)),
+                            &*tr!("select-bps-dialog-bps-custom"),
+                        )
+                        .clicked()
+                    {
+                        selected = Some(BaudEmulation::Rate(custom));
+                    }
+                    if ui.add(egui::DragValue::new(&mut custom).range(50..=1_000_000)).changed() {
+                        ui.data_mut(|data| data.insert_temp(id, custom));
+                    }
                 });
-            ui.separator();
-            close |= ui.button(&*tr!("egui-close")).clicked();
+            });
         });
-    if close || selected.is_some() {
+        dialog.buttons([DialogButton::cancel(tr!("egui-close"), ())]);
+    });
+    if response.action.is_some() || response.dismissed || selected.is_some() {
         *open = false;
     }
     selected

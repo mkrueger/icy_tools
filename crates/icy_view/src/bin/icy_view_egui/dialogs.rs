@@ -104,134 +104,149 @@ impl Dialogs {
         let Some(mode) = self.mode else {
             return;
         };
-        let title = match mode {
-            Mode::Settings => text("settings-heading"),
-            Mode::About => "Icy View".into(),
-            Mode::Help => text("help-title"),
-            Mode::Sauce => text("sauce-dialog-title"),
-            Mode::Export => text("cmd-file-export-action"),
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum Footer {
+            Restore,
+            Cancel,
+            Save,
+            Close,
+        }
+        let dialog = match mode {
+            Mode::Settings => appearance::Dialog::untitled("viewer-settings")
+                .size(appearance::DialogSize::XLarge)
+                .fixed_height(560.0),
+            Mode::About => appearance::Dialog::new("viewer-about")
+                .title("Icy View")
+                .size(appearance::DialogSize::Width(740.0))
+                .scroll(false),
+            Mode::Help => appearance::Dialog::new("viewer-help")
+                .title(text("help-title"))
+                .size(appearance::DialogSize::Width(740.0))
+                .fixed_height(560.0),
+            Mode::Sauce => appearance::Dialog::new("viewer-sauce").size(appearance::DialogSize::Large),
+            Mode::Export => appearance::Dialog::new("viewer-export")
+                .size(appearance::DialogSize::Medium)
+                .confirm_on_enter(true),
         };
-        let mut close = context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
-        let response = appearance::Dialog::new("viewer-dialog", title)
-            .max_width(740.0)
-            .scroll(false)
-            .show(context, |dialog| {
-                dialog.content(|ui| {
-                    let height = (context.content_rect().height() - 190.0).clamp(48.0, 440.0);
-                    ui.scope(|ui| {
-                        ui.set_height(height + if mode == Mode::Settings { 36.0 } else { 0.0 });
-                        if mode == Mode::About {
-                            if let Some(about) = &mut self.about {
-                                let response = about.show(ui, &icy_engine_gui::MonitorSettings::neutral());
-                                if let Some(url) = super::link_at(&about.terminal, response.hover_pos()) {
-                                    response.clone().on_hover_cursor(egui::CursorIcon::PointingHand);
-                                    if response.clicked() {
-                                        context.open_url(egui::OpenUrl::new_tab(url));
-                                    }
+        let response = dialog.show(context, |dialog| {
+            if mode == Mode::Settings {
+                let pages: Vec<_> = ["settings-monitor-category", "settings-commands-category", "settings-paths-category"]
+                    .iter()
+                    .enumerate()
+                    .map(|(index, key)| (index, text(key)))
+                    .collect();
+                dialog.tabs(&mut self.page, &pages);
+            }
+            dialog.content(|ui| {
+                match mode {
+                    Mode::About => {
+                        let height = (context.content_rect().height() - 190.0).clamp(48.0, 440.0);
+                        ui.set_height(height);
+                        if let Some(about) = &mut self.about {
+                            let response = about.show(ui, &icy_engine_gui::MonitorSettings::neutral());
+                            if let Some(url) = super::link_at(&about.terminal, response.hover_pos()) {
+                                response.clone().on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if response.clicked() {
+                                    context.open_url(egui::OpenUrl::new_tab(url));
                                 }
                             }
-                        } else {
-                            if mode == Mode::Settings {
-                                ui.horizontal(|ui| {
-                                    for (index, key) in ["settings-monitor-category", "settings-commands-category", "settings-paths-category"]
-                                        .iter()
-                                        .enumerate()
-                                    {
-                                        appearance::tab(ui, &mut self.page, index, &text(key));
-                                    }
-                                });
-                            }
-                            egui::ScrollArea::vertical()
-                                .id_salt(("dialog-body", self.page, mode as u8))
-                                .auto_shrink([false, false])
-                                .min_scrolled_height(0.0)
-                                .max_height(height)
-                                .show(ui, |ui| {
-                                    ui.set_height(height);
-                                    match mode {
-                                        Mode::Settings => self.settings_fields(ui),
-                                        Mode::Help => help(ui),
-                                        Mode::Sauce => sauce(ui, preview, &mut self.raw),
-                                        Mode::Export => self.export.fields(ui),
-                                        Mode::About => {}
-                                    }
-                                });
                         }
-                    });
-                    if let Some(error) = &self.error {
-                        ui.add(egui::Label::new(egui::RichText::new(error).color(ui.visuals().error_fg_color)).wrap());
                     }
-                });
-                dialog.actions(|ui| {
-                    if matches!(mode, Mode::Settings | Mode::Export) {
-                        if ui
-                            .add(appearance::primary_button(text(if self.export.confirmed.is_some() && mode == Mode::Export {
-                                "egui-overwrite"
-                            } else {
-                                "egui-save"
-                            })))
-                            .clicked()
-                            && !context.will_discard()
-                        {
-                            let result = if mode == Mode::Settings {
-                                self.save_settings().map(|()| {
-                                    *options = self.draft.clone();
-                                    true
-                                })
-                            } else {
-                                self.export.save(preview)
-                            };
-                            match result {
-                                Ok(saved) => close |= saved,
-                                Err(error) => self.error = Some(error.to_string()),
-                            }
-                        }
-                        close |= ui.button(text("button-cancel")).clicked();
-                        if mode == Mode::Settings && self.page == 0 && ui.button(text("settings-reset_button")).clicked() {
-                            self.draft.monitor_settings = icy_engine_gui::MonitorSettings::default();
-                        }
-                    } else {
-                        close |= ui.add(appearance::primary_button(text("dialog-close-button"))).clicked();
-                    }
-                });
+                    Mode::Settings => self.settings_fields(ui),
+                    Mode::Help => help(ui),
+                    Mode::Sauce => appearance::group(ui, "", |ui| sauce(ui, preview, &mut self.raw)),
+                    Mode::Export => appearance::group(ui, "", |ui| self.export.fields(ui)),
+                }
+                if let Some(error) = &self.error {
+                    ui.add_space(6.0);
+                    ui.add(egui::Label::new(egui::RichText::new(error).color(ui.visuals().error_fg_color)).wrap());
+                }
             });
-        if close || response.closed {
+            let mut buttons = Vec::new();
+            match mode {
+                Mode::Settings => {
+                    if self.page == 0 {
+                        buttons.push(appearance::DialogButton::secondary(appearance::labels::restore_defaults(), Footer::Restore).leading());
+                    }
+                    buttons.push(appearance::DialogButton::cancel(appearance::labels::cancel(), Footer::Cancel));
+                    buttons.push(appearance::DialogButton::primary(appearance::labels::ok(), Footer::Save));
+                }
+                Mode::Export => {
+                    buttons.push(appearance::DialogButton::cancel(appearance::labels::cancel(), Footer::Cancel));
+                    buttons.push(if self.export.confirmed.is_some() {
+                        appearance::DialogButton::destructive(appearance::labels::overwrite(), Footer::Save)
+                    } else {
+                        appearance::DialogButton::primary(text("egui-save"), Footer::Save)
+                    });
+                }
+                Mode::About | Mode::Help | Mode::Sauce => {
+                    buttons.push(appearance::DialogButton::primary(appearance::labels::close(), Footer::Close).cancels());
+                }
+            }
+            dialog.buttons(buttons);
+        });
+        let mut close = response.dismissed;
+        match response.action {
+            Some(Footer::Restore) => self.draft.monitor_settings = icy_engine_gui::MonitorSettings::default(),
+            Some(Footer::Save) => {
+                let result = if mode == Mode::Settings {
+                    self.save_settings().map(|()| {
+                        *options = self.draft.clone();
+                        true
+                    })
+                } else {
+                    self.export.save(preview)
+                };
+                match result {
+                    Ok(saved) => close |= saved,
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+            Some(Footer::Cancel | Footer::Close) => close = true,
+            None => {}
+        }
+        if close {
             self.mode = None;
         }
     }
 
     fn settings_fields(&mut self, ui: &mut egui::Ui) {
         match self.page {
-            0 => monitor::fields(ui, &mut self.draft.monitor_settings, text),
+            0 => monitor::fields(ui, &mut self.draft.monitor_settings),
             1 => {
-                appearance::section(ui, &text("settings-commands-section"));
-                for (index, command) in self.draft.external_commands.iter_mut().enumerate() {
-                    appearance::form_row(ui, &format!("F{}", index + 5), |ui| {
-                        ui.add_sized([ui.available_width(), 30.0], appearance::text_edit(&mut command.command));
-                    });
-                }
+                appearance::group(ui, &text("settings-commands-section"), |ui| {
+                    for (index, command) in self.draft.external_commands.iter_mut().enumerate() {
+                        appearance::form_row(ui, &format!("F{}", index + 5), |ui| {
+                            ui.add_sized([ui.available_width(), 30.0], appearance::text_edit(&mut command.command));
+                        });
+                    }
+                });
             }
             _ => {
-                appearance::section(ui, &text("settings-paths-header"));
-                for (key, path) in [
-                    ("settings-paths-config-dir", icy_view::get_config_dir().to_path_buf()),
-                    ("settings-paths-config-file", icy_view::get_config_dir().join("options.toml")),
-                    ("settings-paths-log-file", Options::get_log_file()),
-                ] {
-                    appearance::form_row(ui, &text(key), |ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button(text("settings-paths-open")).clicked() {
-                                if let Err(error) = open::that(&path) {
-                                    self.error = Some(error.to_string());
+                let mut error = None;
+                appearance::group(ui, &text("settings-paths-header"), |ui| {
+                    for (key, path) in [
+                        ("settings-paths-config-dir", icy_view::get_config_dir().to_path_buf()),
+                        ("settings-paths-config-file", icy_view::get_config_dir().join("options.toml")),
+                        ("settings-paths-log-file", Options::get_log_file()),
+                    ] {
+                        appearance::form_row(ui, &text(key), |ui| {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button(text("settings-paths-open")).clicked() {
+                                    if let Err(open_error) = open::that(&path) {
+                                        error = Some(open_error.to_string());
+                                    }
                                 }
-                            }
-                            ui.add(egui::Label::new(path.to_string_lossy()).truncate())
-                                .on_hover_text(path.display().to_string());
+                                ui.add(egui::Label::new(path.to_string_lossy()).truncate())
+                                    .on_hover_text(path.display().to_string());
+                            });
                         });
-                    });
+                    }
+                });
+                if error.is_some() {
+                    self.error = error;
                 }
-                appearance::section(ui, &text("settings-paths-user-header"));
-                directory_row(ui, &mut self.draft.export_path);
+                appearance::group(ui, &text("settings-paths-user-header"), |ui| directory_row(ui, &mut self.draft.export_path));
             }
         }
     }
@@ -282,13 +297,20 @@ fn merge(target: &mut toml::Value, source: toml::Value) {
 
 fn directory_row(ui: &mut egui::Ui, directory: &mut String) {
     appearance::form_row(ui, &text("settings-paths-export-path"), |ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("...").on_hover_text(text("button-open")).clicked() && !ui.ctx().will_discard() {
+        ui.horizontal(|ui| {
+            let browse_width = 36.0;
+            let input_width = (ui.available_width() - browse_width - ui.spacing().item_spacing.x).max(40.0);
+            ui.add_sized([input_width, 30.0], appearance::text_edit(directory));
+            if ui
+                .add_sized([browse_width, 30.0], egui::Button::new("..."))
+                .on_hover_text(text("button-open"))
+                .clicked()
+                && !ui.ctx().will_discard()
+            {
                 if let Some(path) = rfd::FileDialog::new().set_directory(&*directory).pick_folder() {
                     *directory = path.to_string_lossy().into_owned();
                 }
             }
-            ui.add_sized([ui.available_width(), 30.0], appearance::text_edit(directory));
         });
     });
 }
@@ -424,9 +446,9 @@ impl Export {
             self.confirmed = None;
         }
         if !matches!(self.formats[self.format], FileFormat::Image(_)) {
-            ui.checkbox(&mut self.save_sauce, "SAUCE");
-            ui.checkbox(&mut self.options.preprocess.optimize_colors, text("egui-optimize-colors"));
-            ui.checkbox(&mut self.options.preprocess.normalize_whitespaces, text("egui-normalize-spaces"));
+            appearance::check_row(ui, "SAUCE", &mut self.save_sauce);
+            appearance::check_row(ui, &text("egui-optimize-colors"), &mut self.options.preprocess.optimize_colors);
+            appearance::check_row(ui, &text("egui-normalize-spaces"), &mut self.options.preprocess.normalize_whitespaces);
             if self.formats[self.format] == FileFormat::Ansi {
                 let mut ansi = self.options.ansi_options();
                 appearance::combo_row(ui, &text("egui-compatibility"), ansi.level.to_string(), |ui| {
@@ -441,7 +463,7 @@ impl Export {
                 });
                 screen_preparation(ui, &mut ansi.screen_prep);
                 ui.add_enabled_ui(ansi.level.supports_truecolor(), |ui| {
-                    ui.checkbox(&mut ansi.always_use_rgb, "Truecolor");
+                    appearance::check_row(ui, "Truecolor", &mut ansi.always_use_rgb);
                 });
                 let mut length = match ansi.line_length {
                     icy_engine::LineLength::Default => 0,

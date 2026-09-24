@@ -3,7 +3,10 @@ use eframe::egui::{self, Color32};
 use icy_engine::BitFont;
 use icy_engine_edit::bitfont::{BitFontAtomicUndoGuard, BitFontClipboardData, BitFontEditState, BitFontFocusedPanel, BitFontUndoState};
 use icy_engine_edit::tools::Tool;
-use icy_engine_gui::egui::{appearance, screen::ScreenView};
+use icy_engine_gui::egui::{
+    appearance::{self, labels, DialogButton, DialogSize},
+    screen::ScreenView,
+};
 use std::path::{Path, PathBuf};
 
 pub enum Action {
@@ -381,197 +384,222 @@ impl FontEditor {
                 }
             }
         }
-        let response = appearance::Dialog::new("font-editor", "Bitmap Font").max_width(860.0).show(context, |dialog| {
-            dialog.content(|ui| {
-                ui.scope(|ui| {
-                    if blocked || self.confirm_close {
-                        ui.disable();
-                    }
-                    let character = self.state.selected_char();
-                    ui.horizontal_wrapped(|ui| {
-                        for (tool, icon, label) in [
-                            (Tool::Click, "pencil", "Pixels"),
-                            (Tool::Select, "select", "Select Pixels"),
-                            (Tool::Line, "line", "Line"),
-                            (Tool::RectangleOutline, "rectangle_outline", "Rectangle"),
-                            (Tool::RectangleFilled, "rectangle_filled", "Filled Rectangle"),
-                            (Tool::Fill, "fill", "Fill"),
-                        ] {
-                            if self.icons.button(ui, icon, label, self.tool == tool).clicked() {
-                                self.finish();
-                                self.tool = tool;
+        #[derive(Clone, Copy)]
+        enum Footer {
+            Save,
+            Close,
+            Apply,
+            Discard,
+            KeepEditing,
+        }
+        let response = appearance::Dialog::new("font-editor")
+            .size(DialogSize::Width(860.0))
+            .fixed_height(600.0)
+            .show(context, |dialog| {
+                dialog.content(|ui| {
+                    appearance::group(ui, "", |ui| {
+                        ui.scope(|ui| {
+                            if blocked || self.confirm_close {
+                                ui.disable();
                             }
-                        }
-                    });
-                    ui.horizontal_wrapped(|ui| {
-                        if self.icons.button(ui, "arrow_left", "Undo", false).clicked() {
-                            self.operation(|state| state.undo());
-                        }
-                        if self.icons.button(ui, "arrow_right", "Redo", false).clicked() {
-                            self.operation(|state| state.redo());
-                        }
-                        if self.icons.button(ui, "flip_tool", "Flip Horizontally", false).clicked() {
-                            self.operation(|state| state.flip_glyph_x(character));
-                        }
-                        if self.icons.button(ui, "swap", "Flip Vertically", false).clicked() {
-                            self.operation(|state| state.flip_glyph_y(character));
-                        }
-                        if self.icons.button(ui, "invisible", "Invert", false).clicked() {
-                            self.operation(|state| state.inverse_glyph(character));
-                        }
-                        if self.icons.button(ui, "delete", "Clear Glyph", false).clicked() {
-                            self.operation(|state| state.clear_glyph(character));
-                        }
-                        if self.icons.button(ui, "file_copy", "Copy Glyph", false).clicked() {
-                            self.clipboard = Some(BitFontClipboardData::new(self.state.get_copy_data()));
-                        }
-                        if ui.button("Paste").clicked() {
-                            if let Some(data) = self.clipboard.clone() {
-                                self.operation(|state| state.paste_data(data));
-                            }
-                        }
-                        if ui.button("Preview").clicked() {
-                            self.finish();
-                            self.preview = Some(ScreenView::new(self.state.build_preview_content_for(character, 7, 0)));
-                        }
-                    });
-                    ui.horizontal_wrapped(|ui| {
-                        ui.add(egui::DragValue::new(&mut self.dimensions[0]).range(1..=8).prefix("Width "));
-                        ui.add(egui::DragValue::new(&mut self.dimensions[1]).range(1..=32).prefix("Height "));
-                        if ui.button("Resize").clicked() {
-                            let dimensions = self.dimensions;
-                            self.operation(|state| state.resize_font(dimensions[0], dimensions[1]));
-                        }
-                        ui.label(format!("Character {}", character as u32));
-                    });
-                    if let Some(preview) = &mut self.preview {
-                        let settings = icy_engine_gui::MonitorSettings {
-                            scaling_mode: icy_engine_gui::ScalingMode::Auto,
-                            ..Default::default()
-                        };
-                        ui.allocate_ui(egui::vec2(ui.available_width(), 260.0), |ui| {
-                            preview.show(ui, &settings);
-                        });
-                        if ui.button("Edit").clicked() {
-                            self.preview = None;
-                        }
-                    } else {
-                        egui::ScrollArea::horizontal().id_salt("font-grids").show(ui, |ui| {
-                            ui.horizontal_top(|ui| {
-                                let font = self.state.build_font();
-                                egui::Grid::new("font-charset").spacing(egui::Vec2::splat(1.0)).show(ui, |ui| {
-                                    for code in 0..256 {
-                                        let code = char::from_u32(code).unwrap();
-                                        if widgets::glyph(ui, &font, code, code == character, 19.0).clicked() {
-                                            self.finish();
-                                            self.state.set_selected_char(code);
-                                            self.state.set_focused_panel(BitFontFocusedPanel::CharSet);
-                                        }
-                                        if code as u32 % 16 == 15 {
-                                            ui.end_row();
-                                        }
-                                    }
-                                });
-                                ui.separator();
-                                let width = self.state.font_width();
-                                let height = self.state.font_height();
-                                let pixel = (300.0 / height.max(width) as f32).clamp(4.0, 24.0);
-                                let (rect, response) = ui.allocate_exact_size(egui::vec2(width as f32, height as f32) * pixel, egui::Sense::click_and_drag());
-                                let pixels = self.state.get_glyph_pixels(character);
-                                let shape_preview = self.shape_preview();
-                                for row in 0..height {
-                                    for column in 0..width {
-                                        let cell =
-                                            egui::Rect::from_min_size(rect.min + egui::vec2(column as f32, row as f32) * pixel, egui::Vec2::splat(pixel));
-                                        let color = if shape_preview.contains(&(column, row)) {
-                                            ui.visuals().selection.stroke.color
-                                        } else if pixels[row as usize][column as usize] {
-                                            ui.visuals().text_color()
-                                        } else {
-                                            Color32::from_gray(32)
-                                        };
-                                        ui.painter().rect_filled(cell.shrink(0.5), 0, color);
-                                        if self
-                                            .state
-                                            .edit_selection()
-                                            .is_some_and(|selection| selection.is_inside(icy_engine::Position::new(column, row)))
-                                        {
-                                            ui.painter()
-                                                .rect_filled(cell.shrink(0.5), 0, ui.visuals().selection.bg_fill.gamma_multiply(0.4));
-                                        }
-                                        if self.state.focused_panel() == BitFontFocusedPanel::EditGrid && self.state.cursor_pos() == (column, row) {
-                                            ui.painter().rect_stroke(
-                                                cell.shrink(1.0),
-                                                0,
-                                                egui::Stroke::new(2.0, ui.visuals().selection.stroke.color),
-                                                egui::StrokeKind::Inside,
-                                            );
-                                        }
-                                    }
-                                }
-                                let pointer = ui.input(|input| input.pointer.clone());
-                                if ui.is_enabled() && response.hovered() && pointer.any_pressed() {
-                                    if let Some(position) = pointer.interact_pos() {
-                                        let point =
-                                            icy_engine::Position::new(((position.x - rect.left()) / pixel) as i32, ((position.y - rect.top()) / pixel) as i32);
-                                        self.begin_grid(point, pointer.secondary_down());
-                                    }
-                                }
-                                if ui.is_enabled() && self.stroke.is_some() {
-                                    if let Some(position) = pointer.interact_pos().filter(|position| rect.contains(*position)) {
-                                        let point =
-                                            icy_engine::Position::new(((position.x - rect.left()) / pixel) as i32, ((position.y - rect.top()) / pixel) as i32);
-                                        self.update_grid(point);
-                                    }
-                                    if !pointer.any_down() {
+                            let character = self.state.selected_char();
+                            ui.horizontal_wrapped(|ui| {
+                                for (tool, icon, label) in [
+                                    (Tool::Click, "pencil", "Pixels"),
+                                    (Tool::Select, "select", "Select Pixels"),
+                                    (Tool::Line, "line", "Line"),
+                                    (Tool::RectangleOutline, "rectangle_outline", "Rectangle"),
+                                    (Tool::RectangleFilled, "rectangle_filled", "Filled Rectangle"),
+                                    (Tool::Fill, "fill", "Fill"),
+                                ] {
+                                    if self.icons.button(ui, icon, label, self.tool == tool).clicked() {
                                         self.finish();
+                                        self.tool = tool;
                                     }
                                 }
                             });
+                            ui.horizontal_wrapped(|ui| {
+                                if self.icons.button(ui, "arrow_left", "Undo", false).clicked() {
+                                    self.operation(|state| state.undo());
+                                }
+                                if self.icons.button(ui, "arrow_right", "Redo", false).clicked() {
+                                    self.operation(|state| state.redo());
+                                }
+                                if self.icons.button(ui, "flip_tool", "Flip Horizontally", false).clicked() {
+                                    self.operation(|state| state.flip_glyph_x(character));
+                                }
+                                if self.icons.button(ui, "swap", "Flip Vertically", false).clicked() {
+                                    self.operation(|state| state.flip_glyph_y(character));
+                                }
+                                if self.icons.button(ui, "invisible", "Invert", false).clicked() {
+                                    self.operation(|state| state.inverse_glyph(character));
+                                }
+                                if self.icons.button(ui, "delete", "Clear Glyph", false).clicked() {
+                                    self.operation(|state| state.clear_glyph(character));
+                                }
+                                if self.icons.button(ui, "file_copy", "Copy Glyph", false).clicked() {
+                                    self.clipboard = Some(BitFontClipboardData::new(self.state.get_copy_data()));
+                                }
+                                if ui.button("Paste").clicked() {
+                                    if let Some(data) = self.clipboard.clone() {
+                                        self.operation(|state| state.paste_data(data));
+                                    }
+                                }
+                                if ui.button("Preview").clicked() {
+                                    self.finish();
+                                    self.preview = Some(ScreenView::new(self.state.build_preview_content_for(character, 7, 0)));
+                                }
+                            });
+                            ui.horizontal_wrapped(|ui| {
+                                ui.add(egui::DragValue::new(&mut self.dimensions[0]).range(1..=8).prefix("Width "));
+                                ui.add(egui::DragValue::new(&mut self.dimensions[1]).range(1..=32).prefix("Height "));
+                                if ui.button("Resize").clicked() {
+                                    let dimensions = self.dimensions;
+                                    self.operation(|state| state.resize_font(dimensions[0], dimensions[1]));
+                                }
+                                ui.label(format!("Character {}", character as u32));
+                            });
+                            if let Some(preview) = &mut self.preview {
+                                let settings = icy_engine_gui::MonitorSettings {
+                                    scaling_mode: icy_engine_gui::ScalingMode::Auto,
+                                    ..Default::default()
+                                };
+                                ui.allocate_ui(egui::vec2(ui.available_width(), 260.0), |ui| {
+                                    preview.show(ui, &settings);
+                                });
+                                if ui.button("Edit").clicked() {
+                                    self.preview = None;
+                                }
+                            } else {
+                                egui::ScrollArea::horizontal().id_salt("font-grids").show(ui, |ui| {
+                                    ui.horizontal_top(|ui| {
+                                        let font = self.state.build_font();
+                                        egui::Grid::new("font-charset").spacing(egui::Vec2::splat(1.0)).show(ui, |ui| {
+                                            for code in 0..256 {
+                                                let code = char::from_u32(code).unwrap();
+                                                if widgets::glyph(ui, &font, code, code == character, 19.0).clicked() {
+                                                    self.finish();
+                                                    self.state.set_selected_char(code);
+                                                    self.state.set_focused_panel(BitFontFocusedPanel::CharSet);
+                                                }
+                                                if code as u32 % 16 == 15 {
+                                                    ui.end_row();
+                                                }
+                                            }
+                                        });
+                                        ui.separator();
+                                        let width = self.state.font_width();
+                                        let height = self.state.font_height();
+                                        let pixel = (300.0 / height.max(width) as f32).clamp(4.0, 24.0);
+                                        let (rect, response) =
+                                            ui.allocate_exact_size(egui::vec2(width as f32, height as f32) * pixel, egui::Sense::click_and_drag());
+                                        let pixels = self.state.get_glyph_pixels(character);
+                                        let shape_preview = self.shape_preview();
+                                        for row in 0..height {
+                                            for column in 0..width {
+                                                let cell = egui::Rect::from_min_size(
+                                                    rect.min + egui::vec2(column as f32, row as f32) * pixel,
+                                                    egui::Vec2::splat(pixel),
+                                                );
+                                                let color = if shape_preview.contains(&(column, row)) {
+                                                    ui.visuals().selection.stroke.color
+                                                } else if pixels[row as usize][column as usize] {
+                                                    ui.visuals().text_color()
+                                                } else {
+                                                    Color32::from_gray(32)
+                                                };
+                                                ui.painter().rect_filled(cell.shrink(0.5), 0, color);
+                                                if self
+                                                    .state
+                                                    .edit_selection()
+                                                    .is_some_and(|selection| selection.is_inside(icy_engine::Position::new(column, row)))
+                                                {
+                                                    ui.painter()
+                                                        .rect_filled(cell.shrink(0.5), 0, ui.visuals().selection.bg_fill.gamma_multiply(0.4));
+                                                }
+                                                if self.state.focused_panel() == BitFontFocusedPanel::EditGrid && self.state.cursor_pos() == (column, row) {
+                                                    ui.painter().rect_stroke(
+                                                        cell.shrink(1.0),
+                                                        0,
+                                                        egui::Stroke::new(2.0, ui.visuals().selection.stroke.color),
+                                                        egui::StrokeKind::Inside,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                        let pointer = ui.input(|input| input.pointer.clone());
+                                        if ui.is_enabled() && response.hovered() && pointer.any_pressed() {
+                                            if let Some(position) = pointer.interact_pos() {
+                                                let point = icy_engine::Position::new(
+                                                    ((position.x - rect.left()) / pixel) as i32,
+                                                    ((position.y - rect.top()) / pixel) as i32,
+                                                );
+                                                self.begin_grid(point, pointer.secondary_down());
+                                            }
+                                        }
+                                        if ui.is_enabled() && self.stroke.is_some() {
+                                            if let Some(position) = pointer.interact_pos().filter(|position| rect.contains(*position)) {
+                                                let point = icy_engine::Position::new(
+                                                    ((position.x - rect.left()) / pixel) as i32,
+                                                    ((position.y - rect.top()) / pixel) as i32,
+                                                );
+                                                self.update_grid(point);
+                                            }
+                                            if !pointer.any_down() {
+                                                self.finish();
+                                            }
+                                        }
+                                    });
+                                });
+                            }
+                            if let Some(error) = &self.error {
+                                ui.colored_label(ui.visuals().error_fg_color, error);
+                            }
                         });
-                    }
-                    if let Some(error) = &self.error {
-                        ui.colored_label(ui.visuals().error_fg_color, error);
-                    }
-                });
-                if self.confirm_close {
-                    if blocked {
-                        ui.disable();
-                    }
-                    ui.separator();
-                    ui.label("Discard unsaved font changes?");
-                    ui.horizontal(|ui| {
-                        if ui.button("Discard").clicked() {
-                            action = Some(Action::Close);
-                        }
-                        if ui.button("Keep Editing").clicked() {
-                            self.confirm_close = false;
+                        if self.confirm_close {
+                            if blocked {
+                                ui.disable();
+                            }
+                            ui.separator();
+                            ui.label("Discard unsaved font changes?");
                         }
                     });
+                });
+                if self.confirm_close {
+                    dialog.buttons([
+                        DialogButton::destructive("Discard", Footer::Discard).leading().enabled(!blocked),
+                        DialogButton::primary("Keep Editing", Footer::KeepEditing).cancels().enabled(!blocked),
+                    ]);
+                } else {
+                    let enabled = !blocked;
+                    dialog.buttons([
+                        DialogButton::secondary("Save Font...", Footer::Save).leading().enabled(enabled),
+                        DialogButton::cancel(labels::close(), Footer::Close).enabled(enabled),
+                        DialogButton::primary("Apply to Document", Footer::Apply).enabled(enabled),
+                    ]);
                 }
             });
-            dialog.actions(|ui| {
-                if blocked || self.confirm_close {
-                    ui.disable();
+        match response.action {
+            Some(Footer::Apply) => {
+                self.finish();
+                action = Some(Action::Apply(self.state.build_font()));
+            }
+            Some(Footer::Save) => {
+                self.finish();
+                action = Some(Action::Save);
+            }
+            Some(Footer::Close) => {
+                if self.modified() {
+                    self.confirm_close = true;
+                } else {
+                    action = Some(Action::Close);
                 }
-                if ui.button("Apply to Document").clicked() {
-                    self.finish();
-                    action = Some(Action::Apply(self.state.build_font()));
-                }
-                if ui.button("Save Font...").clicked() {
-                    self.finish();
-                    action = Some(Action::Save);
-                }
-                if ui.button("Close").clicked() {
-                    if self.modified() {
-                        self.confirm_close = true;
-                    } else {
-                        action = Some(Action::Close);
-                    }
-                }
-            });
-        });
-        if (response.closed || close_requested) && !blocked {
+            }
+            Some(Footer::Discard) => action = Some(Action::Close),
+            Some(Footer::KeepEditing) => self.confirm_close = false,
+            None => {}
+        }
+        if (response.dismissed || close_requested) && action.is_none() && !blocked {
             self.finish();
             if self.modified() {
                 self.confirm_close = true;

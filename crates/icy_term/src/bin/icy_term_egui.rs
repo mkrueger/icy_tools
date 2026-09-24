@@ -520,7 +520,8 @@ impl TerminalApp {
         self.connected = false;
         self.connecting = false;
         self.remote_focus = false;
-        self.transfers.event(&icy_term::TerminalEvent::Disconnected(None), &self.dialing_directory.options);
+        self.transfers
+            .event(&icy_term::TerminalEvent::Disconnected(None), &self.dialing_directory.options);
         self.tools.event(&icy_term::TerminalEvent::Disconnected(None));
         if let Some(sound) = &self.sound {
             sound.clear();
@@ -689,37 +690,21 @@ impl TerminalApp {
         if !self.show_monitor {
             return;
         }
-        let mut close = false;
-        let width = (context.content_rect().width() - 48.0).clamp(220.0, 480.0);
-        let height = (context.content_rect().height() - 120.0).clamp(110.0, 620.0);
-        egui::Window::new(&*tr!("settings-monitor-category"))
-            .id(egui::Id::new("monitor-settings"))
-            .title_bar(false)
-            .resizable(false)
-            .fixed_size(egui::vec2(width, height))
-            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-8.0, 48.0))
-            .frame(appearance::dialog_frame(context))
-            .show(context, |ui| {
-                ui.set_width(width);
-                ui.set_min_height(height);
-                close |= appearance::dialog_header(ui, &tr!("settings-monitor-category"));
-                egui::ScrollArea::vertical()
-                    .min_scrolled_height(0.0)
-                    .max_height((height - 104.0).max(0.0))
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        monitor::fields(ui, &mut self.settings);
-                    });
-                ui.separator();
-                ui.horizontal_wrapped(|ui| {
-                    if ui.button(tr!("egui-reset-monitor")).clicked() {
-                        self.settings = MonitorSettings::default();
-                    }
-                    close |= ui.button(tr!("egui-close")).clicked();
-                });
+        let response = appearance::Dialog::new("monitor-settings")
+            .size(appearance::DialogSize::Width(480.0))
+            .fixed_height(620.0)
+            .floating(egui::Align2::RIGHT_TOP, egui::vec2(-8.0, 48.0))
+            .show(context, |dialog| {
+                dialog.content(|ui| monitor::fields(ui, &mut self.settings));
+                dialog.buttons([
+                    appearance::DialogButton::secondary(tr!("egui-reset-monitor"), false).leading(),
+                    appearance::DialogButton::primary(tr!("egui-close"), true).cancels(),
+                ]);
             });
-        if close {
-            self.show_monitor = false;
+        match response.action {
+            Some(false) => self.settings = MonitorSettings::default(),
+            Some(true) => self.show_monitor = false,
+            None => self.show_monitor &= !response.dismissed,
         }
     }
 

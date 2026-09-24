@@ -1,5 +1,7 @@
 use ::egui::{self, Color32, CornerRadius, FontId, Stroke, TextStyle};
 
+pub use super::dialog::{button_row, dialog_frame, labels, ButtonKind, Dialog, DialogButton, DialogResponse, DialogSize, DialogUi, MessageBox, MessageKind};
+
 pub const PRIMARY: Color32 = Color32::from_rgb(32, 100, 160);
 
 /// Shared padding so every single-line input ends up the same height.
@@ -9,35 +11,200 @@ pub fn text_edit(value: &mut String) -> egui::TextEdit<'_> {
     egui::TextEdit::singleline(value).margin(FIELD_MARGIN)
 }
 
-pub fn dialog_frame(context: &egui::Context) -> egui::Frame {
-    egui::Frame::window(&context.style()).inner_margin(16)
-}
-
-pub fn dialog_header(ui: &mut egui::Ui, title: &str) -> bool {
-    let mut close = false;
-    ui.horizontal(|ui| {
-        let width = ui.available_width() - 32.0;
-        ui.allocate_ui_with_layout(egui::vec2(width, 28.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            ui.set_min_width(width);
-            ui.add(egui::Label::new(egui::RichText::new(title).strong().size(17.0)).wrap());
-        });
-        close = ui
-            .add_sized([24.0, 24.0], egui::Button::new(egui::RichText::new("\u{00d7}").size(20.0)).frame(false))
-            .on_hover_text(i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "dialog-close-button"))
-            .clicked();
-    });
-    ui.separator();
-    close
-}
-
 pub fn section(ui: &mut egui::Ui, title: &str) {
     ui.add_space(4.0);
     ui.label(egui::RichText::new(title).strong().size(14.0));
     ui.add_space(2.0);
 }
 
-pub struct DialogResponse {
-    pub closed: bool,
+const BOLD_FAMILY: &str = "icy-sans-bold";
+
+/// The semibold face, or the regular one when [`apply`] has not installed the fonts.
+pub fn bold_family(ui: &egui::Ui) -> egui::FontFamily {
+    let family = egui::FontFamily::Name(BOLD_FAMILY.into());
+    if ui.fonts(|fonts| fonts.definitions().families.contains_key(&family)) {
+        family
+    } else {
+        egui::FontFamily::Proportional
+    }
+}
+
+pub fn bold(ui: &egui::Ui, text: impl Into<String>) -> egui::RichText {
+    egui::RichText::new(text).strong().family(bold_family(ui))
+}
+
+/// Titled, rounded box around a set of rows, like the grouped panes of the macOS preferences.
+pub fn group<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    group_with_spacing(ui, title, 4.0, 12, 14.0, 8.0, add)
+}
+
+/// The same grouped surface with tighter spacing for dense, read-only information.
+pub fn compact_group<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    group_with_spacing(ui, title, 2.0, 6, 4.0, 3.0, add)
+}
+
+fn group_with_spacing<R>(
+    ui: &mut egui::Ui,
+    title: &str,
+    top_spacing: f32,
+    vertical_margin: i8,
+    bottom_spacing: f32,
+    row_spacing: f32,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    ui.add_space(top_spacing);
+    if !title.is_empty() {
+        ui.horizontal(|ui| {
+            ui.add_space(10.0);
+            ui.label(bold(ui, title).size(14.0));
+        });
+        ui.add_space(2.0);
+    }
+    let visuals = ui.visuals();
+    let fill = if visuals.dark_mode {
+        visuals.window_fill.lerp_to_gamma(visuals.faint_bg_color, 0.35)
+    } else {
+        // Slightly darker than the window, so white text fields stand out inside the box.
+        visuals.window_fill.lerp_to_gamma(visuals.widgets.inactive.bg_fill, 0.4)
+    };
+    let border = visuals.widgets.noninteractive.bg_stroke.color.lerp_to_gamma(visuals.window_fill, 0.3);
+    let inner = egui::Frame::new()
+        .fill(fill)
+        .stroke(Stroke::new(1.0, border))
+        .corner_radius(8)
+        .inner_margin(egui::Margin::symmetric(16, vertical_margin))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = row_spacing;
+            add(ui)
+        })
+        .inner;
+    ui.add_space(bottom_spacing);
+    inner
+}
+
+/// Square check box without a caption, filled with the accent colour when set.
+pub fn check(ui: &mut egui::Ui, value: &mut bool) -> egui::Response {
+    let side = 18.0;
+    let (rect, mut response) = ui.allocate_exact_size(egui::vec2(side, side.max(ui.spacing().interact_size.y - 6.0)), egui::Sense::click());
+    if response.clicked() {
+        *value = !*value;
+        response.mark_changed();
+    }
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *value, ""));
+    if ui.is_rect_visible(rect) {
+        let square = egui::Rect::from_center_size(rect.center(), egui::vec2(side, side));
+        let painter = ui.painter();
+        if *value {
+            let fill = if response.hovered() { PRIMARY.gamma_multiply(1.2) } else { PRIMARY };
+            painter.rect_filled(square, 4.0, fill);
+            let point = |x: f32, y: f32| square.min + egui::vec2(x, y) * side;
+            painter.add(egui::Shape::line(
+                vec![point(0.26, 0.52), point(0.43, 0.69), point(0.75, 0.33)],
+                Stroke::new(2.0, Color32::WHITE),
+            ));
+        } else {
+            let stroke = if response.hovered() {
+                ui.visuals().widgets.hovered.bg_stroke
+            } else {
+                ui.visuals().widgets.inactive.bg_stroke
+            };
+            painter.rect(square, 4.0, ui.visuals().extreme_bg_color, stroke, egui::StrokeKind::Inside);
+        }
+    }
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Form row with the caption in the label column and a [`check`] box in the control column.
+pub fn check_row(ui: &mut egui::Ui, label: &str, value: &mut bool) -> egui::Response {
+    ui.push_id(label, |ui| {
+        if ui.available_width() < FORM_STACK_WIDTH {
+            // Stacking would leave the box alone on its own line, so keep it beside the caption.
+            ui.horizontal(|ui| {
+                ui.add(egui::Label::new(label).wrap());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| check(ui, value)).inner
+            })
+            .inner
+        } else {
+            let mut response = None;
+            form_row(ui, label, |ui| response = Some(check(ui, value)));
+            response.unwrap()
+        }
+    })
+    .inner
+}
+
+/// Flat track with a filled leading part and a round handle.
+pub fn slider(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeInclusive<f32>, width: f32) -> egui::Response {
+    let (min, max) = (*range.start(), *range.end());
+    let (rect, mut response) = ui.allocate_exact_size(egui::vec2(width, ui.spacing().interact_size.y), egui::Sense::click_and_drag());
+    let radius = 8.0;
+    let (left, right) = (rect.left() + radius, (rect.right() - radius).max(rect.left() + radius + 1.0));
+    let before = *value;
+    if let Some(position) = response.interact_pointer_pos() {
+        let t = ((position.x - left) / (right - left)).clamp(0.0, 1.0);
+        *value = ((min + t * (max - min)) * 100.0).round() / 100.0;
+    }
+    if response.has_focus() {
+        let step = (max - min) / 100.0;
+        let (decrease, increase) = ui.input(|input| {
+            (
+                input.key_pressed(egui::Key::ArrowLeft) || input.key_pressed(egui::Key::ArrowDown),
+                input.key_pressed(egui::Key::ArrowRight) || input.key_pressed(egui::Key::ArrowUp),
+            )
+        });
+        if decrease {
+            *value = (*value - step).clamp(min, max);
+        }
+        if increase {
+            *value = (*value + step).clamp(min, max);
+        }
+    }
+    if *value != before {
+        response.mark_changed();
+    }
+    response.widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), f64::from(*value), ""));
+    if ui.is_rect_visible(rect) {
+        let t = if max > min { ((*value - min) / (max - min)).clamp(0.0, 1.0) } else { 0.0 };
+        let x = left + t * (right - left);
+        let y = rect.center().y;
+        let painter = ui.painter();
+        let track = egui::Rect::from_x_y_ranges(left..=right, (y - 2.0)..=(y + 2.0));
+        painter.rect_filled(track, 2.0, ui.visuals().widgets.noninteractive.bg_stroke.color);
+        painter.rect_filled(egui::Rect::from_x_y_ranges(left..=x, track.y_range()), 2.0, PRIMARY);
+        let active = response.hovered() || response.dragged() || response.has_focus();
+        let handle = if active { radius + 1.0 } else { radius };
+        painter.circle(egui::pos2(x, y), handle - 1.0, Color32::WHITE, Stroke::new(2.0, PRIMARY));
+    }
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// Pill shaped page selector: the current page is filled with the accent colour.
+pub fn tab<Value: PartialEq>(ui: &mut egui::Ui, current: &mut Value, value: Value, label: &str) -> egui::Response {
+    let selected = *current == value;
+    let galley = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.to_owned(), FontId::proportional(14.0), Color32::PLACEHOLDER));
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(galley.size().x + 20.0, 30.0), egui::Sense::click());
+    let pressed = response.is_pointer_button_down_on();
+    let hovered = response.hovered();
+    let fill = if selected {
+        Some(PRIMARY)
+    } else if pressed {
+        Some(PRIMARY.gamma_multiply(0.55))
+    } else if hovered {
+        Some(PRIMARY.gamma_multiply(0.3))
+    } else {
+        None
+    };
+    if let Some(fill) = fill {
+        ui.painter().rect_filled(rect, 6.0, fill);
+    }
+    let color = if selected { Color32::WHITE } else { ui.visuals().text_color() };
+    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
+    if response.clicked() {
+        *current = value;
+        ui.ctx().request_repaint();
+    }
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 pub fn chip(ui: &mut egui::Ui, label: &str, color: Color32) {
@@ -90,86 +257,6 @@ pub fn status_badge(ui: &mut egui::Ui, label: &str, color: Color32) {
         .text(egui::pos2(rect.left() + 18.0, rect.center().y), egui::Align2::LEFT_CENTER, label, font, color);
 }
 
-/// Shared modal shell so every dialog gets the same frame, header, body and action row.
-pub struct Dialog {
-    id: &'static str,
-    title: String,
-    max_width: f32,
-    max_height: f32,
-    scroll: bool,
-}
-
-/// Body and action row of a [`Dialog`]. Call `content` first, then `actions`.
-pub struct DialogUi<'a> {
-    ui: &'a mut egui::Ui,
-    id: &'static str,
-    body_height: f32,
-    scroll: bool,
-}
-
-impl DialogUi<'_> {
-    pub fn content(&mut self, add: impl FnOnce(&mut egui::Ui)) {
-        if self.scroll {
-            egui::ScrollArea::vertical()
-                .id_salt((self.id, "dialog-body"))
-                .auto_shrink([false, true])
-                .min_scrolled_height(0.0)
-                .max_height(self.body_height)
-                .show(self.ui, add);
-        } else {
-            add(self.ui);
-        }
-    }
-
-    /// Laid out right to left, so add the primary button first.
-    pub fn actions(&mut self, add: impl FnOnce(&mut egui::Ui)) {
-        self.ui.separator();
-        self.ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add);
-        });
-    }
-}
-
-impl Dialog {
-    pub fn new(id: &'static str, title: impl Into<String>) -> Self {
-        Self {
-            id,
-            title: title.into(),
-            max_width: 620.0,
-            max_height: 560.0,
-            scroll: true,
-        }
-    }
-
-    pub fn max_width(mut self, width: f32) -> Self {
-        self.max_width = width;
-        self
-    }
-
-    pub fn scroll(mut self, scroll: bool) -> Self {
-        self.scroll = scroll;
-        self
-    }
-
-    pub fn show(self, context: &egui::Context, body: impl FnOnce(&mut DialogUi)) -> DialogResponse {
-        let mut closed = false;
-        egui::Modal::new(egui::Id::new(self.id)).frame(dialog_frame(context)).show(context, |ui| {
-            let width = (context.content_rect().width() - 48.0).clamp(240.0, self.max_width);
-            let height = (context.content_rect().height() - 64.0).clamp(140.0, self.max_height);
-            ui.set_width(width);
-            closed |= dialog_header(ui, &self.title);
-            let mut dialog = DialogUi {
-                ui,
-                id: self.id,
-                body_height: (height - 110.0).max(60.0),
-                scroll: self.scroll,
-            };
-            body(&mut dialog);
-        });
-        DialogResponse { closed }
-    }
-}
-
 pub fn combo_row(ui: &mut egui::Ui, label: &str, selected: impl Into<egui::WidgetText>, choices: impl FnOnce(&mut egui::Ui)) {
     ui.push_id(label, |ui| {
         form_row(ui, label, |ui| {
@@ -183,12 +270,22 @@ pub fn combo_row(ui: &mut egui::Ui, label: &str, selected: impl Into<egui::Widge
 
 pub fn slider_row(ui: &mut egui::Ui, label: &str, value: &mut f32, range: std::ops::RangeInclusive<f32>) {
     form_row(ui, label, |ui| {
-        // The slider's value box grows with the number of digits, so cap the decimals and
-        // reserve room for it; otherwise a long value widens the whole dialog.
-        let width = ui.available_width();
-        ui.spacing_mut().slider_width = (width - 96.0).max(40.0);
-        ui.add(egui::Slider::new(value, range).max_decimals(2));
+        ui.horizontal(|ui| slider_with_value(ui, value, range));
     });
+}
+
+fn slider_with_value(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeInclusive<f32>) {
+    // The value box has a fixed width, otherwise a long value would widen the whole dialog.
+    let box_width = 64.0;
+    let spacing = ui.spacing().item_spacing.x;
+    let track = (ui.available_width() - box_width - spacing * 2.0).max(40.0);
+    slider(ui, value, range.clone(), track);
+    ui.add_space(spacing);
+    let speed = f64::from((*range.end() - *range.start()) / 200.0);
+    ui.add_sized(
+        [box_width, ui.spacing().interact_size.y],
+        egui::DragValue::new(value).range(range).max_decimals(2).speed(speed),
+    );
 }
 
 pub fn primary_button(label: impl Into<String>) -> egui::Button<'static> {
@@ -214,8 +311,11 @@ pub fn value_row_with_note(ui: &mut egui::Ui, label: &str, value: &str, note: &s
     });
 }
 
+/// Below this width [`form_row`] puts the caption above its control.
+const FORM_STACK_WIDTH: f32 = 280.0;
+
 pub fn form_row(ui: &mut egui::Ui, label: &str, control: impl FnOnce(&mut egui::Ui)) {
-    if ui.available_width() < 280.0 {
+    if ui.available_width() < FORM_STACK_WIDTH {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
             ui.add(egui::Label::new(label).wrap());
@@ -233,44 +333,6 @@ pub fn form_row(ui: &mut egui::Ui, label: &str, control: impl FnOnce(&mut egui::
     }
 }
 
-pub fn tab<Value: PartialEq>(ui: &mut egui::Ui, current: &mut Value, value: Value, label: &str) {
-    let selected = *current == value;
-    // Laid out with PLACEHOLDER so the colour can follow the interaction state without re-layout.
-    let galley = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.to_owned(), FontId::proportional(14.0), Color32::PLACEHOLDER));
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(galley.size().x + 20.0, 30.0), egui::Sense::click());
-    let accent = ui.visuals().selection.stroke.color;
-    let pressed = response.is_pointer_button_down_on();
-    let hovered = response.hovered();
-    if pressed || hovered {
-        let fill = if pressed {
-            ui.visuals().widgets.active.bg_fill
-        } else {
-            ui.visuals().widgets.hovered.bg_fill
-        };
-        ui.painter().rect_filled(rect.shrink2(egui::vec2(0.0, 2.0)), 4.0, fill);
-    }
-    let color = if selected || pressed {
-        accent
-    } else if hovered {
-        ui.visuals().strong_text_color()
-    } else {
-        ui.visuals().weak_text_color()
-    };
-    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
-    if selected {
-        ui.painter().line_segment([rect.left_bottom(), rect.right_bottom()], Stroke::new(2.0, accent));
-    } else if hovered {
-        ui.painter()
-            .line_segment([rect.left_bottom(), rect.right_bottom()], Stroke::new(1.0, ui.visuals().weak_text_color()));
-    }
-    if response.clicked() {
-        *current = value;
-        // The app only repaints on events, so make the page switch show up right away.
-        ui.ctx().request_repaint();
-    }
-    response.on_hover_cursor(egui::CursorIcon::PointingHand);
-}
-
 pub fn apply(context: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.insert(
@@ -278,6 +340,13 @@ pub fn apply(context: &egui::Context) {
         egui::FontData::from_static(include_bytes!("../../data/fonts/FiraSans-Regular.ttf")).into(),
     );
     fonts.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "icy-sans".into());
+    fonts.font_data.insert(
+        BOLD_FAMILY.into(),
+        egui::FontData::from_static(include_bytes!("../../data/fonts/FiraSans-SemiBold.ttf")).into(),
+    );
+    let mut bold = vec![BOLD_FAMILY.to_string()];
+    bold.extend(fonts.families[&egui::FontFamily::Proportional].iter().cloned());
+    fonts.families.insert(egui::FontFamily::Name(BOLD_FAMILY.into()), bold);
     context.set_fonts(fonts);
     context.all_styles_mut(|style| {
         style.text_styles.insert(TextStyle::Heading, FontId::proportional(17.0));
@@ -395,6 +464,54 @@ mod tests {
             egui::Shape::Rect(rect) => rect.rect.contains(position) && rect.rect.height() <= 30.0,
             _ => false,
         })
+    }
+
+    fn click(position: egui::Pos2) -> Vec<Vec<egui::Event>> {
+        let button = |pressed| egui::Event::PointerButton {
+            pos: position,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        vec![vec![egui::Event::PointerMoved(position)], vec![button(true)], vec![button(false)]]
+    }
+
+    /// Renders a check box above a slider and returns their rectangles.
+    fn controls(context: &egui::Context, events: Vec<egui::Event>, checked: &mut bool, value: &mut f32) -> (egui::Rect, egui::Rect) {
+        let mut rects = (egui::Rect::NOTHING, egui::Rect::NOTHING);
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 200.0))),
+                events,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    rects.0 = check(ui, checked).rect;
+                    rects.1 = slider(ui, value, 0.0..=100.0, 200.0).rect;
+                });
+            },
+        );
+        rects
+    }
+
+    #[test]
+    fn check_toggles_and_slider_follows_the_pointer() {
+        let context = egui::Context::default();
+        let (mut checked, mut value) = (false, 0.0f32);
+        let (check_rect, slider_rect) = controls(&context, vec![], &mut checked, &mut value);
+        for events in click(check_rect.center()) {
+            controls(&context, events, &mut checked, &mut value);
+        }
+        assert!(checked, "clicking the box must set it");
+        for events in click(egui::pos2(slider_rect.right(), slider_rect.center().y)) {
+            controls(&context, events, &mut checked, &mut value);
+        }
+        assert_eq!(value, 100.0, "clicking the end of the track must select the maximum");
+        for events in click(slider_rect.center()) {
+            controls(&context, events, &mut checked, &mut value);
+        }
+        assert!((value - 50.0).abs() < 0.5, "the middle of the track must select the midpoint, got {value}");
     }
 
     #[test]
