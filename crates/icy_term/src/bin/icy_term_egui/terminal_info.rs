@@ -174,15 +174,31 @@ impl Dialog {
         }
         let response = appearance::Dialog::new("terminal-information")
             .size(appearance::DialogSize::Width(740.0))
-            .fixed_height(680.0)
+            .fixed_height(595.0)
             .show(context, |dialog| {
                 dialog.content(|ui| {
-                    for pair in self.groups.chunks(2) {
-                        if ui.available_width() >= 600.0 {
+                    let Self {
+                        groups,
+                        profile,
+                        kitty_flags_description,
+                        ..
+                    } = self;
+                    let wide = ui.available_width() >= 600.0;
+                    for (index, pair) in groups.chunks(2).enumerate() {
+                        if index > 0 {
+                            ui.add_space(4.0);
+                        }
+                        if wide {
                             let scope = ui.scope(|ui| {
                                 ui.columns(2, |columns| {
                                     for (column, (title, fields)) in columns.iter_mut().zip(pair) {
-                                        self.group(column, title, fields);
+                                        group(column, kitty_flags_description, title, fields);
+                                    }
+                                    // The caret group is short, so the settings fill the space beside the terminal group.
+                                    if index == 0 {
+                                        let column = &mut columns[pair.len() - 1];
+                                        column.add_space(4.0);
+                                        appearance::compact_group(column, &tr!("settings-heading"), |ui| settings(ui, profile));
                                     }
                                 });
                             });
@@ -195,12 +211,13 @@ impl Dialog {
                             }
                         } else {
                             for (title, fields) in pair {
-                                self.group(ui, title, fields);
+                                group(ui, kitty_flags_description, title, fields);
                             }
                         }
-                        ui.add_space(8.0);
                     }
-                    appearance::group(ui, &tr!("settings-heading"), |ui| self.settings(ui));
+                    if !wide {
+                        appearance::compact_group(ui, &tr!("settings-heading"), |ui| settings(ui, profile));
+                    }
                 });
                 let changed = self.original != (self.profile.terminal_type, self.profile.screen_mode, self.profile.ansi_music);
                 dialog.buttons([
@@ -238,115 +255,115 @@ impl Dialog {
         }
         None
     }
+}
 
-    fn settings(&mut self, ui: &mut egui::Ui) {
-        ui.set_min_width(ui.available_width());
-        appearance::form_row(ui, &tr!("egui-terminal-emulation"), |ui| {
-            let previous = self.profile.terminal_type;
-            egui::ComboBox::from_id_salt("info-emulation")
-                .selected_text(icy_term::fmt_terminal_emulation(&previous))
-                .show_ui(ui, |ui| {
-                    for value in icy_term::ALL_TERMINALS {
-                        ui.selectable_value(&mut self.profile.terminal_type, value, icy_term::fmt_terminal_emulation(&value));
-                    }
-                });
-            if previous != self.profile.terminal_type {
-                self.profile.screen_mode = icy_term::normalize_screen_mode(self.profile.terminal_type, ScreenMode::default());
-            }
-        });
-        appearance::form_row(ui, &tr!("dialing_directory-screen_mode"), |ui| {
-            egui::ComboBox::from_id_salt("info-screen-mode")
-                .selected_text(self.profile.screen_mode.to_string())
-                .show_ui(ui, |ui| {
-                    let mut modes = match self.profile.screen_mode {
-                        ScreenMode::Vga(_, _) => icy_engine::VGA_MODES.to_vec(),
-                        ScreenMode::Unicode(_, _) => icy_engine::VGA_MODES
-                            .iter()
-                            .map(|mode| icy_term::normalize_screen_mode(TerminalEmulation::Utf8Ansi, *mode))
-                            .collect(),
-                        ScreenMode::Atascii(_) => vec![ScreenMode::Atascii(40), ScreenMode::Atascii(80)],
-                        ScreenMode::AtariST(_, igs) => [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High]
-                            .map(|resolution| ScreenMode::AtariST(resolution, igs))
-                            .to_vec(),
-                        mode => vec![mode],
-                    };
-                    if !modes.contains(&self.profile.screen_mode) {
-                        modes.push(self.profile.screen_mode);
-                    }
-                    for value in modes {
-                        ui.selectable_value(&mut self.profile.screen_mode, value, value.to_string());
-                    }
-                });
-        });
-        if self.profile.screen_mode.is_custom_vga() {
-            if let ScreenMode::Vga(width, height) | ScreenMode::Unicode(width, height) = &mut self.profile.screen_mode {
-                appearance::form_row(ui, &tr!("egui-screen-size"), |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.add(egui::DragValue::new(width).range(1..=500).prefix(format!("{}: ", tr!("egui-columns"))));
-                        ui.add(egui::DragValue::new(height).range(1..=200).prefix(format!("{}: ", tr!("egui-rows"))));
-                    });
-                });
-            }
+fn settings(ui: &mut egui::Ui, profile: &mut Address) {
+    ui.set_min_width(ui.available_width());
+    appearance::form_row(ui, &tr!("egui-terminal-emulation"), |ui| {
+        let previous = profile.terminal_type;
+        egui::ComboBox::from_id_salt("info-emulation")
+            .selected_text(icy_term::fmt_terminal_emulation(&previous))
+            .show_ui(ui, |ui| {
+                for value in icy_term::ALL_TERMINALS {
+                    ui.selectable_value(&mut profile.terminal_type, value, icy_term::fmt_terminal_emulation(&value));
+                }
+            });
+        if previous != profile.terminal_type {
+            profile.screen_mode = icy_term::normalize_screen_mode(profile.terminal_type, ScreenMode::default());
         }
-        if matches!(self.profile.terminal_type, TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi) {
-            appearance::form_row(ui, &tr!("egui-ansi-music"), |ui| {
-                egui::ComboBox::from_id_salt("info-music")
-                    .selected_text(self.profile.ansi_music.to_string())
-                    .show_ui(ui, |ui| {
-                        for value in [MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both] {
-                            ui.selectable_value(&mut self.profile.ansi_music, value, value.to_string());
-                        }
-                    });
+    });
+    appearance::form_row(ui, &tr!("dialing_directory-screen_mode"), |ui| {
+        egui::ComboBox::from_id_salt("info-screen-mode")
+            .selected_text(profile.screen_mode.to_string())
+            .show_ui(ui, |ui| {
+                let mut modes = match profile.screen_mode {
+                    ScreenMode::Vga(_, _) => icy_engine::VGA_MODES.to_vec(),
+                    ScreenMode::Unicode(_, _) => icy_engine::VGA_MODES
+                        .iter()
+                        .map(|mode| icy_term::normalize_screen_mode(TerminalEmulation::Utf8Ansi, *mode))
+                        .collect(),
+                    ScreenMode::Atascii(_) => vec![ScreenMode::Atascii(40), ScreenMode::Atascii(80)],
+                    ScreenMode::AtariST(_, igs) => [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High]
+                        .map(|resolution| ScreenMode::AtariST(resolution, igs))
+                        .to_vec(),
+                    mode => vec![mode],
+                };
+                if !modes.contains(&profile.screen_mode) {
+                    modes.push(profile.screen_mode);
+                }
+                for value in modes {
+                    ui.selectable_value(&mut profile.screen_mode, value, value.to_string());
+                }
+            });
+    });
+    if profile.screen_mode.is_custom_vga() {
+        if let ScreenMode::Vga(width, height) | ScreenMode::Unicode(width, height) = &mut profile.screen_mode {
+            appearance::form_row(ui, &tr!("egui-screen-size"), |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.add(egui::DragValue::new(width).range(1..=500).prefix(format!("{}: ", tr!("egui-columns"))));
+                    ui.add(egui::DragValue::new(height).range(1..=200).prefix(format!("{}: ", tr!("egui-rows"))));
+                });
             });
         }
     }
-
-    fn group(&self, ui: &mut egui::Ui, title: &str, fields: &[(String, String, String)]) {
-        appearance::compact_group(ui, title, |ui| {
-            for (name, value, note) in fields {
-                let descriptions = if name == &tr!("terminal-info-dialog-mouse-tracking") {
-                    vec![
-                        ("Off", tr!("terminal-info-dialog-mouse-mode-tooltip-off")),
-                        ("X10", tr!("terminal-info-dialog-mouse-mode-tooltip-x10")),
-                        ("VT200", tr!("terminal-info-dialog-mouse-mode-tooltip-vt200")),
-                        ("VT200Highlight", tr!("terminal-info-dialog-mouse-mode-tooltip-vt200highlight")),
-                        ("ButtonEvent", tr!("terminal-info-dialog-mouse-mode-tooltip-btnevent")),
-                        ("AnyEvent", tr!("terminal-info-dialog-mouse-mode-tooltip-anyevent")),
-                    ]
-                } else if name == &tr!("terminal-info-dialog-caret-shape") {
-                    vec![
-                        ("Block", tr!("terminal-info-dialog-shape-tooltip-block")),
-                        ("Underline", tr!("terminal-info-dialog-shape-tooltip-underline")),
-                        ("Bar", tr!("terminal-info-dialog-shape-tooltip-bar")),
-                    ]
-                } else {
-                    Vec::new()
-                };
-                let response = ui.scope(|ui| appearance::value_row_with_note(ui, name, value, note)).response;
-                if !descriptions.is_empty() || name == &tr!("egui-info-kitty") {
-                    ui.interact(response.rect, response.id.with("details"), egui::Sense::hover()).on_hover_ui(|ui| {
-                        ui.set_max_width((ui.ctx().content_rect().width() - 48.0).min(420.0));
-                        ui.strong(name);
-                        ui.separator();
-                        if descriptions.is_empty() {
-                            ui.add(egui::Label::new(&self.kitty_flags_description).wrap());
-                        }
-                        for (mode, description) in descriptions {
-                            let active = value.eq_ignore_ascii_case(mode);
-                            let color = if active { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
-                            ui.horizontal_top(|ui| {
-                                ui.allocate_ui_with_layout(egui::vec2(120.0, 18.0), egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                                    ui.set_min_width(120.0);
-                                    ui.label(egui::RichText::new(mode).monospace().color(color));
-                                });
-                                ui.add(egui::Label::new(egui::RichText::new(description).color(color)).wrap());
-                            });
-                        }
-                    });
-                }
-            }
+    if matches!(profile.terminal_type, TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi) {
+        appearance::form_row(ui, &tr!("egui-ansi-music"), |ui| {
+            egui::ComboBox::from_id_salt("info-music")
+                .selected_text(profile.ansi_music.to_string())
+                .show_ui(ui, |ui| {
+                    for value in [MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both] {
+                        ui.selectable_value(&mut profile.ansi_music, value, value.to_string());
+                    }
+                });
         });
     }
+}
+
+fn group(ui: &mut egui::Ui, kitty_flags_description: &str, title: &str, fields: &[(String, String, String)]) {
+    appearance::compact_group(ui, title, |ui| {
+        for (name, value, note) in fields {
+            let descriptions = if name == &tr!("terminal-info-dialog-mouse-tracking") {
+                vec![
+                    ("Off", tr!("terminal-info-dialog-mouse-mode-tooltip-off")),
+                    ("X10", tr!("terminal-info-dialog-mouse-mode-tooltip-x10")),
+                    ("VT200", tr!("terminal-info-dialog-mouse-mode-tooltip-vt200")),
+                    ("VT200Highlight", tr!("terminal-info-dialog-mouse-mode-tooltip-vt200highlight")),
+                    ("ButtonEvent", tr!("terminal-info-dialog-mouse-mode-tooltip-btnevent")),
+                    ("AnyEvent", tr!("terminal-info-dialog-mouse-mode-tooltip-anyevent")),
+                ]
+            } else if name == &tr!("terminal-info-dialog-caret-shape") {
+                vec![
+                    ("Block", tr!("terminal-info-dialog-shape-tooltip-block")),
+                    ("Underline", tr!("terminal-info-dialog-shape-tooltip-underline")),
+                    ("Bar", tr!("terminal-info-dialog-shape-tooltip-bar")),
+                ]
+            } else {
+                Vec::new()
+            };
+            let response = ui.scope(|ui| appearance::value_row_with_note(ui, name, value, note)).response;
+            if !descriptions.is_empty() || name == &tr!("egui-info-kitty") {
+                ui.interact(response.rect, response.id.with("details"), egui::Sense::hover()).on_hover_ui(|ui| {
+                    ui.set_max_width((ui.ctx().content_rect().width() - 48.0).min(420.0));
+                    ui.strong(name);
+                    ui.separator();
+                    if descriptions.is_empty() {
+                        ui.add(egui::Label::new(kitty_flags_description).wrap());
+                    }
+                    for (mode, description) in descriptions {
+                        let active = value.eq_ignore_ascii_case(mode);
+                        let color = if active { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
+                        ui.horizontal_top(|ui| {
+                            ui.allocate_ui_with_layout(egui::vec2(120.0, 18.0), egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                                ui.set_min_width(120.0);
+                                ui.label(egui::RichText::new(mode).monospace().color(color));
+                            });
+                            ui.add(egui::Label::new(egui::RichText::new(description).color(color)).wrap());
+                        });
+                    }
+                });
+            }
+        }
+    });
 }
 
 fn kitty_flags_description(flags: u8) -> String {

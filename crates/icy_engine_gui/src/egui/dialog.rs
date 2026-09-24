@@ -416,16 +416,19 @@ impl<A: Clone> DialogUi<'_, A> {
             return add(self.ui);
         }
         let max_height = (self.height - (self.ui.cursor().top() - self.top) - self.footer_height).max(0.0);
-        egui::ScrollArea::vertical()
+        let scrolls_id = self.id.with(("body-scrolls", self.page));
+        let scrolls = self.ui.data(|data| data.get_temp::<bool>(scrolls_id)).unwrap_or(false);
+        let output = egui::ScrollArea::vertical()
             .id_salt(self.id.with(("body", self.page)))
             .auto_shrink([false, !self.fixed])
             .min_scrolled_height(0.0)
             .max_height(max_height)
             .show(self.ui, |ui| {
-                // Keeps the content clear of the floating scroll bar.
+                // Keeps the content clear of the floating scroll bar, but only while there is one,
+                // so the body lines up with the button row otherwise.
                 egui::Frame::new()
                     .inner_margin(egui::Margin {
-                        right: 12,
+                        right: if scrolls { 12 } else { 0 },
                         ..Default::default()
                     })
                     .show(ui, |ui| {
@@ -433,8 +436,13 @@ impl<A: Clone> DialogUi<'_, A> {
                         add(ui)
                     })
                     .inner
-            })
-            .inner
+            });
+        let needs_scroll = output.content_size.y > output.inner_rect.height() + 0.5;
+        if needs_scroll != scrolls {
+            self.ui.data_mut(|data| data.insert_temp(scrolls_id, needs_scroll));
+            self.ui.ctx().request_discard("dialog scroll bar changed");
+        }
+        output.inner
     }
 
     /// Reports `action` as if one of the buttons was clicked, e.g. when picking an item closes the dialog.
@@ -454,7 +462,8 @@ impl<A: Clone> DialogUi<'_, A> {
             separator_y,
             ui.visuals().widgets.noninteractive.bg_stroke,
         );
-        ui.add_space(4.0);
+        // Matches the frame padding below the buttons, so the row sits centred in the footer.
+        ui.add_space(f32::from(DIALOG_PADDING));
         for button in &buttons {
             if button.cancel && self.state.cancel.is_none() {
                 self.state.cancel = Some(button.action.clone());

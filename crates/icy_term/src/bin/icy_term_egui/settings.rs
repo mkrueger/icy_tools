@@ -568,17 +568,19 @@ fn command_field(
 
 /// Read-only location with an optional button that reveals it in the file manager.
 fn location_row(ui: &mut egui::Ui, label: &str, path: Option<&Path>, open: Option<&Path>) {
-    let text = path.map_or_else(|| "N/A".to_string(), |path| path.display().to_string());
-    super::appearance::form_row(ui, label, |ui| {
-        // Right to left so the button claims its width first and the path truncates instead.
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let Some(target) = open {
-                if ui.button(&*tr!("settings-paths-open")).clicked() && !ui.ctx().will_discard() {
-                    let _ = open::that(target);
+    let mut text = path.map_or_else(|| "N/A".to_string(), |path| path.display().to_string());
+    ui.push_id(label, |ui| {
+        super::appearance::form_row(ui, label, |ui| {
+            // Right to left so the button claims its width first and the field takes the rest.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if let Some(target) = open {
+                    if ui.button(&*tr!("settings-paths-open")).clicked() && !ui.ctx().will_discard() {
+                        let _ = open::that(target);
+                    }
                 }
-            }
-            ui.add(egui::Label::new(egui::RichText::new(&text).monospace().size(11.0)).truncate().selectable(true))
-                .on_hover_text(&text);
+                let response = ui.add_enabled(false, super::appearance::text_edit(&mut text).desired_width(f32::INFINITY));
+                response.on_disabled_hover_text(&text);
+            });
         });
     });
 }
