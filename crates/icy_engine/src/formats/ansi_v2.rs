@@ -774,8 +774,36 @@ impl StringGeneratorV2 {
         font_map
     }
 
-    fn generate_cells<T: TextPane>(&self, buf: &TextBuffer, layer: &T, area: Rectangle, font_map: &HashMap<u8, u8>) -> (AnsiState, Vec<Vec<CharCell>>) {
+    /// Returns the SGR sequence that must be emitted at the end of a line so that
+    /// the following line break doesn't carry a non-black background along.
+    ///
+    /// Terminals like DOS `ANSI.SYS` (and xterm-style BCE terminals) fill newly
+    /// scrolled-in lines with the current background attribute. If a line ends
+    /// with a colored background, the next line would get that color up to the
+    /// line end wherever it isn't overwritten.
+    fn line_end_bg_reset(state: &mut AnsiState, default_state: &AnsiState) -> Option<&'static [u8]> {
+        if state.is_blink {
+            // In iCE mode blink encodes the high background intensity bit.
+            *state = default_state.clone();
+            return Some(b"\x1b[0m");
+        }
+        if state.bg_idx != 0 || state.bg.rgb() != default_state.bg.rgb() {
+            state.bg_idx = default_state.bg_idx;
+            state.bg = default_state.bg.clone();
+            return Some(b"\x1b[40m");
+        }
+        None
+    }
+
+    fn generate_cells<T: TextPane>(
+        &self,
+        buf: &TextBuffer,
+        layer: &T,
+        area: Rectangle,
+        font_map: &HashMap<u8, u8>,
+    ) -> (AnsiState, Vec<Vec<CharCell>>, Vec<Option<&'static [u8]>>) {
         let mut result: Vec<Vec<CharCell>> = Vec::new();
+        let mut line_end_resets: Vec<Option<&'static [u8]>> = Vec::new();
 
         let default_state = AnsiState {
             is_bold: false,
@@ -793,6 +821,7 @@ impl StringGeneratorV2 {
         };
 
         let mut state = default_state.clone();
+        let last_y = area.y_range().last();
 
         for y in area.y_range() {
             let mut line = Vec::new();
@@ -808,6 +837,7 @@ impl StringGeneratorV2 {
                 if let Some(skip_lines) = &self.options.skip_lines {
                     if skip_lines.contains(&(y as usize)) {
                         result.push(line);
+                        line_end_resets.push(None);
                         continue;
                     }
                 }
@@ -893,9 +923,18 @@ impl StringGeneratorV2 {
             // In UTF-8 mode we keep the state across lines; the legacy exporter
             // resets this for some modes, but doing so changes output size.
             result.push(line);
+
+            // UTF-8 output already resets SGR before each line break and GotoXY output
+            // never scrolls via line breaks.
+            let needs_line_end_reset = !self.level.supports_utf8() && !self.options.longer_terminal_output && Some(y) != last_y;
+            line_end_resets.push(if needs_line_end_reset {
+                Self::line_end_bg_reset(&mut state, &default_state)
+            } else {
+                None
+            });
         }
 
-        (state, result)
+        (state, result, line_end_resets)
     }
 
     fn generate<T: TextPane>(&mut self, buf: &TextBuffer, layer: &T) -> AnsiState {
@@ -920,7 +959,7 @@ impl StringGeneratorV2 {
             area.size.height = line_count.min(area.size.height);
         }
 
-        let (state, cells) = self.generate_cells(buf, layer, area, &font_map);
+        let (state, cells, line_end_resets) = self.generate_cells(buf, layer, area, &font_map);
         let mut cur_font_page = 0;
 
         let mut effective_line_lengths: Vec<usize> = Vec::with_capacity(cells.len());
@@ -1101,6 +1140,10 @@ impl StringGeneratorV2 {
             }
 
             if !self.options.longer_terminal_output {
+                if let Some(Some(reset)) = line_end_resets.get(y) {
+                    result.extend_from_slice(reset);
+                }
+
                 // Deterministic playback: always emit CRLF between rows.
                 // Relying on terminal autowrap differs across emulators and also
                 // makes roundtrip-parse comparisons flaky.

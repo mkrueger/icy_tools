@@ -274,3 +274,72 @@ pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compar
         }
     }
 }
+
+/// Returns `true` if any line break is emitted while a background color (or blink,
+/// which encodes bright backgrounds in iCE mode) is active.
+fn has_background_at_line_break(data: &[u8]) -> bool {
+    let mut bg = 0;
+    let mut blink = false;
+    let mut i = 0;
+    while i < data.len() {
+        match data[i] {
+            0x1B if data.get(i + 1) == Some(&b'[') => {
+                let start = i + 2;
+                let mut end = start;
+                while end < data.len() && !data[end].is_ascii_alphabetic() {
+                    end += 1;
+                }
+                if data.get(end) == Some(&b'm') {
+                    let params = std::str::from_utf8(&data[start..end]).unwrap();
+                    for p in params.split(';') {
+                        match p.parse::<u32>().unwrap_or(0) {
+                            0 => {
+                                bg = 0;
+                                blink = false;
+                            }
+                            5 => blink = true,
+                            p @ 40..=47 => bg = p - 40,
+                            _ => {}
+                        }
+                    }
+                }
+                i = end + 1;
+            }
+            b'\n' => {
+                if bg != 0 || blink {
+                    return true;
+                }
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    false
+}
+
+#[test]
+fn test_no_background_bleed_at_line_end() {
+    use icy_engine::formats::{AnsiCompatibilityLevel, AnsiFormatOptions, FormatOptions};
+
+    let data = b"\x1b[41mX\x1b[0m\r\n\x1b[1;37;44mY\x1b[0m\r\nZ\x1b[5;41mW\x1b[0m\r\nQ";
+    let buf = FileFormat::Ansi.from_bytes(data, None).unwrap().screen.buffer;
+
+    for level in [AnsiCompatibilityLevel::AnsiSys, AnsiCompatibilityLevel::Vt100, AnsiCompatibilityLevel::IcyTerm] {
+        let mut options = SaveOptions::new();
+        options.format = FormatOptions::Ansi(AnsiFormatOptions::new(level));
+        let bytes = FileFormat::Ansi.to_bytes(&buf, &options).unwrap();
+        assert!(
+            !has_background_at_line_break(&bytes),
+            "{level:?}: background active at line break: {:?}",
+            String::from_utf8_lossy(&bytes)
+        );
+
+        let reloaded = FileFormat::Ansi.from_bytes(&bytes, None).unwrap().screen.buffer;
+        for (x, y) in [(0, 0), (0, 1), (0, 2), (1, 2), (0, 3)] {
+            let expected = buf.char_at((x, y).into());
+            let actual = reloaded.char_at((x, y).into());
+            assert_eq!(expected.ch, actual.ch, "{level:?} at {x},{y}");
+            assert_eq!(expected.attribute, actual.attribute, "{level:?} at {x},{y}");
+        }
+    }
+}
