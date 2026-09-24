@@ -89,9 +89,11 @@ fn native_close_commits_shape_and_waits_for_picker() {
             .push(egui::ViewportEvent::Close);
         let output = context.run(input, |context| app.show(context));
         assert!(app.document.modified());
-        assert!(output.viewport_output[&egui::ViewportId::ROOT]
-            .commands
-            .contains(&egui::ViewportCommand::CancelClose));
+        assert!(
+            output.viewport_output[&egui::ViewportId::ROOT]
+                .commands
+                .contains(&egui::ViewportCommand::CancelClose)
+        );
         assert_eq!(matches!(app.dialog, Some(Dialog::Close)), !picker);
     }
 }
@@ -243,7 +245,7 @@ fn editor_chrome_matches_the_original_panel_layout() {
         assert_eq!(rendered("Layers"), panel, "{size:?}: layers");
         if panel {
             assert!(app.canvas_rect.right() <= size.x - chrome::PANEL_WIDTH, "{size:?}: right panel missing");
-            assert!(rendered("80 x 25"), "{size:?}: document dimensions missing");
+            assert!(rendered("80 × 25"), "{size:?}: document dimensions missing");
         }
         assert!(rendered("ICE") && rendered("SQUARE"), "{size:?}: status toggles missing");
     }
@@ -275,6 +277,40 @@ fn toolbar_height_stays_fixed_across_tools_and_window_sizes() {
             assert!(app.canvas_rect.height() > 150.0);
         }
     }
+}
+
+#[test]
+fn rail_color_switcher_swaps_and_opens_palette_popup() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(440.0, 700.0);
+    let rendered = |output: &egui::FullOutput, label: &str| {
+        output.shapes.iter().any(|shape| match &shape.shape {
+            egui::Shape::Text(text) => text.galley.text().contains(label),
+            _ => false,
+        })
+    };
+    for _ in 0..2 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    let bottom = size.y - chrome::STATUS_HEIGHT - 8.0;
+    let swap = egui::pos2(chrome::SIDEBAR_WIDTH - 11.0, bottom - 33.0);
+    let colors = |app: &DrawApp| {
+        app.document.with_state(|state| {
+            let attribute = state.get_caret().attribute;
+            (attribute.foreground(), attribute.background())
+        })
+    };
+    let (foreground, background) = colors(&app);
+    frame(&context, &mut app, size, pointer(swap, true));
+    frame(&context, &mut app, size, pointer(swap, false));
+    assert_eq!(colors(&app), (background, foreground));
+    let swatch = egui::pos2(14.0, bottom - 28.0);
+    frame(&context, &mut app, size, pointer(swatch, true));
+    frame(&context, &mut app, size, pointer(swatch, false));
+    let output = frame(&context, &mut app, size, vec![]);
+    assert!(rendered(&output, "Edit Palette"), "palette popup missing");
 }
 
 #[test]
@@ -583,9 +619,10 @@ fn gpu_selection_mask_covers_the_same_cells_as_a_rectangle() {
         );
         app.document.update(Position::new(29, 8));
         app.document.finish();
-        assert!(app
-            .document
-            .with_state(|state| state.selection().is_none() && state.get_is_mask_selected(Position::new(25, 6))));
+        assert!(
+            app.document
+                .with_state(|state| state.selection().is_none() && state.get_is_mask_selected(Position::new(25, 6)))
+        );
         gpu.capture(&mut app, size, 1.0, vec![], "mask-selection-warmup");
         let mask = marked_area(&gpu.capture(&mut app, size, 1.0, vec![], "mask-selection"), size);
         for (rect_edge, mask_edge) in [(rectangle.0, mask.0), (rectangle.1, mask.1), (rectangle.2, mask.2), (rectangle.3, mask.3)] {

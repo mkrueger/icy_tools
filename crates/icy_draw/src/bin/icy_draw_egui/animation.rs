@@ -1,6 +1,6 @@
-use super::widgets::Icons;
+use super::widgets::{self, Icons};
 use eframe::egui;
-use icy_engine_gui::{egui::screen::ScreenView, MonitorSettings, ScalingMode};
+use icy_engine_gui::{MonitorSettings, ScalingMode, egui::screen::ScreenView};
 use icy_engine_scripting::Animator;
 use parking_lot::Mutex;
 use std::sync::{
@@ -315,81 +315,112 @@ impl AnimationEditor {
         if self.compiling.is_some() || self.pending || self.playing || self.export_job.is_some() {
             context.request_repaint_after(Duration::from_millis(16));
         }
-        egui::TopBottomPanel::top("animation-controls").show(context, |ui| {
-            if blocked {
-                ui.disable();
-            }
-            ui.horizontal_wrapped(|ui| {
-                if self.icons.button(ui, "replay", "Compile", false).clicked() {
-                    self.compile();
-                }
-                if self
-                    .icons
-                    .button(ui, if self.playing { "pause" } else { "play" }, "Play / Pause", self.playing)
-                    .clicked()
-                {
-                    self.playing = !self.playing;
-                    self.tick = Instant::now();
-                }
-                if self.icons.button(ui, "navigate_prev", "Previous Frame", false).clicked() {
-                    self.frame = self.frame.saturating_sub(1);
-                    self.playing = false;
+        let panel_fill = context.style().visuals.panel_fill;
+        egui::TopBottomPanel::top("animation-controls")
+            .exact_height(44.0)
+            .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::symmetric(8, 0)))
+            .show(context, |ui| {
+                if blocked {
+                    ui.disable();
                 }
                 let count = self.animator.lock().frames.len();
-                if self.icons.button(ui, "navigate_next", "Next Frame", false).clicked() {
-                    self.frame = (self.frame + 1).min(count.saturating_sub(1));
-                    self.playing = false;
-                }
-                ui.checkbox(&mut self.looping, "Loop");
-                ui.add(egui::DragValue::new(&mut self.speed).range(0.1..=8.0).speed(0.1).suffix("x"));
-                if self.compiling.is_some() {
-                    ui.spinner();
-                }
-                ui.add_enabled_ui(count > 0 && self.export_job.is_none(), |ui| {
-                    ui.menu_button("Export", |ui| {
-                        for format in [ExportFormat::Gif, ExportFormat::Cast] {
-                            if ui.button(format.name()).clicked() {
-                                self.export_request = Some(format);
-                                ui.close();
+                ui.horizontal_centered(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    if self.icons.button(ui, "replay", "Compile", false).clicked() {
+                        self.compile();
+                    }
+                    if self.compiling.is_some() {
+                        ui.spinner();
+                    }
+                    widgets::divider(ui);
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    if self.icons.button(ui, "navigate_prev", "Previous Frame", false).clicked() {
+                        self.frame = self.frame.saturating_sub(1);
+                        self.playing = false;
+                    }
+                    if self
+                        .icons
+                        .button(ui, if self.playing { "pause" } else { "play" }, "Play / Pause", self.playing)
+                        .clicked()
+                    {
+                        self.playing = !self.playing;
+                        self.tick = Instant::now();
+                    }
+                    if self.icons.button(ui, "navigate_next", "Next Frame", false).clicked() {
+                        self.frame = (self.frame + 1).min(count.saturating_sub(1));
+                        self.playing = false;
+                    }
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    widgets::divider(ui);
+                    widgets::toggle(ui, "Loop", &mut self.looping, "Restart at the first frame after the last one");
+                    ui.add(egui::DragValue::new(&mut self.speed).range(0.1..=8.0).speed(0.1).suffix("×"))
+                        .on_hover_text("Playback speed");
+                    widgets::divider(ui);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_enabled_ui(count > 0 && self.export_job.is_none(), |ui| {
+                            ui.menu_button("Export", |ui| {
+                                for format in [ExportFormat::Gif, ExportFormat::Cast] {
+                                    if ui.button(format.name()).clicked() {
+                                        self.export_request = Some(format);
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        });
+                        if let Some(job) = &self.export_job {
+                            if ui.button("Cancel").clicked() {
+                                job.cancelled.store(true, Ordering::Relaxed);
                             }
+                            ui.add(egui::ProgressBar::new(job.progress.load(Ordering::Relaxed) as f32 / job.count.max(1) as f32).desired_width(90.0));
+                        }
+                        if count > 0 {
+                            ui.label(
+                                egui::RichText::new(format!("{} / {count}", self.frame + 1))
+                                    .size(12.0)
+                                    .color(ui.visuals().weak_text_color()),
+                            );
+                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                ui.spacing_mut().slider_width = (ui.available_width() - 8.0).max(40.0);
+                                ui.add(egui::Slider::new(&mut self.frame, 0..=count - 1).show_value(false))
+                                    .on_hover_text("Frame");
+                            });
                         }
                     });
                 });
-                if let Some(job) = &self.export_job {
-                    ui.add(egui::ProgressBar::new(job.progress.load(Ordering::Relaxed) as f32 / job.count.max(1) as f32).desired_width(100.0));
-                    if ui.button("Cancel Export").clicked() {
-                        job.cancelled.store(true, Ordering::Relaxed);
-                    }
-                }
             });
-            let count = self.animator.lock().frames.len();
-            if count > 0 {
-                ui.spacing_mut().slider_width = (ui.available_width() - 115.0).clamp(60.0, 400.0);
-                ui.add(egui::Slider::new(&mut self.frame, 0..=count - 1).text("Frame"));
-            }
-        });
         let error = self.export_error.clone().unwrap_or_else(|| self.animator.lock().error.clone());
         if !error.is_empty() {
-            egui::TopBottomPanel::bottom("animation-error").max_height(130.0).show(context, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.colored_label(ui.visuals().error_fg_color, error);
+            egui::TopBottomPanel::bottom("animation-error")
+                .max_height(130.0)
+                .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::symmetric(12, 8)))
+                .show(context, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.colored_label(ui.visuals().error_fg_color, error);
+                    });
                 });
-            });
         }
+        let source_frame = egui::Frame::new().fill(context.style().visuals.extreme_bg_color);
         if context.content_rect().width() >= 850.0 {
             egui::SidePanel::left("animation-source")
                 .default_width(500.0)
                 .width_range(260.0..=900.0)
                 .resizable(true)
+                .frame(source_frame)
                 .show(context, |ui| self.code(ui, blocked));
         } else {
             egui::TopBottomPanel::top("animation-source-compact")
                 .resizable(true)
                 .default_height(220.0)
                 .min_height(80.0)
+                .frame(source_frame)
                 .show(context, |ui| self.code(ui, blocked));
         }
-        egui::CentralPanel::default().show(context, |ui| {
+        let well = if context.style().visuals.dark_mode {
+            egui::Color32::from_gray(22)
+        } else {
+            egui::Color32::from_gray(212)
+        };
+        egui::CentralPanel::default().frame(egui::Frame::new().fill(well)).show(context, |ui| {
             if let Some(preview) = &mut self.preview {
                 preview.show(ui, &self.monitor);
             }
@@ -407,6 +438,8 @@ impl AnimationEditor {
                     egui::TextEdit::multiline(&mut self.source)
                         .id(egui::Id::new("animation-source-editor"))
                         .code_editor()
+                        .frame(false)
+                        .margin(egui::Margin::symmetric(12, 10))
                         .desired_width(f32::INFINITY)
                         .desired_rows(30),
                 )

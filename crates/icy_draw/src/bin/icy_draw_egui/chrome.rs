@@ -1,23 +1,25 @@
-//! Editor chrome that mirrors the original icy_ui layout: colour switcher and
-//! tool column on the left, minimap and layers on the right, moebius status bar.
+//! Editor chrome: tool rail on the left, tool options bar on top, sidebar with
+//! colours, minimap and layers on the right and a compact status bar.
 
-use super::{Dialog, DrawApp};
+use super::{Dialog, DrawApp, widgets};
 use eframe::egui::{self, Color32};
 use icy_engine::{LayerProperties, Position, Rectangle, RenderOptions, Role, TextBuffer, TextPane};
 use icy_engine_edit::tools::{Tool, ToolPair};
-use icy_engine_gui::egui::appearance::{self, labels, Dialog as SharedDialog, DialogButton, DialogSize};
+use icy_engine_gui::egui::appearance::{self, Dialog as SharedDialog, DialogButton, DialogSize, PRIMARY, labels};
 
-/// Width of the original left bar (`LEFT_BAR_WIDTH`).
-pub const SIDEBAR_WIDTH: f32 = 52.0;
-/// Width of the original right panel (`RIGHT_PANEL_BASE_WIDTH`).
-pub const PANEL_WIDTH: f32 = 320.0;
-/// Original `TOP_CONTROL_TOTAL_HEIGHT`.
-pub const TOOLBAR_HEIGHT: f32 = 52.0;
-/// Original `TOOL_ICON_SIZE`.
-const TOOL_ICON: f32 = 42.0;
-const LAYER_PREVIEW: [usize; 2] = [128, 80];
-const LAYER_ROW_HEIGHT: f32 = 86.0;
+/// Width of the left tool rail.
+pub const SIDEBAR_WIDTH: f32 = 48.0;
+/// Width of the right sidebar with colours, minimap and layers.
+pub const PANEL_WIDTH: f32 = 280.0;
+/// Height of the full-width tool options bar.
+pub const TOOLBAR_HEIGHT: f32 = 44.0;
+pub const STATUS_HEIGHT: f32 = 28.0;
+const TOOL_ICON: f32 = 36.0;
+const LAYER_PREVIEW: [usize; 2] = [56, 36];
+const LAYER_ROW_HEIGHT: f32 = 48.0;
 const MINIMAP_PIXELS: usize = 512;
+/// Horizontal padding of the right sidebar sections.
+const SECTION_MARGIN: i8 = 12;
 
 const TOOL_SLOTS: [ToolPair; 10] = [
     ToolPair::single(Tool::Click),
@@ -152,7 +154,7 @@ fn layer_preview(buffer: &TextBuffer, index: usize) -> Option<egui::ColorImage> 
 }
 
 impl DrawApp {
-    /// Original colour switcher: overlapping fg/bg swatches, swap and default corners.
+    /// Overlapping foreground/background swatches with swap and reset corners; opens a palette popup.
     fn color_switcher(&mut self, ui: &mut egui::Ui) {
         let (foreground, background) = self.document.with_state(|state| {
             let palette = &state.get_buffer().palette;
@@ -162,109 +164,147 @@ impl DrawApp {
                 attribute.background_color().as_rgb().unwrap_or_else(|| palette.rgb(attribute.background())),
             )
         });
-        let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(SIDEBAR_WIDTH), egui::Sense::click());
+        let (rect, _) = ui.allocate_exact_size(egui::Vec2::splat(40.0), egui::Sense::hover());
+        let swatch = 24.0;
+        let foreground_rect = egui::Rect::from_min_size(rect.min, egui::Vec2::splat(swatch));
+        let background_rect = egui::Rect::from_min_size(rect.max - egui::Vec2::splat(swatch), egui::Vec2::splat(swatch));
+        let swap = egui::Rect::from_min_size(egui::pos2(rect.right() - 14.0, rect.top()), egui::Vec2::splat(14.0));
+        let default = egui::Rect::from_min_size(egui::pos2(rect.left(), rect.bottom() - 14.0), egui::Vec2::splat(14.0));
+        let colors = ui
+            .interact(foreground_rect.union(background_rect), ui.id().with("caret-colors"), egui::Sense::click())
+            .on_hover_text("Foreground / Background – click to pick a palette color");
+        let swap_response = ui
+            .interact(swap, ui.id().with("swap-colors"), egui::Sense::click())
+            .on_hover_text("Swap Foreground and Background");
+        let default_response = ui
+            .interact(default, ui.id().with("default-colors"), egui::Sense::click())
+            .on_hover_text("Default Colors");
+
+        let visuals = ui.visuals().clone();
         let painter = ui.painter();
-        let swatch = 26.0;
-        let foreground_rect = egui::Rect::from_min_size(rect.min + egui::vec2(2.0, 2.0), egui::Vec2::splat(swatch));
-        let background_rect = egui::Rect::from_min_size(rect.max - egui::vec2(swatch + 2.0, swatch + 2.0), egui::Vec2::splat(swatch));
+        let border = visuals.widgets.inactive.fg_stroke.color.gamma_multiply(0.6);
         let plate = |target: egui::Rect, (red, green, blue): (u8, u8, u8)| {
-            painter.rect_filled(target, 0, Color32::BLACK);
-            painter.rect_filled(target.shrink(1.0), 0, Color32::WHITE);
-            painter.rect_filled(target.shrink(2.0), 0, Color32::from_rgb(red, green, blue));
+            painter.rect_filled(target.expand(2.0), 6, visuals.panel_fill);
+            painter.rect_filled(target, 4, Color32::from_rgb(red, green, blue));
+            painter.rect_stroke(target, 4, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
         };
         plate(background_rect, background);
         plate(foreground_rect, foreground);
-        let swap = egui::Rect::from_min_size(egui::pos2(rect.right() - 23.0, rect.top()), egui::Vec2::splat(23.0));
-        let default = egui::Rect::from_min_size(egui::pos2(rect.left() + 1.0, rect.bottom() - 14.0), egui::Vec2::splat(13.0));
-        let hovered = response.hover_pos();
-        painter.rect_filled(egui::Rect::from_min_size(default.min, egui::Vec2::splat(9.0)), 0, Color32::from_gray(170));
-        painter.rect_stroke(
-            egui::Rect::from_min_size(default.min + egui::vec2(4.0, 4.0), egui::Vec2::splat(9.0)),
-            0,
-            egui::Stroke::new(1.0, Color32::from_gray(170)),
-            egui::StrokeKind::Inside,
-        );
-        painter.rect_filled(
-            egui::Rect::from_min_size(default.min + egui::vec2(4.0, 4.0), egui::Vec2::splat(9.0)),
-            0,
-            Color32::BLACK,
-        );
-        self.icons.image(ui, "swap", 23.0).paint_at(ui, swap);
-        if response.clicked() {
-            match hovered {
-                Some(point) if swap.contains(point) => {
-                    self.document.with_state(|state| state.swap_caret_colors());
-                }
-                Some(point) if default.expand(3.0).contains(point) => self.document.with_state(|state| {
-                    state.set_caret_foreground(7);
-                    state.set_caret_background(0);
-                }),
-                Some(point) if foreground_rect.contains(point) || background_rect.contains(point) => {
-                    let foreground = foreground_rect.contains(point);
-                    self.palette_edit = self.document.with_state(|state| state.get_buffer().palette.clone());
-                    self.palette_index = self.document.with_state(|state| {
-                        let attribute = state.get_caret().attribute;
-                        if foreground {
-                            attribute.foreground()
-                        } else {
-                            attribute.background()
-                        }
-                    }) as usize;
-                    self.palette_index = self.palette_index.min(self.palette_edit.len().saturating_sub(1));
-                    self.dialog = Some(Dialog::Palette);
-                }
-                _ => {}
+        let tint = |response: &egui::Response| {
+            if response.hovered() {
+                visuals.strong_text_color()
+            } else {
+                visuals.weak_text_color()
             }
-        }
-        let hint = match hovered {
-            Some(point) if swap.contains(point) => "Swap Foreground and Background",
-            Some(point) if default.expand(3.0).contains(point) => "Default Colors",
-            Some(point) if foreground_rect.contains(point) => "Edit Foreground Palette Color",
-            _ => "Edit Background Palette Color",
         };
-        response.on_hover_text(hint);
+        self.icons
+            .image(ui, "swap", 12.0)
+            .tint(tint(&swap_response))
+            .paint_at(ui, egui::Rect::from_center_size(swap.center(), egui::Vec2::splat(12.0)));
+        let reset_color = tint(&default_response);
+        let back = egui::Rect::from_min_size(default.min + egui::vec2(5.0, 5.0), egui::Vec2::splat(7.0));
+        let front = egui::Rect::from_min_size(default.min + egui::vec2(1.0, 1.0), egui::Vec2::splat(7.0));
+        ui.painter().rect_filled(back, 1, Color32::BLACK);
+        ui.painter().rect_stroke(back, 1, egui::Stroke::new(1.0, reset_color), egui::StrokeKind::Inside);
+        ui.painter().rect_filled(front, 1, Color32::from_gray(170));
+        ui.painter()
+            .rect_stroke(front, 1, egui::Stroke::new(1.0, reset_color), egui::StrokeKind::Inside);
+
+        if swap_response.clicked() {
+            self.document.with_state(|state| state.swap_caret_colors());
+        }
+        if default_response.clicked() {
+            self.document.with_state(|state| {
+                state.set_caret_foreground(7);
+                state.set_caret_background(0);
+            });
+        }
+        egui::Popup::from_toggle_button_response(&colors)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .align(egui::RectAlign::RIGHT_END)
+            .align_alternatives(&[egui::RectAlign::RIGHT_START, egui::RectAlign::RIGHT])
+            .show(|ui| {
+                ui.set_width(208.0);
+                ui.weak("Left click: foreground · Right click: background");
+                self.palette_grid(ui, 208.0);
+                if ui.button("Edit Palette…").clicked() {
+                    self.open_palette_editor(true);
+                    ui.close();
+                }
+            });
     }
 
-    /// Original left bar: palette grid above the tool column.
+    fn open_palette_editor(&mut self, foreground: bool) {
+        self.palette_edit = self.document.with_state(|state| state.get_buffer().palette.clone());
+        self.palette_index = self.document.with_state(|state| {
+            let attribute = state.get_caret().attribute;
+            if foreground { attribute.foreground() } else { attribute.background() }
+        }) as usize;
+        self.palette_index = self.palette_index.min(self.palette_edit.len().saturating_sub(1));
+        self.dialog = Some(Dialog::Palette);
+    }
+
+    /// Left tool rail: grouped tools on top, colour switcher at the bottom.
     pub(super) fn sidebar(&mut self, ui: &mut egui::Ui) {
-        ui.spacing_mut().item_spacing = egui::vec2(0.0, 4.0);
-        egui::ScrollArea::vertical().id_salt("sidebar").show(ui, |ui| {
-            self.palette_grid(ui, SIDEBAR_WIDTH);
-            ui.add_space(4.0);
-            ui.spacing_mut().item_spacing = egui::vec2(0.0, 2.0);
-            ui.vertical_centered(|ui| {
-                for pair in TOOL_SLOTS {
-                    if self.document.outline_font && !matches!(pair.primary, Tool::Click | Tool::Select) {
-                        continue;
-                    }
-                    if self.charfont.is_some() && pair.primary == Tool::Tag {
-                        continue;
-                    }
-                    let selected = pair.contains(self.document.tool);
-                    let tool = if selected { self.document.tool } else { pair.primary };
-                    let response = self.icons.button_sized(ui, tool.icon(), tool.name(), selected, TOOL_ICON);
-                    if response.clicked() {
-                        self.select_tool(if selected { pair.toggle(tool) } else { pair.primary });
-                    }
-                    if pair.primary != pair.secondary {
-                        let corner = response.rect.right_bottom() - egui::vec2(4.0, 4.0);
-                        ui.painter().add(egui::Shape::convex_polygon(
-                            vec![corner, corner - egui::vec2(5.0, 0.0), corner - egui::vec2(0.0, 5.0)],
-                            ui.visuals().text_color(),
-                            egui::Stroke::NONE,
-                        ));
-                        response.context_menu(|ui| {
-                            for variant in [pair.primary, pair.secondary] {
-                                if ui.selectable_label(self.document.tool == variant, variant.name()).clicked() {
-                                    self.select_tool(variant);
-                                    ui.close();
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
+            ui.add_space(8.0);
+            self.color_switcher(ui);
+            ui.add_space(2.0);
+            rail_divider(ui);
+            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("sidebar")
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .show(ui, |ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.add_space(6.0);
+                            let mut last_group = None;
+                            for (slot, pair) in TOOL_SLOTS.into_iter().enumerate() {
+                                if self.document.outline_font && !matches!(pair.primary, Tool::Click | Tool::Select) {
+                                    continue;
                                 }
+                                if self.charfont.is_some() && pair.primary == Tool::Tag {
+                                    continue;
+                                }
+                                let group = TOOL_GROUPS.iter().position(|&end| slot < end);
+                                if last_group.is_some_and(|last| Some(last) != group) {
+                                    rail_divider(ui);
+                                }
+                                last_group = group;
+                                self.tool_button(ui, pair);
                             }
                         });
+                    });
+            });
+        });
+    }
+
+    fn tool_button(&mut self, ui: &mut egui::Ui, pair: ToolPair) {
+        let selected = pair.contains(self.document.tool);
+        let tool = if selected { self.document.tool } else { pair.primary };
+        let label = format!("{} – {}", tool.name(), tool.tooltip());
+        let response = self.icons.button_sized(ui, tool.icon(), &label, selected, TOOL_ICON);
+        if response.clicked() {
+            self.select_tool(if selected { pair.toggle(tool) } else { pair.primary });
+        }
+        if pair.primary != pair.secondary {
+            let corner = response.rect.right_bottom() - egui::vec2(4.0, 4.0);
+            let color = if selected { Color32::WHITE } else { ui.visuals().weak_text_color() };
+            ui.painter().add(egui::Shape::convex_polygon(
+                vec![corner, corner - egui::vec2(4.0, 0.0), corner - egui::vec2(0.0, 4.0)],
+                color,
+                egui::Stroke::NONE,
+            ));
+            response.context_menu(|ui| {
+                for variant in [pair.primary, pair.secondary] {
+                    if ui.selectable_label(self.document.tool == variant, variant.name()).clicked() {
+                        self.select_tool(variant);
+                        ui.close();
                     }
                 }
             });
-        });
+        }
     }
 
     pub(super) fn select_tool(&mut self, tool: Tool) {
@@ -338,7 +378,7 @@ impl DrawApp {
         markers
     }
 
-    /// 16 colours as 8×2 squares like the original palette grid.
+    /// Row-major palette grid: left click sets the foreground, right click the background.
     fn palette_grid(&mut self, ui: &mut egui::Ui, width: f32) {
         let (palette, foreground, background) = self.document.with_state(|state| {
             let attribute = state.get_caret().attribute;
@@ -348,47 +388,42 @@ impl DrawApp {
         if count == 0 {
             return;
         }
-        let columns = if count == 8 {
-            1
-        } else if count <= 16 {
-            2
-        } else {
-            (width / 12.0).floor().max(2.0) as usize
-        };
-        let cell = width / columns.max(2) as f32;
-        let inset = (width - cell * columns as f32) / 2.0;
+        let columns = if count <= 16 { 8 } else { 16 }.min(count);
+        let cell = width / columns as f32;
         let rows = count.div_ceil(columns);
         let (rect, response) = ui.allocate_exact_size(egui::vec2(width, cell * rows as f32), egui::Sense::click());
+        let gap = if cell >= 16.0 { 3.0 } else { 1.0 };
+        let rounding = if cell >= 16.0 { 4 } else { 1 };
+        let edge = ui.visuals().widgets.noninteractive.bg_stroke.color;
+        let hovered = response.hover_pos().and_then(|point| {
+            let local = point - rect.min;
+            let (column, row) = ((local.x / cell) as usize, (local.y / cell) as usize);
+            (local.x >= 0.0 && local.y >= 0.0 && column < columns && row * columns + column < count).then_some(row * columns + column)
+        });
         let painter = ui.painter();
         for index in 0..count {
-            let (column, row) = if count == 16 {
-                (index / 8, index % 8)
-            } else {
-                (index % columns, index / columns)
-            };
-            let origin = rect.min + egui::vec2(inset + column as f32 * cell, row as f32 * cell);
-            let target = egui::Rect::from_min_size(origin, egui::Vec2::splat(cell));
+            let (column, row) = (index % columns, index / columns);
+            let target = egui::Rect::from_min_size(rect.min + egui::vec2(column as f32 * cell, row as f32 * cell), egui::Vec2::splat(cell)).shrink(gap / 2.0);
             let (red, green, blue) = palette.rgb(index as u32);
-            painter.rect_filled(target, 0, Color32::from_rgb(red, green, blue));
+            painter.rect_filled(target, rounding, Color32::from_rgb(red, green, blue));
+            painter.rect_stroke(target, rounding, egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
             if index as u32 == foreground {
-                painter.rect_stroke(target.shrink(1.0), 0, egui::Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Inside);
-                painter.rect_stroke(target, 0, egui::Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Inside);
+                painter.rect_stroke(target, rounding, egui::Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Inside);
+                painter.rect_stroke(target.shrink(2.0), rounding, egui::Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Inside);
+            } else if hovered == Some(index) {
+                painter.rect_stroke(
+                    target,
+                    rounding,
+                    egui::Stroke::new(1.0, ui.visuals().strong_text_color()),
+                    egui::StrokeKind::Inside,
+                );
             }
             if index as u32 == background {
-                painter.circle_filled(target.center(), 3.0, Color32::WHITE);
-                painter.circle_stroke(target.center(), 3.0, egui::Stroke::new(1.0, Color32::BLACK));
+                let radius = (cell * 0.14).clamp(2.0, 3.5);
+                painter.circle_filled(target.center(), radius, Color32::WHITE);
+                painter.circle_stroke(target.center(), radius, egui::Stroke::new(1.0, Color32::BLACK));
             }
         }
-        let hovered = response.hover_pos().and_then(|point| {
-            let local = point - rect.min - egui::vec2(inset, 0.0);
-            if local.x < 0.0 || local.x >= columns as f32 * cell {
-                return None;
-            }
-            let column = (local.x / cell) as usize;
-            let row = (local.y / cell) as usize;
-            let index = if count == 16 { column * 8 + row } else { row * columns + column };
-            (index < count).then_some(index)
-        });
         if let Some(index) = hovered {
             if response.clicked() {
                 self.document.with_state(|state| state.set_caret_foreground(index as u32));
@@ -401,69 +436,113 @@ impl DrawApp {
         }
     }
 
-    /// Original top toolbar: colour switcher plus the active tool's options.
+    /// Full-width tool options bar: the active tool's name followed by its options.
     pub(super) fn toolbar(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            self.color_switcher(ui);
-            ui.separator();
+        ui.horizontal_centered(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.add_space(8.0);
+            let (icon, name) = if self.document.paste_active() {
+                ("anchor", "Paste")
+            } else {
+                (self.document.tool.icon(), self.document.tool.name())
+            };
+            let wide = ui.available_width() >= 760.0;
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(if wide { 150.0 } else { 28.0 }, widgets::CONTROL_HEIGHT), egui::Sense::hover());
+            let icon_rect = egui::Rect::from_min_size(egui::pos2(rect.left(), rect.center().y - 14.0), egui::Vec2::splat(28.0));
+            ui.painter().rect_filled(icon_rect, 6, ui.visuals().widgets.inactive.weak_bg_fill);
+            self.icons
+                .image(ui, icon, 18.0)
+                .tint(ui.visuals().strong_text_color())
+                .paint_at(ui, egui::Rect::from_center_size(icon_rect.center(), egui::Vec2::splat(18.0)));
+            if wide {
+                ui.painter().with_clip_rect(rect).text(
+                    egui::pos2(icon_rect.right() + 8.0, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    name,
+                    egui::FontId::proportional(14.0),
+                    ui.visuals().strong_text_color(),
+                );
+            }
+            widgets::divider(ui);
             egui::ScrollArea::horizontal()
                 .id_salt("tool-options")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.set_height(TOOLBAR_HEIGHT);
-                    self.tool_options(ui, context);
+                    ui.horizontal_centered(|ui| self.tool_options(ui, context));
                 });
         });
     }
 
-    /// Right panel: minimap over the layer list, split like the original pane grid.
+    /// Right sidebar: palette, minimap and layers as separated sections.
     pub(super) fn panel(&mut self, ui: &mut egui::Ui) {
         let signature = self.document.with_state(|state| signature(state.get_buffer()));
+        if self.charfont.is_some() {
+            section(ui, |ui| self.charfont_section(ui));
+        }
         if self.document.outline_font {
-            ui.horizontal(|ui| {
-                ui.label("Outline Preview");
-                egui::ComboBox::from_id_salt("outline-preview-style")
-                    .selected_text(format!("Style {}", self.chrome.outline_style + 1))
-                    .show_ui(ui, |ui| {
-                        for style in 0..19 {
-                            ui.selectable_value(&mut self.chrome.outline_style, style, format!("Style {}", style + 1));
-                        }
-                    });
-            });
-            if self
-                .chrome
-                .outline_preview
-                .as_ref()
-                .is_none_or(|(key, style, _)| *key != signature || *style != self.chrome.outline_style)
-            {
-                let buffer = icy_draw::charfont::outline_preview(&self.document, self.chrome.outline_style);
-                if let Some(image) = render(&buffer, MINIMAP_PIXELS) {
-                    self.chrome.outline_preview = Some((
-                        signature,
-                        self.chrome.outline_style,
-                        ui.ctx().load_texture("outline-preview", image, egui::TextureOptions::NEAREST),
-                    ));
+            section(ui, |ui| {
+                let style = &mut self.chrome.outline_style;
+                widgets::section_header(ui, "Outline Preview", |ui| {
+                    egui::ComboBox::from_id_salt("outline-preview-style")
+                        .width(90.0)
+                        .selected_text(format!("Style {}", *style + 1))
+                        .show_ui(ui, |ui| {
+                            for index in 0..19 {
+                                ui.selectable_value(style, index, format!("Style {}", index + 1));
+                            }
+                        });
+                });
+                if self
+                    .chrome
+                    .outline_preview
+                    .as_ref()
+                    .is_none_or(|(key, style, _)| *key != signature || *style != self.chrome.outline_style)
+                {
+                    let buffer = icy_draw::charfont::outline_preview(&self.document, self.chrome.outline_style);
+                    if let Some(image) = render(&buffer, MINIMAP_PIXELS) {
+                        self.chrome.outline_preview = Some((
+                            signature,
+                            self.chrome.outline_style,
+                            ui.ctx().load_texture("outline-preview", image, egui::TextureOptions::NEAREST),
+                        ));
+                    }
                 }
-            }
-            if let Some((_, _, texture)) = &self.chrome.outline_preview {
-                ui.add(egui::Image::new(texture).fit_to_exact_size(egui::vec2(
-                    ui.available_width(),
-                    ui.available_width() * texture.size()[1] as f32 / texture.size()[0] as f32,
-                )));
-            }
+                if let Some((_, _, texture)) = &self.chrome.outline_preview {
+                    ui.add(egui::Image::new(texture).corner_radius(4).fit_to_exact_size(egui::vec2(
+                        ui.available_width(),
+                        ui.available_width() * texture.size()[1] as f32 / texture.size()[0] as f32,
+                    )));
+                }
+            });
             return;
         }
-        egui::TopBottomPanel::top("minimap")
-            .resizable(true)
-            .default_height(200.0)
-            .height_range(80.0..=420.0)
-            .show_inside(ui, |ui| self.minimap(ui, signature));
+        section(ui, |ui| {
+            widgets::section_header(ui, "Colors", |ui| {
+                if widgets::status_button(ui, "Edit…", "Edit Palette").clicked() {
+                    self.open_palette_editor(true);
+                }
+            });
+            self.palette_grid(ui, ui.available_width());
+        });
+        if self.charfont.is_none() {
+            egui::TopBottomPanel::top("minimap")
+                .resizable(true)
+                .default_height(190.0)
+                .height_range(90.0..=420.0)
+                .frame(egui::Frame::new().inner_margin(egui::Margin {
+                    left: SECTION_MARGIN,
+                    right: SECTION_MARGIN,
+                    top: 2,
+                    bottom: 10,
+                }))
+                .show_inside(ui, |ui| self.minimap(ui, signature));
+        }
         self.layers(ui, signature);
     }
 
     fn minimap(&mut self, ui: &mut egui::Ui, signature: u64) {
-        ui.label("Minimap");
+        widgets::section_header(ui, "Minimap", |_| {});
         if self.chrome.minimap.as_ref().is_none_or(|(key, _)| *key != signature) {
             if let Some(image) = self.document.with_state(|state| render(state.get_buffer(), MINIMAP_PIXELS)) {
                 let texture = ui.ctx().load_texture("minimap", image, egui::TextureOptions::LINEAR);
@@ -473,12 +552,14 @@ impl DrawApp {
         let Some((_, texture)) = self.chrome.minimap.clone() else {
             return;
         };
-        let available = ui.available_size();
+        let (well, _) = ui.allocate_exact_size(ui.available_size(), egui::Sense::hover());
+        ui.painter().rect_filled(well, 6, ui.visuals().extreme_bg_color);
+        let available = well.shrink(6.0).size();
         let [width, height] = texture.size();
         let scale = (available.x / width as f32).min(available.y / height as f32).max(0.01);
         let size = egui::vec2(width as f32 * scale, height as f32 * scale);
-        let (outer, response) = ui.allocate_exact_size(egui::vec2(available.x, size.y), egui::Sense::click_and_drag());
-        let rect = egui::Rect::from_center_size(outer.center(), size);
+        let rect = egui::Rect::from_center_size(well.center(), size);
+        let response = ui.interact(rect, ui.id().with("minimap-image"), egui::Sense::click_and_drag());
         ui.painter().image(
             texture.id(),
             rect,
@@ -492,12 +573,11 @@ impl DrawApp {
                 rect.min + egui::vec2(self.view.offset.x / content.x * size.x, self.view.offset.y / content.y * size.y),
                 egui::vec2((viewport.x / content.x).min(1.0) * size.x, (viewport.y / content.y).min(1.0) * size.y),
             );
-            ui.painter().rect_stroke(
-                visible.intersect(rect),
-                0,
-                egui::Stroke::new(1.0, ui.visuals().selection.bg_fill),
-                egui::StrokeKind::Inside,
-            );
+            if visible.width() < size.x - 1.0 || visible.height() < size.y - 1.0 {
+                ui.painter().rect_filled(visible.intersect(rect), 0, PRIMARY.gamma_multiply(0.15));
+                ui.painter()
+                    .rect_stroke(visible.intersect(rect), 0, egui::Stroke::new(1.5, PRIMARY), egui::StrokeKind::Inside);
+            }
             if let Some(point) = (response.clicked() || response.dragged()).then(|| response.interact_pointer_pos()).flatten() {
                 let normalized = (point - rect.min) / size;
                 let offset = egui::vec2(normalized.x * content.x, normalized.y * content.y) - viewport / 2.0;
@@ -533,84 +613,96 @@ impl DrawApp {
                     .is_some_and(|(properties, _, role)| !properties.is_locked && *role != Role::Image)
                 && !rows[index - 1].0.is_locked
         };
-        ui.horizontal(|ui| {
-            ui.strong("Layers");
-            ui.weak(rows.len().to_string());
-        });
-        egui::TopBottomPanel::bottom("layer-actions").exact_height(38.0).show_inside(ui, |ui| {
-            ui.horizontal_centered(|ui| {
-                if self.icons.button(ui, "add_layer", "Add Layer", false).clicked() {
-                    action = Some(LayerAction::Add(current));
-                }
-                if self.icons.button(ui, "file_copy", "Duplicate Layer", false).clicked() {
-                    action = Some(LayerAction::Duplicate(current));
-                }
-                ui.add_enabled_ui(current_unlocked && current + 1 < rows.len(), |ui| {
-                    if self.icons.button(ui, "move_up", "Raise Layer", false).clicked() {
-                        action = Some(LayerAction::Raise(current));
-                    }
-                });
-                ui.add_enabled_ui(current_unlocked && current > 0, |ui| {
-                    if self.icons.button(ui, "move_down", "Lower Layer", false).clicked() {
-                        action = Some(LayerAction::Lower(current));
-                    }
-                });
-                ui.add_enabled_ui(can_merge(current), |ui| {
-                    if self.icons.button(ui, "anchor", "Merge Down", false).clicked() {
-                        action = Some(LayerAction::Merge(current));
-                    }
-                });
-                if self.icons.button(ui, "measure", "Layer Properties", false).clicked() {
-                    action = Some(LayerAction::Properties(current));
-                }
-                ui.add_enabled_ui(current_unlocked && rows.len() > 1, |ui| {
-                    if self.icons.button(ui, "delete", "Delete Layer", false).clicked() {
-                        action = Some(LayerAction::Remove(current));
-                    }
-                });
+        egui::Frame::new().inner_margin(egui::Margin::symmetric(SECTION_MARGIN, 0)).show(ui, |ui| {
+            widgets::section_header(ui, "Layers", |ui| {
+                ui.weak(rows.len().to_string());
             });
         });
+        egui::TopBottomPanel::bottom("layer-actions")
+            .exact_height(40.0)
+            .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 0)))
+            .show_inside(ui, |ui| {
+                ui.horizontal_centered(|ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    if self.icons.button(ui, "add_layer", "Add Layer", false).clicked() {
+                        action = Some(LayerAction::Add(current));
+                    }
+                    if self.icons.button(ui, "file_copy", "Duplicate Layer", false).clicked() {
+                        action = Some(LayerAction::Duplicate(current));
+                    }
+                    ui.add_enabled_ui(current_unlocked && current + 1 < rows.len(), |ui| {
+                        if self.icons.button(ui, "move_up", "Raise Layer", false).clicked() {
+                            action = Some(LayerAction::Raise(current));
+                        }
+                    });
+                    ui.add_enabled_ui(current_unlocked && current > 0, |ui| {
+                        if self.icons.button(ui, "move_down", "Lower Layer", false).clicked() {
+                            action = Some(LayerAction::Lower(current));
+                        }
+                    });
+                    ui.add_enabled_ui(can_merge(current), |ui| {
+                        if self.icons.button(ui, "anchor", "Merge Down", false).clicked() {
+                            action = Some(LayerAction::Merge(current));
+                        }
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        ui.add_enabled_ui(current_unlocked && rows.len() > 1, |ui| {
+                            if self.icons.button(ui, "delete", "Delete Layer", false).clicked() {
+                                action = Some(LayerAction::Remove(current));
+                            }
+                        });
+                        if self.icons.button(ui, "measure", "Layer Properties", false).clicked() {
+                            action = Some(LayerAction::Properties(current));
+                        }
+                    });
+                });
+            });
         self.chrome.previews.resize_with(rows.len(), || None);
+        let row_pitch = LAYER_ROW_HEIGHT + 2.0;
         egui::ScrollArea::vertical()
             .id_salt("layers")
             .auto_shrink([false, false])
-            .show_rows(ui, LAYER_ROW_HEIGHT, rows.len(), |ui, range| {
+            .show_rows(ui, row_pitch, rows.len(), |ui, range| {
+                ui.spacing_mut().item_spacing.y = 2.0;
                 for row in range {
                     let index = rows.len() - row - 1;
                     let (properties, dimensions, _) = &rows[index];
                     self.ensure_layer_preview(ui.ctx(), index, signature);
                     let selected = index == current;
-                    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), LAYER_ROW_HEIGHT), egui::Sense::click());
+                    let (outer, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), LAYER_ROW_HEIGHT), egui::Sense::click());
+                    let rect = outer.shrink2(egui::vec2(6.0, 0.0));
                     let fill = if selected {
                         ui.visuals().selection.bg_fill
                     } else if response.hovered() {
-                        ui.visuals().widgets.hovered.bg_fill
+                        ui.visuals().widgets.hovered.weak_bg_fill
                     } else {
                         Color32::TRANSPARENT
                     };
-                    ui.painter().rect_filled(rect, 0, fill);
-                    if selected {
-                        ui.painter().rect_filled(
-                            egui::Rect::from_min_size(rect.min, egui::vec2(3.0, rect.height())),
-                            0,
-                            ui.visuals().selection.stroke.color,
-                        );
-                    }
+                    ui.painter().rect_filled(rect, 6, fill);
+                    let text_color = if selected {
+                        ui.visuals().selection.stroke.color
+                    } else {
+                        ui.visuals().text_color()
+                    };
+                    let muted = text_color.gamma_multiply(0.65);
+                    let faded = !properties.is_visible;
                     ui.push_id(index, |ui| {
                         ui.scope_builder(
                             egui::UiBuilder::new()
-                                .max_rect(rect.shrink2(egui::vec2(5.0, 3.0)))
+                                .max_rect(rect.shrink2(egui::vec2(4.0, 0.0)))
                                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
                             |ui| {
                                 ui.set_clip_rect(rect.intersect(ui.clip_rect()));
+                                ui.spacing_mut().item_spacing.x = 6.0;
                                 if self
                                     .icons
                                     .button_sized(
                                         ui,
                                         if properties.is_visible { "visibility" } else { "visibility_off" },
-                                        "Toggle Visibility",
+                                        if properties.is_visible { "Hide Layer" } else { "Show Layer" },
                                         false,
-                                        24.0,
+                                        26.0,
                                     )
                                     .clicked()
                                 {
@@ -618,37 +710,64 @@ impl DrawApp {
                                 }
                                 let preview = egui::vec2(LAYER_PREVIEW[0] as f32, LAYER_PREVIEW[1] as f32);
                                 let (preview_rect, _) = ui.allocate_exact_size(preview, egui::Sense::hover());
-                                for row in 0..10 {
-                                    for column in 0..16 {
+                                let painter = ui.painter().with_clip_rect(preview_rect.intersect(ui.clip_rect()));
+                                for checker_row in 0..(LAYER_PREVIEW[1] / 6) {
+                                    for column in 0..(LAYER_PREVIEW[0] / 6 + 1) {
                                         let cell = egui::Rect::from_min_size(
-                                            preview_rect.min + egui::vec2(column as f32 * 8.0, row as f32 * 8.0),
-                                            egui::Vec2::splat(8.0),
+                                            preview_rect.min + egui::vec2(column as f32 * 6.0, checker_row as f32 * 6.0),
+                                            egui::Vec2::splat(6.0),
                                         );
-                                        ui.painter()
-                                            .rect_filled(cell, 0, Color32::from_gray(if (row + column) % 2 == 0 { 45 } else { 58 }));
+                                        painter.rect_filled(cell, 0, Color32::from_gray(if (checker_row + column) % 2 == 0 { 48 } else { 64 }));
                                     }
                                 }
                                 if let Some((_, Some(texture))) = &self.chrome.previews[index] {
                                     let [width, height] = texture.size();
                                     let scale = (preview.x / width as f32).min(preview.y / height as f32);
-                                    ui.painter().image(
+                                    painter.image(
                                         texture.id(),
                                         egui::Rect::from_center_size(preview_rect.center(), egui::vec2(width as f32, height as f32) * scale),
                                         egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                                        Color32::WHITE,
+                                        if faded { Color32::from_white_alpha(90) } else { Color32::WHITE },
                                     );
                                 }
-                                ui.vertical(|ui| {
-                                    ui.spacing_mut().item_spacing.y = 2.0;
-                                    ui.spacing_mut().interact_size.y = 18.0;
-                                    ui.add(egui::Label::new(&properties.title).truncate()).on_hover_text(&properties.title);
-                                    ui.small(format!("{} x {}", dimensions.width, dimensions.height));
-                                    ui.weak(format!("{}, {}", properties.offset.x, properties.offset.y));
-                                    let mut locked = properties.is_locked;
-                                    if ui.checkbox(&mut locked, "Lock").changed() {
-                                        action = Some(LayerAction::Lock(index));
-                                    }
+                                ui.painter().rect_stroke(
+                                    preview_rect,
+                                    3,
+                                    egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+                                    egui::StrokeKind::Outside,
+                                );
+                                let lock_width = 26.0;
+                                let text_width = (ui.available_width() - lock_width - 6.0).max(0.0);
+                                ui.allocate_ui_with_layout(egui::vec2(text_width, LAYER_ROW_HEIGHT), egui::Layout::top_down(egui::Align::Min), |ui| {
+                                    ui.set_width(text_width);
+                                    ui.spacing_mut().item_spacing.y = 1.0;
+                                    ui.add_space(7.0);
+                                    let title = egui::RichText::new(&properties.title).color(if faded { muted } else { text_color });
+                                    ui.add(egui::Label::new(if selected { title.strong() } else { title }).truncate().selectable(false))
+                                        .on_hover_text(&properties.title);
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(format!(
+                                                "{} × {}  ·  {}, {}",
+                                                dimensions.width, dimensions.height, properties.offset.x, properties.offset.y
+                                            ))
+                                            .size(11.0)
+                                            .color(muted),
+                                        )
+                                        .truncate()
+                                        .selectable(false),
+                                    );
                                 });
+                                let lock = self.icons.subtle_button(
+                                    ui,
+                                    if properties.is_locked { "lock" } else { "lock_open" },
+                                    if properties.is_locked { "Unlock Layer" } else { "Lock Layer" },
+                                    !properties.is_locked,
+                                    lock_width,
+                                );
+                                if lock.clicked() {
+                                    action = Some(LayerAction::Lock(index));
+                                }
                             },
                         );
                     });
@@ -800,7 +919,7 @@ impl DrawApp {
         }
     }
 
-    /// Moebius-style status bar from the original main window.
+    /// Status bar: document facts on the left, clickable document settings on the right.
     pub(super) fn status_bar(&mut self, ui: &mut egui::Ui) {
         let (size, caret, selection, ice, spacing, aspect, font) = self.document.with_state(|state| {
             let buffer = state.get_buffer();
@@ -819,26 +938,34 @@ impl DrawApp {
             )
         });
         let compact = ui.available_width() < 650.0;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
-            if ui.selectable_label(false, if ice { "ICE" } else { "BLINK" }).clicked() {
-                let mode = if ice { icy_engine::IceMode::Blink } else { icy_engine::IceMode::Ice };
-                self.edit(|state| state.set_ice_mode(mode));
+        ui.horizontal_centered(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            ui.add_space(8.0);
+            let small = |text: String| egui::RichText::new(text).size(12.0);
+            ui.label(small(format!("{} × {}", size.width, size.height)))
+                .on_hover_text("Canvas size in characters");
+            ui.label(small("·".into()).weak());
+            if let Some(bounds) = selection {
+                ui.label(small(format!("Selection {} × {}", bounds.width(), bounds.height())).weak())
+                    .on_hover_text(format!(
+                        "Selection: {}, {} to {}, {}",
+                        bounds.left(),
+                        bounds.top(),
+                        bounds.right() - 1,
+                        bounds.bottom() - 1
+                    ));
+            } else {
+                ui.label(small(format!("{}, {}", caret.x, caret.y)).weak())
+                    .on_hover_text("Caret position (column, row)");
             }
-            ui.separator();
-            if ui.selectable_label(false, if spacing { "9 px" } else { "8 px" }).clicked() {
-                self.edit(|state| state.set_use_letter_spacing(!spacing));
-            }
-            ui.separator();
-            if ui
-                .selectable_label(false, if aspect { "ASPECT" } else { "SQUARE" })
-                .on_hover_text("Pixel Aspect Ratio")
-                .clicked()
-            {
-                self.edit(|state| state.set_use_aspect_ratio(!aspect));
+            if self.picker {
+                ui.spinner();
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.menu_button(format!("{:.0}%", self.view.zoom * 100.0), |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                ui.add_space(6.0);
+                let zoom = widgets::status_button(ui, &format!("{:.0}%", self.view.zoom * 100.0), "Zoom");
+                egui::Popup::menu(&zoom).show(|ui| {
                     for (label, mode) in [
                         ("Fit", icy_engine_gui::ScalingMode::Auto),
                         ("Fit Width", icy_engine_gui::ScalingMode::FitWidth),
@@ -853,44 +980,66 @@ impl DrawApp {
                         }
                     }
                 });
-                let font_clicked = if compact {
-                    self.icons.button_sized(ui, "font", &format!("Select Font: {font}"), false, 20.0).clicked()
+                status_separator(ui);
+                let font_label = if compact {
+                    "Font".to_owned()
+                } else if font.chars().count() > 26 {
+                    format!("{}…", font.chars().take(25).collect::<String>())
                 } else {
-                    ui.add_sized([150.0, 20.0], egui::Button::new(egui::RichText::new(&font).small()).truncate().frame(false))
-                        .on_hover_text(format!("Select Font: {font}"))
-                        .clicked()
+                    font.clone()
                 };
-                if font_clicked {
+                if widgets::status_button(ui, &font_label, &format!("Select Font: {font}")).clicked() {
                     self.dialog = Some(Dialog::FontSelect);
                 }
-                ui.separator();
-                if let Some(bounds) = selection {
-                    ui.label(format!("{} x {}", bounds.width(), bounds.height())).on_hover_text(format!(
-                        "Selection: {}, {} to {}, {}",
-                        bounds.left(),
-                        bounds.top(),
-                        bounds.right() - 1,
-                        bounds.bottom() - 1
-                    ));
-                } else {
-                    ui.label(format!("({},{})", caret.x, caret.y));
+                status_separator(ui);
+                if widgets::status_button(ui, if aspect { "ASPECT" } else { "SQUARE" }, "Pixel Aspect Ratio").clicked() {
+                    self.edit(|state| state.set_use_aspect_ratio(!aspect));
                 }
-                if self.picker {
-                    ui.spinner();
+                if widgets::status_button(ui, if spacing { "9 px" } else { "8 px" }, "Letter Spacing").clicked() {
+                    self.edit(|state| state.set_use_letter_spacing(!spacing));
                 }
-                let rect = ui.available_rect_before_wrap();
-                if rect.width() > 180.0 {
-                    ui.painter().with_clip_rect(rect).text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        format!("{}    {} x {}", self.document.tool.name(), size.width, size.height),
-                        egui::TextStyle::Body.resolve(ui.style()),
-                        ui.visuals().weak_text_color(),
-                    );
+                if widgets::status_button(ui, if ice { "ICE" } else { "BLINK" }, "Blink / ICE Colors").clicked() {
+                    let mode = if ice { icy_engine::IceMode::Blink } else { icy_engine::IceMode::Ice };
+                    self.edit(|state| state.set_ice_mode(mode));
                 }
             });
         });
     }
+}
+
+/// End indices (exclusive) of the tool groups in `TOOL_SLOTS`: navigation, drawing, utilities.
+const TOOL_GROUPS: [usize; 3] = [2, 7, 10];
+
+/// Padded sidebar section followed by a full-width separator line.
+fn section(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    egui::Frame::new()
+        .inner_margin(egui::Margin {
+            left: SECTION_MARGIN,
+            right: SECTION_MARGIN,
+            top: 2,
+            bottom: 12,
+        })
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui);
+        });
+    let y = ui.cursor().top();
+    ui.painter().hline(ui.max_rect().x_range(), y, ui.visuals().widgets.noninteractive.bg_stroke);
+}
+
+fn rail_divider(ui: &mut egui::Ui) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 9.0), egui::Sense::hover());
+    ui.painter().hline(
+        egui::Rangef::new(rect.center().x - 12.0, rect.center().x + 12.0),
+        rect.center().y,
+        ui.visuals().widgets.noninteractive.bg_stroke,
+    );
+}
+
+fn status_separator(ui: &mut egui::Ui) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(9.0, 14.0), egui::Sense::hover());
+    ui.painter()
+        .vline(rect.center().x, rect.y_range(), ui.visuals().widgets.noninteractive.bg_stroke);
 }
 
 #[cfg(test)]
@@ -912,7 +1061,7 @@ mod tests {
     }
 
     #[test]
-    fn palette_columns_match_legacy_and_accept_both_mouse_buttons() {
+    fn palette_grid_is_row_major_and_accepts_both_mouse_buttons() {
         let context = egui::Context::default();
         let mut app = DrawApp::new();
         let mut origin = egui::Pos2::ZERO;
@@ -926,7 +1075,7 @@ mod tests {
                 |context| {
                     egui::CentralPanel::default().show(context, |ui| {
                         origin = ui.cursor().min;
-                        app.palette_grid(ui, SIDEBAR_WIDTH);
+                        app.palette_grid(ui, 208.0);
                     });
                 },
             );
@@ -934,9 +1083,9 @@ mod tests {
         };
         let origin = draw(&mut app, vec![]);
         for (column, row, index, button) in [
-            (0, 1, 1, egui::PointerButton::Primary),
-            (1, 0, 8, egui::PointerButton::Primary),
-            (1, 7, 15, egui::PointerButton::Secondary),
+            (1, 0, 1, egui::PointerButton::Primary),
+            (0, 1, 8, egui::PointerButton::Primary),
+            (7, 1, 15, egui::PointerButton::Secondary),
         ] {
             let point = origin + egui::vec2(column as f32 * 26.0 + 13.0, row as f32 * 26.0 + 13.0);
             for pressed in [true, false] {
