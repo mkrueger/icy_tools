@@ -27,6 +27,10 @@ pub struct Browser {
     pub error: Option<String>,
     pub back: Vec<Location>,
     pub forward: Vec<Location>,
+    /// Keys of the files passing the rating filter; folders always pass.
+    pub rated: Option<std::collections::HashSet<String>>,
+    /// Bumped whenever `rated` changes so cached layouts refresh.
+    pub filter_generation: u64,
     generation: u64,
     preview_generation: u64,
     cancel: CancellationToken,
@@ -65,6 +69,8 @@ impl Browser {
             error: None,
             back: Vec::new(),
             forward: Vec::new(),
+            rated: None,
+            filter_generation: 0,
             generation: 0,
             preview_generation: 0,
             cancel: CancellationToken::new(),
@@ -197,6 +203,13 @@ impl Browser {
             .iter()
             .enumerate()
             .filter(|(_, item)| item.get_label().to_lowercase().contains(&filter))
+            .filter(|(_, item)| {
+                item.is_container()
+                    || self
+                        .rated
+                        .as_ref()
+                        .is_none_or(|rated| rated.contains(&super::library::key(&self.location.point, &***item)))
+            })
             .map(|(index, _)| index)
             .collect()
     }
@@ -277,7 +290,7 @@ mod tests {
                 },
                 |context| {
                     egui::CentralPanel::default().show(context, |ui| {
-                        grid.show(ui, browser, &mut thumbnails, &mut icons, false);
+                        grid.show(ui, browser, &mut thumbnails, &mut icons, &Default::default(), false);
                     });
                 },
             )
@@ -329,7 +342,7 @@ mod tests {
                 },
                 |context| {
                     egui::CentralPanel::default().show(context, |ui| {
-                        grid.show(ui, &browser, &mut thumbnails, &mut icons, false);
+                        grid.show(ui, &browser, &mut thumbnails, &mut icons, &Default::default(), false);
                     });
                 },
             );

@@ -13,10 +13,20 @@ const SPACING: f32 = 16.0;
 const PADDING: f32 = 6.0;
 const LABEL_HEIGHT: f32 = 30.0;
 
+/// Inputs of the cached layout: revisions, item count, width, source, sort and filter generation.
+type Signature = (u64, usize, u64, u32, String, String, icy_view::sort_order::SortOrder, u64);
+
+#[derive(Default)]
+pub struct Response {
+    pub activate: Option<(usize, bool)>,
+    pub hovered: Option<usize>,
+    pub change: Option<(usize, super::library::Change)>,
+}
+
 #[derive(Default)]
 pub struct TileGrid {
     pub layout: Option<MasonryLayout>,
-    signature: Option<(u64, usize, u64, u32, String, String, icy_view::sort_order::SortOrder)>,
+    signature: Option<Signature>,
     pub offset: f32,
     pub viewport_height: f32,
 }
@@ -79,10 +89,11 @@ impl TileGrid {
         browser: &Browser,
         thumbnails: &mut Thumbnails,
         icons: &mut Icons,
+        library: &super::library::Library,
         ensure_selected: bool,
-    ) -> Option<(usize, bool)> {
+    ) -> Response {
         thumbnails.set_source(ui.ctx(), &browser.location.point.path, browser.revision());
-        let mut activate = None;
+        let mut result = Response::default();
         let source = (&browser.location.point.path, &browser.filter);
         let scroll = egui::ScrollArea::vertical().id_salt(("masonry", source)).auto_shrink([false, false]);
         scroll.show_viewport(ui, |ui, viewport| {
@@ -95,6 +106,7 @@ impl TileGrid {
                 source.0.clone(),
                 source.1.clone(),
                 browser.sort,
+                browser.filter_generation,
             );
             if self.signature.as_ref() != Some(&signature) {
                 self.layout = Some(layout(
@@ -156,6 +168,23 @@ impl TileGrid {
                         ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
                     }
                 }
+                let key = super::library::key(&browser.location.point, &**item);
+                if !item.is_container() && library.viewed(&key).is_some() {
+                    super::library::paint_viewed(ui.painter(), art.min + egui::vec2(11.0, 11.0), 8.0, ui.visuals());
+                }
+                let rating = library.rating(&key);
+                if rating > 0 {
+                    let badge = egui::Rect::from_min_size(
+                        egui::pos2(art.right() - 6.0 - rating as f32 * 13.0 - 6.0, art.top() + 4.0),
+                        egui::vec2(rating as f32 * 13.0 + 6.0, 18.0),
+                    );
+                    ui.painter().rect_filled(badge, 9.0, egui::Color32::from_black_alpha(170));
+                    let star = super::colors::star(ui.visuals().dark_mode);
+                    for index in 0..rating {
+                        let bounds = egui::Rect::from_min_size(badge.min + egui::vec2(3.0 + index as f32 * 13.0, 3.0), egui::Vec2::splat(12.0));
+                        icons.image(ui.ctx(), Icon::Star, 12.0).tint(star).paint_at(ui, bounds);
+                    }
+                }
                 let label_rect = egui::Rect::from_min_max(egui::pos2(art.left(), art.bottom() + 4.0), rect.max - egui::Vec2::splat(PADDING));
                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(label_rect));
                 child.add(
@@ -164,10 +193,19 @@ impl TileGrid {
                         .selectable(false),
                 );
                 if response.double_clicked() {
-                    activate = Some((tile.index, true));
+                    result.activate = Some((tile.index, true));
                 } else if response.clicked() {
-                    activate = Some((tile.index, false));
+                    result.activate = Some((tile.index, false));
                 }
+                if response.hovered() {
+                    result.hovered = Some(tile.index);
+                }
+                response.context_menu(|ui| {
+                    if let Some(change) = super::library::context_menu(ui, library, &browser.location.point, &**item) {
+                        result.change = Some((tile.index, change));
+                        ui.close();
+                    }
+                });
                 response.on_hover_ui(|ui| {
                     ui.label(item.get_label());
                     if let Some(sauce) = &entry.sauce {
@@ -187,7 +225,7 @@ impl TileGrid {
             }
         });
         thumbnails.trim();
-        activate
+        result
     }
 }
 

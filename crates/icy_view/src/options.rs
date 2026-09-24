@@ -249,6 +249,18 @@ pub struct Options {
     /// Default path for file export
     #[serde(default)]
     pub export_path: String,
+
+    /// Fading title/artist overlay when a file is opened
+    #[serde(default = "enabled")]
+    pub show_osd: bool,
+
+    /// Navigator strip beside art that is taller than the view
+    #[serde(default = "enabled")]
+    pub show_minimap: bool,
+}
+
+fn enabled() -> bool {
+    true
 }
 
 impl Default for Options {
@@ -263,6 +275,8 @@ impl Default for Options {
             monitor_settings: MonitorSettings::default(),
             external_commands: Default::default(),
             export_path: String::new(),
+            show_osd: true,
+            show_minimap: true,
         }
     }
 }

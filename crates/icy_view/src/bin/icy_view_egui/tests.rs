@@ -746,7 +746,8 @@ fn gpu_status_bar_sauce_info_and_shuffle_overlay() {
     let summary = gpu
         .labels
         .keys()
-        .find(|label| label.starts_with("FIRST ART"))
+        // The info panel shows the bare title too; the status bar joins it with the other fields.
+        .find(|label| label.starts_with("FIRST ART") && label.contains(" • "))
         .cloned()
         .unwrap_or_else(|| panic!("status bar misses the SAUCE summary: {:?}", gpu.labels.keys()));
     for part in ["Test Artist", "TEST GROUP", "80\u{00d7}25"] {
@@ -922,5 +923,122 @@ fn gpu_viewer_and_dialogs_fit_desktop_narrow_short_and_hidpi() {
                 app.dialogs.mode = None;
             }
         }
+    }
+}
+
+fn press(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    }
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_info_panel_ratings_palette_minimap_and_font_preview() {
+    config();
+    let fixture = Fixture::new();
+    let mut tall = Vec::new();
+    for row in 0..200 {
+        tall.extend_from_slice(format!("\x1b[{}mROW {row:03} ", 31 + row % 7).as_bytes());
+        tall.extend(std::iter::repeat_n(b'\xdb', 60));
+        tall.extend_from_slice(b"\r\n");
+    }
+    std::fs::write(fixture.0.join("a-tall.ans"), &tall).unwrap();
+    std::fs::write(fixture.0.join("b-short.ans"), b"SHORT").unwrap();
+    std::fs::write(fixture.0.join("zetrax.tdf"), include_bytes!("../../items/sixteencolors/ZETRAX.TDF")).unwrap();
+    std::fs::create_dir(fixture.0.join("release")).unwrap();
+    std::fs::write(fixture.0.join("release").join("FILE_ID.DIZ"), b"RELEASE INFO\r\nDISK 1/1").unwrap();
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let options = icy_view::Options {
+        auto_scroll_enabled: false,
+        ..Default::default()
+    };
+    let mut app = app::Viewer::new(fixture.0.clone(), options, &gpu.context).unwrap();
+    wait_browser(&mut app.browser, &gpu.context);
+    let size = [1100, 760];
+    gpu.capture(&mut app, size, 1.0, vec![], "features-warmup");
+    let name = fixture.0.file_name().unwrap().to_string_lossy().to_string();
+    assert!(
+        gpu.labels.contains_key(&name),
+        "the address bar shows the folder as a crumb: {:?}",
+        gpu.labels.keys()
+    );
+
+    let tall_index = app.browser.items.iter().position(|item| item.get_label() == "a-tall.ans").unwrap();
+    app.browser.select(tall_index, &gpu.context);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.browser.preview_loading || app.preview.loading {
+        gpu.capture(&mut app, size, 1.0, vec![], "features-loading");
+        assert!(Instant::now() < deadline, "preview timed out");
+    }
+    for _ in 0..8 {
+        gpu.capture(&mut app, size, 1.0, vec![], "features-osd");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(app.osd.is_visible(), "opening a file shows the info panel");
+    assert!(gpu.labels.contains_key("a-tall.ans"), "info panel title: {:?}", gpu.labels.keys());
+    let key = library::key(&app.browser.location.point, &*app.browser.items[tall_index]);
+    assert!(app.library.viewed(&key).is_some(), "opened files are marked as viewed");
+
+    gpu.capture(&mut app, size, 1.0, vec![press(egui::Key::Num4, egui::Modifiers::NONE)], "features-rated");
+    gpu.capture(&mut app, size, 1.0, vec![], "features-rated");
+    assert_eq!(app.library.rating(&key), 4, "digit keys rate the selected file");
+    assert!(
+        gpu.labels.keys().any(|label| label.contains("★★★★")),
+        "status bar shows the rating: {:?}",
+        gpu.labels.keys()
+    );
+
+    app.min_rating = 3;
+    app.update_rating_filter();
+    let visible: Vec<_> = app.browser.visible().into_iter().map(|index| app.browser.items[index].get_label()).collect();
+    assert_eq!(visible, ["release", "a-tall.ans"], "the rating filter keeps folders and rated files");
+    app.min_rating = 0;
+    app.update_rating_filter();
+    assert_eq!(app.browser.visible().len(), 4);
+
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![press(egui::Key::P, egui::Modifiers::CTRL | egui::Modifiers::COMMAND)],
+        "features-palette",
+    );
+    assert!(app.palette.is_some(), "Ctrl+P opens quick open");
+    gpu.capture(&mut app, size, 1.0, vec![], "features-palette");
+    gpu.capture(&mut app, size, 1.0, vec![egui::Event::Text("ztx".into())], "features-palette");
+    gpu.capture(&mut app, size, 1.0, vec![], "features-palette");
+    assert!(gpu.labels.contains_key("zetrax.tdf"), "quick open lists the match: {:?}", gpu.labels.keys());
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![press(egui::Key::Enter, egui::Modifiers::NONE)],
+        "features-palette-done",
+    );
+    assert!(app.palette.is_none());
+    assert_eq!(app.browser.items[app.browser.selected.unwrap()].get_label(), "zetrax.tdf");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.browser.preview_loading || app.preview.loading || app.preview.file.is_empty() {
+        gpu.capture(&mut app, size, 1.0, vec![], "features-loading");
+        assert!(Instant::now() < deadline, "font preview timed out");
+    }
+    for _ in 0..3 {
+        gpu.capture(&mut app, size, 1.0, vec![], "features-font");
+    }
+    assert!(app.dialogs.error.is_none(), "font preview failed: {:?}", app.dialogs.error);
+    let lines = app.preview.screen.terminal.screen.lock().height();
+    assert!(lines > 10, "fonts preview as a sample sheet, got {lines} lines");
+
+    gpu.capture(&mut app, size, 1.0, vec![press(egui::Key::Escape, egui::Modifiers::NONE)], "features-font");
+    app.options.view_mode = icy_view::ViewMode::Tiles;
+    for _ in 0..120 {
+        gpu.capture(&mut app, size, 1.0, vec![], "features-tiles");
+        std::thread::sleep(Duration::from_millis(25));
     }
 }

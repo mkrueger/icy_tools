@@ -69,3 +69,16 @@ pub fn file_name(dark: bool, label: &str, container: bool, default: Color32) -> 
         _ => default,
     }
 }
+
+pub fn star(dark: bool) -> Color32 {
+    if dark {
+        Color32::from_rgb(255, 196, 61)
+    } else {
+        Color32::from_rgb(214, 140, 0)
+    }
+}
+
+/// Filled stars for the rating, empty for none.
+pub fn stars(rating: u8) -> String {
+    "★".repeat(rating.min(5) as usize)
+}

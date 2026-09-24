@@ -48,8 +48,20 @@ impl Item for ItemFolder {
     }
 
     async fn get_thumbnail_preview(&self, _cancel_token: &CancellationToken) -> Option<RgbaData> {
-        // Return None - use get_sync_thumbnail() instead
-        None
+        // Release folders carry their description art; plain folders fall back to the folder icon.
+        let path = self.path.clone();
+        tokio::task::spawn_blocking(move || {
+            let entries: Vec<_> = std::fs::read_dir(&path).ok()?.flatten().map(|entry| entry.path()).collect();
+            ["file_id.ans", "file_id.diz"].iter().find_map(|wanted| {
+                let file = entries
+                    .iter()
+                    .find(|entry| entry.is_file() && entry.file_name().is_some_and(|name| name.eq_ignore_ascii_case(wanted)))?;
+                crate::items::archive::render_diz_to_thumbnail(&std::fs::read(file).ok()?)
+            })
+        })
+        .await
+        .ok()
+        .flatten()
     }
 
     async fn get_subitems(&self, _cancel_token: &CancellationToken) -> Result<Vec<Box<dyn Item>>, ItemError> {
@@ -65,5 +77,24 @@ impl Item for ItemFolder {
             path: self.path.clone(),
             label: self.label.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn release_folder_thumbnail_uses_file_id() {
+        let directory = std::env::temp_dir().join(format!("icy-view-file-id-{}-{}", std::process::id(), fastrand::u64(..)));
+        std::fs::create_dir_all(&directory).unwrap();
+        let folder = ItemFolder::new(directory.to_string_lossy().into_owned());
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let cancel = CancellationToken::new();
+        assert!(runtime.block_on(folder.get_thumbnail_preview(&cancel)).is_none());
+        std::fs::write(directory.join("FILE_ID.DIZ"), b"\x1b[1;33mICY RELEASE\r\n").unwrap();
+        let thumbnail = runtime.block_on(folder.get_thumbnail_preview(&cancel));
+        let _ = std::fs::remove_dir_all(&directory);
+        assert!(thumbnail.is_some_and(|rgba| rgba.width > 0 && rgba.height > 0));
     }
 }

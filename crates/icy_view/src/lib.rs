@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod format_preview;
 pub mod items;
 pub mod options;
 #[path = "ui/list_view/sauce_loader.rs"]

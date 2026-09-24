@@ -23,7 +23,11 @@ pub struct FileList {
 pub struct Response {
     pub activate: Option<(usize, bool)>,
     pub sort: Option<SortOrder>,
+    pub hovered: Option<usize>,
+    pub change: Option<(usize, super::library::Change)>,
 }
+
+const RATING_WIDTH: f32 = 76.0;
 
 impl FileList {
     pub fn new(context: &egui::Context) -> Self {
@@ -42,24 +46,43 @@ impl FileList {
         }
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, browser: &Browser, icons: &mut Icons, sauce_mode: bool, ensure_selected: bool) -> Response {
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        browser: &Browser,
+        icons: &mut Icons,
+        library: &super::library::Library,
+        sauce_mode: bool,
+        ensure_selected: bool,
+    ) -> Response {
         let source = (browser.revision(), browser.location.point.path.clone());
         if self.source.as_ref() != Some(&source) {
             *self = Self::new(ui.ctx());
             self.source = Some(source);
         }
-        let mut response = Response { activate: None, sort: None };
+        let mut response = Response {
+            activate: None,
+            sort: None,
+            hovered: None,
+            change: None,
+        };
         let visible = browser.visible();
-        let widths: Vec<f32> = if sauce_mode {
+        // A narrow list keeps the space for the name; the rating stays visible in the status bar.
+        let rating_column = sauce_mode || ui.available_width() >= 340.0;
+        let mut widths: Vec<f32> = if sauce_mode {
             vec![286.0, 280.0, 160.0, 160.0]
         } else {
-            vec![(ui.available_width() - 80.0).max(160.0), 76.0]
+            vec![(ui.available_width() - 80.0 - if rating_column { RATING_WIDTH } else { 0.0 }).max(160.0), 76.0]
         };
-        let headers = if sauce_mode {
+        let mut headers = if sauce_mode {
             vec![text("header-name"), text("header-title"), text("header-author"), text("header-group")]
         } else {
             vec![text("header-name"), text("sauce-field-file-size")]
         };
+        if rating_column {
+            widths.push(RATING_WIDTH);
+            headers.push(text("egui-rating"));
+        }
         egui::ScrollArea::horizontal()
             .id_salt(("file-columns", &browser.location.point.path))
             .auto_shrink([false, false])
@@ -165,6 +188,10 @@ impl FileList {
                         icons
                             .image(ui.ctx(), Icon::File(item.get_file_icon()), 18.0)
                             .paint_at(ui, egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 3.0), egui::Vec2::splat(18.0)));
+                        let key = super::library::key(&browser.location.point, &**item);
+                        if !item.is_container() && library.viewed(&key).is_some() {
+                            super::library::paint_viewed(ui.painter(), rect.min + egui::vec2(20.0, 18.0), 5.0, ui.visuals());
+                        }
                         let name_rect = egui::Rect::from_min_max(rect.min + egui::vec2(26.0, 0.0), egui::pos2(rect.left() + widths[0], rect.bottom()));
                         let label = item.get_label();
                         let color = colors::file_name(dark, &label, item.is_container(), ui.visuals().text_color());
@@ -196,6 +223,22 @@ impl FileList {
                             );
                             left += widths[column + 1];
                         }
+                        let rating = if rating_column { library.rating(&key) } else { 0 };
+                        let star = super::colors::star(dark);
+                        for index in 0..rating {
+                            let bounds =
+                                egui::Rect::from_min_size(egui::pos2(left + 4.0 + index as f32 * 12.0, rect.center().y - 6.0), egui::Vec2::splat(12.0));
+                            icons.image(ui.ctx(), Icon::Star, 12.0).tint(star).paint_at(ui, bounds);
+                        }
+                        if row_response.hovered() {
+                            response.hovered = Some(index);
+                        }
+                        row_response.context_menu(|ui| {
+                            if let Some(change) = super::library::context_menu(ui, library, &browser.location.point, &**item) {
+                                response.change = Some((index, change));
+                                ui.close();
+                            }
+                        });
                         if row_response.double_clicked() {
                             response.activate = Some((index, true));
                         } else if row_response.clicked() {
@@ -310,7 +353,7 @@ mod tests {
         loop {
             let output = context.run(input(), |context| {
                 egui::CentralPanel::default().show(context, |ui| {
-                    list.show(ui, &browser, &mut icons, true, false);
+                    list.show(ui, &browser, &mut icons, &Default::default(), true, false);
                 });
             });
             if output

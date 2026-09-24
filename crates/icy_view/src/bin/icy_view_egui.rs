@@ -17,6 +17,14 @@ mod dialogs;
 mod file_list;
 #[path = "icy_view_egui/icons.rs"]
 mod icons;
+#[path = "icy_view_egui/library.rs"]
+mod library;
+#[path = "icy_view_egui/minimap.rs"]
+mod minimap;
+#[path = "icy_view_egui/osd.rs"]
+mod osd;
+#[path = "icy_view_egui/palette.rs"]
+mod palette;
 #[path = "icy_view_egui/preview.rs"]
 mod preview;
 #[path = "icy_view_egui/shuffle.rs"]

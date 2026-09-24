@@ -18,6 +18,13 @@ pub enum Icon {
     SortName,
     SortSize,
     SortDate,
+    Star,
+    StarOutline,
+    Places,
+    Close,
+    Home,
+    History,
+    Chevron,
     File(FileIcon),
 }
 
@@ -41,6 +48,13 @@ impl Icons {
             Icon::SortName => ("sort-name", include_bytes!("../../../data/icons/sort_by_alpha.svg")),
             Icon::SortSize => ("sort-size", include_bytes!("../../../data/icons/straighten.svg")),
             Icon::SortDate => ("sort-date", include_bytes!("../../../data/icons/calendar_today.svg")),
+            Icon::Star => ("star", include_bytes!("../../../data/icons/star.svg")),
+            Icon::StarOutline => ("star-outline", include_bytes!("../../../data/icons/star_outline.svg")),
+            Icon::Places => ("places", include_bytes!("../../../data/icons/bookmarks.svg")),
+            Icon::Close => ("close", include_bytes!("../../../data/icons/close.svg")),
+            Icon::Home => ("home", include_bytes!("../../../data/icons/home.svg")),
+            Icon::History => ("history", include_bytes!("../../../data/icons/history.svg")),
+            Icon::Chevron => ("chevron", include_bytes!("../../../data/icons/chevron_right.svg")),
             Icon::File(kind) => {
                 let name = match kind {
                     FileIcon::Folder | FileIcon::FolderOpen | FileIcon::FolderData => "folder",

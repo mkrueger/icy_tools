@@ -3,6 +3,9 @@ use super::{
     colors,
     dialogs::{Dialogs, Mode, COMMANDS},
     icons::{Icon, Icons},
+    library::{self, Change, Library, Place},
+    osd::{self, Osd},
+    palette::{self, Palette},
     preview::Preview,
     text,
     thumbnails::Thumbnails,
@@ -39,6 +42,13 @@ pub struct Viewer {
     commands: icy_engine_gui::CommandSet,
     selected_scroll: bool,
     browser_focus: bool,
+    pub library: Library,
+    pub osd: Osd,
+    pub palette: Option<Palette>,
+    minimap: super::minimap::Minimap,
+    pub editing_location: bool,
+    hovered: Option<usize>,
+    pub min_rating: u8,
 }
 
 impl Viewer {
@@ -69,6 +79,17 @@ impl Viewer {
             commands: icy_view::commands::create_icy_view_commands(),
             selected_scroll: false,
             browser_focus: true,
+            library: Library::load(if cfg!(test) {
+                None
+            } else {
+                Some(icy_view::get_config_dir().join("library.json"))
+            }),
+            osd: Osd::default(),
+            palette: None,
+            minimap: super::minimap::Minimap::new(context),
+            editing_location: false,
+            hovered: None,
+            min_rating: 0,
         })
     }
 
@@ -81,9 +102,21 @@ impl Viewer {
             self.folder = None;
             self.preview.stop();
             self.shuffle = None;
+            self.editing_location = false;
+            self.osd.hide();
+            self.library.visit(Place::from_point(&self.browser.location.point));
+            self.update_rating_filter();
         }
         if let Some((path, data)) = self.browser.poll(context) {
             self.preview.load(path.clone(), data, self.options.auto_scroll_enabled, context);
+            if let Some(item) = self.browser.selected.and_then(|index| self.browser.items.get(index)) {
+                self.library.mark_viewed(library::key(&self.browser.location.point, &**item));
+            }
+            if self.options.show_osd && self.shuffle.is_none() {
+                self.osd.start();
+            } else {
+                self.osd.hide();
+            }
             if let Some(shuffle) = &mut self.shuffle {
                 shuffle.set_sauce(self.preview.sauce.as_ref());
             }
@@ -101,9 +134,12 @@ impl Viewer {
             self.dialogs.error = Some(error);
             self.shuffle = None;
         }
-        if !blocked && !context.will_discard() {
+        if !blocked && self.palette.is_none() && !context.will_discard() {
             self.keyboard(context);
+            self.mouse_buttons(context);
         }
+        self.library.save_if_due();
+        self.hovered = None;
         if !blocked {
             let paths: Vec<_> = context.input(|input| input.raw.dropped_files.iter().filter_map(|file| file.path.clone()).collect());
             if let Some(path) = paths.first() {
@@ -147,7 +183,7 @@ impl Viewer {
                         self.shuffle = None;
                     }
                     if preview_only {
-                        self.preview.show(ui, &self.options);
+                        self.preview(ui);
                         if let Some(shuffle) = &mut self.shuffle {
                             let rect = ui.max_rect();
                             shuffle.show(ui, rect);
@@ -159,11 +195,14 @@ impl Viewer {
                     } else if self.folder.is_some() {
                         egui::Frame::new().inner_margin(10).show(ui, |ui| self.grid(ui, true));
                     } else {
-                        self.preview.show(ui, &self.options);
+                        self.preview(ui);
                     }
                 });
             });
         self.dialogs.show(context, &mut self.options, &mut self.preview);
+        if !blocked {
+            self.palette(context);
+        }
         if self.dialogs.mode.is_none() {
             if let Some(error) = self.dialogs.error.clone().or_else(|| self.browser.error.clone()) {
                 let response = appearance::MessageBox::new("viewer-error", appearance::MessageKind::Error, text("preview-error-title"), error)
@@ -268,13 +307,108 @@ impl Viewer {
         if self.icons.button(ui, Icon::Refresh, &text("tooltip-refresh"), true, false).clicked() {
             self.browser.refresh(context);
         }
+        let places = super::icons::tool_button(self.icons.image(context, Icon::Places, 18.0), false);
+        ui.scope(|ui| {
+            super::icons::compact(ui);
+            egui::containers::menu::MenuButton::from_button(places).ui(ui, |ui| self.places_menu(ui)).0
+        })
+        .inner
+        .on_hover_text(text("egui-places"));
+    }
+
+    /// Home, 16colo.rs, the pinned folders and the recently visited ones.
+    fn places_menu(&mut self, ui: &mut egui::Ui) {
+        let context = ui.ctx().clone();
+        let mut target = None;
+        let home = directories::UserDirs::new()
+            .map(|dirs| dirs.home_dir().to_string_lossy().to_string())
+            .unwrap_or_else(|| "/".into());
+        let mut entry = |ui: &mut egui::Ui, icons: &mut Icons, icon: Icon, label: String, place: Place| {
+            let image = icons.image(&context, icon, 16.0).tint(ui.visuals().text_color());
+            if ui.add(egui::Button::image_and_text(image, label)).on_hover_text(&place.path).clicked() {
+                target = Some(place);
+                ui.close();
+            }
+        };
+        entry(ui, &mut self.icons, Icon::Home, text("egui-home"), Place { path: home, web: false });
+        entry(
+            ui,
+            &mut self.icons,
+            Icon::Web,
+            "16colo.rs".into(),
+            Place {
+                path: String::new(),
+                web: true,
+            },
+        );
+        ui.separator();
+        ui.label(egui::RichText::new(text("egui-favorites")).small().color(ui.visuals().weak_text_color()));
+        if self.library.favorites.is_empty() {
+            ui.label(egui::RichText::new(text("egui-no-favorites")).italics().color(ui.visuals().weak_text_color()));
+        }
+        for place in self.library.favorites.clone() {
+            entry(ui, &mut self.icons, Icon::Star, place.label(), place);
+        }
+        if !self.library.recent.is_empty() {
+            ui.separator();
+            ui.label(egui::RichText::new(text("egui-recent")).small().color(ui.visuals().weak_text_color()));
+            for place in self.library.recent.clone() {
+                entry(ui, &mut self.icons, Icon::History, place.label(), place);
+            }
+        }
+        if let Some(place) = target {
+            self.go(&place, &context);
+        }
+    }
+
+    fn go(&mut self, place: &Place, context: &egui::Context) {
+        self.show_preview = false;
+        if place.web {
+            self.browser.navigate(
+                Location {
+                    point: NavPoint::web(place.path.as_str()),
+                    container: None,
+                },
+                context,
+            );
+        } else {
+            self.open_path(PathBuf::from(&place.path), context);
+        }
+    }
+
+    /// Back and forward on the extra mouse buttons.
+    fn mouse_buttons(&mut self, context: &egui::Context) {
+        let (back, forward) = context.input(|input| {
+            (
+                input.pointer.button_pressed(egui::PointerButton::Extra1),
+                input.pointer.button_pressed(egui::PointerButton::Extra2),
+            )
+        });
+        if back {
+            if self.show_preview || self.shuffle.is_some() {
+                self.show_preview = false;
+                self.shuffle = None;
+            } else {
+                self.browser.history(false, context);
+            }
+        }
+        if forward {
+            self.browser.history(true, context);
+        }
     }
 
     /// Address field with the 16colors toggle in front of the path, like the location bar of a browser.
+    /// The path shows as clickable crumbs; clicking the free space or Ctrl+L edits it as text.
     fn location_field(&mut self, ui: &mut egui::Ui, width: f32, context: &egui::Context) {
         let id = egui::Id::new("location-input");
         let web = self.browser.location.point.is_web();
+        let here = Place::from_point(&self.browser.location.point);
+        let pinned = self.library.is_favorite(&here);
         let mut toggle_web = false;
+        let mut toggle_pin = false;
+        let mut crumb = None;
+        let mut edit = false;
+        let editing = self.editing_location;
         let response = field(ui, width, id, |ui| {
             let image = self.icons.image(context, Icon::Web, 16.0);
             toggle_web = ui
@@ -286,13 +420,68 @@ impl Viewer {
                 .inner
                 .on_hover_text(text("tooltip-browse-16colors"))
                 .clicked();
-            ui.add(
-                egui::TextEdit::singleline(&mut self.path_input)
-                    .id(id)
-                    .frame(false)
-                    .margin(egui::vec2(2.0, 4.0))
-                    .desired_width(f32::INFINITY),
-            )
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let (icon, tint) = if pinned {
+                    (Icon::Star, colors::star(ui.visuals().dark_mode))
+                } else {
+                    (Icon::StarOutline, ui.visuals().weak_text_color())
+                };
+                let image = self.icons.image(context, icon, 16.0).tint(tint);
+                toggle_pin = ui
+                    .scope(|ui| {
+                        super::icons::compact(ui);
+                        ui.spacing_mut().button_padding = egui::vec2(3.0, 3.0);
+                        ui.add(egui::Button::image(image).frame_when_inactive(false))
+                    })
+                    .inner
+                    .on_hover_text(text(if pinned { "egui-unpin" } else { "egui-pin" }))
+                    .clicked();
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    if editing {
+                        return ui.add(
+                            egui::TextEdit::singleline(&mut self.path_input)
+                                .id(id)
+                                .frame(false)
+                                .margin(egui::vec2(2.0, 4.0))
+                                .desired_width(f32::INFINITY),
+                        );
+                    }
+                    let crumbs = crumbs(&self.browser.location.point);
+                    let last = crumbs.len().saturating_sub(1);
+                    let separator = self.icons.image(context, Icon::Chevron, 12.0).tint(ui.visuals().weak_text_color());
+                    egui::ScrollArea::horizontal()
+                        .id_salt("crumbs")
+                        .max_width(ui.available_width() - 24.0)
+                        .stick_to_right(true)
+                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                ui.spacing_mut().button_padding = egui::vec2(5.0, 2.0);
+                                for (index, (label, path)) in crumbs.iter().enumerate() {
+                                    if index > 0 {
+                                        ui.add(separator.clone());
+                                    }
+                                    let current = index == last;
+                                    let label = egui::RichText::new(label).color(if current {
+                                        ui.visuals().strong_text_color()
+                                    } else {
+                                        ui.visuals().text_color()
+                                    });
+                                    if ui.add(egui::Button::new(label).frame_when_inactive(false)).on_hover_text(path).clicked() && !current {
+                                        crumb = Some((index, path.clone()));
+                                    }
+                                }
+                            });
+                        });
+                    let rest = ui.available_rect_before_wrap();
+                    let response = ui.interact(rest, id.with("free"), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::Text);
+                    edit = response.clicked();
+                    response
+                })
+                .inner
+            })
+            .inner
         });
         if toggle_web {
             let point = if web {
@@ -302,19 +491,55 @@ impl Viewer {
             };
             self.browser.navigate(Location { point, container: None }, context);
         }
-        if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-            if web {
-                self.browser.navigate(
-                    Location {
-                        point: NavPoint::web(self.path_input.trim_matches('/')),
-                        container: None,
+        if toggle_pin {
+            self.library.toggle_favorite(here);
+        }
+        if let Some((index, path)) = crumb {
+            let crumbs = crumbs(&self.browser.location.point);
+            let selected_item = crumbs.get(index + 1).map(|(label, _)| label.clone());
+            self.browser.navigate(
+                Location {
+                    point: NavPoint {
+                        provider_type: self.browser.location.point.provider_type,
+                        path,
+                        selected_item,
                     },
-                    context,
-                );
-            } else {
-                self.open_path(PathBuf::from(&self.path_input), context);
+                    container: None,
+                },
+                context,
+            );
+        }
+        if edit {
+            self.edit_location();
+        }
+        if editing {
+            if !response.has_focus() && !response.lost_focus() {
+                response.request_focus();
+            }
+            if response.lost_focus() {
+                self.editing_location = false;
+                if ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+                    if web {
+                        self.browser.navigate(
+                            Location {
+                                point: NavPoint::web(self.path_input.trim_matches('/')),
+                                container: None,
+                            },
+                            context,
+                        );
+                    } else {
+                        self.open_path(PathBuf::from(&self.path_input), context);
+                    }
+                } else {
+                    self.path_input = self.browser.location.point.path.clone();
+                }
             }
         }
+    }
+
+    fn edit_location(&mut self) {
+        self.editing_location = true;
+        self.path_input = self.browser.location.point.path.clone();
     }
 
     fn filter_field(&mut self, ui: &mut egui::Ui, width: f32, context: &egui::Context) {
@@ -393,6 +618,8 @@ impl Viewer {
         let context = ui.ctx().clone();
         for id in [
             "file.open",
+            "view.quick_open",
+            "view.command_palette",
             "dialog.export",
             "dialog.sauce",
             "edit.copy",
@@ -418,6 +645,8 @@ impl Viewer {
         }
         ui.separator();
         ui.checkbox(&mut self.options.sauce_mode, text("tooltip-sauce-mode-on"));
+        ui.checkbox(&mut self.options.show_osd, text("egui-show-osd"));
+        ui.checkbox(&mut self.options.show_minimap, text("egui-show-minimap"));
         ui.menu_button(text("egui-sort"), |ui| {
             for (order, key) in [
                 (icy_view::sort_order::SortOrder::NameAsc, "tooltip-sort-name-asc"),
@@ -448,8 +677,14 @@ impl Viewer {
         ui.add_space(2.0);
         let response = self
             .file_list
-            .show(ui, &self.browser, &mut self.icons, self.options.sauce_mode, self.selected_scroll);
+            .show(ui, &self.browser, &mut self.icons, &self.library, self.options.sauce_mode, self.selected_scroll);
         self.selected_scroll = false;
+        if response.hovered.is_some() {
+            self.hovered = response.hovered;
+        }
+        if let Some((index, change)) = response.change {
+            self.apply(index, change);
+        }
         if let Some(order) = response.sort {
             self.sort(order);
         }
@@ -471,6 +706,7 @@ impl Viewer {
                 if pill(ui, sauce, "SAUCE", 22.0).on_hover_text(tooltip).clicked() {
                     self.options.sauce_mode = !sauce;
                 }
+                self.rating_filter(ui);
                 if self.browser.loading {
                     ui.add(egui::Spinner::new().size(14.0));
                 }
@@ -576,6 +812,71 @@ impl Viewer {
         }
         ui.separator();
         self.sort_controls(ui);
+        ui.separator();
+        self.rating_filter(ui);
+    }
+
+    /// "★ n+" drop-down hiding files rated below n; folders stay visible.
+    fn rating_filter(&mut self, ui: &mut egui::Ui) {
+        let active = self.min_rating > 0;
+        let color = if active {
+            colors::star(ui.visuals().dark_mode)
+        } else {
+            ui.visuals().weak_text_color()
+        };
+        let label = egui::RichText::new(if active { format!("★ {}+", self.min_rating) } else { "★".into() })
+            .size(12.0)
+            .color(color);
+        let mut selected = None;
+        status_menu(ui, label, &text("egui-rating-filter"), |ui| {
+            for rating in 0..=5u8 {
+                let label = if rating == 0 {
+                    text("egui-rating-all")
+                } else {
+                    format!("{} +", colors::stars(rating))
+                };
+                if ui.selectable_label(self.min_rating == rating, label).clicked() {
+                    selected = Some(rating);
+                    ui.close();
+                }
+            }
+        });
+        if let Some(rating) = selected {
+            self.min_rating = rating;
+            self.update_rating_filter();
+        }
+    }
+
+    /// Recomputes the set of keys passing the rating filter.
+    pub(super) fn update_rating_filter(&mut self) {
+        let rated = (self.min_rating > 0).then(|| {
+            self.browser
+                .items
+                .iter()
+                .map(|item| library::key(&self.browser.location.point, &**item))
+                .filter(|key| self.library.rating(key) >= self.min_rating)
+                .collect()
+        });
+        if rated != self.browser.rated {
+            self.browser.rated = rated;
+            self.browser.filter_generation += 1;
+        }
+    }
+
+    /// Applies a rating, viewed or pin change coming from a context menu, the OSD or a key.
+    fn apply(&mut self, index: usize, change: Change) {
+        let Some(item) = self.browser.items.get(index) else {
+            return;
+        };
+        let point = &self.browser.location.point;
+        match change {
+            Change::Rate(rating) => {
+                self.library.set_rating(library::key(point, &**item), rating);
+                self.update_rating_filter();
+            }
+            Change::Viewed(viewed) => self.library.set_viewed(library::key(point, &**item), viewed),
+            Change::Pin => self.library.toggle_favorite(library::place(point, &**item)),
+        }
     }
 
     fn sort(&mut self, order: icy_view::sort_order::SortOrder) {
@@ -600,12 +901,35 @@ impl Viewer {
             ui.spinner();
         }
         let grid = if folder { &mut self.folder_tiles } else { &mut self.tiles };
-        let activate = grid.show(ui, source, &mut self.thumbnails, &mut self.icons, !folder && self.selected_scroll);
+        let response = grid.show(
+            ui,
+            source,
+            &mut self.thumbnails,
+            &mut self.icons,
+            &self.library,
+            !folder && self.selected_scroll,
+        );
         if !folder {
             self.selected_scroll = false;
             self.tile_toolbar(ui, area);
+            if response.hovered.is_some() {
+                self.hovered = response.hovered;
+            }
+            if let Some((index, change)) = response.change {
+                self.apply(index, change);
+            }
+        } else if let Some((index, change)) = response.change {
+            let folder = self.folder.as_ref().unwrap();
+            if let Some(item) = folder.items.get(index) {
+                let point = &folder.location.point;
+                match change {
+                    Change::Rate(rating) => self.library.set_rating(library::key(point, &**item), rating),
+                    Change::Viewed(viewed) => self.library.set_viewed(library::key(point, &**item), viewed),
+                    Change::Pin => self.library.toggle_favorite(library::place(point, &**item)),
+                }
+            }
         }
-        if let Some((index, enter)) = activate {
+        if let Some((index, enter)) = response.activate {
             self.browser_focus = true;
             if folder {
                 let folder = self.folder.as_ref().unwrap();
@@ -766,6 +1090,11 @@ impl Viewer {
         }
         if job.text.is_empty() {
             append(&mut job, &text("statusbar-ready"), palette.separator, palette.separator);
+        } else if let Some(item) = self.browser.selected.and_then(|index| self.browser.items.get(index)) {
+            let rating = self.library.rating(&library::key(&self.browser.location.point, &**item));
+            if rating > 0 {
+                append(&mut job, &colors::stars(rating), colors::star(dark), palette.separator);
+            }
         }
         let background = ui.painter().add(egui::Shape::Noop);
         let response =
@@ -829,6 +1158,24 @@ impl Viewer {
         }
         if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)) {
             self.browser.up(context);
+        }
+        for (key, rating) in [
+            (egui::Key::Num0, 0u8),
+            (egui::Key::Num1, 1),
+            (egui::Key::Num2, 2),
+            (egui::Key::Num3, 3),
+            (egui::Key::Num4, 4),
+            (egui::Key::Num5, 5),
+        ] {
+            if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, key)) {
+                let target = self
+                    .hovered
+                    .or(self.browser.selected)
+                    .filter(|index| self.browser.items.get(*index).is_some_and(|item| !item.is_container()));
+                if let Some(index) = target {
+                    self.apply(index, Change::Rate(rating));
+                }
+            }
         }
         for (key, step) in [
             (egui::Key::ArrowDown, 1isize),
@@ -901,6 +1248,19 @@ impl Viewer {
             "nav.forward" => self.browser.history(true, context),
             "nav.up" => self.browser.up(context),
             "dialog.filter" => self.focus_filter = true,
+            "nav.location" => self.edit_location(),
+            "nav.pin" => self.library.toggle_favorite(Place::from_point(&self.browser.location.point)),
+            "view.quick_open" => self.palette = Some(Palette::new(palette::Kind::Files)),
+            "view.command_palette" => self.palette = Some(Palette::new(palette::Kind::Commands)),
+            "view.minimap" => self.options.show_minimap = !self.options.show_minimap,
+            "view.osd" => {
+                self.options.show_osd = !self.options.show_osd;
+                if self.options.show_osd {
+                    self.osd.start();
+                } else {
+                    self.osd.hide();
+                }
+            }
             "settings.open" => self.dialogs.open(Mode::Settings, &self.options, &self.preview),
             "help.show" => self.dialogs.open(Mode::Help, &self.options, &self.preview),
             "help.about" => self.dialogs.open(Mode::About, &self.options, &self.preview),
@@ -960,6 +1320,138 @@ impl Viewer {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Preview with the minimap on the right and the info panel on the bottom left.
+    fn preview(&mut self, ui: &mut egui::Ui) {
+        let area = ui.max_rect();
+        self.preview.show(ui, &self.options);
+        if self.preview.file.is_empty() || self.preview.loading {
+            return;
+        }
+        let index = self
+            .browser
+            .selected
+            .filter(|index| self.browser.items.get(*index).is_some_and(|item| !item.is_container()));
+        if self.options.show_minimap && self.shuffle.is_none() {
+            if let Some(item) = index.and_then(|index| self.browser.items.get(index)) {
+                let screen = &self.preview.screen;
+                if let Some(y) = self.minimap.show(ui, area, &**item, screen.offset, screen.max_offset) {
+                    self.preview.screen.scroll_to = Some(egui::vec2(self.preview.screen.offset.x, y));
+                }
+            }
+        }
+        if self.osd.is_visible() {
+            let info = self.osd_info(index);
+            match self.osd.show(ui, area, &info, &mut self.icons) {
+                Some(osd::Action::Rate(rating)) => {
+                    if let Some(index) = index {
+                        self.apply(index, Change::Rate(rating));
+                    }
+                }
+                Some(osd::Action::OpenSauce) => self.dialogs.open(Mode::Sauce, &self.options, &self.preview),
+                None => {}
+            }
+        }
+    }
+
+    fn osd_info(&self, index: Option<usize>) -> osd::Info {
+        let mut info = osd::Info::default();
+        let file_name = PathBuf::from(&self.preview.file).file_name().unwrap_or_default().to_string_lossy().to_string();
+        info.title = file_name.clone();
+        if let Some(sauce) = &self.preview.sauce {
+            let title = sauce.title().to_string();
+            if !title.trim().is_empty() {
+                info.title = title.trim().to_owned();
+            }
+            let author = sauce.author().to_string();
+            let group = sauce.group().to_string();
+            info.byline = match (author.trim(), group.trim()) {
+                ("", "") => String::new(),
+                (author, "") => author.to_owned(),
+                ("", group) => group.to_owned(),
+                (author, group) => format!("{author} / {group}"),
+            };
+            info.comment = sauce
+                .comments()
+                .iter()
+                .map(|line| line.to_string().trim_end().to_owned())
+                .filter(|line| !line.is_empty())
+                .take(3)
+                .collect();
+        }
+        if info.title != file_name {
+            info.attributes.push(file_name);
+        }
+        if let Some(format) = icy_engine::formats::FileFormat::from_path(std::path::Path::new(&self.preview.file)) {
+            info.attributes.push(format.name().to_owned());
+        }
+        if self.preview.image_pixels.is_none() {
+            let screen = self.preview.screen.terminal.screen.lock();
+            info.attributes.push(format!("{}×{}", screen.width(), screen.height()));
+        } else if let Some(pixels) = &self.preview.image_pixels {
+            info.attributes.push(format!("{}×{} px", pixels.width(), pixels.height()));
+        }
+        if let Some(date) = self.preview.sauce.as_ref().and_then(super::dialogs::sauce_date) {
+            info.attributes.push(date);
+        }
+        info.attributes.push(format_size(self.preview.content_size as u64));
+        if let Some(item) = index.and_then(|index| self.browser.items.get(index)) {
+            info.rating = self.library.rating(&library::key(&self.browser.location.point, &**item));
+        }
+        info
+    }
+
+    /// Quick open (Ctrl+P) and the command palette (Ctrl+Shift+P).
+    fn palette(&mut self, context: &egui::Context) {
+        let Some(kind) = self.palette.as_ref().map(|palette| palette.kind) else {
+            return;
+        };
+        let entries: Vec<palette::Entry> = match kind {
+            palette::Kind::Files => self
+                .browser
+                .visible()
+                .into_iter()
+                .map(|index| {
+                    let item = &self.browser.items[index];
+                    palette::Entry {
+                        label: item.get_label(),
+                        detail: if item.is_container() {
+                            text("egui-folder")
+                        } else {
+                            item.size().map(format_size).unwrap_or_default()
+                        },
+                        target: palette::Target::Item(index),
+                    }
+                })
+                .collect(),
+            palette::Kind::Commands => COMMANDS
+                .iter()
+                .filter(|id| !matches!(**id, "view.command_palette"))
+                .filter_map(|id| self.commands.get(id).map(|command| (*id, command)))
+                .map(|(id, command)| palette::Entry {
+                    label: text(&command.fluent_action_key()),
+                    detail: command.primary_hotkey_display().unwrap_or_default(),
+                    target: palette::Target::Command(id),
+                })
+                .collect(),
+        };
+        let outcome = self.palette.as_mut().unwrap().show(context, &entries);
+        match outcome {
+            palette::Outcome::Open => {}
+            palette::Outcome::Close => self.palette = None,
+            palette::Outcome::Activate(target) => {
+                self.palette = None;
+                match target {
+                    palette::Target::Item(index) => {
+                        self.browser_focus = true;
+                        self.selected_scroll = true;
+                        self.activate(index, true, context);
+                    }
+                    palette::Target::Command(id) => self.action(id, context),
+                }
+            }
         }
     }
 
@@ -1027,6 +1519,33 @@ impl Viewer {
             self.browser.preload(next);
         }
     }
+}
+
+/// Clickable parts of the current path as (label, path) pairs, the root first.
+fn crumbs(point: &NavPoint) -> Vec<(String, String)> {
+    let mut result = Vec::new();
+    if point.is_web() {
+        result.push(("16colo.rs".to_owned(), String::new()));
+    }
+    let path = if point.is_web() { point.path.trim_matches('/') } else { point.path.as_str() };
+    let mut start = 0;
+    for (index, character) in path.char_indices().chain(std::iter::once((path.len(), '/'))) {
+        if character != '/' && character != '\\' {
+            continue;
+        }
+        let name = &path[start..index];
+        if name.is_empty() {
+            if index == 0 {
+                result.push(("/".to_owned(), "/".to_owned()));
+            }
+        } else if result.is_empty() && name.ends_with(':') {
+            result.push((name.to_owned(), format!("{name}\\")));
+        } else {
+            result.push((name.to_owned(), path[..index].to_owned()));
+        }
+        start = index + character.len_utf8();
+    }
+    result
 }
 
 const BAUD_RATES: &[u32] = &[0, 300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
@@ -1194,6 +1713,31 @@ impl eframe::App for Viewer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crumbs_split_local_windows_and_web_paths() {
+        let pairs = |point: NavPoint| crumbs(&point);
+        assert_eq!(
+            pairs(NavPoint::file("/home/art")),
+            vec![("/".into(), "/".into()), ("home".into(), "/home".into()), ("art".into(), "/home/art".into())]
+        );
+        assert_eq!(
+            pairs(NavPoint::file("C:\\art\\pack")),
+            vec![
+                ("C:".into(), "C:\\".into()),
+                ("art".into(), "C:\\art".into()),
+                ("pack".into(), "C:\\art\\pack".into())
+            ]
+        );
+        assert_eq!(
+            pairs(NavPoint::web("/2024/pack/")),
+            vec![
+                ("16colo.rs".into(), String::new()),
+                ("2024".into(), "2024".into()),
+                ("pack".into(), "2024/pack".into())
+            ]
+        );
+    }
 
     #[test]
     fn sauce_summary_colours_every_field_and_hides_an_empty_date() {

@@ -281,6 +281,11 @@ fn render_thumbnail(path: &String, data: &[u8], label: &str, cancel_token: &Canc
             // Sixel files need special handling with icy_sixel
             render_sixel_thumbnail(path, data, label, cancel_token)
         }
+        Some(fmt) if crate::format_preview::is_previewable(fmt) => {
+            let buffer = crate::format_preview::render(fmt, label, data).ok()?;
+            let screen = icy_engine::TextScreen::from_buffer(buffer);
+            render_screen_to_thumbnail(path, &screen, false, None, label, cancel_token)
+        }
         Some(fmt) if fmt.is_image() => {
             log::debug!("[ThumbnailLoader] -> Image format detected: {:?}", fmt);
             // Other image files - render with image crate

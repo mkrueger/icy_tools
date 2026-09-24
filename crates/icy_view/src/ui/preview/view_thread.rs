@@ -515,6 +515,25 @@ impl ViewThread {
             }
         }
 
+        if let Some(format) = file_format.filter(|format| crate::format_preview::is_previewable(*format)) {
+            if let Some(load) = &mut self.current_load {
+                load.load_mode = LoadMode::Format(format);
+            }
+            let name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+            let path_clone = path.clone();
+            self.pending_format_load = Some(tokio::task::spawn_blocking(move || {
+                crate::format_preview::render(format, &name, &stripped_data)
+                    .map(|buffer| FormatLoadResult {
+                        buffer,
+                        path: path_clone,
+                        stripped_data,
+                        generation,
+                    })
+                    .map_err(|error| error.to_string())
+            }));
+            return;
+        }
+
         // Fallback: format-based loading for formats without parser support
         // This runs in a background task so the UI stays responsive
         if let Some(format) = find_format_for_extension(&ext) {

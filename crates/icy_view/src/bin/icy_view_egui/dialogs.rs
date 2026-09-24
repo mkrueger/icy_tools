@@ -23,11 +23,17 @@ pub const COMMANDS: &[&str] = &[
     "nav.back",
     "nav.forward",
     "nav.up",
+    "nav.location",
+    "nav.pin",
+    "view.quick_open",
+    "view.command_palette",
     "view.zoom_in",
     "view.zoom_out",
     "view.zoom_reset",
     "view.zoom_fit",
     "view.fullscreen",
+    "view.minimap",
+    "view.osd",
     "playback.toggle_scroll",
     "playback.scroll_speed",
     "playback.scroll_speed_back",
@@ -223,7 +229,13 @@ impl Dialogs {
 
     fn settings_fields(&mut self, ui: &mut egui::Ui) {
         match self.page {
-            0 => monitor::fields(ui, &mut self.draft.monitor_settings),
+            0 => {
+                appearance::group(ui, &text("egui-viewer"), |ui| {
+                    appearance::check_row(ui, &text("egui-show-osd"), &mut self.draft.show_osd);
+                    appearance::check_row(ui, &text("egui-show-minimap"), &mut self.draft.show_minimap);
+                });
+                monitor::fields(ui, &mut self.draft.monitor_settings);
+            }
             1 => {
                 appearance::group(ui, &text("settings-commands-section"), |ui| {
                     for (index, command) in self.draft.external_commands.iter_mut().enumerate() {
@@ -341,6 +353,9 @@ fn help(ui: &mut egui::Ui) {
             groups.push((category, Vec::new()));
         }
         groups.last_mut().unwrap().1.push((shortcut, text(&command.fluent_action_key())));
+    }
+    if let Some((_, rows)) = groups.iter_mut().find(|(category, _)| *category == text("cmd-category-navigation")) {
+        rows.push(("0 … 5".into(), text("egui-rate-tooltip")));
     }
     let key_width = (ui.available_width() * 0.4).clamp(120.0, 190.0);
     for (category, rows) in groups {

@@ -30,6 +30,46 @@ hotkey_mac = ["Cmd+F"]
 category = "dialog"
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Browsing
+# ═══════════════════════════════════════════════════════════════════════════════
+
+[[commands]]
+id = "view.quick_open"
+hotkey = ["Ctrl+P"]
+hotkey_mac = ["Cmd+P"]
+category = "navigation"
+
+[[commands]]
+id = "view.command_palette"
+hotkey = ["Ctrl+Shift+P"]
+hotkey_mac = ["Cmd+Shift+P"]
+category = "navigation"
+
+[[commands]]
+id = "nav.location"
+hotkey = ["Ctrl+L"]
+hotkey_mac = ["Cmd+L"]
+category = "navigation"
+
+[[commands]]
+id = "nav.pin"
+hotkey = ["Ctrl+D"]
+hotkey_mac = ["Cmd+D"]
+category = "navigation"
+
+[[commands]]
+id = "view.minimap"
+hotkey = ["Ctrl+M"]
+hotkey_mac = ["Cmd+M"]
+category = "view"
+
+[[commands]]
+id = "view.osd"
+hotkey = ["Ctrl+Shift+I"]
+hotkey_mac = ["Cmd+Shift+I"]
+category = "view"
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Playback Control
 # ═══════════════════════════════════════════════════════════════════════════════
 
