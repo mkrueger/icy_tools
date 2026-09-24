@@ -643,3 +643,32 @@ fn test_esc_fallback_preserves_next_sequence() {
     assert_eq!(sink.cmds.len(), 1, "Should parse cursor position after multiple malformed CSIs");
     assert!(matches!(sink.cmds[0], TerminalCommand::CsiCursorPosition(1, 1)));
 }
+
+#[test]
+fn test_rep_repeats_whole_utf8_character() {
+    let mut parser = AnsiParser::new();
+    parser.utf8 = true;
+    let mut sink = CollectSink::new();
+    parser.parse("A▒\x1B[3b".as_bytes(), &mut sink);
+    assert_eq!(String::from_utf8(sink.text).unwrap(), "A▒▒▒▒");
+}
+
+#[test]
+fn test_rep_repeats_utf8_character_split_across_parse_calls() {
+    let mut parser = AnsiParser::new();
+    parser.utf8 = true;
+    let mut sink = CollectSink::new();
+    for byte in "x😀\x1B[2b".bytes() {
+        parser.parse(&[byte], &mut sink);
+    }
+    assert_eq!(String::from_utf8(sink.text).unwrap(), "x😀😀😀");
+}
+
+#[test]
+fn test_rep_repeats_single_byte_by_default() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+    // CP437 █▒ happens to be a valid UTF-8 pair, but only ▒ is repeated.
+    parser.parse(b"\xDB\xB1\x1B[2b", &mut sink);
+    assert_eq!(sink.text, b"\xDB\xB1\xB1\xB1");
+}

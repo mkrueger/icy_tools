@@ -16,7 +16,14 @@ pub struct AnsiParser {
     state: ParserState,
     params: Vec<u16>,
     parse_buffer: Vec<u8>,
-    last_char: u8,
+    /// The character REP (`CSI n b`) repeats; one byte unless `utf8` is set.
+    last_char: [u8; 4],
+    last_char_len: u8,
+    /// Trailing printed bytes, so a UTF-8 character split across `parse` calls is still found.
+    printed_tail: [u8; 4],
+    printed_tail_len: u8,
+    /// Printable bytes are UTF-8, so REP repeats the whole preceding character.
+    pub utf8: bool,
     macros: std::collections::HashMap<usize, Vec<u8>>,
     /// One bit per macro slot, set while that macro is running.
     in_macro: u64,
@@ -37,7 +44,11 @@ impl Default for AnsiParser {
             state: ParserState::Default,
             params: Vec::new(),
             parse_buffer: Vec::new(),
-            last_char: 0,
+            last_char: [0; 4],
+            last_char_len: 1,
+            printed_tail: [0; 4],
+            printed_tail_len: 0,
+            utf8: false,
             macros: std::collections::HashMap::new(),
             in_macro: 0,
             music_option: music::MusicOption::Off,
@@ -116,6 +127,30 @@ impl AnsiParser {
     fn reset(&mut self) {
         self.params.clear();
         self.state = ParserState::Default;
+    }
+
+    fn remember_printed(&mut self, bytes: &[u8]) {
+        let Some(&last) = bytes.last() else {
+            return;
+        };
+        self.last_char = [last, 0, 0, 0];
+        self.last_char_len = 1;
+        if !self.utf8 {
+            return;
+        }
+        let mut tail = [0; 8];
+        let kept = self.printed_tail_len as usize;
+        tail[..kept].copy_from_slice(&self.printed_tail[..kept]);
+        let added = bytes.len().min(4);
+        tail[kept..kept + added].copy_from_slice(&bytes[bytes.len() - added..]);
+        let tail = &tail[(kept + added).saturating_sub(4)..kept + added];
+        self.printed_tail[..tail.len()].copy_from_slice(tail);
+        self.printed_tail_len = tail.len() as u8;
+        // An invalid or still incomplete sequence keeps the single byte fallback.
+        if let Some(len) = (1..=tail.len()).find(|&len| std::str::from_utf8(&tail[tail.len() - len..]).is_ok_and(|text| text.chars().count() == 1)) {
+            self.last_char[..len].copy_from_slice(&tail[tail.len() - len..]);
+            self.last_char_len = len as u8;
+        }
     }
 
     fn parse_dcs(&mut self, sink: &mut dyn CommandSink) {
@@ -333,7 +368,7 @@ impl AnsiParser {
     #[inline(always)]
     fn flush_printable(&mut self, sink: &mut dyn CommandSink, input: &[u8], printable_start: usize, i: usize) {
         if i > printable_start {
-            self.last_char = input[i - 1];
+            self.remember_printed(&input[printable_start..i]);
             sink.print(&input[printable_start..i]);
         }
     }
@@ -495,7 +530,7 @@ impl CommandParser for AnsiParser {
                         }
                         FORM_FEED | BELL | BACKSPACE | TAB | DELETE | ESC | LINE_FEED | CARRIAGE_RETURN => {
                             // non standard extension to print esc chars ESC ESC -> ESC
-                            self.last_char = byte;
+                            self.remember_printed(&[byte]);
                             sink.print(&[byte]);
                             self.reset();
                             i += 1;
@@ -1550,7 +1585,7 @@ impl CommandParser for AnsiParser {
 
         // Emit any remaining printable bytes
         if i > printable_start && self.state == ParserState::Default {
-            self.last_char = input[i - 1];
+            self.remember_printed(&input[printable_start..i]);
             sink.print(&input[printable_start..i]);
         }
     }
@@ -1935,7 +1970,7 @@ impl AnsiParser {
             }
             b'b' => {
                 let n = self.params.first().copied().unwrap_or(1);
-                sink.print(&vec![self.last_char; n as usize]);
+                sink.print(&self.last_char[..self.last_char_len as usize].repeat(n as usize));
             }
             b's' => {
                 if self.params.len() == 2 {
