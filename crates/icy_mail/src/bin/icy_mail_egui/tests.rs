@@ -8,9 +8,64 @@ use std::{
 fn loaded(context: &egui::Context) -> (packet_tests::TempDir, app::MailApp) {
     let (dir, package) = packet_tests::load();
     let mut mail = app::MailApp::new(context);
+    mail.drafts = Some(icy_mail::drafts::DraftStore::open_in(&dir.path().join("TEST.QWK"), &package, dir.path()).unwrap());
+    mail.path = Some(dir.path().join("TEST.QWK"));
     mail.reader.set_package(Arc::new(package));
     wait(&mut mail, context);
     (dir, mail)
+}
+
+fn click_label(context: &egui::Context, mail: &mut app::MailApp, size: egui::Vec2, name: &str) {
+    let output = frame(context, mail, size, vec![]);
+    let position = label(&output, name).center();
+    for pressed in [true, false] {
+        frame(context, mail, size, pointer(position, pressed));
+    }
+}
+
+#[test]
+fn compose_reply_edit_delete_and_export_from_ui() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    frame(&context, &mut mail, size, vec![key(egui::Key::R, egui::Modifiers::COMMAND)]);
+    click_label(&context, &mut mail, size, "Save Draft");
+    assert_eq!(mail.drafts.as_ref().unwrap().drafts().len(), 1);
+    let draft = &mail.drafts.as_ref().unwrap().drafts()[0];
+    assert_eq!(draft.to, "alice");
+    assert_eq!(draft.ref_number, 10);
+    assert!(draft.body.contains("> line 0"));
+    let packet = dir.path().join("OUT.rep");
+    mail.drafts.as_ref().unwrap().export_rep(&packet).unwrap();
+    assert!(packet.exists());
+    let reopened = icy_mail::drafts::DraftStore::open_in(mail.path.as_ref().unwrap(), mail.reader.package.as_ref().unwrap(), dir.path()).unwrap();
+    assert_eq!(reopened.drafts()[0], *draft);
+    mail.edit_draft(0);
+    click_label(&context, &mut mail, size, "Delete Draft");
+    click_label(&context, &mut mail, size, "Delete");
+    assert!(mail.drafts.as_ref().unwrap().drafts().is_empty());
+}
+
+#[test]
+fn new_and_forward_create_distinct_drafts() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    click_label(&context, &mut mail, size, "New");
+    click_label(&context, &mut mail, size, "Save Draft");
+    let draft = &mail.drafts.as_ref().unwrap().drafts()[0];
+    assert_eq!(draft.to, "ALL");
+    assert_eq!(draft.conference, 1);
+    assert_eq!(draft.ref_number, 0);
+    click_label(&context, &mut mail, size, "Forward");
+    click_label(&context, &mut mail, size, "Save Draft");
+    let draft = &mail.drafts.as_ref().unwrap().drafts()[1];
+    assert!(draft.to.is_empty());
+    assert_eq!(draft.subject, "Fwd: Coffee machine");
+    assert!(draft.body.contains("> line 0"));
+    assert_eq!(draft.ref_number, 0);
 }
 
 fn wait(mail: &mut app::MailApp, context: &egui::Context) {

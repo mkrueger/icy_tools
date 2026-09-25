@@ -5,12 +5,13 @@ use std::{
 
 use eframe::egui;
 use icy_engine::TextScreen;
-use icy_mail::{qwk::QwkPackage, reader::render_body};
+use icy_mail::{drafts::DraftStore, qwk::QwkPackage, reader::render_body};
 
 pub enum Event {
     Package(u64, PathBuf, Result<Arc<QwkPackage>, String>),
     Body(u64, Result<TextScreen, String>),
     Picked(Option<PathBuf>),
+    Exported(Option<(PathBuf, Result<(), String>)>),
 }
 
 type Jobs<T> = mpsc::Sender<(T, egui::Context)>;
@@ -19,6 +20,7 @@ pub struct Loader {
     pub package_generation: u64,
     pub body_generation: u64,
     pub picking: bool,
+    pub export_picking: bool,
     pub sender: mpsc::Sender<Event>,
     pub receiver: mpsc::Receiver<Event>,
     packages: Jobs<(u64, PathBuf)>,
@@ -43,6 +45,7 @@ impl Default for Loader {
             package_generation: 0,
             body_generation: 0,
             picking: false,
+            export_picking: false,
             sender,
             receiver,
             packages,
@@ -77,6 +80,31 @@ impl Loader {
                 .add_filter("All Files", &["*"])
                 .pick_file();
             let _ = sender.send(Event::Picked(path));
+            context.request_repaint();
+        });
+    }
+
+    pub fn pick_export(&mut self, suggested: PathBuf, drafts: DraftStore, context: &egui::Context) {
+        if self.export_picking {
+            return;
+        }
+        self.export_picking = true;
+        let sender = self.sender.clone();
+        let context = context.clone();
+        std::thread::spawn(move || {
+            let mut dialog = rfd::FileDialog::new()
+                .set_title("Export Reply Packet")
+                .add_filter("QWK Reply Packet", &["rep"])
+                .set_file_name(suggested.file_name().unwrap_or_default().to_string_lossy());
+            if let Some(directory) = suggested.parent() {
+                dialog = dialog.set_directory(directory);
+            }
+            let path = dialog.save_file();
+            let result = path.map(|path| {
+                let result = drafts.export_rep(&path).map_err(|error| error.to_string());
+                (path, result)
+            });
+            let _ = sender.send(Event::Exported(result));
             context.request_repaint();
         });
     }

@@ -1,3 +1,4 @@
+pub mod drafts;
 pub mod perf;
 pub mod qwk;
 pub mod reader;

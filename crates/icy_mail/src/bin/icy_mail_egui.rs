@@ -19,7 +19,7 @@ mod packet_tests;
 mod tests;
 
 #[derive(Parser)]
-#[command(version, about = "An offline QWK mail reader")]
+#[command(version, about = "An offline QWK mail reader and reply-packet composer")]
 struct Args {
     #[arg(value_name = "FILE", help = "Mail package to open (QWK/ZIP)")]
     file: Option<PathBuf>,

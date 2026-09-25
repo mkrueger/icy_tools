@@ -1,18 +1,43 @@
 use std::{path::PathBuf, sync::Arc};
 
 use eframe::egui::{self, Key, Vec2};
-use icy_engine::{Position, Selection, Size, TextScreen};
+use icy_engine::{BufferType, Position, Selection, Size, TextScreen};
 use icy_engine_gui::{
     egui::{appearance, screen::ScreenView},
     MonitorSettings, ScalingMode,
 };
-use icy_mail::reader::{ConferenceColumn, MessageColumn, NavigateDirection, Pane, Reader, ViewMode};
+use icy_mail::{
+    drafts::{Compose, Draft, DraftStore},
+    reader::{ConferenceColumn, MessageColumn, NavigateDirection, Pane, Reader, ViewMode},
+};
 use parking_lot::Mutex;
 
 use super::{
     loading::{Event, Loader},
     widgets::{self, Icon, Icons, ROW_HEIGHT},
 };
+
+struct Composer {
+    draft: Draft,
+    original: Draft,
+    index: Option<usize>,
+    discard: bool,
+    delete: bool,
+    error: Option<String>,
+}
+
+impl Composer {
+    fn new(draft: Draft, index: Option<usize>) -> Self {
+        Self {
+            original: draft.clone(),
+            draft,
+            index,
+            discard: false,
+            delete: false,
+            error: None,
+        }
+    }
+}
 
 pub struct MailApp {
     pub reader: Reader,
@@ -24,6 +49,9 @@ pub struct MailApp {
     pub loading: Option<PathBuf>,
     pub body_loading: bool,
     pub error: Option<String>,
+    pub drafts: Option<DraftStore>,
+    composer: Option<Composer>,
+    notice: Option<String>,
     icons: Icons,
     rendered: Option<usize>,
     selection_anchor: Option<Position>,
@@ -51,6 +79,9 @@ impl MailApp {
             loading: None,
             body_loading: false,
             error: None,
+            drafts: None,
+            composer: None,
+            notice: None,
             icons: Icons::default(),
             rendered: None,
             selection_anchor: None,
@@ -66,6 +97,9 @@ impl MailApp {
     }
 
     pub fn open(&mut self, path: PathBuf, context: &egui::Context) {
+        if self.composer.is_some() {
+            return;
+        }
         self.loading = Some(path.clone());
         self.error = None;
         self.body_loading = false;
@@ -78,18 +112,23 @@ impl MailApp {
                 Event::Package(generation, path, result) if generation == self.loader.package_generation => {
                     self.loading = None;
                     match result {
-                        Ok(package) => {
-                            self.reader.set_package(package);
-                            self.path = Some(path);
-                            self.rendered = None;
-                            self.focus = Pane::Messages;
-                            self.reveal_conference = true;
-                            self.reveal_message = true;
-                            context.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-                                "{} - Icy Mail",
-                                self.path.as_ref().unwrap().file_name().unwrap_or_default().to_string_lossy()
-                            )));
-                        }
+                        Ok(package) => match DraftStore::open(&path, &package) {
+                            Ok(drafts) => {
+                                self.drafts = Some(drafts);
+                                self.reader.set_package(package);
+                                self.path = Some(path);
+                                self.notice = None;
+                                self.rendered = None;
+                                self.focus = Pane::Messages;
+                                self.reveal_conference = true;
+                                self.reveal_message = true;
+                                context.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+                                    "{} - Icy Mail",
+                                    self.path.as_ref().unwrap().file_name().unwrap_or_default().to_string_lossy()
+                                )));
+                            }
+                            Err(error) => self.error = Some(format!("Unable to load drafts for {}:\n{error}", path.display())),
+                        },
                         Err(error) => {
                             self.error = Some(format!("{}\n{error}", path.display()));
                             self.rendered = None;
@@ -110,6 +149,15 @@ impl MailApp {
                     self.loader.picking = false;
                     if let Some(path) = path {
                         self.open(path, context);
+                    }
+                }
+                Event::Exported(result) => {
+                    self.loader.export_picking = false;
+                    if let Some((path, result)) = result {
+                        match result {
+                            Ok(()) => self.notice = Some(format!("Reply packet exported to {}", path.display())),
+                            Err(error) => self.error = Some(format!("Unable to export {}:\n{error}", path.display())),
+                        }
                     }
                 }
                 _ => {}
@@ -139,7 +187,7 @@ impl MailApp {
         if !context.will_discard() {
             self.poll(context);
         }
-        let blocked = self.error.is_some();
+        let blocked = self.error.is_some() || self.composer.is_some();
         if !blocked && !context.will_discard() {
             self.keys(context);
             let dropped = context.input(|input| input.raw.dropped_files.iter().find_map(|file| file.path.clone()));
@@ -155,8 +203,14 @@ impl MailApp {
                 if let Some(path) = &self.loading {
                     ui.spinner();
                     ui.add(egui::Label::new(format!("Loading {}", path.file_name().unwrap_or_default().to_string_lossy())).truncate());
+                } else if let Some(notice) = &self.notice {
+                    ui.add(egui::Label::new(notice).truncate());
                 } else if let Some(package) = &self.reader.package {
                     ui.add(egui::Label::new(format!("{} / {} messages", self.reader.messages.len(), package.message_count())).truncate());
+                    if let Some(drafts) = &self.drafts {
+                        ui.separator();
+                        ui.label(format!("{} drafts", drafts.drafts().len()));
+                    }
                     ui.separator();
                     ui.add(egui::Label::new(package.control_file.bbs_name.to_string()).truncate())
                         .on_hover_text(self.path.as_ref().map_or(String::new(), |path| path.display().to_string()));
@@ -203,7 +257,7 @@ impl MailApp {
             self.sync_body(context);
         }
         if let Some(error) = self.error.clone() {
-            let response = appearance::MessageBox::new("mail-error", appearance::MessageKind::Error, "Unable to Open Message", error)
+            let response = appearance::MessageBox::new("mail-error", appearance::MessageKind::Error, "Mail Error", error)
                 .copyable()
                 .buttons([appearance::DialogButton::primary(appearance::labels::close(), ()).cancels()])
                 .show(context);
@@ -211,6 +265,7 @@ impl MailApp {
                 self.error = None;
             }
         }
+        self.compose_dialog(context);
         self.windows(context);
     }
 
@@ -230,6 +285,26 @@ impl MailApp {
                 self.open(self.path.clone().unwrap(), &context);
             }
             ui.separator();
+            if ui.add_enabled(self.drafts.is_some(), egui::Button::new("New")).clicked() {
+                self.new_draft();
+            }
+            if ui.add_enabled(self.reader.selected_message.is_some(), egui::Button::new("Reply")).clicked() {
+                self.reply(false);
+            }
+            if !compact && ui.add_enabled(self.reader.selected_message.is_some(), egui::Button::new("Forward")).clicked() {
+                self.reply(true);
+            }
+            if !compact
+                && ui
+                    .add_enabled(
+                        self.drafts.as_ref().is_some_and(|store| !store.drafts().is_empty()),
+                        egui::Button::new("Export REP"),
+                    )
+                    .clicked()
+            {
+                self.pick_export(&context);
+            }
+            ui.separator();
             for (mode, label) in [(ViewMode::List, "List"), (ViewMode::Threads, "Threads")] {
                 if ui.selectable_label(self.reader.view_mode == mode, label).clicked() {
                     self.set_mode(mode);
@@ -238,6 +313,42 @@ impl MailApp {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let menu = self.icons.button(ui, Icon::Menu, "Menu", true);
                 egui::Popup::menu(&menu).show(|ui| {
+                    if ui.add_enabled(self.reader.selected_message.is_some(), egui::Button::new("Forward")).clicked() {
+                        self.reply(true);
+                        ui.close();
+                    }
+                    if ui
+                        .add_enabled(
+                            self.drafts.as_ref().is_some_and(|store| !store.drafts().is_empty()),
+                            egui::Button::new("Export REP"),
+                        )
+                        .clicked()
+                    {
+                        self.pick_export(&context);
+                        ui.close();
+                    }
+                    if let Some(store) = &self.drafts {
+                        let entries: Vec<_> = store
+                            .drafts()
+                            .iter()
+                            .enumerate()
+                            .map(|(index, draft)| (index, draft.subject.clone(), draft.to.clone()))
+                            .collect();
+                        if !entries.is_empty() {
+                            ui.separator();
+                            ui.label("Drafts (select to edit)");
+                            for (index, subject, to) in entries {
+                                if ui
+                                    .button(format!("{} - {}", if subject.is_empty() { "(no subject)" } else { &subject }, to))
+                                    .clicked()
+                                {
+                                    self.edit_draft(index);
+                                    ui.close();
+                                }
+                            }
+                        }
+                    }
+                    ui.separator();
                     if ui.button("New Window").clicked() {
                         self.new_window = true;
                         ui.close();
@@ -302,6 +413,215 @@ impl MailApp {
         self.reader.view_mode = mode;
         self.reader.rebuild_messages();
         self.reveal_message = true;
+    }
+
+    fn new_draft(&mut self) {
+        let Some(package) = &self.reader.package else {
+            return;
+        };
+        let conference = self
+            .reader
+            .selected_conference
+            .or_else(|| conference_choices(package).first().map(|(number, _)| *number));
+        let Some(conference) = conference else {
+            self.error = Some("This packet has no conference available for a new post".into());
+            return;
+        };
+        if let Some(store) = &self.drafts {
+            match store.prepare(package, Compose::New { conference }) {
+                Ok(mut draft) => {
+                    draft.to = "ALL".into();
+                    self.composer = Some(Composer::new(draft, None));
+                }
+                Err(error) => self.error = Some(format!("Unable to start new message: {error}")),
+            }
+        }
+    }
+
+    fn reply(&mut self, forward: bool) {
+        let (Some(package), Some(index)) = (&self.reader.package, self.reader.selected_message) else {
+            return;
+        };
+        let Some(info) = package.infos.get(index) else {
+            self.error = Some("Selected message is no longer available".into());
+            return;
+        };
+        let message = match package.get_message(index) {
+            Ok(message) => message,
+            Err(error) => {
+                self.error = Some(format!("Unable to read original message: {error}"));
+                return;
+            }
+        };
+        let Some(store) = &self.drafts else {
+            return;
+        };
+        let mut draft = match store.prepare(package, if forward { Compose::Forward { index } } else { Compose::Reply { index } }) {
+            Ok(draft) => draft,
+            Err(error) => {
+                self.error = Some(format!("Unable to start reply: {error}"));
+                return;
+            }
+        };
+        let body = decode_cp437(&message.text);
+        draft.body = format!(
+            "\n\nOn {} {} wrote:\n{}",
+            info.date_str,
+            info.from,
+            body.trim_end().lines().map(|line| format!("> {line}\n")).collect::<String>()
+        );
+        self.composer = Some(Composer::new(draft, None));
+    }
+
+    pub(super) fn edit_draft(&mut self, index: usize) {
+        if let Some(draft) = self.drafts.as_ref().and_then(|store| store.drafts().get(index)) {
+            self.composer = Some(Composer::new(draft.clone(), Some(index)));
+        } else {
+            self.error = Some("Draft is no longer available".into());
+        }
+    }
+
+    fn pick_export(&mut self, context: &egui::Context) {
+        if let (Some(path), Some(store)) = (&self.path, &self.drafts) {
+            if store.drafts().is_empty() {
+                return;
+            }
+            self.loader.pick_export(store.default_export_path(path), store.clone(), context);
+        }
+    }
+
+    fn compose_dialog(&mut self, context: &egui::Context) {
+        let Some(composer) = &mut self.composer else {
+            return;
+        };
+        #[derive(Clone, Copy)]
+        enum Action {
+            Save,
+            Cancel,
+            Delete,
+            Discard,
+            Keep,
+        }
+        let Some(package) = &self.reader.package else {
+            self.error = Some("No packet open for the draft".into());
+            return;
+        };
+        let conferences = conference_choices(package);
+        let response = appearance::Dialog::new("mail-compose")
+            .title(if composer.index.is_some() { "Edit Draft" } else { "Compose Message" })
+            .size(appearance::DialogSize::Large)
+            .max_height((context.content_rect().height() - 24.0).max(160.0))
+            .show(context, |dialog| {
+                dialog.content(|ui| {
+                    if composer.delete || composer.discard {
+                        ui.label(if composer.delete {
+                            "Delete this draft permanently?"
+                        } else {
+                            "Discard unsaved changes?"
+                        });
+                        return;
+                    }
+                    appearance::form_row(ui, "Conference", |ui| {
+                        let selected = conferences
+                            .iter()
+                            .find(|(number, _)| *number == composer.draft.conference)
+                            .map(|(_, name)| name.as_str())
+                            .unwrap_or("Select conference");
+                        egui::ComboBox::from_id_salt("draft-conference").selected_text(selected).show_ui(ui, |ui| {
+                            for (number, name) in &conferences {
+                                ui.selectable_value(&mut composer.draft.conference, *number, name);
+                            }
+                        });
+                    });
+                    for (label, field) in [
+                        ("From", &mut composer.draft.from),
+                        ("To", &mut composer.draft.to),
+                        ("Subject", &mut composer.draft.subject),
+                    ] {
+                        appearance::form_row(ui, label, |ui| {
+                            ui.add(appearance::text_edit(field).desired_width(f32::INFINITY));
+                        });
+                    }
+                    ui.checkbox(&mut composer.draft.private, "Private message");
+                    ui.label("Message");
+                    ui.add(
+                        egui::TextEdit::multiline(&mut composer.draft.body)
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(12),
+                    );
+                    if let Some(error) = &composer.error {
+                        ui.colored_label(ui.visuals().error_fg_color, error);
+                    }
+                });
+                let buttons = if composer.delete {
+                    vec![
+                        appearance::DialogButton::cancel("Keep Draft", Action::Keep),
+                        appearance::DialogButton::destructive("Delete", Action::Delete),
+                    ]
+                } else if composer.discard {
+                    vec![
+                        appearance::DialogButton::cancel("Keep Editing", Action::Keep),
+                        appearance::DialogButton::destructive("Discard", Action::Discard),
+                    ]
+                } else {
+                    let mut buttons = Vec::new();
+                    if composer.index.is_some() {
+                        buttons.push(appearance::DialogButton::destructive("Delete Draft", Action::Delete).leading());
+                    }
+                    buttons.push(appearance::DialogButton::cancel("Cancel", Action::Cancel));
+                    buttons.push(appearance::DialogButton::primary("Save Draft", Action::Save));
+                    buttons
+                };
+                dialog.buttons(buttons);
+            });
+        match response.action.or_else(|| response.dismissed.then_some(Action::Cancel)) {
+            Some(Action::Save) => {
+                if let Some(store) = &self.drafts {
+                    let mut next = store.clone();
+                    let result = if composer.index.is_some() {
+                        next.update(composer.draft.clone())
+                    } else {
+                        next.insert(composer.draft.clone())
+                    };
+                    match result {
+                        Ok(()) => {
+                            self.drafts = Some(next);
+                            self.notice = Some("Draft saved".into());
+                            self.error = None;
+                            self.composer = None;
+                        }
+                        Err(error) => composer.error = Some(format!("Unable to save draft: {error}")),
+                    }
+                }
+            }
+            Some(Action::Delete) if composer.delete => {
+                if let (Some(store), Some(index)) = (&self.drafts, composer.index) {
+                    let mut next = store.clone();
+                    let id = next.drafts()[index].id;
+                    match next.delete(id) {
+                        Ok(()) => {
+                            self.drafts = Some(next);
+                            self.notice = Some("Draft deleted".into());
+                            self.error = None;
+                            self.composer = None;
+                        }
+                        Err(error) => composer.error = Some(format!("Unable to delete draft: {error}")),
+                    }
+                }
+            }
+            Some(Action::Delete) => composer.delete = true,
+            Some(Action::Discard) => {
+                self.composer = None;
+                self.error = None;
+            }
+            Some(Action::Cancel) if composer.draft != composer.original => composer.discard = true,
+            Some(Action::Cancel) => self.composer = None,
+            Some(Action::Keep) => {
+                composer.discard = false;
+                composer.delete = false;
+            }
+            None => {}
+        }
     }
 
     fn set_focus(&mut self, pane: Pane, context: &egui::Context) {
@@ -633,6 +953,15 @@ impl MailApp {
     }
 
     fn keys(&mut self, context: &egui::Context) {
+        if key(context, Key::N, true, false) {
+            self.new_draft();
+        }
+        if key(context, Key::R, true, false) {
+            self.reply(false);
+        }
+        if key(context, Key::E, true, true) {
+            self.pick_export(context);
+        }
         if key(context, Key::O, true, false) {
             self.loader.pick(context);
         }
@@ -762,6 +1091,33 @@ impl MailApp {
             }
         }
     }
+}
+
+fn decode_cp437(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .filter_map(|byte| match *byte {
+            b'\n' => Some('\n'),
+            b'\t' => Some('\t'),
+            0..=31 | 127 => None,
+            byte => Some(BufferType::CP437.convert_to_unicode(byte as char)),
+        })
+        .collect::<String>()
+        .trim_end()
+        .to_owned()
+}
+
+fn conference_choices(package: &icy_mail::qwk::QwkPackage) -> Vec<(u16, String)> {
+    let mut conferences: std::collections::BTreeMap<_, _> = package
+        .control_file
+        .conferences
+        .iter()
+        .map(|conference| (conference.number, decode_cp437(&conference.name)))
+        .collect();
+    for (number, name, _) in package.conferences() {
+        conferences.entry(number).or_insert(name);
+    }
+    conferences.into_iter().collect()
 }
 
 fn key(context: &egui::Context, key: Key, command: bool, shift: bool) -> bool {

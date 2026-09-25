@@ -1,8 +1,9 @@
 # Icy Mail
 
-An offline QWK mail reader. The regular binary uses egui with the existing
-wgpu ANSI renderer. QWK parsing, header indexing, lazy body loading, caching
-and reply threading remain shared with the previous frontend.
+An offline QWK mail reader and reply-packet composer. The regular binary uses
+egui with the existing wgpu ANSI renderer. QWK parsing, header indexing, lazy
+body loading, caching and reply threading remain shared with the previous
+frontend.
 
 ## Run
 
@@ -11,9 +12,8 @@ cargo run -p icy_mail -- [packet.qwk]
 ```
 
 Open a packet from the toolbar, with Ctrl/Cmd+O, or by dropping it on the
-window. ZIP archives must contain `CONTROL.DAT` and `MESSAGES.DAT`. The file
-picker also shows REP files, as before, but the backend does not support
-standalone reply packets lacking those QWK files.
+window. ZIP archives must contain `CONTROL.DAT` and `MESSAGES.DAT`; standalone
+REP archives are export files, not readable incoming packets.
 
 The old frontend remains available:
 
@@ -46,17 +46,32 @@ Drag over the reader to select text; Alt-drag selects a rectangle. Ctrl/Cmd+C
 copies the selection, Ctrl/Cmd+A selects the body, and the copy button copies
 the entire message. Column tooltips retain text clipped by narrow columns.
 
+## Writing replies
+
+Open a QWK packet, then use **New** (Ctrl/Cmd+N), **Reply** (Ctrl/Cmd+R), or
+**Forward** from the menu. Select the conference, edit the address, subject and
+body, and save the draft. The menu lists drafts for later editing and deletion.
+Cancelling a modified composer asks before discarding the changes. Drafts are
+stored separately for each source packet and survive application restarts.
+
+Use **Export REP** (Ctrl/Cmd+Shift+E) to save the drafts as a QWK `.rep` ZIP
+archive containing the BBS's `.MSG` reply file. Transfer that file to the BBS
+using your usual offline mail workflow. Export does not delete drafts; edit or
+delete them explicitly when no longer needed. Unsupported characters and
+invalid QWK fields are reported rather than silently replaced.
+
 The shared `icy_engine_gui::egui` appearance, fonts, dialog shell, screen widget
 and frame scheduling are also used by icy_term and icy_view. Native windows use
 `AutoNoVsync`, matching those applications.
 
 ## Scope
 
-This is a reader, not a composer. The legacy `New` button was an unimplemented
-placeholder; composing, replying, sending and REP export are not implemented.
-The previous English UI labels are retained. Theme, pane sizes and zoom are
-session settings, not written to a user configuration. Closing the main window
-also closes its additional windows.
+QWK replies are exported as files, not sent over a network. Blue Wave, OMEN,
+SOUP and OPX packets, address books, taglines, direct mail delivery and the
+legacy frontend's composer are not implemented. The previous English UI labels
+are retained. Theme, pane sizes and zoom are session settings, not written to
+a user configuration. Closing the main window also closes its additional
+windows.
 
 ## Validation
 
