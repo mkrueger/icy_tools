@@ -589,3 +589,27 @@ fn test_sgr_combined_attributes() {
     ));
     assert!(matches!(&sink.cmds[1], TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Inverse(true))));
 }
+
+#[test]
+fn test_pablodraw_true_color() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // ESC[1;r;g;bt - PabloDraw 24-bit foreground (not SGR bold + parameters)
+    parser.parse(b"\x1B[1;87;255;255t", &mut sink);
+    assert_eq!(sink.cmds.len(), 1);
+    assert!(matches!(
+        &sink.cmds[0],
+        TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Rgb(87, 255, 255)))
+    ));
+
+    sink.cmds.clear();
+
+    // ESC[0;r;g;bt - PabloDraw 24-bit background
+    parser.parse(b"\x1B[0;171;0;171t", &mut sink);
+    assert_eq!(sink.cmds.len(), 1);
+    assert!(matches!(
+        &sink.cmds[0],
+        TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Rgb(171, 0, 171)))
+    ));
+}

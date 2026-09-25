@@ -8,8 +8,8 @@ use codepages::tables::UNICODE_TO_CP437;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    analyze_font_usage, AttributedChar, BitFont, Color, Rectangle, Result, Tag, TagPlacement, TextBuffer, TextPane, ANSI_FONTS, DOS_DEFAULT_PALETTE,
-    XTERM_256_PALETTE,
+    analyze_font_usage, nearest_dos_color, AttributedChar, BitFont, Color, Rectangle, Result, Tag, TagPlacement, TextBuffer, TextPane, ANSI_FONTS,
+    DOS_DEFAULT_PALETTE, XTERM_256_PALETTE,
 };
 
 use super::{ControlCharHandling, ScreenPreperation};
@@ -499,8 +499,19 @@ impl StringGeneratorV2 {
             (cur_back_color.rgb(), cur_back_color)
         };
 
-        let fore_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.rgb() == cur_fore_rgb);
-        let mut back_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.rgb() == cur_back_rgb);
+        // Levels without 256 colors can only emit the 16 DOS colors, so fall back to the closest one.
+        // Without iCE colors only the 8 dark backgrounds exist, so a bright one falls back to its dark variant.
+        let limited_to_dos_colors = !self.level.supports_256_colors();
+        let fore_idx: Option<usize> = DOS_DEFAULT_PALETTE
+            .iter()
+            .position(|c| c.rgb() == cur_fore_rgb)
+            .or_else(|| limited_to_dos_colors.then(|| nearest_dos_color(cur_fore_rgb)));
+        let mut back_idx: Option<usize> = DOS_DEFAULT_PALETTE.iter().position(|c| c.rgb() == cur_back_rgb).or_else(|| {
+            limited_to_dos_colors.then(|| match buf.ice_mode {
+                crate::IceMode::Ice => nearest_dos_color(cur_back_rgb),
+                crate::IceMode::Blink | crate::IceMode::Unlimited => nearest_dos_color(cur_back_rgb) % 8,
+            })
+        });
 
         // DOS bright foreground colors (8..15) are typically represented via bold + base color.
         // When forcing RGB output, don't use bold as a color-encoding mechanism.
@@ -846,7 +857,7 @@ impl StringGeneratorV2 {
             let mut len = if self.options.compress && !self.options.preserve_line_length {
                 let mut last = area.width() - 1;
                 let last_attr = layer.char_at((last, y).into()).attribute;
-                if last_attr.background() == 0 {
+                if !last_attr.is_background_rgb() && last_attr.background() == 0 {
                     while last > area.left() {
                         let c = layer.char_at((last, y).into());
                         if c.ch != ' ' && c.ch != 0xFF as char && c.ch != 0 as char {

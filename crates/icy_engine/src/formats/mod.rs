@@ -263,8 +263,9 @@ pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandPa
         for x in 0..width {
             let mut ch = result.char_at((x, y).into());
             if ch.attribute.is_bold() {
+                // Bold only brightens the 8 base palette colors; RGB and extended colors are exact.
                 let fg = ch.attribute.foreground();
-                if fg < 8 {
+                if !ch.attribute.is_foreground_rgb() && !ch.attribute.is_foreground_ext() && fg < 8 {
                     ch.attribute.set_foreground(fg + 8);
                 }
                 ch.attribute.set_is_bold(false);

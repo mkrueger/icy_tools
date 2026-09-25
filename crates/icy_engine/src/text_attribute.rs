@@ -280,12 +280,12 @@ impl TextAttribute {
     pub fn as_u8(self, ice_mode: IceMode) -> u8 {
         let fg_idx = match self.foreground_color {
             AttributeColor::Palette(n) | AttributeColor::ExtendedPalette(n) => n as u32,
-            AttributeColor::Rgb(_, _, _) => 7, // fallback
+            AttributeColor::Rgb(r, g, b) => crate::nearest_dos_color((r, g, b)) as u32,
             AttributeColor::Transparent => 0,
         };
         let bg_idx = match self.background_color {
             AttributeColor::Palette(n) | AttributeColor::ExtendedPalette(n) => n as u32,
-            AttributeColor::Rgb(_, _, _) => 0, // fallback
+            AttributeColor::Rgb(r, g, b) => crate::nearest_dos_color((r, g, b)) as u32,
             AttributeColor::Transparent => 0,
         };
 

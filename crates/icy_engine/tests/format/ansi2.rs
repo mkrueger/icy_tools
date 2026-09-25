@@ -343,3 +343,50 @@ fn test_no_background_bleed_at_line_end() {
         }
     }
 }
+
+/// PabloDraw writes a 16 color SGR followed by `ESC[0;r;g;bt` (background) and `ESC[1;r;g;bt` (foreground).
+const PABLODRAW_TRUE_COLOR: &[u8] = b"\x1b[0;1;45;36m\x1b[0;171;0;171t\x1b[1;87;255;255tX";
+
+#[test]
+fn test_pablodraw_true_color_load() {
+    let buf = FileFormat::Ansi.from_bytes(PABLODRAW_TRUE_COLOR, None).unwrap().screen.buffer;
+    let attr = buf.char_at((0, 0).into()).attribute;
+
+    // The preceding bold must not turn the RGB foreground into dark gray (palette 8).
+    assert_eq!(AttributeColor::Rgb(87, 255, 255), attr.foreground_color());
+    assert_eq!(AttributeColor::Rgb(171, 0, 171), attr.background_color());
+    assert!(!attr.is_bold());
+    assert_eq!(11, icy_engine::nearest_dos_color(attr.foreground_rgb()));
+    assert_eq!(5, icy_engine::nearest_dos_color(attr.background_rgb()));
+}
+
+#[test]
+fn test_pablodraw_true_color_export_dos_colors() {
+    use icy_engine::formats::{AnsiCompatibilityLevel, AnsiFormatOptions, FormatOptions};
+
+    let buf = FileFormat::Ansi.from_bytes(PABLODRAW_TRUE_COLOR, None).unwrap().screen.buffer;
+    for level in [AnsiCompatibilityLevel::AnsiSys, AnsiCompatibilityLevel::Vt100] {
+        let mut options = SaveOptions::new();
+        options.format = FormatOptions::Ansi(AnsiFormatOptions::new(level));
+        let bytes = FileFormat::Ansi.to_bytes(&buf, &options).unwrap();
+        assert!(
+            bytes.starts_with(b"\x1b[1;36;45mX"),
+            "{level:?}: expected bright cyan on magenta: {:?}",
+            String::from_utf8_lossy(&bytes)
+        );
+    }
+
+    // Trailing spaces on an RGB background are not trimmed as if the background were black.
+    let mut data = b"\x1b[0;171;0;171tX".to_vec();
+    data.extend_from_slice(&[b' '; 79]);
+    let line = FileFormat::Ansi.from_bytes(&data, None).unwrap().screen.buffer;
+    let mut options = SaveOptions::new();
+    options.format = FormatOptions::Ansi(AnsiFormatOptions::new(AnsiCompatibilityLevel::AnsiSys));
+    let bytes = FileFormat::Ansi.to_bytes(&line, &options).unwrap();
+    let reloaded = FileFormat::Ansi.from_bytes(&bytes, None).unwrap().screen.buffer;
+    assert_eq!(AttributeColor::Palette(5), reloaded.char_at((79, 0).into()).attribute.background_color());
+
+    // Binary formats get the closest DOS attribute as well: bright cyan on magenta.
+    let bytes = FileFormat::Bin.to_bytes(&buf, &SaveOptions::new()).unwrap();
+    assert_eq!(&[b'X', 0x5B], &bytes[..2]);
+}
