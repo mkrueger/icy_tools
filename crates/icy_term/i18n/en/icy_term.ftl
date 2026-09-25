@@ -972,7 +972,7 @@ egui-uploaded = Uploaded
 
 egui-downloaded = Downloaded
 
-egui-strict-host-key = Host key: ~/.ssh/known_hosts (strict)
+egui-known-host-key = Host key: ~/.ssh/known_hosts (trust new hosts)
 
 egui-delete-entry = Delete entry
 

@@ -159,7 +159,7 @@ pub fn entry_connection_config(entry: &icy_term::Address, options: &icy_term::Op
         let home = directories::UserDirs::new().ok_or("Cannot locate SSH known_hosts")?;
         config.ssh_host_key_policy = Some(icy_net::ssh::HostKeyPolicy::KnownHosts {
             path: home.home_dir().join(".ssh/known_hosts"),
-            accept_new: false,
+            accept_new: true,
         });
     }
     if matches!(entry.protocol, ConnectionType::Websocket | ConnectionType::SecureWebsocket) {
@@ -261,7 +261,7 @@ mod tests {
         let ssh = entry_connection_config(&entry, &options).unwrap();
         assert!(matches!(
             ssh.ssh_host_key_policy,
-            Some(icy_net::ssh::HostKeyPolicy::KnownHosts { accept_new: false, .. })
+            Some(icy_net::ssh::HostKeyPolicy::KnownHosts { accept_new: true, .. })
         ));
         entry.protocol = ConnectionType::Telnet;
         entry.address = "telnet://url-user:url-password@localhost:2323".into();

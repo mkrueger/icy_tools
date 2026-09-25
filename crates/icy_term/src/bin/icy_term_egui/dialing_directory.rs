@@ -727,7 +727,7 @@ impl DialingDirectory {
                         super::appearance::value_row(ui, label, &value);
                     }
                     if entry.protocol == icy_net::ConnectionType::SSH {
-                        ui.label(&*tr!("egui-strict-host-key"));
+                        ui.label(&*tr!("egui-known-host-key"));
                     }
                     super::appearance::section(ui, &tr!("egui-statistics"));
                     ui.horizontal_wrapped(|ui| {

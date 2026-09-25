@@ -958,7 +958,7 @@ egui-uploaded = Hochgeladen
 
 egui-downloaded = Heruntergeladen
 
-egui-strict-host-key = Hostschlüssel: ~/.ssh/known_hosts (strenge Prüfung)
+egui-known-host-key = Hostschlüssel: ~/.ssh/known_hosts (neuen Hosts vertrauen)
 
 dialing_directory-duplicate = Duplizieren
 
