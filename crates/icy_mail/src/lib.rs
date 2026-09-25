@@ -2,7 +2,6 @@ pub mod drafts;
 pub mod perf;
 pub mod qwk;
 pub mod reader;
-pub mod state;
 #[path = "ui/threading.rs"]
 pub mod threading;
 

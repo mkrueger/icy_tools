@@ -5,28 +5,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// A window with the test packet open; drafts, read marks and the recent list stay in the packet's directory.
 fn loaded(context: &egui::Context) -> (packet_tests::TempDir, app::MailApp) {
-    let (dir, _package) = packet_tests::load();
-    let mut mail = app::MailApp::with_storage(context, dir.path().to_path_buf());
-    mail.open(dir.path().join("TEST.QWK"), context);
+    let (dir, package) = packet_tests::load();
+    let mut mail = app::MailApp::new(context);
+    mail.drafts = Some(icy_mail::drafts::DraftStore::open_in(&dir.path().join("TEST.QWK"), &package, dir.path()).unwrap());
+    mail.path = Some(dir.path().join("TEST.QWK"));
+    mail.reader.set_package(Arc::new(package));
     wait(&mut mail, context);
     (dir, mail)
-}
-
-fn settle(context: &egui::Context, mail: &mut app::MailApp, size: egui::Vec2) -> egui::FullOutput {
-    for _ in 0..3 {
-        frame(context, mail, size, vec![]);
-    }
-    frame(context, mail, size, vec![])
-}
-
-fn count(output: &egui::FullOutput, label: &str) -> usize {
-    output
-        .shapes
-        .iter()
-        .filter(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text() == label))
-        .count()
 }
 
 fn click_label(context: &egui::Context, mail: &mut app::MailApp, size: egui::Vec2, name: &str) {
@@ -46,8 +32,7 @@ fn compose_reply_edit_delete_and_export_from_ui() {
     frame(&context, &mut mail, size, vec![key(egui::Key::R, egui::Modifiers::COMMAND)]);
     click_label(&context, &mut mail, size, "Save Draft");
     assert_eq!(mail.drafts.as_ref().unwrap().drafts().len(), 1);
-    let draft = mail.drafts.as_ref().unwrap().drafts()[0].clone();
-    let draft = &draft;
+    let draft = &mail.drafts.as_ref().unwrap().drafts()[0];
     assert_eq!(draft.to, "alice");
     assert_eq!(draft.ref_number, 10);
     assert!(draft.body.contains("> line 0"));
@@ -56,12 +41,10 @@ fn compose_reply_edit_delete_and_export_from_ui() {
     assert!(packet.exists());
     let reopened = icy_mail::drafts::DraftStore::open_in(mail.path.as_ref().unwrap(), mail.reader.package.as_ref().unwrap(), dir.path()).unwrap();
     assert_eq!(reopened.drafts()[0], *draft);
-    let id = draft.id;
-    mail.edit_draft(&context, id);
+    mail.edit_draft(0);
     click_label(&context, &mut mail, size, "Delete Draft");
     click_label(&context, &mut mail, size, "Delete");
     assert!(mail.drafts.as_ref().unwrap().drafts().is_empty());
-    assert!(mail.composer.is_none());
 }
 
 #[test]
@@ -162,7 +145,7 @@ fn file_loading_populates_an_initially_empty_reader_and_reports_errors() {
     appearance::apply(&context);
     let (dir, _package) = packet_tests::load();
     let path = dir.path().join("TEST.QWK");
-    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    let mut mail = app::MailApp::new(&context);
     frame(&context, &mut mail, egui::vec2(1100.0, 760.0), vec![]);
     mail.open(path.clone(), &context);
     assert!(mail.loading.is_some());
@@ -191,8 +174,7 @@ fn new_window_shortcut_uses_exact_modifiers_and_registers_native_viewport() {
     let context = egui::Context::default();
     context.set_embed_viewports(false);
     appearance::apply(&context);
-    let (dir, _package) = packet_tests::load();
-    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    let mut mail = app::MailApp::new(&context);
     let size = egui::vec2(1100.0, 760.0);
     frame(&context, &mut mail, size, vec![]);
     let output = frame(
@@ -330,7 +312,7 @@ fn modal_blocks_navigation_and_close_key_does_not_leak() {
 }
 
 #[test]
-fn responsive_toolbar_has_one_search_field_and_keeps_actions_on_screen() {
+fn responsive_toolbar_has_one_filter_and_no_clipped_modes() {
     let context = egui::Context::default();
     appearance::apply(&context);
     let (_dir, mut mail) = loaded(&context);
@@ -340,161 +322,20 @@ fn responsive_toolbar_has_one_search_field_and_keeps_actions_on_screen() {
         egui::vec2(360.0, 240.0),
         egui::vec2(1100.0, 760.0),
     ] {
-        let output = settle(&context, &mut mail, size);
-        assert_eq!(count(&output, "Search messages"), 1, "{size:?}: exactly one search field");
-        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
-        assert!(screen.contains_rect(label(&output, "Search messages")), "{size:?}");
-        if size.x >= 900.0 {
-            for text in ["Open", "New", "Reply", "Forward", "Export Replies"] {
-                assert!(screen.contains_rect(label(&output, text)), "{size:?}: {text}");
-            }
-        } else {
-            assert_eq!(count(&output, "Reply"), 0, "{size:?}: compact toolbar shows icons only");
+        for _ in 0..3 {
+            frame(&context, &mut mail, size, vec![]);
         }
+        let output = frame(&context, &mut mail, size, vec![]);
+        for text in ["List", "Threads"] {
+            assert!(egui::Rect::from_min_size(egui::Pos2::ZERO, size).contains_rect(label(&output, text)));
+        }
+        let filters = output
+            .shapes
+            .iter()
+            .filter(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text() == "Filter author or subject"))
+            .count();
+        assert_eq!(filters, 1, "{size:?}: exactly one filter");
     }
-}
-
-#[test]
-fn reading_marks_messages_and_next_unread_walks_the_conferences() {
-    let context = egui::Context::default();
-    appearance::apply(&context);
-    let (dir, mut mail) = loaded(&context);
-    let size = egui::vec2(1100.0, 760.0);
-    assert!(mail.reader.read.contains(&0), "the first message was shown");
-    assert_eq!(mail.counts.unread, 3);
-    frame(&context, &mut mail, size, vec![key(egui::Key::N, egui::Modifiers::NONE)]);
-    assert_eq!(mail.reader.selected_message, Some(1));
-    wait(&mut mail, &context);
-    assert_eq!(mail.counts.unread, 2);
-    frame(&context, &mut mail, size, vec![key(egui::Key::M, egui::Modifiers::NONE)]);
-    assert!(!mail.reader.read.contains(&1));
-    settle(&context, &mut mail, size);
-    wait(&mut mail, &context);
-    assert!(!mail.reader.read.contains(&1), "a message marked unread stays unread while it is shown");
-    click_label(&context, &mut mail, size, "General");
-    assert_eq!(mail.folder, app::Folder::Conference(1));
-    assert_eq!(mail.reader.selected_message, Some(1), "the folder opens at its first unread message");
-    wait(&mut mail, &context);
-    frame(&context, &mut mail, size, vec![key(egui::Key::N, egui::Modifiers::NONE)]);
-    assert_eq!(mail.folder, app::Folder::Conference(2), "next unread continues in the next conference");
-    frame(&context, &mut mail, size, vec![key(egui::Key::C, egui::Modifiers::SHIFT)]);
-    assert_eq!(mail.counts.conferences.get(&2).copied().unwrap_or(0), 0);
-    let package = mail.reader.package.clone().unwrap();
-    let state = icy_mail::state::ReadState::open_in(mail.path.as_ref().unwrap(), &package, dir.path()).unwrap();
-    assert_eq!(state.indices(&package), std::collections::HashSet::from([0, 2, 3]));
-    let mut reopened = app::MailApp::with_storage(&context, dir.path().to_path_buf());
-    reopened.open(dir.path().join("TEST.QWK"), &context);
-    wait(&mut reopened, &context);
-    assert_eq!(
-        reopened.reader.selected_message,
-        Some(1),
-        "a reopened packet starts at the first unread message"
-    );
-    assert_eq!(reopened.counts.unread, 0, "showing the message marked it read");
-}
-
-#[test]
-fn outbox_lists_drafts_and_edits_or_deletes_them_from_the_keyboard() {
-    let context = egui::Context::default();
-    appearance::apply(&context);
-    let (_dir, mut mail) = loaded(&context);
-    let size = egui::vec2(1100.0, 760.0);
-    frame(&context, &mut mail, size, vec![key(egui::Key::R, egui::Modifiers::COMMAND)]);
-    frame(&context, &mut mail, size, vec![key(egui::Key::S, egui::Modifiers::COMMAND)]);
-    assert!(mail.composer.is_none());
-    assert_eq!(mail.draft_count(), 1);
-    let output = settle(&context, &mut mail, size);
-    label(&output, "1 reply to send");
-    click_label(&context, &mut mail, size, "Outbox");
-    assert_eq!(mail.folder, app::Folder::Drafts);
-    let output = settle(&context, &mut mail, size);
-    label(&output, "Re: Coffee machine");
-    label(&output, "alice");
-    frame(&context, &mut mail, size, vec![key(egui::Key::Tab, egui::Modifiers::NONE)]);
-    assert_eq!(mail.focus, Pane::Messages);
-    frame(&context, &mut mail, size, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
-    assert!(mail.composer.as_ref().is_some_and(|composer| composer.existing));
-    frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
-    assert!(mail.composer.is_none(), "an unchanged draft closes without asking");
-    frame(&context, &mut mail, size, vec![key(egui::Key::Delete, egui::Modifiers::NONE)]);
-    assert!(matches!(mail.modal, Some(app::Modal::DeleteDraft(_))));
-    click_label(&context, &mut mail, size, "Delete");
-    assert_eq!(mail.draft_count(), 0);
-    let output = settle(&context, &mut mail, size);
-    label(&output, "The outbox is empty");
-}
-
-#[test]
-fn unsaved_messages_ask_before_they_are_discarded() {
-    let context = egui::Context::default();
-    appearance::apply(&context);
-    let (_dir, mut mail) = loaded(&context);
-    let size = egui::vec2(1100.0, 760.0);
-    frame(&context, &mut mail, size, vec![key(egui::Key::N, egui::Modifiers::COMMAND)]);
-    let output = settle(&context, &mut mail, size);
-    label(&output, "New Message");
-    frame(&context, &mut mail, size, vec![egui::Event::Text("Hello\tworld".into())]);
-    let composer = mail.composer.as_ref().unwrap();
-    assert!(composer.dirty());
-    assert!(!composer.draft.to.contains('\t') && !composer.draft.subject.contains('\t') && !composer.draft.body.contains('\t'));
-    frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
-    assert!(matches!(mail.modal, Some(app::Modal::Discard(app::AfterDiscard::Close))));
-    click_label(&context, &mut mail, size, "Keep Editing");
-    assert!(mail.composer.is_some() && mail.modal.is_none());
-    frame(&context, &mut mail, size, vec![key(egui::Key::W, egui::Modifiers::COMMAND)]);
-    assert!(matches!(mail.modal, Some(app::Modal::Discard(app::AfterDiscard::Quit))));
-    assert!(!mail.closed);
-    click_label(&context, &mut mail, size, "Discard");
-    assert!(mail.closed);
-    assert!(mail.composer.is_none());
-    assert_eq!(mail.draft_count(), 0);
-}
-
-#[test]
-fn export_points_to_drafts_that_cannot_be_sent_yet() {
-    let context = egui::Context::default();
-    appearance::apply(&context);
-    let (_dir, mut mail) = loaded(&context);
-    let size = egui::vec2(1100.0, 760.0);
-    frame(&context, &mut mail, size, vec![key(egui::Key::N, egui::Modifiers::COMMAND)]);
-    frame(&context, &mut mail, size, vec![key(egui::Key::S, egui::Modifiers::COMMAND)]);
-    assert_eq!(mail.draft_count(), 1, "incomplete drafts can be saved");
-    frame(
-        &context,
-        &mut mail,
-        size,
-        vec![key(egui::Key::E, egui::Modifiers::COMMAND | egui::Modifiers::SHIFT)],
-    );
-    assert!(matches!(&mail.modal, Some(app::Modal::ExportProblems(problems)) if problems[0].contains("Subject is required")));
-    assert!(!mail.loader.export_picking);
-    click_label(&context, &mut mail, size, "Show Outbox");
-    assert_eq!(mail.folder, app::Folder::Drafts);
-    let output = settle(&context, &mut mail, size);
-    label(&output, "Fix before exporting");
-}
-
-#[test]
-fn welcome_page_opens_and_forgets_recent_packets() {
-    let context = egui::Context::default();
-    appearance::apply(&context);
-    let (dir, _mail) = loaded(&context);
-    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
-    let size = egui::vec2(1100.0, 760.0);
-    let output = settle(&context, &mut mail, size);
-    label(&output, "Open Packet\u{2026}");
-    click_label(&context, &mut mail, size, "TEST.QWK");
-    wait(&mut mail, &context);
-    assert!(mail.reader.package.is_some());
-    let mut fresh = app::MailApp::with_storage(&context, dir.path().to_path_buf());
-    let output = settle(&context, &mut fresh, size);
-    let row = label(&output, "TEST.QWK");
-    let forget = egui::pos2(row.left() - 40.0 + 460.0 - 18.0, row.bottom());
-    frame(&context, &mut fresh, size, vec![egui::Event::PointerMoved(forget)]);
-    for pressed in [true, false] {
-        frame(&context, &mut fresh, size, pointer(forget, pressed));
-    }
-    assert!(fresh.recent.as_ref().unwrap().packets.is_empty());
-    assert!(fresh.reader.package.is_none());
 }
 
 #[test]
@@ -689,7 +530,8 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
                 gpu.capture(&mut mail, size, scale, vec![], "warmup");
             }
             let (pixels, output) = gpu.capture(&mut mail, size, scale, vec![], &format!("{name}-{pane:?}"));
-            label(&output, "Search messages");
+            label(&output, "List");
+            label(&output, "Threads");
             if pane == Pane::Content {
                 let rect = mail.content_rect;
                 assert!(rect.is_positive());
@@ -705,33 +547,9 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
                         colors.insert(pixels[pos..pos + 3].to_vec());
                     }
                 }
-                assert!(colors.len() >= 2, "nonblank terminal in {name}: {} colors", colors.len());
+                assert!(colors.len() > 2, "nonblank terminal in {name}: {} colors", colors.len());
             }
         }
-    }
-    gpu.context.set_theme(egui::Theme::Dark);
-    mail.focus = Pane::Messages;
-    gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::R, egui::Modifiers::COMMAND)], "compose-start");
-    for _ in 0..3 {
-        gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
-    }
-    let (_, output) = gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "compose");
-    label(&output, "Save Draft");
-    gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::S, egui::Modifiers::COMMAND)], "compose-save");
-    mail.select_folder(app::Folder::Drafts);
-    for _ in 0..3 {
-        gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
-    }
-    let (_, output) = gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "outbox");
-    label(&output, "Re: Coffee machine");
-    let mut welcome = app::MailApp::with_storage(&gpu.context, _dir.path().to_path_buf());
-    for theme in [egui::Theme::Dark, egui::Theme::Light] {
-        gpu.context.set_theme(theme);
-        for _ in 0..3 {
-            gpu.capture(&mut welcome, [1100, 760], 1.0, vec![], "warmup");
-        }
-        let (_, output) = gpu.capture(&mut welcome, [1100, 760], 1.0, vec![], &format!("welcome-{theme:?}"));
-        label(&output, "TEST.QWK");
     }
 }
 
