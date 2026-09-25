@@ -48,6 +48,7 @@ pub struct Viewer {
     pub palette: Option<Palette>,
     minimap: super::minimap::Minimap,
     pub font_bar: FontBar,
+    music_drag: Option<f64>,
     pub editing_location: bool,
     hovered: Option<usize>,
     pub min_rating: u8,
@@ -90,6 +91,7 @@ impl Viewer {
             palette: None,
             minimap: super::minimap::Minimap::new(context),
             font_bar: FontBar::default(),
+            music_drag: None,
             editing_location: false,
             hovered: None,
             min_rating: 0,
@@ -111,6 +113,7 @@ impl Viewer {
             self.update_rating_filter();
         }
         if let Some((path, data)) = self.browser.poll(context) {
+            self.preview.music_autoplay = self.shuffle.is_none();
             self.preview.load(path.clone(), data, self.options.auto_scroll_enabled, context);
             if let Some(item) = self.browser.selected.and_then(|index| self.browser.items.get(index)) {
                 self.library.mark_viewed(library::key(&self.browser.location.point, &**item));
@@ -1397,28 +1400,16 @@ impl Viewer {
                         self.font_bar.ui(ui);
                         return;
                     }
+                    if self.preview.music.is_some() && self.shuffle.is_none() {
+                        ui.separator();
+                        self.music_bar(ui, &context);
+                        return;
+                    }
                     let Some(playback) = self.preview.playback.filter(|_| self.shuffle.is_none()) else {
                         return;
                     };
                     ui.separator();
-                    let (play, pause) = (text("egui-playback-play"), text("egui-playback-pause"));
-                    let label_width = [&play, &pause]
-                        .iter()
-                        .map(|label| {
-                            egui::WidgetText::from(label.as_str())
-                                .into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button)
-                                .size()
-                                .x
-                        })
-                        .fold(0.0, f32::max);
-                    let spacing = ui.spacing();
-                    let play_width = label_width + 16.0 + spacing.icon_spacing + spacing.button_padding.x * 2.0;
-                    let (icon, label) = if playback.playing() { (Icon::Pause, pause) } else { (Icon::Play, play) };
-                    let image = self.icons.image(&context, icon, 16.0);
-                    if ui
-                        .add(egui::Button::image_and_text(image, label).min_size(egui::vec2(play_width, 0.0)))
-                        .clicked()
-                    {
+                    if self.play_button(ui, &context, playback.playing()).clicked() {
                         self.preview.toggle_pause();
                     }
                     let image = self.icons.image(&context, Icon::Replay, 16.0);
@@ -1470,6 +1461,61 @@ impl Viewer {
             });
     }
 
+    /// Play/pause sized for the wider of both labels, so toggling doesn't shift the bar.
+    fn play_button(&mut self, ui: &mut egui::Ui, context: &egui::Context, playing: bool) -> egui::Response {
+        let (play, pause) = (text("egui-playback-play"), text("egui-playback-pause"));
+        let label_width = [&play, &pause]
+            .iter()
+            .map(|label| {
+                egui::WidgetText::from(label.as_str())
+                    .into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button)
+                    .size()
+                    .x
+            })
+            .fold(0.0, f32::max);
+        let spacing = ui.spacing();
+        let play_width = label_width + 16.0 + spacing.icon_spacing + spacing.button_padding.x * 2.0;
+        let (icon, label) = if playing { (Icon::Pause, pause) } else { (Icon::Play, play) };
+        let image = self.icons.image(context, icon, 16.0);
+        ui.add(egui::Button::image_and_text(image, label).min_size(egui::vec2(play_width, 0.0)))
+    }
+
+    /// Transport for tracker modules: play/pause, replay and a time slider that seeks on release.
+    fn music_bar(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        let Some(music) = &self.preview.music else {
+            return;
+        };
+        let (playing, duration, error) = (music.playing(), music.duration(), music.error());
+        let mut position = self.music_drag.unwrap_or_else(|| music.position());
+        if self.play_button(ui, context, playing).clicked() {
+            self.preview.toggle_music();
+        }
+        let image = self.icons.image(context, Icon::Replay, 16.0);
+        if ui.add(egui::Button::image_and_text(image, text("egui-playback-replay"))).clicked() {
+            self.music_drag = None;
+            self.preview.replay_music();
+        }
+        ui.add_space(4.0);
+        ui.spacing_mut().slider_width = (ui.available_width() - 140.0).clamp(60.0, 480.0);
+        let slider = ui
+            .add(egui::Slider::new(&mut position, 0.0..=duration.max(0.1)).show_value(false))
+            .on_hover_text(text("egui-music-seek"));
+        if slider.dragged() {
+            self.music_drag = Some(position);
+        } else if slider.drag_stopped() || slider.changed() {
+            self.music_drag = None;
+            if let Some(music) = &self.preview.music {
+                music.seek(position);
+            }
+        }
+        let time = format!("{} / {}", icy_view::tracker::format_time(position), icy_view::tracker::format_time(duration));
+        ui.label(egui::RichText::new(time).monospace().color(ui.visuals().weak_text_color()));
+        if let Some(error) = error {
+            ui.label(egui::RichText::new(text("egui-music-no-audio")).color(ui.visuals().warn_fg_color))
+                .on_hover_text(error);
+        }
+    }
+
     fn osd_info(&self, index: Option<usize>) -> osd::Info {
         let mut info = osd::Info::default();
         let file_name = PathBuf::from(&self.preview.file).file_name().unwrap_or_default().to_string_lossy().to_string();
@@ -1495,13 +1541,23 @@ impl Viewer {
                 .take(3)
                 .collect();
         }
+        if let Some(title) = self.preview.music_info.as_ref().map(|module| module.title()) {
+            if !title.trim().is_empty() && info.title == file_name {
+                info.title = title.trim().to_owned();
+            }
+        }
         if info.title != file_name {
             info.attributes.push(file_name);
         }
-        if let Some(format) = icy_engine::formats::FileFormat::from_path(std::path::Path::new(&self.preview.file)) {
+        if let Some(module) = &self.preview.music_info {
+            info.attributes.push(module.format.to_owned());
+            info.attributes.push(icy_view::tracker::format_time(module.duration));
+        } else if let Some(format) = icy_engine::formats::FileFormat::from_path(std::path::Path::new(&self.preview.file)) {
             info.attributes.push(format.name().to_owned());
         }
-        if self.preview.image_pixels.is_none() {
+        if self.preview.music_info.is_some() {
+            // A module's info sheet has no meaningful text dimensions.
+        } else if self.preview.image_pixels.is_none() {
             let screen = self.preview.screen.terminal.screen.lock();
             info.attributes.push(format!("{}×{}", screen.width(), screen.height()));
         } else if let Some(pixels) = &self.preview.image_pixels {
@@ -1611,6 +1667,9 @@ impl Viewer {
             .collect();
         self.shuffle = super::shuffle::Shuffle::new(files);
         self.options.auto_scroll_enabled = true;
+        if let Some(music) = &self.preview.music {
+            music.set_paused(true);
+        }
         let Some(index) = self.shuffle.as_ref().and_then(|shuffle| shuffle.current()) else {
             return;
         };

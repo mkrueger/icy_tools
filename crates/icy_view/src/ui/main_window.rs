@@ -2128,9 +2128,9 @@ impl MainWindow {
                                         }
                                     } else {
                                         // Use image crate for other formats
-                                        match image::load_from_memory(&stripped_data) {
-                                            Ok(img) => {
-                                                let rgba = img.to_rgba8();
+                                        let format = icy_engine::formats::ImageFormat::from_path(&path_buf).unwrap_or(icy_engine::formats::ImageFormat::Png);
+                                        match format.decode_rgba(&stripped_data) {
+                                            Ok(rgba) => {
                                                 let (width, height) = rgba.dimensions();
                                                 Some(super::DecodedImage { rgba: rgba.into_raw(), width, height })
                                             }

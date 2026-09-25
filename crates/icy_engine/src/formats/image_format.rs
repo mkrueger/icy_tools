@@ -38,11 +38,32 @@ pub enum ImageFormat {
     Bmp,
     /// Sixel graphics format (.six, .sixel)
     Sixel,
+    /// Truevision TGA (recognition and decoding only)
+    Tga,
+    /// TIFF (recognition and decoding only)
+    Tiff,
+    /// WebP (recognition and decoding only)
+    WebP,
+    /// Quite OK Image format (recognition and decoding only)
+    Qoi,
+    /// Windows icon (recognition and decoding only)
+    Ico,
 }
 
 impl ImageFormat {
     /// All available image formats
-    pub const ALL: &'static [ImageFormat] = &[ImageFormat::Png, ImageFormat::Gif, ImageFormat::Jpeg, ImageFormat::Bmp, ImageFormat::Sixel];
+    pub const ALL: &'static [ImageFormat] = &[
+        ImageFormat::Png,
+        ImageFormat::Gif,
+        ImageFormat::Jpeg,
+        ImageFormat::Bmp,
+        ImageFormat::Sixel,
+        ImageFormat::Tga,
+        ImageFormat::Tiff,
+        ImageFormat::WebP,
+        ImageFormat::Qoi,
+        ImageFormat::Ico,
+    ];
 
     /// Get the file extension for this image format.
     pub fn extension(&self) -> &'static str {
@@ -52,6 +73,11 @@ impl ImageFormat {
             ImageFormat::Jpeg => "jpg",
             ImageFormat::Bmp => "bmp",
             ImageFormat::Sixel => "six",
+            ImageFormat::Tga => "tga",
+            ImageFormat::Tiff => "tif",
+            ImageFormat::WebP => "webp",
+            ImageFormat::Qoi => "qoi",
+            ImageFormat::Ico => "ico",
         }
     }
 
@@ -63,6 +89,11 @@ impl ImageFormat {
             ImageFormat::Jpeg => "JPEG Image",
             ImageFormat::Bmp => "BMP Image",
             ImageFormat::Sixel => "Sixel Graphics",
+            ImageFormat::Tga => "TGA Image",
+            ImageFormat::Tiff => "TIFF Image",
+            ImageFormat::WebP => "WebP Image",
+            ImageFormat::Qoi => "QOI Image",
+            ImageFormat::Ico => "Windows Icon",
         }
     }
 
@@ -74,6 +105,11 @@ impl ImageFormat {
             ImageFormat::Jpeg => "JPEG image (recognition only)",
             ImageFormat::Bmp => "BMP image (recognition only)",
             ImageFormat::Sixel => "Sixel terminal graphics",
+            ImageFormat::Tga => "Truevision TGA image (recognition only)",
+            ImageFormat::Tiff => "TIFF image (recognition only)",
+            ImageFormat::WebP => "WebP image (recognition only)",
+            ImageFormat::Qoi => "QOI image (recognition only)",
+            ImageFormat::Ico => "Windows icon (recognition only)",
         }
     }
 
@@ -95,6 +131,11 @@ impl ImageFormat {
             "jpg" | "jpeg" => Some(ImageFormat::Jpeg),
             "bmp" => Some(ImageFormat::Bmp),
             "six" | "sixel" => Some(ImageFormat::Sixel),
+            "tga" => Some(ImageFormat::Tga),
+            "tif" | "tiff" => Some(ImageFormat::Tiff),
+            "webp" => Some(ImageFormat::WebP),
+            "qoi" => Some(ImageFormat::Qoi),
+            "ico" => Some(ImageFormat::Ico),
             _ => None,
         }
     }
@@ -102,6 +143,36 @@ impl ImageFormat {
     /// Detect image format from file path.
     pub fn from_path(path: &Path) -> Option<ImageFormat> {
         path.extension().and_then(|ext| ext.to_str()).and_then(ImageFormat::from_extension)
+    }
+
+    fn image_crate_format(&self) -> Option<image::ImageFormat> {
+        match self {
+            ImageFormat::Png => Some(image::ImageFormat::Png),
+            ImageFormat::Gif => Some(image::ImageFormat::Gif),
+            ImageFormat::Jpeg => Some(image::ImageFormat::Jpeg),
+            ImageFormat::Bmp => Some(image::ImageFormat::Bmp),
+            ImageFormat::Tga => Some(image::ImageFormat::Tga),
+            ImageFormat::Tiff => Some(image::ImageFormat::Tiff),
+            ImageFormat::WebP => Some(image::ImageFormat::WebP),
+            ImageFormat::Qoi => Some(image::ImageFormat::Qoi),
+            ImageFormat::Ico => Some(image::ImageFormat::Ico),
+            ImageFormat::Sixel => None,
+        }
+    }
+
+    /// Decodes an image file of this format into RGBA pixels.
+    ///
+    /// The extension picks the decoder (TGA has no signature); files whose content does not
+    /// match fall back to detection from the data.
+    pub fn decode_rgba(&self, data: &[u8]) -> std::result::Result<image::RgbaImage, String> {
+        let Some(format) = self.image_crate_format() else {
+            let image = icy_sixel::SixelImage::decode(data).map_err(|error| error.to_string())?;
+            return image::RgbaImage::from_raw(image.width as u32, image.height as u32, image.pixels).ok_or_else(|| "Invalid Sixel dimensions".to_string());
+        };
+        image::load_from_memory_with_format(data, format)
+            .or_else(|error| image::load_from_memory(data).map_err(|_| error))
+            .map(|image| image.into_rgba8())
+            .map_err(|error| error.to_string())
     }
 
     /// Save a Screen to an image file.
@@ -122,7 +193,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_screen_png(screen, path, rect),
             ImageFormat::Gif => self.save_screen_gif(screen, path, rect),
-            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => Err(crate::EngineError::FormatNotSupported {
+            _ => Err(crate::EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "saving".to_string(),
             }),
@@ -134,7 +205,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_screen_png(screen, path, region),
             ImageFormat::Gif => self.save_screen_gif(screen, path, region),
-            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => Err(crate::EngineError::FormatNotSupported {
+            _ => Err(crate::EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "saving".to_string(),
             }),
@@ -207,7 +278,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_png(buffer, path, rect),
             ImageFormat::Gif => self.save_gif(buffer, path, rect),
-            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => Err(crate::EngineError::FormatNotSupported {
+            _ => Err(crate::EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "saving".to_string(),
             }),
@@ -224,7 +295,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_png(buffer, path, region),
             ImageFormat::Gif => self.save_gif(buffer, path, region),
-            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => Err(crate::EngineError::FormatNotSupported {
+            _ => Err(crate::EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "saving".to_string(),
             }),

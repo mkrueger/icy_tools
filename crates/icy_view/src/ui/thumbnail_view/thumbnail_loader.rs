@@ -275,6 +275,14 @@ fn render_thumbnail(path: &String, data: &[u8], label: &str, cancel_token: &Canc
     let format = FileFormat::from_extension(&ext);
     log::debug!("[ThumbnailLoader] render_thumbnail: path={:?}, ext={:?}, format={:?}", path, ext, format);
 
+    // Tracker modules show their info sheet; other ".mod" files fall through to the text renderer.
+    if crate::tracker::is_tracker_file(&path_buf) {
+        if let Ok(buffer) = crate::tracker::render(&path_buf, data) {
+            let screen = icy_engine::TextScreen::from_buffer(buffer);
+            return render_screen_to_thumbnail(path, &screen, false, None, label, cancel_token);
+        }
+    }
+
     match format {
         Some(FileFormat::Image(ImageFormat::Sixel)) => {
             log::debug!("[ThumbnailLoader] -> Sixel format detected");
@@ -381,7 +389,8 @@ fn render_image_thumbnail(path: &String, data: &[u8], label: &str, cancel_token:
         return None;
     }
 
-    match ::image::load_from_memory(data) {
+    let format = icy_engine::formats::ImageFormat::from_path(std::path::Path::new(path)).unwrap_or(icy_engine::formats::ImageFormat::Png);
+    match format.decode_rgba(data).map(::image::DynamicImage::ImageRgba8) {
         Ok(img) => {
             if cancel_token.is_cancelled() {
                 return None;

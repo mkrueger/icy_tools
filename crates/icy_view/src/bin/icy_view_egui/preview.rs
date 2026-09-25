@@ -1,7 +1,8 @@
 use eframe::egui;
-use icy_engine::formats::{FileFormat, ImageFormat};
+use icy_engine::formats::FileFormat;
 use icy_engine_gui::{egui::screen::ScreenView, CheckerboardColors, MonitorSettings, ScalingMode};
 use icy_view::{
+    tracker::{self, TrackerPlayer},
     view_thread::{ScrollMode, ViewCommand, ViewEvent, ViewThread},
     Options,
 };
@@ -30,12 +31,24 @@ impl Playback {
     }
 }
 
+/// Load generation plus the module's info sheet, details and player.
+type MusicLoad = (u64, Result<(icy_engine::TextBuffer, tracker::ModuleInfo, TrackerPlayer), String>);
+
 pub struct Preview {
     pub screen: ScreenView,
     command: tokio::sync::mpsc::UnboundedSender<ViewCommand>,
     events: mpsc::Receiver<ViewEvent>,
     image_sender: mpsc::Sender<(u64, Result<image::RgbaImage, String>)>,
     image_receiver: mpsc::Receiver<(u64, Result<image::RgbaImage, String>)>,
+    music_sender: mpsc::Sender<MusicLoad>,
+    music_receiver: mpsc::Receiver<MusicLoad>,
+    /// Tracker module playing in the background of its info sheet.
+    pub music: Option<TrackerPlayer>,
+    pub music_info: Option<tracker::ModuleInfo>,
+    /// Start modules playing as soon as they are shown (off in shuffle mode).
+    pub music_autoplay: bool,
+    /// Play through the output device; tests turn this off.
+    pub audio: bool,
     pub image: Option<egui::TextureHandle>,
     pub image_pixels: Option<image::RgbaImage>,
     image_tiles: Vec<(egui::Vec2, egui::TextureHandle)>,
@@ -56,6 +69,8 @@ pub struct Preview {
     selection_anchor: Option<icy_engine::Position>,
     accept_events: bool,
     loading_image: bool,
+    loading_music: bool,
+    auto: bool,
 }
 
 impl Preview {
@@ -76,12 +91,19 @@ impl Preview {
             }
         });
         let (image_sender, image_receiver) = mpsc::channel();
+        let (music_sender, music_receiver) = mpsc::channel();
         Ok(Self {
             screen,
             command,
             events: receiver,
             image_sender,
             image_receiver,
+            music_sender,
+            music_receiver,
+            music: None,
+            music_info: None,
+            music_autoplay: true,
+            audio: true,
             image: None,
             image_pixels: None,
             image_tiles: Vec::new(),
@@ -102,6 +124,8 @@ impl Preview {
             selection_anchor: None,
             accept_events: false,
             loading_image: false,
+            loading_music: false,
+            auto: false,
         })
     }
 
@@ -168,6 +192,9 @@ impl Preview {
     pub fn stop(&mut self) {
         self.generation += 1;
         self.playback = None;
+        self.music = None;
+        self.music_info = None;
+        self.loading_music = false;
         self.loading = false;
         self.accept_events = false;
         self.scroll_mode = ScrollMode::Off;
@@ -213,38 +240,80 @@ impl Preview {
         self.screen.scroll_to = Some(egui::Vec2::ZERO);
         self.loading = true;
         self.loaded_at = Instant::now();
+        self.auto = auto;
         let format = FileFormat::from_path(std::path::Path::new(&self.file));
         self.loading_image = matches!(format, Some(FileFormat::Image(_)));
-        if self.loading_image {
+        self.loading_music = tracker::is_tracker_file(std::path::Path::new(&self.file));
+        if self.loading_music {
+            let (path, data, generation) = (PathBuf::from(&self.file), self.data.clone(), self.generation);
+            let (sender, context) = (self.music_sender.clone(), context.clone());
+            let (audio, paused) = (self.audio, !self.music_autoplay);
+            std::thread::spawn(move || {
+                let result = tracker::load_module(&path, &data).map(|module| {
+                    let info = tracker::ModuleInfo::new(&module, &data);
+                    let buffer = tracker::render_info(&info);
+                    let player = if audio {
+                        TrackerPlayer::start(module, paused)
+                    } else {
+                        TrackerPlayer::silent(&module, paused)
+                    };
+                    (buffer, info, player)
+                });
+                let _ = sender.send((generation, result.map_err(|error| error.to_string())));
+                context.request_repaint();
+            });
+        } else if self.loading_image {
             let data = self.data.clone();
             let generation = self.generation;
             let sender = self.image_sender.clone();
             let context = context.clone();
             std::thread::spawn(move || {
                 let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
-                let result = if format == Some(FileFormat::Image(ImageFormat::Sixel)) {
-                    icy_sixel::SixelImage::decode(data).map_err(|error| error.to_string()).and_then(|image| {
-                        image::RgbaImage::from_raw(image.width as u32, image.height as u32, image.pixels).ok_or_else(|| "Invalid Sixel dimensions".into())
-                    })
-                } else {
-                    image::load_from_memory(data).map(|image| image.into_rgba8()).map_err(|error| error.to_string())
+                let result = match format {
+                    Some(FileFormat::Image(format)) => format.decode_rgba(data),
+                    _ => Err("not an image".to_string()),
                 };
                 let _ = sender.send((generation, result));
                 context.request_repaint();
             });
         } else {
-            let _ = self.command.send(ViewCommand::LoadDataTagged(
-                self.generation,
-                PathBuf::from(&self.file),
-                self.data.as_ref().clone(),
-                auto,
-            ));
+            self.load_text();
+        }
+    }
+
+    fn load_text(&mut self) {
+        let _ = self.command.send(ViewCommand::LoadDataTagged(
+            self.generation,
+            PathBuf::from(&self.file),
+            self.data.as_ref().clone(),
+            self.auto,
+        ));
+    }
+
+    pub fn toggle_music(&mut self) {
+        if let Some(music) = &self.music {
+            if music.finished() {
+                music.seek(0.0);
+                music.set_paused(false);
+            } else {
+                music.set_paused(!music.paused());
+            }
+        }
+    }
+
+    pub fn replay_music(&mut self) {
+        if let Some(music) = &self.music {
+            music.seek(0.0);
+            music.set_paused(false);
         }
     }
 
     pub fn poll(&mut self, context: &egui::Context) {
+        if self.music.as_ref().is_some_and(|music| music.playing()) {
+            context.request_repaint_after(Duration::from_millis(250));
+        }
         while let Ok(event) = self.events.try_recv() {
-            if self.loading_image {
+            if self.loading_image || self.loading_music {
                 continue;
             }
             let event = match event {
@@ -282,6 +351,23 @@ impl Preview {
                 }
                 ViewEvent::LoadingStarted(_) => {}
                 ViewEvent::ForRequest(_, _) => {}
+            }
+        }
+        while let Ok((generation, result)) = self.music_receiver.try_recv() {
+            if generation != self.generation || !self.loading_music {
+                continue;
+            }
+            self.loading_music = false;
+            match result {
+                Ok((buffer, info, player)) => {
+                    self.show_buffer(buffer, true);
+                    self.music = Some(player);
+                    self.music_info = Some(info);
+                    self.loading = false;
+                    self.loaded_at = Instant::now();
+                }
+                // Not a module after all (".mod" is also used for kernel and Fortran modules).
+                Err(_) => self.load_text(),
             }
         }
         while let Ok((generation, result)) = self.image_receiver.try_recv() {

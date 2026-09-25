@@ -251,9 +251,9 @@ impl PreviewView {
                             }
                         } else {
                             // Use image crate for other formats
-                            match image::load_from_memory(&data) {
-                                Ok(img) => {
-                                    let rgba = img.to_rgba8();
+                            let format = icy_engine::formats::ImageFormat::from_path(&path).unwrap_or(icy_engine::formats::ImageFormat::Png);
+                            match format.decode_rgba(&data) {
+                                Ok(rgba) => {
                                     let (width, height) = rgba.dimensions();
                                     let handle = iced_image::Handle::from_rgba(width, height, rgba.into_raw());
                                     (load_id, Ok((handle, width, height)))

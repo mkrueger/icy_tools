@@ -226,6 +226,9 @@ impl Clone for Box<dyn Item> {
 
 /// Get the FileIcon for a given path based on its extension
 pub fn get_file_icon_for_path(path: &Path) -> FileIcon {
+    if crate::tracker::is_tracker_file(path) {
+        return FileIcon::Music;
+    }
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
 
     // Check if FileFormat recognizes this as a supported format

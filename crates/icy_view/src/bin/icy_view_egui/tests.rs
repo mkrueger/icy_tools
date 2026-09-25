@@ -177,6 +177,33 @@ fn preview_loads_text_images_and_reports_corrupt_formats() {
 }
 
 #[test]
+fn preview_plays_tracker_modules_and_shows_other_mod_files_as_text() {
+    let context = egui::Context::default();
+    let mut preview = preview::Preview::new(&context).unwrap();
+    preview.audio = false;
+    let row = |preview: &preview::Preview, y: i32| -> String {
+        let screen = preview.screen.terminal.screen.lock();
+        (0..40).map(|x| screen.char_at((x, y).into()).ch).collect()
+    };
+    preview.load("song.mod".into(), icy_view::tracker::test_module(), false, &context);
+    wait_preview(&mut preview, &context);
+    let music = preview.music.as_ref().expect("module plays");
+    assert!(music.playing());
+    assert!((music.duration() - 15.36).abs() < 0.01);
+    assert!(row(&preview, 0).starts_with(" test song"), "{:?}", row(&preview, 0));
+    preview.toggle_music();
+    assert!(preview.music.as_ref().unwrap().paused());
+    preview.replay_music();
+    assert!(preview.music.as_ref().unwrap().playing());
+
+    preview.load("kernel.mod".into(), b"HELLO FROM A KERNEL MODULE".to_vec(), false, &context);
+    wait_preview(&mut preview, &context);
+    assert!(preview.music.is_none(), "switching files stops the music");
+    assert!(preview.error.is_none(), "{:?}", preview.error);
+    assert!(row(&preview, 0).starts_with("HELLO FROM"), "{:?}", row(&preview, 0));
+}
+
+#[test]
 fn shortcuts_use_exact_modifiers_and_all_viewer_commands_resolve() {
     let commands = icy_view::commands::create_icy_view_commands();
     for id in dialogs::COMMANDS {
@@ -1392,4 +1419,41 @@ fn gpu_completed_text_playback_is_visible() {
         preview_bright_pixels(&pixels, size) > 100,
         "completed baud-off replay is missing from the rendered preview"
     );
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_music_bar_controls_tracker_modules() {
+    config();
+    let fixture = Fixture::new();
+    std::fs::write(fixture.0.join("song.mod"), icy_view::tracker::test_module()).unwrap();
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let options = icy_view::Options {
+        auto_scroll_enabled: false,
+        ..Default::default()
+    };
+    let mut app = app::Viewer::new(fixture.0.clone(), options, &gpu.context).unwrap();
+    app.preview.audio = false;
+    wait_browser(&mut app.browser, &gpu.context);
+    let size = [1100, 760];
+    gpu.capture(&mut app, size, 1.0, vec![], "music-warmup");
+    gpu.capture(&mut app, size, 1.0, vec![press(egui::Key::ArrowDown, egui::Modifiers::NONE)], "music-selected");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.browser.preview_loading || app.preview.loading || app.preview.music.is_none() {
+        gpu.capture(&mut app, size, 1.0, vec![], "music-loading");
+        assert!(Instant::now() < deadline, "module did not load");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    gpu.capture(&mut app, size, 1.0, vec![], "music-playing");
+    for label in [text("egui-playback-pause"), text("egui-playback-replay"), "0:00 / 0:15".into()] {
+        assert!(gpu.labels.contains_key(&label), "music bar misses {label}: {:?}", gpu.labels.keys());
+    }
+    assert!(!gpu.labels.contains_key(&text("egui-playback-bytes")), "no byte slider for modules");
+    gpu.click(&mut app, size, 1.0, &text("egui-playback-pause"));
+    assert!(app.preview.music.as_ref().unwrap().paused());
+    gpu.capture(&mut app, size, 1.0, vec![], "music-paused");
+    assert!(gpu.labels.contains_key(&text("egui-playback-play")), "{:?}", gpu.labels.keys());
+    gpu.click(&mut app, size, 1.0, &text("egui-playback-replay"));
+    assert!(app.preview.music.as_ref().unwrap().playing());
 }

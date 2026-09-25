@@ -8,6 +8,7 @@ pub mod sort_order;
 pub mod thumbnail;
 #[path = "ui/thumbnail_view/backend.rs"]
 pub mod thumbnail_backend;
+pub mod tracker;
 #[path = "ui/preview/view_thread.rs"]
 pub mod view_thread;
 

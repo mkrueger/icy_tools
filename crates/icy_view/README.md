@@ -34,6 +34,7 @@ An isolated default build does not depend on icy_ui. Building the entire workspa
 - Art fills the window width and scrolls vertically instead of being shrunk to fit the height, as in the original viewer.
 - Zoom, mouse panning and automatic scrolling. An auto-scroll icon sits above every preview; manual wheel, scrollbar, pan, minimap or page scrolling switches it off and takes priority over cursor following. Parser-based previews also have play/pause, replay, baud-rate selection and byte seeking in that bar. At a simulated baud rate, the complete file determines the canvas height before playback; the viewer follows the typing cursor rather than jumping to the bottom of the still-unrevealed document.
 - TheDraw (`.tdf`) and FIGlet (`.flf`) font viewer: the bar above the preview picks one font of a bundle (or all of them, mouse wheel steps through), renders a typed multi-line sample text, and adjusts letter spacing, line gap, the outline style, the colours of outline/block/FIGlet fonts and a 40/80/132-column width guide. A single font also shows a table of all its glyphs.
+- Tracker music (`.mod`, `.s3m`, `.xm`, `.it`) plays in the background of an info sheet with the title, format, channels, tempo, length, song message and the numbered instrument/sample names in their original CP437, so the greetings and ASCII art that sceners put there stay intact. The bar above offers play/pause, replay and a time slider; slideshows start modules paused. Other `.mod` files (kernel or Fortran modules) are shown as text.
 - Slideshow mode with the original timing (minimum display time and a pause after scrolling), a title/author/group overlay, SAUCE comments that scroll up and fade, Space/Enter for the next file, Escape or a click to leave, and background preloading of the next file.
 - Text selection, rectangular selection with Alt, word/line selection, copy and hyperlinks.
 - SAUCE inspection, export with format-specific options, and overwrite confirmation.
@@ -76,8 +77,12 @@ The second command requires a working GPU adapter and network access for the opt
 
 ### Images
 
-- PNG, JPEG, GIF, BMP, WebP
+- PNG, JPEG, GIF, BMP, WebP, TGA, TIFF, QOI, ICO
 - Sixel graphics (.six, .sixel)
+
+### Tracker Music
+
+- ProTracker/SoundTracker MOD (.mod), Scream Tracker 3 (.s3m), FastTracker II (.xm), Impulse Tracker (.it), played with [xmrsplayer](https://codeberg.org/sbechet/xmrsplayer)
 
 ### Archives (browsable as virtual folders)
 

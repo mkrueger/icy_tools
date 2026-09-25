@@ -41,6 +41,9 @@ unarc-rs = { workspace = true }
 
 icy_ui = { workspace = true, optional = true, features = ["tokio", "svg", "image", "wgpu"] }
 image = { workspace = true }
+rodio = { workspace = true }
+xmrs = { workspace = true }
+xmrsplayer = { workspace = true }
 clap = { workspace = true }
 directories = { workspace = true }
 log = { workspace = true }
