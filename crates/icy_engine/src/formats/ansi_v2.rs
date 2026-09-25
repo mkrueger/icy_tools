@@ -339,9 +339,9 @@ fn save_ansi_v2_internal(buf: &TextBuffer, options: &AnsiSaveOptions) -> Result<
     result.extend(generator.data());
 
     if let Some(meta) = &options.save_sauce {
-        use super::save_options::SauceBuilder;
+        use super::save_options::{append_sauce, SauceBuilder};
         let sauce = buf.build_character_sauce(meta, icy_sauce::CharacterFormat::Ansi);
-        sauce.write(&mut result)?;
+        append_sauce(&mut result, sauce)?;
     }
 
     Ok(result)

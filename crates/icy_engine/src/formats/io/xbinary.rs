@@ -5,7 +5,7 @@ use crate::{
 
 use rayon::prelude::*;
 
-use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions, TextAttribute};
+use super::super::{append_sauce, apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions, TextAttribute};
 
 const XBIN_HEADER_SIZE: usize = 11;
 const XBIN_PALETTE_LENGTH: usize = 3 * 16;
@@ -243,7 +243,7 @@ pub(crate) fn save_xbin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u
 
     if let Some(meta) = &options.sauce {
         let sauce = buf.build_binary_sauce(meta);
-        sauce.write(&mut result)?;
+        append_sauce(&mut result, sauce)?;
     }
     Ok(result)
 }
