@@ -25,6 +25,10 @@ pub enum Icon {
     Home,
     History,
     Chevron,
+    Play,
+    Pause,
+    Replay,
+    Bolt,
     File(FileIcon),
 }
 
@@ -55,6 +59,10 @@ impl Icons {
             Icon::Home => ("home", include_bytes!("../../../data/icons/home.svg")),
             Icon::History => ("history", include_bytes!("../../../data/icons/history.svg")),
             Icon::Chevron => ("chevron", include_bytes!("../../../data/icons/chevron_right.svg")),
+            Icon::Play => ("play", include_bytes!("../../../data/icons/play_arrow.svg")),
+            Icon::Pause => ("pause", include_bytes!("../../../data/icons/pause.svg")),
+            Icon::Replay => ("replay", include_bytes!("../../../data/icons/replay.svg")),
+            Icon::Bolt => ("bolt", include_bytes!("../../../data/icons/bolt.svg")),
             Icon::File(kind) => {
                 let name = match kind {
                     FileIcon::Folder | FileIcon::FolderOpen | FileIcon::FolderData => "folder",

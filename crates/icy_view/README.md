@@ -32,7 +32,7 @@ An isolated default build does not depend on icy_ui. Building the entire workspa
 - Background loading, cancellation, filtering, sorting and navigation history.
 - Text-art, image and Sixel previews; tiled uploads support images taller than a GPU texture.
 - Art fills the window width and scrolls vertically instead of being shrunk to fit the height, as in the original viewer.
-- Zoom, mouse panning, automatic scrolling and baud-rate emulation.
+- Zoom, mouse panning and automatic scrolling. Parser-based previews have a playback bar above the art with play/pause, replay, baud-rate selection and byte seeking. At a simulated baud rate, the complete file determines the canvas height before playback; the viewer follows the typing cursor rather than jumping to the bottom of the still-unrevealed document.
 - Slideshow mode with the original timing (minimum display time and a pause after scrolling), a title/author/group overlay, SAUCE comments that scroll up and fade, Space/Enter for the next file, Escape or a click to leave, and background preloading of the next file.
 - Text selection, rectangular selection with Alt, word/line selection, copy and hyperlinks.
 - SAUCE inspection, export with format-specific options, and overwrite confirmation.

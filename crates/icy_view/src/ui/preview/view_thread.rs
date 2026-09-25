@@ -44,6 +44,10 @@ pub enum ViewCommand {
     Stop,
     /// Set baud emulation rate
     SetBaudEmulation(BaudEmulation),
+    /// Pause or resume streaming playback
+    SetPaused(bool),
+    /// Jump to a byte position of the streamed file; earlier positions replay from the start
+    Seek(usize),
     /// Shutdown the thread
     Shutdown,
 }
@@ -61,6 +65,8 @@ pub enum ViewEvent {
     SauceInfo(Option<SauceRecord>, usize),
     /// Set scroll mode (determined by background thread)
     SetScrollMode(ScrollMode),
+    /// Streaming playback progress (position, length) in bytes and typing cursor in source pixels
+    Progress(usize, usize, i32),
 }
 
 /// Result from background format loading
@@ -89,6 +95,16 @@ struct LoadOperation {
     file_position: usize,
     /// Whether we're currently playing back a file
     is_playing: bool,
+    /// Streaming is suspended by the user
+    paused: bool,
+    /// Repaired SAUCE applied to the screen before parsing
+    sauce: Option<SauceRecord>,
+    /// Keep the screen height when applying SAUCE
+    preserve_height: bool,
+    /// Data had a UTF-8 BOM
+    is_unicode: bool,
+    /// Fixed document height from the complete stream, in text rows
+    document_height: Option<i32>,
     /// Current load mode
     load_mode: LoadMode,
     /// Current screen mode
@@ -111,6 +127,11 @@ impl LoadOperation {
             file_data: Vec::new(),
             file_position: 0,
             is_playing: false,
+            paused: false,
+            sauce: None,
+            preserve_height: false,
+            is_unicode: false,
+            document_height: None,
             load_mode: LoadMode::Parser,
             screen_mode: ScreenMode::Vga(80, 25),
             terminal_emulation: TerminalEmulation::Ansi,
@@ -163,6 +184,38 @@ pub fn prepare_parser_data(data: Vec<u8>, ext: &str) -> (Vec<u8>, bool) {
     };
 
     (data, is_unicode)
+}
+
+/// Size a text stream from the complete input, without painting into the live screen.
+/// Parser commands (rather than newline counts) account for wrapping and cursor moves.
+fn text_document_height(mode: ScreenMode, emulation: TerminalEmulation, sauce: Option<&SauceRecord>, unicode: bool, data: &[u8]) -> Option<i32> {
+    if !matches!(mode, ScreenMode::Vga(..) | ScreenMode::Unicode(..)) {
+        return None;
+    }
+    let (mut screen, mut parser) = mode.create_screen(emulation, None);
+    screen.terminal_state_mut().is_terminal_buffer = false;
+    if let Some(sauce) = sauce {
+        let height = screen.height();
+        screen.apply_sauce(sauce);
+        screen.set_height(height);
+    }
+    if unicode {
+        *screen.buffer_type_mut() = icy_engine::BufferType::Unicode;
+    }
+    let mut commands = VecDeque::new();
+    for chunk in data.chunks(4096) {
+        parser.parse(chunk, &mut QueueingSink::new(&mut commands));
+        let mut sink = ScreenSink::new(screen.as_mut());
+        while let Some(command) = commands.pop_front() {
+            if !command.needs_async_processing() {
+                command.process_screen_command(&mut sink);
+            }
+        }
+        if screen.height() >= limits::MAX_BUFFER_HEIGHT || screen.width() >= limits::MAX_BUFFER_WIDTH {
+            break;
+        }
+    }
+    Some(screen.height().max(screen.caret_position().y + 1).min(limits::MAX_BUFFER_HEIGHT))
 }
 
 /// Find a matching format for the file extension
@@ -226,6 +279,8 @@ pub struct ViewThread {
     /// Current load operation - None if no file is loaded
     /// Replacing this automatically cancels the previous operation via Drop
     current_load: Option<LoadOperation>,
+    /// Last time a progress event was sent
+    last_progress: Instant,
 }
 
 struct ViewEvents {
@@ -259,6 +314,7 @@ impl ViewThread {
             pending_format_load: None,
             auto_scroll_enabled: false,
             current_load: None,
+            last_progress: Instant::now(),
         };
 
         std::thread::spawn(move || {
@@ -301,7 +357,100 @@ impl ViewThread {
 
     /// Check if current load is playing
     fn is_playing(&self) -> bool {
-        self.current_load.as_ref().map_or(false, |l| l.is_playing)
+        self.current_load.as_ref().is_some_and(|l| l.is_playing && !l.paused)
+    }
+
+    /// Report the streaming position, at most ~30 times per second unless forced.
+    fn send_progress(&mut self, force: bool) {
+        let Some(load) = &self.current_load else {
+            return;
+        };
+        if load.parser.is_none() || (!force && self.last_progress.elapsed().as_millis() < 33) {
+            return;
+        }
+        self.last_progress = Instant::now();
+        let cursor_px = {
+            let screen = self.screen.lock();
+            (screen.caret_position().y + 1).max(0) * screen.font_dimensions().height
+        };
+        let _ = self.event_tx.send(ViewEvent::Progress(load.file_position, load.file_data.len(), cursor_px));
+    }
+
+    fn finish_playback(&mut self) {
+        let Some(load) = &mut self.current_load else {
+            return;
+        };
+        load.is_playing = false;
+        let auto_scroll = load.auto_scroll_enabled;
+        let _ = self.event_tx.send(ViewEvent::LoadingCompleted);
+        let scroll_mode = if auto_scroll { ScrollMode::AutoScroll } else { ScrollMode::Off };
+        let _ = self.event_tx.send(ViewEvent::SetScrollMode(scroll_mode));
+    }
+
+    /// Jump to `position`, parsing everything before it at once (without sounds or delays).
+    async fn seek(&mut self, position: usize) {
+        let Some(load) = &self.current_load else {
+            return;
+        };
+        if load.parser.is_none() {
+            return;
+        }
+        let position = position.min(load.file_data.len());
+        if position < load.file_position {
+            let (mode, emulation, sauce, preserve_height, unicode, file_data, mut document_height) = (
+                load.screen_mode,
+                load.terminal_emulation,
+                load.sauce.clone(),
+                load.preserve_height,
+                load.is_unicode,
+                load.file_data.clone(),
+                load.document_height,
+            );
+            if document_height.is_none() && !matches!(self.baud_emulator.baud_emulation, BaudEmulation::Off) {
+                document_height = text_document_height(mode, emulation, sauce.as_ref(), unicode, &file_data);
+            }
+            self.sound_thread.clear();
+            let parser = self.init_parser_screen(mode, emulation, sauce.as_ref(), preserve_height, unicode, document_height);
+            let load = self.current_load.as_mut().unwrap();
+            load.parser = Some(parser);
+            load.document_height = document_height;
+            load.command_queue.clear();
+            load.file_position = 0;
+        }
+        let load = self.current_load.as_mut().unwrap();
+        let was_finished = !load.is_playing;
+        load.is_playing = true;
+        if position > load.file_position {
+            let LoadOperation {
+                parser,
+                command_queue,
+                file_data,
+                file_position,
+                ..
+            } = load;
+            if let Some(parser) = parser {
+                let mut sink = QueueingSink::new(command_queue);
+                parser.parse(&file_data[*file_position..position], &mut sink);
+            }
+            *file_position = position;
+            self.process_command_queue(true).await;
+        }
+        let Some(load) = &self.current_load else {
+            return;
+        };
+        if load.file_position >= load.file_data.len() || !load.is_playing {
+            self.finish_playback();
+        } else if was_finished {
+            let _ = self
+                .event_tx
+                .send(ViewEvent::SetScrollMode(if matches!(self.baud_emulator.baud_emulation, BaudEmulation::Off) {
+                    ScrollMode::Off
+                } else {
+                    ScrollMode::ClampToBottom
+                }));
+        }
+        self.baud_emulator.reset();
+        self.send_progress(true);
     }
 
     async fn run(&mut self, mut command_rx: mpsc::UnboundedReceiver<ViewCommand>) {
@@ -380,6 +529,15 @@ impl ViewThread {
                     let _ = self.event_tx.send(ViewEvent::SetScrollMode(ScrollMode::ClampToBottom));
                 }
             }
+            ViewCommand::SetPaused(paused) => {
+                if let Some(load) = &mut self.current_load {
+                    load.paused = paused;
+                }
+                // Don't let the paused time count as transmitted bytes.
+                self.baud_emulator.reset();
+                self.send_progress(true);
+            }
+            ViewCommand::Seek(position) => self.seek(position).await,
             ViewCommand::Shutdown => {
                 return false;
             }
@@ -396,6 +554,39 @@ impl ViewThread {
             new_screen.terminal_state_mut().is_terminal_buffer = false;
             let mut screen = self.screen.lock();
             *screen = new_screen;
+        }
+        parser
+    }
+
+    /// Create the screen and parser for streaming, with SAUCE and the Unicode buffer type applied.
+    fn init_parser_screen(
+        &mut self,
+        mode: ScreenMode,
+        emulation: TerminalEmulation,
+        sauce: Option<&SauceRecord>,
+        preserve_height: bool,
+        unicode: bool,
+        document_height: Option<i32>,
+    ) -> Box<dyn CommandParser + Send> {
+        let parser = self.init_screen_for_mode(mode, emulation);
+        let mut screen = self.screen.lock();
+        if let Some(editable) = screen.as_editable() {
+            if let Some(sauce) = sauce {
+                let height = editable.height();
+                editable.apply_sauce(sauce);
+                if preserve_height {
+                    // preserve height otherwise the "baud rate" emulation may not work correctly
+                    editable.set_height(height);
+                }
+            }
+            if unicode {
+                *editable.buffer_type_mut() = icy_engine::BufferType::Unicode;
+            }
+            if let Some(height) = document_height {
+                let window_height = editable.terminal_state().height();
+                editable.set_height(height);
+                editable.terminal_state_mut().set_height(window_height);
+            }
         }
         parser
     }
@@ -468,42 +659,16 @@ impl ViewThread {
                 let mode = format.screen_mode();
                 let emulation = format.terminal_emulation().unwrap_or(TerminalEmulation::Ansi);
 
-                // Initialize screen for this mode - replaces the entire screen
-                let parser = self.init_screen_for_mode(mode, emulation);
-
-                // Apply SAUCE width if available (using repaired sauce data)
-                // This must be done after init_screen_for_mode but before parsing
-                if let Some(sauce) = &repaired_sauce_opt {
-                    let mut screen = self.screen.lock();
-                    if let Some(editable) = screen.as_editable() {
-                        let height = editable.height();
-                        editable.apply_sauce(sauce);
-                        // preserve height otherwise the "baud rate"
-                        // emulation may not work correctly
-                        editable.set_height(height);
-                    }
-                }
-
                 // Prepare data: strip BOM and crop at EOF marker
                 let (file_data, is_unicode) = prepare_parser_data(stripped_data, &ext);
-
-                if is_unicode {
-                    let mut screen = self.screen.lock();
-                    if let Some(editable) = screen.as_editable() {
-                        *editable.buffer_type_mut() = icy_engine::BufferType::Unicode;
-                    }
-                }
-
-                // Update load operation
-                if let Some(load) = &mut self.current_load {
-                    load.parser = Some(parser);
-                    load.screen_mode = mode;
-                    load.terminal_emulation = emulation;
-                    load.file_data = file_data;
-                    load.load_mode = LoadMode::Parser;
-                    load.file_position = 0;
-                    load.is_playing = true;
-                }
+                let document_height = if matches!(self.baud_emulator.baud_emulation, BaudEmulation::Off) {
+                    None
+                } else {
+                    text_document_height(mode, emulation, repaired_sauce_opt.as_ref(), is_unicode, &file_data)
+                };
+                // Initialize screen for this mode - replaces the entire screen
+                let parser = self.init_parser_screen(mode, emulation, repaired_sauce_opt.as_ref(), true, is_unicode, document_height);
+                self.start_streaming(parser, mode, emulation, file_data, repaired_sauce_opt, true, is_unicode, document_height);
 
                 // Send scroll mode: ClampToBottom if baud emulation active, otherwise Off (will switch to AutoScroll on complete)
                 if !matches!(self.baud_emulator.baud_emulation, BaudEmulation::Off) {
@@ -575,34 +740,28 @@ impl ViewThread {
         // Unknown format - try parser anyway with default ANSI emulation
         let mode = ScreenMode::Vga(80, 25);
         let emulation = TerminalEmulation::Ansi;
-        let parser = self.init_screen_for_mode(mode, emulation);
-
-        // Apply SAUCE width if available (using repaired sauce data)
-        if let Some(sauce) = &repaired_sauce_opt {
-            let mut screen = self.screen.lock();
-            if let Some(editable) = screen.as_editable() {
-                editable.apply_sauce(sauce);
-            }
-        }
-
-        if let Some(sauce) = &repaired_sauce_opt {
-            let mut screen = self.screen.lock();
-            if let Some(editable) = screen.as_editable() {
-                editable.apply_sauce(sauce);
-            }
-        }
-
-        // Prepare data: strip BOM and crop at EOF marker
         let (file_data, is_unicode) = prepare_parser_data(stripped_data, &ext);
+        let document_height = if matches!(self.baud_emulator.baud_emulation, BaudEmulation::Off) {
+            None
+        } else {
+            text_document_height(mode, emulation, repaired_sauce_opt.as_ref(), is_unicode, &file_data)
+        };
+        let parser = self.init_parser_screen(mode, emulation, repaired_sauce_opt.as_ref(), false, is_unicode, document_height);
+        self.start_streaming(parser, mode, emulation, file_data, repaired_sauce_opt, false, is_unicode, document_height);
+    }
 
-        if is_unicode {
-            let mut screen = self.screen.lock();
-            if let Some(editable) = screen.as_editable() {
-                *editable.buffer_type_mut() = icy_engine::BufferType::Unicode;
-            }
-        }
-
-        // Update load operation
+    #[allow(clippy::too_many_arguments)]
+    fn start_streaming(
+        &mut self,
+        parser: Box<dyn CommandParser + Send>,
+        mode: ScreenMode,
+        emulation: TerminalEmulation,
+        file_data: Vec<u8>,
+        sauce: Option<SauceRecord>,
+        preserve_height: bool,
+        is_unicode: bool,
+        document_height: Option<i32>,
+    ) {
         if let Some(load) = &mut self.current_load {
             load.parser = Some(parser);
             load.screen_mode = mode;
@@ -611,7 +770,12 @@ impl ViewThread {
             load.load_mode = LoadMode::Parser;
             load.file_position = 0;
             load.is_playing = true;
+            load.sauce = sauce;
+            load.preserve_height = preserve_height;
+            load.is_unicode = is_unicode;
+            load.document_height = document_height;
         }
+        self.send_progress(true);
     }
 
     fn stop(&mut self) {
@@ -661,6 +825,7 @@ impl ViewThread {
             };
 
             if bytes_to_send == 0 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
                 return; // Not enough time has passed, wait for next tick
             }
 
@@ -668,18 +833,19 @@ impl ViewThread {
             load.file_position += bytes_to_send;
             chunk
         } else {
-            load.is_playing = false;
-            let auto_scroll = load.auto_scroll_enabled;
-            let _ = self.event_tx.send(ViewEvent::LoadingCompleted);
-            // Send scroll mode: AutoScroll if enabled, otherwise Off
-            let scroll_mode = if auto_scroll { ScrollMode::AutoScroll } else { ScrollMode::Off };
-            let _ = self.event_tx.send(ViewEvent::SetScrollMode(scroll_mode));
+            self.finish_playback();
             return;
         };
+        let at_end = load.file_position >= load.file_data.len();
 
-        if !chunk.is_empty() {
+        if matches!(self.baud_emulator.baud_emulation, BaudEmulation::Off) {
             self.process_data(&chunk).await;
+        } else {
+            for byte in chunk {
+                self.process_data(std::slice::from_ref(&byte)).await;
+            }
         }
+        self.send_progress(at_end);
     }
 
     async fn process_data(&mut self, data: &[u8]) {
@@ -692,10 +858,11 @@ impl ViewThread {
             parser.parse(data, &mut sink);
         }
 
-        self.process_command_queue().await;
+        self.process_command_queue(false).await;
     }
 
-    async fn process_command_queue(&mut self) {
+    /// Run the queued commands; `fast_forward` skips sounds and delays (used when seeking).
+    async fn process_command_queue(&mut self, fast_forward: bool) {
         const MAX_LOCK_DURATION_MS: u64 = 10;
 
         loop {
@@ -712,6 +879,10 @@ impl ViewThread {
             let Some(cmd) = load.command_queue.pop_front() else {
                 break;
             };
+
+            if fast_forward && (cmd.is_sound() || cmd.is_delay()) {
+                continue;
+            }
 
             // Get cancel token BEFORE any async operations
             let cancel_token = load.get_cancel_token();

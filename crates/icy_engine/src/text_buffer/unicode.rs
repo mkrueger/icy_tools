@@ -273,6 +273,7 @@ impl TextScreen {
             }
         }
         self.buffer.layers[self.current_layer].put_grapheme(position, text, width, attribute);
+        self.buffer.mark_line_dirty(position.y);
         let next_column = position.x + width as i32;
         self.caret.x = next_column.min(last_column);
         self.terminal_state_mut().wrap_pending = next_column > last_column && self.terminal_state().auto_wrap_mode == AutoWrapMode::AutoWrap;

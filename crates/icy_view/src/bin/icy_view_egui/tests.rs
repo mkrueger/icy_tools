@@ -1042,3 +1042,162 @@ fn gpu_info_panel_ratings_palette_minimap_and_font_preview() {
         std::thread::sleep(Duration::from_millis(25));
     }
 }
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_playback_bar_controls_streamed_files() {
+    config();
+    let fixture = Fixture::new();
+    let mut data = Vec::new();
+    for row in 0..60 {
+        data.extend_from_slice(format!("\x1b[1;3{}mPLAYBACK ROW {row:02}\r\n", row % 8).as_bytes());
+    }
+
+    std::fs::write(fixture.0.join("stream.ans"), &data).unwrap();
+    std::fs::write(fixture.0.join("stream2.ans"), b"SECOND FILE").unwrap();
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let options = icy_view::Options {
+        auto_scroll_enabled: false,
+        ..Default::default()
+    };
+    let mut app = app::Viewer::new(fixture.0.clone(), options, &gpu.context).unwrap();
+    app.preview.set_baud(2400);
+    wait_browser(&mut app.browser, &gpu.context);
+    let size = [1100, 760];
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-warmup");
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![egui::Event::Key {
+            key: egui::Key::ArrowDown,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        "playback-selected",
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.preview.playback.is_none_or(|playback| playback.position < 200) {
+        gpu.capture(&mut app, size, 1.0, vec![], "playback-loading");
+        assert!(Instant::now() < deadline, "playback did not start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-streaming");
+    for label in [
+        text("egui-playback-pause"),
+        text("egui-playback-replay"),
+        "2400 BPS".into(),
+        text("egui-playback-bytes"),
+    ] {
+        assert!(gpu.labels.contains_key(&label), "playback bar misses {label}: {:?}", gpu.labels.keys());
+    }
+    assert!(
+        gpu.labels.keys().any(|label| label.ends_with(&app::format_size(data.len() as u64))),
+        "playback bar misses the size: {:?}",
+        gpu.labels.keys()
+    );
+    gpu.click(&mut app, size, 1.0, &text("egui-playback-pause"));
+    assert!(app.preview.playback.unwrap().paused);
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-paused");
+    assert!(gpu.labels.contains_key(&text("egui-playback-play")), "{:?}", gpu.labels.keys());
+    let position = app.preview.playback.unwrap().position;
+    std::thread::sleep(Duration::from_millis(200));
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-paused");
+    assert_eq!(app.preview.playback.unwrap().position, position, "paused playback advanced");
+    app.preview.seek(data.len() / 2);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.preview.playback.is_none_or(|playback| playback.cursor_px < 25 * 16) {
+        gpu.capture(&mut app, size, 1.0, vec![], "playback-seeking");
+        assert!(Instant::now() < deadline, "seek did not update the cursor");
+    }
+    let pixels = gpu.capture(&mut app, size, 1.0, vec![], "playback-blank-canvas");
+    let sample = &pixels[((600 * size[0] + 700) * 4) as usize..][..3];
+    assert!(
+        sample.iter().all(|channel| *channel < 60),
+        "unrevealed playback canvas should be dark, not checkerboard: {sample:?}"
+    );
+    gpu.click(&mut app, size, 1.0, &text("egui-playback-play"));
+    assert!(app.preview.playback.unwrap().playing());
+    app.browser.select(1, &gpu.context);
+    app.preview.stop();
+    assert!(app.preview.file.is_empty());
+    assert_ne!(app.preview.screen.terminal.screen.lock().char_at((0, 0).into()).ch, 'P');
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !app.preview.file.ends_with("stream2.ans") || app.preview.loading {
+        gpu.capture(&mut app, size, 1.0, vec![], "playback-next-file");
+        assert!(
+            Instant::now() < deadline,
+            "selecting the next file did not replace the preview: {:?}, selected {:?}",
+            app.preview.file,
+            app.browser.selected
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(app.preview.screen.terminal.screen.lock().char_at((0, 0).into()).ch, 'S');
+    let pixels = gpu.capture(&mut app, size, 1.0, vec![], "playback-next-file-visible");
+    assert!(
+        preview_bright_pixels(&pixels, size) > 20,
+        "the next file is present in the screen buffer but missing from the rendered preview"
+    );
+}
+
+fn preview_bright_pixels(pixels: &[u8], size: [u32; 2]) -> usize {
+    (100..350)
+        .flat_map(|y| (300..750).map(move |x| ((y * size[0] + x) * 4) as usize))
+        .filter(|&index| pixels[index..index + 3].iter().any(|&c| c > 130))
+        .count()
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_completed_text_playback_is_visible() {
+    config();
+    let fixture = Fixture::new();
+    let data = b"VISIBLE POSTER\r\n".repeat(8);
+    std::fs::write(fixture.0.join("poster.txt"), &data).unwrap();
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let options = icy_view::Options {
+        auto_scroll_enabled: false,
+        ..Default::default()
+    };
+    let mut app = app::Viewer::new(fixture.0.clone(), options, &gpu.context).unwrap();
+    wait_browser(&mut app.browser, &gpu.context);
+    let size = [860, 700];
+    gpu.capture(&mut app, size, 1.0, vec![], "poster-warmup");
+    app.preview.set_baud(2400);
+    app.preview.load("poster.Txt".into(), data, false, &gpu.context);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut visible_during_playback = false;
+    while app.preview.loading {
+        let pixels = gpu.capture(&mut app, size, 1.0, vec![], "poster-playing");
+        if app.preview.playback.is_some_and(|playback| playback.position > 16) {
+            visible_during_playback |= preview_bright_pixels(&pixels, size) > 100;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(visible_during_playback, "text was not rendered while playing");
+    let pixels = gpu.capture(&mut app, size, 1.0, vec![], "poster-completed");
+    assert_eq!(app.preview.screen.terminal.screen.lock().char_at((0, 0).into()).ch, 'V');
+    assert_eq!(app.preview.playback.unwrap().position, app.preview.playback.unwrap().length);
+    let visible_pixels = preview_bright_pixels(&pixels, size);
+    assert!(visible_pixels > 100, "loaded text is blank in GPU preview: {visible_pixels} visible pixels");
+
+    app.preview.set_baud(0);
+    app.preview.replay();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.preview.loading {
+        gpu.capture(&mut app, size, 1.0, vec![], "poster-off-loading");
+        assert!(Instant::now() < deadline, "baud-off replay timed out");
+    }
+    let pixels = gpu.capture(&mut app, size, 1.0, vec![], "poster-off-completed");
+    assert_eq!(app.preview.playback.unwrap().position, app.preview.playback.unwrap().length);
+    assert!(
+        preview_bright_pixels(&pixels, size) > 100,
+        "completed baud-off replay is missing from the rendered preview"
+    );
+}

@@ -445,6 +445,9 @@ impl EditableScreen for TextScreen {
     fn set_char(&mut self, pos: Position, ch: AttributedChar) {
         self.finish_grapheme();
         self.buffer.layers[self.current_layer].set_char(pos, ch);
+        if pos.x >= 0 && pos.x < self.width() && pos.y >= 0 && pos.y < self.height() {
+            self.buffer.mark_line_dirty(pos.y);
+        }
     }
 
     fn end_grapheme(&mut self) {
@@ -949,5 +952,24 @@ impl EditableScreen for TextScreen {
 
     fn set_letter_spacing(&mut self, enabled: bool) {
         self.buffer.use_letter_spacing = enabled;
+    }
+}
+
+#[cfg(test)]
+mod dirty_line_tests {
+    use super::*;
+
+    #[test]
+    fn writing_text_invalidates_its_rendered_line() {
+        let mut screen = TextScreen::new(Size::new(80, 25));
+        let ch = AttributedChar::new('X', Default::default());
+        screen.set_char(Position::new(1, 2), ch);
+        assert_eq!(screen.get_dirty_lines(), Some((2, 3)));
+        screen.clear_dirty_lines();
+
+        screen.set_unicode_width(true);
+        screen.caret.set_position(Position::new(1, 4));
+        screen.print_char(ch);
+        assert_eq!(screen.get_dirty_lines(), Some((4, 5)));
     }
 }

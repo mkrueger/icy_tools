@@ -607,7 +607,7 @@ impl PreviewView {
 
                 for event in events {
                     match event {
-                        ViewEvent::ForRequest(_, _) => {}
+                        ViewEvent::ForRequest(_, _) | ViewEvent::Progress(_, _, _) => {}
                         ViewEvent::LoadFailed(error) => {
                             self.preview_mode = PreviewMode::Error(error);
                         }

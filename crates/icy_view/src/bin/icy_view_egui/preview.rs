@@ -1,6 +1,6 @@
 use eframe::egui;
 use icy_engine::formats::{FileFormat, ImageFormat};
-use icy_engine_gui::{egui::screen::ScreenView, MonitorSettings, ScalingMode};
+use icy_engine_gui::{egui::screen::ScreenView, CheckerboardColors, MonitorSettings, ScalingMode};
 use icy_view::{
     view_thread::{ScrollMode, ViewCommand, ViewEvent, ViewThread},
     Options,
@@ -10,6 +10,25 @@ use std::{
     sync::{mpsc, Arc},
     time::{Duration, Instant},
 };
+
+/// Position of a file streamed through the parser (baud emulation playback).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Playback {
+    pub position: usize,
+    pub length: usize,
+    pub paused: bool,
+    pub cursor_px: i32,
+}
+
+impl Playback {
+    pub fn finished(&self) -> bool {
+        self.position >= self.length
+    }
+
+    pub fn playing(&self) -> bool {
+        !self.paused && !self.finished()
+    }
+}
 
 pub struct Preview {
     pub screen: ScreenView,
@@ -29,6 +48,7 @@ pub struct Preview {
     pub error: Option<String>,
     pub scroll_mode: ScrollMode,
     pub baud: u32,
+    pub playback: Option<Playback>,
     pub loaded_at: Instant,
     last_tick: Instant,
     selection_anchor: Option<icy_engine::Position>,
@@ -72,6 +92,7 @@ impl Preview {
             error: None,
             scroll_mode: ScrollMode::Off,
             baud: 0,
+            playback: None,
             loaded_at: Instant::now(),
             last_tick: Instant::now(),
             selection_anchor: None,
@@ -89,11 +110,72 @@ impl Preview {
         }));
     }
 
+    /// Change the rate; a finished stream replays so the new speed can be watched.
+    pub fn change_baud(&mut self, rate: u32) {
+        self.set_baud(rate);
+        if rate != 0 && self.playback.is_some_and(|playback| playback.finished()) {
+            self.replay();
+        }
+    }
+
+    pub fn toggle_pause(&mut self) {
+        let Some(playback) = &mut self.playback else {
+            return;
+        };
+        if playback.finished() {
+            self.replay();
+            return;
+        }
+        playback.paused = !playback.paused;
+        let _ = self.command.send(ViewCommand::SetPaused(playback.paused));
+    }
+
+    pub fn replay(&mut self) {
+        let Some(playback) = &mut self.playback else {
+            return;
+        };
+        playback.position = 0;
+        playback.paused = false;
+        self.loading = true;
+        self.loaded_at = Instant::now();
+        self.screen.scroll_to = Some(egui::Vec2::ZERO);
+        let _ = self.command.send(ViewCommand::Seek(0));
+        let _ = self.command.send(ViewCommand::SetPaused(false));
+    }
+
+    /// Jump to a byte position and pause there.
+    pub fn seek(&mut self, position: usize) {
+        let Some(playback) = &mut self.playback else {
+            return;
+        };
+        playback.position = position.min(playback.length);
+        playback.paused = true;
+        // Seeking to the end completes the load in the view thread.
+        self.loading = true;
+        let _ = self.command.send(ViewCommand::SetPaused(true));
+        let _ = self.command.send(ViewCommand::Seek(position));
+    }
+
+    fn paused(&self) -> bool {
+        self.playback.is_some_and(|playback| playback.paused)
+    }
+
     pub fn stop(&mut self) {
         self.generation += 1;
+        self.playback = None;
         self.loading = false;
         self.accept_events = false;
         self.scroll_mode = ScrollMode::Off;
+        let had_file = !self.file.is_empty();
+        self.file.clear();
+        self.image = None;
+        self.image_pixels = None;
+        self.image_tiles.clear();
+        self.screen.scroll_to = Some(egui::Vec2::ZERO);
+        if had_file {
+            *self.screen.terminal.screen.lock() = Box::new(icy_engine::TextScreen::new(icy_engine::Size::new(80, 25)));
+            self.screen.terminal.update_viewport_size();
+        }
         let _ = self.command.send(ViewCommand::Stop);
     }
 
@@ -106,6 +188,7 @@ impl Preview {
         self.image = None;
         self.image_pixels = None;
         self.image_tiles.clear();
+        self.playback = None;
         self.error = None;
         self.screen.scroll_to = Some(egui::Vec2::ZERO);
         self.loading = true;
@@ -165,6 +248,18 @@ impl Preview {
                 }
                 ViewEvent::SetScrollMode(mode) => self.scroll_mode = mode,
                 ViewEvent::SauceInfo(sauce, _) => self.sauce = sauce,
+                ViewEvent::Progress(position, length, cursor_px) => {
+                    let paused = self.paused();
+                    self.playback = Some(Playback {
+                        position,
+                        length,
+                        paused,
+                        cursor_px,
+                    });
+                    if position < length {
+                        self.loading = true;
+                    }
+                }
                 ViewEvent::LoadingStarted(_) => {}
                 ViewEvent::ForRequest(_, _) => {}
             }
@@ -201,8 +296,11 @@ impl Preview {
     pub fn show(&mut self, ui: &mut egui::Ui, options: &Options) {
         let delta = self.last_tick.elapsed().as_secs_f32().min(0.1);
         self.last_tick = Instant::now();
-        if self.scroll_mode == ScrollMode::ClampToBottom && self.loading {
-            self.screen.scroll_to = Some(egui::vec2(self.screen.offset.x, f32::MAX));
+        if self.scroll_mode == ScrollMode::ClampToBottom && self.loading && !self.paused() {
+            if let Some(playback) = self.playback {
+                let bottom = playback.cursor_px as f32 * self.screen.zoom;
+                self.screen.scroll_to = Some(egui::vec2(self.screen.offset.x, (bottom - ui.available_height()).max(0.0)));
+            }
         } else if options.auto_scroll_enabled && !self.loading && !self.file.is_empty() && self.loaded_at.elapsed() > Duration::from_secs(1) {
             self.screen.scroll_to = Some(self.screen.offset + egui::vec2(0.0, options.scroll_speed.get_speed() * delta));
             if self.screen.offset.y < self.screen.max_offset.y {
@@ -240,6 +338,9 @@ impl Preview {
             } else {
                 settings.scaling_mode = viewer_scaling(&options.monitor_settings);
             }
+            if self.playback.is_some() {
+                settings.checkerboard_colors = CheckerboardColors::new(icy_engine::Color::new(0, 0, 0), icy_engine::Color::new(0, 0, 0), 8.0);
+            }
             let response = self.screen.show(ui, &settings);
             self.select(&response);
             if let Some(url) = super::link_at(&self.screen.terminal, response.hover_pos()) {
@@ -253,7 +354,7 @@ impl Preview {
         if response.dragged_by(egui::PointerButton::Secondary) || response.dragged_by(egui::PointerButton::Middle) {
             self.screen.scroll_to = Some(self.screen.offset - ui.input(|input| input.pointer.delta()));
         }
-        if self.loading {
+        if self.loading && !self.paused() {
             ui.ctx().request_repaint_after(Duration::from_millis(16));
         }
         ui.ctx().request_repaint_after(Duration::from_millis(500));
@@ -384,6 +485,150 @@ mod tests {
             frame(&mut preview);
         }
         assert!(preview.screen.offset.y > 0.0, "scrolling to the bottom had no effect");
+    }
+
+    fn wait(preview: &mut Preview, context: &egui::Context, what: &str, done: impl Fn(&Preview) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !done(preview) {
+            preview.poll(context);
+            assert!(Instant::now() < deadline, "timed out waiting for {what}");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn row_start(preview: &Preview, row: i32) -> char {
+        let screen = preview.screen.terminal.screen.lock();
+        screen.buffer_type().convert_to_unicode(screen.char_at((0, row).into()).ch)
+    }
+
+    #[test]
+    fn playback_pauses_seeks_and_replays_streamed_files() {
+        let context = egui::Context::default();
+        let mut preview = Preview::new(&context).unwrap();
+        preview.set_baud(300);
+        let mut data = Vec::new();
+        for row in 0..20 {
+            data.extend_from_slice(format!("ROW {row:02}\r\n").as_bytes());
+        }
+        let length = data.len();
+        preview.load("stream.ans".into(), data, false, &context);
+        wait(&mut preview, &context, "progress", |preview| preview.playback.is_some());
+        assert_eq!(preview.playback.unwrap().length, length);
+        assert!(preview.loading);
+
+        preview.seek(length / 2);
+        wait(&mut preview, &context, "forward seek", |preview| row_start(preview, 9) == 'R');
+        assert_eq!(row_start(&preview, 10), ' ', "seeking must stop at the requested byte");
+        std::thread::sleep(Duration::from_millis(200));
+        preview.poll(&context);
+        let playback = preview.playback.unwrap();
+        assert!(playback.paused && playback.position == length / 2, "paused playback moved: {playback:?}");
+        assert!(preview.loading);
+
+        preview.seek(length);
+        wait(&mut preview, &context, "seek to the end", |preview| !preview.loading);
+        assert_eq!(row_start(&preview, 19), 'R');
+        assert!(preview.playback.unwrap().finished());
+
+        preview.seek(3);
+        wait(&mut preview, &context, "backward seek", |preview| {
+            preview.loading && row_start(preview, 1) == ' '
+        });
+        assert_eq!(row_start(&preview, 0), 'R');
+
+        preview.change_baud(0);
+        preview.toggle_pause();
+        wait(&mut preview, &context, "resume", |preview| !preview.loading);
+        assert_eq!(row_start(&preview, 19), 'R');
+
+        preview.change_baud(300);
+        assert!(preview.loading, "changing the rate of a finished file replays it");
+        wait(&mut preview, &context, "replay restart", |preview| row_start(preview, 1) == ' ');
+        assert!(preview.playback.unwrap().playing());
+    }
+
+    #[test]
+    fn streaming_keeps_full_height_and_follows_the_cursor() {
+        let context = egui::Context::default();
+        let mut preview = Preview::new(&context).unwrap();
+        preview.set_baud(300);
+        let data = (0..80).map(|row| format!("ROW {row:02}\r\n")).collect::<String>().into_bytes();
+        let length = data.len();
+        preview.load("long.ans".into(), data, false, &context);
+        wait(&mut preview, &context, "initial progress", |preview| preview.playback.is_some());
+        let (height, window_height) = {
+            let screen = preview.screen.terminal.screen.lock();
+            (screen.height(), screen.terminal_state().height())
+        };
+        assert!(height >= 80, "full document height must be available before typing: {height}");
+        assert_eq!(window_height, 25, "document height must not stretch the terminal viewport");
+        let options = Options {
+            auto_scroll_enabled: false,
+            ..Default::default()
+        };
+        let frame = |preview: &mut Preview| {
+            let _ = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 240.0))),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| preview.show(ui, &options));
+                },
+            );
+        };
+        frame(&mut preview);
+        frame(&mut preview);
+        let max_offset = preview.screen.max_offset.y;
+        let zoom = preview.screen.zoom;
+        assert!(max_offset > 0.0);
+        assert_eq!(preview.screen.offset.y, 0.0, "start at the top, not at the blank end");
+        preview.seek(length / 2);
+        wait(&mut preview, &context, "cursor progress", |preview| {
+            preview
+                .playback
+                .is_some_and(|playback| playback.position == length / 2 && playback.cursor_px >= 40 * 16)
+        });
+        preview.toggle_pause();
+        frame(&mut preview);
+        frame(&mut preview);
+        assert!(preview.screen.offset.y > 0.0, "the viewport should follow the typing cursor");
+        assert!(preview.screen.offset.y < max_offset, "the viewport should not jump to the document end");
+        assert!((preview.screen.zoom - zoom).abs() < 0.01, "playback must not change the art's aspect ratio");
+        assert_eq!(preview.screen.terminal.screen.lock().terminal_state().height(), window_height);
+    }
+
+    #[test]
+    fn slow_baud_reveals_the_first_character_before_the_rest() {
+        let context = egui::Context::default();
+        let mut preview = Preview::new(&context).unwrap();
+        preview.set_baud(300);
+        preview.load("letters.ans".into(), b"ABCDEFGHIJ".to_vec(), false, &context);
+        wait(&mut preview, &context, "first character", |preview| {
+            preview.playback.is_some_and(|playback| playback.position >= 1)
+        });
+        assert_eq!(preview.playback.unwrap().position, 1);
+        let screen = preview.screen.terminal.screen.lock();
+        assert_eq!(screen.char_at((0, 0).into()).ch, b'A' as char);
+        assert_ne!(screen.char_at((1, 0).into()).ch, b'B' as char);
+    }
+
+    #[test]
+    fn switching_files_clears_previous_art_before_new_data_arrives() {
+        let context = egui::Context::default();
+        let mut preview = Preview::new(&context).unwrap();
+        preview.set_baud(300);
+        preview.load("first.ans".into(), b"OLD ART ".repeat(40), false, &context);
+        wait(&mut preview, &context, "first file", |preview| row_start(preview, 0) == 'O');
+        assert!(preview.loading, "the first stream must still be active");
+        assert_eq!(row_start(&preview, 0), 'O');
+        preview.stop();
+        assert!(preview.file.is_empty());
+        assert_ne!(row_start(&preview, 0), 'O');
+        preview.load("second.ans".into(), b"NEW ART".to_vec(), false, &context);
+        crate::tests::wait_preview(&mut preview, &context);
+        assert_eq!(row_start(&preview, 0), 'N');
+        assert_eq!(preview.file, "second.ans");
     }
 
     #[test]

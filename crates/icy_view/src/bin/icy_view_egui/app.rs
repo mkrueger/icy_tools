@@ -1005,7 +1005,7 @@ impl Viewer {
         self.file_info(ui);
     }
 
-    /// Right-to-left: zoom, baud rate, auto scroll and the position in the folder.
+    /// Right-to-left: zoom, auto scroll and the position in the folder.
     fn status_controls(&mut self, ui: &mut egui::Ui) {
         let small = |value: String| egui::RichText::new(value).size(12.0);
         let zoom = match self.options.monitor_settings.scaling_mode {
@@ -1027,21 +1027,6 @@ impl Viewer {
                 let selected = matches!(self.options.monitor_settings.scaling_mode, ScalingMode::Manual(current) if current == zoom);
                 if ui.selectable_label(selected, format!("{:.0}%", zoom * 100.0)).clicked() {
                     self.options.monitor_settings.scaling_mode = ScalingMode::Manual(zoom);
-                }
-            }
-        });
-        let baud = if self.preview.baud == 0 {
-            small("BPS: OFF".into()).color(ui.visuals().weak_text_color())
-        } else {
-            small(format!("{} BPS", self.preview.baud)).color(ui.visuals().hyperlink_color)
-        };
-        status_menu(ui, baud, &text("egui-baud-emulation"), |ui| {
-            for rate in BAUD_RATES {
-                if ui
-                    .selectable_label(self.preview.baud == *rate, if *rate == 0 { "OFF".into() } else { format!("{rate} BPS") })
-                    .clicked()
-                {
-                    self.preview.set_baud(*rate);
                 }
             }
         });
@@ -1295,11 +1280,11 @@ impl Viewer {
                 };
                 self.options.scroll_speed = [ScrollSpeed::Slow, ScrollSpeed::Medium, ScrollSpeed::Fast][(index + if id.ends_with("back") { 2 } else { 1 }) % 3];
             }
-            "playback.baud_rate_off" => self.preview.set_baud(0),
+            "playback.baud_rate_off" => self.preview.change_baud(0),
             "playback.baud_rate" | "playback.baud_rate_back" => {
                 let index = BAUD_RATES.iter().position(|rate| *rate == self.preview.baud).unwrap_or(0);
                 self.preview
-                    .set_baud(BAUD_RATES[(index + if id.ends_with("back") { BAUD_RATES.len() - 1 } else { 1 }) % BAUD_RATES.len()]);
+                    .change_baud(BAUD_RATES[(index + if id.ends_with("back") { BAUD_RATES.len() - 1 } else { 1 }) % BAUD_RATES.len()]);
             }
             "window.close" | "app.quit" => context.send_viewport_cmd(egui::ViewportCommand::Close),
             "window.new" => {
@@ -1323,9 +1308,12 @@ impl Viewer {
         }
     }
 
-    /// Preview with the minimap on the right and the info panel on the bottom left.
+    /// Preview with the playback controls on top, the minimap on the right and the info panel on the bottom left.
     fn preview(&mut self, ui: &mut egui::Ui) {
-        let area = ui.max_rect();
+        if self.shuffle.is_none() {
+            self.playback_bar(ui);
+        }
+        let area = ui.available_rect_before_wrap();
         self.preview.show(ui, &self.options);
         if self.preview.file.is_empty() || self.preview.loading {
             return;
@@ -1354,6 +1342,83 @@ impl Viewer {
                 None => {}
             }
         }
+    }
+
+    /// Transport row for files streamed through the parser: play/pause, replay, baud rate and seeking.
+    fn playback_bar(&mut self, ui: &mut egui::Ui) {
+        let Some(playback) = self.preview.playback else {
+            return;
+        };
+        let context = ui.ctx().clone();
+        let visuals = ui.visuals().clone();
+        egui::Frame::new()
+            .fill(visuals.panel_fill.lerp_to_gamma(visuals.faint_bg_color, 0.45))
+            .inner_margin(egui::Margin::symmetric(8, 4))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let (play, pause) = (text("egui-playback-play"), text("egui-playback-pause"));
+                    let label_width = [&play, &pause]
+                        .iter()
+                        .map(|label| {
+                            egui::WidgetText::from(label.as_str())
+                                .into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button)
+                                .size()
+                                .x
+                        })
+                        .fold(0.0, f32::max);
+                    let spacing = ui.spacing();
+                    let play_width = label_width + 16.0 + spacing.icon_spacing + spacing.button_padding.x * 2.0;
+                    let (icon, label) = if playback.playing() { (Icon::Pause, pause) } else { (Icon::Play, play) };
+                    let image = self.icons.image(&context, icon, 16.0);
+                    if ui
+                        .add(egui::Button::image_and_text(image, label).min_size(egui::vec2(play_width, 0.0)))
+                        .clicked()
+                    {
+                        self.preview.toggle_pause();
+                    }
+                    let image = self.icons.image(&context, Icon::Replay, 16.0);
+                    if ui.add(egui::Button::image_and_text(image, text("egui-playback-replay"))).clicked() {
+                        self.preview.replay();
+                    }
+                    ui.add_space(4.0);
+                    ui.add(self.icons.image(&context, Icon::Bolt, 16.0));
+                    let mut baud = self.preview.baud;
+                    let baud_label = |rate: u32| if rate == 0 { text("egui-baud-off") } else { format!("{rate} BPS") };
+                    let combo = egui::ComboBox::from_id_salt("playback-baud")
+                        .selected_text(baud_label(baud))
+                        .show_ui(ui, |ui| {
+                            for rate in BAUD_RATES {
+                                ui.selectable_value(&mut baud, *rate, baud_label(*rate));
+                            }
+                        })
+                        .response;
+                    let wheel = if combo.hovered() { ui.input(|input| input.raw_scroll_delta.y) } else { 0.0 };
+                    combo.on_hover_text(text("egui-baud-emulation"));
+                    if wheel != 0.0 {
+                        let index = BAUD_RATES.iter().position(|rate| *rate == baud).unwrap_or(0);
+                        baud = BAUD_RATES[if wheel < 0.0 {
+                            (index + 1).min(BAUD_RATES.len() - 1)
+                        } else {
+                            index.saturating_sub(1)
+                        }];
+                    }
+                    if baud != self.preview.baud {
+                        self.preview.change_baud(baud);
+                    }
+                    ui.add_space(4.0);
+                    let percent = (playback.position * 100).checked_div(playback.length).unwrap_or(100);
+                    let info = format!("{percent}%  ·  {}", format_size(playback.length as u64));
+                    ui.spacing_mut().slider_width = (ui.available_width() - 220.0).clamp(60.0, 360.0);
+                    let mut position = playback.position;
+                    let slider = egui::Slider::new(&mut position, 0..=playback.length).text(text("egui-playback-bytes"));
+                    if ui.add(slider).changed() {
+                        self.preview.seek(position);
+                    }
+                    ui.label(egui::RichText::new(info).color(ui.visuals().weak_text_color()));
+                });
+            });
     }
 
     fn osd_info(&self, index: Option<usize>) -> osd::Info {
