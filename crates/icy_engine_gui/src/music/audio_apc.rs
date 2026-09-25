@@ -17,7 +17,7 @@ use std::{
 };
 
 use once_cell::sync::Lazy;
-use rodio::{buffer::SamplesBuffer, mixer::Mixer, Player, Source};
+use rodio::{mixer::Mixer, Player, Source};
 
 /// Patch slots addressable by `S=`.
 pub const PATCH_SLOTS: usize = 256;
@@ -644,7 +644,40 @@ fn decode_ogg_opus(_data: &[u8]) -> Option<Vec<f32>> {
 /// A decoded sample, stored stereo-interleaved at [`SAMPLE_RATE`].
 #[derive(Default, Clone)]
 struct Patch {
-    frames: Vec<f32>,
+    frames: Arc<[f32]>,
+}
+
+struct PatchSource {
+    frames: Arc<[f32]>,
+    position: usize,
+}
+
+impl Iterator for PatchSource {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let sample = self.frames.get(self.position).copied()?;
+        self.position += 1;
+        Some(sample)
+    }
+}
+
+impl Source for PatchSource {
+    fn current_span_len(&self) -> Option<usize> {
+        Some(self.frames.len() - self.position)
+    }
+
+    fn channels(&self) -> rodio::ChannelCount {
+        stereo()
+    }
+
+    fn sample_rate(&self) -> rodio::SampleRate {
+        sample_rate()
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        Some(Duration::from_secs_f64(self.frames.len() as f64 / (SAMPLE_RATE as f64 * 2.0)))
+    }
 }
 
 enum DecodeInput {
@@ -716,11 +749,17 @@ struct StereoGain<S> {
     input: S,
     control: Arc<StereoGainControl>,
     channel: usize,
+    pan: [f32; 2],
 }
 
 impl<S> StereoGain<S> {
-    fn new(input: S, control: Arc<StereoGainControl>) -> Self {
-        Self { input, control, channel: 0 }
+    fn new(input: S, control: Arc<StereoGainControl>, pan: [f32; 2]) -> Self {
+        Self {
+            input,
+            control,
+            channel: 0,
+            pan,
+        }
     }
 }
 
@@ -733,7 +772,7 @@ impl<S: Source> Iterator for StereoGain<S> {
             f32::from_bits(self.control.left.load(Ordering::Relaxed))
         } else {
             f32::from_bits(self.control.right.load(Ordering::Relaxed))
-        };
+        } * self.pan[self.channel];
         self.channel = (self.channel + 1) % self.input.channels().get() as usize;
         Some(sample * gain)
     }
@@ -832,7 +871,7 @@ impl AudioApcState {
         let index = slot as usize;
         self.generations[index] = self.generations[index].wrapping_add(1);
         self.pending[index] = true;
-        self.patches[index].frames.clear();
+        self.patches[index].frames = Arc::default();
         self.deferred[index].clear();
         let job = DecodeJob {
             slot,
@@ -863,6 +902,10 @@ impl AudioApcState {
     }
 
     fn store(&mut self, slot: u8, frames: Vec<f32>) {
+        self.store_shared(slot, Arc::from(frames));
+    }
+
+    fn store_shared(&mut self, slot: u8, frames: Arc<[f32]>) {
         if frames.is_empty() {
             return;
         }
@@ -958,7 +1001,7 @@ impl AudioApcState {
                 self.pending[destination_index] = false;
                 self.deferred[destination_index].clear();
                 let frames = self.patches[source as usize].frames.clone();
-                self.store(destination, frames);
+                self.store_shared(destination, frames);
             }
             AudioApcCommand::Queue {
                 channel,
@@ -979,7 +1022,7 @@ impl AudioApcState {
                     });
                     return;
                 }
-                let frames = std::mem::take(&mut self.patches[slot as usize].frames);
+                let frames = self.patches[slot as usize].frames.clone();
                 if frames.is_empty() {
                     return;
                 }
@@ -989,17 +1032,16 @@ impl AudioApcState {
                 };
                 let left = db_to_gain(left_db);
                 let right = db_to_gain(right_db);
-                let panned = apply_pan(frames, left, right);
                 let volume = self.volumes[channel as usize].clone();
                 let Some(player) = self.player(mixer, channel) else { return };
 
-                let buffer = SamplesBuffer::new(stereo(), sample_rate(), panned);
+                let buffer = PatchSource { frames, position: 0 };
                 let fade = Duration::from_secs_f32(fade_in as f32 / SAMPLE_RATE as f32);
                 match (looping, fade_in > 0) {
-                    (true, true) => player.append(StereoGain::new(buffer.repeat_infinite().fade_in(fade), volume)),
-                    (true, false) => player.append(StereoGain::new(buffer.repeat_infinite(), volume)),
-                    (false, true) => player.append(StereoGain::new(buffer.fade_in(fade), volume)),
-                    (false, false) => player.append(StereoGain::new(buffer, volume)),
+                    (true, true) => player.append(StereoGain::new(buffer.repeat_infinite().fade_in(fade), volume, [left, right])),
+                    (true, false) => player.append(StereoGain::new(buffer.repeat_infinite(), volume, [left, right])),
+                    (false, true) => player.append(StereoGain::new(buffer.fade_in(fade), volume, [left, right])),
+                    (false, false) => player.append(StereoGain::new(buffer, volume, [left, right])),
                 }
                 self.status.set_active(channel, true);
             }
@@ -1034,14 +1076,6 @@ fn db_to_gain(db: f32) -> f32 {
     } else {
         10.0f32.powf(db / 20.0)
     }
-}
-
-fn apply_pan(mut frames: Vec<f32>, left: f32, right: f32) -> Vec<f32> {
-    for pair in frames.chunks_exact_mut(2) {
-        pair[0] *= left;
-        pair[1] *= right;
-    }
-    frames
 }
 
 /// Resolves a cache-relative file name, rejecting absolute paths and traversal.
@@ -1108,8 +1142,11 @@ mod tests {
     #[test]
     fn stereo_gain_preserves_channels_and_live_updates() {
         let control = Arc::new(StereoGainControl::new(1.0, 0.25));
-        let buffer = SamplesBuffer::new(stereo(), sample_rate(), vec![1.0, 1.0, 0.5, 0.5]);
-        let mut source = StereoGain::new(buffer, control.clone());
+        let buffer = PatchSource {
+            frames: Arc::from(vec![1.0, 1.0, 0.5, 0.5]),
+            position: 0,
+        };
+        let mut source = StereoGain::new(buffer, control.clone(), [1.0, 1.0]);
 
         assert_eq!(source.next(), Some(1.0));
         assert_eq!(source.next(), Some(0.25));
@@ -1120,10 +1157,68 @@ mod tests {
 
     #[test]
     fn decibel_floor_mutes_without_affecting_other_channel() {
-        let frames = apply_pan(vec![1.0, 1.0], db_to_gain(MIN_DB), db_to_gain(-6.0206));
-        assert_eq!(frames[0], 0.0);
-        assert!((frames[1] - 0.5).abs() < 0.0001);
+        let buffer = PatchSource {
+            frames: Arc::from(vec![1.0, 1.0]),
+            position: 0,
+        };
+        let mut source = StereoGain::new(buffer, Arc::new(StereoGainControl::new(1.0, 1.0)), [db_to_gain(MIN_DB), db_to_gain(-6.0206)]);
+        assert_eq!(source.next(), Some(0.0));
+        assert!((source.next().unwrap() - 0.5).abs() < 0.0001);
         assert!((db_to_gain(BASE_DB) - 0.25118864).abs() < 0.0001);
+    }
+
+    #[test]
+    fn cached_wav_effect_can_play_twice_without_reloading() {
+        let pcm: Vec<i16> = (0..2048).map(|index| if index % 2 == 0 { 16_384 } else { -16_384 }).collect();
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + pcm.len() as u32 * 2).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+        wav.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&(pcm.len() as u32 * 2).to_le_bytes());
+        for sample in pcm {
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+
+        let decoded = AudioApcState::decode(wav.clone()).expect("WAV sample should decode");
+        assert!(decoded.iter().any(|sample| sample.abs() > 0.1));
+        let (mixer, mut output) = rodio::mixer::mixer(stereo(), sample_rate());
+        let mut state = AudioApcState::new();
+        let queue = AudioApcCommand::Queue {
+            channel: 4,
+            slot: 7,
+            fade_in: 0,
+            looping: false,
+            left_db: 0.0,
+            right_db: 0.0,
+        };
+        state.handle(Some(&mixer), None, AudioApcCommand::LoadBlob { slot: 7, data: wav });
+        state.handle(Some(&mixer), None, queue.clone());
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while state.pending[7] && std::time::Instant::now() < deadline {
+            state.poll(Some(&mixer));
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(!state.pending[7], "WAV decoding did not finish");
+        let patch = state.patches[7].frames.clone();
+        assert!(!patch.is_empty(), "WAV patch was not loaded");
+        for iteration in 0..2 {
+            if iteration > 0 {
+                state.handle(Some(&mixer), None, queue.clone());
+            }
+            assert!(Arc::ptr_eq(&patch, &state.patches[7].frames));
+            assert!(state.status.is_active(4));
+            let samples: Vec<_> = output.by_ref().take(8192).collect();
+            assert!(samples.iter().any(|sample| sample.abs() > 0.01), "replayed WAV effect was silent");
+            state.poll(Some(&mixer));
+        }
     }
 
     #[test]
@@ -1325,6 +1420,30 @@ mod tests {
         // A 440 Hz tone must not decode to silence.
         let peak = decoded.iter().fold(0f32, |peak, sample| peak.max(sample.abs()));
         assert!(peak > 0.1, "decoded tone was silent (peak {peak})");
+
+        let (mixer, mut output) = rodio::mixer::mixer(stereo(), sample_rate());
+        let mut state = AudioApcState::new();
+        state.store(8, decoded);
+        let patch = state.patches[8].frames.clone();
+        for _ in 0..2 {
+            state.handle(
+                Some(&mixer),
+                None,
+                AudioApcCommand::Queue {
+                    channel: 5,
+                    slot: 8,
+                    fade_in: 0,
+                    looping: false,
+                    left_db: 0.0,
+                    right_db: 0.0,
+                },
+            );
+            assert!(Arc::ptr_eq(&patch, &state.patches[8].frames));
+            let samples: Vec<_> = output.by_ref().take(8192).collect();
+            assert!(samples.iter().any(|sample| sample.abs() > 0.01), "replayed Ogg effect was silent");
+            output.by_ref().take(patch.len() + 4096).for_each(drop);
+            state.poll(Some(&mixer));
+        }
     }
 
     #[cfg(feature = "opus-audio")]
