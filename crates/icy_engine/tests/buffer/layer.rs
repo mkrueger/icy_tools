@@ -1,4 +1,4 @@
-use icy_engine::{AttributedChar, Layer, Line, TextAttribute, TextPane};
+use icy_engine::{AttributeColor, AttributedChar, Layer, Line, TextAttribute, TextPane};
 
 #[test]
 fn test_get_char() {
@@ -78,3 +78,37 @@ fn test_clipboard() {
 
     assert!(layer.char_at((0, 0).into()).ch == '5');
 }*/
+
+#[test]
+fn test_line_count_counts_visible_blank_rows() {
+    let mut layer = Layer::new(String::new(), (10, 8));
+    layer.set_char((0, 0), AttributedChar::new('a', TextAttribute::default()));
+    assert_eq!(1, layer.line_count());
+
+    // Spaces on black are empty.
+    layer.set_char((0, 1), AttributedChar::new(' ', TextAttribute::default()));
+    assert_eq!(1, layer.line_count());
+
+    // Spaces on a coloured background are a visible bar.
+    layer.set_char((3, 2), AttributedChar::new(' ', TextAttribute::new(7, 1)));
+    assert_eq!(3, layer.line_count());
+
+    // Blink selects the bright background in iCE mode.
+    let mut blink = TextAttribute::default();
+    blink.set_is_blinking(true);
+    layer.set_char((0, 3), AttributedChar::new(' ', blink));
+    assert_eq!(4, layer.line_count());
+
+    // A glyph drawn in the black background colour is invisible ...
+    layer.set_char((0, 4), AttributedChar::new('x', TextAttribute::new(0, 0)));
+    assert_eq!(4, layer.line_count());
+
+    // ... but a glyph drawn in a non-black background colour is not.
+    layer.set_char((0, 5), AttributedChar::new('\u{DB}', TextAttribute::new(1, 1)));
+    assert_eq!(6, layer.line_count());
+
+    // RGB colours are compared as colours, not as palette index 0.
+    let rgb = TextAttribute::from_colors(AttributeColor::Rgb(255, 0, 0), AttributeColor::Palette(0));
+    layer.set_char((0, 6), AttributedChar::new('x', rgb));
+    assert_eq!(7, layer.line_count());
+}
