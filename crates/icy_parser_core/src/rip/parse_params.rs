@@ -407,8 +407,12 @@ impl RipParser {
             }
 
             // Level 1 commands
-            // BeginText, GetImage, PutImage: 5 params (10 digits)
-            (1, b'T') | (1, b'C') | (1, b'P') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 9),
+            // BeginText: x0, y0, x1, y1, res (all 2 digits)
+            (1, b'T') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 9),
+            // GetImage: x0, y0, x1, y1 (2 digits), res (1 digit)
+            (1, b'C') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 8),
+            // PutImage: x, y, mode (2 digits), res (1 digit)
+            (1, b'P') => self.builder.parse_base36_complete(ch, self.builder.param_state / 2, 6),
 
             // RegionText: 1 digit (justify) then text
             (1, b't') if self.builder.param_state == 0 => {
@@ -593,10 +597,10 @@ impl RipParser {
                 true
             }
             Err(()) => {
-                // Parse error - abort command and return to NonRip mode
+                // Invalid parameter: drop the command and skip to the next `|` or line end.
+                // The rest of a RIP line is never text (spec rule 6).
                 self.builder.reset();
-                self.mode = ParserMode::NonRip;
-                self.state = State::Default;
+                self.state = State::RipLine;
                 false
             }
         }

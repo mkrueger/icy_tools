@@ -44,6 +44,8 @@ pub struct RipParser {
     ansi_parser: AnsiParser,
     enabled: bool, // RIPscrip processing enabled/disabled
     got_backslash: bool,
+    /// Blanks seen after a `\`; dropped if the line ends (padded continuation).
+    backslash_blanks: u8,
     win_eol: bool,
     at_line_start: bool,
     escape_at_line_start: bool,
@@ -58,6 +60,7 @@ impl RipParser {
             ansi_parser: AnsiParser::new(),
             enabled: true, // RIPscrip starts enabled
             got_backslash: false,
+            backslash_blanks: 0,
             win_eol: false,
             at_line_start: true,
             escape_at_line_start: false,
@@ -95,7 +98,7 @@ impl CommandParser for RipParser {
             let at_line_start = self.at_line_start;
             self.at_line_start = ch == b'\r' || ch == b'\n';
 
-            // Check for backslash (line continuation) in any RIP state
+            // Line continuation and escapes only apply inside RIP lines.
             if self.mode == ParserMode::Rip {
                 if ch == b'\r' {
                     self.win_eol = true;
@@ -106,180 +109,203 @@ impl CommandParser for RipParser {
                     if b'\n' != ch {
                         // cancel line continuation
                         self.got_backslash = false;
+                        self.backslash_blanks = 0;
                         log::error!("Expected \\n after \\r in RIP command, got: {}", ch);
                     }
                 }
 
                 if self.got_backslash {
-                    self.got_backslash = false;
                     match ch {
                         b'\n' => {
-                            // Line continuation - skip this character
+                            // Line continuation. Blanks between the backslash and the line end
+                            // are padding (files re-saved with fixed-width lines) and dropped.
+                            self.got_backslash = false;
+                            self.backslash_blanks = 0;
                             continue;
                         }
-                        b'\\' | b'|' | b'!' => {
-                            // Escaped backslash or pipe - treat as normal character
-                            if self.state == State::ReadParams {
-                                self.builder.got_escape = true;
-                            }
+                        b' ' | b'\t' if self.backslash_blanks < u8::MAX => {
+                            self.backslash_blanks += 1;
+                            continue;
                         }
-                        _ => {
-                            // Not a continuation - treat previous backslash as normal character
-                            self.state = State::Default;
-                        }
+                        _ => {}
                     }
-                } else if ch == b'\\' {
+                    self.got_backslash = false;
+                    let blanks = std::mem::take(&mut self.backslash_blanks);
+                    if self.state != State::ReadParams {
+                        // Outside parameters the backslash is ordinary data.
+                        self.feed(b'\\', false, sink);
+                    } else if blanks == 0 && matches!(ch, b'\\' | b'|' | b'!') {
+                        // `\\`, `\|` and `\!` are literal characters in text parameters.
+                        self.builder.got_escape = true;
+                        self.feed(ch, false, sink);
+                        continue;
+                    }
+                    // Any other `\X` collapses to `X` (like SyncTERM); held blanks are data.
+                    for _ in 0..blanks {
+                        self.feed(b' ', false, sink);
+                    }
+                    if blanks == 0 {
+                        self.feed(ch, false, sink);
+                        continue;
+                    }
+                }
+                if ch == b'\\' {
                     self.got_backslash = true;
                     continue;
                 }
             }
+            self.feed(ch, at_line_start, sink);
+        }
+    }
+}
 
-            match self.state {
-                State::Default => {
-                    match self.mode {
-                        ParserMode::NonRip => {
-                            if ch == 0x1B {
-                                // ESC character - check if it's an ANSI RIP control sequence
-                                self.escape_at_line_start = at_line_start;
-                                self.state = State::GotEscape;
-                            } else if ch == b'!' && self.enabled && at_line_start {
-                                self.mode = ParserMode::Rip;
-                                self.state = State::GotExclaim;
-                            } else {
-                                // Pass through to ANSI parser
-                                self.ansi_parser.parse(&[ch], sink);
-                            }
-                        }
-                        ParserMode::Rip => {
-                            if ch == 0x1B {
-                                // ESC character - check if it's an ANSI RIP control sequence
-                                self.escape_at_line_start = at_line_start;
-                                self.state = State::GotEscape;
-                            } else if ch == b'!' && at_line_start {
-                                self.state = State::GotExclaim;
-                            } else {
-                                // In RIP mode without !, treat as error and go back to NonRip
-                                self.mode = ParserMode::NonRip;
-                                self.ansi_parser.parse(&[ch], sink);
-                            }
+impl RipParser {
+    /// Runs one byte (after continuation/escape handling) through the state machine.
+    fn feed(&mut self, ch: u8, at_line_start: bool, sink: &mut dyn CommandSink) {
+        match self.state {
+            State::Default => {
+                match self.mode {
+                    ParserMode::NonRip => {
+                        if ch == 0x1B {
+                            // ESC character - check if it's an ANSI RIP control sequence
+                            self.escape_at_line_start = at_line_start;
+                            self.state = State::GotEscape;
+                        } else if ch == b'!' && self.enabled && at_line_start {
+                            self.mode = ParserMode::Rip;
+                            self.state = State::GotExclaim;
+                        } else {
+                            // Pass through to ANSI parser
+                            self.ansi_parser.parse(&[ch], sink);
                         }
                     }
-                }
-                State::GotEscape => {
-                    if ch == b'[' {
-                        self.state = State::GotEscBracket;
-                    } else {
-                        // Not ESC[ - pass to ANSI parser
-                        self.state = State::Default;
-                        self.ansi_parser.parse(b"\x1B", sink);
-                        self.ansi_parser.parse(&[ch], sink);
-                    }
-                }
-                State::GotEscBracket => {
-                    if ch == b'!' {
-                        // ESC[! - Query version (same as ESC[0!)
-                        sink.request(crate::TerminalRequest::RipRequestTerminalId);
-                        self.at_line_start = self.escape_at_line_start;
-                        self.state = State::Default;
-                    } else if ch.is_ascii_digit() {
-                        // Start reading number
-                        self.state = State::ReadAnsiNumber(ch);
-                    } else {
-                        // Unknown ESC[ sequence - pass to ANSI parser
-                        self.state = State::Default;
-                        self.ansi_parser.parse(&[0x1B, b'[', ch], sink);
-                    }
-                }
-                State::ReadAnsiNumber(digit) => {
-                    if ch == b'!' {
-                        // Complete ESC[<number>! sequence
-                        match digit {
-                            b'0' => {
-                                // ESC[0! - Query version
-                                sink.request(crate::TerminalRequest::RipRequestTerminalId);
-                                self.at_line_start = self.escape_at_line_start;
-                                self.state = State::Default;
-                            }
-                            b'1' => {
-                                // ESC[1! - Disable RIPscrip (handled internally)
-                                self.enabled = false;
-                                self.at_line_start = self.escape_at_line_start;
-                                self.state = State::Default;
-                            }
-                            b'2' => {
-                                // ESC[2! - Enable RIPscrip (handled internally)
-                                self.enabled = true;
-                                self.at_line_start = self.escape_at_line_start;
-                                self.state = State::Default;
-                            }
-                            _ => {
-                                log::warn!("Unknown RIP ANSI request: ESC[{}!", digit as char);
-                            }
+                    ParserMode::Rip => {
+                        if ch == 0x1B {
+                            // ESC character - check if it's an ANSI RIP control sequence
+                            self.escape_at_line_start = at_line_start;
+                            self.state = State::GotEscape;
+                        } else if ch == b'!' && at_line_start {
+                            self.state = State::GotExclaim;
+                        } else {
+                            // In RIP mode without !, treat as error and go back to NonRip
+                            self.mode = ParserMode::NonRip;
+                            self.ansi_parser.parse(&[ch], sink);
                         }
                     }
-                    self.ansi_parser.parse(&[0x1B, b'[', digit, ch], sink);
-                    self.state = State::Default;
                 }
-                State::GotExclaim => {
-                    if ch == b'!' {
-                        // Double ! - stay in GotExclaim
-                        continue;
-                    } else if ch == b'|' {
-                        self.state = State::GotPipe;
-                    } else if ch == b'\n' || ch == b'\r' {
-                        // End of line after ! - reset to NonRip mode
-                        self.mode = ParserMode::NonRip;
-                        self.state = State::Default;
-                    //                        self.ansi_parser.parse(&[ch], sink);
-                    } else {
-                        // Not a RIP command - emit ! and continue in NonRip mode
-                        self.mode = ParserMode::NonRip;
-                        self.state = State::Default;
-                        self.ansi_parser.parse(b"!", sink);
-                        self.ansi_parser.parse(&[ch], sink);
-                    }
-                }
-                State::GotPipe => {
-                    // Read command character
-                    if (b'1'..=b'9').contains(&ch) {
-                        self.builder.level = ch - b'0';
-                        self.builder.level_path.push(self.builder.level);
-                        self.state = State::ReadLevel;
-                    } else if ch == b'#' {
-                        // No more RIP
-                        self.builder.cmd_char = b'#';
-                        self.builder.level = 0;
-                        self.emit_command(sink);
-                        self.builder.reset();
-                        self.state = State::RipLine;
-                    } else {
-                        // Level 0 command
-                        self.builder.level = 0;
-                        self.builder.cmd_char = ch;
-                        self.state = State::ReadParams;
-                    }
-                }
-                State::ReadLevel => {
-                    if (b'1'..=b'9').contains(&ch) && self.builder.level_path.len() < 9 {
-                        self.builder.level_path.push(ch - b'0');
-                        self.builder.level = u8::MAX;
-                    } else {
-                        self.builder.cmd_char = ch;
-                        self.state = State::ReadParams;
-                    }
-                }
-                State::ReadParams => {
-                    if !self.parse_params(ch, sink) {
-                        // Parse error - already reset by parse_params
-                    }
-                }
-                State::RipLine => match ch {
-                    b'|' => self.state = State::GotPipe,
-                    b'!' => self.state = State::GotExclaim,
-                    b'\r' | b'\n' => self.state = State::Default,
-                    _ => {}
-                },
             }
+            State::GotEscape => {
+                if ch == b'[' {
+                    self.state = State::GotEscBracket;
+                } else {
+                    // Not ESC[ - pass to ANSI parser
+                    self.state = State::Default;
+                    self.ansi_parser.parse(b"\x1B", sink);
+                    self.ansi_parser.parse(&[ch], sink);
+                }
+            }
+            State::GotEscBracket => {
+                if ch == b'!' {
+                    // ESC[! - Query version (same as ESC[0!)
+                    sink.request(crate::TerminalRequest::RipRequestTerminalId);
+                    self.at_line_start = self.escape_at_line_start;
+                    self.state = State::Default;
+                } else if ch.is_ascii_digit() {
+                    // Start reading number
+                    self.state = State::ReadAnsiNumber(ch);
+                } else {
+                    // Unknown ESC[ sequence - pass to ANSI parser
+                    self.state = State::Default;
+                    self.ansi_parser.parse(&[0x1B, b'[', ch], sink);
+                }
+            }
+            State::ReadAnsiNumber(digit) => {
+                if ch == b'!' {
+                    // Complete ESC[<number>! sequence
+                    match digit {
+                        b'0' => {
+                            // ESC[0! - Query version
+                            sink.request(crate::TerminalRequest::RipRequestTerminalId);
+                            self.at_line_start = self.escape_at_line_start;
+                            self.state = State::Default;
+                        }
+                        b'1' => {
+                            // ESC[1! - Disable RIPscrip (handled internally)
+                            self.enabled = false;
+                            self.at_line_start = self.escape_at_line_start;
+                            self.state = State::Default;
+                        }
+                        b'2' => {
+                            // ESC[2! - Enable RIPscrip (handled internally)
+                            self.enabled = true;
+                            self.at_line_start = self.escape_at_line_start;
+                            self.state = State::Default;
+                        }
+                        _ => {
+                            log::warn!("Unknown RIP ANSI request: ESC[{}!", digit as char);
+                        }
+                    }
+                }
+                self.ansi_parser.parse(&[0x1B, b'[', digit, ch], sink);
+                self.state = State::Default;
+            }
+            State::GotExclaim => {
+                if ch == b'!' {
+                    // Double ! - stay in GotExclaim
+                } else if ch == b'|' {
+                    self.state = State::GotPipe;
+                } else if ch == b'\n' || ch == b'\r' {
+                    // End of line after ! - reset to NonRip mode
+                    self.mode = ParserMode::NonRip;
+                    self.state = State::Default;
+                //                        self.ansi_parser.parse(&[ch], sink);
+                } else {
+                    // Not a RIP command - emit ! and continue in NonRip mode
+                    self.mode = ParserMode::NonRip;
+                    self.state = State::Default;
+                    self.ansi_parser.parse(b"!", sink);
+                    self.ansi_parser.parse(&[ch], sink);
+                }
+            }
+            State::GotPipe => {
+                // Read command character
+                if (b'1'..=b'9').contains(&ch) {
+                    self.builder.level = ch - b'0';
+                    self.builder.level_path.push(self.builder.level);
+                    self.state = State::ReadLevel;
+                } else if ch == b'#' {
+                    // No more RIP
+                    self.builder.cmd_char = b'#';
+                    self.builder.level = 0;
+                    self.emit_command(sink);
+                    self.builder.reset();
+                    self.state = State::RipLine;
+                } else {
+                    // Level 0 command
+                    self.builder.level = 0;
+                    self.builder.cmd_char = ch;
+                    self.state = State::ReadParams;
+                }
+            }
+            State::ReadLevel => {
+                if (b'1'..=b'9').contains(&ch) && self.builder.level_path.len() < 9 {
+                    self.builder.level_path.push(ch - b'0');
+                    self.builder.level = u8::MAX;
+                } else {
+                    self.builder.cmd_char = ch;
+                    self.state = State::ReadParams;
+                }
+            }
+            State::ReadParams => {
+                if !self.parse_params(ch, sink) {
+                    // Parse error - already reset by parse_params
+                }
+            }
+            State::RipLine => match ch {
+                b'|' => self.state = State::GotPipe,
+                b'!' => self.state = State::GotExclaim,
+                b'\r' | b'\n' => self.state = State::Default,
+                _ => {}
+            },
         }
     }
 }

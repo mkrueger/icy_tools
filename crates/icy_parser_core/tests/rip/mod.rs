@@ -890,3 +890,76 @@ fn test_debug_line_continuation() {
 
     assert_eq!(sink.rip_commands.len(), 2, "Should parse exactly 2 commands");
 }
+
+#[test]
+fn test_rip_continuation_tolerates_space_padding() {
+    // Art packs re-saved RIP files with every line padded to a fixed width,
+    // leaving blanks between the continuation backslash and the line end.
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+    parser.parse(b"!|p020000\\      \r\n0A0A|S0109      \r\n", &mut sink);
+
+    assert_eq!(
+        sink.rip_commands,
+        vec![
+            RipCommand::FilledPolygon {
+                points: vec![0, 0, 10, 10],
+            },
+            RipCommand::FillStyle {
+                pattern: FillStyle::Solid,
+                color: 9,
+            },
+        ]
+    );
+    assert!(sink.terminal_commands.is_empty(), "{:?}", sink.terminal_commands);
+}
+
+#[test]
+fn test_rip_backslash_escapes_do_not_leak_into_next_command() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+    parser.parse(b"!|TA\\B\\ C|c0F\r\n", &mut sink);
+
+    assert_eq!(
+        sink.rip_commands,
+        vec![RipCommand::Text { text: "AB C".to_string() }, RipCommand::Color { c: 15 }]
+    );
+}
+
+#[test]
+fn test_rip_image_commands_complete_at_spec_width() {
+    // GetImage is 9 digits and PutImage 7 digits; trailing blanks are ignored text.
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+    parser.parse(b"!|1C001122330|1P0011010      \r\n", &mut sink);
+
+    assert_eq!(
+        sink.rip_commands,
+        vec![
+            RipCommand::GetImage {
+                x0: 0,
+                y0: 37,
+                x1: 74,
+                y1: 111,
+                res: 0,
+            },
+            RipCommand::PutImage {
+                x: 0,
+                y: 37,
+                mode: ImagePasteMode::Xor,
+                res: 0,
+            },
+        ]
+    );
+    assert!(sink.terminal_commands.is_empty(), "{:?}", sink.terminal_commands);
+}
+
+#[test]
+fn test_rip_invalid_parameter_skips_to_next_command() {
+    let mut parser = RipParser::new();
+    let mut sink = TestSink::new();
+    parser.parse(b"!|c0 junk|c0F\r\n", &mut sink);
+
+    assert_eq!(sink.rip_commands, vec![RipCommand::Color { c: 15 }]);
+    assert!(sink.terminal_commands.is_empty(), "{:?}", sink.terminal_commands);
+}
