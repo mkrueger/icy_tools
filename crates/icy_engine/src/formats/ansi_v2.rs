@@ -112,6 +112,12 @@ impl AnsiCompatibilityLevel {
     fn supports_font_pages(self) -> bool {
         matches!(self, Self::IcyTerm | Self::Utf8Terminal)
     }
+
+    /// DOS `ANSI.SYS` knows no private modes; there iCE colors are signalled
+    /// by the SAUCE record only and bright backgrounds stay encoded as blink.
+    fn supports_ice_mode_switch(self) -> bool {
+        !matches!(self, Self::AnsiSys)
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -429,7 +435,7 @@ impl StringGeneratorV2 {
     fn screen_prep(&mut self) {
         // When forcing RGB output, iCE mode is unnecessary (and would risk
         // interacting with blink semantics on some terminals).
-        if self.use_ice_colors && !self.options.always_use_rgb {
+        if self.use_ice_colors && !self.options.always_use_rgb && self.level.supports_ice_mode_switch() {
             self.push_bytes(b"\x1b[?33h");
         }
 
@@ -1213,7 +1219,7 @@ impl StringGeneratorV2 {
             self.cursor_restore();
         }
 
-        if self.use_ice_colors {
+        if self.use_ice_colors && self.level.supports_ice_mode_switch() {
             self.output.extend_from_slice(b"\x1b[?33l");
         }
     }

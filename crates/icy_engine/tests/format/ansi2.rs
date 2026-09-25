@@ -302,6 +302,64 @@ pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compar
     }
 }
 
+/// Returns the parameter lists of all SGR (`CSI ... m`) sequences in `data`.
+fn sgr_params(data: &[u8]) -> Vec<Vec<u32>> {
+    let mut result = Vec::new();
+    let mut i = 0;
+    while i + 1 < data.len() {
+        if data[i] == 0x1B && data[i + 1] == b'[' {
+            let start = i + 2;
+            let mut end = start;
+            while end < data.len() && !data[end].is_ascii_alphabetic() {
+                end += 1;
+            }
+            if data.get(end) == Some(&b'm') {
+                let params = std::str::from_utf8(&data[start..end]).unwrap();
+                result.push(params.split(';').map(|p| p.parse::<u32>().unwrap_or(0)).collect());
+            }
+            i = end + 1;
+        } else {
+            i += 1;
+        }
+    }
+    result
+}
+
+#[test]
+fn test_ansi_sys_has_no_ice_mode_switch() {
+    use icy_engine::formats::{AnsiCompatibilityLevel, AnsiFormatOptions, FormatOptions};
+
+    // White on a bright red background needs iCE colors.
+    let mut buf = TextBuffer::new((80, 1));
+    buf.ice_mode = icy_engine::IceMode::Ice;
+    buf.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::new(15, 12)));
+
+    let mut options = SaveOptions::new();
+    options.format = FormatOptions::Ansi(AnsiFormatOptions::new(AnsiCompatibilityLevel::AnsiSys));
+    options.sauce = Some(icy_engine::SauceMetaData::default());
+    let bytes = FileFormat::Ansi.to_bytes(&buf, &options).unwrap();
+    assert!(
+        !bytes.windows(3).any(|w| w == b"\x1b[?"),
+        "ANSI.SYS output contains a private sequence: {:?}",
+        String::from_utf8_lossy(&bytes)
+    );
+    assert!(
+        sgr_params(&bytes).iter().any(|p| p.contains(&5)),
+        "bright background not encoded as blink: {:?}",
+        String::from_utf8_lossy(&bytes)
+    );
+
+    // The SAUCE iCE flag carries the intent.
+    let reloaded = FileFormat::Ansi.from_bytes(&bytes, None).unwrap().screen.buffer;
+    assert_eq!(icy_engine::IceMode::Ice, reloaded.ice_mode);
+    assert_eq!(12, reloaded.char_at((0, 0).into()).attribute.background());
+
+    options.format = FormatOptions::Ansi(AnsiFormatOptions::new(AnsiCompatibilityLevel::IcyTerm));
+    let bytes = FileFormat::Ansi.to_bytes(&buf, &options).unwrap();
+    assert!(bytes.windows(6).any(|w| w == b"\x1b[?33h"), "{:?}", String::from_utf8_lossy(&bytes));
+    assert!(bytes.windows(6).any(|w| w == b"\x1b[?33l"), "{:?}", String::from_utf8_lossy(&bytes));
+}
+
 /// Returns `true` if any line break is emitted while a background color (or blink,
 /// which encodes bright backgrounds in iCE mode) is active.
 fn has_background_at_line_break(data: &[u8]) -> bool {

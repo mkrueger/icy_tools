@@ -244,6 +244,11 @@ impl AnsiCompatibilityLevel {
         !matches!(self, Self::AnsiSys)
     }
 
+    /// Returns true if this level supports the private iCE color mode switch (`CSI ? 33 h/l`).
+    pub fn supports_ice_mode_switch(self) -> bool {
+        !matches!(self, Self::AnsiSys)
+    }
+
     /// Returns true if this level supports font page switching.
     pub fn supports_font_pages(self) -> bool {
         matches!(self, Self::IcyTerm | Self::Utf8Terminal)
