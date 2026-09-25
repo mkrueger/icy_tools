@@ -138,6 +138,33 @@ fn test_palette_color_bug() {
 
     assert_eq!(" \u{1b}[1;211;211;211tA ", str);
 }
+
+#[test]
+fn test_last_row_of_coloured_spaces_survives_export() {
+    use icy_engine::formats::{AnsiCompatibilityLevel, AnsiFormatOptions, FormatOptions};
+
+    // A closing bar made of spaces on a blue background as the last row.
+    let mut buf = TextBuffer::new((80, 3));
+    buf.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::default()));
+    for x in 0..80 {
+        buf.layers[0].set_char((x, 2), AttributedChar::new(' ', TextAttribute::new(7, 1)));
+    }
+    assert_eq!(3, buf.line_count());
+
+    for level in [AnsiCompatibilityLevel::AnsiSys, AnsiCompatibilityLevel::Vt100, AnsiCompatibilityLevel::IcyTerm] {
+        let mut options = SaveOptions::new();
+        options.format = FormatOptions::Ansi(AnsiFormatOptions::new(level));
+        let bytes = FileFormat::Ansi.to_bytes(&buf, &options).unwrap();
+
+        let reloaded = FileFormat::Ansi.from_bytes(&bytes, None).unwrap().screen.buffer;
+        assert_eq!(3, reloaded.line_count(), "{level:?}: {:?}", String::from_utf8_lossy(&bytes));
+        for x in 0..80 {
+            let ch = reloaded.char_at((x, 2).into());
+            assert_eq!(1, ch.attribute.background(), "{level:?}: background lost at {x},2");
+        }
+    }
+}
+
 /*
 #[cfg(test)]
 fn crop2_loaded_file(result: &mut dyn Screen) {
