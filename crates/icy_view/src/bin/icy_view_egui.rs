@@ -15,6 +15,8 @@ mod colors;
 mod dialogs;
 #[path = "icy_view_egui/file_list.rs"]
 mod file_list;
+#[path = "icy_view_egui/font_bar.rs"]
+mod font_bar;
 #[path = "icy_view_egui/icons.rs"]
 mod icons;
 #[path = "icy_view_egui/library.rs"]

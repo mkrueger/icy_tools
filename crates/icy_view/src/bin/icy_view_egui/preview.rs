@@ -47,6 +47,8 @@ pub struct Preview {
     pub content_size: usize,
     pub error: Option<String>,
     pub scroll_mode: ScrollMode,
+    pub follow_cursor: bool,
+    pub manual_scrolled: bool,
     pub baud: u32,
     pub playback: Option<Playback>,
     pub loaded_at: Instant,
@@ -91,6 +93,8 @@ impl Preview {
             content_size: 0,
             error: None,
             scroll_mode: ScrollMode::Off,
+            follow_cursor: true,
+            manual_scrolled: false,
             baud: 0,
             playback: None,
             loaded_at: Instant::now(),
@@ -137,6 +141,7 @@ impl Preview {
         playback.position = 0;
         playback.paused = false;
         self.loading = true;
+        self.follow_cursor = true;
         self.loaded_at = Instant::now();
         self.screen.scroll_to = Some(egui::Vec2::ZERO);
         let _ = self.command.send(ViewCommand::Seek(0));
@@ -166,6 +171,8 @@ impl Preview {
         self.loading = false;
         self.accept_events = false;
         self.scroll_mode = ScrollMode::Off;
+        self.follow_cursor = true;
+        self.manual_scrolled = false;
         let had_file = !self.file.is_empty();
         self.file.clear();
         self.image = None;
@@ -177,6 +184,19 @@ impl Preview {
             self.screen.terminal.update_viewport_size();
         }
         let _ = self.command.send(ViewCommand::Stop);
+    }
+
+    /// Replaces the loaded screen with a buffer rendered on the UI thread (font samples).
+    pub fn show_buffer(&mut self, buffer: icy_engine::TextBuffer, reset_scroll: bool) {
+        use icy_engine::EditableScreen;
+        let mut screen = icy_engine::TextScreen::from_buffer(buffer);
+        screen.terminal_state_mut().is_terminal_buffer = false;
+        *self.screen.terminal.screen.lock() = Box::new(screen);
+        self.screen.terminal.update_viewport_size();
+        self.selection_anchor = None;
+        if reset_scroll {
+            self.screen.scroll_to = Some(egui::Vec2::ZERO);
+        }
     }
 
     pub fn load(&mut self, path: String, data: Vec<u8>, auto: bool, context: &egui::Context) {
@@ -294,9 +314,10 @@ impl Preview {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui, options: &Options) {
+        self.manual_scrolled = false;
         let delta = self.last_tick.elapsed().as_secs_f32().min(0.1);
         self.last_tick = Instant::now();
-        if self.scroll_mode == ScrollMode::ClampToBottom && self.loading && !self.paused() {
+        if self.follow_cursor && self.scroll_mode == ScrollMode::ClampToBottom && self.loading && !self.paused() {
             if let Some(playback) = self.playback {
                 let bottom = playback.cursor_px as f32 * self.screen.zoom;
                 self.screen.scroll_to = Some(egui::vec2(self.screen.offset.x, (bottom - ui.available_height()).max(0.0)));
@@ -307,6 +328,8 @@ impl Preview {
                 ui.ctx().request_repaint_after(Duration::from_millis(16));
             }
         }
+        let previous_offset = self.screen.offset;
+        let requested_offset = self.screen.scroll_to;
         let response = if let Some(pixels) = &self.image_pixels {
             let available = ui.available_size().max(egui::Vec2::splat(1.0));
             let size = egui::vec2(pixels.width() as f32, pixels.height() as f32);
@@ -351,8 +374,15 @@ impl Preview {
             }
             response
         };
+        let expected_offset = requested_offset.unwrap_or(previous_offset).max(egui::Vec2::ZERO).min(self.screen.max_offset);
+        self.manual_scrolled = ui.input(|input| {
+            input.pointer.primary_down()
+                && input.pointer.hover_pos().is_some_and(|pos| ui.max_rect().contains(pos))
+                && (self.screen.offset - expected_offset).length() > 1.0
+        });
         if response.dragged_by(egui::PointerButton::Secondary) || response.dragged_by(egui::PointerButton::Middle) {
             self.screen.scroll_to = Some(self.screen.offset - ui.input(|input| input.pointer.delta()));
+            self.manual_scrolled = true;
         }
         if self.loading && !self.paused() {
             ui.ctx().request_repaint_after(Duration::from_millis(16));

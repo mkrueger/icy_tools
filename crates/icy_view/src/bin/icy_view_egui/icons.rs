@@ -29,6 +29,7 @@ pub enum Icon {
     Pause,
     Replay,
     Bolt,
+    AutoScroll,
     File(FileIcon),
 }
 
@@ -63,6 +64,7 @@ impl Icons {
             Icon::Pause => ("pause", include_bytes!("../../../data/icons/pause.svg")),
             Icon::Replay => ("replay", include_bytes!("../../../data/icons/replay.svg")),
             Icon::Bolt => ("bolt", include_bytes!("../../../data/icons/bolt.svg")),
+            Icon::AutoScroll => ("auto-scroll", include_bytes!("../../../data/icons/auto_scroll.svg")),
             Icon::File(kind) => {
                 let name = match kind {
                     FileIcon::Folder | FileIcon::FolderOpen | FileIcon::FolderData => "folder",

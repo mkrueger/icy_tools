@@ -365,6 +365,10 @@ impl Gpu {
             .get(label)
             .unwrap_or_else(|| panic!("missing visible control {label}: {:?}", self.labels.keys()))
             .center();
+        self.click_at(app, size, scale, position);
+    }
+
+    fn click_at(&mut self, app: &mut app::Viewer, size: [u32; 2], scale: f32, position: egui::Pos2) {
         for pressed in [true, false] {
             self.capture(
                 app,
@@ -471,6 +475,13 @@ fn gpu_file_navigation_selection_copy_and_large_image_tiles() {
     wait_preview(&mut app.preview, &gpu.context);
     assert_eq!(app.preview.image_pixels.as_ref().unwrap().height(), 20000);
     gpu.capture(&mut app, [1100, 760], 1.0, vec![], "tall-top");
+    for enabled in [true, false] {
+        gpu.click_at(&mut app, [1100, 760], 1.0, egui::pos2(323.0, 64.0));
+        assert_eq!(
+            app.options.auto_scroll_enabled, enabled,
+            "the top-bar auto-scroll icon must also work for images"
+        );
+    }
     app.preview.screen.scroll_to = Some(egui::vec2(0.0, f32::MAX));
     let pixels = gpu.capture(&mut app, [1100, 760], 1.0, vec![], "tall-bottom");
     assert!(app.preview.screen.offset.y > 19000.0);
@@ -1035,6 +1046,49 @@ fn gpu_info_panel_ratings_palette_minimap_and_font_preview() {
     let lines = app.preview.screen.terminal.screen.lock().height();
     assert!(lines > 10, "fonts preview as a sample sheet, got {lines} lines");
 
+    let fonts = app.font_bar.fonts.clone();
+    assert!(!fonts.is_empty(), "the font bar lists the fonts of the bundle");
+    let all = format!("{} ({})", super::text("egui-font-all"), fonts.len());
+    assert!(gpu.labels.contains_key(&all), "font bar picker: {:?}", gpu.labels.keys());
+    let row = |app: &app::Viewer, y: i32| -> String {
+        let screen = app.preview.screen.terminal.screen.lock();
+        (0..screen.width()).map(|x| screen.char_at(icy_engine::Position::new(x, y)).ch).collect()
+    };
+    gpu.click(&mut app, size, 1.0, &super::text("egui-font-sample"));
+    gpu.capture(&mut app, size, 1.0, vec![egui::Event::Text("ICY".into())], "features-font-text");
+    gpu.capture(&mut app, size, 1.0, vec![], "features-font-text");
+    assert_eq!(app.font_bar.options.text, "ICY", "typing goes into the sample field");
+    assert_eq!(
+        app.browser.items[app.browser.selected.unwrap()].get_label(),
+        "zetrax.tdf",
+        "typing does not trigger shortcuts"
+    );
+    let expected = icy_view::format_preview::render_font_sample(include_bytes!("../../items/sixteencolors/ZETRAX.TDF"), None, &app.font_bar.options).unwrap();
+    assert_eq!(
+        app.preview.screen.terminal.screen.lock().height(),
+        icy_engine::TextPane::height(&expected),
+        "the overview shows the typed text"
+    );
+
+    gpu.click(&mut app, size, 1.0, &all);
+    gpu.capture(&mut app, size, 1.0, vec![], "features-font-picker");
+    let entry = format!("{}  ·  {}  ·  {}", fonts[0].name, fonts[0].kind, fonts[0].glyphs);
+    gpu.click(&mut app, size, 1.0, &entry);
+    gpu.capture(&mut app, size, 1.0, vec![], "features-font-single");
+    assert_eq!(app.font_bar.selected, Some(0), "picking a font shows it alone");
+    assert!(row(&app, 0).starts_with(&fonts[0].name));
+    let height = app.preview.screen.terminal.screen.lock().height();
+    assert!((0..height).any(|y| row(&app, y).contains("glyphs")), "single font view has a glyph table");
+
+    app.font_bar.options.ruler = 132;
+    app.font_bar.options.foreground = Some(14);
+    gpu.capture(&mut app, size, 1.0, vec![], "features-font-ruler");
+    gpu.capture(&mut app, size, 1.0, vec![], "features-font-ruler");
+    assert!(app.preview.screen.terminal.screen.lock().width() > 132, "the width guide widens the canvas");
+    gpu.click(&mut app, size, 1.0, &super::text("egui-font-reset"));
+    gpu.capture(&mut app, size, 1.0, vec![], "features-font-reset");
+    assert_eq!(app.font_bar.options, icy_view::format_preview::FontSampleOptions::default());
+
     gpu.capture(&mut app, size, 1.0, vec![press(egui::Key::Escape, egui::Modifiers::NONE)], "features-font");
     app.options.view_mode = icy_view::ViewMode::Tiles;
     for _ in 0..120 {
@@ -1107,7 +1161,7 @@ fn gpu_playback_bar_controls_streamed_files() {
     std::thread::sleep(Duration::from_millis(200));
     gpu.capture(&mut app, size, 1.0, vec![], "playback-paused");
     assert_eq!(app.preview.playback.unwrap().position, position, "paused playback advanced");
-    app.preview.seek(data.len() / 2);
+    app.preview.seek(data.len() * 3 / 4);
     let deadline = Instant::now() + Duration::from_secs(10);
     while app.preview.playback.is_none_or(|playback| playback.cursor_px < 25 * 16) {
         gpu.capture(&mut app, size, 1.0, vec![], "playback-seeking");
@@ -1121,6 +1175,144 @@ fn gpu_playback_bar_controls_streamed_files() {
     );
     gpu.click(&mut app, size, 1.0, &text("egui-playback-play"));
     assert!(app.preview.playback.unwrap().playing());
+    gpu.click_at(&mut app, size, 1.0, egui::pos2(323.0, 64.0));
+    assert!(app.options.auto_scroll_enabled && app.preview.follow_cursor);
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-following");
+    let before_wheel = app.preview.screen.offset.y;
+    assert!(before_wheel > 0.0, "playback must follow the cursor before manual input");
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![
+            egui::Event::PointerMoved(egui::pos2(600.0, 300.0)),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 250.0),
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        "playback-manual-wheel",
+    );
+    assert!(!app.options.auto_scroll_enabled && !app.preview.follow_cursor);
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-manual-wheel-settle");
+    assert!(
+        app.preview.screen.offset.y < before_wheel,
+        "wheel scroll must take priority over cursor following"
+    );
+    let manual_offset = app.preview.screen.offset.y;
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-manual-stays");
+    assert!(
+        (app.preview.screen.offset.y - manual_offset).abs() < 1.0,
+        "playback snapped back after manual scroll"
+    );
+    app.action("playback.toggle_scroll", &gpu.context);
+    assert!(app.options.auto_scroll_enabled && app.preview.follow_cursor);
+    let pan_start = egui::pos2(600.0, 400.0);
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![
+            egui::Event::PointerMoved(pan_start),
+            egui::Event::PointerButton {
+                pos: pan_start,
+                button: egui::PointerButton::Middle,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        "playback-pan-start",
+    );
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![egui::Event::PointerMoved(pan_start - egui::vec2(0.0, 80.0))],
+        "playback-pan-drag",
+    );
+    assert!(
+        !app.options.auto_scroll_enabled && !app.preview.follow_cursor,
+        "manual panning must stop auto-scroll"
+    );
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![egui::Event::PointerButton {
+            pos: pan_start - egui::vec2(0.0, 80.0),
+            button: egui::PointerButton::Middle,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        "playback-pan-release",
+    );
+    app.action("playback.toggle_scroll", &gpu.context);
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![press(egui::Key::PageUp, egui::Modifiers::NONE)],
+        "playback-manual-page",
+    );
+    assert!(
+        !app.options.auto_scroll_enabled && !app.preview.follow_cursor,
+        "page scrolling must stop auto-scroll"
+    );
+    app.preview.seek(data.len());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.preview.loading {
+        gpu.capture(&mut app, size, 1.0, vec![], "playback-finish-for-scrollbar");
+        assert!(Instant::now() < deadline);
+    }
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-finished-for-scrollbar");
+    app.action("playback.toggle_scroll", &gpu.context);
+    let bar_top = egui::pos2(1096.0, 260.0);
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![
+            egui::Event::PointerMoved(bar_top),
+            egui::Event::PointerButton {
+                pos: bar_top,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        "playback-manual-scrollbar",
+    );
+    assert!(
+        !app.options.auto_scroll_enabled && !app.preview.follow_cursor,
+        "dragging the scrollbar must stop auto-scroll"
+    );
+    let before_drag = app.preview.screen.offset.y;
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![egui::Event::PointerMoved(egui::pos2(bar_top.x, 520.0))],
+        "playback-scrollbar-drag",
+    );
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![
+            egui::Event::PointerMoved(egui::pos2(bar_top.x, 520.0)),
+            egui::Event::PointerButton {
+                pos: egui::pos2(bar_top.x, 520.0),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        "playback-scrollbar-release",
+    );
+    let pixels = gpu.capture(&mut app, size, 1.0, vec![], "playback-scrollbar-settle");
+    assert!(app.preview.screen.offset.y > before_drag, "the scrollbar drag must move the preview");
+    assert!(preview_bright_pixels(&pixels, size) > 100, "manual scrolling must keep the art visible");
     app.browser.select(1, &gpu.context);
     app.preview.stop();
     assert!(app.preview.file.is_empty());

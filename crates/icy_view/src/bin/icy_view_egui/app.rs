@@ -2,6 +2,7 @@ use super::{
     browser::{Browser, Location},
     colors,
     dialogs::{Dialogs, Mode, COMMANDS},
+    font_bar::FontBar,
     icons::{Icon, Icons},
     library::{self, Change, Library, Place},
     osd::{self, Osd},
@@ -46,6 +47,7 @@ pub struct Viewer {
     pub osd: Osd,
     pub palette: Option<Palette>,
     minimap: super::minimap::Minimap,
+    pub font_bar: FontBar,
     pub editing_location: bool,
     hovered: Option<usize>,
     pub min_rating: u8,
@@ -87,6 +89,7 @@ impl Viewer {
             osd: Osd::default(),
             palette: None,
             minimap: super::minimap::Minimap::new(context),
+            font_bar: FontBar::default(),
             editing_location: false,
             hovered: None,
             min_rating: 0,
@@ -1005,7 +1008,7 @@ impl Viewer {
         self.file_info(ui);
     }
 
-    /// Right-to-left: zoom, auto scroll and the position in the folder.
+    /// Right-to-left: zoom and the position in the folder.
     fn status_controls(&mut self, ui: &mut egui::Ui) {
         let small = |value: String| egui::RichText::new(value).size(12.0);
         let zoom = match self.options.monitor_settings.scaling_mode {
@@ -1030,13 +1033,6 @@ impl Viewer {
                 }
             }
         });
-        let scroll = self.options.auto_scroll_enabled;
-        if pill(ui, scroll, &text("egui-auto-scroll"), 20.0)
-            .on_hover_text(text(if scroll { "toast-auto-scroll-on" } else { "toast-auto-scroll-off" }))
-            .clicked()
-        {
-            self.options.auto_scroll_enabled = !scroll;
-        }
         ui.separator();
         let position = format!("{} / {}", self.browser.selected.map_or(0, |index| index + 1), self.browser.items.len());
         ui.label(small(position).color(ui.visuals().weak_text_color()));
@@ -1216,6 +1212,7 @@ impl Viewer {
                         self.selected_scroll = true;
                     }
                 } else {
+                    self.stop_auto_scroll();
                     self.preview.screen.scroll_to = Some(self.preview.screen.offset + egui::vec2(0.0, offset));
                 }
             }
@@ -1271,7 +1268,7 @@ impl Viewer {
             }
             "view.zoom_reset" => self.options.monitor_settings.scaling_mode = ScalingMode::Manual(1.0),
             "view.zoom_fit" => self.options.monitor_settings.scaling_mode = ScalingMode::FitWidth,
-            "playback.toggle_scroll" => self.options.auto_scroll_enabled = !self.options.auto_scroll_enabled,
+            "playback.toggle_scroll" => self.toggle_auto_scroll(),
             "playback.scroll_speed" | "playback.scroll_speed_back" => {
                 let index = match self.options.scroll_speed {
                     ScrollSpeed::Slow => 0,
@@ -1310,11 +1307,29 @@ impl Viewer {
 
     /// Preview with the playback controls on top, the minimap on the right and the info panel on the bottom left.
     fn preview(&mut self, ui: &mut egui::Ui) {
-        if self.shuffle.is_none() {
-            self.playback_bar(ui);
-        }
+        let font = self.font_bar.sync(&mut self.preview) && self.shuffle.is_none();
+        self.playback_bar(ui, font);
         let area = ui.available_rect_before_wrap();
+        let manual_scroll = ui.input(|input| {
+            let Some(pointer) = input.pointer.hover_pos().filter(|pointer| area.contains(*pointer)) else {
+                return false;
+            };
+            let scroll = &ui.spacing().scroll;
+            let bar_width = scroll.bar_width + scroll.bar_inner_margin + scroll.bar_outer_margin;
+            input.raw_scroll_delta != egui::Vec2::ZERO
+                || input.smooth_scroll_delta != egui::Vec2::ZERO
+                || (input.pointer.primary_pressed()
+                    && ((self.preview.screen.max_offset.y > 0.0 && pointer.x >= area.right() - bar_width)
+                        || (self.preview.screen.max_offset.x > 0.0 && pointer.y >= area.bottom() - bar_width)))
+        });
+        if manual_scroll {
+            self.stop_auto_scroll();
+            self.preview.screen.scroll_to = None;
+        }
         self.preview.show(ui, &self.options);
+        if self.preview.manual_scrolled {
+            self.stop_auto_scroll();
+        }
         if self.preview.file.is_empty() || self.preview.loading {
             return;
         }
@@ -1322,11 +1337,12 @@ impl Viewer {
             .browser
             .selected
             .filter(|index| self.browser.items.get(*index).is_some_and(|item| !item.is_container()));
-        if self.options.show_minimap && self.shuffle.is_none() {
+        if self.options.show_minimap && self.shuffle.is_none() && !self.font_bar.customized() {
             if let Some(item) = index.and_then(|index| self.browser.items.get(index)) {
-                let screen = &self.preview.screen;
-                if let Some(y) = self.minimap.show(ui, area, &**item, screen.offset, screen.max_offset) {
-                    self.preview.screen.scroll_to = Some(egui::vec2(self.preview.screen.offset.x, y));
+                let offset = self.preview.screen.offset;
+                if let Some(y) = self.minimap.show(ui, area, &**item, offset, self.preview.screen.max_offset) {
+                    self.stop_auto_scroll();
+                    self.preview.screen.scroll_to = Some(egui::vec2(offset.x, y));
                 }
             }
         }
@@ -1344,11 +1360,22 @@ impl Viewer {
         }
     }
 
-    /// Transport row for files streamed through the parser: play/pause, replay, baud rate and seeking.
-    fn playback_bar(&mut self, ui: &mut egui::Ui) {
-        let Some(playback) = self.preview.playback else {
+    fn toggle_auto_scroll(&mut self) {
+        self.options.auto_scroll_enabled = !self.options.auto_scroll_enabled;
+        self.preview.follow_cursor = self.options.auto_scroll_enabled;
+    }
+
+    fn stop_auto_scroll(&mut self) {
+        self.options.auto_scroll_enabled = false;
+        self.preview.follow_cursor = false;
+    }
+
+    /// Auto-scroll for every preview, plus transport controls for streamed files and
+    /// sample controls for TheDraw/FIGlet fonts.
+    fn playback_bar(&mut self, ui: &mut egui::Ui, font: bool) {
+        if self.preview.file.is_empty() {
             return;
-        };
+        }
         let context = ui.ctx().clone();
         let visuals = ui.visuals().clone();
         egui::Frame::new()
@@ -1356,8 +1383,24 @@ impl Viewer {
             .inner_margin(egui::Margin::symmetric(8, 4))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
+                let body = |ui: &mut egui::Ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
+                    if self
+                        .icons
+                        .button(ui, Icon::AutoScroll, &text("egui-auto-scroll"), true, self.options.auto_scroll_enabled)
+                        .clicked()
+                    {
+                        self.toggle_auto_scroll();
+                    }
+                    if font {
+                        ui.separator();
+                        self.font_bar.ui(ui);
+                        return;
+                    }
+                    let Some(playback) = self.preview.playback.filter(|_| self.shuffle.is_none()) else {
+                        return;
+                    };
+                    ui.separator();
                     let (play, pause) = (text("egui-playback-play"), text("egui-playback-pause"));
                     let label_width = [&play, &pause]
                         .iter()
@@ -1417,7 +1460,13 @@ impl Viewer {
                         self.preview.seek(position);
                     }
                     ui.label(egui::RichText::new(info).color(ui.visuals().weak_text_color()));
-                });
+                };
+                // The many font controls wrap; the playback row sizes its slider to one line.
+                if font {
+                    ui.horizontal_wrapped(body);
+                } else {
+                    ui.horizontal(body);
+                }
             });
     }
 
