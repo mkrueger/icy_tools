@@ -17,7 +17,9 @@ pub use save_options::*;
 
 pub mod ansi_v2;
 
+mod font_specimen;
 mod image_format;
+mod legacy_images;
 use icy_sauce::SauceRecord;
 pub use image_format::*;
 

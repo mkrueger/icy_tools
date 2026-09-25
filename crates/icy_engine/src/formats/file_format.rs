@@ -96,6 +96,8 @@ pub enum FileFormat {
     TundraDraw,
     /// Artworx format (.adf)
     Artworx,
+    /// `REXPaint` layered truecolor format (.xp), load only
+    RexPaint,
 
     // Animation format
     /// `IcyDraw` animation format (.icyanim)
@@ -145,6 +147,7 @@ impl FileFormat {
         FileFormat::XBin,
         FileFormat::TundraDraw,
         FileFormat::Artworx,
+        FileFormat::RexPaint,
         FileFormat::IcyAnim,
         FileFormat::Palette(PaletteFormat::Pal),
         FileFormat::Palette(PaletteFormat::Gpl),
@@ -180,6 +183,12 @@ impl FileFormat {
         FileFormat::Image(ImageFormat::WebP),
         FileFormat::Image(ImageFormat::Qoi),
         FileFormat::Image(ImageFormat::Ico),
+        FileFormat::Image(ImageFormat::Pcx),
+        FileFormat::Image(ImageFormat::Ilbm),
+        FileFormat::Image(ImageFormat::Bsave),
+        FileFormat::Image(ImageFormat::WindowsFont),
+        FileFormat::Image(ImageFormat::AmigaFont),
+        FileFormat::Image(ImageFormat::BgiFont),
         FileFormat::Archive(ArchiveFormat::Zip),
         FileFormat::Archive(ArchiveFormat::Arc),
         FileFormat::Archive(ArchiveFormat::Arj),
@@ -312,6 +321,9 @@ impl FileFormat {
             // Artworx
             "adf" => Some(FileFormat::Artworx),
 
+            // REXPaint
+            "xp" => Some(FileFormat::RexPaint),
+
             // IcyDraw animation
             "icyanim" => Some(FileFormat::IcyAnim),
 
@@ -335,6 +347,8 @@ impl FileFormat {
             "webp" => Some(FileFormat::Image(ImageFormat::WebP)),
             "qoi" => Some(FileFormat::Image(ImageFormat::Qoi)),
             "ico" => Some(FileFormat::Image(ImageFormat::Ico)),
+            "pcx" | "iff" | "ilbm" | "lbm" | "bsv" | "bsave" | "fon" | "fnt" | "chr" => ImageFormat::from_extension(&ext_lower).map(FileFormat::Image),
+            ext if ImageFormat::AMIGA_FONT_EXTENSIONS.contains(&ext) => Some(FileFormat::Image(ImageFormat::AmigaFont)),
 
             // Try CharacterFont formats, then BitFont formats, then archive formats, then default to ANSI
             _ => {
@@ -398,6 +412,7 @@ impl FileFormat {
             FileFormat::XBin => "xb",
             FileFormat::TundraDraw => "tnd",
             FileFormat::Artworx => "adf",
+            FileFormat::RexPaint => "xp",
             FileFormat::IcyAnim => "icyanim",
             FileFormat::Palette(fmt) => fmt.extension(),
             FileFormat::BitFont(font_fmt) => match font_fmt {
@@ -475,6 +490,7 @@ impl FileFormat {
             FileFormat::XBin => &["xb"],
             FileFormat::TundraDraw => &["tnd"],
             FileFormat::Artworx => &["adf"],
+            FileFormat::RexPaint => &["xp"],
             FileFormat::IcyAnim => &["icyanim"],
             FileFormat::Palette(fmt) => fmt.all_extensions(),
             FileFormat::BitFont(BitFontFormat::Yaff) => &["yaff"],
@@ -492,6 +508,12 @@ impl FileFormat {
             FileFormat::Image(ImageFormat::WebP) => &["webp"],
             FileFormat::Image(ImageFormat::Qoi) => &["qoi"],
             FileFormat::Image(ImageFormat::Ico) => &["ico"],
+            FileFormat::Image(ImageFormat::Pcx) => &["pcx"],
+            FileFormat::Image(ImageFormat::Ilbm) => &["iff", "ilbm", "lbm"],
+            FileFormat::Image(ImageFormat::Bsave) => &["bsv", "bsave"],
+            FileFormat::Image(ImageFormat::WindowsFont) => &["fon", "fnt"],
+            FileFormat::Image(ImageFormat::AmigaFont) => ImageFormat::AMIGA_FONT_EXTENSIONS,
+            FileFormat::Image(ImageFormat::BgiFont) => &["chr"],
             FileFormat::Archive(ArchiveFormat::Zip) => &["zip"],
             FileFormat::Archive(ArchiveFormat::Arc) => &["arc", "pak"],
             FileFormat::Archive(ArchiveFormat::Ace) => &["ace"],
@@ -541,6 +563,7 @@ impl FileFormat {
             FileFormat::XBin => "XBin",
             FileFormat::TundraDraw => "TundraDraw",
             FileFormat::Artworx => "Artworx",
+            FileFormat::RexPaint => "REXPaint",
             FileFormat::IcyAnim => "IcyDraw Animation",
             FileFormat::Palette(fmt) => fmt.name(),
             FileFormat::BitFont(font_fmt) => font_fmt.name(),
@@ -607,6 +630,9 @@ impl FileFormat {
 
             // Artworx - basic DOS format
             FileFormat::Artworx => C::ICE_COLORS,
+
+            // REXPaint - truecolor CP437 layers
+            FileFormat::RexPaint => C::TRUECOLOR | C::ICE_COLORS,
 
             // iCE Draw - DOS features with custom palette/font
             FileFormat::IceDraw => C::CUSTOM_PALETTE | C::ICE_COLORS | C::CUSTOM_FONT,
@@ -880,7 +906,8 @@ impl FileFormat {
             | FileFormat::Renegade
             | FileFormat::Bin
             | FileFormat::IceDraw
-            | FileFormat::Artworx => &[BufferType::CP437, BufferType::Unicode],
+            | FileFormat::Artworx
+            | FileFormat::RexPaint => &[BufferType::CP437, BufferType::Unicode],
 
             // XBin and TundraDraw support extended features
             FileFormat::XBin | FileFormat::TundraDraw => &[BufferType::CP437, BufferType::Unicode],
@@ -1022,6 +1049,7 @@ impl FileFormat {
             | FileFormat::XBin
             | FileFormat::TundraDraw
             | FileFormat::Artworx
+            | FileFormat::RexPaint
             | FileFormat::IcyAnim
             | FileFormat::BitFont(_)
             | FileFormat::CharacterFont(_)
@@ -1050,6 +1078,7 @@ impl FileFormat {
             | FileFormat::XBin
             | FileFormat::TundraDraw
             | FileFormat::Artworx
+            | FileFormat::RexPaint
             | FileFormat::IcyAnim => ScreenMode::Vga(80, 25),
             FileFormat::Petscii => ScreenMode::Vic,
             FileFormat::Atascii => ScreenMode::Atascii(40),
@@ -1111,6 +1140,7 @@ impl FileFormat {
             | FileFormat::XBin
             | FileFormat::TundraDraw
             | FileFormat::Artworx
+            | FileFormat::RexPaint
             | FileFormat::IcyAnim
             | FileFormat::BitFont(_)
             | FileFormat::CharacterFont(_)
@@ -1182,6 +1212,7 @@ impl FileFormat {
             FileFormat::IceDraw => io::load_ice_draw(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
             FileFormat::TundraDraw => io::load_tundra(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
             FileFormat::Artworx => io::load_artworx(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::RexPaint => io::load_rexpaint(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
             _ => Err(EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "loading".to_string(),

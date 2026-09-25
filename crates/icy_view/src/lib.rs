@@ -2,6 +2,7 @@ pub mod commands;
 pub mod format_preview;
 pub mod items;
 pub mod options;
+pub mod rad;
 #[path = "ui/list_view/sauce_loader.rs"]
 pub mod sauce_loader;
 pub mod sort_order;

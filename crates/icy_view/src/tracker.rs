@@ -1,4 +1,4 @@
-//! Tracker modules (MOD/S3M/XM/IT): an info sheet for the preview and thumbnails, and a
+//! Tracker modules (MOD/S3M/XM/IT/RAD): an info sheet for the preview and thumbnails, and a
 //! streaming player (xmrsplayer rendered on a worker thread, played through rodio).
 //!
 //! Names and song messages are read straight from the file because they are CP437 and
@@ -16,10 +16,12 @@ use std::{
 
 use icy_engine::{AttributedChar, Position, TextAttribute, TextBuffer, TextPane};
 use parking_lot::Mutex;
-use xmrs::{core::module::Module, tracker::format::ModuleFormat};
+use xmrs::{core::module::Module as XmModule, tracker::format::ModuleFormat};
 use xmrsplayer::xmrsplayer::XmrsPlayer;
 
-pub const EXTENSIONS: &[&str] = &["mod", "s3m", "xm", "it"];
+use crate::rad::RadTune;
+
+pub const EXTENSIONS: &[&str] = &["mod", "s3m", "xm", "it", "rad"];
 
 const TITLE: u8 = 14;
 const TEXT: u8 = 7;
@@ -34,17 +36,28 @@ pub fn is_tracker_file(path: &Path) -> bool {
     extension(path).is_some_and(|ext| EXTENSIONS.contains(&ext.as_str()))
 }
 
+#[derive(Debug)]
+pub enum PlayableModule {
+    Xm(Box<XmModule>),
+    Rad(RadTune),
+}
+
 /// The MOD importer accepts nearly anything, so the extension picks the importer and only
 /// unknown extensions fall back to content detection.
-pub fn load_module(path: &Path, data: &[u8]) -> anyhow::Result<Module> {
+pub fn load_module(path: &Path, data: &[u8]) -> anyhow::Result<PlayableModule> {
+    if extension(path).as_deref() == Some("rad") {
+        return RadTune::load(data).map(PlayableModule::Rad);
+    }
     let result = match extension(path).as_deref() {
-        Some("mod") => Module::load_mod(data),
-        Some("s3m") => Module::load_s3m(data),
-        Some("xm") => Module::load_xm(data),
-        Some("it") => Module::load_it(data),
-        _ => Module::load(data),
+        Some("mod") => XmModule::load_mod(data),
+        Some("s3m") => XmModule::load_s3m(data),
+        Some("xm") => XmModule::load_xm(data),
+        Some("it") => XmModule::load_it(data),
+        _ => XmModule::load(data),
     };
-    result.map_err(|error| anyhow::anyhow!("not a playable tracker module: {error:?}"))
+    result
+        .map(|module| PlayableModule::Xm(Box::new(module)))
+        .map_err(|error| anyhow::anyhow!("not a playable tracker module: {error:?}"))
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -62,7 +75,24 @@ pub struct ModuleInfo {
 }
 
 impl ModuleInfo {
-    pub fn new(module: &Module, data: &[u8]) -> Self {
+    pub fn new(module: &PlayableModule, data: &[u8]) -> Self {
+        match module {
+            PlayableModule::Xm(module) => Self::new_xm(module, data),
+            PlayableModule::Rad(tune) => Self {
+                title: tune.title(),
+                format: tune.format_name(),
+                channels: tune.channels(),
+                tempo: tune.speed(),
+                bpm: tune.bpm(),
+                duration: tune.duration(),
+                instruments: tune.instruments(),
+                message: tune.message(),
+                ..Default::default()
+            },
+        }
+    }
+
+    fn new_xm(module: &XmModule, data: &[u8]) -> Self {
         let mut info = raw_info(module.origin.unwrap_or_default(), data).unwrap_or_else(|| ModuleInfo {
             title: module.name.as_bytes().to_vec(),
             instruments: module.instrument.iter().map(|instrument| instrument.name.as_bytes().to_vec()).collect(),
@@ -323,6 +353,56 @@ struct Chunk {
     last: bool,
 }
 
+fn module_duration(module: &PlayableModule) -> f64 {
+    match module {
+        PlayableModule::Xm(module) => XmrsPlayer::new(module, 48_000, 0).duration_seconds(),
+        PlayableModule::Rad(tune) => tune.duration(),
+    }
+}
+
+enum Synth<'a> {
+    Xm(Box<XmrsPlayer<'a>>),
+    Rad(Box<crate::rad::RadRenderer>),
+}
+
+impl<'a> Synth<'a> {
+    fn new(module: &'a PlayableModule, rate: u32) -> anyhow::Result<Self> {
+        Ok(match module {
+            PlayableModule::Xm(module) => {
+                let mut player = XmrsPlayer::new(module, rate, 0);
+                player.set_max_loop_count(1);
+                Synth::Xm(Box::new(player))
+            }
+            PlayableModule::Rad(tune) => Synth::Rad(Box::new(tune.renderer(rate)?)),
+        })
+    }
+
+    fn next_f32(&mut self) -> Option<f32> {
+        match self {
+            Synth::Xm(player) => player.next().map(|sample| sample as f32 / 32768.0),
+            Synth::Rad(player) => player.next_f32(),
+        }
+    }
+
+    fn seek_seconds(&mut self, module: &PlayableModule, rate: u32, seconds: f64) -> f64 {
+        match self {
+            Synth::Xm(player) => {
+                player.seek_seconds(seconds);
+                player.position_seconds()
+            }
+            Synth::Rad(player) => match Synth::new(module, rate) {
+                Ok(Synth::Rad(mut next)) => {
+                    next.seek_seconds(seconds);
+                    let position = next.position_seconds();
+                    *player = next;
+                    position
+                }
+                _ => player.position_seconds(),
+            },
+        }
+    }
+}
+
 /// Plays a module on the default output device until dropped.
 pub struct TrackerPlayer {
     commands: mpsc::Sender<Command>,
@@ -331,7 +411,7 @@ pub struct TrackerPlayer {
 }
 
 impl TrackerPlayer {
-    pub fn start(module: Module, paused: bool) -> Self {
+    pub fn start(module: PlayableModule, paused: bool) -> Self {
         let (player, commands) = Self::new(&module);
         player.set_paused(paused);
         let shared = player.shared.clone();
@@ -358,18 +438,18 @@ impl TrackerPlayer {
     }
 
     /// No output device (tests, audio off): knows the duration but never advances.
-    pub fn silent(module: &Module, paused: bool) -> Self {
+    pub fn silent(module: &PlayableModule, paused: bool) -> Self {
         let player = Self::new(module).0;
         player.set_paused(paused);
         player
     }
 
-    fn new(module: &Module) -> (Self, mpsc::Receiver<Command>) {
+    fn new(module: &PlayableModule) -> (Self, mpsc::Receiver<Command>) {
         let (commands, receiver) = mpsc::channel();
         let player = Self {
             commands,
             shared: Arc::default(),
-            duration: XmrsPlayer::new(module, 48_000, 0).duration_seconds(),
+            duration: module_duration(module),
         };
         (player, receiver)
     }
@@ -418,9 +498,15 @@ impl TrackerPlayer {
 
 /// Renders chunks ahead of the output until the player is dropped; a seek bumps the
 /// generation so the output discards everything rendered before it.
-fn synthesize(module: &Module, rate: u32, shared: &Shared, commands: &mpsc::Receiver<Command>, output: mpsc::SyncSender<Chunk>) {
-    let mut player = XmrsPlayer::new(module, rate, 0);
-    player.set_max_loop_count(1);
+fn synthesize(module: &PlayableModule, rate: u32, shared: &Shared, commands: &mpsc::Receiver<Command>, output: mpsc::SyncSender<Chunk>) {
+    let mut player = match Synth::new(module, rate) {
+        Ok(player) => player,
+        Err(error) => {
+            *shared.error.lock() = Some(error.to_string());
+            shared.finished.store(true, Ordering::Relaxed);
+            return;
+        }
+    };
     shared.sample_rate.store(rate, Ordering::Relaxed);
     let mut generation = shared.generation.load(Ordering::Relaxed);
     let mut pending: Option<Chunk> = None;
@@ -429,10 +515,10 @@ fn synthesize(module: &Module, rate: u32, shared: &Shared, commands: &mpsc::Rece
         loop {
             match commands.try_recv() {
                 Ok(Command::Seek(seconds)) => {
-                    player.seek_seconds(seconds);
+                    let position = player.seek_seconds(module, rate, seconds);
                     generation += 1;
                     shared.generation.store(generation, Ordering::Relaxed);
-                    shared.base_seconds.store(player.position_seconds().to_bits(), Ordering::Relaxed);
+                    shared.base_seconds.store(position.to_bits(), Ordering::Relaxed);
                     shared.played_frames.store(0, Ordering::Relaxed);
                     shared.finished.store(false, Ordering::Relaxed);
                     pending = None;
@@ -445,8 +531,8 @@ fn synthesize(module: &Module, rate: u32, shared: &Shared, commands: &mpsc::Rece
         if pending.is_none() && !ended {
             let mut samples = Vec::with_capacity(CHUNK_FRAMES * 2);
             while samples.len() < CHUNK_FRAMES * 2 {
-                match player.next() {
-                    Some(sample) => samples.push(sample as f32 / 32768.0),
+                match player.next_f32() {
+                    Some(sample) => samples.push(sample),
                     None => {
                         ended = true;
                         break;
@@ -595,6 +681,7 @@ mod tests {
     #[test]
     fn detects_tracker_files_by_extension() {
         assert!(is_tracker_file(Path::new("SONG.MOD")));
+        assert!(is_tracker_file(Path::new("SONG.RAD")));
         assert!(is_tracker_file(Path::new("a/b.it")));
         assert!(!is_tracker_file(Path::new("art.ans")));
         assert!(!is_tracker_file(Path::new("mod")));
@@ -636,6 +723,20 @@ mod tests {
     fn rejects_non_modules() {
         assert!(load_module(Path::new("x.xm"), b"not a module").is_err());
         assert!(load_module(Path::new("x.it"), &test_module()).is_err());
+        assert!(load_module(Path::new("x.rad"), b"not a RAD module").is_err());
+    }
+
+    #[test]
+    fn rad_info_reads_description_instruments_and_duration() {
+        let data = crate::rad::test_rad_v2();
+        let module = load_module(Path::new("test.rad"), &data).unwrap();
+        let info = ModuleInfo::new(&module, &data);
+        assert_eq!(info.title, b"RAD Test Tune");
+        assert_eq!(info.format, "Reality AdLib Tracker RAD v2");
+        assert_eq!(info.channels, 18);
+        assert_eq!(info.instruments, vec![b"Bell".to_vec()]);
+        assert!(info.message.iter().any(|line| line == b"A tiny v2 description"));
+        assert!(info.duration > 0.0);
     }
 
     fn pull(source: &mut StreamSource, frames: usize) -> Vec<f32> {

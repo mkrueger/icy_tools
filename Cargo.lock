@@ -3532,6 +3532,7 @@ dependencies = [
  "codepages 0.1.0 (git+https://github.com/mkrueger/icy_board)",
  "criterion",
  "env_logger",
+ "flate2",
  "gif 0.14.2",
  "icy_net",
  "icy_parser_core",

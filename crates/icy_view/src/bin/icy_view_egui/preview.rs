@@ -241,7 +241,8 @@ impl Preview {
         self.loading = true;
         self.loaded_at = Instant::now();
         self.auto = auto;
-        let format = FileFormat::from_path(std::path::Path::new(&self.file));
+        let format =
+            FileFormat::from_path(std::path::Path::new(&self.file)).or_else(|| icy_engine::formats::ImageFormat::sniff(&self.data).map(FileFormat::Image));
         self.loading_image = matches!(format, Some(FileFormat::Image(_)));
         self.loading_music = tracker::is_tracker_file(std::path::Path::new(&self.file));
         if self.loading_music {
@@ -264,13 +265,14 @@ impl Preview {
             });
         } else if self.loading_image {
             let data = self.data.clone();
+            let path = PathBuf::from(&self.file);
             let generation = self.generation;
             let sender = self.image_sender.clone();
             let context = context.clone();
             std::thread::spawn(move || {
                 let data = icy_sauce::strip_sauce(&data, icy_sauce::StripMode::All);
                 let result = match format {
-                    Some(FileFormat::Image(format)) => format.decode_rgba(data),
+                    Some(FileFormat::Image(format)) => format.decode_rgba_at(data, &path),
                     _ => Err("not an image".to_string()),
                 };
                 let _ = sender.send((generation, result));

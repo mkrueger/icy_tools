@@ -167,6 +167,10 @@ impl Font {
         })
     }
 
+    pub fn character(&self, code: u8) -> Option<&Character> {
+        self.characters.get(code as usize).and_then(Option::as_ref)
+    }
+
     pub fn from_file(file: &str) -> Result<Self> {
         let mut file = std::fs::File::open(file)?;
         let mut buf: Vec<u8> = Vec::new();

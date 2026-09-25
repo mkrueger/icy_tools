@@ -325,6 +325,11 @@ impl FileIcon {
             // Archive formats
             FileFormat::Archive(_) => FileIcon::Archive,
 
+            // Fonts rendered as specimen images
+            FileFormat::Image(
+                icy_engine::formats::ImageFormat::WindowsFont | icy_engine::formats::ImageFormat::AmigaFont | icy_engine::formats::ImageFormat::BgiFont,
+            ) => FileIcon::Binary,
+
             // Image formats
             FileFormat::Image(_) => FileIcon::Image,
 
@@ -356,7 +361,7 @@ impl FileIcon {
             FileFormat::IcyDraw => FileIcon::Native,
 
             // Binary formats
-            FileFormat::IceDraw | FileFormat::Bin | FileFormat::XBin | FileFormat::TundraDraw | FileFormat::Artworx => FileIcon::Binary,
+            FileFormat::IceDraw | FileFormat::Bin | FileFormat::XBin | FileFormat::TundraDraw | FileFormat::Artworx | FileFormat::RexPaint => FileIcon::Binary,
 
             // Font formats
             FileFormat::BitFont(_) | FileFormat::CharacterFont(_) => FileIcon::Binary,
