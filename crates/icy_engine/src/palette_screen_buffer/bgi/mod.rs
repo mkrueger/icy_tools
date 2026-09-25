@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::{BitFont, EGA_PALETTE, EditableScreen, Palette, Position, Rectangle, Size};
+use crate::{BitFont, EditableScreen, Palette, Position, Rectangle, Size, EGA_PALETTE};
 use byteorder::{LittleEndian, ReadBytesExt};
 
 mod character;
@@ -213,7 +213,11 @@ fn bgi_sin(angle: i32) -> i32 {
         angle = 180 - angle;
     }
     let value = i32::from(BGI_SIN_TABLE[angle as usize]) << 1;
-    if negative { -value } else { value }
+    if negative {
+        -value
+    } else {
+        value
+    }
 }
 
 fn bgi_trig_mul(trig: i32, radius: i32) -> i32 {
@@ -232,7 +236,11 @@ fn bgi_angle_size(angle: i32, radius_x: i32, radius_y: i32) -> Position {
 fn bgi_arc_metric(x: i32, mut y: i32) -> i32 {
     y = -y;
     if x >= 0 {
-        if y >= 0 { y - x } else { x + 6000 + y }
+        if y >= 0 {
+            y - x
+        } else {
+            x + 6000 + y
+        }
     } else if y >= 0 {
         -x + 2000 - y
     } else {

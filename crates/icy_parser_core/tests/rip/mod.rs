@@ -902,9 +902,7 @@ fn test_rip_continuation_tolerates_space_padding() {
     assert_eq!(
         sink.rip_commands,
         vec![
-            RipCommand::FilledPolygon {
-                points: vec![0, 0, 10, 10],
-            },
+            RipCommand::FilledPolygon { points: vec![0, 0, 10, 10] },
             RipCommand::FillStyle {
                 pattern: FillStyle::Solid,
                 color: 9,

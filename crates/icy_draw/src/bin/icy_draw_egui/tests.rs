@@ -89,11 +89,9 @@ fn native_close_commits_shape_and_waits_for_picker() {
             .push(egui::ViewportEvent::Close);
         let output = context.run(input, |context| app.show(context));
         assert!(app.document.modified());
-        assert!(
-            output.viewport_output[&egui::ViewportId::ROOT]
-                .commands
-                .contains(&egui::ViewportCommand::CancelClose)
-        );
+        assert!(output.viewport_output[&egui::ViewportId::ROOT]
+            .commands
+            .contains(&egui::ViewportCommand::CancelClose));
         assert_eq!(matches!(app.dialog, Some(Dialog::Close)), !picker);
     }
 }
@@ -619,10 +617,9 @@ fn gpu_selection_mask_covers_the_same_cells_as_a_rectangle() {
         );
         app.document.update(Position::new(29, 8));
         app.document.finish();
-        assert!(
-            app.document
-                .with_state(|state| state.selection().is_none() && state.get_is_mask_selected(Position::new(25, 6)))
-        );
+        assert!(app
+            .document
+            .with_state(|state| state.selection().is_none() && state.get_is_mask_selected(Position::new(25, 6))));
         gpu.capture(&mut app, size, 1.0, vec![], "mask-selection-warmup");
         let mask = marked_area(&gpu.capture(&mut app, size, 1.0, vec![], "mask-selection"), size);
         for (rect_edge, mask_edge) in [(rectangle.0, mask.0), (rectangle.1, mask.1), (rectangle.2, mask.2), (rectangle.3, mask.3)] {

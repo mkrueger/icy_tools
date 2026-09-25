@@ -69,8 +69,8 @@ pub use mcp::McpCommand;
 pub use ui::settings::*;
 pub use window_manager::*;
 
-pub use util::*;
 pub use icy_draw::brush;
+pub use util::*;
 
 pub static VERSION: std::sync::LazyLock<Version> = std::sync::LazyLock::new(|| Version::parse(env!("CARGO_PKG_VERSION")).unwrap());
 
@@ -79,9 +79,8 @@ pub static PENDING_NEW_WINDOW_BUFFERS: std::sync::LazyLock<std::sync::Mutex<Vec<
     std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
 
 /// Latest version available on GitHub (checked at startup)
-pub static LATEST_VERSION: std::sync::LazyLock<Version> = std::sync::LazyLock::new(|| {
-    icy_engine_gui::release_check::latest_release("mkrueger/icy_tools", "IcyDraw").unwrap_or_else(|| VERSION.clone())
-});
+pub static LATEST_VERSION: std::sync::LazyLock<Version> =
+    std::sync::LazyLock::new(|| icy_engine_gui::release_check::latest_release("mkrueger/icy_tools", "IcyDraw").unwrap_or_else(|| VERSION.clone()));
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "i18n"]

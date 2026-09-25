@@ -54,7 +54,9 @@ fn decodes_every_raster_format_by_extension() {
 #[test]
 fn mislabelled_images_fall_back_to_content_detection() {
     let mut data = std::io::Cursor::new(Vec::new());
-    image::DynamicImage::ImageRgba8(image::RgbaImage::new(4, 4)).write_to(&mut data, image::ImageFormat::Png).unwrap();
+    image::DynamicImage::ImageRgba8(image::RgbaImage::new(4, 4))
+        .write_to(&mut data, image::ImageFormat::Png)
+        .unwrap();
     assert_eq!(ImageFormat::Jpeg.decode_rgba(data.get_ref()).unwrap().dimensions(), (4, 4));
     assert!(ImageFormat::Tga.decode_rgba(b"not an image").is_err());
 }

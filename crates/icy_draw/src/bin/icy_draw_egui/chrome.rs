@@ -1,11 +1,11 @@
 //! Editor chrome: tool rail on the left, tool options bar on top, sidebar with
 //! colours, minimap and layers on the right and a compact status bar.
 
-use super::{Dialog, DrawApp, widgets};
+use super::{widgets, Dialog, DrawApp};
 use eframe::egui::{self, Color32};
 use icy_engine::{LayerProperties, Position, Rectangle, RenderOptions, Role, TextBuffer, TextPane};
 use icy_engine_edit::tools::{Tool, ToolPair};
-use icy_engine_gui::egui::appearance::{self, Dialog as SharedDialog, DialogButton, DialogSize, PRIMARY, labels};
+use icy_engine_gui::egui::appearance::{self, labels, Dialog as SharedDialog, DialogButton, DialogSize, PRIMARY};
 
 /// Width of the left tool rail.
 pub const SIDEBAR_WIDTH: f32 = 48.0;
@@ -238,7 +238,11 @@ impl DrawApp {
         self.palette_edit = self.document.with_state(|state| state.get_buffer().palette.clone());
         self.palette_index = self.document.with_state(|state| {
             let attribute = state.get_caret().attribute;
-            if foreground { attribute.foreground() } else { attribute.background() }
+            if foreground {
+                attribute.foreground()
+            } else {
+                attribute.background()
+            }
         }) as usize;
         self.palette_index = self.palette_index.min(self.palette_edit.len().saturating_sub(1));
         self.dialog = Some(Dialog::Palette);

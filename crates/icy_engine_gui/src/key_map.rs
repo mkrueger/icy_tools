@@ -1,5 +1,5 @@
 use crate::terminal_keys::{self, Code, Key, NamedKey};
-pub use crate::terminal_keys::{ANSI_KEY_MAP, ATARI_ST_KEY_MAP, ATASCII_KEY_MAP, C64_KEY_MAP, KeyWithModifiers, MODE7_KEY_MAP, VIDEOTERM_KEY_MAP};
+pub use crate::terminal_keys::{KeyWithModifiers, ANSI_KEY_MAP, ATARI_ST_KEY_MAP, ATASCII_KEY_MAP, C64_KEY_MAP, MODE7_KEY_MAP, VIDEOTERM_KEY_MAP};
 use icy_ui::keyboard;
 
 fn named_key(key: keyboard::key::Named) -> Option<NamedKey> {
@@ -70,10 +70,10 @@ fn ansi_modified_function_key(key: keyboard::key::Named, input_modifiers: keyboa
 
 #[cfg(test)]
 mod tests {
-    use super::{MODE7_KEY_MAP, VIDEOTERM_KEY_MAP, ansi_modified_function_key, lookup_key};
+    use super::{ansi_modified_function_key, lookup_key, MODE7_KEY_MAP, VIDEOTERM_KEY_MAP};
     use icy_ui::keyboard::{
-        Key, Modifiers,
         key::{Named, NativeCode, Physical},
+        Key, Modifiers,
     };
 
     #[test]

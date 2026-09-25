@@ -1,6 +1,6 @@
 use super::widgets::{self, Icons};
 use eframe::egui;
-use icy_engine_gui::{MonitorSettings, ScalingMode, egui::screen::ScreenView};
+use icy_engine_gui::{egui::screen::ScreenView, MonitorSettings, ScalingMode};
 use icy_engine_scripting::Animator;
 use parking_lot::Mutex;
 use std::sync::{

@@ -44,6 +44,9 @@ mod tests {
             .join("\n");
 
         let expected_version = format!("v{}", *VERSION);
-        assert!(text.contains(&expected_version), "about document must display {expected_version}; contents:\n{text}");
+        assert!(
+            text.contains(&expected_version),
+            "about document must display {expected_version}; contents:\n{text}"
+        );
     }
 }

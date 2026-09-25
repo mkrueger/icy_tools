@@ -26,7 +26,7 @@
 //mod ui;
 use std::{
     path::PathBuf,
-    sync::{Arc, LazyLock, atomic::AtomicU16},
+    sync::{atomic::AtomicU16, Arc, LazyLock},
     time::Instant,
 };
 
@@ -36,7 +36,7 @@ use flexi_logger::{Cleanup, Criterion, FileSpec, Logger, Naming};
 use semver::Version;
 
 pub use data::*;
-pub use icy_term::{LANGUAGE_LOADER, Res, TerminalResult, auto_login, data, features, protocol, scripting, terminal, util};
+pub use icy_term::{auto_login, data, features, protocol, scripting, terminal, util, Res, TerminalResult, LANGUAGE_LOADER};
 pub use terminal::*;
 
 pub mod commands;

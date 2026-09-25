@@ -1,14 +1,14 @@
 use eframe::egui::{self, Color32, Key};
-use icy_draw::{Settings, brush::BrushPrimaryMode, document::Document};
+use icy_draw::{brush::BrushPrimaryMode, document::Document, Settings};
 use icy_engine::{FileFormat, Position, Selection, Size, TextPane};
-use icy_engine_edit::UndoState;
 use icy_engine_edit::tools::Tool;
+use icy_engine_edit::UndoState;
 use icy_engine_gui::{
-    ScalingMode,
     egui::{
-        appearance::{self, DialogButton, DialogSize, MessageBox, MessageKind, labels},
+        appearance::{self, labels, DialogButton, DialogSize, MessageBox, MessageKind},
         screen::ScreenView,
     },
+    ScalingMode,
 };
 use std::{
     path::PathBuf,
