@@ -846,6 +846,11 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let mut gpu = runtime.block_on(Gpu::new());
     let (_dir, mut mail) = loaded(&gpu.context);
+    let package = Arc::make_mut(mail.reader.package.as_mut().unwrap());
+    let other = package.infos.iter().position(|info| Some(info.index) != mail.reader.selected_message).unwrap();
+    package.infos[other].from = b"Andr\x82 \xb1\xdb".as_slice().into();
+    package.infos[other].subject = b"\xb0\xb1\xb2\xdb CP437 \xda\xc4\xbf".as_slice().into();
+    mail.reader.rebuild_messages();
     for (size, scale, theme, name) in [
         ([1100, 760], 1.0, egui::Theme::Dark, "desktop-dark"),
         ([1100, 760], 1.0, egui::Theme::Light, "desktop-light"),
