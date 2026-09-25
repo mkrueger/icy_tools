@@ -74,6 +74,36 @@ pub struct Draft {
     pub date: String,
 }
 
+/// Maximum length of the QWK To, From and Subject header fields.
+pub const HEADER_FIELD_LENGTH: usize = 25;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DraftField {
+    Conference,
+    From,
+    To,
+    Subject,
+    Body,
+}
+
+impl DraftField {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Conference => "Conference",
+            Self::From => "From",
+            Self::To => "To",
+            Self::Subject => "Subject",
+            Self::Body => "Message text",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DraftIssue {
+    pub field: DraftField,
+    pub message: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Stored {
@@ -116,7 +146,7 @@ impl DraftStore {
             .map(|conference| conference.number)
             .chain(package.descriptors.iter().map(|message| message.conference))
             .collect();
-        let path = storage_path(packet_path, &bbs_id, directory)?;
+        let path = storage_path(packet_path, &bbs_id, directory, ".toml")?;
         let mut stored: Stored = if path.exists() {
             toml::from_str(&fs::read_to_string(&path)?)?
         } else {
@@ -341,6 +371,50 @@ impl DraftStore {
         self.export(destination)
     }
 
+    /// Every problem that would stop `draft` from being exported, so an editor can show them while typing.
+    pub fn issues(&self, draft: &Draft) -> Vec<DraftIssue> {
+        let mut issues = Vec::new();
+        if !self.allowed_conferences.contains(&draft.conference) {
+            issues.push(DraftIssue {
+                field: DraftField::Conference,
+                message: format!("Conference {} is not part of this packet", draft.conference),
+            });
+        }
+        for (field, value) in [
+            (DraftField::From, &draft.from),
+            (DraftField::To, &draft.to),
+            (DraftField::Subject, &draft.subject),
+        ] {
+            if value.trim().is_empty() {
+                issues.push(DraftIssue {
+                    field,
+                    message: format!("{} is required", field.label()),
+                });
+                continue;
+            }
+            let length = value.chars().count();
+            if length > HEADER_FIELD_LENGTH {
+                issues.push(DraftIssue {
+                    field,
+                    message: format!("{} has {length} characters; QWK allows {HEADER_FIELD_LENGTH}", field.label()),
+                });
+            }
+            character_issues(field, value, false, &mut issues);
+        }
+        let body = draft.body.replace("\r\n", "\n").replace('\r', "\n");
+        if crate::editor::strip_codes(&body).trim().is_empty() {
+            issues.push(DraftIssue {
+                field: DraftField::Body,
+                message: "Message text is required".into(),
+            });
+        } else {
+            for line in body.split('\n') {
+                character_issues(DraftField::Body, line, true, &mut issues);
+            }
+        }
+        issues
+    }
+
     /// Suggested `.REP` filename beside the packet, using the BBS ID from CONTROL.DAT.
     pub fn default_export_path(&self, packet_path: &Path) -> PathBuf {
         packet_path.with_file_name(format!("{}.REP", self.bbs_id))
@@ -361,7 +435,7 @@ fn validate_conference(allowed: &BTreeSet<u16>, conference: u16) -> Result<()> {
     Ok(())
 }
 
-fn bbs_id(package: &QwkPackage) -> Result<String> {
+pub(crate) fn bbs_id(package: &QwkPackage) -> Result<String> {
     let raw = package.control_file.bbs_id.as_slice();
     if raw.is_empty() || raw.len() > 8 || !raw.iter().all(u8::is_ascii_alphanumeric) {
         return Err(invalid("BBS ID", "expected 1–8 ASCII letters or digits in CONTROL.DAT"));
@@ -369,29 +443,74 @@ fn bbs_id(package: &QwkPackage) -> Result<String> {
     Ok(String::from_utf8(raw.to_ascii_uppercase()).expect("ASCII ID"))
 }
 
-fn storage_path(packet_path: &Path, bbs_id: &str, directory: Option<&Path>) -> Result<PathBuf> {
+/// Per-packet file in the application's data directory (or `directory`), named after the BBS ID
+/// and a stable hash of the packet's canonical path.
+pub(crate) fn storage_path(packet_path: &Path, bbs_id: &str, directory: Option<&Path>, suffix: &str) -> Result<PathBuf> {
     let absolute = if packet_path.is_absolute() {
         packet_path.to_path_buf()
     } else {
         std::env::current_dir()?.join(packet_path)
     };
     let canonical = absolute.canonicalize().unwrap_or(absolute);
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    canonical.hash(&mut hasher);
     let dir = if let Some(directory) = directory {
         directory.to_path_buf()
     } else {
-        #[cfg(test)]
-        let dir = packet_path.parent().unwrap_or(Path::new(".")).join(".icy_mail_drafts");
-        #[cfg(not(test))]
-        let dir = directories::ProjectDirs::from("com", "GitHub", "icy_mail")
-            .ok_or_else(|| invalid("data directory", "no user data directory available"))?
-            .data_local_dir()
-            .join("drafts");
-        dir
+        data_directory(packet_path)?
     };
     fs::create_dir_all(&dir)?;
-    Ok(dir.join(format!("{bbs_id}-{:016x}.toml", hasher.finish())))
+    // FNV-1a keeps the name stable across Rust releases, unlike `DefaultHasher`.
+    let hash = canonical
+        .as_os_str()
+        .as_encoded_bytes()
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3));
+    let path = dir.join(format!("{bbs_id}-{hash:016x}{suffix}"));
+    if suffix == ".toml" && !path.exists() {
+        let mut legacy = std::collections::hash_map::DefaultHasher::new();
+        canonical.hash(&mut legacy);
+        let legacy = dir.join(format!("{bbs_id}-{:016x}.toml", legacy.finish()));
+        if legacy.exists() {
+            fs::rename(legacy, &path)?;
+        }
+    }
+    Ok(path)
+}
+
+#[cfg(test)]
+fn data_directory(packet_path: &Path) -> Result<PathBuf> {
+    Ok(packet_path.parent().unwrap_or(Path::new(".")).join(".icy_mail_drafts"))
+}
+
+#[cfg(not(test))]
+fn data_directory(_packet_path: &Path) -> Result<PathBuf> {
+    Ok(directories::ProjectDirs::from("com", "GitHub", "icy_mail")
+        .ok_or_else(|| invalid("data directory", "no user data directory available"))?
+        .data_local_dir()
+        .join("drafts"))
+}
+
+/// Reports each distinct character of `value` that cannot be written to a QWK message once.
+/// Message text may contain ESC for ANSI color sequences.
+fn character_issues(field: DraftField, value: &str, allow_escape: bool, issues: &mut Vec<DraftIssue>) {
+    for ch in value.chars() {
+        if allow_escape && ch == '\x1b' {
+            continue;
+        }
+        let message = if ch.is_control() {
+            format!("{} contains a control character (U+{:04X})", field.label(), ch as u32)
+        } else {
+            match BufferType::CP437.try_convert_from_unicode(ch) {
+                None => format!("{} contains \u{201c}{ch}\u{201d}, which has no CP437 equivalent", field.label()),
+                Some(byte) if byte as u32 == 0xE3 || ch == '\u{e3}' => {
+                    format!("{} contains \u{201c}{ch}\u{201d}, which QWK reserves as its line break", field.label())
+                }
+                Some(_) => continue,
+            }
+        };
+        if !issues.iter().any(|issue| issue.message == message) {
+            issues.push(DraftIssue { field, message });
+        }
+    }
 }
 
 fn decode(bytes: &[u8]) -> String {
@@ -406,6 +525,10 @@ fn decode(bytes: &[u8]) -> String {
 fn encode(field: &'static str, value: &str, max: Option<usize>) -> Result<Vec<u8>> {
     let mut bytes = Vec::with_capacity(value.len());
     for ch in value.chars() {
+        if field == "body" && ch == '\x1b' {
+            bytes.push(0x1b);
+            continue;
+        }
         if ch.is_control() || ch == '\u{e3}' {
             return Err(invalid(field, "control characters are not allowed"));
         }
@@ -448,9 +571,9 @@ fn validate_draft(d: &Draft, complete: bool) -> Result<(Vec<u8>, Vec<u8>, Vec<u8
     if d.body.len() > 128 * 999_998 {
         return Err(invalid("body", "QWK block count exceeds six digits"));
     }
-    let to = encode("to", &d.to, Some(25))?;
-    let from = encode("from", &d.from, Some(25))?;
-    let subject = encode("subject", &d.subject, Some(25))?;
+    let to = encode("to", &d.to, Some(HEADER_FIELD_LENGTH))?;
+    let from = encode("from", &d.from, Some(HEADER_FIELD_LENGTH))?;
+    let subject = encode("subject", &d.subject, Some(HEADER_FIELD_LENGTH))?;
     let mut body = Vec::new();
     for (index, line) in d.body.replace("\r\n", "\n").replace('\r', "\n").split('\n').enumerate() {
         if index > 0 {
@@ -464,7 +587,7 @@ fn validate_draft(d: &Draft, complete: bool) -> Result<(Vec<u8>, Vec<u8>, Vec<u8
     Ok((to, from, subject, body))
 }
 
-fn atomic_write(path: &Path, write: impl FnOnce(&mut File) -> Result<()>) -> Result<()> {
+pub(crate) fn atomic_write(path: &Path, write: impl FnOnce(&mut File) -> Result<()>) -> Result<()> {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let (temp, mut file) = loop {
         let mut name = path.as_os_str().to_os_string();
@@ -512,6 +635,30 @@ mod tests {
         assert_eq!(DraftStore::open(&path, &package).unwrap().drafts(), &[prepared.clone()]);
         store.delete(prepared.id).unwrap();
         assert!(DraftStore::open(&path, &package).unwrap().drafts().is_empty());
+    }
+
+    #[test]
+    fn issues_report_every_export_problem_while_editing() {
+        let (dir, package) = crate::qwk::tests::load();
+        let store = DraftStore::open(dir.path().join("TEST.QWK"), &package).unwrap();
+        let mut draft = store.prepare(&package, Compose::New { conference: 1 }).unwrap();
+        let fields: Vec<_> = store.issues(&draft).iter().map(|issue| issue.field).collect();
+        assert_eq!(fields, [DraftField::To, DraftField::Subject, DraftField::Body]);
+        draft.to = "All".into();
+        draft.subject = "x".repeat(26);
+        draft.body = "Tab\there \u{1F30D} and \u{3c0}\nok".into();
+        draft.conference = 9;
+        let issues = store.issues(&draft);
+        assert_eq!(issues.len(), 5, "{issues:?}");
+        assert!(issues[0].message.contains("Conference 9"));
+        assert!(issues[1].message.contains("26 characters"));
+        assert!(issues.iter().any(|issue| issue.message.contains("U+0009")));
+        assert!(issues.iter().any(|issue| issue.message.contains("no CP437")));
+        assert!(issues.iter().any(|issue| issue.message.contains("line break")));
+        draft.subject = "Hello".into();
+        draft.body = "Caf\u{e9}".into();
+        draft.conference = 1;
+        assert!(store.issues(&draft).is_empty());
     }
 
     #[test]

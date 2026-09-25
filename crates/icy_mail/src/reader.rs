@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, sync::Arc};
+use std::{cmp::Ordering, collections::HashSet, sync::Arc};
 
 use icy_engine::{EditableScreen, Size, TextScreen};
 
@@ -98,6 +98,11 @@ pub struct Reader {
     pub selected_conference: Option<u16>,
     pub selected_message: Option<usize>,
     pub filter: String,
+    /// Only messages addressed to this user name (case-insensitive), for the personal mailbox.
+    pub personal: Option<String>,
+    /// Package indices of messages the user has read.
+    pub read: HashSet<usize>,
+    pub unread_only: bool,
     pub view_mode: ViewMode,
     pub message_sort: (MessageColumn, SortDirection),
     pub conference_sort: (ConferenceColumn, SortDirection),
@@ -112,6 +117,9 @@ impl Default for Reader {
             selected_conference: None,
             selected_message: None,
             filter: String::new(),
+            personal: None,
+            read: HashSet::new(),
+            unread_only: false,
             view_mode: ViewMode::List,
             message_sort: (MessageColumn::Date, SortDirection::Ascending),
             conference_sort: (ConferenceColumn::Area, SortDirection::Ascending),
@@ -127,6 +135,9 @@ impl Reader {
         self.selected_conference = None;
         self.selected_message = None;
         self.filter.clear();
+        self.personal = None;
+        self.read.clear();
+        self.unread_only = false;
         self.rebuild_conferences();
         self.rebuild_messages();
     }
@@ -175,6 +186,8 @@ impl Reader {
             .iter()
             .filter(|info| {
                 self.selected_conference.is_none_or(|number| info.conference == number)
+                    && self.personal.as_ref().is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name.trim()))
+                    && (!self.unread_only || !self.read.contains(&info.index))
                     && (needle.is_empty() || [&info.from, &info.to, &info.subject].iter().any(|value| value.to_lowercase().contains(&needle)))
             })
             .collect();
@@ -341,6 +354,22 @@ mod tests {
         assert_eq!(reader.selected_message, Some(0));
         reader.sort_conferences(ConferenceColumn::Count);
         assert_eq!(reader.conferences[0].number, None);
+    }
+
+    #[test]
+    fn personal_and_unread_filters_combine_with_conferences() {
+        let (_dir, mut reader) = loaded();
+        Arc::make_mut(reader.package.as_mut().unwrap()).infos[2].to = "Reader ".into();
+        reader.personal = Some("READER".into());
+        reader.rebuild_messages();
+        assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [2]);
+        reader.personal = None;
+        reader.read = HashSet::from([0, 2]);
+        reader.unread_only = true;
+        reader.rebuild_messages();
+        assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [1, 3]);
+        reader.select_conference(Some(2));
+        assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [3]);
     }
 
     #[test]

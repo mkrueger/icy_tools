@@ -5,8 +5,24 @@ use std::path::PathBuf;
 
 #[path = "icy_mail_egui/app.rs"]
 mod app;
+#[path = "icy_mail_egui/chrome.rs"]
+mod chrome;
+#[path = "icy_mail_egui/composer.rs"]
+mod composer;
+#[path = "icy_mail_egui/dialogs.rs"]
+mod dialogs;
+#[path = "icy_mail_egui/list.rs"]
+mod list;
 #[path = "icy_mail_egui/loading.rs"]
 mod loading;
+#[path = "icy_mail_egui/reader_view.rs"]
+mod reader_view;
+#[path = "icy_mail_egui/sidebar.rs"]
+mod sidebar;
+#[path = "icy_mail_egui/terminal_editor.rs"]
+mod terminal_editor;
+#[path = "icy_mail_egui/welcome.rs"]
+mod welcome;
 #[path = "icy_mail_egui/widgets.rs"]
 mod widgets;
 #[cfg(test)]
