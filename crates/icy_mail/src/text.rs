@@ -8,7 +8,8 @@ use icy_engine::BufferType;
 /// else is read as CP437.
 pub fn decode(bytes: &[u8]) -> Cow<'_, str> {
     match std::str::from_utf8(bytes) {
-        Ok(text) => Cow::Borrowed(text),
+        Ok(text) if !text.bytes().any(|byte| byte.is_ascii_control()) => Cow::Borrowed(text),
+        Ok(text) => Cow::Owned(text.chars().map(|ch| if ch.is_control() { ' ' } else { ch }).collect()),
         Err(_) => Cow::Owned(bytes.iter().map(|&byte| cp437_char(byte)).collect()),
     }
 }
