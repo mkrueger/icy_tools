@@ -2,7 +2,7 @@
 
 use crate::{AttributedChar, Position, Result, TextAttribute, TextBuffer, TextPane, TextScreen};
 
-use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
+use super::super::{append_sauce, apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
 
 /// Load a binary file into a `TextScreen`.
 pub(crate) fn load_bin(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt: Option<&icy_sauce::SauceRecord>) -> Result<TextScreen> {
@@ -70,7 +70,7 @@ pub(crate) fn save_bin(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8
     }
     if let Some(meta) = &options.sauce {
         let sauce = buf.build_binary_sauce(meta);
-        sauce.write(&mut result)?;
+        append_sauce(&mut result, sauce)?;
     }
     Ok(result)
 }

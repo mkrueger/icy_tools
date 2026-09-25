@@ -430,7 +430,18 @@ impl AnsiFormatOptions {
 use bstr::BString;
 use icy_sauce::{AspectRatio, BinaryCapabilities, Capabilities, CharacterCapabilities, CharacterFormat, LetterSpacing, SauceRecordBuilder};
 
-use crate::{IceMode, TextBuffer, TextPane};
+use crate::{IceMode, Result, TextBuffer, TextPane};
+
+/// Append `sauce` (EOF marker, optional comment block and record) to `data`.
+///
+/// `FileSize` is set to the length of `data` before the append, i.e. the size of the
+/// file content without the EOF marker and the SAUCE block. Readers such as Moebius
+/// only parse that many bytes of the file.
+pub(crate) fn append_sauce(data: &mut Vec<u8>, sauce: icy_sauce::SauceRecord) -> Result<()> {
+    let file_size = u32::try_from(data.len()).unwrap_or(u32::MAX);
+    sauce.to_builder().file_size(file_size).build().write(data)?;
+    Ok(())
+}
 
 /// Trait to create SAUCE records with appropriate capabilities for different formats.
 pub trait SauceBuilder {

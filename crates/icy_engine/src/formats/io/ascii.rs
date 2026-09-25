@@ -1,7 +1,7 @@
 //! ASCII format (.asc, .txt) I/O implementation.
 use crate::{EditableScreen, Position, Result, TextBuffer, TextPane, TextScreen};
 
-use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
+use super::super::{append_sauce, apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
 use icy_sauce::CharacterFormat;
 
 /// Load an ASCII file into a `TextScreen`.
@@ -57,7 +57,7 @@ pub(crate) fn save_ascii(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<
 
     if let Some(meta) = &options.sauce {
         let sauce = buf.build_character_sauce(meta, CharacterFormat::Ascii);
-        sauce.write(&mut result)?;
+        append_sauce(&mut result, sauce)?;
     }
     Ok(result)
 }

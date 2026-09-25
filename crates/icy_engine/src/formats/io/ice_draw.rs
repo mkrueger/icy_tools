@@ -1,4 +1,4 @@
-use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
+use super::super::{append_sauce, apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
 use crate::{
     analyze_font_usage, guess_font_name, AttributedChar, BitFont, IceMode, LoadingError, Palette, Position, Result, SavingError, Size, TextAttribute,
     TextBuffer, TextPane, TextScreen,
@@ -104,7 +104,7 @@ pub(crate) fn save_ice_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     result.extend(buf.palette.as_vec_63());
     if let Some(meta) = &options.sauce {
         let sauce = buf.build_character_sauce(meta, CharacterFormat::Ansi);
-        sauce.write(&mut result)?;
+        append_sauce(&mut result, sauce)?;
     }
     Ok(result)
 }

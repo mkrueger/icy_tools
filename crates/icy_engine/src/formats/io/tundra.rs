@@ -1,6 +1,6 @@
 use std::{collections::HashSet, io};
 
-use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
+use super::super::{append_sauce, apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
 use crate::{
     analyze_font_usage, AttributedChar, BufferType, IceMode, LoadingError, Position, Result, SavingError, TextAttribute, TextBuffer, TextPane, TextScreen,
 };
@@ -129,7 +129,7 @@ pub(crate) fn save_tundra(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
 
     if let Some(meta) = &options.sauce {
         let sauce = buf.build_character_sauce(meta, CharacterFormat::TundraDraw);
-        sauce.write(&mut result)?;
+        append_sauce(&mut result, sauce)?;
     }
     Ok(result)
 }
