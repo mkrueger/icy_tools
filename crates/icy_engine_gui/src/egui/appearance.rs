@@ -339,7 +339,10 @@ pub fn apply(context: &egui::Context) {
         "icy-sans".into(),
         egui::FontData::from_static(include_bytes!("../../data/fonts/FiraSans-Regular.ttf")).into(),
     );
-    fonts.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "icy-sans".into());
+    let proportional = fonts.families.entry(egui::FontFamily::Proportional).or_default();
+    proportional.insert(0, "icy-sans".into());
+    // Hack covers the CP437 box drawing and block characters used in BBS names and subjects.
+    proportional.insert(2.min(proportional.len()), "Hack".into());
     fonts.font_data.insert(
         BOLD_FAMILY.into(),
         egui::FontData::from_static(include_bytes!("../../data/fonts/FiraSans-SemiBold.ttf")).into(),

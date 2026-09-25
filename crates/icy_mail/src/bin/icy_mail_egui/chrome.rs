@@ -254,10 +254,7 @@ impl MailApp {
         let context = ui.ctx().clone();
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            if let Some(path) = &self.loading {
-                ui.spinner();
-                ui.add(egui::Label::new(format!("Opening {}\u{2026}", path.file_name().unwrap_or_default().to_string_lossy())).truncate());
-            } else if let Some(notice) = &self.notice {
+            if let Some(notice) = &self.notice {
                 let (icon, color) = match notice.kind {
                     NoticeKind::Info => (Icon::Info, ui.visuals().text_color()),
                     NoticeKind::Success => (Icon::Check, egui::Color32::from_rgb(76, 175, 80)),
@@ -277,7 +274,7 @@ impl MailApp {
                     format!("{} messages \u{00b7} {unread} unread", self.reader.messages.len())
                 };
                 ui.label(text);
-            } else {
+            } else if self.loading.is_none() {
                 ui.weak("No packet open");
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

@@ -6,6 +6,7 @@ use crate::ui::{ConferenceColumn, Message, MessageColumn, NavigateDirection, Pan
 use icy_engine::{Screen, Size, TextScreen};
 use icy_engine_gui::{MonitorSettings, Terminal};
 use icy_mail::reader::step;
+use icy_mail::text as header_text;
 use icy_ui::widget::{button, column, container, operation, progress_bar, text, Space};
 use icy_ui::{window, Alignment, Element, Length, Task, Theme};
 use parking_lot::Mutex;
@@ -324,9 +325,9 @@ impl MainWindow {
             .filter(|info| self.selected_conference == 0 || info.conference == self.selected_conference)
             .filter(|info| {
                 needle.is_empty()
-                    || info.from.to_ascii_lowercase().contains(&needle)
-                    || info.to.to_ascii_lowercase().contains(&needle)
-                    || info.subject.to_ascii_lowercase().contains(&needle)
+                    || [&info.from, &info.to, &info.subject]
+                        .iter()
+                        .any(|value| header_text::decode(value).to_ascii_lowercase().contains(&needle))
             })
             .collect();
 
@@ -339,9 +340,9 @@ impl MainWindow {
                 let (column, direction) = self.message_sort;
                 infos.sort_by(|a, b| {
                     let ordering = match column {
-                        MessageColumn::From => a.from.to_ascii_lowercase().cmp(&b.from.to_ascii_lowercase()),
+                        MessageColumn::From => header_text::cmp_ignore_case(&a.from, &b.from),
                         MessageColumn::Date => a.date.cmp(&b.date).then(a.number.cmp(&b.number)),
-                        MessageColumn::Subject => a.subject.to_ascii_lowercase().cmp(&b.subject.to_ascii_lowercase()),
+                        MessageColumn::Subject => header_text::cmp_ignore_case(&a.subject, &b.subject),
                         MessageColumn::Lines => a.lines.cmp(&b.lines),
                     };
                     match direction {
@@ -699,11 +700,19 @@ mod tests {
         let package = window.package.clone().unwrap();
 
         let _ = window.update(Message::SortMessagesBy(MessageColumn::From));
-        let ascending: Vec<&str> = window.message_rows().iter().map(|r| package.infos[r.index].from.as_str()).collect();
+        let ascending: Vec<_> = window
+            .message_rows()
+            .iter()
+            .map(|r| header_text::decode(&package.infos[r.index].from))
+            .collect();
         assert_eq!(ascending, vec!["alice", "bob", "carol", "dave"]);
 
         let _ = window.update(Message::SortMessagesBy(MessageColumn::From));
-        let descending: Vec<&str> = window.message_rows().iter().map(|r| package.infos[r.index].from.as_str()).collect();
+        let descending: Vec<_> = window
+            .message_rows()
+            .iter()
+            .map(|r| header_text::decode(&package.infos[r.index].from))
+            .collect();
         assert_eq!(descending, vec!["dave", "carol", "bob", "alice"]);
     }
 

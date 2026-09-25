@@ -188,9 +188,15 @@ impl Reader {
             .iter()
             .filter(|info| {
                 self.selected_conference.is_none_or(|number| info.conference == number)
-                    && self.personal.as_ref().is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name.trim().as_bytes()))
+                    && self
+                        .personal
+                        .as_ref()
+                        .is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name.trim().as_bytes()))
                     && (!self.unread_only || !self.read.contains(&info.index))
-                    && (needle.is_empty() || [&info.from, &info.to, &info.subject].iter().any(|value| text::decode(value).to_lowercase().contains(&needle)))
+                    && (needle.is_empty()
+                        || [&info.from, &info.to, &info.subject]
+                            .iter()
+                            .any(|value| text::decode(value).to_lowercase().contains(&needle)))
             })
             .collect();
         self.messages = match self.view_mode {

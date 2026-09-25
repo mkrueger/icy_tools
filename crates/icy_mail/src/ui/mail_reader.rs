@@ -3,6 +3,7 @@ use crate::ui::main_window::{ConferenceRow, ROW_HEIGHT};
 use crate::ui::threading::Row;
 use crate::ui::{ConferenceColumn, MainWindow, Message, MessageColumn, Pane, SortDirection, ViewMode};
 use icy_engine_gui::TerminalView;
+use icy_mail::text::decode;
 use icy_ui::widget::{button, column, container, mouse_area, row, scroll_area, scrollable, table, text, text_input, Space};
 use icy_ui::{Alignment, Border, Color, Element, Font, Length};
 
@@ -248,9 +249,10 @@ impl MainWindow {
     fn message_row<'a>(&self, entry: &Row, info: &'a MessageInfo, focused: bool, threaded: bool) -> Element<'a, Message> {
         let selected = self.selected_message == Some(info.index);
 
+        let subject_text = decode(&info.subject).into_owned();
         let subject = if threaded && entry.depth > 0 {
             // Replies show the reply marker instead of repeating "Re:" over and over.
-            let stripped = info.subject.trim_start();
+            let stripped = subject_text.trim_start();
             row![
                 Space::new().width(Length::Fixed(f32::from(entry.depth) * THREAD_INDENT)),
                 text("\u{21B3} ").size(TEXT_SIZE).font(Font::MONOSPACE),
@@ -259,14 +261,14 @@ impl MainWindow {
         } else if threaded {
             row![
                 text(if entry.has_children { "\u{25BE} " } else { "  " }).size(TEXT_SIZE).font(Font::MONOSPACE),
-                cell(info.subject.clone(), 0.0),
+                cell(subject_text, 0.0),
             ]
         } else {
-            row![cell(info.subject.clone(), 0.0)]
+            row![cell(subject_text, 0.0)]
         };
 
         let content = row![
-            cell(info.from.clone(), FROM_COL),
+            cell(decode(&info.from).into_owned(), FROM_COL),
             cell(info.date_str.clone(), DATE_COL),
             container(subject.align_y(Alignment::Center)).width(Length::Fill).clip(true),
             cell(info.lines.to_string(), LINES_COL),
@@ -308,11 +310,11 @@ impl MainWindow {
         };
 
         let header = column![
-            field("Subject: ", &info.subject),
+            field("Subject: ", &decode(&info.subject)),
             row![
-                field("From: ", &info.from),
+                field("From: ", &decode(&info.from)),
                 Space::new().width(16),
-                field("To: ", &info.to),
+                field("To: ", &decode(&info.to)),
                 Space::new().width(16),
                 field("Date: ", &info.date_str),
             ]

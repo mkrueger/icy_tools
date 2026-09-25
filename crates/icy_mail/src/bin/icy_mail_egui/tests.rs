@@ -1018,3 +1018,15 @@ fn gpu_long_message_scroll_and_selection_copy() {
     }
     assert!(mail.screen.offset.y > 0.0);
 }
+
+#[test]
+fn ui_font_covers_every_cp437_character() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let _ = context.run(Default::default(), |_| {});
+    let missing: String = (128u8..=255)
+        .map(icy_mail::editor::cp437_char)
+        .filter(|&ch| !context.fonts_mut(|fonts| fonts.has_glyph(&egui::FontId::proportional(13.0), ch)))
+        .collect();
+    assert!(missing.is_empty(), "missing glyphs: {missing}");
+}
