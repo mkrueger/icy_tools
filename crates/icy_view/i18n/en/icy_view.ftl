@@ -34,6 +34,7 @@ egui-no-favorites = Pin folders with the star in the address bar
 egui-folder = Folder
 egui-show-osd = Show info panel on open
 egui-show-minimap = Show minimap
+egui-hide-minimap = Hide minimap
 egui-viewer = Viewer
 egui-open-folder = Open folder
 egui-zoom = Zoom

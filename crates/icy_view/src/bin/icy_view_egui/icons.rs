@@ -30,6 +30,7 @@ pub enum Icon {
     Replay,
     Bolt,
     AutoScroll,
+    Minimap,
     File(FileIcon),
 }
 
@@ -65,6 +66,7 @@ impl Icons {
             Icon::Replay => ("replay", include_bytes!("../../../data/icons/replay.svg")),
             Icon::Bolt => ("bolt", include_bytes!("../../../data/icons/bolt.svg")),
             Icon::AutoScroll => ("auto-scroll", include_bytes!("../../../data/icons/auto_scroll.svg")),
+            Icon::Minimap => ("minimap", include_bytes!("../../../data/icons/minimap.svg")),
             Icon::File(kind) => {
                 let name = match kind {
                     FileIcon::Folder | FileIcon::FolderOpen | FileIcon::FolderData => "folder",

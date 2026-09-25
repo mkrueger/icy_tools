@@ -1,15 +1,23 @@
 //! Navigator strip for art taller than the view: a scaled render of the whole file with the
 //! visible part outlined. Click or drag to jump; long files scroll the strip along.
 
-use super::thumbnails::Thumbnails;
+use super::{
+    icons::{Icon, Icons},
+    text,
+    thumbnails::Thumbnails,
+};
 use eframe::egui;
 use icy_view::items::Item;
 
 pub const WIDTH: f32 = 92.0;
 const MARGIN: f32 = 8.0;
+const SCROLL_BAR: f32 = 12.0;
+const TOGGLE: f32 = 22.0;
 
 pub struct Minimap {
     thumbnails: Thumbnails,
+    /// Strip and toggle button of the last frame, for tests.
+    pub rects: Option<(egui::Rect, egui::Rect)>,
 }
 
 /// Viewport of the preview in content fractions and the matching strip geometry.
@@ -38,12 +46,33 @@ impl Minimap {
     pub fn new(context: &egui::Context) -> Self {
         Self {
             thumbnails: Thumbnails::new(context),
+            rects: None,
         }
     }
 
-    /// Returns the scroll offset to jump to when the strip was clicked or dragged.
-    pub fn show(&mut self, ui: &mut egui::Ui, area: egui::Rect, item: &dyn Item, offset: egui::Vec2, max_offset: egui::Vec2) -> Option<f32> {
+    /// Returns the scroll offset to jump to when the strip was clicked or dragged. The corner
+    /// button hides the strip; while hidden only that button remains to bring it back.
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        area: egui::Rect,
+        item: &dyn Item,
+        offset: egui::Vec2,
+        max_offset: egui::Vec2,
+        visible: &mut bool,
+        icons: &mut Icons,
+    ) -> Option<f32> {
+        self.rects = None;
         if max_offset.y <= 0.0 || area.width() < WIDTH * 3.0 {
+            return None;
+        }
+        let right = area.right() - MARGIN - SCROLL_BAR;
+        if !*visible {
+            let button = egui::Rect::from_min_size(egui::pos2(right - TOGGLE, area.top() + MARGIN), egui::Vec2::splat(TOGGLE));
+            self.rects = Some((button, button));
+            if toggle(ui, button, Icon::Minimap, &text("egui-show-minimap"), true, icons) {
+                *visible = true;
+            }
             return None;
         }
         self.thumbnails.request(item);
@@ -52,7 +81,7 @@ impl Minimap {
         let entry = self.thumbnails.entries.get(&Thumbnails::key(item))?;
         let image = entry.images.first()?;
         let height = area.height() - MARGIN * 2.0;
-        let rect = egui::Rect::from_min_size(egui::pos2(area.right() - WIDTH - MARGIN - 12.0, area.top() + MARGIN), egui::vec2(WIDTH, height));
+        let rect = egui::Rect::from_min_size(egui::pos2(right - WIDTH, area.top() + MARGIN), egui::vec2(WIDTH, height));
         let view_height = area.height();
         let geometry = geometry(image.size, height, offset.y, max_offset.y, view_height);
         let strip = egui::Rect::from_min_size(rect.min, egui::vec2(WIDTH, geometry.strip_height.min(height)));
@@ -74,11 +103,40 @@ impl Minimap {
         let view = egui::Rect::from_min_size(strip.min + egui::vec2(0.0, geometry.view_top), egui::vec2(WIDTH, geometry.view_height)).intersect(strip);
         painter.rect_filled(view, 2.0, visuals.selection.bg_fill.gamma_multiply(0.25));
         painter.rect_stroke(view, 2.0, egui::Stroke::new(1.5, visuals.selection.stroke.color), egui::StrokeKind::Inside);
+        let button = egui::Rect::from_min_size(egui::pos2(strip.right() - TOGGLE - 3.0, strip.top() + 3.0), egui::Vec2::splat(TOGGLE));
+        self.rects = Some((strip, button));
+        let hovered = ui.rect_contains_pointer(strip) && !response.dragged();
+        if hovered && toggle(ui, button, Icon::Chevron, &text("egui-hide-minimap"), false, icons) {
+            *visible = false;
+            return None;
+        }
         let pointer = response.interact_pointer_pos().filter(|_| response.clicked() || response.dragged())?;
         let fraction = ((pointer.y - strip.top() + geometry.strip_scroll) / geometry.strip_height.max(1.0)).clamp(0.0, 1.0);
         let total = max_offset.y + view_height;
         Some((fraction * total - view_height / 2.0).clamp(0.0, max_offset.y))
     }
+}
+
+/// Small dark round button over the art; `solid` keeps it readable when nothing is behind it.
+fn toggle(ui: &mut egui::Ui, rect: egui::Rect, icon: Icon, tooltip: &str, solid: bool, icons: &mut Icons) -> bool {
+    let response = ui
+        .interact(rect, ui.id().with(("minimap-toggle", solid)), egui::Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(tooltip);
+    let alpha = match (response.hovered(), solid) {
+        (true, _) => 230,
+        (false, true) => 150,
+        (false, false) => 190,
+    };
+    ui.painter().rect_filled(rect, 5.0, egui::Color32::from_black_alpha(alpha));
+    let tint = if response.hovered() {
+        egui::Color32::WHITE
+    } else {
+        egui::Color32::from_gray(200)
+    };
+    icons.image(ui.ctx(), icon, 16.0).tint(tint).paint_at(ui, rect.shrink(3.0));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tooltip));
+    response.clicked()
 }
 
 #[cfg(test)]

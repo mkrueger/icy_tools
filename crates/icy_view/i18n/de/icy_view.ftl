@@ -32,6 +32,7 @@ egui-no-favorites = Ordner mit dem Stern in der Adressleiste anheften
 egui-folder = Ordner
 egui-show-osd = Infofeld beim Öffnen zeigen
 egui-show-minimap = Minikarte zeigen
+egui-hide-minimap = Minikarte ausblenden
 egui-viewer = Anzeige
 egui-open-folder = Ordner öffnen
 egui-zoom = Zoom

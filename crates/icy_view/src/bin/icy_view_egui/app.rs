@@ -46,7 +46,7 @@ pub struct Viewer {
     pub library: Library,
     pub osd: Osd,
     pub palette: Option<Palette>,
-    minimap: super::minimap::Minimap,
+    pub minimap: super::minimap::Minimap,
     pub font_bar: FontBar,
     music_drag: Option<f64>,
     pub editing_location: bool,
@@ -1340,10 +1340,14 @@ impl Viewer {
             .browser
             .selected
             .filter(|index| self.browser.items.get(*index).is_some_and(|item| !item.is_container()));
-        if self.options.show_minimap && self.shuffle.is_none() && !self.font_bar.customized() {
+        if self.shuffle.is_none() && !self.font_bar.customized() {
             if let Some(item) = index.and_then(|index| self.browser.items.get(index)) {
                 let offset = self.preview.screen.offset;
-                if let Some(y) = self.minimap.show(ui, area, &**item, offset, self.preview.screen.max_offset) {
+                let max_offset = self.preview.screen.max_offset;
+                if let Some(y) = self
+                    .minimap
+                    .show(ui, area, &**item, offset, max_offset, &mut self.options.show_minimap, &mut self.icons)
+                {
                     self.stop_auto_scroll();
                     self.preview.screen.scroll_to = Some(egui::vec2(offset.x, y));
                 }

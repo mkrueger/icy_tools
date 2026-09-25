@@ -1023,6 +1023,19 @@ fn gpu_info_panel_ratings_palette_minimap_and_font_preview() {
     let key = library::key(&app.browser.location.point, &*app.browser.items[tall_index]);
     assert!(app.library.viewed(&key).is_some(), "opened files are marked as viewed");
 
+    let (strip, button) = app.minimap.rects.expect("tall art shows the minimap");
+    let hover = egui::Event::PointerMoved(strip.center());
+    gpu.capture(&mut app, size, 1.0, vec![hover.clone()], "features-minimap-hover");
+    gpu.capture(&mut app, size, 1.0, vec![hover], "features-minimap-hover");
+    gpu.click_at(&mut app, size, 1.0, button.center());
+    assert!(!app.options.show_minimap, "the corner button hides the minimap");
+    gpu.capture(&mut app, size, 1.0, vec![], "features-minimap-hidden");
+    let (_, button) = app.minimap.rects.expect("a hidden minimap leaves its toggle");
+    assert!(button.width() < 30.0);
+    gpu.click_at(&mut app, size, 1.0, button.center());
+    assert!(app.options.show_minimap, "the toggle brings the minimap back");
+    gpu.capture(&mut app, size, 1.0, vec![egui::Event::PointerGone], "features-minimap-back");
+
     gpu.capture(&mut app, size, 1.0, vec![press(egui::Key::Num4, egui::Modifiers::NONE)], "features-rated");
     gpu.capture(&mut app, size, 1.0, vec![], "features-rated");
     assert_eq!(app.library.rating(&key), 4, "digit keys rate the selected file");
