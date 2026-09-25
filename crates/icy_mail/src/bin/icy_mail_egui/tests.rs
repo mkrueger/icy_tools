@@ -649,6 +649,26 @@ fn welcome_page_opens_and_forgets_recent_packets() {
 }
 
 #[test]
+fn cp437_header_fields_are_decoded_for_display() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let package = Arc::make_mut(mail.reader.package.as_mut().unwrap());
+    let index = package.infos.iter().position(|info| Some(info.index) == mail.reader.selected_message).unwrap();
+    package.infos[index].from = b"Andr\x82".as_slice().into();
+    package.infos[index].to = b"J\x81rgen".as_slice().into();
+    package.infos[index].subject = b"\xb0\xb1\xb2 News".as_slice().into();
+    mail.reader.filter = "j\u{fc}rgen".into();
+    mail.reader.rebuild_messages();
+    assert_eq!(mail.reader.messages.len(), 1, "search matches the decoded text");
+    let size = egui::vec2(1100.0, 760.0);
+    let output = settle(&context, &mut mail, size);
+    label(&output, "Andr\u{e9}");
+    label(&output, "J\u{fc}rgen");
+    label(&output, "\u{2591}\u{2592}\u{2593} News");
+}
+
+#[test]
 fn virtualized_table_renders_only_visible_rows_and_reveals_end() {
     let context = egui::Context::default();
     appearance::apply(&context);
@@ -660,7 +680,7 @@ fn virtualized_table_renders_only_visible_rows_and_reveals_end() {
         let mut next = info.clone();
         next.index = index;
         next.number = index as u32 + 100;
-        next.subject = format!("Message {index:05}");
+        next.subject = format!("Message {index:05}").into();
         next.date = package.infos[3].date;
         package.infos.push(next);
         package.descriptors.push(descriptor.clone());

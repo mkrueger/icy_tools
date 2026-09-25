@@ -1,9 +1,11 @@
 use std::{cmp::Ordering, collections::HashSet, sync::Arc};
 
+use bstr::ByteSlice;
 use icy_engine::{EditableScreen, Size, TextScreen};
 
 use crate::{
     qwk::QwkPackage,
+    text,
     threading::{self, Row},
     Res,
 };
@@ -186,9 +188,9 @@ impl Reader {
             .iter()
             .filter(|info| {
                 self.selected_conference.is_none_or(|number| info.conference == number)
-                    && self.personal.as_ref().is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name.trim()))
+                    && self.personal.as_ref().is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name.trim().as_bytes()))
                     && (!self.unread_only || !self.read.contains(&info.index))
-                    && (needle.is_empty() || [&info.from, &info.to, &info.subject].iter().any(|value| value.to_lowercase().contains(&needle)))
+                    && (needle.is_empty() || [&info.from, &info.to, &info.subject].iter().any(|value| text::decode(value).to_lowercase().contains(&needle)))
             })
             .collect();
         self.messages = match self.view_mode {
@@ -197,9 +199,9 @@ impl Reader {
                 let (column, direction) = self.message_sort;
                 infos.sort_by(|left, right| {
                     direction.apply(match column {
-                        MessageColumn::From => left.from.to_lowercase().cmp(&right.from.to_lowercase()),
+                        MessageColumn::From => text::cmp_ignore_case(&left.from, &right.from),
                         MessageColumn::Date => left.date.cmp(&right.date).then(left.number.cmp(&right.number)),
-                        MessageColumn::Subject => left.subject.to_lowercase().cmp(&right.subject.to_lowercase()),
+                        MessageColumn::Subject => text::cmp_ignore_case(&left.subject, &right.subject),
                         MessageColumn::Lines => left.lines.cmp(&right.lines),
                     })
                 });

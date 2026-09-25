@@ -3,6 +3,7 @@ use icy_engine_gui::egui::appearance;
 use icy_mail::{
     drafts::DraftKind,
     reader::{MessageColumn, Pane, ViewMode},
+    text,
 };
 
 use super::{
@@ -125,11 +126,9 @@ impl MailApp {
                         let row = self.reader.messages[position];
                         let info = &package.infos[row.index];
                         let unread = !self.reader.read.contains(&row.index);
-                        let subject = if threaded && row.depth > 0 {
-                            format!("> {}", info.subject)
-                        } else {
-                            info.subject.clone()
-                        };
+                        let from = text::decode(&info.from);
+                        let subject = text::decode(&info.subject);
+                        let subject = if threaded && row.depth > 0 { format!("> {subject}").into() } else { subject };
                         let lines = info.lines.to_string();
                         let selected = self.reader.selected_message == Some(row.index);
                         let (response, cells, colors) = widgets::row(
@@ -137,7 +136,7 @@ impl MailApp {
                             &widths,
                             &[
                                 Cell::new(""),
-                                Cell::new(&info.from).strong(unread),
+                                Cell::new(&from).strong(unread),
                                 Cell::new(&subject)
                                     .strong(unread)
                                     .indent(if threaded { f32::from(row.depth.min(12)) * 16.0 } else { 0.0 }),

@@ -78,7 +78,7 @@ fn control_dat() -> Vec<u8> {
 fn write_packet(dir: &std::path::Path) -> std::path::PathBuf {
     let mut messages = vec![b' '; 128]; // packet header block
 
-    message(&mut messages, 10, "01-02-2010:00", "alice", "Coffee machine", 0, 1, 3);
+    message(&mut messages, 10, "01/02/2010:00", "alice", "Coffee machine", 0, 1, 3);
     message(&mut messages, 11, "01-02-2011:00", "bob", "Re: Coffee machine", 10, 1, 1);
     message(&mut messages, 12, "01-03-2009:00", "carol", "Amiga demos", 0, 2, 5);
     message(&mut messages, 13, "01-04-2009:00", "dave", "Re: Amiga demos", 0, 2, 2);

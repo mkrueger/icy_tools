@@ -1,3 +1,4 @@
+use bstr::{BString, ByteSlice};
 use jamjam::qwk::control::ControlDat;
 use jamjam::qwk::qwk_message::QWKMessage;
 use std::collections::HashMap;
@@ -31,9 +32,10 @@ pub struct MessageInfo {
     /// Message this one replies to, `0` when it starts a thread.
     pub ref_number: u32,
     pub conference: u16,
-    pub from: String,
-    pub to: String,
-    pub subject: String,
+    /// Header fields as stored in the packet (usually CP437), see [`crate::text::decode`].
+    pub from: BString,
+    pub to: BString,
+    pub subject: BString,
     /// Subject with all `Re:` prefixes stripped, lowercased - the thread key.
     pub subject_key: String,
     pub date: chrono::NaiveDateTime,
@@ -180,9 +182,9 @@ impl QwkPackage {
                         number: descriptor.number,
                         ref_number: 0,
                         conference: descriptor.conference,
-                        from: String::new(),
-                        to: String::new(),
-                        subject: format!("<unreadable message #{}>", descriptor.number),
+                        from: BString::default(),
+                        to: BString::default(),
+                        subject: format!("<unreadable message #{}>", descriptor.number).into(),
                         subject_key: String::new(),
                         date: chrono::NaiveDateTime::default(),
                         date_str: String::new(),
@@ -191,19 +193,26 @@ impl QwkPackage {
                     };
                 };
 
-                let subject = trim_field(&msg.subj);
-                let date = msg.date_time();
+                let subject = BString::from(msg.subj.trim());
+                let raw_date = trim_field(&msg.date_time);
+                let (date, date_str) = match parse_qwk_date(&raw_date) {
+                    Ok(date) => (date, date.format("%Y-%m-%d %H:%M").to_string()),
+                    Err(error) => {
+                        log::warn!("invalid QWK date for message {}: {raw_date:?}: {error}", msg.msg_number);
+                        (chrono::NaiveDateTime::default(), raw_date)
+                    }
+                };
                 MessageInfo {
                     index,
                     number: msg.msg_number,
                     ref_number: msg.ref_msg_number,
                     conference: msg.conference_number,
-                    from: trim_field(&msg.from),
-                    to: trim_field(&msg.to),
-                    subject_key: normalize_subject(&subject),
+                    from: msg.from.trim().into(),
+                    to: msg.to.trim().into(),
+                    subject_key: normalize_subject(&crate::text::decode(&subject)),
                     subject,
                     date,
-                    date_str: date.format("%Y-%m-%d %H:%M").to_string(),
+                    date_str,
                     lines: msg.text.iter().filter(|b| **b == b'\n').count() as u32,
                     private: matches!(msg.status, b'*' | b'+' | b'~' | b'`'),
                 }
@@ -320,7 +329,7 @@ impl QwkPackage {
             .conferences
             .iter()
             .filter_map(|conference| {
-                let name = trim_field(&conference.name);
+                let name = crate::text::decode(conference.name.trim()).into_owned();
                 let count = counts.remove(&conference.number).unwrap_or(0);
                 (!name.is_empty() && count > 0).then_some((conference.number, name, count))
             })
@@ -335,6 +344,10 @@ impl QwkPackage {
 
 fn trim_field(field: &[u8]) -> String {
     String::from_utf8_lossy(field).trim().to_string()
+}
+
+fn parse_qwk_date(value: &str) -> Result<chrono::NaiveDateTime, chrono::ParseError> {
+    chrono::NaiveDateTime::parse_from_str(value, "%m-%d-%y%H:%M").or_else(|_| chrono::NaiveDateTime::parse_from_str(value, "%m/%d/%y%H:%M"))
 }
 
 fn parse_qwk_number(data: &[u8]) -> Result<u32, Box<dyn Error>> {

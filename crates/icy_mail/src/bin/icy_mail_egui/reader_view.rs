@@ -5,6 +5,7 @@ use icy_mail::{
     drafts::{Draft, DraftKind},
     editor,
     reader::{NavigateDirection, Pane},
+    text,
 };
 
 use super::{
@@ -25,6 +26,7 @@ impl MailApp {
             widgets::empty(ui, image, "No message selected", "Pick a message from the list to read it here.");
             return;
         };
+        let (from, to, subject) = (text::decode(&info.from), text::decode(&info.to), text::decode(&info.subject));
         let compact = ui.available_height() < 220.0;
         let minimal = ui.available_height() < 160.0;
         let conference = self.folder_name(Folder::Conference(info.conference));
@@ -55,8 +57,8 @@ impl MailApp {
                     let width = (ui.available_width() - actions).max(40.0);
                     ui.allocate_ui_with_layout(egui::vec2(width, 30.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         ui.set_min_width(width);
-                        ui.add(egui::Label::new(appearance::bold(ui, &info.subject).size(if compact { 14.0 } else { 17.0 })).truncate())
-                            .on_hover_text(&info.subject);
+                        ui.add(egui::Label::new(appearance::bold(ui, &*subject).size(if compact { 14.0 } else { 17.0 })).truncate())
+                            .on_hover_text(&*subject);
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
@@ -104,22 +106,22 @@ impl MailApp {
                     return;
                 }
                 if compact {
-                    let details = format!("{} \u{2192} {}  \u{00b7}  {}  \u{00b7}  {conference}", info.from, info.to, info.date_str);
+                    let details = format!("{} \u{2192} {}  \u{00b7}  {}  \u{00b7}  {conference}", from, to, info.date_str);
                     ui.add(egui::Label::new(egui::RichText::new(&details).size(12.0).weak()).truncate())
                         .on_hover_text(details);
                     return;
                 }
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    widgets::avatar(ui, &info.from, 34.0);
+                    widgets::avatar(ui, &from, 34.0);
                     ui.add_space(4.0);
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 1.0;
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
-                            ui.label(appearance::bold(ui, &info.from).size(13.5));
+                            ui.label(appearance::bold(ui, &*from).size(13.5));
                             ui.label(egui::RichText::new("to").weak().size(12.5));
-                            ui.label(egui::RichText::new(&info.to).size(13.5));
+                            ui.label(egui::RichText::new(&*to).size(13.5));
                             if info.private {
                                 ui.add_space(6.0);
                                 appearance::status_badge(ui, "Private", widgets::warning(ui));

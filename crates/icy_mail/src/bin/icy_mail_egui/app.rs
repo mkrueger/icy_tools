@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
+use bstr::ByteSlice;
 use eframe::egui::{self, Key, Vec2};
 use icy_engine::{BufferType, Position, Selection, Size, TextScreen};
 use icy_engine_gui::{egui::screen::ScreenView, MonitorSettings, ScalingMode};
@@ -9,6 +10,7 @@ use icy_mail::{
     qwk::MessageInfo,
     reader::{NavigateDirection, Pane, Reader, ViewMode},
     state::{ReadState, RecentPackets},
+    text,
 };
 use parking_lot::Mutex;
 
@@ -322,7 +324,7 @@ impl MailApp {
         self.reader
             .package
             .as_ref()
-            .map(|package| package.control_file.qmail_user_name.to_string().trim().to_string())
+            .map(|package| text::decode(package.control_file.qmail_user_name.trim()).into_owned())
             .unwrap_or_default()
     }
 
@@ -340,7 +342,7 @@ impl MailApp {
         if let Some(package) = &self.reader.package {
             for info in &package.infos {
                 let unread = !self.reader.read.contains(&info.index);
-                let personal = !user.is_empty() && info.to.trim().eq_ignore_ascii_case(&user);
+                let personal = !user.is_empty() && info.to.trim().eq_ignore_ascii_case(user.as_bytes());
                 if personal {
                     counts.personal.1 += 1;
                 }
@@ -571,10 +573,13 @@ impl MailApp {
             let quoted: String = text.trim_end().lines().map(|line| format!("> {line}\n")).collect();
             draft.body = format!(
                 "\n\n--- Forwarded message ---\nFrom: {}\nTo: {}\nDate: {}\nSubject: {}\n\n{quoted}",
-                info.from, info.to, info.date_str, info.subject
+                text::decode(&info.from),
+                text::decode(&info.to),
+                info.date_str,
+                text::decode(&info.subject)
             );
         }
-        let origin = format!("{} \u{00b7} {} \u{00b7} #{}", info.from, info.subject, info.number);
+        let origin = message_origin(info);
         // Like on a BBS, a reply starts empty with the quote panel open to pick lines from.
         self.start_composer(context, Composer::new(draft, false, Some(origin), quotes, !forward));
     }
@@ -604,7 +609,7 @@ impl MailApp {
             .infos
             .iter()
             .find(|info| info.number == draft.ref_number && info.conference == draft.conference)?;
-        Some(format!("{} \u{00b7} {} \u{00b7} #{}", info.from, info.subject, info.number))
+        Some(message_origin(info))
     }
 
     /// Quote lines of the message a reply refers to, when it is in the open packet.
@@ -1067,10 +1072,21 @@ pub fn draft_title(draft: &Draft) -> String {
     }
 }
 
+/// Sender, subject and number of a message, for the composer heading.
+fn message_origin(info: &MessageInfo) -> String {
+    format!(
+        "{} \u{00b7} {} \u{00b7} #{}",
+        text::decode(&info.from),
+        text::decode(&info.subject),
+        info.number
+    )
+}
+
 /// The attribution and quoted lines offered in the editor's quote panel.
 fn quotes(info: &MessageInfo, text: &[u8]) -> Vec<String> {
-    let mut lines = vec![format!("On {} {} wrote:", info.date_str, info.from.trim())];
-    lines.extend(editor::quote_lines(&info.from, &editor::decode_message(text), editor::WRAP_WIDTH));
+    let from = text::decode(&info.from);
+    let mut lines = vec![format!("On {} {} wrote:", info.date_str, from.trim())];
+    lines.extend(editor::quote_lines(&from, &editor::decode_message(text), editor::WRAP_WIDTH));
     lines
 }
 
