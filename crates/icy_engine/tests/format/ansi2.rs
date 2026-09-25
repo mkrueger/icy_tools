@@ -343,3 +343,77 @@ fn test_no_background_bleed_at_line_end() {
         }
     }
 }
+
+/// Buffer with every row filled with its own letter ('A', 'B', ...).
+fn full_rows_buffer(width: i32, height: i32) -> TextBuffer {
+    let mut buf = TextBuffer::new((width, height));
+    for y in 0..height {
+        for x in 0..width {
+            buf.layers[0].set_char((x, y), AttributedChar::new((b'A' + y as u8) as char, TextAttribute::default()));
+        }
+    }
+    buf
+}
+
+fn save_with_line_break(buf: &TextBuffer, line_break: icy_engine::LineBreakBehavior, terminal_width: Option<u16>) -> Vec<u8> {
+    use icy_engine::formats::{AnsiCompatibilityLevel, AnsiFormatOptions, FormatOptions};
+
+    let mut ansi = AnsiFormatOptions::new(AnsiCompatibilityLevel::AnsiSys);
+    ansi.line_break = line_break;
+    ansi.terminal_width = terminal_width;
+    let mut options = SaveOptions::new();
+    options.format = FormatOptions::Ansi(ansi);
+    FileFormat::Ansi.to_bytes(buf, &options).unwrap()
+}
+
+fn assert_rows_match(expected: &TextBuffer, actual: &TextBuffer) {
+    for y in 0..expected.height() {
+        for x in 0..expected.width() {
+            assert_eq!(expected.char_at((x, y).into()).ch, actual.char_at((x, y).into()).ch, "at {x},{y}");
+        }
+    }
+}
+
+#[test]
+fn test_force_line_breaks_narrow_buffer() {
+    let buf = full_rows_buffer(16, 12);
+    let bytes = save_with_line_break(&buf, icy_engine::LineBreakBehavior::Force, None);
+    let rows: Vec<&[u8]> = bytes.split(|&b| b == b'\n').collect();
+    assert_eq!(12, rows.len(), "{:?}", String::from_utf8_lossy(&bytes));
+    for (y, row) in rows.iter().enumerate() {
+        let text = row.strip_suffix(b"\r").unwrap_or(row);
+        assert_eq!(vec![b'A' + y as u8; 16], text, "row {y}: {:?}", String::from_utf8_lossy(row));
+        assert_eq!(y + 1 < rows.len(), text.len() < row.len(), "row {y} must end in CR LF");
+    }
+
+    // An 80 column terminal (the default load width) shows the same rows.
+    let reloaded = FileFormat::Ansi.from_bytes(&bytes, None).unwrap().screen.buffer;
+    assert_rows_match(&buf, &reloaded);
+}
+
+#[test]
+fn test_terminal_width_narrow_buffer() {
+    let buf = full_rows_buffer(16, 3);
+
+    // Default: the terminal is assumed to be as wide as the buffer (as declared in SAUCE),
+    // full rows rely on autowrap.
+    let bytes = save_with_line_break(&buf, icy_engine::LineBreakBehavior::Wrap, None);
+    assert!(!bytes.contains(&b'\n'), "{:?}", String::from_utf8_lossy(&bytes));
+
+    // On an 80 column terminal the 16 column rows don't wrap by themselves.
+    let bytes = save_with_line_break(&buf, icy_engine::LineBreakBehavior::Wrap, Some(80));
+    assert_eq!(2, bytes.iter().filter(|&&b| b == b'\n').count(), "{:?}", String::from_utf8_lossy(&bytes));
+    let reloaded = FileFormat::Ansi.from_bytes(&bytes, None).unwrap().screen.buffer;
+    assert_rows_match(&buf, &reloaded);
+}
+
+#[test]
+fn test_terminal_width_full_width_rows_unchanged() {
+    let buf = full_rows_buffer(80, 3);
+    let default = save_with_line_break(&buf, icy_engine::LineBreakBehavior::Wrap, None);
+    assert!(!default.contains(&b'\n'), "{:?}", String::from_utf8_lossy(&default));
+    assert_eq!(default, save_with_line_break(&buf, icy_engine::LineBreakBehavior::Wrap, Some(80)));
+
+    let reloaded = FileFormat::Ansi.from_bytes(&default, None).unwrap().screen.buffer;
+    assert_rows_match(&buf, &reloaded);
+}

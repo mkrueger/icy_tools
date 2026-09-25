@@ -148,6 +148,16 @@ pub struct AnsiSaveOptions {
     /// making the file work on longer terminals.
     pub longer_terminal_output: bool,
 
+    /// When set a line break is emitted after every row, even if the row is full
+    /// and the terminal would wrap on its own.
+    #[serde(default)]
+    pub force_line_breaks: bool,
+
+    /// Width of the target terminal; `None` assumes the buffer width.
+    /// Full rows only rely on autowrap if they fill the terminal.
+    #[serde(default)]
+    pub terminal_width: Option<usize>,
+
     /// When set output ignores fg color changes in whitespaces
     /// and bg color changes in blocks.
     pub lossles_output: bool,
@@ -194,6 +204,8 @@ impl Default for AnsiSaveOptions {
             preserve_line_length: false,
             output_line_length: None,
             longer_terminal_output: false,
+            force_line_breaks: false,
+            terminal_width: None,
             control_char_handling: ControlCharHandling::Ignore,
             skip_lines: None,
             lossles_output: false,
@@ -260,6 +272,7 @@ impl AnsiSaveOptions {
         };
 
         let longer_terminal_output = matches!(ansi_opts.line_break, super::save_options::LineBreakBehavior::GotoXY);
+        let force_line_breaks = matches!(ansi_opts.line_break, super::save_options::LineBreakBehavior::Force);
 
         Self {
             format_type: 0,
@@ -273,6 +286,8 @@ impl AnsiSaveOptions {
             preserve_line_length,
             output_line_length,
             longer_terminal_output,
+            force_line_breaks,
+            terminal_width: ansi_opts.terminal_width.map(|w| w as usize),
             lossles_output: !options.preprocess.optimize_colors,
             use_extended_colors,
             normalize_whitespaces: options.preprocess.normalize_whitespaces,
@@ -1149,7 +1164,9 @@ impl StringGeneratorV2 {
                 // makes roundtrip-parse comparisons flaky.
                 if y + 1 < cells.len() {
                     let is_full_width = full_width > 0 && len == full_width;
-                    let can_rely_on_autowrap = is_full_width && printed_last_column;
+                    // A row narrower than the viewer's terminal doesn't wrap there.
+                    let fills_terminal = self.options.terminal_width.is_none_or(|w| w == full_width);
+                    let can_rely_on_autowrap = !self.options.force_line_breaks && is_full_width && fills_terminal && printed_last_column;
 
                     // If we printed the last column, many parsers/emulators will already
                     // advance to the next line due to autowrap. Emitting an explicit CRLF

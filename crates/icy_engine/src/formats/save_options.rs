@@ -362,6 +362,13 @@ pub struct AnsiFormatOptions {
     /// Line break behavior.
     pub line_break: LineBreakBehavior,
 
+    /// Width of the terminal the output is meant for (`None`: same as the buffer width).
+    /// With `LineBreakBehavior::Wrap` a full row is only left to the terminal's
+    /// autowrap if it also fills the terminal, e.g. a 16 column buffer shown on an
+    /// 80 column terminal still gets a line break after each row.
+    #[serde(default)]
+    pub terminal_width: Option<u16>,
+
     /// Line ending style.
     pub line_ending: LineEnding,
 
@@ -391,6 +398,7 @@ impl AnsiFormatOptions {
             screen_prep: ScreenPreperation::None,
             line_length: LineLength::Default,
             line_break: LineBreakBehavior::Wrap,
+            terminal_width: None,
             line_ending: LineEnding::Lf,
             control_char_handling: ControlCharHandling::Ignore,
             sixel: SixelSettings::default(),
