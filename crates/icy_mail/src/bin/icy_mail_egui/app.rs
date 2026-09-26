@@ -2,21 +2,28 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use bstr::ByteSlice;
 use eframe::egui::{self, Key, Vec2};
+use i18n_embed_fl::fl;
 use icy_engine::{BufferType, Position, Selection, Size, TextScreen};
-use icy_engine_gui::{egui::screen::ScreenView, MonitorSettings, ScalingMode};
+use icy_engine_gui::{egui::screen::ScreenView, MonitorSettings};
 use icy_mail::{
+    address_book::AddressBook,
     drafts::{Compose, Draft, DraftStore},
     editor,
+    options::Options,
     qwk::MessageInfo,
     reader::{NavigateDirection, Pane, Reader, ViewMode},
     state::{ReadState, RecentPackets},
-    text,
+    taglines::{self, Taglines},
+    text, LANGUAGE_LOADER,
 };
 use parking_lot::Mutex;
 
 use super::{
+    address_dialog::AddressDialog,
     composer::Composer,
     loading::{Event, Loader},
+    settings::SettingsDialog,
+    tagline_dialog::TaglineDialog,
     widgets::{Icons, ROW_HEIGHT},
 };
 
@@ -57,6 +64,9 @@ pub enum Modal {
     DeleteDraft(u64),
     Discard(AfterDiscard),
     ExportProblems(Vec<String>),
+    Settings,
+    Taglines,
+    AddressBook,
 }
 
 /// Unread counts for the sidebar, refreshed when the packet or the read marks change.
@@ -88,6 +98,8 @@ pub struct MailApp {
     pub modal: Option<Modal>,
     pub notice: Option<Notice>,
     pub counts: Counts,
+    /// Conferences a draft can be posted to, see [`conference_choices`].
+    pub choices: Vec<(u16, String)>,
     pub icons: Icons,
     pub rendered: Option<usize>,
     /// The outbox draft (id and text) shown in `screen`.
@@ -99,6 +111,17 @@ pub struct MailApp {
     pub content_rect: egui::Rect,
     pub new_window: bool,
     pub closed: bool,
+    /// The settings as last saved.
+    pub options: Options,
+    pub settings_dialog: Option<SettingsDialog>,
+    /// New messages start with a random tagline.
+    pub random_tagline: bool,
+    pub taglines: Option<Taglines>,
+    pub tagline_dialog: Option<TaglineDialog>,
+    pub address_book: Option<AddressBook>,
+    pub address_dialog: Option<AddressDialog>,
+    /// The tagline found in a message, keyed by packet and message index.
+    tagline_cache: Option<((usize, usize), Option<String>)>,
     children: Vec<(egui::ViewportId, Arc<Mutex<MailApp>>)>,
 }
 
@@ -109,23 +132,37 @@ impl MailApp {
 
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn with_storage(context: &egui::Context, storage: PathBuf) -> Self {
+        #[cfg(test)]
+        crate::use_english();
         Self::create(context, Some(storage))
     }
 
-    fn create(_context: &egui::Context, storage: Option<PathBuf>) -> Self {
-        let settings = MonitorSettings {
-            scaling_mode: ScalingMode::FitWidth,
-            ..Default::default()
-        };
+    fn create(context: &egui::Context, storage: Option<PathBuf>) -> Self {
+        let options = storage
+            .clone()
+            .or_else(|| Options::directory().ok())
+            .map(|directory| {
+                Options::load_in(&directory).unwrap_or_else(|error| {
+                    log::warn!("could not read the settings, using the defaults: {error}");
+                    Options::default()
+                })
+            })
+            .unwrap_or_default();
         let recent = match &storage {
             Some(directory) => RecentPackets::open_in(directory),
             None => RecentPackets::open(),
         }
         .ok();
-        Self {
+        let taglines = match &storage {
+            Some(directory) => Taglines::open_in(directory),
+            None => Taglines::open(),
+        }
+        .inspect_err(|error| log::warn!("could not read the taglines: {error}"))
+        .ok();
+        let mut app = Self {
             reader: Reader::default(),
             screen: ScreenView::new(TextScreen::new(Size::new(80, 25))),
-            settings,
+            settings: options.monitor_settings.clone(),
             focus: Pane::Messages,
             loader: Loader::default(),
             path: None,
@@ -142,6 +179,7 @@ impl MailApp {
             modal: None,
             notice: None,
             counts: Counts::default(),
+            choices: Vec::new(),
             icons: Icons::default(),
             rendered: None,
             rendered_draft: None,
@@ -152,13 +190,28 @@ impl MailApp {
             content_rect: egui::Rect::NOTHING,
             new_window: false,
             closed: false,
+            random_tagline: options.random_tagline,
+            options,
+            settings_dialog: None,
+            taglines,
+            tagline_dialog: None,
+            address_book: None,
+            address_dialog: None,
+            tagline_cache: None,
             children: Vec::new(),
-        }
+        };
+        let options = app.options.clone();
+        app.apply_options(context, &options);
+        app
+    }
+
+    pub fn options_directory(&self) -> Option<PathBuf> {
+        self.storage.clone().or_else(|| Options::directory().ok())
     }
 
     pub fn open(&mut self, path: PathBuf, context: &egui::Context) {
         if self.composer.is_some() {
-            self.notify(context, NoticeKind::Warning, "Save or discard the message you are writing first");
+            self.notify(context, NoticeKind::Warning, fl!(LANGUAGE_LOADER, "notice-finish-writing"));
             return;
         }
         self.loading = Some(path.clone());
@@ -207,7 +260,7 @@ impl MailApp {
                             self.screen = ScreenView::new(screen);
                             if self.folder != Folder::Drafts {
                                 if let Some(index) = self.rendered {
-                                    if !self.reader.read.contains(&index) {
+                                    if !self.reader.is_read(index) {
                                         self.set_read(context, &[index], true);
                                     }
                                 }
@@ -231,9 +284,16 @@ impl MailApp {
                         match result {
                             Ok(()) => {
                                 let file = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                                self.notify(context, NoticeKind::Success, format!("Reply packet saved as {file} - upload it to the BBS"));
+                                self.notify(context, NoticeKind::Success, fl!(LANGUAGE_LOADER, "notice-exported", file = file));
                             }
-                            Err(error) => self.error = Some(format!("Unable to export {}:\n{error}", path.display())),
+                            Err(error) => {
+                                self.error = Some(fl!(
+                                    LANGUAGE_LOADER,
+                                    "app-export-failed",
+                                    path = path.display().to_string(),
+                                    error = error.to_string()
+                                ))
+                            }
                         }
                     }
                 }
@@ -251,7 +311,12 @@ impl MailApp {
         let drafts = match drafts {
             Ok(drafts) => drafts,
             Err(error) => {
-                self.error = Some(format!("Unable to load the drafts for {}:\n{error}", path.display()));
+                self.error = Some(fl!(
+                    LANGUAGE_LOADER,
+                    "app-drafts-failed",
+                    path = path.display().to_string(),
+                    error = error.to_string()
+                ));
                 return;
             }
         };
@@ -262,14 +327,19 @@ impl MailApp {
         let reload = self.path.as_ref() == Some(&path);
         let previous = (self.folder, self.reader.selected_message, self.reader.view_mode, self.reader.message_sort);
         self.reader.set_package(package.clone());
+        self.choices = conference_choices(&package);
         match read_state {
             Ok(state) => {
-                self.reader.read = state.indices(&package);
+                self.reader.set_read_marks(state.indices(&package));
                 self.read_state = Some(state);
             }
             Err(error) => {
                 self.read_state = None;
-                self.notify(context, NoticeKind::Warning, format!("Read marks are unavailable: {error}"));
+                self.notify(
+                    context,
+                    NoticeKind::Warning,
+                    fl!(LANGUAGE_LOADER, "notice-read-marks-unavailable", error = error.to_string()),
+                );
             }
         }
         self.drafts = Some(drafts);
@@ -296,10 +366,8 @@ impl MailApp {
                 log::warn!("unable to update the recent packet list: {error}");
             }
         }
-        context.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-            "{} - Icy Mail",
-            path.file_name().unwrap_or_default().to_string_lossy()
-        )));
+        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        context.send_viewport_cmd(egui::ViewportCommand::Title(fl!(LANGUAGE_LOADER, "window-packet-title", name = name.as_str())));
     }
 
     fn sync_body(&mut self, context: &egui::Context) {
@@ -324,7 +392,7 @@ impl MailApp {
         self.reader
             .package
             .as_ref()
-            .map(|package| text::decode(package.control_file.qmail_user_name.trim()).into_owned())
+            .map(|package| text::HeaderText::new(package.control_file.qmail_user_name.trim()).to_string())
             .unwrap_or_default()
     }
 
@@ -341,8 +409,8 @@ impl MailApp {
         let user = self.user_name();
         if let Some(package) = &self.reader.package {
             for info in &package.infos {
-                let unread = !self.reader.read.contains(&info.index);
-                let personal = !user.is_empty() && info.to.trim().eq_ignore_ascii_case(user.as_bytes());
+                let unread = !self.reader.is_read(info.index);
+                let personal = is_personal(info, &user);
                 if personal {
                     counts.personal.1 += 1;
                 }
@@ -388,22 +456,22 @@ impl MailApp {
             Folder::Conference(number) => Some(number),
             _ => None,
         });
-        if let Some(row) = self.reader.messages.iter().find(|row| !self.reader.read.contains(&row.index)) {
+        if let Some(row) = self.reader.messages.iter().find(|row| !self.reader.is_read(row.index)) {
             self.reader.selected_message = Some(row.index);
         }
     }
 
     pub fn folder_name(&self, folder: Folder) -> String {
         match folder {
-            Folder::All => "All Messages".into(),
-            Folder::Personal => "Personal".into(),
-            Folder::Drafts => "Outbox".into(),
+            Folder::All => fl!(LANGUAGE_LOADER, "folder-all"),
+            Folder::Personal => fl!(LANGUAGE_LOADER, "folder-personal"),
+            Folder::Drafts => fl!(LANGUAGE_LOADER, "folder-outbox"),
             Folder::Conference(number) => self
                 .reader
                 .conferences
                 .iter()
                 .find(|row| row.number == Some(number))
-                .map_or_else(|| format!("Conference {number}"), |row| row.name.clone()),
+                .map_or_else(|| fl!(LANGUAGE_LOADER, "folder-conference", number = number), |row| row.name.clone()),
         }
     }
 
@@ -428,22 +496,37 @@ impl MailApp {
         let infos: Vec<_> = indices.iter().filter_map(|index| package.infos.get(*index)).collect();
         if let Some(state) = &mut self.read_state {
             if let Err(error) = state.set(infos.iter().copied(), read) {
-                self.notify(context, NoticeKind::Warning, format!("Unable to save read marks: {error}"));
+                self.notify(
+                    context,
+                    NoticeKind::Warning,
+                    fl!(LANGUAGE_LOADER, "notice-read-marks-failed", error = error.to_string()),
+                );
             }
         }
+        let user = self.user_name();
         for info in infos {
-            if read {
-                self.reader.read.insert(info.index);
-            } else {
-                self.reader.read.remove(&info.index);
+            if !self.reader.set_read(info.index, read) {
+                continue;
+            }
+            let personal = is_personal(info, &user);
+            let delta = |count: &mut usize| {
+                if read {
+                    *count = count.saturating_sub(1);
+                } else {
+                    *count += 1;
+                }
+            };
+            delta(&mut self.counts.unread);
+            delta(self.counts.conferences.entry(info.conference).or_default());
+            if personal {
+                delta(&mut self.counts.personal.0);
             }
         }
-        self.refresh_counts();
     }
 
     pub fn toggle_read(&mut self, context: &egui::Context) {
         if let Some(index) = self.reader.selected_message.filter(|_| self.message_selected()) {
-            let read = !self.reader.read.contains(&index);
+            let read = !self.reader.is_read(index);
             self.set_read(context, &[index], read);
             if !read {
                 // Keep the message unread instead of marking it again as soon as it is shown.
@@ -457,10 +540,10 @@ impl MailApp {
             return;
         }
         let indices: Vec<_> = self.reader.messages.iter().map(|row| row.index).collect();
-        let count = indices.iter().filter(|index| !self.reader.read.contains(index)).count();
+        let count = indices.iter().filter(|index| !self.reader.is_read(**index)).count();
         self.set_read(context, &indices, true);
         if count > 0 {
-            self.notify(context, NoticeKind::Info, format!("Marked {count} messages as read"));
+            self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-marked-read", count = count));
         }
     }
 
@@ -473,7 +556,7 @@ impl MailApp {
             let start = self.reader.selected_position().map_or(0, |position| position + 1);
             if let Some(row) = self.reader.messages[start.min(self.reader.messages.len())..]
                 .iter()
-                .find(|row| !self.reader.read.contains(&row.index))
+                .find(|row| !self.reader.is_read(row.index))
             {
                 self.reader.selected_message = Some(row.index);
                 self.reveal_message = true;
@@ -490,9 +573,9 @@ impl MailApp {
             Some(folder) => {
                 self.select_folder(folder);
                 let name = self.folder_name(folder);
-                self.notify(context, NoticeKind::Info, format!("Continuing in {name}"));
+                self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-continuing-in", name = name));
             }
-            None => self.notify(context, NoticeKind::Info, "No more unread messages"),
+            None => self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-no-more-unread")),
         }
     }
 
@@ -517,7 +600,7 @@ impl MailApp {
         let Some(package) = self.reader.package.clone() else {
             return;
         };
-        let choices = conference_choices(&package);
+        let choices = self.choices.clone();
         let conference = match self.folder {
             Folder::Conference(number) => Some(number),
             _ => self.selected_info().map(|info| info.conference),
@@ -525,7 +608,7 @@ impl MailApp {
         .filter(|number| choices.iter().any(|(choice, _)| choice == number))
         .or_else(|| choices.first().map(|(number, _)| *number));
         let Some(conference) = conference else {
-            self.error = Some("This packet has no conference to post a message in.".into());
+            self.error = Some(fl!(LANGUAGE_LOADER, "app-no-conference"));
             return;
         };
         if let Some(store) = &self.drafts {
@@ -534,7 +617,7 @@ impl MailApp {
                     draft.to = "ALL".into();
                     self.start_composer(context, Composer::new(draft, false, None, Vec::new(), false));
                 }
-                Err(error) => self.error = Some(format!("Unable to start a new message: {error}")),
+                Err(error) => self.error = Some(fl!(LANGUAGE_LOADER, "app-new-message-failed", error = error.to_string())),
             }
         }
     }
@@ -547,13 +630,13 @@ impl MailApp {
             return;
         };
         let Some(info) = package.infos.get(index) else {
-            self.error = Some("The selected message is no longer available.".into());
+            self.error = Some(fl!(LANGUAGE_LOADER, "app-message-unavailable"));
             return;
         };
         let message = match package.get_message(index) {
             Ok(message) => message,
             Err(error) => {
-                self.error = Some(format!("Unable to read the original message: {error}"));
+                self.error = Some(fl!(LANGUAGE_LOADER, "app-original-failed", error = error.to_string()));
                 return;
             }
         };
@@ -563,7 +646,7 @@ impl MailApp {
         let mut draft = match store.prepare(&package, if forward { Compose::Forward { index } } else { Compose::Reply { index } }) {
             Ok(draft) => draft,
             Err(error) => {
-                self.error = Some(format!("Unable to start the reply: {error}"));
+                self.error = Some(fl!(LANGUAGE_LOADER, "app-reply-failed", error = error.to_string()));
                 return;
             }
         };
@@ -571,13 +654,15 @@ impl MailApp {
         if forward {
             let text = editor::strip_codes(&editor::decode_message(&message.text));
             let quoted: String = text.trim_end().lines().map(|line| format!("> {line}\n")).collect();
-            draft.body = format!(
-                "\n\n--- Forwarded message ---\nFrom: {}\nTo: {}\nDate: {}\nSubject: {}\n\n{quoted}",
-                text::decode(&info.from),
-                text::decode(&info.to),
-                info.date_str,
-                text::decode(&info.subject)
+            let header = fl!(
+                LANGUAGE_LOADER,
+                "app-forward-header",
+                from = info.from.as_str(),
+                to = info.to.as_str(),
+                date = info.date_str.as_str(),
+                subject = info.subject.as_str()
             );
+            draft.body = format!("\n\n{header}\n\n{quoted}");
         }
         let origin = message_origin(info);
         // Like on a BBS, a reply starts empty with the quote panel open to pick lines from.
@@ -595,7 +680,7 @@ impl MailApp {
             let quotes = self.original_quotes(&draft);
             self.start_composer(context, Composer::new(draft, true, origin, quotes, false));
         } else {
-            self.error = Some("The draft is no longer available.".into());
+            self.error = Some(fl!(LANGUAGE_LOADER, "app-draft-unavailable"));
         }
     }
 
@@ -628,7 +713,13 @@ impl MailApp {
             .unwrap_or_default()
     }
 
-    fn start_composer(&mut self, context: &egui::Context, composer: Composer) {
+    fn start_composer(&mut self, context: &egui::Context, mut composer: Composer) {
+        if !composer.existing && self.random_tagline {
+            if let Some(tagline) = self.taglines.as_ref().and_then(Taglines::random) {
+                composer.draft.tagline = tagline.to_string();
+                composer.original.tagline = tagline.to_string();
+            }
+        }
         self.composer = Some(composer);
         self.notice = None;
         context.memory_mut(|memory| memory.surrender_focus(egui::Id::new("mail-search")));
@@ -651,9 +742,9 @@ impl MailApp {
                 if self.composer.as_ref().is_some_and(|composer| composer.draft.id == id) {
                     self.composer = None;
                 }
-                self.notify(context, NoticeKind::Info, "Draft deleted");
+                self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-draft-deleted"));
             }
-            Err(error) => self.error = Some(format!("Unable to delete the draft: {error}")),
+            Err(error) => self.error = Some(fl!(LANGUAGE_LOADER, "app-delete-draft-failed", error = error.to_string())),
         }
     }
 
@@ -662,7 +753,7 @@ impl MailApp {
             return;
         };
         if store.drafts().is_empty() {
-            self.notify(context, NoticeKind::Info, "There are no replies to export");
+            self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-nothing-to-export"));
             return;
         }
         let mut problems = Vec::new();
@@ -777,6 +868,9 @@ impl MailApp {
             self.sync_body(context);
         }
         self.modals(context);
+        if !matches!(self.modal, Some(Modal::Settings)) {
+            self.persist_options(context);
+        }
         self.windows(context);
     }
 
@@ -784,8 +878,12 @@ impl MailApp {
         ui.add_space(3.0);
         ui.horizontal(|ui| {
             ui.add_space(6.0);
-            for (pane, label) in [(Pane::Conferences, "Folders"), (Pane::Messages, "Messages"), (Pane::Content, "Message")] {
-                if super::widgets::pill(ui, self.focus == pane, label).clicked() {
+            for (pane, label) in [
+                (Pane::Conferences, fl!(LANGUAGE_LOADER, "app-tab-folders")),
+                (Pane::Messages, fl!(LANGUAGE_LOADER, "app-tab-messages")),
+                (Pane::Content, fl!(LANGUAGE_LOADER, "app-tab-message")),
+            ] {
+                if super::widgets::pill(ui, self.focus == pane, &label).clicked() {
                     self.set_focus(pane, ui.ctx());
                 }
             }
@@ -818,6 +916,57 @@ impl MailApp {
         ))
     }
 
+    /// The `... tagline` of the selected message, if it has one.
+    pub fn message_tagline(&mut self) -> Option<String> {
+        if self.folder == Folder::Drafts {
+            return None;
+        }
+        let package = self.reader.package.clone()?;
+        let index = self.reader.selected_message?;
+        let key = (Arc::as_ptr(&package) as usize, index);
+        if let Some((cached, tagline)) = &self.tagline_cache {
+            if *cached == key {
+                return tagline.clone();
+            }
+        }
+        let tagline = package
+            .get_message(index)
+            .ok()
+            .and_then(|message| taglines::find(&editor::strip_codes(&editor::decode_message(&message.text))));
+        self.tagline_cache = Some((key, tagline.clone()));
+        tagline
+    }
+
+    /// Adds the tagline of the selected message to the tagline list, like MultiMail's tagline stealer.
+    pub fn save_tagline(&mut self, context: &egui::Context) {
+        let Some(tagline) = self.message_tagline() else {
+            if self.message_selected() && self.folder != Folder::Drafts {
+                self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-no-tagline"));
+            }
+            return;
+        };
+        let mut list = match self.tagline_file() {
+            Ok(list) => list,
+            Err(error) => {
+                self.error = Some(fl!(LANGUAGE_LOADER, "app-taglines-read-failed", error = error.to_string()));
+                return;
+            }
+        };
+        if list.lines.contains(&tagline) {
+            self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-tagline-known"));
+        } else if list.add(&tagline).is_some() {
+            match list.save() {
+                Ok(()) => self.notify(
+                    context,
+                    NoticeKind::Success,
+                    fl!(LANGUAGE_LOADER, "notice-tagline-saved", tagline = tagline.as_str()),
+                ),
+                Err(error) => self.error = Some(fl!(LANGUAGE_LOADER, "app-taglines-save-failed", error = error.to_string())),
+            }
+        }
+        self.taglines = Some(list);
+    }
+
     pub fn copy(&self, context: &egui::Context) {
         if !self.body_loading {
             if let Some(text) = self.screen.terminal.screen.lock().copy_text() {
@@ -845,7 +994,7 @@ impl MailApp {
                 let _ = screen.clear_selection();
             }
         }
-        self.notify(context, NoticeKind::Info, "Message copied to the clipboard");
+        self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-message-copied"));
     }
 
     fn scroll_content(&mut self, direction: NavigateDirection) {
@@ -895,6 +1044,14 @@ impl MailApp {
     fn keys(&mut self, context: &egui::Context) {
         if key(context, Key::F1, false, false) {
             self.modal = Some(Modal::Shortcuts);
+            return;
+        }
+        if key(context, Key::T, true, true) {
+            self.open_taglines(false);
+            return;
+        }
+        if key(context, Key::Comma, true, false) {
+            self.open_settings(context);
             return;
         }
         if key(context, Key::O, true, false) {
@@ -976,6 +1133,15 @@ impl MailApp {
         }
         if key(context, Key::M, false, false) {
             self.toggle_read(context);
+        }
+        if key(context, Key::T, false, false) {
+            self.save_tagline(context);
+        }
+        if key(context, Key::A, false, false) {
+            self.open_address_book(false);
+        }
+        if key(context, Key::A, false, true) {
+            self.add_sender(context);
         }
         if key(context, Key::C, false, true) {
             self.mark_folder_read(context);
@@ -1064,9 +1230,13 @@ pub fn sidebar_fill(visuals: &egui::Visuals) -> egui::Color32 {
     }
 }
 
+fn is_personal(info: &MessageInfo, user: &str) -> bool {
+    !user.is_empty() && info.to.trim().eq_ignore_ascii_case(user)
+}
+
 pub fn draft_title(draft: &Draft) -> String {
     if draft.subject.trim().is_empty() {
-        "(no subject)".into()
+        fl!(LANGUAGE_LOADER, "app-no-subject")
     } else {
         draft.subject.clone()
     }
@@ -1074,19 +1244,18 @@ pub fn draft_title(draft: &Draft) -> String {
 
 /// Sender, subject and number of a message, for the composer heading.
 fn message_origin(info: &MessageInfo) -> String {
-    format!(
-        "{} \u{00b7} {} \u{00b7} #{}",
-        text::decode(&info.from),
-        text::decode(&info.subject),
-        info.number
-    )
+    format!("{} \u{00b7} {} \u{00b7} #{}", info.from, info.subject, info.number)
 }
 
 /// The attribution and quoted lines offered in the editor's quote panel.
 fn quotes(info: &MessageInfo, text: &[u8]) -> Vec<String> {
-    let from = text::decode(&info.from);
-    let mut lines = vec![format!("On {} {} wrote:", info.date_str, from.trim())];
-    lines.extend(editor::quote_lines(&from, &editor::decode_message(text), editor::WRAP_WIDTH));
+    let mut lines = vec![fl!(
+        LANGUAGE_LOADER,
+        "app-quote-attribution",
+        date = info.date_str.as_str(),
+        name = info.from.trim()
+    )];
+    lines.extend(editor::quote_lines(&info.from, &editor::decode_message(text), editor::WRAP_WIDTH));
     lines
 }
 

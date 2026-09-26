@@ -121,7 +121,7 @@ impl MainWindow {
                 async {
                     let file_dialog = rfd::AsyncFileDialog::new()
                         .set_title("Open Mail Package")
-                        .add_filter("Mail Packages", &["zip", "qwk", "rep"])
+                        .add_filter("Mail Packages", &["qwk", "zip", "arj", "lzh", "lha", "rar", "7z", "arc", "zoo", "rep"])
                         .add_filter("All Files", &["*"]);
 
                     file_dialog.pick_file().await
@@ -327,7 +327,7 @@ impl MainWindow {
                 needle.is_empty()
                     || [&info.from, &info.to, &info.subject]
                         .iter()
-                        .any(|value| header_text::decode(value).to_ascii_lowercase().contains(&needle))
+                        .any(|value| value.to_ascii_lowercase().contains(&needle))
             })
             .collect();
 
@@ -700,19 +700,11 @@ mod tests {
         let package = window.package.clone().unwrap();
 
         let _ = window.update(Message::SortMessagesBy(MessageColumn::From));
-        let ascending: Vec<_> = window
-            .message_rows()
-            .iter()
-            .map(|r| header_text::decode(&package.infos[r.index].from))
-            .collect();
+        let ascending: Vec<_> = window.message_rows().iter().map(|r| package.infos[r.index].from.to_string()).collect();
         assert_eq!(ascending, vec!["alice", "bob", "carol", "dave"]);
 
         let _ = window.update(Message::SortMessagesBy(MessageColumn::From));
-        let descending: Vec<_> = window
-            .message_rows()
-            .iter()
-            .map(|r| header_text::decode(&package.infos[r.index].from))
-            .collect();
+        let descending: Vec<_> = window.message_rows().iter().map(|r| package.infos[r.index].from.to_string()).collect();
         assert_eq!(descending, vec!["dave", "carol", "bob", "alice"]);
     }
 

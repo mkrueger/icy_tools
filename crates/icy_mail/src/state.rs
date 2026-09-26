@@ -5,10 +5,12 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use i18n_embed_fl::fl;
 use serde::{Deserialize, Serialize};
 
 use crate::drafts::{atomic_write, bbs_id, storage_path, DraftError};
 use crate::qwk::{MessageInfo, QwkPackage};
+use crate::LANGUAGE_LOADER;
 
 const MAX_RECENT: usize = 10;
 
@@ -16,8 +18,13 @@ const MAX_RECENT: usize = 10;
 #[serde(deny_unknown_fields)]
 struct StoredRead {
     bbs_id: String,
-    /// `(conference, message number)`, which stays valid when the packet is reloaded.
+    /// `(conference, message number)`; written by earlier versions, still accepted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     read: Vec<(u16, u32)>,
+    /// `(conference, first, last)` inclusive runs of read message numbers, which stay valid when
+    /// the packet is reloaded and keep the file small for packets with many read messages.
+    #[serde(default)]
+    ranges: Vec<(u16, u32, u32)>,
 }
 
 /// Which messages of a packet the user has already read.
@@ -46,7 +53,24 @@ impl ReadState {
             if stored.bbs_id != bbs_id {
                 return Err(DraftError::WrongPacket.into());
             }
-            stored.read.into_iter().collect()
+            let mut ranges = stored.ranges;
+            ranges.sort_unstable();
+            // Only this packet's messages, so a damaged file cannot expand into huge ranges.
+            let in_range = |conference: u16, number: u32| {
+                let end = ranges.partition_point(|range| (range.0, range.1) <= (conference, number));
+                end > 0 && ranges[end - 1].0 == conference && ranges[end - 1].2 >= number
+            };
+            let mut read: BTreeSet<_> = stored.read.into_iter().collect();
+            if !ranges.is_empty() {
+                read.extend(
+                    package
+                        .infos
+                        .iter()
+                        .filter(|info| in_range(info.conference, info.number))
+                        .map(|info| (info.conference, info.number)),
+                );
+            }
+            read
         } else {
             BTreeSet::new()
         };
@@ -59,6 +83,9 @@ impl ReadState {
 
     /// Package indices of the read messages.
     pub fn indices(&self, package: &QwkPackage) -> HashSet<usize> {
+        if self.read.is_empty() {
+            return HashSet::new();
+        }
         package.infos.iter().filter(|info| self.is_read(info)).map(|info| info.index).collect()
     }
 
@@ -79,9 +106,17 @@ impl ReadState {
     }
 
     fn save(&self) -> crate::Res<()> {
+        let mut ranges: Vec<(u16, u32, u32)> = Vec::new();
+        for &(conference, number) in &self.read {
+            match ranges.last_mut() {
+                Some((last_conference, _, last)) if *last_conference == conference && last.checked_add(1) == Some(number) => *last = number,
+                _ => ranges.push((conference, number, number)),
+            }
+        }
         let content = toml::to_string(&StoredRead {
             bbs_id: self.bbs_id.clone(),
-            read: self.read.iter().copied().collect(),
+            read: Vec::new(),
+            ranges,
         })?;
         atomic_write(&self.path, |file| {
             file.write_all(content.as_bytes())?;
@@ -89,6 +124,14 @@ impl ReadState {
         })?;
         Ok(())
     }
+}
+
+/// Where the reader keeps the recent packet list, taglines and the address book.
+pub fn data_directory() -> crate::Res<PathBuf> {
+    Ok(directories::ProjectDirs::from("com", "GitHub", "icy_mail")
+        .ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-user-data-directory-unavailable"))?
+        .data_local_dir()
+        .to_path_buf())
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -106,11 +149,7 @@ pub struct RecentPackets {
 
 impl RecentPackets {
     pub fn open() -> crate::Res<Self> {
-        let directory = directories::ProjectDirs::from("com", "GitHub", "icy_mail")
-            .ok_or("no user data directory available")?
-            .data_local_dir()
-            .to_path_buf();
-        Self::open_in(&directory)
+        Self::open_in(&data_directory()?)
     }
 
     pub fn open_in(directory: &Path) -> crate::Res<Self> {
@@ -184,6 +223,33 @@ mod tests {
         let mut other = package.clone();
         other.control_file.bbs_id = "OTHER".into();
         assert!(ReadState::open_in(&packet, &other, dir.path()).unwrap().indices(&other).is_empty());
+    }
+
+    #[test]
+    fn read_marks_are_stored_as_ranges_and_accept_the_old_format() {
+        let (dir, package) = crate::qwk::tests::load();
+        let packet = dir.path().join("TEST.QWK");
+        let mut state = ReadState::open_in(&packet, &package, dir.path()).unwrap();
+        state.set(package.infos.iter(), true).unwrap();
+        let content = fs::read_to_string(&state.path).unwrap();
+        let stored: StoredRead = toml::from_str(&content).unwrap();
+        assert!(stored.read.is_empty());
+        assert_eq!(stored.ranges, [(1, 10, 11), (2, 12, 13)]);
+        assert_eq!(ReadState::open_in(&packet, &package, dir.path()).unwrap().indices(&package).len(), 4);
+
+        let damaged = format!("bbs_id = {:?}\nranges = [[1, 0, 4294967295], [3, 5, 1]]\n", stored.bbs_id);
+        fs::write(&state.path, damaged).unwrap();
+        assert_eq!(
+            ReadState::open_in(&packet, &package, dir.path()).unwrap().indices(&package),
+            HashSet::from([0, 1])
+        );
+
+        let old = format!("bbs_id = {:?}\nread = [[1, 11], [2, 13]]\n", stored.bbs_id);
+        fs::write(&state.path, old).unwrap();
+        assert_eq!(
+            ReadState::open_in(&packet, &package, dir.path()).unwrap().indices(&package),
+            HashSet::from([1, 3])
+        );
     }
 
     #[test]

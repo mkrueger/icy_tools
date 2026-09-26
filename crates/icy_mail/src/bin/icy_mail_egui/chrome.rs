@@ -1,9 +1,12 @@
 use eframe::egui::{self, Key, KeyboardShortcut, Modifiers};
+use i18n_embed_fl::fl;
 use icy_engine_gui::ScalingMode;
 use icy_mail::reader::ViewMode;
+use icy_mail::LANGUAGE_LOADER;
 
 use super::{
     app::{Folder, MailApp, Modal, NoticeKind},
+    settings,
     widgets::{self, Icon},
 };
 
@@ -37,10 +40,16 @@ impl MailApp {
         let drafts = self.draft_count();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
-            let caption = |label| captions.then_some(label);
             if self
                 .icons
-                .tool(ui, Icon::Open, caption("Open"), "Open a mail packet (Ctrl+O)", !self.loader.picking, false)
+                .tool(
+                    ui,
+                    Icon::Open,
+                    captions.then_some(fl!(LANGUAGE_LOADER, "toolbar-open").as_str()),
+                    &fl!(LANGUAGE_LOADER, "toolbar-open-tooltip"),
+                    !self.loader.picking,
+                    false,
+                )
                 .clicked()
             {
                 self.loader.pick(&context);
@@ -50,21 +59,42 @@ impl MailApp {
             ui.add_space(4.0);
             if self
                 .icons
-                .tool(ui, Icon::Compose, caption("New"), "Write a new message (Ctrl+N)", open, false)
+                .tool(
+                    ui,
+                    Icon::Compose,
+                    captions.then_some(fl!(LANGUAGE_LOADER, "toolbar-new").as_str()),
+                    &fl!(LANGUAGE_LOADER, "toolbar-new-tooltip"),
+                    open,
+                    false,
+                )
                 .clicked()
             {
                 self.new_draft(&context);
             }
             if self
                 .icons
-                .tool(ui, Icon::Reply, caption("Reply"), "Reply to the message (Ctrl+R)", selected, false)
+                .tool(
+                    ui,
+                    Icon::Reply,
+                    captions.then_some(fl!(LANGUAGE_LOADER, "toolbar-reply").as_str()),
+                    &fl!(LANGUAGE_LOADER, "toolbar-reply-tooltip"),
+                    selected,
+                    false,
+                )
                 .clicked()
             {
                 self.reply(&context, false);
             }
             if self
                 .icons
-                .tool(ui, Icon::Forward, caption("Forward"), "Forward the message (Ctrl+L)", selected, false)
+                .tool(
+                    ui,
+                    Icon::Forward,
+                    captions.then_some(fl!(LANGUAGE_LOADER, "toolbar-forward").as_str()),
+                    &fl!(LANGUAGE_LOADER, "toolbar-forward-tooltip"),
+                    selected,
+                    false,
+                )
                 .clicked()
             {
                 self.reply(&context, true);
@@ -73,9 +103,9 @@ impl MailApp {
             ui.separator();
             ui.add_space(4.0);
             let export = if drafts > 0 {
-                format!("Export Replies ({drafts})")
+                fl!(LANGUAGE_LOADER, "toolbar-export-count", count = drafts)
             } else {
-                "Export Replies".into()
+                fl!(LANGUAGE_LOADER, "toolbar-export")
             };
             if self
                 .icons
@@ -83,7 +113,7 @@ impl MailApp {
                     ui,
                     Icon::Export,
                     captions.then_some(export.as_str()),
-                    "Save the reply packet to upload to the BBS (Ctrl+Shift+E)",
+                    &fl!(LANGUAGE_LOADER, "toolbar-export-tooltip"),
                     drafts > 0,
                     false,
                 )
@@ -92,14 +122,14 @@ impl MailApp {
                 self.export(&context);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let menu = self.icons.button(ui, Icon::Menu, "Menu", true);
+                let menu = self.icons.button(ui, Icon::Menu, &fl!(LANGUAGE_LOADER, "toolbar-menu"), true);
                 egui::Popup::menu(&menu).show(|ui| self.menu(ui));
                 ui.add_space(4.0);
                 for (mode, icon, tooltip) in [
-                    (ViewMode::Threads, Icon::Threads, "Group messages into threads (Ctrl+T)"),
-                    (ViewMode::List, Icon::List, "Show messages as a list (Ctrl+T)"),
+                    (ViewMode::Threads, Icon::Threads, fl!(LANGUAGE_LOADER, "toolbar-threads-tooltip")),
+                    (ViewMode::List, Icon::List, fl!(LANGUAGE_LOADER, "toolbar-list-tooltip")),
                 ] {
-                    if self.icons.toggle(ui, icon, tooltip, self.reader.view_mode == mode).clicked() {
+                    if self.icons.toggle(ui, icon, &tooltip, self.reader.view_mode == mode).clicked() {
                         self.set_mode(mode);
                     }
                 }
@@ -130,7 +160,7 @@ impl MailApp {
                         .id(id)
                         .frame(false)
                         .margin(egui::vec2(4.0, 4.0))
-                        .hint_text("Search messages"),
+                        .hint_text(fl!(LANGUAGE_LOADER, "toolbar-search-hint")),
                 );
                 if response.changed() {
                     if self.folder == Folder::Drafts {
@@ -142,7 +172,7 @@ impl MailApp {
                     let image = self.icons.image(ui.ctx(), Icon::Close, 14.0);
                     if ui
                         .add(egui::Button::image(image).frame(false).image_tint_follows_text_color(true))
-                        .on_hover_text("Clear Search (Esc)")
+                        .on_hover_text(fl!(LANGUAGE_LOADER, "toolbar-search-clear"))
                         .clicked()
                     {
                         self.reader.filter.clear();
@@ -161,12 +191,12 @@ impl MailApp {
         let open = self.reader.package.is_some();
         let selected = self.message_selected();
         ui.set_min_width(240.0);
-        if item(ui, "Open Packet\u{2026}", &command(Key::O), !self.loader.picking) {
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-open-packet"), &command(Key::O), !self.loader.picking) {
             self.loader.pick(&context);
         }
         let recent = self.recent.as_ref().map(|recent| recent.packets.clone()).unwrap_or_default();
         ui.add_enabled_ui(!recent.is_empty(), |ui| {
-            ui.menu_button("Open Recent", |ui| {
+            ui.menu_button(fl!(LANGUAGE_LOADER, "menu-open-recent"), |ui| {
                 for path in &recent {
                     let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
                     if ui.button(name).on_hover_text(path.display().to_string()).clicked() {
@@ -176,50 +206,86 @@ impl MailApp {
                 }
             });
         });
-        if item(ui, "Reload Packet", "F5", open && self.loading.is_none()) {
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-reload-packet"), "F5", open && self.loading.is_none()) {
             self.reload(&context);
         }
-        if item(ui, "Packet Information", "", open) {
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-packet-information"), "", open) {
             self.modal = Some(Modal::PacketInfo);
         }
         ui.separator();
-        if item(ui, "New Message", &command(Key::N), open) {
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-new-message"), &command(Key::N), open) {
             self.new_draft(&context);
         }
-        if item(ui, "Reply", &command(Key::R), selected) {
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-reply"), &command(Key::R), selected) {
             self.reply(&context, false);
         }
-        if item(ui, "Forward", &command(Key::L), selected) {
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-forward"), &command(Key::L), selected) {
             self.reply(&context, true);
         }
         if item(
             ui,
-            "Export Replies\u{2026}",
+            &fl!(LANGUAGE_LOADER, "menu-export-replies"),
             &shortcut(&context, Modifiers::COMMAND | Modifiers::SHIFT, Key::E),
             self.draft_count() > 0,
         ) {
             self.export(&context);
         }
         ui.separator();
-        if item(ui, "Next Unread", "N", open) {
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-next-unread"), "N", open) {
             self.next_unread(&context);
         }
-        let unread = self.reader.selected_message.is_some_and(|index| !self.reader.read.contains(&index));
-        if item(ui, if unread { "Mark as Read" } else { "Mark as Unread" }, "M", selected) {
+        let unread = self.reader.selected_message.is_some_and(|index| !self.reader.is_read(index));
+        if item(
+            ui,
+            &if unread {
+                fl!(LANGUAGE_LOADER, "menu-mark-read")
+            } else {
+                fl!(LANGUAGE_LOADER, "menu-mark-unread")
+            },
+            "M",
+            selected,
+        ) {
             self.toggle_read(&context);
         }
         if item(
             ui,
-            "Mark Folder as Read",
+            &fl!(LANGUAGE_LOADER, "menu-mark-folder-read"),
             &shortcut(&context, Modifiers::SHIFT, Key::C),
             open && self.folder != Folder::Drafts,
         ) {
             self.mark_folder_read(&context);
         }
         ui.separator();
-        ui.menu_button("View", |ui| {
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-address-book"), "A", true) {
+            self.open_address_book(false);
+        }
+        if item(
+            ui,
+            &fl!(LANGUAGE_LOADER, "menu-taglines"),
+            &shortcut(&context, Modifiers::COMMAND | Modifiers::SHIFT, Key::T),
+            true,
+        ) {
+            self.open_taglines(false);
+        }
+        if item(
+            ui,
+            &fl!(LANGUAGE_LOADER, "menu-add-author"),
+            &shortcut(&context, Modifiers::SHIFT, Key::A),
+            selected && self.folder != Folder::Drafts,
+        ) {
+            self.add_sender(&context);
+        }
+        let tagline = selected && self.message_tagline().is_some();
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-save-tagline"), "T", tagline) {
+            self.save_tagline(&context);
+        }
+        ui.separator();
+        ui.menu_button(fl!(LANGUAGE_LOADER, "menu-view"), |ui| {
             ui.set_min_width(200.0);
-            for (mode, label) in [(ViewMode::List, "List"), (ViewMode::Threads, "Threads")] {
+            for (mode, label) in [
+                (ViewMode::List, fl!(LANGUAGE_LOADER, "menu-view-list")),
+                (ViewMode::Threads, fl!(LANGUAGE_LOADER, "menu-view-threads")),
+            ] {
                 let button = egui::Button::selectable(self.reader.view_mode == mode, label).shortcut_text(egui::RichText::new(command(Key::T)).weak());
                 if ui.add(button).clicked() {
                     self.set_mode(mode);
@@ -228,24 +294,32 @@ impl MailApp {
             }
             ui.separator();
             let mut unread_only = self.reader.unread_only;
-            if ui.checkbox(&mut unread_only, "Unread Messages Only").changed() {
+            if ui.checkbox(&mut unread_only, fl!(LANGUAGE_LOADER, "menu-unread-only")).changed() {
                 self.set_unread_only(unread_only);
             }
             ui.separator();
-            ui.label(egui::RichText::new("Message Zoom").weak());
+            ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "menu-message-zoom")).weak());
             zoom_choices(ui, &mut self.settings.scaling_mode);
             ui.separator();
-            ui.label(egui::RichText::new("Appearance").weak());
+            ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "menu-appearance")).weak());
             egui::widgets::global_theme_preference_buttons(ui);
         });
-        if item(ui, "Keyboard Shortcuts", "F1", true) {
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-settings"), &command(Key::Comma), true) {
+            self.open_settings(&context);
+        }
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-keyboard-shortcuts"), "F1", true) {
             self.modal = Some(Modal::Shortcuts);
         }
         ui.separator();
-        if item(ui, "New Window", &shortcut(&context, Modifiers::COMMAND | Modifiers::SHIFT, Key::N), true) {
+        if item(
+            ui,
+            &fl!(LANGUAGE_LOADER, "menu-new-window"),
+            &shortcut(&context, Modifiers::COMMAND | Modifiers::SHIFT, Key::N),
+            true,
+        ) {
             self.new_window = true;
         }
-        if item(ui, "Close Window", &command(Key::W), true) {
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-close-window"), &command(Key::W), true) {
             self.close(&context);
         }
     }
@@ -265,38 +339,31 @@ impl MailApp {
                 ui.add(egui::Label::new(text).truncate());
             } else if self.reader.package.is_some() {
                 let text = if self.folder == Folder::Drafts {
-                    match self.draft_count() {
-                        1 => "1 draft".to_string(),
-                        count => format!("{count} drafts"),
-                    }
+                    fl!(LANGUAGE_LOADER, "status-drafts", count = self.draft_count())
                 } else {
-                    let unread = self.reader.messages.iter().filter(|row| !self.reader.read.contains(&row.index)).count();
-                    format!("{} messages \u{00b7} {unread} unread", self.reader.messages.len())
+                    let unread = self.reader.unread_count();
+                    fl!(LANGUAGE_LOADER, "status-messages", count = self.reader.messages.len(), unread = unread)
                 };
                 ui.label(text);
             } else if self.loading.is_none() {
-                ui.weak("No packet open");
+                ui.weak(fl!(LANGUAGE_LOADER, "status-no-packet"));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if self.reader.package.is_none() {
                     return;
                 }
-                let zoom = if self.settings.scaling_mode.is_fit_width() { "Fit Width" } else { "100%" };
-                widgets::status_menu(ui, egui::RichText::new(zoom).size(12.0), "Message zoom", |ui| {
+                let zoom = settings::zoom_name(self.settings.scaling_mode);
+                widgets::status_menu(ui, egui::RichText::new(zoom).size(12.0), &fl!(LANGUAGE_LOADER, "status-message-zoom"), |ui| {
                     zoom_choices(ui, &mut self.settings.scaling_mode);
                 });
                 let drafts = self.draft_count();
                 if drafts > 0 && ui.available_width() > 260.0 {
                     ui.separator();
-                    let label = if drafts == 1 {
-                        "1 reply to send".to_string()
-                    } else {
-                        format!("{drafts} replies to send")
-                    };
+                    let label = fl!(LANGUAGE_LOADER, "status-replies-to-send", count = drafts);
                     let link = egui::RichText::new(label).size(12.0).color(widgets::accent(ui));
                     if ui
                         .add(egui::Label::new(link).sense(egui::Sense::click()))
-                        .on_hover_text("Show the outbox")
+                        .on_hover_text(fl!(LANGUAGE_LOADER, "status-show-outbox"))
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .clicked()
                     {
@@ -314,12 +381,10 @@ impl MailApp {
 }
 
 fn zoom_choices(ui: &mut egui::Ui, mode: &mut ScalingMode) {
-    if ui.add(egui::Button::selectable(mode.is_fit_width(), "Fit Width")).clicked() {
-        *mode = ScalingMode::FitWidth;
-        ui.close();
-    }
-    if ui.add(egui::Button::selectable(!mode.is_fit_width(), "100%")).clicked() {
-        *mode = ScalingMode::Manual(1.0);
-        ui.close();
+    for zoom in settings::ZOOMS {
+        if ui.add(egui::Button::selectable(*mode == zoom, settings::zoom_name(zoom))).clicked() {
+            *mode = zoom;
+            ui.close();
+        }
     }
 }

@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use eframe::egui::{self, Color32, FontId, Rect, Response, Sense, Stroke};
 use icy_engine_gui::egui::appearance;
-use icy_mail::reader::SortDirection;
+use icy_mail::{
+    reader::SortDirection,
+    text::{find_ignore_case, HeaderText},
+};
 
 pub const ROW_HEIGHT: f32 = 24.0;
 pub const NAV_HEIGHT: f32 = 28.0;
@@ -35,6 +38,10 @@ pub enum Icon {
     Warning,
     Check,
     Mailbox,
+    Contacts,
+    PersonAdd,
+    Shuffle,
+    Tag,
 }
 
 impl Icon {
@@ -65,6 +72,10 @@ impl Icon {
             Self::Warning => include_bytes!("../../../data/icons/warning.svg"),
             Self::Check => include_bytes!("../../../data/icons/check_circle.svg"),
             Self::Mailbox => include_bytes!("../../../data/icons/markunread_mailbox.svg"),
+            Self::Contacts => include_bytes!("../../../data/icons/contacts.svg"),
+            Self::PersonAdd => include_bytes!("../../../data/icons/person_add.svg"),
+            Self::Shuffle => include_bytes!("../../../data/icons/shuffle.svg"),
+            Self::Tag => include_bytes!("../../../data/icons/sell.svg"),
         }
     }
 }
@@ -295,18 +306,47 @@ pub fn nav_row(ui: &mut egui::Ui, image: Option<egui::Image<'static>>, label: &s
 }
 
 /// One cell of a list row.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
+pub enum CellText<'a> {
+    Plain(&'a str),
+    Header(&'a HeaderText),
+}
+
+#[derive(Clone, Copy)]
 pub struct Cell<'a> {
-    pub text: &'a str,
+    pub text: CellText<'a>,
+    pub prefix: &'a str,
     pub strong: bool,
     pub weak: bool,
     pub indent: f32,
     pub right: bool,
+    /// Search text to highlight.
+    pub highlight: &'a str,
 }
 
 impl<'a> Cell<'a> {
     pub fn new(text: &'a str) -> Self {
-        Self { text, ..Default::default() }
+        Self {
+            text: CellText::Plain(text),
+            prefix: "",
+            strong: false,
+            weak: false,
+            indent: 0.0,
+            right: false,
+            highlight: "",
+        }
+    }
+
+    pub fn header(text: &'a HeaderText) -> Self {
+        Self {
+            text: CellText::Header(text),
+            ..Self::new("")
+        }
+    }
+
+    pub fn prefix(mut self, prefix: &'a str) -> Self {
+        self.prefix = prefix;
+        self
     }
 
     pub fn strong(mut self, strong: bool) -> Self {
@@ -326,6 +366,11 @@ impl<'a> Cell<'a> {
 
     pub fn right(mut self) -> Self {
         self.right = true;
+        self
+    }
+
+    pub fn highlight(mut self, needle: &'a str) -> Self {
+        self.highlight = needle;
         self
     }
 }
@@ -375,14 +420,22 @@ pub fn row(ui: &mut egui::Ui, widths: &[f32], cells: &[Cell], selected: bool, fo
         let family = if value.strong { bold.clone() } else { egui::FontFamily::Proportional };
         let mut area = cell.shrink2(egui::vec2(6.0, 0.0));
         area.min.x = (area.min.x + value.indent).min(area.max.x);
-        paint_text(
-            ui,
-            area,
-            value.text,
-            FontId::new(13.0, family),
-            if value.weak { weak } else { text },
-            if value.right { egui::Align::Max } else { egui::Align::Min },
-        );
+        let color = if value.weak { weak } else { text };
+        let align = if value.right { egui::Align::Max } else { egui::Align::Min };
+        let font = FontId::new(13.0, family);
+        match value.text {
+            CellText::Plain(cell_text) if value.highlight.is_empty() => paint_text(ui, area, cell_text, font, color, align),
+            CellText::Plain(cell_text) => {
+                let mut job = egui::text::LayoutJob::simple_singleline(cell_text.to_owned(), font, color);
+                highlight(&mut job, 0, value.highlight, ui);
+                paint_job(ui, area, job, color, align);
+            }
+            CellText::Header(header) => {
+                let mut job = header_job(ui, header, value.prefix, font, color, value.strong);
+                highlight(&mut job, value.prefix.len(), value.highlight, ui);
+                paint_job(ui, area, job, color, align);
+            }
+        }
     }
     (
         response,
@@ -458,6 +511,113 @@ pub fn paint_text(ui: &egui::Ui, rect: Rect, text: &str, font: FontId, color: Co
         .galley(egui::pos2(x, rect.center().y - galley.size().y / 2.0), galley, color);
 }
 
+pub fn header_job(ui: &egui::Ui, header: &HeaderText, prefix: &str, font: FontId, color: Color32, strong: bool) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    append_header(&mut job, ui, header, prefix, font, color, strong);
+    job
+}
+
+pub fn append_header(job: &mut egui::text::LayoutJob, ui: &egui::Ui, header: &HeaderText, prefix: &str, font: FontId, color: Color32, strong: bool) {
+    let base = egui::TextFormat {
+        font_id: font.clone(),
+        color,
+        ..Default::default()
+    };
+    if !prefix.is_empty() {
+        job.append(prefix, 0.0, base.clone());
+    }
+    let Some(spans) = header.styled() else {
+        job.append(header.as_str(), 0.0, base);
+        return;
+    };
+    for span in spans {
+        let span_color = span.foreground.map_or(color, |[red, green, blue]| Color32::from_rgb(red, green, blue));
+        job.append(
+            &span.text,
+            0.0,
+            egui::TextFormat {
+                font_id: if strong || span.bold {
+                    FontId::new(font.size, appearance::bold_family(ui))
+                } else {
+                    font.clone()
+                },
+                color: span_color,
+                background: span
+                    .background
+                    .map_or(Color32::TRANSPARENT, |[red, green, blue]| Color32::from_rgb(red, green, blue)),
+                italics: span.italic,
+                underline: if span.underline { Stroke::new(1.0, span_color) } else { Stroke::NONE },
+                strikethrough: if span.strikethrough { Stroke::new(1.0, span_color) } else { Stroke::NONE },
+                ..Default::default()
+            },
+        );
+    }
+}
+
+/// Marks the search matches in the job's text from byte `start` on, like the find highlight of a browser.
+pub fn highlight(job: &mut egui::text::LayoutJob, start: usize, needle: &str, ui: &egui::Ui) {
+    let Some(text) = job.text.get(start..) else {
+        return;
+    };
+    let matches: Vec<_> = find_ignore_case(text, needle.trim())
+        .into_iter()
+        .map(|found| found.start + start..found.end + start)
+        .collect();
+    if matches.is_empty() {
+        return;
+    }
+    let background = if ui.visuals().dark_mode {
+        Color32::from_rgb(230, 180, 40)
+    } else {
+        Color32::from_rgb(255, 214, 80)
+    };
+    let mut sections = Vec::with_capacity(job.sections.len() + matches.len() * 2);
+    for section in std::mem::take(&mut job.sections) {
+        let mut start = section.byte_range.start;
+        let mut leading_space = section.leading_space;
+        let mut push = |sections: &mut Vec<egui::text::LayoutSection>, range: std::ops::Range<usize>, marked: bool| {
+            if range.is_empty() {
+                return;
+            }
+            let mut format = section.format.clone();
+            if marked {
+                format.background = background;
+                format.color = Color32::BLACK;
+            }
+            sections.push(egui::text::LayoutSection {
+                leading_space: std::mem::take(&mut leading_space),
+                byte_range: range,
+                format,
+            });
+        };
+        for found in &matches {
+            let (from, to) = (found.start.max(start), found.end.min(section.byte_range.end));
+            if from >= to {
+                continue;
+            }
+            push(&mut sections, start..from, false);
+            push(&mut sections, from..to, true);
+            start = to;
+        }
+        push(&mut sections, start..section.byte_range.end, false);
+    }
+    job.sections = sections;
+}
+
+fn paint_job(ui: &egui::Ui, rect: Rect, job: egui::text::LayoutJob, color: Color32, align: egui::Align) {
+    if job.text.is_empty() || rect.width() <= 0.0 {
+        return;
+    }
+    let galley = ui.painter().layout_job(job);
+    let x = match align {
+        egui::Align::Max => (rect.right() - galley.size().x).max(rect.left()),
+        _ => rect.left(),
+    };
+    ui.painter()
+        .with_clip_rect(ui.clip_rect().intersect(rect))
+        .galley(egui::pos2(x, rect.center().y - galley.size().y / 2.0), galley, color);
+}
+
 /// Small filled circle marking unread messages.
 pub fn unread_dot(ui: &egui::Ui, rect: Rect, color: Color32) {
     ui.painter().circle_filled(rect.center(), 3.5, color);
@@ -507,4 +667,84 @@ pub fn empty(ui: &mut egui::Ui, image: egui::Image<'static>, title: &str, detail
             ui.label(egui::RichText::new(detail).size(12.0).color(ui.visuals().weak_text_color()));
         }
     });
+}
+
+/// A row of a selectable list in a dialog, painted with the selection or hover background.
+pub fn list_row(ui: &mut egui::Ui, selected: bool, height: f32) -> (egui::Rect, Response) {
+    // Not focusable: the arrow keys move the selection, so they must not move the focus onto rows.
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), height), egui::Sense::CLICK);
+    let visuals = ui.visuals();
+    if selected {
+        ui.painter().rect_filled(rect, 4, visuals.selection.bg_fill);
+    } else if response.hovered() {
+        ui.painter().rect_filled(rect, 4, visuals.widgets.hovered.weak_bg_fill);
+    }
+    (rect, response)
+}
+
+/// Text color on a [`list_row`].
+pub fn list_text(ui: &egui::Ui, selected: bool) -> Color32 {
+    if selected {
+        ui.visuals().selection.stroke.color
+    } else {
+        ui.visuals().text_color()
+    }
+}
+
+/// Moves `selected` through the `visible` entries with the arrow and page keys, which a
+/// filter field above the list does not need; returns whether it moved.
+/// Keeps the arrow keys in a list's filter field, so they move the list selection instead of the focus.
+pub fn keep_list_focus(ui: &egui::Ui, response: &egui::Response) {
+    if response.has_focus() {
+        let filter = egui::EventFilter {
+            horizontal_arrows: true,
+            vertical_arrows: true,
+            ..Default::default()
+        };
+        ui.memory_mut(|memory| memory.set_focus_lock_filter(response.id, filter));
+    }
+}
+
+pub fn list_keys(context: &egui::Context, visible: &[usize], selected: &mut Option<usize>) -> bool {
+    if visible.is_empty() {
+        return false;
+    }
+    let current = selected.and_then(|index| visible.iter().position(|&entry| entry == index));
+    let last = visible.len() - 1;
+    let next = context.input_mut(|input| {
+        let mut next = None;
+        for (key, target) in [
+            (egui::Key::ArrowUp, current.map_or(0, |current| current.saturating_sub(1))),
+            (egui::Key::ArrowDown, current.map_or(0, |current| (current + 1).min(last))),
+            (egui::Key::PageUp, current.map_or(0, |current| current.saturating_sub(10))),
+            (egui::Key::PageDown, current.map_or(0, |current| (current + 10).min(last))),
+        ] {
+            if input.consume_key(egui::Modifiers::NONE, key) {
+                next = Some(target);
+            }
+        }
+        next
+    });
+    match next {
+        Some(next) => {
+            *selected = Some(visible[next]);
+            true
+        }
+        None => false,
+    }
+}
+
+/// One line of text in `rect`, cut off with an ellipsis, with the matches of `needle` highlighted.
+pub fn paint_line(ui: &egui::Ui, rect: Rect, text: &str, font: FontId, color: Color32, needle: &str) {
+    let mut job = egui::text::LayoutJob::single_section(
+        text.to_owned(),
+        egui::TextFormat {
+            font_id: font,
+            color,
+            ..Default::default()
+        },
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width());
+    highlight(&mut job, 0, needle, ui);
+    paint_job(ui, rect, job, color, egui::Align::Min);
 }

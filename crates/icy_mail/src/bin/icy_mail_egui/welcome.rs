@@ -1,5 +1,7 @@
 use eframe::egui;
+use i18n_embed_fl::fl;
 use icy_engine_gui::egui::appearance;
+use icy_mail::LANGUAGE_LOADER;
 
 use super::{
     app::MailApp,
@@ -16,7 +18,7 @@ impl MailApp {
                 ui.add_space((ui.available_height() / 2.0 - 30.0).max(8.0));
                 ui.spinner();
                 ui.add_space(6.0);
-                ui.label(egui::RichText::new(format!("Opening {name}\u{2026}")).weak());
+                ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "welcome-opening", name = name)).weak());
             });
             return;
         }
@@ -33,24 +35,28 @@ impl MailApp {
                 ui.add(self.icons.image(&context, Icon::Mailbox, 56.0).tint(accent));
                 ui.add_space(6.0);
                 ui.label(appearance::bold(ui, "Icy Mail").size(24.0));
-                ui.label(egui::RichText::new("Read and answer your BBS mail offline.").weak());
+                ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "welcome-tagline")).weak());
                 ui.add_space(18.0);
-                let button = appearance::primary_button("Open Packet\u{2026}").min_size(egui::vec2(180.0, 34.0));
+                let button = appearance::primary_button(fl!(LANGUAGE_LOADER, "welcome-open-packet")).min_size(egui::vec2(180.0, 34.0));
                 if ui
                     .add_enabled(!self.loader.picking, button)
-                    .on_hover_text("Open a QWK packet (Ctrl+O)")
+                    .on_hover_text(fl!(LANGUAGE_LOADER, "welcome-open-packet-tooltip"))
                     .clicked()
                 {
                     self.loader.pick(&context);
                 }
                 ui.add_space(6.0);
-                ui.label(egui::RichText::new("or drop a .QWK packet onto this window").weak().size(12.0));
+                ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "welcome-drop-hint")).weak().size(12.0));
                 if recent.is_empty() {
                     return;
                 }
                 ui.add_space(24.0);
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("RECENT PACKETS").size(11.0).color(ui.visuals().weak_text_color()));
+                    ui.label(
+                        egui::RichText::new(fl!(LANGUAGE_LOADER, "welcome-recent-packets").to_uppercase())
+                            .size(11.0)
+                            .color(ui.visuals().weak_text_color()),
+                    );
                 });
                 ui.add_space(2.0);
                 for path in &recent {
@@ -92,7 +98,7 @@ impl MailApp {
                         }
                         self.icons.paint(ui, Icon::Close, close.shrink(6.0), ui.visuals().text_color());
                     }
-                    if close_response.on_hover_text("Remove from the list").clicked() {
+                    if close_response.on_hover_text(fl!(LANGUAGE_LOADER, "welcome-forget-recent")).clicked() {
                         remove = Some(path.clone());
                     } else if response.on_hover_text(path.display().to_string()).clicked() {
                         open = Some(path.clone());

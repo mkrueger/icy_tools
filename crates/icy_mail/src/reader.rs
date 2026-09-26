@@ -1,13 +1,12 @@
-use std::{cmp::Ordering, collections::HashSet, sync::Arc};
+use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 
-use bstr::ByteSlice;
+use i18n_embed_fl::fl;
 use icy_engine::{EditableScreen, Size, TextScreen};
 
 use crate::{
-    qwk::QwkPackage,
-    text,
+    qwk::{MessageInfo, QwkPackage},
     threading::{self, Row},
-    Res,
+    Res, LANGUAGE_LOADER,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,14 +101,22 @@ pub struct Reader {
     pub filter: String,
     /// Only messages addressed to this user name (case-insensitive), for the personal mailbox.
     pub personal: Option<String>,
-    /// Package indices of messages the user has read.
-    pub read: HashSet<usize>,
+    /// Read flag per package index.
+    read: Vec<bool>,
     pub unread_only: bool,
     pub view_mode: ViewMode,
     pub message_sort: (MessageColumn, SortDirection),
     pub conference_sort: (ConferenceColumn, SortDirection),
     pub conferences: Vec<ConferenceRow>,
     pub messages: Vec<Row>,
+    /// Position in `messages` per package index, `u32::MAX` when filtered out.
+    positions: Vec<u32>,
+    /// Unread messages in `messages`.
+    unread: usize,
+    /// Package index per `(conference, message number)`.
+    numbers: HashMap<(u16, u32), usize>,
+    /// Lowercased `from`, `to` and `subject` per package index, built on the first search.
+    search: Vec<String>,
 }
 
 impl Default for Reader {
@@ -120,13 +127,17 @@ impl Default for Reader {
             selected_message: None,
             filter: String::new(),
             personal: None,
-            read: HashSet::new(),
+            read: Vec::new(),
             unread_only: false,
             view_mode: ViewMode::List,
             message_sort: (MessageColumn::Date, SortDirection::Ascending),
             conference_sort: (ConferenceColumn::Area, SortDirection::Ascending),
             conferences: Vec::new(),
             messages: Vec::new(),
+            positions: Vec::new(),
+            unread: 0,
+            numbers: HashMap::new(),
+            search: Vec::new(),
         }
     }
 }
@@ -140,6 +151,8 @@ impl Reader {
         self.personal = None;
         self.read.clear();
         self.unread_only = false;
+        self.numbers.clear();
+        self.search.clear();
         self.rebuild_conferences();
         self.rebuild_messages();
     }
@@ -170,7 +183,7 @@ impl Reader {
             0,
             ConferenceRow {
                 number: None,
-                name: "All Conferences".into(),
+                name: fl!(LANGUAGE_LOADER, "packet-all-conferences"),
                 count: package.message_count(),
             },
         );
@@ -182,35 +195,61 @@ impl Reader {
             self.selected_message = None;
             return;
         };
+        let package = package.clone();
+        self.read.resize(package.infos.len(), false);
         let needle = self.filter.trim().to_lowercase();
+        if !needle.is_empty() && self.search.len() != package.infos.len() {
+            self.search = package
+                .infos
+                .iter()
+                .map(|info| {
+                    [&info.from, &info.to, &info.subject]
+                        .iter()
+                        .map(|value| value.to_lowercase())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .collect();
+        }
+        let personal = self.personal.as_ref().map(|name| name.trim().to_string());
         let mut infos: Vec<_> = package
             .infos
             .iter()
             .filter(|info| {
                 self.selected_conference.is_none_or(|number| info.conference == number)
-                    && self
-                        .personal
-                        .as_ref()
-                        .is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name.trim().as_bytes()))
-                    && (!self.unread_only || !self.read.contains(&info.index))
-                    && (needle.is_empty()
-                        || [&info.from, &info.to, &info.subject]
-                            .iter()
-                            .any(|value| text::decode(value).to_lowercase().contains(&needle)))
+                    && personal.as_ref().is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name))
+                    && (!self.unread_only || !self.read[info.index])
+                    && (needle.is_empty() || self.search[info.index].contains(&needle))
             })
             .collect();
         self.messages = match self.view_mode {
             ViewMode::Threads => threading::build_threads(&infos),
             ViewMode::List => {
                 let (column, direction) = self.message_sort;
-                infos.sort_by(|left, right| {
-                    direction.apply(match column {
-                        MessageColumn::From => text::cmp_ignore_case(&left.from, &right.from),
-                        MessageColumn::Date => left.date.cmp(&right.date).then(left.number.cmp(&right.number)),
-                        MessageColumn::Subject => text::cmp_ignore_case(&left.subject, &right.subject),
-                        MessageColumn::Lines => left.lines.cmp(&right.lines),
-                    })
-                });
+                match column {
+                    // Lowercase each key once instead of in every comparison.
+                    MessageColumn::From | MessageColumn::Subject => {
+                        let text = |info: &MessageInfo| {
+                            if column == MessageColumn::From {
+                                info.from.to_lowercase()
+                            } else {
+                                info.subject.to_lowercase()
+                            }
+                        };
+                        match direction {
+                            SortDirection::Ascending => infos.sort_by_cached_key(|info| (text(info), info.index)),
+                            SortDirection::Descending => infos.sort_by_cached_key(|info| (std::cmp::Reverse(text(info)), info.index)),
+                        }
+                    }
+                    MessageColumn::Date => infos.sort_unstable_by(|left, right| {
+                        direction
+                            .apply(left.date.cmp(&right.date).then(left.number.cmp(&right.number)))
+                            .then(left.index.cmp(&right.index))
+                    }),
+                    MessageColumn::Lines => {
+                        infos.sort_unstable_by(|left, right| direction.apply(left.lines.cmp(&right.lines)).then(left.index.cmp(&right.index)));
+                    }
+                }
                 infos
                     .iter()
                     .map(|info| Row {
@@ -221,6 +260,13 @@ impl Reader {
                     .collect()
             }
         };
+        self.positions.clear();
+        self.positions.resize(package.infos.len(), u32::MAX);
+        self.unread = 0;
+        for (position, row) in self.messages.iter().enumerate() {
+            self.positions[row.index] = position as u32;
+            self.unread += usize::from(!self.read[row.index]);
+        }
         if self.selected_position().is_none() {
             self.selected_message = self.messages.first().map(|row| row.index);
         }
@@ -233,9 +279,71 @@ impl Reader {
     }
 
     pub fn select_message(&mut self, index: usize) {
-        if self.messages.iter().any(|row| row.index == index) {
+        if self.contains(index) {
             self.selected_message = Some(index);
         }
+    }
+
+    /// Whether the message with this package index is in the current list.
+    pub fn contains(&self, index: usize) -> bool {
+        self.position(index).is_some()
+    }
+
+    fn position(&self, index: usize) -> Option<usize> {
+        self.positions
+            .get(index)
+            .filter(|position| **position != u32::MAX)
+            .map(|position| *position as usize)
+    }
+
+    pub fn is_read(&self, index: usize) -> bool {
+        self.read.get(index).copied().unwrap_or(false)
+    }
+
+    /// Updates one read mark. Returns whether it changed.
+    pub fn set_read(&mut self, index: usize, read: bool) -> bool {
+        let Some(flag) = self.read.get_mut(index) else {
+            return false;
+        };
+        if *flag == read {
+            return false;
+        }
+        *flag = read;
+        if self.contains(index) {
+            if read {
+                self.unread -= 1;
+            } else {
+                self.unread += 1;
+            }
+        }
+        true
+    }
+
+    /// Replaces all read marks by the given package indices.
+    pub fn set_read_marks(&mut self, indices: impl IntoIterator<Item = usize>) {
+        let len = self.package.as_ref().map_or(0, |package| package.infos.len());
+        self.read.clear();
+        self.read.resize(len, false);
+        for index in indices {
+            if let Some(flag) = self.read.get_mut(index) {
+                *flag = true;
+            }
+        }
+        self.unread = self.messages.iter().filter(|row| !self.read[row.index]).count();
+    }
+
+    /// Unread messages in the current list.
+    pub fn unread_count(&self) -> usize {
+        self.unread
+    }
+
+    /// Package index of a message by its conference and number.
+    pub fn find(&mut self, conference: u16, number: u32) -> Option<usize> {
+        let package = self.package.as_ref()?;
+        if self.numbers.is_empty() {
+            self.numbers = package.infos.iter().map(|info| ((info.conference, info.number), info.index)).collect();
+        }
+        self.numbers.get(&(conference, number)).copied()
     }
 
     pub fn sort_messages(&mut self, column: MessageColumn) {
@@ -266,7 +374,7 @@ impl Reader {
     }
 
     pub fn selected_position(&self) -> Option<usize> {
-        self.messages.iter().position(|row| Some(row.index) == self.selected_message)
+        self.position(self.selected_message?)
     }
 
     pub fn conference_position(&self) -> usize {
@@ -372,7 +480,7 @@ mod tests {
         reader.rebuild_messages();
         assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [2]);
         reader.personal = None;
-        reader.read = HashSet::from([0, 2]);
+        reader.set_read_marks([0, 2]);
         reader.unread_only = true;
         reader.rebuild_messages();
         assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [1, 3]);

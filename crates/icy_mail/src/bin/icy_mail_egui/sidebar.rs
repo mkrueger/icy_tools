@@ -1,6 +1,10 @@
 use eframe::egui;
+use i18n_embed_fl::fl;
 use icy_engine_gui::egui::appearance;
-use icy_mail::reader::{ConferenceColumn, Pane};
+use icy_mail::{
+    reader::{ConferenceColumn, Pane},
+    LANGUAGE_LOADER,
+};
 
 use super::{
     app::{Folder, MailApp, Modal},
@@ -28,7 +32,11 @@ impl MailApp {
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         ui.add(egui::Label::new(appearance::bold(ui, &bbs).size(14.0)).truncate().selectable(false));
-                        let detail = if user.is_empty() { "Offline mail".to_string() } else { user.clone() };
+                        let detail = if user.is_empty() {
+                            fl!(LANGUAGE_LOADER, "sidebar-offline-mail")
+                        } else {
+                            user.clone()
+                        };
                         ui.add(egui::Label::new(egui::RichText::new(detail).weak().size(12.0)).truncate().selectable(false));
                     });
                 });
@@ -40,7 +48,7 @@ impl MailApp {
                 .rect_filled(header.rect.shrink(4.0), 6.0, ui.visuals().widgets.hovered.weak_bg_fill.gamma_multiply(0.5));
         }
         if header
-            .on_hover_text("Packet information")
+            .on_hover_text(fl!(LANGUAGE_LOADER, "sidebar-packet-information"))
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
         {
@@ -50,26 +58,26 @@ impl MailApp {
         let reveal = std::mem::take(&mut self.reveal_sidebar);
         egui::ScrollArea::vertical().id_salt("sidebar").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            widgets::section(ui, "Mailboxes");
+            widgets::section(ui, &fl!(LANGUAGE_LOADER, "sidebar-mailboxes"));
             let total = self.reader.package.as_ref().map_or(0, |package| package.message_count());
             let mut entries = vec![(
                 Folder::All,
                 Some(Icon::Inbox),
-                "All Messages".to_string(),
+                fl!(LANGUAGE_LOADER, "folder-all"),
                 unread_badge(self.counts.unread, total),
-                format!("{total} messages, {} unread", self.counts.unread),
+                fl!(LANGUAGE_LOADER, "folder-all-tooltip", count = total, unread = self.counts.unread),
             )];
             if !user.is_empty() {
                 entries.push((
                     Folder::Personal,
                     Some(Icon::Personal),
-                    "Personal".to_string(),
+                    fl!(LANGUAGE_LOADER, "folder-personal"),
                     if self.counts.personal.0 > 0 {
                         Badge::Unread(self.counts.personal.0)
                     } else {
                         Badge::None
                     },
-                    format!("Messages addressed to {user}"),
+                    fl!(LANGUAGE_LOADER, "folder-personal-tooltip", user = user.as_str()),
                 ));
             }
             let drafts = self.draft_count();
@@ -80,7 +88,7 @@ impl MailApp {
             entries.push((
                 Folder::Drafts,
                 Some(Icon::Export),
-                "Outbox".to_string(),
+                fl!(LANGUAGE_LOADER, "folder-outbox"),
                 if problems > 0 {
                     Badge::Warning(problems)
                 } else if drafts > 0 {
@@ -88,7 +96,7 @@ impl MailApp {
                 } else {
                     Badge::None
                 },
-                "Replies and new messages waiting to be exported".to_string(),
+                fl!(LANGUAGE_LOADER, "folder-outbox-tooltip"),
             ));
             for (folder, icon, label, badge, tooltip) in entries {
                 let image = icon.map(|icon| self.icons.image(&context, icon, 18.0));
@@ -101,22 +109,22 @@ impl MailApp {
                 }
             }
             ui.add_space(6.0);
-            widgets::section_with(ui, "Conferences", |ui| {
+            widgets::section_with(ui, &fl!(LANGUAGE_LOADER, "sidebar-conferences"), |ui| {
                 let image = self.icons.image(&context, Icon::Sort, 16.0);
                 let button = ui
                     .add(egui::Button::image(image).frame_when_inactive(false).image_tint_follows_text_color(true))
-                    .on_hover_text("Sort conferences");
+                    .on_hover_text(fl!(LANGUAGE_LOADER, "sidebar-sort-conferences"));
                 egui::Popup::menu(&button).show(|ui| {
                     for (column, label) in [
-                        (ConferenceColumn::Area, "By Number"),
-                        (ConferenceColumn::Name, "By Name"),
-                        (ConferenceColumn::Count, "By Message Count"),
+                        (ConferenceColumn::Area, fl!(LANGUAGE_LOADER, "sidebar-sort-number")),
+                        (ConferenceColumn::Name, fl!(LANGUAGE_LOADER, "sidebar-sort-name")),
+                        (ConferenceColumn::Count, fl!(LANGUAGE_LOADER, "sidebar-sort-count")),
                     ] {
                         let active = self.reader.conference_sort.0 == column;
                         let text = if active {
                             format!("{label} {}", widgets::arrow(self.reader.conference_sort.1))
                         } else {
-                            label.to_string()
+                            label
                         };
                         if ui.add(egui::Button::selectable(active, text)).clicked() {
                             self.reader.sort_conferences(column);
@@ -135,8 +143,13 @@ impl MailApp {
             for (number, name, count) in rows {
                 let unread = self.counts.conferences.get(&number).copied().unwrap_or(0);
                 let folder = Folder::Conference(number);
-                let response = widgets::nav_row(ui, None, &name, unread_badge(unread, count), self.folder == folder, focused)
-                    .on_hover_text(format!("Conference {number}\n{count} messages, {unread} unread"));
+                let response = widgets::nav_row(ui, None, &name, unread_badge(unread, count), self.folder == folder, focused).on_hover_text(fl!(
+                    LANGUAGE_LOADER,
+                    "sidebar-conference-tooltip",
+                    number = number,
+                    count = count,
+                    unread = unread
+                ));
                 if reveal && self.folder == folder {
                     response.scroll_to_me(None);
                 }

@@ -1,8 +1,12 @@
 use clap::Parser;
 use eframe::{egui, egui_wgpu};
+use i18n_embed_fl::fl;
 use icy_engine_gui::{egui::appearance, TerminalShaderRenderer};
+use icy_mail::LANGUAGE_LOADER;
 use std::path::PathBuf;
 
+#[path = "icy_mail_egui/address_dialog.rs"]
+mod address_dialog;
 #[path = "icy_mail_egui/app.rs"]
 mod app;
 #[path = "icy_mail_egui/chrome.rs"]
@@ -17,6 +21,10 @@ mod list;
 mod loading;
 #[path = "icy_mail_egui/reader_view.rs"]
 mod reader_view;
+#[path = "icy_mail_egui/settings.rs"]
+mod settings;
+#[path = "icy_mail_egui/tagline_dialog.rs"]
+mod tagline_dialog;
 #[path = "icy_mail_egui/sidebar.rs"]
 mod sidebar;
 #[path = "icy_mail_egui/terminal_editor.rs"]
@@ -35,26 +43,39 @@ mod packet_tests;
 mod tests;
 
 #[derive(Parser)]
-#[command(version, about = "An offline QWK mail reader and reply-packet composer")]
+#[command(version, about = i18n_embed_fl::fl!(icy_mail::LANGUAGE_LOADER, "cli-about"))]
 struct Args {
-    #[arg(value_name = "FILE", help = "Mail package to open (QWK/ZIP)")]
+    #[arg(long, help = i18n_embed_fl::fl!(icy_mail::LANGUAGE_LOADER, "cli-debug-help"))]
+    debug: bool,
+    #[arg(value_name = "FILE", help = i18n_embed_fl::fl!(icy_mail::LANGUAGE_LOADER, "cli-file-help"))]
     file: Option<PathBuf>,
 }
 
 fn viewport() -> egui::ViewportBuilder {
     egui::ViewportBuilder::default()
-        .with_title(format!("Icy Mail {}", env!("CARGO_PKG_VERSION")))
+        .with_title(fl!(LANGUAGE_LOADER, "window-title", version = env!("CARGO_PKG_VERSION")))
         .with_inner_size([1100.0, 760.0])
         .with_min_inner_size([360.0, 240.0])
         .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../../build/linux/256x256.png")).expect("bundled mail icon"))
 }
 
+/// Tests match English labels regardless of the desktop language.
+#[cfg(test)]
+pub fn use_english() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| icy_mail::select_languages(&["en".parse().unwrap()]));
+}
+
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let _ = tracing_subscriber::fmt()
-        .with_max_level(tracing_subscriber::filter::LevelFilter::WARN)
-        .try_init();
+    let log_level = if args.debug {
+        tracing_subscriber::filter::LevelFilter::DEBUG
+    } else {
+        tracing_subscriber::filter::LevelFilter::WARN
+    };
+    let _ = tracing_subscriber::fmt().with_max_level(log_level).try_init();
     eframe::run_native(
+        // The application id (window class, storage), not a caption.
         "Icy Mail",
         eframe::NativeOptions {
             renderer: eframe::Renderer::Wgpu,
@@ -66,7 +87,10 @@ fn main() -> anyhow::Result<()> {
             ..Default::default()
         },
         Box::new(move |creation| {
-            let render = creation.wgpu_render_state.as_ref().ok_or("wgpu renderer unavailable")?;
+            let render = creation
+                .wgpu_render_state
+                .as_ref()
+                .ok_or_else(|| fl!(LANGUAGE_LOADER, "app-error-wgpu-unavailable"))?;
             render
                 .renderer
                 .write()

@@ -4,9 +4,13 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use eframe::egui::{self, emath::GuiRounding, Color32, Key};
+use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, CaretShape, EditableScreen, IceMode, Position, Size, TextAttribute, TextScreen};
 use icy_engine_gui::{egui::screen::ScreenView, MonitorSettings};
-use icy_mail::editor::{self, Attr, Editor, Motion, Pos};
+use icy_mail::{
+    editor::{self, Attr, Editor, Motion, Pos},
+    LANGUAGE_LOADER,
+};
 
 use super::widgets::{pill, Icon, Icons};
 
@@ -259,7 +263,7 @@ impl TerminalEditor {
                 if self.colors.is_none() {
                     let replaced = self.editor.insert_text(&text);
                     if replaced > 0 {
-                        self.status = Some(format!("{replaced} pasted characters are not in CP437 and became \u{201c}?\u{201d}"));
+                        self.status = Some(fl!(LANGUAGE_LOADER, "editor-paste-replaced", count = replaced));
                     }
                     self.follow = true;
                 }
@@ -294,7 +298,7 @@ impl TerminalEditor {
         self.quotes.open = false;
         for ch in text.chars() {
             if !self.editor.type_char(ch) && !ch.is_control() {
-                self.status = Some(format!("\u{201c}{ch}\u{201d} is not a CP437 character - Ctrl+G shows the character table"));
+                self.status = Some(fl!(LANGUAGE_LOADER, "editor-character-not-cp437", character = ch.to_string()));
             }
         }
         self.follow = true;
@@ -398,7 +402,7 @@ impl TerminalEditor {
 
     fn toggle_quotes(&mut self) {
         if self.quotes.lines.is_empty() {
-            self.status = Some("There is no original message to quote".into());
+            self.status = Some(fl!(LANGUAGE_LOADER, "editor-no-original-to-quote"));
         } else {
             self.quotes.open = !self.quotes.open;
             self.quotes.reveal = true;
@@ -420,7 +424,7 @@ impl TerminalEditor {
         }
         self.last_find.clone_from(&query);
         if !self.editor.find(&query) {
-            self.status = Some(format!("\u{201c}{query}\u{201d} was not found"));
+            self.status = Some(fl!(LANGUAGE_LOADER, "editor-find-not-found", query = query.as_str()));
         }
         self.follow = true;
     }
@@ -499,9 +503,9 @@ impl TerminalEditor {
         self.chars.code = code;
         if !editor::is_insertable(code) {
             self.status = Some(if code == 0xe3 {
-                "Character 227 (E3h) is the QWK line separator and cannot be used".into()
+                fl!(LANGUAGE_LOADER, "editor-qwk-separator-unusable")
             } else {
-                format!("Character {code} ({code:02X}h) is a terminal control code and cannot be used")
+                fl!(LANGUAGE_LOADER, "editor-control-code-unusable", code = code, hex = format!("{code:02X}"))
             });
             return;
         }
@@ -556,7 +560,7 @@ impl TerminalEditor {
                 self.palette[usize::from(attr.bg)],
                 self.colors.is_some(),
             )
-            .on_hover_text("Text color (Ctrl+K)");
+            .on_hover_text(fl!(LANGUAGE_LOADER, "editor-text-color-tooltip"));
             self.color_button = response.rect;
             if response.clicked() {
                 if self.colors.is_some() {
@@ -566,23 +570,28 @@ impl TerminalEditor {
                 }
                 self.request_focus();
             }
-            if pill(ui, self.chars.open, "Characters")
-                .on_hover_text("CP437 character table (Ctrl+G)")
+            if pill(ui, self.chars.open, &fl!(LANGUAGE_LOADER, "editor-characters"))
+                .on_hover_text(fl!(LANGUAGE_LOADER, "editor-characters-tooltip"))
                 .clicked()
             {
                 self.toggle_chars(false);
                 self.request_focus();
             }
             let quote = ui
-                .add_enabled_ui(!self.quotes.lines.is_empty(), |ui| pill(ui, self.quotes.open, "Quote"))
+                .add_enabled_ui(!self.quotes.lines.is_empty(), |ui| {
+                    pill(ui, self.quotes.open, &fl!(LANGUAGE_LOADER, "editor-quote"))
+                })
                 .inner
-                .on_hover_text("Quote the original message (Ctrl+Q)")
-                .on_disabled_hover_text("Only replies have a message to quote");
+                .on_hover_text(fl!(LANGUAGE_LOADER, "editor-quote-tooltip"))
+                .on_disabled_hover_text(fl!(LANGUAGE_LOADER, "editor-quote-disabled-tooltip"));
             if quote.clicked() {
                 self.toggle_quotes();
                 self.request_focus();
             }
-            if pill(ui, self.find.is_some(), "Find").on_hover_text("Find text (Ctrl+F, F3 next)").clicked() {
+            if pill(ui, self.find.is_some(), &fl!(LANGUAGE_LOADER, "editor-find"))
+                .on_hover_text(fl!(LANGUAGE_LOADER, "editor-find-tooltip"))
+                .clicked()
+            {
                 if self.find.is_some() {
                     self.find = None;
                     self.request_focus();
@@ -591,7 +600,7 @@ impl TerminalEditor {
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if icons.button(ui, Icon::Info, "Editor keys (F1)", true).clicked() {
+                if icons.button(ui, Icon::Info, &fl!(LANGUAGE_LOADER, "editor-keys-tooltip"), true).clicked() {
                     output.help = true;
                 }
             });
@@ -615,7 +624,7 @@ impl TerminalEditor {
             return;
         };
         let focus = std::mem::take(&mut self.find_focus);
-        let not_found = self.status.clone().filter(|status| status.ends_with("was not found"));
+        let not_found = self.status.clone();
         let (mut search, mut close) = (next, false);
         ui.add_space(4.0);
         ui.horizontal(|ui| {
@@ -623,7 +632,7 @@ impl TerminalEditor {
             let response = ui.add(
                 egui::TextEdit::singleline(&mut query)
                     .id(id)
-                    .hint_text("Find in message")
+                    .hint_text(fl!(LANGUAGE_LOADER, "editor-find-in-message"))
                     .desired_width(260.0)
                     .char_limit(80),
             );
@@ -631,10 +640,13 @@ impl TerminalEditor {
                 response.request_focus();
             }
             self.find_focused = response.has_focus() || focus;
-            if icons.button(ui, Icon::Down, "Find next (F3)", !query.is_empty()).clicked() {
+            if icons
+                .button(ui, Icon::Down, &fl!(LANGUAGE_LOADER, "editor-find-next-tooltip"), !query.is_empty())
+                .clicked()
+            {
                 search = true;
             }
-            if icons.button(ui, Icon::Close, "Close (Esc)", true).clicked() {
+            if icons.button(ui, Icon::Close, &fl!(LANGUAGE_LOADER, "editor-close-tooltip"), true).clicked() {
                 close = true;
             }
             if let Some(status) = &not_found {
@@ -654,29 +666,33 @@ impl TerminalEditor {
 
     fn quote_panel(&mut self, ui: &mut egui::Ui, icons: &mut Icons) {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Quote from the original").strong());
+            ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "editor-quote-from-original")).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if icons.button(ui, Icon::Close, "Close (Esc)", true).clicked() {
+                if icons.button(ui, Icon::Close, &fl!(LANGUAGE_LOADER, "editor-close-tooltip"), true).clicked() {
                     self.quotes.open = false;
                     self.request_focus();
                 }
                 let count = self.quotes.lines.len();
                 let selected = self.quotes.selected;
                 if ui
-                    .button("Quote Rest")
-                    .on_hover_text("Quote the selected line and all after it (Ctrl+A)")
+                    .button(fl!(LANGUAGE_LOADER, "editor-quote-rest"))
+                    .on_hover_text(fl!(LANGUAGE_LOADER, "editor-quote-rest-tooltip"))
                     .clicked()
                 {
                     self.insert_quotes(selected..count);
                     self.quotes.open = false;
                     self.request_focus();
                 }
-                if ui.button("Quote Line").on_hover_text("Quote the selected line (Enter)").clicked() {
+                if ui
+                    .button(fl!(LANGUAGE_LOADER, "editor-quote-line"))
+                    .on_hover_text(fl!(LANGUAGE_LOADER, "editor-quote-line-tooltip"))
+                    .clicked()
+                {
                     self.insert_quotes(selected..selected + 1);
                     self.request_focus();
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    let help = "\u{2191}\u{2193} select \u{00b7} Enter quote line \u{00b7} Ctrl+A quote rest \u{00b7} Esc close";
+                    let help = fl!(LANGUAGE_LOADER, "editor-quote-help");
                     ui.add(egui::Label::new(egui::RichText::new(help).size(11.5).color(ui.visuals().weak_text_color())).truncate());
                 });
             });
@@ -730,9 +746,9 @@ impl TerminalEditor {
 
     fn char_panel(&mut self, ui: &mut egui::Ui, icons: &mut Icons) {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Characters").strong());
+            ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "editor-characters")).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if icons.button(ui, Icon::Close, "Close (Esc)", true).clicked() {
+                if icons.button(ui, Icon::Close, &fl!(LANGUAGE_LOADER, "editor-close-tooltip"), true).clicked() {
                     self.chars.open = false;
                     self.chars.picking = false;
                     self.request_focus();
@@ -799,12 +815,17 @@ impl TerminalEditor {
             let scale = (32.0 / font.y).floor().max(1.0);
             paint_glyph(ui.painter(), &glyphs, shown, preview.center(), font * scale, self.palette[7]);
             ui.vertical(|ui| {
-                let usable = if editor::is_insertable(shown) { "" } else { " \u{00b7} reserved" };
-                ui.label(egui::RichText::new(format!("Character {shown} \u{00b7} {shown:02X}h{usable}")).strong());
-                let hint = if self.chars.picking {
-                    "Arrows choose \u{00b7} Enter insert \u{00b7} Esc back to the text"
+                let hex = format!("{shown:02X}");
+                let details = if editor::is_insertable(shown) {
+                    fl!(LANGUAGE_LOADER, "editor-character-details", code = shown, hex = hex.as_str())
                 } else {
-                    "Click to insert \u{00b7} Ctrl+G picks with the keyboard"
+                    fl!(LANGUAGE_LOADER, "editor-character-details-reserved", code = shown, hex = hex.as_str())
+                };
+                ui.label(egui::RichText::new(details).strong());
+                let hint = if self.chars.picking {
+                    fl!(LANGUAGE_LOADER, "editor-character-picking-hint")
+                } else {
+                    fl!(LANGUAGE_LOADER, "editor-character-click-hint")
                 };
                 ui.label(egui::RichText::new(hint).size(11.5).color(ui.visuals().weak_text_color()));
             });
@@ -818,9 +839,9 @@ impl TerminalEditor {
         let mut apply = false;
         let mut close = false;
         let title = if self.editor.selection().is_some() {
-            "Color of the selection"
+            fl!(LANGUAGE_LOADER, "editor-selection-color")
         } else {
-            "Text color"
+            fl!(LANGUAGE_LOADER, "editor-text-color")
         };
         let area = egui::Area::new(egui::Id::new("editor-colors"))
             .order(egui::Order::Foreground)
@@ -831,7 +852,11 @@ impl TerminalEditor {
                     ui.set_width(8.0 * 30.0);
                     ui.label(egui::RichText::new(title).strong());
                     ui.add_space(6.0);
-                    ui.label(egui::RichText::new("Foreground").size(11.5).color(ui.visuals().weak_text_color()));
+                    ui.label(
+                        egui::RichText::new(fl!(LANGUAGE_LOADER, "editor-foreground"))
+                            .size(11.5)
+                            .color(ui.visuals().weak_text_color()),
+                    );
                     for row in 0..2u8 {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 2.0;
@@ -848,7 +873,11 @@ impl TerminalEditor {
                         });
                     }
                     ui.add_space(4.0);
-                    ui.label(egui::RichText::new("Background").size(11.5).color(ui.visuals().weak_text_color()));
+                    ui.label(
+                        egui::RichText::new(fl!(LANGUAGE_LOADER, "editor-background"))
+                            .size(11.5)
+                            .color(ui.visuals().weak_text_color()),
+                    );
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
                         for index in 0..8u8 {
@@ -862,37 +891,41 @@ impl TerminalEditor {
                         }
                     });
                     ui.add_space(4.0);
-                    ui.checkbox(&mut pending.blink, "Blink");
+                    ui.checkbox(&mut pending.blink, fl!(LANGUAGE_LOADER, "editor-blink"));
                     ui.add_space(4.0);
                     let (preview, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 30.0), egui::Sense::hover());
                     ui.painter().rect_filled(preview, 3, self.palette[usize::from(pending.bg)]);
                     ui.painter().text(
                         preview.center(),
                         egui::Align2::CENTER_CENTER,
-                        "The quick brown fox",
+                        fl!(LANGUAGE_LOADER, "editor-color-preview-text"),
                         egui::FontId::monospace(14.0),
                         self.palette[usize::from(pending.fg)],
                     );
                     ui.add_space(4.0);
                     ui.label(
-                        egui::RichText::new("\u{2190}\u{2192} \u{2191}\u{2193} 0-F choose \u{00b7} Space blink")
+                        egui::RichText::new(fl!(LANGUAGE_LOADER, "editor-color-help"))
                             .size(11.0)
                             .color(ui.visuals().weak_text_color()),
                     );
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
-                        if ui.button("Default").on_hover_text("Light gray on black (Del)").clicked() {
+                        if ui
+                            .button(fl!(LANGUAGE_LOADER, "editor-default"))
+                            .on_hover_text(fl!(LANGUAGE_LOADER, "editor-default-color-tooltip"))
+                            .clicked()
+                        {
                             pending = Attr::DEFAULT;
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
-                                .add(egui::Button::new("Apply").fill(ui.visuals().selection.bg_fill))
+                                .add(egui::Button::new(fl!(LANGUAGE_LOADER, "editor-apply")).fill(ui.visuals().selection.bg_fill))
                                 .on_hover_text("Enter")
                                 .clicked()
                             {
                                 apply = true;
                             }
-                            if ui.button("Cancel").on_hover_text("Esc").clicked() {
+                            if ui.button(fl!(LANGUAGE_LOADER, "editor-cancel")).on_hover_text("Esc").clicked() {
                                 close = true;
                             }
                         });
@@ -1132,61 +1165,78 @@ impl TerminalEditor {
         let y = self.rows as i32 - 1;
         canvas.fill(0, y, COLUMNS as i32, 1, ' ', BAR);
         self.hotspots.clear();
+        let (row, column) = self.editor.caret_visual();
+        let position = format!(
+            "{} {} {} {} ",
+            fl!(LANGUAGE_LOADER, "editor-status-line"),
+            row + 1,
+            fl!(LANGUAGE_LOADER, "editor-status-column"),
+            column + 1
+        );
+        let sample = format!(" {} ", fl!(LANGUAGE_LOADER, "editor-status-sample"));
+        let sample_width = sample.chars().count() as i32;
+        let sample_x = COLUMNS as i32 - sample_width;
+        let position_x = sample_x - 1 - position.chars().count() as i32;
+        canvas.text(position_x, y, &position, BAR);
+        let mode = if self.editor.insert_mode() {
+            fl!(LANGUAGE_LOADER, "editor-status-insert")
+        } else {
+            fl!(LANGUAGE_LOADER, "editor-status-overwrite")
+        };
+        let mode_width = mode.chars().count() as i32;
+        let mode_x = position_x - 2 - mode_width;
+        canvas.text(mode_x, y, &mode, BAR_TEXT);
+        self.hotspots.push((mode_x, mode_x + mode_width, Command::Insert));
+        canvas.text(sample_x, y, &sample, self.editor.attr());
+        self.hotspots.push((sample_x, sample_x + sample_width, Command::Colors));
         if let Some(status) = &self.status {
-            canvas.text(1, y, status, BAR_TEXT);
+            let max_x = mode_x.saturating_sub(1).max(1);
+            canvas.text_limited(1, y, status, BAR_TEXT, max_x);
         } else {
             let mut x = 1;
             for (key, label, command) in [
-                ("^K", "Color", Command::Colors),
-                ("^G", "Chars", Command::Chars),
-                ("^Q", "Quote", Command::Quote),
-                ("^F", "Find", Command::Find),
-                ("F1", "Help", Command::Help),
+                ("^K", fl!(LANGUAGE_LOADER, "editor-status-color"), Command::Colors),
+                ("^G", fl!(LANGUAGE_LOADER, "editor-status-chars"), Command::Chars),
+                ("^Q", fl!(LANGUAGE_LOADER, "editor-status-quote"), Command::Quote),
+                ("^F", fl!(LANGUAGE_LOADER, "editor-status-find"), Command::Find),
+                ("F1", fl!(LANGUAGE_LOADER, "editor-status-help"), Command::Help),
             ] {
+                let max_x = mode_x.saturating_sub(1).max(1);
+                if x >= max_x {
+                    break;
+                }
                 let start = x;
-                x = canvas.text(x, y, key, BAR_KEY) + 1;
-                x = canvas.text(x, y, label, BAR);
+                x = canvas.text_limited(x, y, key, BAR_KEY, max_x) + 1;
+                x = canvas.text_limited(x, y, &label, BAR, max_x);
                 self.hotspots.push((start, x, command));
                 x += 2;
             }
         }
-        let (row, column) = self.editor.caret_visual();
-        let position = format!("Ln {} Col {} ", row + 1, column + 1);
-        let sample_x = COLUMNS as i32 - 5;
-        let x = sample_x - 1 - position.chars().count() as i32;
-        canvas.text(x, y, &position, BAR);
-        let mode = if self.editor.insert_mode() { "INS" } else { "OVR" };
-        let mode_x = x - 5;
-        canvas.text(mode_x, y, mode, BAR_TEXT);
-        self.hotspots.push((mode_x, mode_x + 3, Command::Insert));
-        canvas.text(sample_x, y, " Aa ", self.editor.attr());
-        self.hotspots.push((sample_x, sample_x + 4, Command::Colors));
     }
 }
 
 const CHAR_PANEL_WIDTH: f32 = 16.0 * 24.0 + 16.0;
 
-const COLOR_NAMES: [&str; 16] = [
-    "Black",
-    "Blue",
-    "Green",
-    "Cyan",
-    "Red",
-    "Magenta",
-    "Brown",
-    "Light gray",
-    "Dark gray",
-    "Light blue",
-    "Light green",
-    "Light cyan",
-    "Light red",
-    "Light magenta",
-    "Yellow",
-    "White",
-];
-
 fn color_name(index: u8) -> String {
-    format!("{} ({index:X})", COLOR_NAMES[usize::from(index & 15)])
+    let name = match index & 15 {
+        0 => fl!(LANGUAGE_LOADER, "editor-color-black"),
+        1 => fl!(LANGUAGE_LOADER, "editor-color-blue"),
+        2 => fl!(LANGUAGE_LOADER, "editor-color-green"),
+        3 => fl!(LANGUAGE_LOADER, "editor-color-cyan"),
+        4 => fl!(LANGUAGE_LOADER, "editor-color-red"),
+        5 => fl!(LANGUAGE_LOADER, "editor-color-magenta"),
+        6 => fl!(LANGUAGE_LOADER, "editor-color-brown"),
+        7 => fl!(LANGUAGE_LOADER, "editor-color-light-gray"),
+        8 => fl!(LANGUAGE_LOADER, "editor-color-dark-gray"),
+        9 => fl!(LANGUAGE_LOADER, "editor-color-light-blue"),
+        10 => fl!(LANGUAGE_LOADER, "editor-color-light-green"),
+        11 => fl!(LANGUAGE_LOADER, "editor-color-light-cyan"),
+        12 => fl!(LANGUAGE_LOADER, "editor-color-light-red"),
+        13 => fl!(LANGUAGE_LOADER, "editor-color-light-magenta"),
+        14 => fl!(LANGUAGE_LOADER, "editor-color-yellow"),
+        _ => fl!(LANGUAGE_LOADER, "editor-color-white"),
+    };
+    format!("{name} ({index:X})")
 }
 
 /// Toolbar button showing the current colors.
@@ -1202,15 +1252,20 @@ fn color_button(ui: &mut egui::Ui, fg: Color32, bg: Color32, open: bool) -> egui
         .rect(rect, 5, visuals.widgets.inactive.weak_bg_fill, frame, egui::StrokeKind::Inside);
     let sample = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 4.0), egui::vec2(32.0, 16.0));
     ui.painter().rect_filled(sample, 2, bg);
-    ui.painter()
-        .text(sample.center(), egui::Align2::CENTER_CENTER, "Aa", egui::FontId::monospace(12.0), fg);
+    ui.painter().text(
+        sample.center(),
+        egui::Align2::CENTER_CENTER,
+        fl!(LANGUAGE_LOADER, "editor-status-sample"),
+        egui::FontId::monospace(12.0),
+        fg,
+    );
     let center = egui::pos2(rect.right() - 11.0, rect.center().y);
     ui.painter().add(egui::Shape::convex_polygon(
         vec![center + egui::vec2(-4.0, -2.0), center + egui::vec2(4.0, -2.0), center + egui::vec2(0.0, 3.0)],
         visuals.text_color(),
         egui::Stroke::NONE,
     ));
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Text color"));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, fl!(LANGUAGE_LOADER, "editor-text-color")));
     response
 }
 
@@ -1295,6 +1350,18 @@ impl Canvas {
     fn text(&mut self, x: i32, y: i32, text: &str, attr: Attr) -> i32 {
         let mut x = x;
         for ch in text.chars() {
+            self.put(x, y, ch, attr);
+            x += 1;
+        }
+        x
+    }
+
+    fn text_limited(&mut self, x: i32, y: i32, text: &str, attr: Attr, max_x: i32) -> i32 {
+        let mut x = x;
+        for ch in text.chars() {
+            if x >= max_x {
+                break;
+            }
             self.put(x, y, ch, attr);
             x += 1;
         }

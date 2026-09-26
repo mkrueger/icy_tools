@@ -1,9 +1,13 @@
 use eframe::egui::{self, Key};
+use i18n_embed_fl::fl;
 use icy_engine_gui::egui::appearance;
-use icy_mail::drafts::{Draft, DraftField, DraftKind, HEADER_FIELD_LENGTH};
+use icy_mail::{
+    drafts::{Draft, DraftField, DraftKind, HEADER_FIELD_LENGTH},
+    LANGUAGE_LOADER,
+};
 
 use super::{
-    app::{conference_choices, key, AfterDiscard, MailApp, Modal, NoticeKind},
+    app::{key, AfterDiscard, MailApp, Modal, NoticeKind},
     reader_view::issue_box,
     terminal_editor::TerminalEditor,
     widgets::Icon,
@@ -41,12 +45,12 @@ impl Composer {
         self.draft != self.original
     }
 
-    fn title(&self) -> &'static str {
+    fn title(&self) -> String {
         match (self.existing, self.draft.kind) {
-            (true, _) => "Edit Draft",
-            (false, DraftKind::New) => "New Message",
-            (false, DraftKind::Reply) => "Reply",
-            (false, DraftKind::Forward) => "Forward Message",
+            (true, _) => fl!(LANGUAGE_LOADER, "composer-title-edit-draft"),
+            (false, DraftKind::New) => fl!(LANGUAGE_LOADER, "composer-title-new-message"),
+            (false, DraftKind::Reply) => fl!(LANGUAGE_LOADER, "composer-title-reply"),
+            (false, DraftKind::Forward) => fl!(LANGUAGE_LOADER, "composer-title-forward-message"),
         }
     }
 
@@ -71,6 +75,10 @@ impl MailApp {
             self.save_composer(context);
         } else if key(context, Key::W, true, false) {
             self.close(context);
+        } else if key(context, Key::T, true, false) {
+            self.open_taglines(true);
+        } else if key(context, Key::B, true, false) {
+            self.open_address_book(true);
         } else if !editor_escape && !egui::Popup::is_any_open(context) && key(context, Key::Escape, false, false) {
             self.cancel_composer();
         }
@@ -101,23 +109,22 @@ impl MailApp {
                 self.composer = None;
                 self.selected_draft = Some(id);
                 if problems {
-                    self.notify(context, NoticeKind::Warning, "Draft saved - it needs changes before it can be exported");
+                    self.notify(context, NoticeKind::Warning, fl!(LANGUAGE_LOADER, "composer-draft-saved-needs-changes"));
                 } else {
                     let count = self.draft_count();
-                    let waiting = if count == 1 { "1 message".to_string() } else { format!("{count} messages") };
-                    self.notify(context, NoticeKind::Success, format!("Draft saved - {waiting} in the outbox"));
+                    self.notify(context, NoticeKind::Success, fl!(LANGUAGE_LOADER, "composer-draft-saved-outbox", count = count));
                 }
             }
-            Err(error) => composer.error = Some(format!("Unable to save the draft: {error}")),
+            Err(error) => composer.error = Some(fl!(LANGUAGE_LOADER, "composer-save-error", error = error.to_string())),
         }
     }
 
     pub fn composer_view(&mut self, ui: &mut egui::Ui) {
         let context = ui.ctx().clone();
-        let Some(package) = self.reader.package.clone() else {
+        if self.reader.package.is_none() {
             return;
-        };
-        let conferences = conference_choices(&package);
+        }
+        let conferences = self.choices.clone();
         let Some(composer) = &mut self.composer else {
             return;
         };
@@ -129,6 +136,9 @@ impl MailApp {
             Save,
             Cancel,
             Delete,
+            AddressBook,
+            Taglines,
+            RandomTagline,
         }
         let mut action = None;
         let mut help = false;
@@ -152,26 +162,30 @@ impl MailApp {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         ui.label(appearance::bold(ui, composer.title()).size(18.0));
                         if let Some(origin) = &composer.origin {
-                            let prefix = if composer.draft.kind == DraftKind::Forward {
-                                "Forwarding"
+                            let label = if composer.draft.kind == DraftKind::Forward {
+                                fl!(LANGUAGE_LOADER, "composer-forwarding-origin", origin = origin.as_str())
                             } else {
-                                "Replying to"
+                                fl!(LANGUAGE_LOADER, "composer-replying-origin", origin = origin.as_str())
                             };
-                            ui.add(egui::Label::new(egui::RichText::new(format!("{prefix} {origin}")).weak().size(12.0)).truncate());
+                            ui.add(egui::Label::new(egui::RichText::new(label).weak().size(12.0)).truncate());
                         }
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
-                            .add(appearance::primary_button("Save Draft"))
-                            .on_hover_text("Keep the message in the outbox (Ctrl+S)")
+                            .add(appearance::primary_button(fl!(LANGUAGE_LOADER, "composer-save-draft")))
+                            .on_hover_text(fl!(LANGUAGE_LOADER, "composer-save-draft-tooltip"))
                             .clicked()
                         {
                             action = Some(Action::Save);
                         }
-                        if ui.button("Cancel").on_hover_text("Close without saving (Esc)").clicked() {
+                        if ui
+                            .button(fl!(LANGUAGE_LOADER, "composer-cancel"))
+                            .on_hover_text(fl!(LANGUAGE_LOADER, "composer-cancel-tooltip"))
+                            .clicked()
+                        {
                             action = Some(Action::Cancel);
                         }
-                        if composer.existing && ui.button("Delete Draft").clicked() {
+                        if composer.existing && ui.button(fl!(LANGUAGE_LOADER, "composer-delete-draft")).clicked() {
                             action = Some(Action::Delete);
                         }
                     });
@@ -188,11 +202,12 @@ impl MailApp {
                     });
                 };
                 let draft = &mut composer.draft;
-                row(ui, "Conference", &mut |ui| {
-                    let selected = conferences
-                        .iter()
-                        .find(|(number, _)| *number == draft.conference)
-                        .map_or_else(|| format!("Conference {}", draft.conference), |(number, name)| format!("{name} ({number})"));
+                let icons = &mut self.icons;
+                row(ui, &fl!(LANGUAGE_LOADER, "composer-conference"), &mut |ui| {
+                    let selected = conferences.iter().find(|(number, _)| *number == draft.conference).map_or_else(
+                        || fl!(LANGUAGE_LOADER, "composer-conference-number", number = draft.conference),
+                        |(number, name)| format!("{name} ({number})"),
+                    );
                     egui::ComboBox::from_id_salt("composer-conference")
                         .width((ui.available_width() - 140.0).clamp(120.0, 320.0))
                         .selected_text(selected)
@@ -202,20 +217,26 @@ impl MailApp {
                             }
                         });
                     ui.add_space(12.0);
-                    ui.checkbox(&mut draft.private, "Private")
-                        .on_hover_text("Only the recipient and the sysop can read private messages");
+                    ui.checkbox(&mut draft.private, fl!(LANGUAGE_LOADER, "composer-private"))
+                        .on_hover_text(fl!(LANGUAGE_LOADER, "composer-private-tooltip"));
                 });
-                for (field, label) in [(DraftField::To, "To"), (DraftField::Subject, "Subject"), (DraftField::From, "From")] {
+                for (field, label, id_label) in [
+                    (DraftField::To, fl!(LANGUAGE_LOADER, "composer-field-to"), "To"),
+                    (DraftField::Subject, fl!(LANGUAGE_LOADER, "composer-field-subject"), "Subject"),
+                    (DraftField::From, fl!(LANGUAGE_LOADER, "composer-field-from"), "From"),
+                ] {
                     let value = match field {
                         DraftField::To => &mut draft.to,
                         DraftField::Subject => &mut draft.subject,
                         _ => &mut draft.from,
                     };
                     let invalid = issues.iter().any(|issue| issue.field == field && !value.trim().is_empty());
-                    row(ui, label, &mut |ui| {
-                        let counter_width = 44.0;
+                    row(ui, &label, &mut |ui| {
+                        let counter_width = 44.0 + if field == DraftField::To { 34.0 } else { 0.0 };
                         let width = (ui.available_width() - counter_width - 8.0).max(80.0);
-                        let mut edit = appearance::text_edit(value).id(egui::Id::new(format!("composer-{label}"))).desired_width(width);
+                        let mut edit = appearance::text_edit(value)
+                            .id(egui::Id::new(format!("composer-{id_label}")))
+                            .desired_width(width);
                         if invalid {
                             edit = edit.text_color(ui.visuals().error_fg_color);
                         }
@@ -229,7 +250,14 @@ impl MailApp {
                             ui.visuals().weak_text_color()
                         };
                         ui.label(egui::RichText::new(format!("{length}/{HEADER_FIELD_LENGTH}")).size(11.5).color(color))
-                            .on_hover_text("QWK headers hold up to 25 characters");
+                            .on_hover_text(fl!(LANGUAGE_LOADER, "composer-qwk-header-limit-tooltip"));
+                        if field == DraftField::To
+                            && icons
+                                .button(ui, Icon::Contacts, &fl!(LANGUAGE_LOADER, "composer-address-book-tooltip"), true)
+                                .clicked()
+                        {
+                            action = Some(Action::AddressBook);
+                        }
                     });
                 }
                 ui.add_space(6.0);
@@ -241,6 +269,55 @@ impl MailApp {
                     issue_box(ui, &mut self.icons, &problems);
                     ui.add_space(6.0);
                 }
+                egui::TopBottomPanel::bottom("composer-tagline")
+                    .frame(egui::Frame::new().inner_margin(egui::Margin { top: 6, ..Default::default() }))
+                    .show_separator_line(false)
+                    .show_inside(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 4.0;
+                            ui.allocate_ui_with_layout(egui::vec2(label_width, 28.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                ui.set_min_width(label_width);
+                                ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "composer-tagline")).weak());
+                            });
+                            let buttons = 3.0 * 32.0;
+                            let width = (ui.available_width() - buttons).max(60.0);
+                            let tagline = &composer.draft.tagline;
+                            ui.allocate_ui_with_layout(egui::vec2(width, 28.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                ui.set_min_width(width);
+                                let text = if tagline.is_empty() {
+                                    egui::RichText::new(fl!(LANGUAGE_LOADER, "composer-no-tagline")).weak().italics()
+                                } else {
+                                    egui::RichText::new(format!("... {tagline}")).monospace()
+                                };
+                                let response = ui.add(egui::Label::new(text).truncate().sense(egui::Sense::click()));
+                                if response.on_hover_text(fl!(LANGUAGE_LOADER, "composer-choose-tagline-tooltip")).clicked() {
+                                    action = Some(Action::Taglines);
+                                }
+                            });
+                            if self
+                                .icons
+                                .button(ui, Icon::Tag, &fl!(LANGUAGE_LOADER, "composer-choose-tagline-tooltip"), true)
+                                .clicked()
+                            {
+                                action = Some(Action::Taglines);
+                            }
+                            let any = self.taglines.as_ref().is_some_and(|taglines| !taglines.lines.is_empty());
+                            if self
+                                .icons
+                                .button(ui, Icon::Shuffle, &fl!(LANGUAGE_LOADER, "composer-random-tagline"), any)
+                                .clicked()
+                            {
+                                action = Some(Action::RandomTagline);
+                            }
+                            if self
+                                .icons
+                                .button(ui, Icon::Close, &fl!(LANGUAGE_LOADER, "composer-no-tagline"), !tagline.is_empty())
+                                .clicked()
+                            {
+                                composer.draft.tagline.clear();
+                            }
+                        });
+                    });
                 let output = composer.editor.show(ui, &self.settings, &mut self.icons, enabled);
                 if output.changed {
                     composer.draft.body = composer.editor.editor.to_body();
@@ -263,6 +340,14 @@ impl MailApp {
             Some(Action::Delete) => {
                 if let Some(composer) = &self.composer {
                     self.modal = Some(Modal::DeleteDraft(composer.draft.id));
+                }
+            }
+            Some(Action::AddressBook) => self.open_address_book(true),
+            Some(Action::Taglines) => self.open_taglines(true),
+            Some(Action::RandomTagline) => {
+                let tagline = self.taglines.as_ref().and_then(|taglines| taglines.random()).map(str::to_string);
+                if let (Some(tagline), Some(composer)) = (tagline, &mut self.composer) {
+                    composer.draft.tagline = tagline;
                 }
             }
             None => {}

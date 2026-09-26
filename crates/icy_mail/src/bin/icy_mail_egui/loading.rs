@@ -4,8 +4,9 @@ use std::{
 };
 
 use eframe::egui;
+use i18n_embed_fl::fl;
 use icy_engine::TextScreen;
-use icy_mail::{drafts::DraftStore, qwk::QwkPackage, reader::render_body};
+use icy_mail::{drafts::DraftStore, qwk::QwkPackage, reader::render_body, LANGUAGE_LOADER};
 
 pub enum Event {
     Package(u64, PathBuf, Result<Arc<QwkPackage>, String>),
@@ -75,9 +76,12 @@ impl Loader {
         let context = context.clone();
         std::thread::spawn(move || {
             let path = rfd::FileDialog::new()
-                .set_title("Open Mail Package")
-                .add_filter("Mail Packages", &["qwk", "zip", "rep"])
-                .add_filter("All Files", &["*"])
+                .set_title(fl!(LANGUAGE_LOADER, "loading-open-title"))
+                .add_filter(
+                    fl!(LANGUAGE_LOADER, "loading-filter-packages"),
+                    &["qwk", "zip", "arj", "lzh", "lha", "rar", "7z", "arc", "zoo", "rep"],
+                )
+                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-all"), &["*"])
                 .pick_file();
             let _ = sender.send(Event::Picked(path));
             context.request_repaint();
@@ -93,8 +97,8 @@ impl Loader {
         let context = context.clone();
         std::thread::spawn(move || {
             let mut dialog = rfd::FileDialog::new()
-                .set_title("Export Reply Packet")
-                .add_filter("QWK Reply Packet", &["rep"])
+                .set_title(fl!(LANGUAGE_LOADER, "loading-export-title"))
+                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-reply"), &["rep"])
                 .set_file_name(suggested.file_name().unwrap_or_default().to_string_lossy());
             if let Some(directory) = suggested.parent() {
                 dialog = dialog.set_directory(directory);

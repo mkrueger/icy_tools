@@ -13,8 +13,10 @@ cargo run -p icy_mail -- [packet.qwk]
 
 Open a packet with **Open**, Ctrl/Cmd+O, by dropping it on the window, or from
 the start screen's recent packet list (hover an entry and press × to forget
-it). ZIP archives must contain `CONTROL.DAT` and `MESSAGES.DAT`; standalone
-REP archives are export files, not readable incoming packets.
+it). Packets are unpacked with [unarc-rs](https://github.com/mkrueger/unarc-rs),
+so ZIP, ARJ, LHA/LZH, RAR, 7z, ARC, ZOO and the other formats it detects work;
+the archive must contain `CONTROL.DAT` and `MESSAGES.DAT`. Standalone REP
+archives are export files, not readable incoming packets.
 
 The old frontend remains available:
 
@@ -36,11 +38,16 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
 - Unread messages are bold with a dot; replied-to and private messages are
   flagged. Opening a folder selects its first unread message.
 - Sortable columns, list or thread view, and an **Unread** filter. Search
-  matches author, recipient and subject.
+  matches author, recipient and subject; matches are highlighted in the list
+  and the message header.
 - The reader header links to the referenced message (“reply to #n”) and offers
   reply, forward, mark read/unread, copy and previous/next actions.
-- ANSI/CP437 rendering, text/rectangular selection and copy, fit-width or 100%
-  zoom, light/dark themes and additional native windows.
+- ANSI/CP437 rendering, text/rectangular selection and copy, zoom, light/dark
+  themes and additional native windows.
+- **Settings** (Ctrl/Cmd+,): theme, message zoom and the shared monitor
+  emulation (monitor color, scaling, filtering, brightness, contrast, CRT
+  effects…). Changes preview live; Cancel restores the previous values. They
+  are saved to `settings.toml` in the icy_mail configuration directory.
 - Packets and message bodies load in the background; a failed open keeps the
   current packet and reports the error.
 
@@ -106,6 +113,36 @@ using your usual offline mail workflow. Drafts with problems are listed instead
 of being exported. Export does not delete drafts. Unsupported characters and
 invalid QWK fields are reported rather than silently replaced.
 
+## Taglines
+
+Taglines are kept in `taglines.txt` in the user data directory, one per line
+(the same format as MultiMail's `taglines` file, so an existing list can be
+copied over). A tagline is sent below the message as `... text`, up to 76
+characters.
+
+- New messages get a random tagline; this can be switched off in Settings
+  (General → Writing). The **Tagline** bar below the editor shows it and offers
+  choosing, shuffling and removing it.
+- Ctrl+T (or clicking the tagline) opens the picker: filter, arrows and Enter,
+  **Random** or **No Tagline**.
+- **T** or the tag button in the reader header saves the tagline of the shown
+  message (its last `... ` line) to the list, like MultiMail's tagline stealer.
+- Ctrl/Cmd+Shift+T or **Taglines…** in the menu manages the list: add, edit
+  (Enter) and delete (Delete) entries.
+
+## Address book
+
+Contacts are stored in `addressbook.txt` in the user data directory in
+MultiMail's address book format (name line, address line, blank line; Internet
+addresses are recognized by their `@`).
+
+- **A** or **Address Book…** in the menu opens it: filter, add, edit and delete
+  contacts, or **Write Message** to start a new message to the selected one.
+- **Shift+A** or the person button in the reader header adds the author of the
+  shown message.
+- While writing, Ctrl+B or the contacts button next to **To** picks the
+  recipient.
+
 ## Keyboard
 
 | Keys | Action |
@@ -121,10 +158,21 @@ invalid QWK fields are reported rather than silently replaced.
 | Tab/Shift+Tab, Enter | Cycle panes, open the selection |
 | Ctrl/Cmd+F, Escape | Search, clear search |
 | Ctrl/Cmd+T | List/thread view |
+| T, Ctrl/Cmd+Shift+T | Save the message's tagline, manage taglines |
+| A, Shift+A | Address book, add the author to it |
 | Delete | Delete the selected outbox draft |
 | Ctrl/Cmd+Shift+N, Ctrl/Cmd+W | New window, close window |
+| Ctrl/Cmd+, | Settings |
 | F1 | Show all shortcuts (editor keys while writing) |
 | Ctrl+K, Ctrl+G, Ctrl+Q | Editor colors, CP437 table, quote panel |
+| Ctrl+T, Ctrl+B | While writing: choose a tagline, pick the recipient |
+
+## Translations
+
+The interface texts are Fluent messages in `i18n/<language>/icy_mail.ftl`, loaded
+with i18n-embed like the other icy tools. English (`i18n/en`) is the fallback, so
+another language only needs the messages it translates; the desktop language is
+picked at startup.
 
 The shared `icy_engine_gui::egui` appearance, fonts, dialog shell, screen widget
 and frame scheduling are also used by icy_term and icy_view. Native windows use
@@ -133,10 +181,10 @@ and frame scheduling are also used by icy_term and icy_view. Native windows use
 ## Scope
 
 QWK replies are exported as files, not sent over a network. Blue Wave, OMEN,
-SOUP and OPX packets, address books, taglines, direct mail delivery and the
-legacy frontend's composer are not implemented. Read marks, recent packets and
-drafts are stored in the user data directory; theme, pane sizes and zoom are
-session settings. Closing the main window also closes its additional windows.
+SOUP and OPX packets, direct mail delivery and the legacy frontend's composer
+are not implemented. Read marks, recent packets, drafts, taglines and the
+address book are stored in the user data directory, theme, zoom and monitor settings
+in the configuration directory; pane sizes are session settings. Closing the main window also closes its additional windows.
 
 ## Validation
 
@@ -149,7 +197,7 @@ cargo test -p icy_mail --no-default-features --features legacy-ui --bin icy_mail
 GPU tests require a working wgpu adapter. They render actual terminal pixels,
 check text selection/copy and scrolling, and cover desktop, 360x640, 360x240 and
 HiDPI layouts in light and dark themes plus the composer with its quote panel,
-color picker, character table and find field, the outbox and start screen:
+color picker, character table, find field, tagline and recipient pickers, the outbox and start screen:
 
 ```sh
 ICY_EGUI_SCREENSHOTS="$PWD/target/egui-mail" \

@@ -1,5 +1,7 @@
 use eframe::egui::{self, Key, Modifiers};
+use i18n_embed_fl::fl;
 use icy_engine_gui::egui::{appearance, shortcuts::keycaps};
+use icy_mail::LANGUAGE_LOADER;
 
 use super::{
     app::{draft_title, AfterDiscard, Folder, MailApp, Modal},
@@ -9,10 +11,15 @@ use super::{
 impl MailApp {
     pub fn modals(&mut self, context: &egui::Context) {
         if let Some(error) = self.error.clone() {
-            let response = appearance::MessageBox::new("mail-error", appearance::MessageKind::Error, "Icy Mail", error)
-                .copyable()
-                .buttons([appearance::DialogButton::primary(appearance::labels::close(), ()).cancels()])
-                .show(context);
+            let response = appearance::MessageBox::new(
+                "mail-error",
+                appearance::MessageKind::Error,
+                fl!(LANGUAGE_LOADER, "dialog-mail-app-title"),
+                error,
+            )
+            .copyable()
+            .buttons([appearance::DialogButton::primary(appearance::labels::close(), ()).cancels()])
+            .show(context);
             if response.action.is_some() || response.dismissed {
                 self.error = None;
             }
@@ -24,6 +31,21 @@ impl MailApp {
         match modal {
             Modal::Shortcuts => {
                 if self.shortcuts(context) {
+                    self.modal = None;
+                }
+            }
+            Modal::Settings => {
+                if self.settings(context) {
+                    self.modal = None;
+                }
+            }
+            Modal::Taglines => {
+                if self.taglines_dialog(context) {
+                    self.modal = None;
+                }
+            }
+            Modal::AddressBook => {
+                if self.address_dialog(context) {
                     self.modal = None;
                 }
             }
@@ -43,12 +65,12 @@ impl MailApp {
                 let response = appearance::MessageBox::new(
                     "mail-delete-draft",
                     appearance::MessageKind::Question,
-                    "Delete this draft?",
-                    format!("\u{201c}{title}\u{201d} will be removed from the outbox. This cannot be undone."),
+                    fl!(LANGUAGE_LOADER, "dialog-mail-delete-draft-title"),
+                    fl!(LANGUAGE_LOADER, "dialog-mail-delete-draft-message", title = title.as_str()),
                 )
                 .buttons([
-                    appearance::DialogButton::cancel("Keep", false),
-                    appearance::DialogButton::destructive("Delete", true),
+                    appearance::DialogButton::cancel(fl!(LANGUAGE_LOADER, "dialog-mail-delete-draft-keep"), false),
+                    appearance::DialogButton::destructive(fl!(LANGUAGE_LOADER, "dialog-mail-delete-draft-delete"), true),
                 ])
                 .show(context);
                 if let Some(delete) = response.action.or(response.dismissed.then_some(false)) {
@@ -61,16 +83,21 @@ impl MailApp {
             Modal::Discard(after) => {
                 let after = *after;
                 let message = if after == AfterDiscard::Quit {
-                    "The message you are writing has not been saved. Close the window anyway?"
+                    fl!(LANGUAGE_LOADER, "dialog-mail-discard-quit-message")
                 } else {
-                    "Your changes to this message will be lost."
+                    fl!(LANGUAGE_LOADER, "dialog-mail-discard-message")
                 };
-                let response = appearance::MessageBox::new("mail-discard", appearance::MessageKind::Warning, "Discard this message?", message)
-                    .buttons([
-                        appearance::DialogButton::cancel("Keep Editing", false),
-                        appearance::DialogButton::destructive("Discard", true),
-                    ])
-                    .show(context);
+                let response = appearance::MessageBox::new(
+                    "mail-discard",
+                    appearance::MessageKind::Warning,
+                    fl!(LANGUAGE_LOADER, "dialog-mail-discard-title"),
+                    message,
+                )
+                .buttons([
+                    appearance::DialogButton::cancel(fl!(LANGUAGE_LOADER, "dialog-mail-discard-keep-editing"), false),
+                    appearance::DialogButton::destructive(fl!(LANGUAGE_LOADER, "dialog-mail-discard-discard"), true),
+                ])
+                .show(context);
                 if let Some(discard) = response.action.or(response.dismissed.then_some(false)) {
                     self.modal = None;
                     if discard {
@@ -86,10 +113,10 @@ impl MailApp {
                 let response = appearance::MessageBox::new(
                     "mail-export-problems",
                     appearance::MessageKind::Warning,
-                    "Some messages need attention",
-                    format!("Fix these messages in the outbox before exporting the reply packet:\n\n{}", list.trim_end()),
+                    fl!(LANGUAGE_LOADER, "dialog-mail-export-problems-title"),
+                    fl!(LANGUAGE_LOADER, "dialog-mail-export-problems-message", problems = list.trim_end()),
                 )
-                .buttons([appearance::DialogButton::primary("Show Outbox", ()).cancels()])
+                .buttons([appearance::DialogButton::primary(fl!(LANGUAGE_LOADER, "dialog-mail-show-outbox"), ()).cancels()])
                 .show(context);
                 if response.action.is_some() || response.dismissed {
                     self.modal = None;
@@ -102,64 +129,83 @@ impl MailApp {
     fn shortcuts(&self, context: &egui::Context) -> bool {
         let command = |key| shortcut(context, Modifiers::COMMAND, key);
         let command_shift = |key| shortcut(context, Modifiers::COMMAND | Modifiers::SHIFT, key);
-        let mut groups: Vec<(&str, Vec<(String, &str)>)> = vec![
+        let mut groups: Vec<(String, Vec<(String, String)>)> = vec![
             (
-                "Reading",
+                fl!(LANGUAGE_LOADER, "shortcuts-section-reading"),
                 vec![
-                    ("\u{2191}+\u{2193}".into(), "Previous or next entry"),
-                    ("Tab".into(), "Next pane"),
-                    ("Enter".into(), "Open the selected folder or message"),
-                    ("Space".into(), "Page down, then next unread message"),
-                    ("N".into(), "Next unread message"),
-                    ("M".into(), "Mark as read or unread"),
-                    (shortcut(context, Modifiers::SHIFT, Key::C), "Mark the folder as read"),
-                    (command(Key::F), "Search messages"),
-                    (command(Key::T), "Switch between list and threads"),
+                    ("\u{2191}+\u{2193}".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-previous-next-entry")),
+                    ("Tab".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-next-pane")),
+                    ("Enter".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-open-selected-folder-message")),
+                    ("Space".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-page-down-next-unread")),
+                    ("N".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-next-unread")),
+                    ("M".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-mark-read-unread")),
+                    (
+                        shortcut(context, Modifiers::SHIFT, Key::C),
+                        fl!(LANGUAGE_LOADER, "shortcuts-reading-mark-folder-read"),
+                    ),
+                    (command(Key::F), fl!(LANGUAGE_LOADER, "shortcuts-reading-search-messages")),
+                    (command(Key::T), fl!(LANGUAGE_LOADER, "shortcuts-reading-switch-list-threads")),
+                    ("T".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-save-message-tagline")),
+                    ("A".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-address-book")),
+                    (
+                        shortcut(context, Modifiers::SHIFT, Key::A),
+                        fl!(LANGUAGE_LOADER, "shortcuts-reading-add-author-address-book"),
+                    ),
                 ],
             ),
             (
-                "Writing",
+                fl!(LANGUAGE_LOADER, "shortcuts-section-writing"),
                 vec![
-                    (command(Key::N), "New message"),
-                    (command(Key::R), "Reply"),
-                    (command(Key::L), "Forward"),
-                    (command(Key::S), "Save the draft"),
-                    ("Esc".into(), "Cancel writing"),
-                    ("Del".into(), "Delete the selected draft"),
-                    (command_shift(Key::E), "Export the reply packet"),
+                    (command(Key::N), fl!(LANGUAGE_LOADER, "shortcuts-writing-new-message")),
+                    (command(Key::R), fl!(LANGUAGE_LOADER, "shortcuts-writing-reply")),
+                    (command(Key::L), fl!(LANGUAGE_LOADER, "shortcuts-writing-forward")),
+                    (command(Key::S), fl!(LANGUAGE_LOADER, "shortcuts-writing-save-draft")),
+                    (command(Key::B), fl!(LANGUAGE_LOADER, "shortcuts-writing-pick-recipient-address-book")),
+                    (command(Key::T), fl!(LANGUAGE_LOADER, "shortcuts-writing-choose-tagline")),
+                    (command_shift(Key::T), fl!(LANGUAGE_LOADER, "shortcuts-writing-edit-tagline-list")),
+                    ("Esc".into(), fl!(LANGUAGE_LOADER, "shortcuts-writing-cancel-writing")),
+                    ("Del".into(), fl!(LANGUAGE_LOADER, "shortcuts-writing-delete-selected-draft")),
+                    (command_shift(Key::E), fl!(LANGUAGE_LOADER, "shortcuts-writing-export-reply-packet")),
                 ],
             ),
-            ("Packets", vec![(command(Key::O), "Open a packet"), ("F5".into(), "Reload the packet")]),
             (
-                "Windows",
+                fl!(LANGUAGE_LOADER, "shortcuts-section-packets"),
                 vec![
-                    (command_shift(Key::N), "New window"),
-                    (command(Key::W), "Close the window"),
-                    ("F1".into(), "Keyboard shortcuts"),
+                    (command(Key::O), fl!(LANGUAGE_LOADER, "shortcuts-packets-open-packet")),
+                    ("F5".into(), fl!(LANGUAGE_LOADER, "shortcuts-packets-reload-packet")),
+                ],
+            ),
+            (
+                fl!(LANGUAGE_LOADER, "shortcuts-section-windows"),
+                vec![
+                    (command_shift(Key::N), fl!(LANGUAGE_LOADER, "shortcuts-windows-new-window")),
+                    (command(Key::W), fl!(LANGUAGE_LOADER, "shortcuts-windows-close-window")),
+                    (command(Key::Comma), fl!(LANGUAGE_LOADER, "shortcuts-windows-settings")),
+                    ("F1".into(), fl!(LANGUAGE_LOADER, "shortcuts-windows-keyboard-shortcuts")),
                 ],
             ),
         ];
         if self.composer.is_some() {
             groups[0] = (
-                "Message editor",
+                fl!(LANGUAGE_LOADER, "shortcuts-section-message-editor"),
                 vec![
-                    (command(Key::K), "Text color, recolors a selection"),
-                    (command(Key::G), "Character table, pick with the keyboard"),
-                    (command(Key::Q), "Quote panel"),
-                    (command(Key::F), "Find text"),
-                    ("F3".into(), "Find next"),
-                    (command(Key::D), "Delete the line"),
-                    (command(Key::Z), "Undo"),
-                    (command(Key::Y), "Redo"),
-                    (command(Key::A), "Select all, or quote the rest"),
-                    ("Ins".into(), "Insert or overwrite"),
-                    ("Esc".into(), "Close a panel or the selection"),
+                    (command(Key::K), fl!(LANGUAGE_LOADER, "shortcuts-editor-text-color")),
+                    (command(Key::G), fl!(LANGUAGE_LOADER, "shortcuts-editor-character-table")),
+                    (command(Key::Q), fl!(LANGUAGE_LOADER, "shortcuts-editor-quote-panel")),
+                    (command(Key::F), fl!(LANGUAGE_LOADER, "shortcuts-editor-find-text")),
+                    ("F3".into(), fl!(LANGUAGE_LOADER, "shortcuts-editor-find-next")),
+                    (command(Key::D), fl!(LANGUAGE_LOADER, "shortcuts-editor-delete-line")),
+                    (command(Key::Z), fl!(LANGUAGE_LOADER, "shortcuts-editor-undo")),
+                    (command(Key::Y), fl!(LANGUAGE_LOADER, "shortcuts-editor-redo")),
+                    (command(Key::A), fl!(LANGUAGE_LOADER, "shortcuts-editor-select-all-quote-rest")),
+                    ("Ins".into(), fl!(LANGUAGE_LOADER, "shortcuts-editor-insert-overwrite")),
+                    ("Esc".into(), fl!(LANGUAGE_LOADER, "shortcuts-editor-close-panel-selection")),
                 ],
             );
             groups.remove(2);
         }
         let response = appearance::Dialog::new("mail-shortcuts")
-            .title("Keyboard Shortcuts")
+            .title(fl!(LANGUAGE_LOADER, "shortcuts-title"))
             .size(appearance::DialogSize::Medium)
             .show(context, |dialog| {
                 dialog.content(|ui| {
@@ -177,7 +223,7 @@ impl MailApp {
                                             keycaps(ui, keys);
                                         }
                                     });
-                                    ui.label(*description);
+                                    ui.label(description.as_str());
                                 });
                             }
                         });
@@ -196,31 +242,35 @@ impl MailApp {
         let text = |value: &bstr::BString| value.to_string().trim().to_string();
         let response = appearance::Dialog::new("mail-packet-info")
             .title(text(&control.bbs_name))
-            .subtitle("Packet information")
+            .subtitle(fl!(LANGUAGE_LOADER, "dialog-mail-packet-info-subtitle"))
             .size(appearance::DialogSize::Medium)
             .show(context, |dialog| {
                 dialog.content(|ui| {
-                    appearance::compact_group(ui, "Board", |ui| {
+                    appearance::compact_group(ui, &fl!(LANGUAGE_LOADER, "dialog-mail-packet-board"), |ui| {
                         for (label, value) in [
-                            ("Location", text(&control.bbs_city_and_state)),
-                            ("Phone", text(&control.bbs_phone_number)),
-                            ("Sysop", text(&control.bbs_sysop_name)),
-                            ("BBS ID", text(&control.bbs_id)),
+                            (fl!(LANGUAGE_LOADER, "dialog-mail-packet-location"), text(&control.bbs_city_and_state)),
+                            (fl!(LANGUAGE_LOADER, "dialog-mail-packet-phone"), text(&control.bbs_phone_number)),
+                            (fl!(LANGUAGE_LOADER, "dialog-mail-packet-sysop"), text(&control.bbs_sysop_name)),
+                            (fl!(LANGUAGE_LOADER, "dialog-mail-packet-bbs-id"), text(&control.bbs_id)),
                         ] {
                             if !value.is_empty() {
-                                appearance::value_row(ui, label, &value);
+                                appearance::value_row(ui, &label, &value);
                             }
                         }
                     });
-                    appearance::compact_group(ui, "Packet", |ui| {
-                        appearance::value_row(ui, "User", &self.user_name());
-                        appearance::value_row(ui, "Created", &text(&control.creation_time));
-                        appearance::value_row(ui, "Messages", &package.message_count().to_string());
-                        appearance::value_row(ui, "Unread", &self.counts.unread.to_string());
-                        appearance::value_row(ui, "Conferences", &package.conferences().len().to_string());
-                        appearance::value_row(ui, "Outbox", &self.draft_count().to_string());
+                    appearance::compact_group(ui, &fl!(LANGUAGE_LOADER, "dialog-mail-packet-packet"), |ui| {
+                        appearance::value_row(ui, &fl!(LANGUAGE_LOADER, "dialog-mail-packet-user"), &self.user_name());
+                        appearance::value_row(ui, &fl!(LANGUAGE_LOADER, "dialog-mail-packet-created"), &text(&control.creation_time));
+                        appearance::value_row(ui, &fl!(LANGUAGE_LOADER, "dialog-mail-packet-messages"), &package.message_count().to_string());
+                        appearance::value_row(ui, &fl!(LANGUAGE_LOADER, "dialog-mail-packet-unread"), &self.counts.unread.to_string());
+                        appearance::value_row(
+                            ui,
+                            &fl!(LANGUAGE_LOADER, "dialog-mail-packet-conferences"),
+                            &package.conferences().len().to_string(),
+                        );
+                        appearance::value_row(ui, &fl!(LANGUAGE_LOADER, "dialog-mail-packet-outbox"), &self.draft_count().to_string());
                         if let Some(path) = &self.path {
-                            appearance::value_row(ui, "File", &path.display().to_string());
+                            appearance::value_row(ui, &fl!(LANGUAGE_LOADER, "dialog-mail-packet-file"), &path.display().to_string());
                         }
                     });
                 });

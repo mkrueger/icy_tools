@@ -1,14 +1,16 @@
-use bstr::{BString, ByteSlice};
+use bstr::ByteSlice;
+use i18n_embed_fl::fl;
 use jamjam::qwk::control::ControlDat;
 use jamjam::qwk::qwk_message::QWKMessage;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::{Cursor, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
-use crate::Res;
+use crate::{text::HeaderText, Res, LANGUAGE_LOADER};
 
 #[cfg(test)]
 pub mod tests;
@@ -32,10 +34,9 @@ pub struct MessageInfo {
     /// Message this one replies to, `0` when it starts a thread.
     pub ref_number: u32,
     pub conference: u16,
-    /// Header fields as stored in the packet (usually CP437), see [`crate::text::decode`].
-    pub from: BString,
-    pub to: BString,
-    pub subject: BString,
+    pub from: HeaderText,
+    pub to: HeaderText,
+    pub subject: HeaderText,
     /// Subject with all `Re:` prefixes stripped, lowercased - the thread key.
     pub subject_key: String,
     pub date: chrono::NaiveDateTime,
@@ -103,40 +104,42 @@ impl QwkPackage {
     pub fn load_from_file(path: impl AsRef<Path>) -> Res<Self> {
         let _timer = crate::perf::Timer::new("qwk::load_from_file");
         let path = path.as_ref();
-        let file = fs::File::open(path)?;
-        let mut archive = zip::ZipArchive::new(file)?;
+        let mut reader = std::io::BufReader::new(fs::File::open(path)?);
+        // Packets are usually ZIP files, but BBSes also pack them with ARJ, LHA, RAR, ARC, ZOO and
+        // others; the content decides, since the extension is always `.QWK`.
+        let format = ArchiveFormat::detect(&mut reader, Some(path))?.ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-unknown-archive-format"))?;
+        let mut archive = UnifiedArchive::open_with_format(reader, format)?;
 
         let mut messages_dat: Option<Vec<u8>> = None;
         let mut control_dat: Option<Vec<u8>> = None;
         let mut bbs_id = String::new();
 
         // Extract relevant files from the archive
-        for i in 0..archive.len() {
-            let mut file = archive.by_index(i)?;
-            let file_name = file.name().to_uppercase();
+        while let Some(entry) = archive.next_entry()? {
+            let file_name = entry.name().replace('\\', "/").to_uppercase();
+            let base_name = file_name.rsplit('/').next().unwrap_or_default();
 
-            if file_name.ends_with("MESSAGES.DAT") || file_name == "MESSAGES.DAT" {
-                let mut buffer = Vec::with_capacity(file.size() as usize);
-                file.read_to_end(&mut buffer)?;
-                messages_dat = Some(buffer);
+            if base_name == "MESSAGES.DAT" {
+                messages_dat = Some(archive.read(&entry)?);
 
                 if let Some(dot_pos) = file_name.find('.') {
                     if dot_pos > 0 {
                         bbs_id = file_name[..dot_pos].to_string();
                     }
                 }
-            } else if file_name == "CONTROL.DAT" {
-                let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer)?;
-                control_dat = Some(buffer);
+            } else if base_name == "CONTROL.DAT" {
+                control_dat = Some(archive.read(&entry)?);
+            } else {
+                archive.skip(&entry)?;
             }
         }
 
         // CONTROL.DAT is required
-        let control_data = control_dat.ok_or("CONTROL.DAT not found in archive")?;
+        let control_data = control_dat.ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-control-dat-not-found"))?;
 
         // Parse CONTROL.DAT
-        let control_file = ControlDat::read(&control_data).map_err(|e| format!("Failed to parse CONTROL.DAT: {e:?}"))?;
+        let control_file =
+            ControlDat::read(&control_data).map_err(|error| fl!(LANGUAGE_LOADER, "packet-error-control-dat-parse-failed", error = format!("{error:?}")))?;
 
         // Use BBS name from control file if we don't have one yet
         if !control_file.bbs_name.is_empty() && bbs_id.is_empty() {
@@ -144,7 +147,7 @@ impl QwkPackage {
         }
 
         // Parse just the headers, not full messages
-        let messages_data = messages_dat.ok_or("MESSAGES.DAT not found in archive")?;
+        let messages_data = messages_dat.ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-messages-dat-not-found"))?;
         let headers = Self::parse_headers(&messages_data);
         let messages_data = Arc::new(messages_data);
 
@@ -182,9 +185,9 @@ impl QwkPackage {
                         number: descriptor.number,
                         ref_number: 0,
                         conference: descriptor.conference,
-                        from: BString::default(),
-                        to: BString::default(),
-                        subject: format!("<unreadable message #{}>", descriptor.number).into(),
+                        from: HeaderText::default(),
+                        to: HeaderText::default(),
+                        subject: fl!(LANGUAGE_LOADER, "packet-unreadable-message-subject", number = descriptor.number).into(),
                         subject_key: String::new(),
                         date: chrono::NaiveDateTime::default(),
                         date_str: String::new(),
@@ -193,7 +196,23 @@ impl QwkPackage {
                     };
                 };
 
-                let subject = BString::from(msg.subj.trim());
+                let from = HeaderText::new(msg.from.trim());
+                let to = HeaderText::new(msg.to.trim());
+                let subject = HeaderText::new(msg.subj.trim());
+                if log::log_enabled!(log::Level::Debug)
+                    && [&msg.from[..], &msg.to[..], &msg.subj[..]]
+                        .iter()
+                        .any(|field| field.iter().any(u8::is_ascii_control))
+                {
+                    log::debug!(
+                        "parsed ANSI QWK header conference={} message={}: from={:?}, to={:?}, subject={:?}",
+                        msg.conference_number,
+                        msg.msg_number,
+                        msg.from.as_bstr(),
+                        msg.to.as_bstr(),
+                        msg.subj.as_bstr()
+                    );
+                }
                 let raw_date = trim_field(&msg.date_time);
                 let (date, date_str) = match parse_qwk_date(&raw_date) {
                     Ok(date) => (date, date.format("%Y-%m-%d %H:%M").to_string()),
@@ -207,9 +226,9 @@ impl QwkPackage {
                     number: msg.msg_number,
                     ref_number: msg.ref_msg_number,
                     conference: msg.conference_number,
-                    from: msg.from.trim().into(),
-                    to: msg.to.trim().into(),
-                    subject_key: normalize_subject(&crate::text::decode(&subject)),
+                    from,
+                    to,
+                    subject_key: normalize_subject(&subject),
                     subject,
                     date,
                     date_str,
@@ -259,7 +278,7 @@ impl QwkPackage {
     /// Load a specific message on demand with caching
     pub fn get_message(&self, index: usize) -> Res<QWKMessage> {
         if index >= self.descriptors.len() {
-            return Err("Message index out of range".into());
+            return Err(fl!(LANGUAGE_LOADER, "packet-error-message-index-out-of-range").into());
         }
 
         // Check cache first
@@ -329,14 +348,18 @@ impl QwkPackage {
             .conferences
             .iter()
             .filter_map(|conference| {
-                let name = crate::text::decode(conference.name.trim()).into_owned();
+                let name = HeaderText::new(conference.name.trim()).to_string();
                 let count = counts.remove(&conference.number).unwrap_or(0);
                 (!name.is_empty() && count > 0).then_some((conference.number, name, count))
             })
             .collect();
 
         // Conferences present in MESSAGES.DAT but missing from CONTROL.DAT.
-        list.extend(counts.into_iter().map(|(number, count)| (number, format!("Conference {number}"), count)));
+        list.extend(
+            counts
+                .into_iter()
+                .map(|(number, count)| (number, fl!(LANGUAGE_LOADER, "packet-conference-fallback-name", number = number), count)),
+        );
         list.sort_by_key(|(number, _, _)| *number);
         list
     }

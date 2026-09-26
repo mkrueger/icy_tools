@@ -109,7 +109,8 @@ pub fn load() -> (TempDir, QwkPackage) {
 pub struct TempDir(std::path::PathBuf);
 
 impl TempDir {
-    fn new() -> Self {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
         static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!("icy_mail_qwk_{}_{id}", std::process::id()));
@@ -181,4 +182,25 @@ fn threading_groups_replies_under_their_root() {
     assert_eq!(rows.iter().map(|r| r.depth).collect::<Vec<_>>(), vec![0, 1]);
     assert_eq!(package.infos[rows[0].index].number, 12);
     assert_eq!(package.infos[rows[1].index].number, 13);
+}
+
+#[test]
+fn packets_open_from_other_archive_formats() {
+    for name in ["TEST_ARJ.QWK", "TEST_7Z.QWK"] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/qwk/test_data").join(name);
+        let package = QwkPackage::load_from_file(&path).unwrap_or_else(|error| panic!("{name}: {error}"));
+        let (_dir, zip) = load();
+        assert_eq!(package.infos.len(), 4, "{name}");
+        assert_eq!(package.bbs_name, zip.bbs_name, "{name}");
+        assert_eq!(package.infos[0].from, "alice", "{name}");
+        assert_eq!(package.conferences(), zip.conferences(), "{name}");
+    }
+}
+
+#[test]
+fn unknown_archives_are_rejected() {
+    let dir = TempDir::new();
+    let path = dir.path().join("BROKEN.QWK");
+    std::fs::write(&path, b"this is not an archive").unwrap();
+    assert!(QwkPackage::load_from_file(&path).is_err());
 }

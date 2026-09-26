@@ -3,8 +3,8 @@ use crate::ui::main_window::{ConferenceRow, ROW_HEIGHT};
 use crate::ui::threading::Row;
 use crate::ui::{ConferenceColumn, MainWindow, Message, MessageColumn, Pane, SortDirection, ViewMode};
 use icy_engine_gui::TerminalView;
-use icy_mail::text::decode;
-use icy_ui::widget::{button, column, container, mouse_area, row, scroll_area, scrollable, table, text, text_input, Space};
+use icy_mail::text::HeaderText;
+use icy_ui::widget::{button, column, container, mouse_area, rich_text, row, scroll_area, scrollable, span, table, text, text_input, Space};
 use icy_ui::{Alignment, Border, Color, Element, Font, Length};
 
 const TEXT_SIZE: f32 = 12.0;
@@ -249,26 +249,24 @@ impl MainWindow {
     fn message_row<'a>(&self, entry: &Row, info: &'a MessageInfo, focused: bool, threaded: bool) -> Element<'a, Message> {
         let selected = self.selected_message == Some(info.index);
 
-        let subject_text = decode(&info.subject).into_owned();
         let subject = if threaded && entry.depth > 0 {
             // Replies show the reply marker instead of repeating "Re:" over and over.
-            let stripped = subject_text.trim_start();
             row![
                 Space::new().width(Length::Fixed(f32::from(entry.depth) * THREAD_INDENT)),
-                text("\u{21B3} ").size(TEXT_SIZE).font(Font::MONOSPACE),
-                cell(stripped.to_string(), 0.0),
+                text("> ").size(TEXT_SIZE).font(Font::MONOSPACE),
+                header_cell(&info.subject, 0.0),
             ]
         } else if threaded {
             row![
                 text(if entry.has_children { "\u{25BE} " } else { "  " }).size(TEXT_SIZE).font(Font::MONOSPACE),
-                cell(subject_text, 0.0),
+                header_cell(&info.subject, 0.0),
             ]
         } else {
-            row![cell(subject_text, 0.0)]
+            row![header_cell(&info.subject, 0.0)]
         };
 
         let content = row![
-            cell(decode(&info.from).into_owned(), FROM_COL),
+            header_cell(&info.from, FROM_COL),
             cell(info.date_str.clone(), DATE_COL),
             container(subject.align_y(Alignment::Center)).width(Length::Fill).clip(true),
             cell(info.lines.to_string(), LINES_COL),
@@ -302,21 +300,16 @@ impl MainWindow {
                 .into();
         };
 
-        let field = |label: &'static str, value: &str| {
-            row![
-                text(label).size(TEXT_SIZE).font(Font::MONOSPACE),
-                text(value.to_string()).size(TEXT_SIZE).font(Font::MONOSPACE),
-            ]
-        };
+        let field = |label: &'static str, value: Element<'static, Message>| row![text(label).size(TEXT_SIZE).font(Font::MONOSPACE), value,];
 
         let header = column![
-            field("Subject: ", &decode(&info.subject)),
+            field("Subject: ", header_text(&info.subject)),
             row![
-                field("From: ", &decode(&info.from)),
+                field("From: ", header_text(&info.from)),
                 Space::new().width(16),
-                field("To: ", &decode(&info.to)),
+                field("To: ", header_text(&info.to)),
                 Space::new().width(16),
-                field("Date: ", &info.date_str),
+                field("Date: ", text(info.date_str.clone()).size(TEXT_SIZE).font(Font::MONOSPACE).into()),
             ]
             .align_y(Alignment::Center),
         ]
@@ -375,6 +368,51 @@ fn cell<'a>(value: String, width: f32) -> Element<'a, Message> {
     let label = text(value).size(TEXT_SIZE).font(Font::MONOSPACE).wrapping(text::Wrapping::None);
     let width = if width > 0.0 { Length::Fixed(width) } else { Length::Fill };
     container(label).width(width).clip(true).into()
+}
+
+fn header_text(value: &HeaderText) -> Element<'static, Message> {
+    let Some(parts) = value.styled() else {
+        return text(value.to_string()).size(TEXT_SIZE).font(Font::MONOSPACE).into();
+    };
+    let spans: Vec<icy_ui::widget::text::Span<'static, (), Font>> = parts
+        .iter()
+        .map(|part| {
+            let mut item = span(part.text.clone())
+                .font(Font {
+                    weight: if part.bold {
+                        icy_ui::font::Weight::Bold
+                    } else {
+                        icy_ui::font::Weight::Normal
+                    },
+                    style: if part.italic {
+                        icy_ui::font::Style::Italic
+                    } else {
+                        icy_ui::font::Style::Normal
+                    },
+                    ..Font::MONOSPACE
+                })
+                .underline(part.underline)
+                .strikethrough(part.strikethrough);
+            if let Some([red, green, blue]) = part.foreground {
+                item = item.color(Color::from_rgb8(red, green, blue));
+            }
+            if let Some([red, green, blue]) = part.background {
+                item = item.background(icy_ui::Background::Color(Color::from_rgb8(red, green, blue)));
+            }
+            item
+        })
+        .collect();
+    rich_text(spans)
+        .on_link_click(|_: ()| unreachable!())
+        .size(TEXT_SIZE)
+        .font(Font::MONOSPACE)
+        .wrapping(text::Wrapping::None)
+        .into()
+}
+
+fn header_cell(value: &HeaderText, width: f32) -> Element<'static, Message> {
+    let width = if width > 0.0 { Length::Fixed(width) } else { Length::Fill };
+    container(header_text(value)).width(width).clip(true).into()
 }
 
 /// Header strip that stays put while the list scrolls underneath it.

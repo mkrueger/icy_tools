@@ -68,6 +68,8 @@ i18n-embed-fl = { workspace = true }
 rust-embed = { workspace = true }
 once_cell = { workspace = true }
 zip = { workspace = true }
+unarc-rs = { workspace = true }
+fastrand = { workspace = true }
 
 log = { workspace = true }
 log4rs = "1.4.0"

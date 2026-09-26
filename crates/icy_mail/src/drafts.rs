@@ -8,12 +8,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use bstr::BString;
+use i18n_embed_fl::fl;
 use icy_engine::BufferType;
 use jamjam::qwk::qwk_message::{QWKMessage, MSG_ACTIVE};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::qwk::QwkPackage;
+use crate::{qwk::QwkPackage, LANGUAGE_LOADER};
 
 #[derive(Debug, Error)]
 pub enum DraftError {
@@ -72,6 +73,16 @@ pub struct Draft {
     pub private: bool,
     #[serde(default)]
     pub date: String,
+    /// Sent below the text as `... tagline`, see [`crate::taglines`].
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tagline: String,
+}
+
+impl Draft {
+    /// The message text as it is sent, with the tagline.
+    pub fn text(&self) -> String {
+        crate::taglines::append(&self.body, &self.tagline)
+    }
 }
 
 /// Maximum length of the QWK To, From and Subject header fields.
@@ -84,16 +95,18 @@ pub enum DraftField {
     To,
     Subject,
     Body,
+    Tagline,
 }
 
 impl DraftField {
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Conference => "Conference",
-            Self::From => "From",
-            Self::To => "To",
-            Self::Subject => "Subject",
-            Self::Body => "Message text",
+            Self::Conference => fl!(LANGUAGE_LOADER, "draft-field-conference"),
+            Self::From => fl!(LANGUAGE_LOADER, "draft-field-from"),
+            Self::To => fl!(LANGUAGE_LOADER, "draft-field-to"),
+            Self::Subject => fl!(LANGUAGE_LOADER, "draft-field-subject"),
+            Self::Body => fl!(LANGUAGE_LOADER, "draft-field-body"),
+            Self::Tagline => fl!(LANGUAGE_LOADER, "draft-field-tagline"),
         }
     }
 }
@@ -241,6 +254,7 @@ impl DraftStore {
             ref_number,
             private,
             date: chrono::Local::now().format("%m-%d-%y%H:%M").to_string(),
+            tagline: String::new(),
         })
     }
 
@@ -377,7 +391,7 @@ impl DraftStore {
         if !self.allowed_conferences.contains(&draft.conference) {
             issues.push(DraftIssue {
                 field: DraftField::Conference,
-                message: format!("Conference {} is not part of this packet", draft.conference),
+                message: fl!(LANGUAGE_LOADER, "draft-issue-conference-not-in-packet", conference = draft.conference),
             });
         }
         for (field, value) in [
@@ -388,7 +402,7 @@ impl DraftStore {
             if value.trim().is_empty() {
                 issues.push(DraftIssue {
                     field,
-                    message: format!("{} is required", field.label()),
+                    message: fl!(LANGUAGE_LOADER, "draft-issue-field-required", field = field.label()),
                 });
                 continue;
             }
@@ -396,7 +410,13 @@ impl DraftStore {
             if length > HEADER_FIELD_LENGTH {
                 issues.push(DraftIssue {
                     field,
-                    message: format!("{} has {length} characters; QWK allows {HEADER_FIELD_LENGTH}", field.label()),
+                    message: fl!(
+                        LANGUAGE_LOADER,
+                        "draft-issue-field-too-long",
+                        field = field.label(),
+                        length = length,
+                        limit = HEADER_FIELD_LENGTH
+                    ),
                 });
             }
             character_issues(field, value, false, &mut issues);
@@ -405,13 +425,14 @@ impl DraftStore {
         if crate::editor::strip_codes(&body).trim().is_empty() {
             issues.push(DraftIssue {
                 field: DraftField::Body,
-                message: "Message text is required".into(),
+                message: fl!(LANGUAGE_LOADER, "draft-issue-message-text-required"),
             });
         } else {
             for line in body.split('\n') {
                 character_issues(DraftField::Body, line, true, &mut issues);
             }
         }
+        character_issues(DraftField::Tagline, &draft.tagline, false, &mut issues);
         issues
     }
 
@@ -484,7 +505,7 @@ fn data_directory(packet_path: &Path) -> Result<PathBuf> {
 #[cfg(not(test))]
 fn data_directory(_packet_path: &Path) -> Result<PathBuf> {
     Ok(directories::ProjectDirs::from("com", "GitHub", "icy_mail")
-        .ok_or_else(|| invalid("data directory", "no user data directory available"))?
+        .ok_or_else(|| invalid("data directory", fl!(LANGUAGE_LOADER, "packet-user-data-directory-unavailable")))?
         .data_local_dir()
         .join("drafts"))
 }
@@ -496,13 +517,24 @@ fn character_issues(field: DraftField, value: &str, allow_escape: bool, issues: 
         if allow_escape && ch == '\x1b' {
             continue;
         }
+        let field_label = field.label();
         let message = if ch.is_control() {
-            format!("{} contains a control character (U+{:04X})", field.label(), ch as u32)
+            fl!(
+                LANGUAGE_LOADER,
+                "draft-issue-control-character",
+                field = field_label,
+                code = format!("{:04X}", ch as u32)
+            )
         } else {
             match BufferType::CP437.try_convert_from_unicode(ch) {
-                None => format!("{} contains \u{201c}{ch}\u{201d}, which has no CP437 equivalent", field.label()),
+                None => fl!(
+                    LANGUAGE_LOADER,
+                    "draft-issue-no-cp437-equivalent",
+                    field = field_label,
+                    character = ch.to_string()
+                ),
                 Some(byte) if byte as u32 == 0xE3 || ch == '\u{e3}' => {
-                    format!("{} contains \u{201c}{ch}\u{201d}, which QWK reserves as its line break", field.label())
+                    fl!(LANGUAGE_LOADER, "draft-issue-qwk-line-break", field = field_label, character = ch.to_string())
                 }
                 Some(_) => continue,
             }
@@ -568,20 +600,21 @@ fn validate_metadata(d: &Draft) -> Result<()> {
 
 fn validate_draft(d: &Draft, complete: bool) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
     validate_metadata(d)?;
-    if d.body.len() > 128 * 999_998 {
+    let text = d.text();
+    if text.len() > 128 * 999_998 {
         return Err(invalid("body", "QWK block count exceeds six digits"));
     }
     let to = encode("to", &d.to, Some(HEADER_FIELD_LENGTH))?;
     let from = encode("from", &d.from, Some(HEADER_FIELD_LENGTH))?;
     let subject = encode("subject", &d.subject, Some(HEADER_FIELD_LENGTH))?;
     let mut body = Vec::new();
-    for (index, line) in d.body.replace("\r\n", "\n").replace('\r', "\n").split('\n').enumerate() {
+    for (index, line) in text.replace("\r\n", "\n").replace('\r', "\n").split('\n').enumerate() {
         if index > 0 {
             body.push(b'\n');
         }
         body.extend(encode("body", line, None)?);
     }
-    if complete && (to.is_empty() || from.is_empty() || subject.is_empty() || body.is_empty()) {
+    if complete && (to.is_empty() || from.is_empty() || subject.is_empty() || d.body.is_empty()) {
         return Err(invalid("draft", "to, from, subject and body are required for export"));
     }
     Ok((to, from, subject, body))
@@ -711,6 +744,7 @@ mod tests {
             ref_number: 11,
             private: true,
             date: "01-01-2600:00".into(),
+            tagline: "Bye".into(),
         }
     }
 
@@ -731,6 +765,7 @@ mod tests {
             ref_number: 0,
             private: false,
             date: "01-01-2600:00".into(),
+            tagline: String::new(),
         });
         store.save().unwrap();
         drop(store);
@@ -751,6 +786,7 @@ mod tests {
             ref_number: 0,
             private: false,
             date: "01-01-2600:00".into(),
+            tagline: String::new(),
         });
         let rep = dir.path().join("TEST.REP");
         let original_packet = fs::read(&packet).unwrap();
@@ -775,7 +811,7 @@ mod tests {
         assert_eq!(msg.status, b'*');
         assert_eq!(msg.to.as_slice(), b"Andr\x82");
         assert!(msg.text.starts_with(b"Caf\x82\nNext"));
-        assert!(bytes.windows(10).any(|w| w == b"Caf\x82\xE3Next "));
+        assert!(bytes.windows(18).any(|w| w == b"Caf\x82\xE3Next\xE3\xE3... Bye"));
         let next = QWKMessage::read(&mut cursor, false).unwrap();
         assert_eq!(next.ref_msg_number, 0);
         assert_eq!(next.msg_number, 1);
@@ -833,6 +869,7 @@ mod tests {
             ref_number: 0,
             private: false,
             date: "01-01-2600:00".into(),
+            tagline: String::new(),
         });
         let rep = dir.path().join("TEST.REP");
         store.export(&rep).unwrap();

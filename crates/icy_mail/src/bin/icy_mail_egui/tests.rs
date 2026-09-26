@@ -1,5 +1,6 @@
 use super::*;
-use icy_mail::reader::{NavigateDirection, Pane, ViewMode};
+use icy_engine_gui::ScalingMode;
+use icy_mail::reader::{MessageColumn, NavigateDirection, Pane, ViewMode};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -35,6 +36,204 @@ fn click_label(context: &egui::Context, mail: &mut app::MailApp, size: egui::Vec
     for pressed in [true, false] {
         frame(context, mail, size, pointer(position, pressed));
     }
+}
+
+/// Texts painted with a highlighted (search match) background.
+fn highlighted(output: &egui::FullOutput) -> Vec<String> {
+    output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) => Some(
+                text.galley
+                    .job
+                    .sections
+                    .iter()
+                    .filter(|section| section.format.background != egui::Color32::TRANSPARENT)
+                    .map(|section| text.galley.job.text[section.byte_range.clone()].to_string())
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
+#[test]
+fn search_matches_are_highlighted_in_the_list_and_header() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    assert!(highlighted(&settle(&context, &mut mail, size)).is_empty());
+    mail.reader.filter = "COFFEE".into();
+    mail.reader.rebuild_messages();
+    let output = settle(&context, &mut mail, size);
+    let marked = highlighted(&output);
+    assert_eq!(
+        marked.iter().filter(|text| *text == "Coffee").count(),
+        3,
+        "two list rows and the header: {marked:?}"
+    );
+    mail.reader.filter = "ali".into();
+    mail.reader.rebuild_messages();
+    let marked = highlighted(&settle(&context, &mut mail, size));
+    assert!(marked.iter().all(|text| text == "ali") && marked.len() >= 2, "{marked:?}");
+}
+
+#[test]
+fn settings_preview_live_cancel_restores_and_ok_persists() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![key(egui::Key::Comma, egui::Modifiers::COMMAND)]);
+    assert!(matches!(mail.modal, Some(app::Modal::Settings)));
+    let output = settle(&context, &mut mail, size);
+    label(&output, "Theme");
+    click_label(&context, &mut mail, size, "Fit Width");
+    click_label(&context, &mut mail, size, "200%");
+    assert_eq!(mail.settings.scaling_mode, ScalingMode::Manual(2.0), "changes preview live");
+    frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
+    assert!(mail.modal.is_none());
+    assert_eq!(mail.settings.scaling_mode, ScalingMode::FitWidth, "cancel restores the settings");
+    assert!(!dir.path().join("settings.toml").exists());
+
+    frame(&context, &mut mail, size, vec![key(egui::Key::Comma, egui::Modifiers::COMMAND)]);
+    settle(&context, &mut mail, size);
+    click_label(&context, &mut mail, size, "Monitor");
+    let output = settle(&context, &mut mail, size);
+    label(&output, "Gamma");
+    click_label(&context, &mut mail, size, "General");
+    click_label(&context, &mut mail, size, "Fit Width");
+    click_label(&context, &mut mail, size, "150%");
+    click_label(&context, &mut mail, size, "OK");
+    assert!(mail.modal.is_none());
+    assert_eq!(mail.settings.scaling_mode, ScalingMode::Manual(1.5));
+    let fresh = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    assert_eq!(fresh.settings.scaling_mode, ScalingMode::Manual(1.5), "saved settings are loaded");
+
+    // Zoom changed from the status bar is remembered as well.
+    click_label(&context, &mut mail, size, "150%");
+    click_label(&context, &mut mail, size, "100%");
+    frame(&context, &mut mail, size, vec![]);
+    let fresh = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    assert_eq!(fresh.settings.scaling_mode, ScalingMode::Manual(1.0));
+}
+
+#[test]
+fn composer_picks_taglines_and_recipients_from_the_lists() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, _package) = packet_tests::load();
+    std::fs::write(dir.path().join("taglines.txt"), "First saying\nSecond saying\n").unwrap();
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    mail.open(dir.path().join("TEST.QWK"), &context);
+    wait(&mut mail, &context);
+    let size = egui::vec2(1100.0, 760.0);
+    frame(&context, &mut mail, size, vec![key(egui::Key::N, egui::Modifiers::COMMAND)]);
+    let tagline = mail.composer.as_ref().unwrap().draft.tagline.clone();
+    assert!(["First saying", "Second saying"].contains(&tagline.as_str()), "random tagline: {tagline:?}");
+    assert!(!mail.composer.as_ref().unwrap().dirty(), "the random tagline is not an edit");
+    let output = settle(&context, &mut mail, size);
+    label(&output, &format!("... {tagline}"));
+
+    frame(&context, &mut mail, size, vec![key(egui::Key::T, egui::Modifiers::COMMAND)]);
+    assert!(matches!(mail.modal, Some(app::Modal::Taglines)));
+    let output = settle(&context, &mut mail, size);
+    label(&output, "Choose a Tagline");
+    click_label(&context, &mut mail, size, "... First saying");
+    click_label(&context, &mut mail, size, "Use Tagline");
+    assert!(mail.modal.is_none());
+    assert_eq!(mail.composer.as_ref().unwrap().draft.tagline, "First saying");
+
+    frame(&context, &mut mail, size, vec![key(egui::Key::T, egui::Modifiers::COMMAND)]);
+    settle(&context, &mut mail, size);
+    click_label(&context, &mut mail, size, "No Tagline");
+    assert_eq!(mail.composer.as_ref().unwrap().draft.tagline, "");
+    label(&settle(&context, &mut mail, size), "No tagline");
+
+    // A new tagline is stored in the list and can be used right away.
+    frame(&context, &mut mail, size, vec![key(egui::Key::T, egui::Modifiers::COMMAND)]);
+    settle(&context, &mut mail, size);
+    click_label(&context, &mut mail, size, "New Tagline");
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![text("... Fresh one")]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
+    let output = settle(&context, &mut mail, size);
+    label(&output, "... Fresh one");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("taglines.txt")).unwrap(),
+        "First saying\nSecond saying\nFresh one\n"
+    );
+    frame(&context, &mut mail, size, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
+    assert!(mail.modal.is_none(), "Enter uses the selected tagline");
+    assert_eq!(mail.composer.as_ref().unwrap().draft.tagline, "Fresh one");
+
+    // The address book fills in the recipient.
+    frame(&context, &mut mail, size, vec![key(egui::Key::B, egui::Modifiers::COMMAND)]);
+    assert!(matches!(mail.modal, Some(app::Modal::AddressBook)));
+    let output = settle(&context, &mut mail, size);
+    label(&output, "The address book is empty");
+    click_label(&context, &mut mail, size, "New Contact");
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![text("Zed Zero")]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
+    label(&settle(&context, &mut mail, size), "Zed Zero");
+    assert_eq!(std::fs::read_to_string(dir.path().join("addressbook.txt")).unwrap(), "Zed Zero\n\n\n");
+    click_label(&context, &mut mail, size, "Use as Recipient");
+    assert!(mail.modal.is_none());
+    assert_eq!(mail.composer.as_ref().unwrap().draft.to, "Zed Zero");
+
+    settle(&context, &mut mail, size);
+    assert!(mail.composer.as_ref().unwrap().editor.has_focus(), "the text has the keyboard again");
+    frame(&context, &mut mail, size, vec![text("Hello")]);
+    click_label(&context, &mut mail, size, "Save Draft");
+    let draft = &mail.drafts.as_ref().unwrap().drafts()[0];
+    assert_eq!(draft.tagline, "Fresh one");
+    assert!(draft.text().ends_with("\n\n... Fresh one"), "{:?}", draft.text());
+}
+
+#[test]
+fn reader_keeps_authors_and_taglines_and_writes_to_contacts() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    assert!(mail.message_selected());
+    frame(&context, &mut mail, size, vec![key(egui::Key::A, egui::Modifiers::SHIFT)]);
+    assert_eq!(std::fs::read_to_string(dir.path().join("addressbook.txt")).unwrap(), "alice\n\n\n");
+    assert!(mail.notice.as_ref().is_some_and(|notice| notice.text == "alice added to the address book"));
+    frame(&context, &mut mail, size, vec![key(egui::Key::A, egui::Modifiers::SHIFT)]);
+    assert!(mail.notice.as_ref().is_some_and(|notice| notice.text.contains("already")));
+
+    frame(&context, &mut mail, size, vec![key(egui::Key::T, egui::Modifiers::NONE)]);
+    assert!(mail.notice.as_ref().is_some_and(|notice| notice.text == "This message has no tagline"));
+    assert!(!dir.path().join("taglines.txt").exists());
+
+    frame(
+        &context,
+        &mut mail,
+        size,
+        vec![key(egui::Key::T, egui::Modifiers::COMMAND | egui::Modifiers::SHIFT)],
+    );
+    assert!(matches!(mail.modal, Some(app::Modal::Taglines)));
+    let output = settle(&context, &mut mail, size);
+    label(&output, "No taglines yet");
+    frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
+    assert!(mail.modal.is_none());
+
+    // Enter in the address book starts a message to the selected contact.
+    frame(&context, &mut mail, size, vec![key(egui::Key::A, egui::Modifiers::NONE)]);
+    assert!(matches!(mail.modal, Some(app::Modal::AddressBook)));
+    label(&settle(&context, &mut mail, size), "alice");
+    frame(&context, &mut mail, size, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
+    assert!(mail.modal.is_none());
+    let composer = mail.composer.as_ref().expect("a new message");
+    assert_eq!(composer.draft.to, "alice");
+    assert_eq!(composer.draft.ref_number, 0);
 }
 
 #[test]
@@ -489,17 +688,17 @@ fn reading_marks_messages_and_next_unread_walks_the_conferences() {
     appearance::apply(&context);
     let (dir, mut mail) = loaded(&context);
     let size = egui::vec2(1100.0, 760.0);
-    assert!(mail.reader.read.contains(&0), "the first message was shown");
+    assert!(mail.reader.is_read(0), "the first message was shown");
     assert_eq!(mail.counts.unread, 3);
     frame(&context, &mut mail, size, vec![key(egui::Key::N, egui::Modifiers::NONE)]);
     assert_eq!(mail.reader.selected_message, Some(1));
     wait(&mut mail, &context);
     assert_eq!(mail.counts.unread, 2);
     frame(&context, &mut mail, size, vec![key(egui::Key::M, egui::Modifiers::NONE)]);
-    assert!(!mail.reader.read.contains(&1));
+    assert!(!mail.reader.is_read(1));
     settle(&context, &mut mail, size);
     wait(&mut mail, &context);
-    assert!(!mail.reader.read.contains(&1), "a message marked unread stays unread while it is shown");
+    assert!(!mail.reader.is_read(1), "a message marked unread stays unread while it is shown");
     click_label(&context, &mut mail, size, "General");
     assert_eq!(mail.folder, app::Folder::Conference(1));
     assert_eq!(mail.reader.selected_message, Some(1), "the folder opens at its first unread message");
@@ -701,6 +900,98 @@ fn virtualized_table_renders_only_visible_rows_and_reveals_end() {
     assert!(drawn < 40, "only visible rows should be painted: {drawn}");
 }
 
+/// A packet as large as busy real ones (half a million messages in two conferences).
+fn huge(context: &egui::Context, count: usize) -> (packet_tests::TempDir, app::MailApp) {
+    let (dir, mut mail) = loaded(context);
+    let package = Arc::make_mut(mail.reader.package.as_mut().unwrap());
+    let base: Vec<_> = package.infos.clone();
+    let descriptor = package.descriptors[0].clone();
+    package.infos.reserve(count);
+    package.descriptors.reserve(count);
+    for index in base.len()..count {
+        let mut next = base[index % base.len()].clone();
+        next.index = index;
+        next.number = index as u32 + 100;
+        next.ref_number = if index % 3 == 0 { 0 } else { index as u32 + 99 };
+        next.subject = format!("Topic {:05}", index / 7).into();
+        next.subject_key = format!("topic {:05}", index / 7);
+        next.date += chrono::Duration::minutes(index as i64);
+        package.infos.push(next);
+        package.descriptors.push(descriptor.clone());
+    }
+    mail.reader.rebuild_conferences();
+    mail.reader.rebuild_messages();
+    mail.refresh_counts();
+    (dir, mail)
+}
+
+fn timed(label: &str, frames: usize, mut run: impl FnMut(usize)) -> Duration {
+    let start = Instant::now();
+    for frame in 0..frames {
+        run(frame);
+    }
+    let average = start.elapsed() / frames as u32;
+    eprintln!("[perf] {label:<28} {:>8.2} ms", average.as_secs_f64() * 1000.0);
+    average
+}
+
+#[test]
+fn large_packets_keep_frames_and_navigation_fast() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let count = std::env::var("ICY_MAIL_PERF_COUNT")
+        .ok()
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(200_000);
+    let (_dir, mut mail) = huge(&context, count);
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    let budget = Duration::from_millis(if cfg!(debug_assertions) { 60 } else { 10 });
+    let idle = timed("idle frame", 20, |_| {
+        frame(&context, &mut mail, size, vec![]);
+    });
+    let down = timed("arrow down", 20, |_| {
+        frame(&context, &mut mail, size, vec![key(egui::Key::ArrowDown, egui::Modifiers::NONE)]);
+        mail.poll(&context);
+    });
+    let toggle = timed("toggle read", 10, |_| {
+        frame(&context, &mut mail, size, vec![key(egui::Key::M, egui::Modifiers::NONE)]);
+    });
+    assert!(idle < budget, "idle frame took {idle:?}");
+    assert!(down < budget, "navigation frame took {down:?}");
+    assert!(toggle < budget, "toggling a read mark took {toggle:?}");
+    let before = mail.counts.unread;
+    mail.mark_folder_read(&context);
+    assert_eq!(mail.counts.unread, 0, "{before} unread messages marked");
+    let read = timed("show after mark all", 5, |_| {
+        frame(&context, &mut mail, size, vec![key(egui::Key::ArrowDown, egui::Modifiers::NONE)]);
+        wait(&mut mail, &context);
+        mail.poll(&context);
+    });
+    assert!(read < budget * 3, "reading after marking everything took {read:?}");
+    let search = timed("search keystroke", 3, |frame| {
+        mail.reader.filter = format!("topic {frame}");
+        mail.filter_changed();
+    });
+    assert!(search < budget * 10, "search took {search:?}");
+    mail.reader.filter.clear();
+    mail.filter_changed();
+    let folders = [app::Folder::Conference(2), app::Folder::All];
+    let switch = timed("switch folder", 4, |frame| mail.select_folder(folders[frame % 2]));
+    let sort = timed("sort by subject", 2, |_| mail.reader.sort_messages(MessageColumn::Subject));
+    let threads = timed("thread view", 2, |frame| {
+        mail.set_mode(if frame % 2 == 0 { ViewMode::Threads } else { ViewMode::List })
+    });
+    for (name, time) in [("folder switch", switch), ("sort", sort), ("thread view", threads)] {
+        assert!(time < budget * 20, "{name} took {time:?}");
+    }
+    mail.set_mode(ViewMode::Threads);
+    let idle = timed("idle frame (threads)", 10, |_| {
+        frame(&context, &mut mail, size, vec![]);
+    });
+    assert!(idle < budget, "idle thread frame took {idle:?}");
+}
+
 struct Gpu {
     context: egui::Context,
     device: eframe::wgpu::Device,
@@ -886,7 +1177,46 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
         }
     }
     gpu.context.set_theme(egui::Theme::Dark);
+    mail.reader.filter = "coffee".into();
+    for _ in 0..3 {
+        gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+    }
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "search-highlight");
+    mail.reader.filter.clear();
+    gpu.capture(
+        &mut mail,
+        [1100, 760],
+        1.0,
+        vec![key(egui::Key::Comma, egui::Modifiers::COMMAND)],
+        "settings-start",
+    );
+    for _ in 0..3 {
+        gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+    }
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "settings");
+    gpu.capture(
+        &mut mail,
+        [1100, 760],
+        1.0,
+        vec![key(egui::Key::Escape, egui::Modifiers::NONE)],
+        "settings-close",
+    );
+    assert!(mail.settings_dialog.is_none());
+    gpu.context.set_theme(egui::Theme::Dark);
     mail.focus = Pane::Messages;
+    std::fs::write(
+        _dir.path().join("taglines.txt"),
+        "Stay a while... stay forever!\nI'd rather be downloading.\nFidoNet: where no packet has gone before.\nANSI art is not a crime.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        _dir.path().join("addressbook.txt"),
+        "alice\n\n\nSysop\n1:234/5\n\nWalter White\nIwalt@example.com\n\n",
+    )
+    .unwrap();
+    let mut taglines = mail.tagline_file().unwrap();
+    taglines.lines.truncate(1);
+    mail.taglines = Some(taglines);
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::R, egui::Modifiers::COMMAND)], "compose-start");
     for _ in 0..3 {
         gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
@@ -930,6 +1260,15 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
             "editor-help",
         ),
         (vec![key(egui::Key::Escape, egui::Modifiers::NONE)], ""),
+        (
+            vec![key(egui::Key::T, egui::Modifiers::COMMAND), key(egui::Key::ArrowDown, egui::Modifiers::NONE)],
+            "taglines-pick",
+        ),
+        (
+            vec![key(egui::Key::Enter, egui::Modifiers::NONE), key(egui::Key::B, egui::Modifiers::COMMAND)],
+            "address-pick",
+        ),
+        (vec![key(egui::Key::Escape, egui::Modifiers::NONE)], "compose-tagline"),
     ];
     for (events, name) in steps {
         for event in events {
@@ -947,6 +1286,7 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
         "{:?}",
         composer.draft.body
     );
+    assert_eq!(composer.draft.tagline, "I'd rather be downloading.");
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::S, egui::Modifiers::COMMAND)], "compose-save");
     mail.select_folder(app::Folder::Drafts);
     for _ in 0..3 {

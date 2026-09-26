@@ -52,16 +52,36 @@ pub fn build_threads(infos: &[&MessageInfo]) -> Vec<Row> {
 
     break_cycles(&mut children, &mut roots, infos.len());
 
+    // Parents before children; walked backwards it yields each subtree's newest message in one pass.
+    let mut order = Vec::with_capacity(infos.len());
+    let mut stack = roots.clone();
+    while let Some(pos) = stack.pop() {
+        order.push(pos);
+        stack.extend(children[pos].iter().copied());
+    }
+    let mut newest: Vec<i64> = infos.iter().map(|info| info.date.and_utc().timestamp()).collect();
+    for &pos in order.iter().rev() {
+        for &child in &children[pos] {
+            newest[pos] = newest[pos].max(newest[child]);
+        }
+    }
+
     // Newest activity first, so live discussions stay at the top.
-    let newest: Vec<i64> = (0..infos.len()).map(|pos| subtree_newest(pos, &children, infos)).collect();
     roots.sort_by(|a, b| newest[*b].cmp(&newest[*a]).then(infos[*a].number.cmp(&infos[*b].number)));
     for list in &mut children {
         list.sort_by_key(|pos| (infos[*pos].date, infos[*pos].number));
     }
 
+    // Iterative, so very long reply chains cannot overflow the stack.
     let mut rows = Vec::with_capacity(infos.len());
-    for root in roots {
-        push_subtree(root, 0, &children, infos, &mut rows);
+    let mut stack: Vec<(usize, u16)> = roots.iter().rev().map(|root| (*root, 0)).collect();
+    while let Some((pos, depth)) = stack.pop() {
+        rows.push(Row {
+            index: infos[pos].index,
+            depth,
+            has_children: !children[pos].is_empty(),
+        });
+        stack.extend(children[pos].iter().rev().map(|child| (*child, depth.saturating_add(1))));
     }
     rows
 }
@@ -97,27 +117,6 @@ fn break_cycles(children: &mut [Vec<usize>], roots: &mut Vec<usize>, len: usize)
     let promoted: std::collections::HashSet<usize> = roots.iter().copied().collect();
     for (parent, list) in children.iter_mut().enumerate() {
         list.retain(|child| !promoted.contains(child) || *child == parent);
-    }
-}
-
-fn subtree_newest(pos: usize, children: &[Vec<usize>], infos: &[&MessageInfo]) -> i64 {
-    let mut newest = infos[pos].date.and_utc().timestamp();
-    let mut stack = children[pos].clone();
-    while let Some(cur) = stack.pop() {
-        newest = newest.max(infos[cur].date.and_utc().timestamp());
-        stack.extend(children[cur].iter().copied());
-    }
-    newest
-}
-
-fn push_subtree(pos: usize, depth: u16, children: &[Vec<usize>], infos: &[&MessageInfo], rows: &mut Vec<Row>) {
-    rows.push(Row {
-        index: infos[pos].index,
-        depth,
-        has_children: !children[pos].is_empty(),
-    });
-    for child in &children[pos] {
-        push_subtree(*child, depth + 1, children, infos, rows);
     }
 }
 
@@ -188,6 +187,14 @@ mod tests {
         let mut seen: Vec<usize> = rows.iter().map(|r| r.index).collect();
         seen.sort_unstable();
         assert_eq!(seen, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn long_reply_chains_are_threaded_without_recursion() {
+        let infos: Vec<_> = (0..200_000u32).map(|pos| info(pos as usize, pos + 1, pos, "Chain", 0)).collect();
+        let rows = rows_of(&infos);
+        assert_eq!(rows.len(), infos.len());
+        assert_eq!(rows.last().map(|row| (row.index, row.depth)), Some((199_999, u16::MAX)));
     }
 
     #[test]
