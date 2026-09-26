@@ -81,13 +81,102 @@ impl Icons {
 /// Height shared by the controls in the tool options bar.
 pub const CONTROL_HEIGHT: f32 = 30.0;
 
+const OUTLINE_PATTERN: [u8; 48] = [
+    69, 65, 65, 65, 65, 65, 65, 70, 67, 79, 71, 66, 66, 72, 79, 68, 67, 79, 73, 65, 65, 74, 79, 68, 67, 79, 71, 66, 66, 72, 79, 68, 67, 79, 68, 64, 64, 67, 79,
+    68, 75, 66, 76, 64, 64, 75, 66, 76,
+];
+
+/// Visual picker for the 19 TheDraw outline styles.
+pub fn outline_style_picker(ui: &mut egui::Ui, current: &mut usize) -> Response {
+    let button = ui
+        .add_sized([90.0, CONTROL_HEIGHT], egui::Button::new(format!("Style {}", *current + 1)))
+        .on_hover_text("Choose an outline style");
+    egui::Popup::menu(&button).show(|ui| {
+        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+        egui::Grid::new("outline-style-grid").num_columns(5).show(ui, |ui| {
+            for style in 0..19 {
+                if outline_style_cell(ui, style, *current == style).clicked() {
+                    *current = style;
+                    ui.close();
+                }
+                if style % 5 == 4 {
+                    ui.end_row();
+                }
+            }
+        });
+    });
+    button
+}
+
+fn outline_style_cell(ui: &mut egui::Ui, style: usize, selected: bool) -> Response {
+    const SCALE: f32 = 0.75;
+    const COLUMNS: usize = 8;
+    const ROWS: usize = 6;
+    let font = icy_engine::BitFont::default();
+    let dimensions = font.size();
+    let preview_size = egui::vec2(dimensions.width as f32 * COLUMNS as f32 * SCALE, dimensions.height as f32 * ROWS as f32 * SCALE);
+    let (rect, response) = ui.allocate_exact_size(preview_size + egui::vec2(28.0, 12.0), egui::Sense::click());
+    let visuals = ui.visuals();
+    let fill = if selected {
+        visuals.selection.bg_fill
+    } else if response.hovered() {
+        visuals.widgets.hovered.weak_bg_fill
+    } else {
+        visuals.faint_bg_color
+    };
+    ui.painter().rect_filled(rect, 5, fill);
+    ui.painter().rect_stroke(
+        rect,
+        5,
+        if selected {
+            visuals.selection.stroke
+        } else {
+            visuals.widgets.noninteractive.bg_stroke
+        },
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        egui::pos2(rect.left() + 8.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        char::from_u32(b'A' as u32 + style as u32).unwrap_or('?'),
+        egui::FontId::monospace(11.0),
+        visuals.weak_text_color(),
+    );
+    let origin = egui::pos2(rect.left() + 24.0, rect.top() + 6.0);
+    for row in 0..ROWS {
+        for column in 0..COLUMNS {
+            let unicode = retrofont::transform_outline(style, OUTLINE_PATTERN[column + row * COLUMNS]);
+            let character = codepages::tables::UNICODE_TO_CP437.get(&unicode).copied().map(char::from).unwrap_or(unicode);
+            for (pixel_y, pixels) in font.glyph(character).to_bitmap_pixels().iter().enumerate() {
+                for (pixel_x, enabled) in pixels.iter().enumerate() {
+                    if *enabled {
+                        ui.painter().rect_filled(
+                            egui::Rect::from_min_size(
+                                origin
+                                    + egui::vec2(
+                                        (column * dimensions.width as usize + pixel_x) as f32 * SCALE,
+                                        (row * dimensions.height as usize + pixel_y) as f32 * SCALE,
+                                    ),
+                                egui::Vec2::splat(SCALE),
+                            ),
+                            0,
+                            visuals.strong_text_color(),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    response.on_hover_text(format!("Style {} ({})", style + 1, char::from_u32(b'A' as u32 + style as u32).unwrap_or('?')))
+}
+
 /// Pill segmented control: an inset track with the current option filled with the accent colour.
-/// Returns true when the selection changed.
-pub fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, current: &mut T, options: &[(T, &str)]) -> bool {
+/// Each option is `(value, label, tooltip)`. Returns true when the selection changed.
+pub fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, current: &mut T, options: &[(T, &str, &str)]) -> bool {
     let font = egui::TextStyle::Button.resolve(ui.style());
     let galleys: Vec<_> = options
         .iter()
-        .map(|(_, label)| ui.fonts_mut(|fonts| fonts.layout_no_wrap((*label).to_owned(), font.clone(), Color32::PLACEHOLDER)))
+        .map(|(_, label, _)| ui.fonts_mut(|fonts| fonts.layout_no_wrap((*label).to_owned(), font.clone(), Color32::PLACEHOLDER)))
         .collect();
     let widths: Vec<f32> = galleys.iter().map(|galley| (galley.size().x + 20.0).max(40.0)).collect();
     let inset = 2.0;
@@ -98,7 +187,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, current: &mut T, option
         .rect_stroke(track, 7, visuals.widgets.noninteractive.bg_stroke, egui::StrokeKind::Inside);
     let mut changed = false;
     let mut left = track.left() + inset;
-    for (((value, label), galley), width) in options.iter().zip(galleys).zip(widths) {
+    for (((value, label, tooltip), galley), width) in options.iter().zip(galleys).zip(widths) {
         let rect = egui::Rect::from_min_size(egui::pos2(left, track.top() + inset), egui::vec2(width, CONTROL_HEIGHT - inset * 2.0));
         left += width;
         let response = ui.interact(rect, ui.id().with(("segment", *label)), egui::Sense::click());
@@ -123,6 +212,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, current: &mut T, option
         };
         ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
         response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, enabled, selected, *label));
+        let response = if tooltip.is_empty() { response } else { response.on_hover_text(*tooltip) };
         if response.clicked() && !selected {
             *current = *value;
             changed = true;
@@ -275,6 +365,17 @@ pub fn glyph(ui: &mut egui::Ui, font: &icy_engine::BitFont, code: char, selected
     let target = egui::Rect::from_min_size(origin, egui::vec2(dimensions.width as f32, dimensions.height as f32) * scale);
     ui.painter().image(atlas.texture.id(), target, uv, ui.visuals().text_color());
     response.on_hover_text(format!("{} (0x{:02X})", code as u32, code as u32))
+}
+
+pub fn colored_glyph(ui: &mut egui::Ui, font: &icy_engine::BitFont, code: char, foreground: Color32, background: Color32, size: f32) -> Response {
+    let old_extreme = ui.visuals().extreme_bg_color;
+    let old_text = ui.visuals().override_text_color;
+    ui.visuals_mut().extreme_bg_color = background;
+    ui.visuals_mut().override_text_color = Some(foreground);
+    let response = ui.add_enabled_ui(false, |ui| glyph(ui, font, code, false, size)).inner;
+    ui.visuals_mut().extreme_bg_color = old_extreme;
+    ui.visuals_mut().override_text_color = old_text;
+    response
 }
 
 struct GlyphAtlas {

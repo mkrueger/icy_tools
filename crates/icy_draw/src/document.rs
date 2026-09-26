@@ -153,8 +153,30 @@ impl Document {
     }
 
     pub fn start_paste(&mut self, text: &str, data: Option<&[u8]>) -> DrawResult<()> {
+        if text.is_empty() && data.is_none() {
+            return Ok(());
+        }
+        self.start_floating_paste(|state| {
+            if let Some(data) = data {
+                state.paste_clipboard_data(data)
+            } else {
+                state.paste_text(text)
+            }
+        })
+    }
+
+    /// Inserts an RGBA image as a floating image layer that can be positioned before anchoring.
+    pub fn start_image_paste(&mut self, image: &image::RgbaImage) -> DrawResult<()> {
+        let mut sixel = icy_engine::Sixel::new(Position::default());
+        sixel.picture_data = image.as_raw().clone();
+        sixel.set_width(image.width() as i32);
+        sixel.set_height(image.height() as i32);
+        self.start_floating_paste(|state| state.paste_sixel(sixel))
+    }
+
+    fn start_floating_paste(&mut self, paste: impl FnOnce(&mut EditState) -> icy_engine::Result<()>) -> DrawResult<()> {
         self.finish();
-        if self.paste_active() || !self.can_paint() || (text.is_empty() && data.is_none()) {
+        if self.paste_active() || !self.can_paint() {
             return Ok(());
         }
         let mut undo = self.with_state(|state| state.begin_atomic_undo("Paste"));
@@ -162,11 +184,7 @@ impl Document {
             let offset = state.get_cur_layer().map(|layer| layer.offset()).unwrap_or_default();
             let count = state.get_buffer().layers.len();
             state.clear_selection()?;
-            if let Some(data) = data {
-                state.paste_clipboard_data(data)?;
-            } else {
-                state.paste_text(text)?;
-            }
+            paste(state)?;
             if state.get_buffer().layers.len() == count {
                 return Ok(false);
             }
@@ -269,11 +287,15 @@ impl Document {
                     } else {
                         self.selected_tags.push(index);
                     }
+                    if let Some(index) = self.selected_tags.last().copied() {
+                        self.with_state(|state| state.set_current_tag(index));
+                    }
                     return;
                 }
                 if !self.selected_tags.contains(&index) {
                     self.selected_tags = vec![index];
                 }
+                self.with_state(|state| state.set_current_tag(index));
                 tag_offsets = self.with_state(|state| {
                     self.selected_tags
                         .iter()
@@ -379,23 +401,42 @@ impl Document {
             return;
         };
         let (start, last, tool, brush, button) = (stroke.start, stroke.last, stroke.tool, stroke.brush, stroke.button);
-        if tool == Tool::Tag && stroke.tag_offsets.is_empty() {
-            let area = Rectangle::from(
-                start.x.min(position.x),
-                start.y.min(position.y),
-                (start.x - position.x).abs() + 1,
-                (start.y - position.y).abs() + 1,
-            );
-            self.selected_tags = self.with_state(|state| {
-                state
-                    .get_buffer()
-                    .tags
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, tag)| area.contains_pt(tag.position))
-                    .map(|(index, _)| index)
-                    .collect()
-            });
+        if tool == Tool::Tag {
+            if stroke.tag_offsets.is_empty() {
+                let area = Rectangle::from(
+                    start.x.min(position.x),
+                    start.y.min(position.y),
+                    (start.x - position.x).abs() + 1,
+                    (start.y - position.y).abs() + 1,
+                );
+                self.selected_tags = self.with_state(|state| {
+                    state
+                        .get_buffer()
+                        .tags
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, tag)| {
+                            tag.position.y >= area.top()
+                                && tag.position.y <= area.bottom()
+                                && tag.position.x <= area.right()
+                                && tag.position.x + tag.len() as i32 - 1 >= area.left()
+                        })
+                        .map(|(index, _)| index)
+                        .collect()
+                });
+            } else if last != position {
+                let tag_offsets = stroke.tag_offsets.clone();
+                let mut delta = position - start;
+                let min_x = tag_offsets.iter().map(|(_, offset)| offset.x).min().unwrap_or(0);
+                let min_y = tag_offsets.iter().map(|(_, offset)| offset.y).min().unwrap_or(0);
+                delta.x = delta.x.max(-min_x);
+                delta.y = delta.y.max(-min_y);
+                self.with_state(|state| {
+                    for (index, offset) in tag_offsets {
+                        let _ = state.move_tag(index, offset + delta);
+                    }
+                });
+            }
         } else if let Some(offset) = stroke.layer_offset {
             self.with_state(|state| state.set_layer_preview_offset(Some(offset + position - start)));
         } else if tool == Tool::Pencil && last != position {
@@ -459,14 +500,6 @@ impl Document {
 
     pub fn finish(&mut self) {
         if let Some(stroke) = self.stroke.take() {
-            if stroke.tool == Tool::Tag && stroke.start != stroke.last {
-                self.with_state(|state| {
-                    for (index, offset) in &stroke.tag_offsets {
-                        let position = *offset + stroke.last - stroke.start;
-                        let _ = state.move_tag(*index, Position::new(position.x.max(0), position.y.max(0)));
-                    }
-                });
-            }
             if let Some(offset) = stroke.layer_offset {
                 self.with_state(|state| {
                     state.set_layer_preview_offset(None);
@@ -666,11 +699,16 @@ impl Document {
     pub fn tag_preview_position(&self, index: usize, position: Position) -> Position {
         if let Some(stroke) = &self.stroke {
             if stroke.tool == Tool::Tag && stroke.tag_offsets.iter().any(|(tag, _)| *tag == index) {
-                let position = position + stroke.last - stroke.start;
-                return Position::new(position.x.max(0), position.y.max(0));
+                return self.with_state(|state| state.get_buffer().tags.get(index).map_or(position, |tag| tag.position));
             }
         }
         position
+    }
+
+    pub fn tag_drag_active(&self) -> bool {
+        self.stroke
+            .as_ref()
+            .is_some_and(|stroke| stroke.tool == Tool::Tag && !stroke.tag_offsets.is_empty() && stroke.start != stroke.last)
     }
 
     pub fn tag_selection_rectangle(&self) -> Option<Rectangle> {
@@ -683,6 +721,88 @@ impl Document {
                 (stroke.start.y - stroke.last.y).abs() + 1,
             )
         })
+    }
+
+    fn change_caret_colors(
+        &mut self,
+        label: &str,
+        change_caret: impl FnOnce(&mut EditState),
+        change_tag: impl Fn(&mut icy_engine::TextAttribute, icy_engine::TextAttribute),
+    ) -> DrawResult<()> {
+        let selected_tags = (self.tool == Tool::Tag).then(|| self.selected_tags.clone()).unwrap_or_default();
+        self.with_state(|state| {
+            change_caret(state);
+            if selected_tags.is_empty() {
+                return Ok(());
+            }
+            let caret_attribute = state.get_caret().attribute;
+            let updates: Vec<_> = selected_tags
+                .into_iter()
+                .filter_map(|index| {
+                    state.get_buffer().tags.get(index).cloned().and_then(|mut tag| {
+                        let mut attribute = tag.attribute;
+                        change_tag(&mut attribute, caret_attribute);
+                        (attribute != tag.attribute).then(|| {
+                            tag.attribute = attribute;
+                            (index, tag)
+                        })
+                    })
+                })
+                .collect();
+            if updates.is_empty() {
+                return Ok(());
+            }
+            let _undo = state.begin_atomic_undo(label);
+            for (index, tag) in updates {
+                state.update_tag(tag, index)?;
+            }
+            Ok(())
+        })
+        .map_err(|error: icy_engine::EngineError| error.to_string())
+    }
+
+    pub fn set_caret_foreground(&mut self, color: u32) -> DrawResult<()> {
+        self.change_caret_colors(
+            "Change tag foreground",
+            |state| state.set_caret_foreground(color),
+            |attribute, caret| attribute.set_foreground_color(caret.foreground_color()),
+        )
+    }
+
+    pub fn set_caret_background(&mut self, color: u32) -> DrawResult<()> {
+        self.change_caret_colors(
+            "Change tag background",
+            |state| state.set_caret_background(color),
+            |attribute, caret| attribute.set_background_color(caret.background_color()),
+        )
+    }
+
+    pub fn swap_caret_colors(&mut self) -> DrawResult<()> {
+        self.change_caret_colors(
+            "Swap tag colors",
+            |state| {
+                state.swap_caret_colors();
+            },
+            |attribute, _| {
+                let foreground = attribute.foreground_color();
+                attribute.set_foreground_color(attribute.background_color());
+                attribute.set_background_color(foreground);
+            },
+        )
+    }
+
+    pub fn reset_caret_colors(&mut self) -> DrawResult<()> {
+        self.change_caret_colors(
+            "Reset tag colors",
+            |state| {
+                state.set_caret_foreground(7);
+                state.set_caret_background(0);
+            },
+            |attribute, caret| {
+                attribute.set_foreground_color(caret.foreground_color());
+                attribute.set_background_color(caret.background_color());
+            },
+        )
     }
 
     pub fn delete_selected_tags(&mut self) -> DrawResult<()> {
@@ -1105,7 +1225,8 @@ mod tests {
         document.begin(Position::new(2, 2), MouseButton::Left);
         document.update(Position::new(5, 4));
         assert_eq!(document.tag_preview_position(1, Position::new(12, 2)), Position::new(15, 4));
-        assert_eq!(document.with_state(|state| state.get_buffer().tags[0].position), Position::new(2, 2));
+        assert_eq!(document.with_state(|state| state.get_buffer().tags[0].position), Position::new(5, 4));
+        assert_eq!(document.with_state(|state| state.get_buffer().tags[1].position), Position::new(15, 4));
         document.cancel();
         assert_eq!(document.with_state(|state| state.get_buffer().tags[0].position), Position::new(2, 2));
         document.begin(Position::new(2, 2), MouseButton::Left);
@@ -1119,6 +1240,46 @@ mod tests {
         assert!(document.with_state(|state| state.get_buffer().tags.is_empty()));
         document.undo().unwrap();
         assert_eq!(document.with_state(|state| state.get_buffer().tags.len()), 2);
+    }
+
+    #[test]
+    fn selected_tag_uses_and_tracks_caret_colors() {
+        let mut document = Document::new(Size::new(30, 12));
+        document
+            .with_state(|state| {
+                let mut attribute = icy_engine::TextAttribute::default();
+                attribute.set_foreground(2);
+                attribute.set_background(1);
+                state.add_new_tag(icy_engine::Tag {
+                    is_enabled: true,
+                    preview: "TAG".into(),
+                    replacement_value: String::new(),
+                    position: Position::new(2, 2),
+                    length: 3,
+                    alignment: std::fmt::Alignment::Left,
+                    tag_placement: icy_engine::TagPlacement::InText,
+                    tag_role: icy_engine::TagRole::Displaycode,
+                    attribute,
+                })
+            })
+            .unwrap();
+        document.tool = Tool::Tag;
+        document.begin(Position::new(2, 2), MouseButton::Left);
+        document.finish();
+
+        assert_eq!(document.with_state(|state| state.get_caret().attribute.foreground()), 2);
+        assert_eq!(document.with_state(|state| state.get_caret().attribute.background()), 1);
+
+        document.set_caret_foreground(14).unwrap();
+        assert_eq!(document.with_state(|state| state.get_buffer().tags[0].attribute.background()), 1);
+        document.set_caret_background(4).unwrap();
+        let attribute = document.with_state(|state| state.get_buffer().tags[0].attribute);
+        assert_eq!(attribute.foreground(), 14);
+        assert_eq!(attribute.background(), 4);
+        assert_eq!(
+            document.with_state(|state| state.get_buffer().char_at(Position::new(2, 2)).attribute),
+            attribute
+        );
     }
 
     #[test]

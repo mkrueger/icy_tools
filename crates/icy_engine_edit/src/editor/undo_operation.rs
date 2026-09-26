@@ -813,6 +813,7 @@ impl EditorUndoOp {
             }
             EditorUndoOp::AddTag { .. } => {
                 edit_state.get_buffer_mut().tags.pop();
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::EditTag { tag_index, old_tag, .. } => {
@@ -825,6 +826,7 @@ impl EditorUndoOp {
                         edit_state.get_buffer().tags.len()
                     );
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::MoveTag { tag, old_pos, .. } => {
@@ -833,14 +835,17 @@ impl EditorUndoOp {
                 } else {
                     log::warn!("MoveTag undo: tag index {} out of bounds (len={})", tag, edit_state.get_buffer().tags.len());
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::RemoveTag { tag_index, tag } => {
                 edit_state.get_buffer_mut().tags.insert(*tag_index, tag.clone());
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::ShowTags { show } => {
                 *show = !*show;
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
         }
@@ -1294,6 +1299,7 @@ impl EditorUndoOp {
             }
             EditorUndoOp::AddTag { new_tag, .. } => {
                 edit_state.get_buffer_mut().tags.push(new_tag.clone());
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::EditTag { tag_index, new_tag, .. } => {
@@ -1306,6 +1312,7 @@ impl EditorUndoOp {
                         edit_state.get_buffer().tags.len()
                     );
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::MoveTag { tag, new_pos, .. } => {
@@ -1314,14 +1321,17 @@ impl EditorUndoOp {
                 } else {
                     log::warn!("MoveTag redo: tag index {} out of bounds (len={})", tag, edit_state.get_buffer().tags.len());
                 }
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::RemoveTag { tag_index, .. } => {
                 edit_state.get_buffer_mut().tags.remove(*tag_index);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::ShowTags { show } => {
                 *show = !*show;
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
         }

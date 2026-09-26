@@ -245,7 +245,11 @@ fn editor_chrome_matches_the_original_panel_layout() {
             assert!(app.canvas_rect.right() <= size.x - chrome::PANEL_WIDTH, "{size:?}: right panel missing");
             assert!(rendered("80 × 25"), "{size:?}: document dimensions missing");
         }
-        assert!(rendered("ICE") && rendered("SQUARE"), "{size:?}: status toggles missing");
+        assert!(
+            (rendered("iCE Colors") || rendered("Blinking") || rendered("Blink"))
+                && (rendered("DOS Aspect") || rendered("Square Pixels") || rendered("4:3") || rendered("1:1")),
+            "{size:?}: status toggles missing"
+        );
     }
 }
 
@@ -278,22 +282,34 @@ fn toolbar_height_stays_fixed_across_tools_and_window_sizes() {
 }
 
 #[test]
-fn rail_color_switcher_swaps_and_opens_palette_popup() {
+fn toolbar_color_switcher_swaps_and_opens_palette_popup() {
     let context = egui::Context::default();
     appearance::apply(&context);
     let mut app = DrawApp::new();
-    let size = egui::vec2(440.0, 700.0);
     let rendered = |output: &egui::FullOutput, label: &str| {
         output.shapes.iter().any(|shape| match &shape.shape {
             egui::Shape::Text(text) => text.galley.text().contains(label),
             _ => false,
         })
     };
-    for _ in 0..2 {
-        frame(&context, &mut app, size, vec![]);
-    }
-    let bottom = size.y - chrome::STATUS_HEIGHT - 8.0;
-    let swap = egui::pos2(chrome::SIDEBAR_WIDTH - 11.0, bottom - 33.0);
+    let origin = std::cell::Cell::new(egui::Pos2::ZERO);
+    let draw = |app: &mut DrawApp, events: Vec<egui::Event>| {
+        context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 100.0))),
+                events,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    origin.set(ui.cursor().min);
+                    app.color_switcher(ui);
+                });
+            },
+        )
+    };
+    draw(&mut app, vec![]);
+    let swap = origin.get() + egui::vec2(33.0, 7.0);
     let colors = |app: &DrawApp| {
         app.document.with_state(|state| {
             let attribute = state.get_caret().attribute;
@@ -301,14 +317,55 @@ fn rail_color_switcher_swaps_and_opens_palette_popup() {
         })
     };
     let (foreground, background) = colors(&app);
-    frame(&context, &mut app, size, pointer(swap, true));
-    frame(&context, &mut app, size, pointer(swap, false));
+    draw(&mut app, pointer(swap, true));
+    draw(&mut app, pointer(swap, false));
     assert_eq!(colors(&app), (background, foreground));
-    let swatch = egui::pos2(14.0, bottom - 28.0);
-    frame(&context, &mut app, size, pointer(swatch, true));
-    frame(&context, &mut app, size, pointer(swatch, false));
-    let output = frame(&context, &mut app, size, vec![]);
+    let swatch = origin.get() + egui::vec2(10.0, 10.0);
+    draw(&mut app, pointer(swatch, true));
+    draw(&mut app, pointer(swatch, false));
+    let output = draw(&mut app, vec![]);
     assert!(rendered(&output, "Edit Palette"), "palette popup missing");
+}
+
+#[test]
+fn pipette_toolbar_previews_hovered_character_and_colors() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.document.tool = Tool::Pipette;
+    app.document.with_state(|state| {
+        state.get_buffer_mut().layers[0].set_char(Position::default(), icy_engine::AttributedChar::new('#', icy_engine::TextAttribute::new(11, 0)));
+    });
+    app.pipette_hover = Some((Position::default(), egui::Modifiers::NONE));
+
+    let output = context.run(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 100.0))),
+            ..Default::default()
+        },
+        |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                ui.horizontal_centered(|ui| app.pipette_options(ui));
+            });
+        },
+    );
+    let labels: Vec<_> = output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) => Some(text.galley.text()),
+            _ => None,
+        })
+        .collect();
+    for expected in ["#23", "FG 11", "#55FFFF", "BG 0", "#000000"] {
+        assert!(labels.iter().any(|label| label.contains(expected)), "missing {expected:?} in {labels:?}");
+    }
+}
+
+#[test]
+fn font_filter_highlights_all_case_insensitive_matches() {
+    assert_eq!(filter_match_ranges("Blue blue BLUE", "blue"), vec![0..4, 5..9, 10..14]);
+    assert!(filter_match_ranges("1911", "").is_empty());
 }
 
 #[test]
@@ -901,4 +958,79 @@ fn gpu_canvas_draws_at_pointer_and_scrolls() {
         gpu.capture(&mut app, [1280, 820], 1.0, pointer(point, false), "scroll-draw");
         assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(cell).ch), '#');
     });
+}
+
+#[test]
+fn classic_menu_commands_edit_colors_and_markers() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    frame(&context, &mut app, size, vec![]);
+
+    app.document.type_text("AB").unwrap();
+    app.document.with_state(|state| state.set_caret_position(Position::new(0, 0)));
+    frame(
+        &context,
+        &mut app,
+        size,
+        vec![key_event(Key::ArrowUp, egui::Modifiers::ALT), egui::Event::Text("∆".into())],
+    );
+    let char_at = |app: &mut DrawApp, x, y| app.document.with_state(|state| state.get_buffer().char_at(Position::new(x, y)).ch);
+    assert_eq!(char_at(&mut app, 0, 1), 'A', "Alt+Up inserts a row above the caret");
+    assert_eq!(char_at(&mut app, 0, 0), ' ', "the Option text of a consumed Alt shortcut is not typed");
+    app.area_operation(menus::AreaOp::DeleteRow);
+    assert_eq!(char_at(&mut app, 0, 0), 'A');
+
+    let colors = |app: &mut DrawApp| {
+        app.document.with_state(|state| {
+            let attribute = state.get_caret().attribute;
+            (attribute.foreground(), attribute.background())
+        })
+    };
+    let (foreground, background) = colors(&mut app);
+    frame(&context, &mut app, size, vec![key_event(Key::ArrowDown, egui::Modifiers::COMMAND)]);
+    assert_eq!(colors(&mut app), (foreground + 1, background));
+    frame(&context, &mut app, size, vec![key_event(Key::ArrowLeft, egui::Modifiers::COMMAND)]);
+    let count = app.document.with_state(|state| state.get_buffer().palette.len() as u32);
+    assert_eq!(colors(&mut app), (foreground + 1, (background + count - 1) % count));
+    app.color_operation(menus::ColorOp::Default);
+    assert_eq!(colors(&mut app), (foreground, background));
+    app.color_operation(menus::ColorOp::Swap);
+    assert_eq!(colors(&mut app), (background, foreground));
+
+    app.guide = Some((80, 25));
+    app.raster = Some((8, 4));
+    frame(&context, &mut app, size, vec![]);
+    let font = app.document.with_state(|state| state.get_buffer().font_dimensions());
+    let markers = app.view.markers.clone().unwrap();
+    assert_eq!(markers.guide, Some((80.0 * font.width as f32, 25.0 * font.height as f32)));
+    assert_eq!(markers.raster, Some((8.0 * font.width as f32, 4.0 * font.height as f32)));
+    frame(&context, &mut app, size, vec![key_event(Key::Semicolon, egui::Modifiers::COMMAND)]);
+    assert!(!app.show_guide);
+    frame(&context, &mut app, size, vec![]);
+    assert!(app.view.markers.as_ref().unwrap().guide.is_none(), "Cmd+; hides the guide");
+
+    app.show_line_numbers = false;
+    frame(&context, &mut app, size, vec![key_event(Key::R, egui::Modifiers::COMMAND)]);
+    assert!(app.show_line_numbers);
+    frame(&context, &mut app, size, vec![]);
+}
+
+#[test]
+fn insert_image_creates_a_floating_image_layer() {
+    let mut app = DrawApp::new();
+    let path = std::env::temp_dir().join(format!("icy_draw_insert_{}.png", std::process::id()));
+    image::RgbaImage::from_pixel(24, 32, image::Rgba([255, 0, 0, 255])).save(&path).unwrap();
+    let layers = app.document.with_state(|state| state.get_buffer().layers.len());
+    app.insert_image(&path);
+    let _ = std::fs::remove_file(&path);
+    assert!(app.dialog.is_none());
+    assert!(app.document.paste_active());
+    let (count, role, sixels) = app.document.with_state(|state| {
+        let layer = state.get_cur_layer().unwrap();
+        (state.get_buffer().layers.len(), layer.role, layer.sixels.len())
+    });
+    assert_eq!(count, layers + 1);
+    assert_eq!(role, icy_engine::Role::Image);
+    assert_eq!(sixels, 1);
 }

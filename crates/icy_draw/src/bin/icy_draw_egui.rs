@@ -61,8 +61,9 @@ fn main() -> anyhow::Result<()> {
             appearance::apply(&creation.egui_ctx);
             let mut editor = app::DrawApp::new();
             editor.persist_settings = true;
-            if let Some(path) = args.file {
-                editor.open(path);
+            match args.file {
+                Some(path) => editor.open(path),
+                None => editor.show_start = true,
             }
             if let Some(port) = args.mcp_port {
                 editor.enable_mcp(port, creation.egui_ctx.clone());

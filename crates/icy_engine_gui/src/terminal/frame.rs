@@ -2,7 +2,7 @@ use crate::{
     compute_viewport_auto, compute_viewport_manual,
     shared_render_cache::{SharedCachedTile, TileCacheKey, TILE_HEIGHT},
     tile_cache::MAX_TEXTURE_SLICES,
-    CRTShaderState, CaretFrame, MonitorSettings, Terminal, TerminalShader, TextureSliceData,
+    CRTShaderState, CaretFrame, MonitorSettings, ReferenceImageMode, Terminal, TerminalShader, TextureSliceData,
 };
 use icy_engine::{CaretShape, EditableScreen};
 use std::sync::{atomic::Ordering, Arc};
@@ -760,13 +760,24 @@ impl<'a> CRTShaderProgram<'a> {
                 if ref_img.visible && !ref_img.path.as_os_str().is_empty() {
                     // Use cached image data (caller should have loaded it)
                     if let Some((data, w, h)) = ref_img.get_cached() {
+                        // The shader knows stretch (0), original size (1) and tile (2); the fit modes are original size with a computed scale.
+                        let document = (texture_width as f32, full_content_height);
+                        let (image_width, image_height) = ((*w).max(1) as f32, (*h).max(1) as f32);
+                        let (mode, scale) = match ref_img.mode {
+                            ReferenceImageMode::Stretch => (0, ref_img.scale),
+                            ReferenceImageMode::Original => (1, ref_img.scale),
+                            ReferenceImageMode::Tile => (2, ref_img.scale),
+                            ReferenceImageMode::FitWidth => (1, document.0 / image_width),
+                            ReferenceImageMode::FitHeight => (1, document.1 / image_height),
+                            ReferenceImageMode::Contain => (1, (document.0 / image_width).min(document.1 / image_height)),
+                        };
                         (
                             Some((data.clone(), *w, *h)),
                             true,
                             ref_img.alpha,
-                            ref_img.mode as u8,
+                            mode,
                             [ref_img.offset.0, ref_img.offset.1],
-                            ref_img.scale,
+                            scale,
                         )
                     } else {
                         (None, false, 0.5, 0, [0.0, 0.0], 1.0)

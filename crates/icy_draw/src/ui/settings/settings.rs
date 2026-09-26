@@ -24,6 +24,9 @@ struct PersistedSettings {
     #[serde(default)]
     pub font_outline_style: usize,
 
+    #[serde(default)]
+    pub text_art_font_favorites: Vec<String>,
+
     #[serde(default = "default_true")]
     pub show_layer_borders: bool,
 
@@ -88,6 +91,7 @@ impl Default for PersistedSettings {
         Self {
             monitor_settings: MonitorSettings::default(),
             font_outline_style: 0,
+            text_art_font_favorites: Vec::new(),
             show_layer_borders: true,
             show_line_numbers: false,
             collaboration: Default::default(),
@@ -113,6 +117,9 @@ pub struct Settings {
 
     /// Shared outline style for drawing/TDFFont outlines (persisted)
     pub font_outline_style: usize,
+
+    /// Names of text-art fonts marked as favorites.
+    pub text_art_font_favorites: Vec<String>,
 
     /// Whether layer borders are shown (persisted, default: true)
     pub show_layer_borders: bool,
@@ -144,6 +151,7 @@ impl Settings {
             fkeys: FKeySets::load(),
             monitor_settings: persistent.monitor_settings,
             font_outline_style: persistent.font_outline_style,
+            text_art_font_favorites: persistent.text_art_font_favorites,
             show_layer_borders: persistent.show_layer_borders,
             show_line_numbers: persistent.show_line_numbers,
             collaboration: persistent.collaboration,
@@ -157,6 +165,7 @@ impl Settings {
         let settings = PersistedSettings {
             monitor_settings: self.monitor_settings.clone(),
             font_outline_style: self.font_outline_style,
+            text_art_font_favorites: self.text_art_font_favorites.clone(),
             show_layer_borders: self.show_layer_borders,
             show_line_numbers: self.show_line_numbers,
             collaboration: self.collaboration.clone(),
@@ -343,4 +352,21 @@ fn normalize_monitor_settings(mut settings: MonitorSettings) -> MonitorSettings 
     settings.use_integer_scaling = false;
 
     settings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_art_favorites_are_backward_compatible_and_persisted() {
+        let old: PersistedSettings = toml::from_str("").unwrap();
+        assert!(old.text_art_font_favorites.is_empty());
+
+        let mut settings = PersistedSettings::default();
+        settings.text_art_font_favorites = vec!["Color:1911".to_owned()];
+        let encoded = toml::to_string(&settings).unwrap();
+        let decoded: PersistedSettings = toml::from_str(&encoded).unwrap();
+        assert_eq!(decoded.text_art_font_favorites, settings.text_art_font_favorites);
+    }
 }

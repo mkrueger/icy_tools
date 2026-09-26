@@ -1,5 +1,5 @@
-//! Editor chrome: tool rail on the left, tool options bar on top, sidebar with
-//! colours, minimap and layers on the right and a compact status bar.
+//! Editor chrome: palette and tools on the left, tool options on top, minimap
+//! and layers on the right and a compact status bar.
 
 use super::{widgets, Dialog, DrawApp};
 use eframe::egui::{self, Color32};
@@ -7,10 +7,10 @@ use icy_engine::{LayerProperties, Position, Rectangle, RenderOptions, Role, Text
 use icy_engine_edit::tools::{Tool, ToolPair};
 use icy_engine_gui::egui::appearance::{self, labels, Dialog as SharedDialog, DialogButton, DialogSize, PRIMARY};
 
-/// Width of the left tool rail.
-pub const SIDEBAR_WIDTH: f32 = 48.0;
-/// Width of the right sidebar with colours, minimap and layers.
-pub const PANEL_WIDTH: f32 = 280.0;
+/// Width of the left palette and tool rail.
+pub const SIDEBAR_WIDTH: f32 = 52.0;
+/// Width of the right sidebar with minimap and layers.
+pub const PANEL_WIDTH: f32 = 320.0;
 /// Height of the full-width tool options bar.
 pub const TOOLBAR_HEIGHT: f32 = 44.0;
 pub const STATUS_HEIGHT: f32 = 28.0;
@@ -59,6 +59,48 @@ enum LayerAction {
 
 fn mix(hash: &mut u64, value: u64) {
     *hash ^= value.wrapping_add(0x9e37_79b9_7f4a_7c15).wrapping_add(*hash << 6).wrapping_add(*hash >> 2);
+}
+
+pub(super) fn color_sample(ui: &mut egui::Ui, label: &str, index: u32, (red, green, blue): (u8, u8, u8), selected: bool) {
+    const LABEL_WIDTH: f32 = 48.0;
+    const GAP: f32 = 6.0;
+    const SWATCH_WIDTH: f32 = 82.0;
+    const HEIGHT: f32 = 30.0;
+
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(LABEL_WIDTH + GAP + SWATCH_WIDTH, HEIGHT), egui::Sense::hover());
+    let label_rect = egui::Rect::from_min_size(rect.min, egui::vec2(LABEL_WIDTH, HEIGHT));
+    let swatch_rect = egui::Rect::from_min_size(rect.min + egui::vec2(LABEL_WIDTH + GAP, 0.0), egui::vec2(SWATCH_WIDTH, HEIGHT));
+    let visuals = ui.visuals();
+    let label_color = if selected {
+        visuals.strong_text_color()
+    } else {
+        visuals.weak_text_color().gamma_multiply(0.55)
+    };
+    ui.painter().text(
+        label_rect.right_center(),
+        egui::Align2::RIGHT_CENTER,
+        format!("{label} {index}"),
+        egui::FontId::monospace(13.0),
+        label_color,
+    );
+
+    let color = Color32::from_rgb(red, green, blue);
+    let text = if 299 * u32::from(red) + 587 * u32::from(green) + 114 * u32::from(blue) > 186_000 {
+        Color32::BLACK
+    } else {
+        Color32::WHITE
+    };
+    ui.painter().rect_filled(swatch_rect, 4, color);
+    ui.painter()
+        .rect_stroke(swatch_rect, 4, egui::Stroke::new(1.0, visuals.strong_text_color()), egui::StrokeKind::Inside);
+    ui.painter().text(
+        swatch_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        format!("#{red:02X}{green:02X}{blue:02X}"),
+        egui::FontId::monospace(13.0),
+        text,
+    );
+    response.on_hover_text(format!("{label} {index}: #{red:02X}{green:02X}{blue:02X}"));
 }
 
 /// Cache key built on the engine's buffer version, like the original layer view.
@@ -155,7 +197,7 @@ fn layer_preview(buffer: &TextBuffer, index: usize) -> Option<egui::ColorImage> 
 
 impl DrawApp {
     /// Overlapping foreground/background swatches with swap and reset corners; opens a palette popup.
-    fn color_switcher(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn color_switcher(&mut self, ui: &mut egui::Ui) {
         let (foreground, background) = self.document.with_state(|state| {
             let palette = &state.get_buffer().palette;
             let attribute = state.get_caret().attribute;
@@ -211,13 +253,12 @@ impl DrawApp {
             .rect_stroke(front, 1, egui::Stroke::new(1.0, reset_color), egui::StrokeKind::Inside);
 
         if swap_response.clicked() {
-            self.document.with_state(|state| state.swap_caret_colors());
+            let result = self.document.swap_caret_colors();
+            self.result(result);
         }
         if default_response.clicked() {
-            self.document.with_state(|state| {
-                state.set_caret_foreground(7);
-                state.set_caret_background(0);
-            });
+            let result = self.document.reset_caret_colors();
+            self.result(result);
         }
         egui::Popup::from_toggle_button_response(&colors)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -248,46 +289,43 @@ impl DrawApp {
         self.dialog = Some(Dialog::Palette);
     }
 
-    /// Left tool rail: grouped tools on top, colour switcher at the bottom.
+    /// Left rail: the persistent palette followed by grouped tools.
     pub(super) fn sidebar(&mut self, ui: &mut egui::Ui) {
-        ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-            ui.add_space(8.0);
-            self.color_switcher(ui);
-            ui.add_space(2.0);
+        ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+            ui.add_space(4.0);
+            let palette_width = ui.available_width();
+            self.palette_grid(ui, palette_width);
             rail_divider(ui);
-            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt("sidebar")
-                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-                    .show(ui, |ui| {
-                        ui.vertical_centered(|ui| {
-                            ui.spacing_mut().item_spacing.y = 2.0;
-                            ui.add_space(6.0);
-                            let mut last_group = None;
-                            for (slot, pair) in TOOL_SLOTS.into_iter().enumerate() {
-                                if self.document.outline_font && !matches!(pair.primary, Tool::Click | Tool::Select) {
-                                    continue;
-                                }
-                                if self.charfont.is_some() && pair.primary == Tool::Tag {
-                                    continue;
-                                }
-                                let group = TOOL_GROUPS.iter().position(|&end| slot < end);
-                                if last_group.is_some_and(|last| Some(last) != group) {
-                                    rail_divider(ui);
-                                }
-                                last_group = group;
-                                self.tool_button(ui, pair);
+            egui::ScrollArea::vertical()
+                .id_salt("sidebar")
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                .show(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        let mut last_group = None;
+                        for (slot, pair) in TOOL_SLOTS.into_iter().enumerate() {
+                            if self.document.outline_font && !matches!(pair.primary, Tool::Click | Tool::Select) {
+                                continue;
                             }
-                        });
+                            if self.charfont.is_some() && pair.primary == Tool::Tag {
+                                continue;
+                            }
+                            let group = TOOL_GROUPS.iter().position(|&end| slot < end);
+                            if last_group.is_some_and(|last| Some(last) != group) {
+                                rail_divider(ui);
+                            }
+                            last_group = group;
+                            self.tool_button(ui, pair);
+                        }
                     });
-            });
+                });
         });
     }
 
     fn tool_button(&mut self, ui: &mut egui::Ui, pair: ToolPair) {
         let selected = pair.contains(self.document.tool);
         let tool = if selected { self.document.tool } else { pair.primary };
-        let label = format!("{} – {}", tool.name(), tool.tooltip());
+        let label = format!("{} – {}", tool_label(tool), tool_hint(tool));
         let response = self.icons.button_sized(ui, tool.icon(), &label, selected, TOOL_ICON);
         if response.clicked() {
             self.select_tool(if selected { pair.toggle(tool) } else { pair.primary });
@@ -302,7 +340,7 @@ impl DrawApp {
             ));
             response.context_menu(|ui| {
                 for variant in [pair.primary, pair.secondary] {
-                    if ui.selectable_label(self.document.tool == variant, variant.name()).clicked() {
+                    if ui.selectable_label(self.document.tool == variant, tool_label(variant)).clicked() {
                         self.select_tool(variant);
                         ui.close();
                     }
@@ -336,9 +374,19 @@ impl DrawApp {
         markers.paste_mode = floating;
         markers.show_layer_bounds = floating || self.show_layer_bounds;
         markers.layer_border_animated = floating;
+        markers.marker_settings = Some(icy_engine_gui::MarkerSettings::default());
+        if let Some(image) = &mut self.reference_image {
+            if image.visible {
+                image.load_and_cache();
+            }
+            markers.reference_image = Some(image.clone());
+        }
         self.document.with_state(|state| {
             let dimensions = state.get_buffer().font_dimensions();
             let (font_width, font_height) = (dimensions.width as f32, dimensions.height as f32);
+            let to_pixels = |(columns, rows): (i32, i32)| (columns as f32 * font_width, rows as f32 * font_height);
+            markers.raster = self.raster.filter(|_| self.show_raster).map(to_pixels);
+            markers.guide = self.guide.filter(|_| self.show_guide).map(to_pixels);
             let pixels_of = |position: Position, size: icy_engine::Size| {
                 (
                     position.x as f32 * font_width,
@@ -382,6 +430,78 @@ impl DrawApp {
         markers
     }
 
+    /// Row numbers beside and column digits above and below the document, highlighting the caret or selection like the original editor.
+    pub(super) fn line_numbers(&mut self, ui: &egui::Ui, painter: &egui::Painter, clip: egui::Rect, origin: egui::Pos2, step: egui::Vec2) {
+        if step.x <= 0.0 || step.y <= 0.0 {
+            return;
+        }
+        let (width, height, caret, selection) = self.document.with_state(|state| {
+            let buffer = state.get_buffer();
+            (
+                buffer.width(),
+                buffer.height(),
+                state.layer_to_document_position(state.get_caret().position()),
+                state.selection().map(|selection| selection.as_rectangle()),
+            )
+        });
+        let (rows, columns) = match selection {
+            Some(rect) => (rect.top()..rect.bottom(), rect.left()..rect.right()),
+            None => (caret.y..caret.y + 1, caret.x..caret.x + 1),
+        };
+        let document = egui::Rect::from_min_size(origin, egui::vec2(width as f32 * step.x, height as f32 * step.y));
+        let font = egui::FontId::monospace((12.0 * step.y / 16.0).clamp(8.0, 16.0));
+        let visuals = ui.visuals();
+        let (normal, active) = (visuals.weak_text_color(), visuals.strong_text_color());
+        let background = visuals.extreme_bg_color.gamma_multiply(0.85);
+        let digit = painter.layout_no_wrap("0".to_owned(), font.clone(), normal).size();
+        let gap = 4.0;
+
+        let gutter = digit.x * height.max(1).to_string().len() as f32 + gap;
+        let first_row = (((clip.top() - origin.y) / step.y).floor() as i32).max(0);
+        let last_row = (((clip.bottom() - origin.y) / step.y).ceil() as i32).min(height);
+        // Keep the numbers on screen: they sit outside the document when there is room and overlay its edge otherwise.
+        let left = (document.left() - gap).max(clip.left() + gutter);
+        let right = (document.right() + gap).min(clip.right() - gutter);
+        for (edge, align) in [(left, egui::Align2::RIGHT_CENTER), (right, egui::Align2::LEFT_CENTER)] {
+            let strip = if align == egui::Align2::RIGHT_CENTER {
+                egui::Rect::from_x_y_ranges(edge - gutter + gap / 2.0..=edge + gap / 2.0, document.y_range())
+            } else {
+                egui::Rect::from_x_y_ranges(edge - gap / 2.0..=edge + gutter - gap / 2.0, document.y_range())
+            };
+            if strip.intersects(document) {
+                painter.rect_filled(strip.intersect(clip), 0, background);
+            }
+            for row in first_row..last_row {
+                let y = origin.y + (row as f32 + 0.5) * step.y;
+                let color = if rows.contains(&row) { active } else { normal };
+                painter.text(egui::pos2(edge, y), align, (row + 1).to_string(), font.clone(), color);
+            }
+        }
+
+        if step.x < digit.x * 0.9 {
+            return;
+        }
+        let first_column = (((clip.left() - origin.x) / step.x).floor() as i32).max(0);
+        let last_column = (((clip.right() - origin.x) / step.x).ceil() as i32).min(width);
+        let top = (document.top() - gap / 2.0).max(clip.top() + digit.y);
+        let bottom = (document.bottom() + gap / 2.0).min(clip.bottom() - digit.y);
+        for (edge, align) in [(top, egui::Align2::CENTER_BOTTOM), (bottom, egui::Align2::CENTER_TOP)] {
+            let strip = if align == egui::Align2::CENTER_BOTTOM {
+                egui::Rect::from_x_y_ranges(document.x_range(), edge - digit.y..=edge)
+            } else {
+                egui::Rect::from_x_y_ranges(document.x_range(), edge..=edge + digit.y)
+            };
+            if strip.intersects(document) {
+                painter.rect_filled(strip.intersect(clip), 0, background);
+            }
+            for column in first_column..last_column {
+                let x = origin.x + (column as f32 + 0.5) * step.x;
+                let color = if columns.contains(&column) { active } else { normal };
+                painter.text(egui::pos2(x, edge), align, ((column + 1) % 10).to_string(), font.clone(), color);
+            }
+        }
+    }
+
     /// Row-major palette grid: left click sets the foreground, right click the background.
     fn palette_grid(&mut self, ui: &mut egui::Ui, width: f32) {
         let (palette, foreground, background) = self.document.with_state(|state| {
@@ -392,7 +512,16 @@ impl DrawApp {
         if count == 0 {
             return;
         }
-        let columns = if count <= 16 { 8 } else { 16 }.min(count);
+        let columns = if count <= 16 {
+            if width < 100.0 {
+                2
+            } else {
+                8
+            }
+        } else {
+            16
+        }
+        .min(count);
         let cell = width / columns as f32;
         let rows = count.div_ceil(columns);
         let (rect, response) = ui.allocate_exact_size(egui::vec2(width, cell * rows as f32), egui::Sense::click());
@@ -430,10 +559,12 @@ impl DrawApp {
         }
         if let Some(index) = hovered {
             if response.clicked() {
-                self.document.with_state(|state| state.set_caret_foreground(index as u32));
+                let result = self.document.set_caret_foreground(index as u32);
+                self.result(result);
             }
             if response.secondary_clicked() {
-                self.document.with_state(|state| state.set_caret_background(index as u32));
+                let result = self.document.set_caret_background(index as u32);
+                self.result(result);
             }
             let (red, green, blue) = palette.rgb(index as u32);
             response.on_hover_text(format!("{index}: #{red:02X}{green:02X}{blue:02X}"));
@@ -444,11 +575,13 @@ impl DrawApp {
     pub(super) fn toolbar(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            ui.add_space(8.0);
+            ui.add_space(6.0);
+            self.color_switcher(ui);
+            widgets::divider(ui);
             let (icon, name) = if self.document.paste_active() {
                 ("anchor", "Paste")
             } else {
-                (self.document.tool.icon(), self.document.tool.name())
+                (self.document.tool.icon(), tool_label(self.document.tool))
             };
             let wide = ui.available_width() >= 760.0;
             let (rect, _) = ui.allocate_exact_size(egui::vec2(if wide { 150.0 } else { 28.0 }, widgets::CONTROL_HEIGHT), egui::Sense::hover());
@@ -478,7 +611,7 @@ impl DrawApp {
         });
     }
 
-    /// Right sidebar: palette, minimap and layers as separated sections.
+    /// Right sidebar: minimap and layers as separated sections.
     pub(super) fn panel(&mut self, ui: &mut egui::Ui) {
         let signature = self.document.with_state(|state| signature(state.get_buffer()));
         if self.charfont.is_some() {
@@ -521,19 +654,11 @@ impl DrawApp {
             });
             return;
         }
-        section(ui, |ui| {
-            widgets::section_header(ui, "Colors", |ui| {
-                if widgets::status_button(ui, "Edit…", "Edit Palette").clicked() {
-                    self.open_palette_editor(true);
-                }
-            });
-            self.palette_grid(ui, ui.available_width());
-        });
         if self.charfont.is_none() {
             egui::TopBottomPanel::top("minimap")
                 .resizable(true)
-                .default_height(190.0)
-                .height_range(90.0..=420.0)
+                .default_height(340.0)
+                .height_range(160.0..=520.0)
                 .frame(egui::Frame::new().inner_margin(egui::Margin {
                     left: SECTION_MARGIN,
                     right: SECTION_MARGIN,
@@ -968,10 +1093,21 @@ impl DrawApp {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 ui.add_space(6.0);
-                let zoom = widgets::status_button(ui, &format!("{:.0}%", self.view.zoom * 100.0), "Zoom");
+                let zoom = widgets::status_button(
+                    ui,
+                    &format!("{:.0}%", self.view.zoom * 100.0),
+                    &format!("Zoom: {}", super::menus::zoom_label(self.settings.monitor_settings.scaling_mode)),
+                );
                 egui::Popup::menu(&zoom).show(|ui| {
+                    if ui.button("Zoom In").clicked() {
+                        self.zoom_step(1);
+                    }
+                    if ui.button("Zoom Out").clicked() {
+                        self.zoom_step(-1);
+                    }
+                    ui.separator();
                     for (label, mode) in [
-                        ("Fit", icy_engine_gui::ScalingMode::Auto),
+                        ("Fit to Window", icy_engine_gui::ScalingMode::Auto),
                         ("Fit Width", icy_engine_gui::ScalingMode::FitWidth),
                         ("50%", icy_engine_gui::ScalingMode::Manual(0.5)),
                         ("100%", icy_engine_gui::ScalingMode::Manual(1.0)),
@@ -992,22 +1128,77 @@ impl DrawApp {
                 } else {
                     font.clone()
                 };
-                if widgets::status_button(ui, &font_label, &format!("Select Font: {font}")).clicked() {
+                if widgets::status_button(ui, &font_label, &format!("Font: {font}\nClick to choose a different font")).clicked() {
                     self.dialog = Some(Dialog::FontSelect);
                 }
                 status_separator(ui);
-                if widgets::status_button(ui, if aspect { "ASPECT" } else { "SQUARE" }, "Pixel Aspect Ratio").clicked() {
+                let aspect_label = match (aspect, compact) {
+                    (true, true) => "4:3",
+                    (true, false) => "DOS Aspect",
+                    (false, true) => "1:1",
+                    (false, false) => "Square Pixels",
+                };
+                let aspect_tip = if aspect {
+                    "Pixels are stretched like on a 4:3 DOS monitor.\nClick to use square pixels."
+                } else {
+                    "Pixels are square.\nClick to stretch them like on a 4:3 DOS monitor."
+                };
+                if widgets::status_button(ui, aspect_label, aspect_tip).clicked() {
                     self.edit(|state| state.set_use_aspect_ratio(!aspect));
                 }
-                if widgets::status_button(ui, if spacing { "9 px" } else { "8 px" }, "Letter Spacing").clicked() {
+                let spacing_label = match (spacing, compact) {
+                    (true, true) => "9px",
+                    (true, false) => "9 px Font",
+                    (false, true) => "8px",
+                    (false, false) => "8 px Font",
+                };
+                let spacing_tip = if spacing {
+                    "Characters are 9 pixels wide (VGA letter spacing).\nClick to use 8 pixel wide characters."
+                } else {
+                    "Characters are 8 pixels wide.\nClick to add the 9th pixel column of VGA text mode."
+                };
+                if widgets::status_button(ui, spacing_label, spacing_tip).clicked() {
                     self.edit(|state| state.set_use_letter_spacing(!spacing));
                 }
-                if widgets::status_button(ui, if ice { "ICE" } else { "BLINK" }, "Blink / ICE Colors").clicked() {
+                let ice_label = match (ice, compact) {
+                    (true, _) => "iCE Colors",
+                    (false, true) => "Blink",
+                    (false, false) => "Blinking",
+                };
+                let ice_tip = if ice {
+                    "The blink bit selects 8 additional bright background colors (iCE colors).\nClick to make it blink instead."
+                } else {
+                    "The blink bit makes characters blink.\nClick to use it for 8 bright background colors (iCE colors)."
+                };
+                if widgets::status_button(ui, ice_label, ice_tip).clicked() {
                     let mode = if ice { icy_engine::IceMode::Blink } else { icy_engine::IceMode::Ice };
                     self.edit(|state| state.set_ice_mode(mode));
                 }
             });
         });
+    }
+}
+
+/// Display name of a tool in this frontend.
+pub(super) fn tool_label(tool: Tool) -> &'static str {
+    match tool {
+        Tool::Click => "Text",
+        Tool::Pipette => "Color Picker",
+        Tool::Font => "Text Art",
+        tool => tool.name(),
+    }
+}
+
+/// One line description shown in the tool rail tooltips.
+fn tool_hint(tool: Tool) -> &'static str {
+    match tool {
+        Tool::Click => "Type text, move the caret and use F-key characters",
+        Tool::Select => "Select areas, characters or colors",
+        Tool::Pencil => "Paint with the brush",
+        Tool::Pipette => "Pick colors from the canvas",
+        Tool::Font => "Type with TheDraw and FIGlet fonts",
+        Tool::Tag => "Place and edit annotation tags",
+        tool => tool.tooltip(),
     }
 }
 

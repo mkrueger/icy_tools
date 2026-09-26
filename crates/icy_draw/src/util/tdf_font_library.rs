@@ -49,6 +49,8 @@ pub struct FontPreview {
 pub struct TextArtFontLibrary {
     /// All loaded fonts
     fonts: Vec<Font>,
+    /// Maximum glyph width and height for each font.
+    dimensions: Vec<(usize, usize)>,
     /// Path to the font directory being watched
     font_dir: Option<PathBuf>,
     /// Cached preview images (`font_index` -> preview)
@@ -66,6 +68,7 @@ impl TextArtFontLibrary {
     fn new() -> Self {
         Self {
             fonts: Vec::new(),
+            dimensions: Vec::new(),
             font_dir: None,
             preview_cache: HashMap::new(),
         }
@@ -108,12 +111,14 @@ impl TextArtFontLibrary {
             // Load fonts WITHOUT holding any lock - this is the slow part
             log::info!("Loading fonts from {}...", font_dir.display());
             let fonts = load_fonts_from_dir(&font_dir);
+            let dimensions = fonts.iter().map(font_dimensions).collect();
             log::info!("Loaded {} fonts from {}", fonts.len(), font_dir.display());
 
             // Only lock briefly to swap in the new data
             {
                 let mut lib = library.write();
                 lib.fonts = fonts;
+                lib.dimensions = dimensions;
                 lib.font_dir = Some(font_dir);
                 lib.preview_cache.clear(); // Clear cached previews when fonts reload
             }
@@ -142,6 +147,12 @@ impl TextArtFontLibrary {
     #[must_use]
     pub fn font_name(&self, index: usize) -> Option<&str> {
         self.fonts.get(index).map(retrofont::Font::name)
+    }
+
+    /// Maximum glyph width and height for the font at `index`.
+    #[must_use]
+    pub fn font_dimensions(&self, index: usize) -> Option<(usize, usize)> {
+        self.dimensions.get(index).copied()
     }
 
     /// Get all font names
@@ -228,13 +239,16 @@ impl TextArtFontLibrary {
     }
 
     fn render_preview_for_font(font: &Font) -> Option<FontPreview> {
+        Self::render_preview_for_font_with_text(font, PREVIEW_TEXT)
+    }
+
+    fn render_preview_for_font_with_text(font: &Font, preview_text: &str) -> Option<FontPreview> {
         // Create a buffer for rendering
         let mut buffer = TextBuffer::new((PREVIEW_BUFFER_WIDTH, PREVIEW_BUFFER_HEIGHT));
         let mut renderer = TdfBufferRenderer::new(&mut buffer, 0, 0);
         let options = retrofont::RenderOptions::default();
 
-        // Render preview text
-        let preview_text = PREVIEW_TEXT;
+        let preview_text = if preview_text.is_empty() { PREVIEW_TEXT } else { preview_text };
         let lowercase = preview_text.to_ascii_lowercase();
 
         // Use uppercase if available, otherwise lowercase
@@ -269,6 +283,11 @@ impl TextArtFontLibrary {
             width: size.width as u32,
             height: size.height as u32,
         })
+    }
+
+    /// Render a one-off preview with custom text without changing the shared default preview cache.
+    pub fn generate_preview_text(&self, index: usize, text: &str) -> Option<FontPreview> {
+        Self::render_preview_for_font_with_text(self.fonts.get(index)?, text)
     }
 
     /// Generate previews for indices without holding the write lock during rendering.
@@ -413,6 +432,14 @@ fn load_fonts_from_dir(dir: &Path) -> Vec<Font> {
     fonts
 }
 
+fn font_dimensions(font: &Font) -> (usize, usize) {
+    let width = ('!'..='~')
+        .filter_map(|character| font.glyph_size(character).map(|size| size.0))
+        .max()
+        .unwrap_or(0);
+    (width, font.max_height())
+}
+
 /// Load fonts from an archive using unarc-rs via `FileFormat`
 fn load_fonts_from_archive(data: &[u8], format: &FileFormat, fonts: &mut Vec<Font>) {
     let cursor = Cursor::new(data);
@@ -474,5 +501,6 @@ mod tests {
         let library = TextArtFontLibrary::new();
         assert!(!library.has_fonts());
         assert_eq!(library.font_count(), 0);
+        assert!(library.font_dimensions(0).is_none());
     }
 }
