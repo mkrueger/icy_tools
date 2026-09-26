@@ -341,7 +341,8 @@ fn append_sgr_color(params: &mut Vec<String>, color: icy_engine::AttributeColor,
 /// Messages sent to the terminal thread
 #[derive(Debug, Clone)]
 pub enum TerminalCommand {
-    Connect(ConnectionConfig),
+    // Large payloads are boxed to keep every command small.
+    Connect(Box<ConnectionConfig>),
     OpenSerial(Serial),
     AutoDetectSerial(Serial),
     Disconnect,
@@ -352,7 +353,7 @@ pub enum TerminalCommand {
     Resize(u16, u16),
     SetBaudEmulation(BaudEmulation),
     SetTerminalProfile {
-        profile: crate::Address,
+        profile: Box<crate::Address>,
         scrollback: usize,
     },
     StartCapture(String),
@@ -803,7 +804,7 @@ impl TerminalThread {
                 let password = config.password.clone();
                 let terminal_type = config.terminal_type;
 
-                match self.connect(config).await {
+                match self.connect(*config).await {
                     Ok(()) => {
                         if let Some(commands) = commands {
                             self.auto_login(&commands, user_name, password, terminal_type).await;

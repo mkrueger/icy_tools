@@ -554,7 +554,7 @@ impl TerminalApp {
             self.connected_size = config.window_size;
             self.terminal_emulation = config.terminal_type;
             self.connecting = true;
-            self.command(icy_term::TerminalCommand::Connect(config), context);
+            self.command(icy_term::TerminalCommand::Connect(Box::new(config)), context);
             return;
         }
         self.session = None;
@@ -724,9 +724,9 @@ impl TerminalApp {
                 || ui.input(|input| input.modifiers.shift)
         };
         if self.connected && local_wheel {
-            if wheel > 0.0 && !self.terminal.is_in_scrollback_mode() {
-                self.toggle_scrollback();
-            } else if wheel < 0.0 && self.terminal.is_in_scrollback_mode() && self.terminal.scroll_y() >= self.terminal.max_scroll_y() - 1.0 {
+            let scrollback = self.terminal.is_in_scrollback_mode();
+            // Wheel up enters the scrollback; wheel down past its end leaves it.
+            if (wheel > 0.0 && !scrollback) || (wheel < 0.0 && scrollback && self.terminal.scroll_y() >= self.terminal.max_scroll_y() - 1.0) {
                 self.toggle_scrollback();
             }
         }

@@ -225,7 +225,7 @@ impl DialingDirectory {
                             );
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icon_button(ui, &self.icons.as_ref().unwrap().close, &*tr!("egui-close")).clicked() {
+                            if icon_button(ui, &self.icons.as_ref().unwrap().close, &tr!("egui-close")).clicked() {
                                 self.close();
                             }
                         });
@@ -763,7 +763,7 @@ impl DialingDirectory {
                         self.show_password = false;
                     }
                     ui.add_enabled_ui(!remote, |ui| {
-                        if icon_button(ui, &self.icons.as_ref().unwrap().delete, &*tr!("egui-delete-entry")).clicked() {
+                        if icon_button(ui, &self.icons.as_ref().unwrap().delete, &tr!("egui-delete-entry")).clicked() {
                             self.confirmation = Some(Confirmation::Delete);
                         }
                     });
@@ -1315,27 +1315,27 @@ mod tests {
             ..Default::default()
         };
         let context = egui::Context::default();
-        click(&mut dialog, &context, &*tr!("egui-edit"));
+        click(&mut dialog, &context, &tr!("egui-edit"));
         assert!(dialog.phonebook.as_ref().unwrap().draft.is_some());
         dialog.phonebook.as_mut().unwrap().draft.as_mut().unwrap().system_name = "Renamed BBS".into();
-        click(&mut dialog, &context, &*tr!("egui-save"));
+        click(&mut dialog, &context, &tr!("egui-save"));
         assert_eq!(dialog.phonebook.as_ref().unwrap().selection().unwrap().system_name, "Renamed BBS");
-        click(&mut dialog, &context, &*tr!("dialing_directory-duplicate"));
+        click(&mut dialog, &context, &tr!("dialing_directory-duplicate"));
         assert!(dialog.phonebook.as_ref().unwrap().selected.is_none());
         frame(&mut dialog, &context, vec![]);
         assert!(
             dialog.phonebook.as_ref().unwrap().selected.is_none(),
             "layout must not reselect an existing entry during creation"
         );
-        click(&mut dialog, &context, &*tr!("egui-save"));
+        click(&mut dialog, &context, &tr!("egui-save"));
         assert_eq!(dialog.phonebook.as_ref().unwrap().book.addresses.len(), 2);
-        click(&mut dialog, &context, &*tr!("egui-edit"));
+        click(&mut dialog, &context, &tr!("egui-edit"));
         dialog.close();
         assert!(dialog.open);
-        click(&mut dialog, &context, &*tr!("egui-cancel"));
+        click(&mut dialog, &context, &tr!("egui-cancel"));
         assert!(dialog.open && dialog.phonebook.as_ref().unwrap().draft.is_some());
         dialog.close();
-        click(&mut dialog, &context, &*tr!("egui-discard-close"));
+        click(&mut dialog, &context, &tr!("egui-discard-close"));
         assert!(!dialog.open);
     }
 
@@ -1350,7 +1350,7 @@ mod tests {
             ..Default::default()
         };
         let context = egui::Context::default();
-        let request = click(&mut dialog, &context, &*tr!("dialing_directory-connect-button")).unwrap();
+        let request = click(&mut dialog, &context, &tr!("dialing_directory-connect-button")).unwrap();
         let DialRequest::Entry(entry, _) = request else {
             panic!("Expected selected profile");
         };
@@ -1358,10 +1358,10 @@ mod tests {
         assert!(!dialog.open);
         dialog.open = true;
         dialog.confirmation = Some(Confirmation::Delete);
-        click(&mut dialog, &context, &*tr!("egui-cancel"));
+        click(&mut dialog, &context, &tr!("egui-cancel"));
         assert_eq!(dialog.phonebook.as_ref().unwrap().book.addresses.len(), 1);
         dialog.confirmation = Some(Confirmation::Delete);
-        click(&mut dialog, &context, &*tr!("egui-delete"));
+        click(&mut dialog, &context, &tr!("egui-delete"));
         assert!(dialog.phonebook.as_ref().unwrap().book.addresses.is_empty());
     }
 
@@ -1377,10 +1377,10 @@ mod tests {
             ..Default::default()
         };
         let context = egui::Context::default();
-        click(&mut dialog, &context, &*tr!("egui-edit"));
-        click(&mut dialog, &context, &*tr!("settings-terminal-category"));
-        click(&mut dialog, &context, &*tr!("egui-mouse-reporting"));
-        click(&mut dialog, &context, &*tr!("egui-save"));
+        click(&mut dialog, &context, &tr!("egui-edit"));
+        click(&mut dialog, &context, &tr!("settings-terminal-category"));
+        click(&mut dialog, &context, &tr!("egui-mouse-reporting"));
+        click(&mut dialog, &context, &tr!("egui-save"));
         let book = dialog.phonebook.as_ref().unwrap();
         let loaded = Phonebook::load(book.path().to_path_buf()).unwrap();
         assert_eq!(loaded.selection().unwrap().mouse_reporting_enabled, !before);
@@ -1476,18 +1476,18 @@ mod tests {
             ..Default::default()
         };
         let context = egui::Context::default();
-        click(&mut dialog, &context, &*tr!("egui-edit"));
-        click(&mut dialog, &context, &*tr!("egui-direct-connection"));
+        click(&mut dialog, &context, &tr!("egui-edit"));
+        click(&mut dialog, &context, &tr!("egui-direct-connection"));
         click(&mut dialog, &context, "Tor (SOCKS5)");
-        click(&mut dialog, &context, &*tr!("egui-colors"));
-        click(&mut dialog, &context, &*tr!("dialing_directory-custom-palette"));
-        click(&mut dialog, &context, &*tr!("egui-login"));
+        click(&mut dialog, &context, &tr!("egui-colors"));
+        click(&mut dialog, &context, &tr!("dialing_directory-custom-palette"));
+        click(&mut dialog, &context, &tr!("egui-login"));
         let (output, _) = frame(&mut dialog, &context, vec![]);
         assert!(!output
             .shapes
             .iter()
             .any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text().contains("test-secret"))));
-        click(&mut dialog, &context, &*tr!("egui-save"));
+        click(&mut dialog, &context, &tr!("egui-save"));
         let book = dialog.phonebook.as_ref().unwrap();
         let loaded = Phonebook::load(book.path().to_path_buf()).unwrap();
         let entry = loaded.selection().unwrap();
@@ -1531,7 +1531,7 @@ mod tests {
             ..Default::default()
         };
         let context = egui::Context::default();
-        click(&mut dialog, &context, &*tr!("egui-edit"));
+        click(&mut dialog, &context, &tr!("egui-edit"));
         let (output, _) = frame(&mut dialog, &context, vec![]);
         assert!(!output
             .shapes
@@ -1556,7 +1556,7 @@ mod tests {
         };
         let context = egui::Context::default();
         click(&mut dialog, &context, &tr!("dialing_directory-connect-to-address"));
-        let request = click(&mut dialog, &context, &*tr!("egui-quick-connect")).unwrap();
+        let request = click(&mut dialog, &context, &tr!("egui-quick-connect")).unwrap();
         assert!(matches!(request, DialRequest::Quick(entry, _) if entry.address == "raw://localhost:2323"));
         assert!(!dialog.open);
     }
@@ -1628,7 +1628,7 @@ mod tests {
         };
         let details = bar_y(&mut dialog, &tr!("egui-edit"));
         assert!(details > 700.0, "details bar is not at the bottom: {details}");
-        click(&mut dialog, &context, &*tr!("egui-edit"));
+        click(&mut dialog, &context, &tr!("egui-edit"));
         let editor = bar_y(&mut dialog, &tr!("egui-save"));
         dialog.phonebook.as_mut().unwrap().draft = None;
         dialog.quick_selected = true;
@@ -1857,11 +1857,11 @@ mod tests {
         };
         let context = egui::Context::default();
         click(&mut dialog, &context, &tr!("dialing_directory-connect-to-address"));
-        click(&mut dialog, &context, &*tr!("dialing_directory-add-bbs-button"));
+        click(&mut dialog, &context, &tr!("dialing_directory-add-bbs-button"));
         let book = dialog.phonebook.as_ref().unwrap();
         assert_eq!(book.draft.as_ref().unwrap().address, "ws://localhost:2323/terminal");
         assert!(book.book.addresses.is_empty());
-        click(&mut dialog, &context, &*tr!("egui-save"));
+        click(&mut dialog, &context, &tr!("egui-save"));
         assert_eq!(
             dialog.phonebook.as_ref().unwrap().selection().unwrap().protocol,
             icy_net::ConnectionType::Websocket

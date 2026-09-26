@@ -390,7 +390,7 @@ impl MainWindow {
                     cache_directory: address.get_cache_directory(),
                 };
 
-                let _ = self.terminal_tx.send(TerminalCommand::Connect(config));
+                let _ = self.terminal_tx.send(TerminalCommand::Connect(Box::new(config)));
                 self.terminal_window.connect(Some(address.clone()));
                 self.current_address = Some(address);
                 self.state.mode = MainWindowMode::ShowTerminal;

@@ -6,8 +6,11 @@ use icy_term::{Address, TerminalCommand};
 
 use super::appearance;
 
+/// A titled group of `(label, value, note)` rows.
+type Group = (String, Vec<(String, String, String)>);
+
 pub struct Dialog {
-    groups: Vec<(String, Vec<(String, String, String)>)>,
+    groups: Vec<Group>,
     profile: Address,
     original: (TerminalEmulation, ScreenMode, MusicOption),
     kitty_flags_description: String,
@@ -246,7 +249,7 @@ impl Dialog {
             Some(Info::Apply) => {
                 self.closed = true;
                 return Some(TerminalCommand::SetTerminalProfile {
-                    profile: self.profile.clone(),
+                    profile: Box::new(self.profile.clone()),
                     scrollback,
                 });
             }

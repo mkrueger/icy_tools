@@ -129,7 +129,7 @@ impl ProfileEditor {
 
     fn connection(&mut self, ui: &mut egui::Ui, entry: &mut Address, options: &Options, show_password: bool, icons: &mut super::IconCache, quick: bool) {
         if !quick {
-            text_field(ui, &*tr!("egui-system-name"), &mut entry.system_name);
+            text_field(ui, &tr!("egui-system-name"), &mut entry.system_name);
             icon_row(ui, entry, icons);
         }
         let address_id = ui.make_persistent_id("profile-address");
@@ -212,12 +212,12 @@ impl ProfileEditor {
                 self.proxy_password.clear();
             }
             if let Some(proxy) = &mut entry.proxy {
-                text_field(ui, &*tr!("dialing_directory-proxy-host"), &mut proxy.host);
+                text_field(ui, &tr!("dialing_directory-proxy-host"), &mut proxy.host);
                 appearance::form_row(ui, &tr!("egui-port"), |ui| {
                     ui.add(egui::DragValue::new(&mut proxy.port).range(1..=65535));
                 });
                 let mut user = proxy.username.clone().unwrap_or_default();
-                text_field(ui, &*tr!("egui-proxy-user"), &mut user);
+                text_field(ui, &tr!("egui-proxy-user"), &mut user);
                 proxy.username = (!user.is_empty()).then_some(user);
                 ui.label(&*tr!("egui-proxy-password"));
                 if ui
@@ -242,7 +242,7 @@ impl ProfileEditor {
             }
         }
         if entry.protocol == ConnectionType::SSH {
-            text_field(ui, &*tr!("egui-proxy-command"), &mut entry.proxy_command);
+            text_field(ui, &tr!("egui-proxy-command"), &mut entry.proxy_command);
         }
         if matches!(entry.protocol, ConnectionType::Websocket | ConnectionType::SecureWebsocket) && entry.proxy.is_some() {
             ui.colored_label(ui.visuals().warn_fg_color, &*tr!("egui-websocket-proxy-error"));
@@ -373,7 +373,7 @@ pub(crate) fn terminal(ui: &mut egui::Ui, entry: &mut Address) {
 }
 
 fn login(ui: &mut egui::Ui, entry: &mut Address, show_password: &mut bool, eye: &egui::TextureHandle) {
-    text_field(ui, &*tr!("egui-user-name"), &mut entry.user_name);
+    text_field(ui, &tr!("egui-user-name"), &mut entry.user_name);
     appearance::form_row(ui, &tr!("dialing_directory-password"), |ui| {
         ui.horizontal(|ui| {
             // desired_width covers the text area only, so leave room for the field's own padding.
@@ -406,7 +406,7 @@ fn login(ui: &mut egui::Ui, entry: &mut Address, show_password: &mut bool, eye: 
             }
         });
         if matches!(entry.ssh_authentication, SshAuthenticationMode::PrivateKey | SshAuthenticationMode::Auto) {
-            text_field(ui, &*tr!("dialing_directory-ssh-private-key"), &mut entry.ssh_private_key);
+            text_field(ui, &tr!("dialing_directory-ssh-private-key"), &mut entry.ssh_private_key);
             if ui.button(&*tr!("egui-browse")).clicked() && !ui.ctx().will_discard() {
                 if let Some(path) = rfd::FileDialog::new().set_title(&*tr!("egui-select-ssh-key")).pick_file() {
                     entry.ssh_private_key = path.to_string_lossy().into();
@@ -422,7 +422,7 @@ fn login(ui: &mut egui::Ui, entry: &mut Address, show_password: &mut bool, eye: 
         }
     }
     ui.separator();
-    text_field(ui, &*tr!("egui-auto-login-expression"), &mut entry.auto_login);
+    text_field(ui, &tr!("egui-auto-login-expression"), &mut entry.auto_login);
     egui::ComboBox::from_id_salt("auto-login-presets")
         .selected_text(&*tr!("egui-login-presets"))
         .show_ui(ui, |ui| {

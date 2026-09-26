@@ -19,7 +19,7 @@ pub struct Session {
 impl Session {
     pub fn start(screen: Arc<Mutex<Box<dyn Screen>>>, config: ConnectionConfig, context: egui::Context) -> Self {
         let session = Self::idle(screen, context);
-        let _ = session.command(TerminalCommand::Connect(config));
+        let _ = session.command(TerminalCommand::Connect(Box::new(config)));
         session
     }
 
@@ -553,7 +553,12 @@ mod tests {
         profile.ice_mode = true;
         profile.mouse_reporting_enabled = true;
         profile.set_lf_expand(false);
-        session.command(TerminalCommand::SetTerminalProfile { profile, scrollback: 123 }).unwrap();
+        session
+            .command(TerminalCommand::SetTerminalProfile {
+                profile: Box::new(profile),
+                scrollback: 123,
+            })
+            .unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             if matches!(

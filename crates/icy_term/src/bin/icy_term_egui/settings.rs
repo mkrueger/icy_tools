@@ -377,9 +377,10 @@ impl Settings {
                     self.invalid_commands.clear();
                 }
                 if ui.button(&*tr!("egui-add-modem")).clicked() {
-                    let mut modem = icy_net::modem::ModemConfiguration::default();
-                    modem.name = format!("Modem {}", options.modems.len() + 1);
-                    options.modems.push(modem);
+                    options.modems.push(icy_net::modem::ModemConfiguration {
+                        name: format!("Modem {}", options.modems.len() + 1),
+                        ..Default::default()
+                    });
                 }
             }
             Page::Protocols => {
@@ -602,7 +603,7 @@ fn path_field(ui: &mut egui::Ui, label: &str, value: &mut String) {
 
 pub fn serial_fields(ui: &mut egui::Ui, serial: &mut icy_net::serial::Serial) {
     use icy_net::serial::{CharSize, FlowControl, Parity, StopBits};
-    text_field(ui, &*tr!("settings-modem-device"), &mut serial.device);
+    text_field(ui, &tr!("settings-modem-device"), &mut serial.device);
     super::appearance::form_row(ui, &tr!("egui-baud-rate"), |ui| {
         ui.add(egui::DragValue::new(&mut serial.baud_rate).range(50..=4_000_000));
     });
@@ -815,8 +816,10 @@ mod tests {
     #[test]
     fn opening_settings_uses_disk_values_and_preserves_unknown_tables() {
         let path = std::env::temp_dir().join(format!("icy-settings-current-{}.toml", fastrand::u64(..)));
-        let mut current = Options::default();
-        current.master_volume = 0.2;
+        let current = Options {
+            master_volume: 0.2,
+            ..Default::default()
+        };
         let mut original = toml::Value::try_from(&current).unwrap();
         original
             .as_table_mut()

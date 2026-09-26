@@ -592,10 +592,12 @@ mod mouse_tests {
     #[test]
     fn mouse_reports_respect_scale_profile_and_shift() {
         let context = egui::Context::default();
-        let mut state = icy_engine::MouseState::default();
-        state.mouse_tracking_enabled = true;
-        state.mouse_mode = icy_engine::MouseMode::VT200;
-        state.extended_mode = icy_engine::ExtMouseMode::SGR;
+        let mut state = icy_engine::MouseState {
+            mouse_tracking_enabled: true,
+            mouse_mode: icy_engine::MouseMode::VT200,
+            extended_mode: icy_engine::ExtMouseMode::SGR,
+            ..Default::default()
+        };
         let render = icy_engine_gui::terminal::RenderInfo {
             display_scale: 2.0,
             font_width: 8.0,

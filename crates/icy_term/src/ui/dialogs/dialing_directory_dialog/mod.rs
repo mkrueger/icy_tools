@@ -682,6 +682,7 @@ impl ProxyPreset {
     pub const OPTIONS: [ProxyPreset; 4] = [ProxyPreset::None, ProxyPreset::Tor, ProxyPreset::I2p, ProxyPreset::Custom];
 
     /// Derive the preset currently represented by an address' proxy config.
+    #[must_use]
     pub fn from_config(proxy: Option<&icy_net::proxy::ProxyConfig>) -> ProxyPreset {
         match proxy {
             None => ProxyPreset::None,

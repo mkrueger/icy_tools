@@ -121,11 +121,9 @@ impl Transfers {
                 self.active = false;
                 self.capture = None;
             }
-            TerminalEvent::Error(title, detail) => {
-                if self.active {
-                    self.active = false;
-                    self.result = Some(format!("{title}: {detail}"));
-                }
+            TerminalEvent::Error(title, detail) if self.active => {
+                self.active = false;
+                self.result = Some(format!("{title}: {detail}"));
             }
             _ => {}
         }
@@ -465,7 +463,7 @@ impl Transfers {
             OpenFolder,
             Close,
             ChooseFiles,
-            CancelTransfer,
+            Cancel,
         }
         let title = if self.download { tr!("transfer-download") } else { tr!("transfer-upload") };
         let finished = self.state.as_ref().is_some_and(|state| state.is_finished) || (!self.active && self.result.is_some());
@@ -508,7 +506,7 @@ impl Transfers {
             });
             let mut buttons = Vec::new();
             if self.active {
-                buttons.push(DialogButton::primary(tr!("egui-cancel-transfer"), Transfer::CancelTransfer).cancels());
+                buttons.push(DialogButton::primary(tr!("egui-cancel-transfer"), Transfer::Cancel).cancels());
             } else {
                 if finished && self.download && self.destination.is_some() {
                     buttons.push(DialogButton::secondary(tr!("egui-open-download-folder"), Transfer::OpenFolder).leading());
@@ -524,7 +522,7 @@ impl Transfers {
             dialog.buttons(buttons);
         });
         match response.action {
-            Some(Transfer::CancelTransfer) => self.commands.push(TerminalCommand::CancelTransfer),
+            Some(Transfer::Cancel) => self.commands.push(TerminalCommand::CancelTransfer),
             Some(Transfer::ChooseFiles) => {
                 if let Some(protocol) = self.selected_protocol(options) {
                     self.choose_files(protocol, options);

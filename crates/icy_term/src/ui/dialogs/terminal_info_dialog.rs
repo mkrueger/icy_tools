@@ -225,6 +225,12 @@ impl TerminalInfoDialog {
             CaretShape::Underline => "Underline",
             CaretShape::Bar => "Bar",
         };
+        let kitty_flags = format!(
+            "0x{:02X} {} (depth {})",
+            self.info.kitty_flags,
+            kitty_flags_names(self.info.kitty_flags),
+            self.info.kitty_stack_depth
+        );
 
         format!(
             "Terminal Information\n\
@@ -285,12 +291,7 @@ impl TerminalInfoDialog {
             if self.info.lf_expand { "CR+LF" } else { "LF only" },
             if self.info.bracketed_paste { "On" } else { "Off" },
             if self.info.synchronized_output { "On" } else { "Off" },
-            format!(
-                "0x{:02X} {} (depth {})",
-                self.info.kitty_flags,
-                kitty_flags_names(self.info.kitty_flags),
-                self.info.kitty_stack_depth
-            ),
+            kitty_flags,
             if self.info.sixel_at_cursor { "Cursor" } else { "Origin" },
             if self.info.sixel_shared_palette { "Shared" } else { "Private" },
             if self.info.jxl_supported { "Yes" } else { "No" },

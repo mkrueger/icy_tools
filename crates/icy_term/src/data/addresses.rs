@@ -424,7 +424,7 @@ impl From<ConnectionInformation> for Address {
     fn from(info: ConnectionInformation) -> Self {
         let time = Utc::now();
         unsafe {
-            current_id = current_id.wrapping_add(1);
+            CURRENT_ID = CURRENT_ID.wrapping_add(1);
         }
 
         // Build the address string (host:port)
@@ -526,7 +526,7 @@ fn is_zero(n: &usize) -> bool {
 
 const TEMPLATE: &str = include_str!("default_phonebook.toml");
 
-static mut current_id: usize = 0;
+static mut CURRENT_ID: usize = 0;
 
 impl Address {
     fn cache_key(address: &str) -> String {
@@ -544,7 +544,7 @@ impl Address {
     pub fn new(system_name: impl Into<String>) -> Self {
         let time = Utc::now();
         unsafe {
-            current_id = current_id.wrapping_add(1);
+            CURRENT_ID = CURRENT_ID.wrapping_add(1);
         }
 
         Self {
@@ -706,7 +706,7 @@ pub fn start_watch_thread() {
     }
 }
 
-pub static vga_regex: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| Regex::new("vga\\((\\d+),\\s*(\\d+)\\)").unwrap());
+pub static VGA_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| Regex::new("vga\\((\\d+),\\s*(\\d+)\\)").unwrap());
 
 #[cfg(test)]
 mod tests {

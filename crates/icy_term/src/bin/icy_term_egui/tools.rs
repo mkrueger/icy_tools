@@ -119,7 +119,7 @@ impl Tools {
             });
             if response.action == Some(true) {
                 self.commands.push(TerminalCommand::SetTerminalProfile {
-                    profile: profile.clone(),
+                    profile: Box::new(profile.clone()),
                     scrollback: self.scrollback,
                 });
             }
