@@ -138,6 +138,33 @@ fn test_palette_color_bug() {
 
     assert_eq!(" \u{1b}[1;211;211;211tA ", str);
 }
+
+#[test]
+fn test_last_row_of_coloured_spaces_survives_export() {
+    use icy_engine::formats::{AnsiCompatibilityLevel, AnsiFormatOptions, FormatOptions};
+
+    // A closing bar made of spaces on a blue background as the last row.
+    let mut buf = TextBuffer::new((80, 3));
+    buf.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::default()));
+    for x in 0..80 {
+        buf.layers[0].set_char((x, 2), AttributedChar::new(' ', TextAttribute::new(7, 1)));
+    }
+    assert_eq!(3, buf.line_count());
+
+    for level in [AnsiCompatibilityLevel::AnsiSys, AnsiCompatibilityLevel::Vt100, AnsiCompatibilityLevel::IcyTerm] {
+        let mut options = SaveOptions::new();
+        options.format = FormatOptions::Ansi(AnsiFormatOptions::new(level));
+        let bytes = FileFormat::Ansi.to_bytes(&buf, &options).unwrap();
+
+        let reloaded = FileFormat::Ansi.from_bytes(&bytes, None).unwrap().screen.buffer;
+        assert_eq!(3, reloaded.line_count(), "{level:?}: {:?}", String::from_utf8_lossy(&bytes));
+        for x in 0..80 {
+            let ch = reloaded.char_at((x, 2).into());
+            assert_eq!(1, ch.attribute.background(), "{level:?}: background lost at {x},2");
+        }
+    }
+}
+
 /*
 #[cfg(test)]
 fn crop2_loaded_file(result: &mut dyn Screen) {
@@ -275,6 +302,64 @@ pub(crate) fn compare_buffers(buf_old: &TextBuffer, buf_new: &TextBuffer, compar
     }
 }
 
+/// Returns the parameter lists of all SGR (`CSI ... m`) sequences in `data`.
+fn sgr_params(data: &[u8]) -> Vec<Vec<u32>> {
+    let mut result = Vec::new();
+    let mut i = 0;
+    while i + 1 < data.len() {
+        if data[i] == 0x1B && data[i + 1] == b'[' {
+            let start = i + 2;
+            let mut end = start;
+            while end < data.len() && !data[end].is_ascii_alphabetic() {
+                end += 1;
+            }
+            if data.get(end) == Some(&b'm') {
+                let params = std::str::from_utf8(&data[start..end]).unwrap();
+                result.push(params.split(';').map(|p| p.parse::<u32>().unwrap_or(0)).collect());
+            }
+            i = end + 1;
+        } else {
+            i += 1;
+        }
+    }
+    result
+}
+
+#[test]
+fn test_ansi_sys_has_no_ice_mode_switch() {
+    use icy_engine::formats::{AnsiCompatibilityLevel, AnsiFormatOptions, FormatOptions};
+
+    // White on a bright red background needs iCE colors.
+    let mut buf = TextBuffer::new((80, 1));
+    buf.ice_mode = icy_engine::IceMode::Ice;
+    buf.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::new(15, 12)));
+
+    let mut options = SaveOptions::new();
+    options.format = FormatOptions::Ansi(AnsiFormatOptions::new(AnsiCompatibilityLevel::AnsiSys));
+    options.sauce = Some(icy_engine::SauceMetaData::default());
+    let bytes = FileFormat::Ansi.to_bytes(&buf, &options).unwrap();
+    assert!(
+        !bytes.windows(3).any(|w| w == b"\x1b[?"),
+        "ANSI.SYS output contains a private sequence: {:?}",
+        String::from_utf8_lossy(&bytes)
+    );
+    assert!(
+        sgr_params(&bytes).iter().any(|p| p.contains(&5)),
+        "bright background not encoded as blink: {:?}",
+        String::from_utf8_lossy(&bytes)
+    );
+
+    // The SAUCE iCE flag carries the intent.
+    let reloaded = FileFormat::Ansi.from_bytes(&bytes, None).unwrap().screen.buffer;
+    assert_eq!(icy_engine::IceMode::Ice, reloaded.ice_mode);
+    assert_eq!(12, reloaded.char_at((0, 0).into()).attribute.background());
+
+    options.format = FormatOptions::Ansi(AnsiFormatOptions::new(AnsiCompatibilityLevel::IcyTerm));
+    let bytes = FileFormat::Ansi.to_bytes(&buf, &options).unwrap();
+    assert!(bytes.windows(6).any(|w| w == b"\x1b[?33h"), "{:?}", String::from_utf8_lossy(&bytes));
+    assert!(bytes.windows(6).any(|w| w == b"\x1b[?33l"), "{:?}", String::from_utf8_lossy(&bytes));
+}
+
 /// Returns `true` if any line break is emitted while a background color (or blink,
 /// which encodes bright backgrounds in iCE mode) is active.
 fn has_background_at_line_break(data: &[u8]) -> bool {
@@ -389,4 +474,78 @@ fn test_pablodraw_true_color_export_dos_colors() {
     // Binary formats get the closest DOS attribute as well: bright cyan on magenta.
     let bytes = FileFormat::Bin.to_bytes(&buf, &SaveOptions::new()).unwrap();
     assert_eq!(&[b'X', 0x5B], &bytes[..2]);
+}
+
+/// Buffer with every row filled with its own letter ('A', 'B', ...).
+fn full_rows_buffer(width: i32, height: i32) -> TextBuffer {
+    let mut buf = TextBuffer::new((width, height));
+    for y in 0..height {
+        for x in 0..width {
+            buf.layers[0].set_char((x, y), AttributedChar::new((b'A' + y as u8) as char, TextAttribute::default()));
+        }
+    }
+    buf
+}
+
+fn save_with_line_break(buf: &TextBuffer, line_break: icy_engine::LineBreakBehavior, terminal_width: Option<u16>) -> Vec<u8> {
+    use icy_engine::formats::{AnsiCompatibilityLevel, AnsiFormatOptions, FormatOptions};
+
+    let mut ansi = AnsiFormatOptions::new(AnsiCompatibilityLevel::AnsiSys);
+    ansi.line_break = line_break;
+    ansi.terminal_width = terminal_width;
+    let mut options = SaveOptions::new();
+    options.format = FormatOptions::Ansi(ansi);
+    FileFormat::Ansi.to_bytes(buf, &options).unwrap()
+}
+
+fn assert_rows_match(expected: &TextBuffer, actual: &TextBuffer) {
+    for y in 0..expected.height() {
+        for x in 0..expected.width() {
+            assert_eq!(expected.char_at((x, y).into()).ch, actual.char_at((x, y).into()).ch, "at {x},{y}");
+        }
+    }
+}
+
+#[test]
+fn test_force_line_breaks_narrow_buffer() {
+    let buf = full_rows_buffer(16, 12);
+    let bytes = save_with_line_break(&buf, icy_engine::LineBreakBehavior::Force, None);
+    let rows: Vec<&[u8]> = bytes.split(|&b| b == b'\n').collect();
+    assert_eq!(12, rows.len(), "{:?}", String::from_utf8_lossy(&bytes));
+    for (y, row) in rows.iter().enumerate() {
+        let text = row.strip_suffix(b"\r").unwrap_or(row);
+        assert_eq!(vec![b'A' + y as u8; 16], text, "row {y}: {:?}", String::from_utf8_lossy(row));
+        assert_eq!(y + 1 < rows.len(), text.len() < row.len(), "row {y} must end in CR LF");
+    }
+
+    // An 80 column terminal (the default load width) shows the same rows.
+    let reloaded = FileFormat::Ansi.from_bytes(&bytes, None).unwrap().screen.buffer;
+    assert_rows_match(&buf, &reloaded);
+}
+
+#[test]
+fn test_terminal_width_narrow_buffer() {
+    let buf = full_rows_buffer(16, 3);
+
+    // Default: the terminal is assumed to be as wide as the buffer (as declared in SAUCE),
+    // full rows rely on autowrap.
+    let bytes = save_with_line_break(&buf, icy_engine::LineBreakBehavior::Wrap, None);
+    assert!(!bytes.contains(&b'\n'), "{:?}", String::from_utf8_lossy(&bytes));
+
+    // On an 80 column terminal the 16 column rows don't wrap by themselves.
+    let bytes = save_with_line_break(&buf, icy_engine::LineBreakBehavior::Wrap, Some(80));
+    assert_eq!(2, bytes.iter().filter(|&&b| b == b'\n').count(), "{:?}", String::from_utf8_lossy(&bytes));
+    let reloaded = FileFormat::Ansi.from_bytes(&bytes, None).unwrap().screen.buffer;
+    assert_rows_match(&buf, &reloaded);
+}
+
+#[test]
+fn test_terminal_width_full_width_rows_unchanged() {
+    let buf = full_rows_buffer(80, 3);
+    let default = save_with_line_break(&buf, icy_engine::LineBreakBehavior::Wrap, None);
+    assert!(!default.contains(&b'\n'), "{:?}", String::from_utf8_lossy(&default));
+    assert_eq!(default, save_with_line_break(&buf, icy_engine::LineBreakBehavior::Wrap, Some(80)));
+
+    let reloaded = FileFormat::Ansi.from_bytes(&default, None).unwrap().screen.buffer;
+    assert_rows_match(&buf, &reloaded);
 }

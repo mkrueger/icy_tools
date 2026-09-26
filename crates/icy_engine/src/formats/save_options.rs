@@ -244,6 +244,11 @@ impl AnsiCompatibilityLevel {
         !matches!(self, Self::AnsiSys)
     }
 
+    /// Returns true if this level supports the private iCE color mode switch (`CSI ? 33 h/l`).
+    pub fn supports_ice_mode_switch(self) -> bool {
+        !matches!(self, Self::AnsiSys)
+    }
+
     /// Returns true if this level supports font page switching.
     pub fn supports_font_pages(self) -> bool {
         matches!(self, Self::IcyTerm | Self::Utf8Terminal)
@@ -362,6 +367,13 @@ pub struct AnsiFormatOptions {
     /// Line break behavior.
     pub line_break: LineBreakBehavior,
 
+    /// Width of the terminal the output is meant for (`None`: same as the buffer width).
+    /// With `LineBreakBehavior::Wrap` a full row is only left to the terminal's
+    /// autowrap if it also fills the terminal, e.g. a 16 column buffer shown on an
+    /// 80 column terminal still gets a line break after each row.
+    #[serde(default)]
+    pub terminal_width: Option<u16>,
+
     /// Line ending style.
     pub line_ending: LineEnding,
 
@@ -391,6 +403,7 @@ impl AnsiFormatOptions {
             screen_prep: ScreenPreperation::None,
             line_length: LineLength::Default,
             line_break: LineBreakBehavior::Wrap,
+            terminal_width: None,
             line_ending: LineEnding::Lf,
             control_char_handling: ControlCharHandling::Ignore,
             sixel: SixelSettings::default(),
@@ -417,7 +430,18 @@ impl AnsiFormatOptions {
 use bstr::BString;
 use icy_sauce::{AspectRatio, BinaryCapabilities, Capabilities, CharacterCapabilities, CharacterFormat, LetterSpacing, SauceRecordBuilder};
 
-use crate::{IceMode, TextBuffer, TextPane};
+use crate::{IceMode, Result, TextBuffer, TextPane};
+
+/// Append `sauce` (EOF marker, optional comment block and record) to `data`.
+///
+/// `FileSize` is set to the length of `data` before the append, i.e. the size of the
+/// file content without the EOF marker and the SAUCE block. Readers such as Moebius
+/// only parse that many bytes of the file.
+pub(crate) fn append_sauce(data: &mut Vec<u8>, sauce: icy_sauce::SauceRecord) -> Result<()> {
+    let file_size = u32::try_from(data.len()).unwrap_or(u32::MAX);
+    sauce.to_builder().file_size(file_size).build().write(data)?;
+    Ok(())
+}
 
 /// Trait to create SAUCE records with appropriate capabilities for different formats.
 pub trait SauceBuilder {

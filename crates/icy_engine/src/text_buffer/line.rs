@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::AttributedChar;
+use crate::AttributeColor;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Line {
@@ -47,15 +48,39 @@ impl Line {
         self.chars[index as usize] = char;
     }
 
+    /// Returns true if no cell of this line would show up when rendered.
+    ///
+    /// Unlike `AttributedChar::is_transparent()` (which treats every space as
+    /// transparent), a space on a coloured background counts as content here,
+    /// so rows like a closing colour bar survive `line_count()` and export.
     pub(crate) fn is_effective_empty(&self) -> bool {
-        if self.chars.is_empty() {
-            return true;
-        }
-        for ch in &self.chars {
-            if !ch.is_transparent() {
-                return false;
-            }
-        }
-        true
+        !self.chars.iter().any(|ch| is_visible_content(*ch))
+    }
+}
+
+/// Returns true if the cell renders visibly on the default (black) screen.
+fn is_visible_content(ch: AttributedChar) -> bool {
+    if !ch.is_visible() {
+        return false;
+    }
+    let attr = ch.attribute;
+    let bg = default_to_black(attr.background_color());
+    // A coloured background is visible even behind a blank glyph.
+    if bg != AttributeColor::Palette(0) {
+        return true;
+    }
+    // In iCE mode blink selects the bright background (DOS colour 8 for black).
+    if attr.is_blinking() {
+        return true;
+    }
+    let is_blank = ch.ch == '\0' || ch.ch == ' ';
+    !is_blank && default_to_black(attr.foreground_color()) != bg
+}
+
+fn default_to_black(color: AttributeColor) -> AttributeColor {
+    if color.is_transparent() {
+        AttributeColor::Palette(0)
+    } else {
+        color
     }
 }

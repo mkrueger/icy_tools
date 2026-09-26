@@ -112,6 +112,12 @@ impl AnsiCompatibilityLevel {
     fn supports_font_pages(self) -> bool {
         matches!(self, Self::IcyTerm | Self::Utf8Terminal)
     }
+
+    /// DOS `ANSI.SYS` knows no private modes; there iCE colors are signalled
+    /// by the SAUCE record only and bright backgrounds stay encoded as blink.
+    fn supports_ice_mode_switch(self) -> bool {
+        !matches!(self, Self::AnsiSys)
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -147,6 +153,16 @@ pub struct AnsiSaveOptions {
     /// When set the ansi engine will generate a gotoxy sequence at each line start
     /// making the file work on longer terminals.
     pub longer_terminal_output: bool,
+
+    /// When set a line break is emitted after every row, even if the row is full
+    /// and the terminal would wrap on its own.
+    #[serde(default)]
+    pub force_line_breaks: bool,
+
+    /// Width of the target terminal; `None` assumes the buffer width.
+    /// Full rows only rely on autowrap if they fill the terminal.
+    #[serde(default)]
+    pub terminal_width: Option<usize>,
 
     /// When set output ignores fg color changes in whitespaces
     /// and bg color changes in blocks.
@@ -194,6 +210,8 @@ impl Default for AnsiSaveOptions {
             preserve_line_length: false,
             output_line_length: None,
             longer_terminal_output: false,
+            force_line_breaks: false,
+            terminal_width: None,
             control_char_handling: ControlCharHandling::Ignore,
             skip_lines: None,
             lossles_output: false,
@@ -260,6 +278,7 @@ impl AnsiSaveOptions {
         };
 
         let longer_terminal_output = matches!(ansi_opts.line_break, super::save_options::LineBreakBehavior::GotoXY);
+        let force_line_breaks = matches!(ansi_opts.line_break, super::save_options::LineBreakBehavior::Force);
 
         Self {
             format_type: 0,
@@ -273,6 +292,8 @@ impl AnsiSaveOptions {
             preserve_line_length,
             output_line_length,
             longer_terminal_output,
+            force_line_breaks,
+            terminal_width: ansi_opts.terminal_width.map(|w| w as usize),
             lossles_output: !options.preprocess.optimize_colors,
             use_extended_colors,
             normalize_whitespaces: options.preprocess.normalize_whitespaces,
@@ -339,9 +360,9 @@ fn save_ansi_v2_internal(buf: &TextBuffer, options: &AnsiSaveOptions) -> Result<
     result.extend(generator.data());
 
     if let Some(meta) = &options.save_sauce {
-        use super::save_options::SauceBuilder;
+        use super::save_options::{append_sauce, SauceBuilder};
         let sauce = buf.build_character_sauce(meta, icy_sauce::CharacterFormat::Ansi);
-        sauce.write(&mut result)?;
+        append_sauce(&mut result, sauce)?;
     }
 
     Ok(result)
@@ -429,7 +450,7 @@ impl StringGeneratorV2 {
     fn screen_prep(&mut self) {
         // When forcing RGB output, iCE mode is unnecessary (and would risk
         // interacting with blink semantics on some terminals).
-        if self.use_ice_colors && !self.options.always_use_rgb {
+        if self.use_ice_colors && !self.options.always_use_rgb && self.level.supports_ice_mode_switch() {
             self.push_bytes(b"\x1b[?33h");
         }
 
@@ -1160,7 +1181,9 @@ impl StringGeneratorV2 {
                 // makes roundtrip-parse comparisons flaky.
                 if y + 1 < cells.len() {
                     let is_full_width = full_width > 0 && len == full_width;
-                    let can_rely_on_autowrap = is_full_width && printed_last_column;
+                    // A row narrower than the viewer's terminal doesn't wrap there.
+                    let fills_terminal = self.options.terminal_width.is_none_or(|w| w == full_width);
+                    let can_rely_on_autowrap = !self.options.force_line_breaks && is_full_width && fills_terminal && printed_last_column;
 
                     // If we printed the last column, many parsers/emulators will already
                     // advance to the next line due to autowrap. Emitting an explicit CRLF
@@ -1224,7 +1247,7 @@ impl StringGeneratorV2 {
             self.cursor_restore();
         }
 
-        if self.use_ice_colors {
+        if self.use_ice_colors && self.level.supports_ice_mode_switch() {
             self.output.extend_from_slice(b"\x1b[?33l");
         }
     }

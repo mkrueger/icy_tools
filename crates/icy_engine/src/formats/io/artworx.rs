@@ -1,4 +1,4 @@
-use super::super::{apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
+use super::super::{append_sauce, apply_sauce_to_buffer, LoadData, SauceBuilder, SaveOptions};
 use crate::{
     analyze_font_usage, guess_font_name, AttributedChar, BitFont, BufferType, Color, FontMode, IceMode, LoadingError, Palette, Position, Result, SavingError,
     TextAttribute, TextBuffer, TextPane, TextScreen, EGA_PALETTE,
@@ -60,7 +60,7 @@ pub(crate) fn save_artworx(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
     }
     if let Some(meta) = &options.sauce {
         let sauce = buf.build_character_sauce(meta, CharacterFormat::Ansi);
-        sauce.write(&mut result)?;
+        append_sauce(&mut result, sauce)?;
     }
     Ok(result)
 }
