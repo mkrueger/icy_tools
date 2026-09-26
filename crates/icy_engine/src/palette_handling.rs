@@ -619,6 +619,41 @@ pub const DOS_DEFAULT_PALETTE: [Color; 16] = [
     Color { name: None, r: 0xFF, g: 0xFF, b: 0xFF }, // 15: White
 ];
 
+/// Returns the index of the `DOS_DEFAULT_PALETTE` color that is perceptually closest to `rgb`.
+///
+/// Uses the "redmean" weighted euclidean distance, see <https://www.compuphase.com/cmetric.htm>.
+pub fn nearest_dos_color(rgb: (u8, u8, u8)) -> usize {
+    let distance = |c: &Color| {
+        let r_mean = c.r.midpoint(rgb.0) as i32;
+        let r = c.r as i32 - rgb.0 as i32;
+        let g = c.g as i32 - rgb.1 as i32;
+        let b = c.b as i32 - rgb.2 as i32;
+        (((512 + r_mean) * r * r) >> 8) + 4 * g * g + (((767 - r_mean) * b * b) >> 8)
+    };
+    DOS_DEFAULT_PALETTE.iter().enumerate().min_by_key(|(_, c)| distance(c)).map_or(0, |(i, _)| i)
+}
+
+#[cfg(test)]
+mod nearest_dos_color_tests {
+    use super::{nearest_dos_color, DOS_DEFAULT_PALETTE};
+
+    #[test]
+    fn dos_colors_map_to_themselves() {
+        for (i, c) in DOS_DEFAULT_PALETTE.iter().enumerate() {
+            assert_eq!(nearest_dos_color(c.rgb()), i);
+        }
+    }
+
+    #[test]
+    fn pablodraw_colors_map_to_dos_colors() {
+        // PabloDraw uses 0/87/171/255 instead of 0/85/170/255.
+        assert_eq!(nearest_dos_color((87, 255, 255)), 11);
+        assert_eq!(nearest_dos_color((87, 87, 87)), 8);
+        assert_eq!(nearest_dos_color((171, 87, 0)), 6);
+        assert_eq!(nearest_dos_color((255, 87, 255)), 13);
+    }
+}
+
 //  New palette from Petmate 9
 #[rustfmt::skip]
 pub const C64_DEFAULT_PALETTE: [Color; 16] = [
