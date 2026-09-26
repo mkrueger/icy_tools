@@ -90,6 +90,7 @@ once_cell = { workspace = true }
 tokio = { workspace = true }
 
 # Utilities
+chrono = { workspace = true }
 directories = { workspace = true }
 semver = { workspace = true }
 thiserror = { workspace = true }

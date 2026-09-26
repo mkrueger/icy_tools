@@ -1034,3 +1034,185 @@ fn insert_image_creates_a_floating_image_layer() {
     assert_eq!(role, icy_engine::Role::Image);
     assert_eq!(sixels, 1);
 }
+
+fn pump_until(context: &egui::Context, app: &mut DrawApp, what: &str, mut done: impl FnMut(&mut DrawApp) -> bool) {
+    for _ in 0..300 {
+        frame(context, app, egui::vec2(1280.0, 820.0), vec![]);
+        if done(app) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("timed out waiting for {what}");
+}
+
+fn wait_for_event(
+    runtime: &tokio::runtime::Runtime,
+    events: &mut tokio::sync::mpsc::Receiver<icy_engine_edit::collaboration::CollaborationEvent>,
+    what: &str,
+    mut matches: impl FnMut(&icy_engine_edit::collaboration::CollaborationEvent) -> bool,
+) {
+    let found = runtime.block_on(async {
+        tokio::time::timeout(std::time::Duration::from_secs(6), async {
+            while let Some(event) = events.recv().await {
+                if matches(&event) {
+                    return true;
+                }
+            }
+            false
+        })
+        .await
+        .unwrap_or(false)
+    });
+    assert!(found, "peer never received {what}");
+}
+
+#[test]
+fn collaboration_session_syncs_document_chat_and_cursors() {
+    use icy_engine_edit::collaboration::{self as collaboration, Block, ClientConfig, CollaborationEvent, CursorMode, ServerConfig};
+
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    runtime.spawn(collaboration::run_server(ServerConfig {
+        bind_addr: format!("127.0.0.1:{port}").parse().unwrap(),
+        columns: 40,
+        rows: 10,
+        autosave: icy_engine_edit::collaboration::AutosaveConfig {
+            backup_folder: std::env::temp_dir(),
+            interval: None,
+            ..Default::default()
+        },
+        ..Default::default()
+    }));
+    let url = format!("127.0.0.1:{port}");
+    for _ in 0..100 {
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let (peer, mut peer_events) = runtime
+        .block_on(collaboration::connect(ClientConfig {
+            url: url.clone(),
+            nick: "peer".into(),
+            ..Default::default()
+        }))
+        .unwrap();
+    wait_for_event(&runtime, &mut peer_events, "its own session", |event| {
+        matches!(event, CollaborationEvent::Connected(_))
+    });
+
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.open_connect_dialog();
+    assert!(matches!(app.dialog, Some(Dialog::Connect)));
+    app.dialog = None;
+    app.collab.form.url = url.clone();
+    app.collab.form.nick = "me".into();
+    app.collab.form.group = "crew".into();
+    app.start_collaboration(&context);
+    assert!(app.collab.connecting);
+    assert!(app.settings.collaboration_servers_list().contains(&url));
+    pump_until(&context, &mut app, "the session document", |app| app.collab.active);
+    assert!(app.collab.chat_visible);
+    assert_eq!(app.document.with_state(|state| state.get_buffer().size()), Size::new(40, 10));
+    assert!(app.collab.core.remote_users.values().any(|user| user.user.nick == "peer"));
+    assert!(!app.modified(), "the server owns the shared document");
+    wait_for_event(
+        &runtime,
+        &mut peer_events,
+        "the join",
+        |event| matches!(event, CollaborationEvent::UserJoined(user) if user.nick == "me"),
+    );
+
+    frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![egui::Event::Text("A".into())]);
+    let local_undo = app.document.with_state(|state| state.undo_stack_len());
+    wait_for_event(
+        &runtime,
+        &mut peer_events,
+        "the typed character",
+        |event| matches!(event, CollaborationEvent::Draw { col: 0, row: 0, block } if block.code == 'A' as u32),
+    );
+
+    runtime
+        .block_on(peer.draw(
+            5,
+            2,
+            Block {
+                code: 'Z' as u32,
+                fg: 4,
+                bg: 1,
+            },
+        ))
+        .unwrap();
+    runtime.block_on(peer.send_cursor(3, 4)).unwrap();
+    runtime.block_on(peer.send_chat("hello there".into())).unwrap();
+    pump_until(&context, &mut app, "the peer's edits", |app| {
+        app.collab.core.chat_messages.iter().any(|message| message.text == "hello there")
+    });
+    let ch = app.document.with_state(|state| state.get_buffer().char_at(Position::new(5, 2)));
+    assert_eq!((ch.ch, ch.attribute.foreground(), ch.attribute.background()), ('Z', 4, 1));
+    let peer_user = app.collab.core.remote_users.values().find(|user| user.user.nick == "peer").unwrap();
+    assert_eq!((peer_user.cursor, peer_user.cursor_mode), (Some((3, 4)), CursorMode::Editing));
+    assert_eq!(
+        app.document.with_state(|state| state.undo_stack_len()),
+        local_undo,
+        "remote edits are not undoable locally"
+    );
+
+    runtime.block_on(peer.set_canvas_size(50, 12)).unwrap();
+    pump_until(&context, &mut app, "the remote resize", |app| {
+        app.document.with_state(|state| state.get_buffer().size()) == Size::new(50, 12)
+    });
+    assert!(app
+        .collab
+        .core
+        .chat_messages
+        .iter()
+        .any(|message| message.text.contains("changed the canvas size to 50 × 12")));
+
+    app.document.start_paste("XY", None).unwrap();
+    frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+    wait_for_event(
+        &runtime,
+        &mut peer_events,
+        "the floating paste",
+        |event| matches!(event, CollaborationEvent::PasteAsSelection { blocks, .. } if blocks.data[0].code == 'X' as u32 && blocks.data[1].code == 'Y' as u32),
+    );
+    app.document.paste_action(icy_draw::document::PasteAction::Cancel).unwrap();
+    frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+
+    app.collab.chat_input = "hi peer".into();
+    app.collab.send_chat();
+    assert!(app
+        .collab
+        .core
+        .chat_messages
+        .iter()
+        .any(|message| message.text == "hi peer" && message.nick == "me"));
+    wait_for_event(
+        &runtime,
+        &mut peer_events,
+        "the chat message",
+        |event| matches!(event, CollaborationEvent::Chat(message) if message.text == "hi peer"),
+    );
+
+    app.disconnect_collaboration();
+    assert!(!app.collab.in_session());
+    wait_for_event(&runtime, &mut peer_events, "the leave", |event| {
+        matches!(event, CollaborationEvent::UserLeft { .. })
+    });
+}
+
+#[test]
+fn connecting_offers_to_save_unsaved_work_first() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.document.type_text("KEEP").unwrap();
+    app.open_connect_dialog();
+    assert!(matches!(app.dialog, Some(Dialog::Close)));
+    app.dialog = None;
+    app.complete_close(&context);
+    assert!(matches!(app.dialog, Some(Dialog::Connect)), "discarding continues to the connect dialog");
+}

@@ -334,6 +334,14 @@ impl DrawApp {
             self.dialog = Some(Dialog::Export);
         }
         ui.separator();
+        if self.collab.in_session() {
+            if item(ui, "Disconnect", None, true) {
+                self.disconnect_collaboration();
+            }
+        } else if item(ui, "Connect to Server…", None, true) {
+            self.open_connect_dialog();
+        }
+        ui.separator();
         if item(ui, "New Window", Some(&NEW_WINDOW), true) {
             self.new_window();
         }
@@ -616,6 +624,12 @@ impl DrawApp {
             self.store_line_numbers();
         }
         check_item(ui, "Side Panel", Some(&PANELS), &mut self.show_inspector);
+        if self.collab.active {
+            let mut chat = self.collab.chat_visible;
+            if check_item(ui, "Chat Panel", None, &mut chat) {
+                self.toggle_chat();
+            }
+        }
         ui.separator();
         if item(ui, "Reference Image…", Some(&REFERENCE_IMAGE), true) {
             self.open_reference_image();

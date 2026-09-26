@@ -19,6 +19,8 @@ use std::{
 use super::widgets::{self, Icons};
 #[path = "chrome.rs"]
 mod chrome;
+#[path = "collab.rs"]
+mod collab;
 #[path = "mcp.rs"]
 mod mcp;
 #[path = "menus.rs"]
@@ -51,6 +53,7 @@ enum Dialog {
     ReferenceImage,
     Shortcuts,
     About,
+    Connect,
 }
 enum FileAction {
     Open,
@@ -189,6 +192,7 @@ pub struct DrawApp {
     sender: Sender<Picked>,
     receiver: Receiver<Picked>,
     pending: Option<PathBuf>,
+    pending_connect: bool,
     quitting: bool,
     allow_close: bool,
     continue_after_save: bool,
@@ -238,6 +242,7 @@ pub struct DrawApp {
     reference_path: String,
     pipette_hover: Option<(Position, egui::Modifiers)>,
     pub canvas_rect: egui::Rect,
+    collab: collab::Collaboration,
 }
 
 impl DrawApp {
@@ -258,6 +263,7 @@ impl DrawApp {
             sender,
             receiver,
             pending: None,
+            pending_connect: false,
             quitting: false,
             allow_close: false,
             continue_after_save: false,
@@ -307,6 +313,7 @@ impl DrawApp {
             reference_path: String::new(),
             pipette_hover: None,
             canvas_rect: egui::Rect::NOTHING,
+            collab: collab::Collaboration::default(),
         }
     }
 
@@ -330,7 +337,15 @@ impl DrawApp {
         }
     }
 
+    /// Replacing the document leaves any collaboration session, since the server owns the shared canvas.
     fn replace(&mut self, document: Document) {
+        if self.collab.in_session() {
+            self.collab.disconnect();
+        }
+        self.replace_document(document);
+    }
+
+    fn replace_document(&mut self, document: Document) {
         self.show_start = false;
         self.charfont = None;
         self.animation = None;
@@ -371,6 +386,7 @@ impl DrawApp {
         }
         if self.modified() {
             self.pending = Some(path);
+            self.pending_connect = false;
             self.dialog = Some(Dialog::Close);
             return;
         }
@@ -513,6 +529,8 @@ impl DrawApp {
         if self.quitting {
             self.allow_close = true;
             context.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else if std::mem::take(&mut self.pending_connect) {
+            self.show_connect_dialog();
         } else if let Some(path) = self.pending.take() {
             self.load_path(path);
         } else {
@@ -549,6 +567,10 @@ impl DrawApp {
     }
 
     fn modified(&self) -> bool {
+        // The collaboration server persists the shared document.
+        if self.collab.active {
+            return false;
+        }
         self.document.modified()
             || self.charfont.as_ref().is_some_and(|font| font.modified())
             || self.animation.as_ref().is_some_and(|editor| editor.modified())
@@ -1368,8 +1390,9 @@ impl DrawApp {
                 }
             }
         }
+        let step = egui::vec2(info.font_width, info.font_height * if info.scan_lines { 2.0 } else { 1.0 }) * info.display_scale;
+        self.remote_cursors(ui.ctx(), &painter, origin, step);
         if self.show_line_numbers {
-            let step = egui::vec2(info.font_width, info.font_height * if info.scan_lines { 2.0 } else { 1.0 }) * info.display_scale;
             self.line_numbers(ui, &painter, response.rect, origin, step);
         }
         if blocked {
@@ -1517,6 +1540,7 @@ impl DrawApp {
     fn request_new(&mut self) {
         self.document.finish();
         self.pending = None;
+        self.pending_connect = false;
         self.quitting = false;
         self.dialog = Some(if self.modified() { Dialog::Close } else { Dialog::New });
     }
@@ -1947,6 +1971,7 @@ impl DrawApp {
             Dialog::Shortcuts => keep = !self.shortcuts_dialog(context),
             Dialog::About => keep = !self.about_dialog(context),
             Dialog::ReferenceImage => keep = !self.reference_image_dialog(context),
+            Dialog::Connect => keep = !self.connect_dialog(context),
             Dialog::Monitor => {
                 #[derive(Clone, Copy)]
                 enum Action {
@@ -2730,6 +2755,7 @@ impl DrawApp {
                         if response.action.is_some() || response.dismissed {
                             self.quitting = false;
                             self.pending = None;
+                            self.pending_connect = false;
                             self.continue_after_save = false;
                             keep = false;
                         }
@@ -2746,6 +2772,7 @@ impl DrawApp {
         // Ctrl+Plus/Minus zoom the canvas instead of the whole user interface.
         context.options_mut(|options| options.zoom_with_keyboard = false);
         if !context.will_discard() {
+            self.poll_collaboration();
             while let Some(event) = self.mcp.as_ref().and_then(|bridge| bridge.events.try_recv().ok()) {
                 match event {
                     Ok(command) => self.mcp_command(command),
@@ -2829,6 +2856,7 @@ impl DrawApp {
                 }
             } else {
                 self.continue_after_save = false;
+                self.pending_connect = false;
             }
         }
         let close_requested = context.input(|input| input.viewport().close_requested());
@@ -2866,6 +2894,8 @@ impl DrawApp {
             .or(self.document.path.as_ref());
         let title = if self.show_start {
             "Icy Draw".to_owned()
+        } else if self.collab.active {
+            format!("{} — Icy Draw", self.collab.server)
         } else {
             format!(
                 "{}{} — Icy Draw",
@@ -2956,12 +2986,26 @@ impl DrawApp {
         } else {
             Color32::from_gray(212)
         };
+        if self.collab.active && self.collab.chat_visible {
+            egui::TopBottomPanel::bottom("chat")
+                .resizable(true)
+                .default_height(220.0)
+                .height_range(120.0..=520.0)
+                .frame(egui::Frame::new().fill(panel_fill))
+                .show(context, |ui| {
+                    if blocked {
+                        ui.disable();
+                    }
+                    self.chat_panel(ui);
+                });
+        }
         egui::CentralPanel::default().frame(egui::Frame::new().fill(well)).show(context, |ui| {
             self.canvas(ui, blocked || self.dialog.is_some() || self.picker || self.layer_properties_open())
         });
         if !blocked && !self.layer_properties_open() {
             self.keys(context);
         }
+        self.sync_collaboration();
         self.layer_properties_dialog(context);
         self.dialogs(context);
     }

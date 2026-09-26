@@ -124,12 +124,17 @@ fn signature(buffer: &TextBuffer) -> u64 {
     hash
 }
 
-/// Box-filtered downscale so small previews stay readable.
+/// Box-filtered downscale that fits the longer side into `target` pixels.
 fn downsample(width: usize, height: usize, rgba: &[u8], target: usize) -> Option<egui::ColorImage> {
+    downsample_by(width, height, rgba, width.max(height).div_ceil(target.max(1)).max(1))
+}
+
+/// Box-filtered downscale by an integer `step` so small previews stay readable.
+fn downsample_by(width: usize, height: usize, rgba: &[u8], step: usize) -> Option<egui::ColorImage> {
     if width == 0 || height == 0 || rgba.len() < width * height * 4 {
         return None;
     }
-    let step = width.max(height).div_ceil(target.max(1)).max(1);
+    let step = step.max(1);
     let (columns, rows) = (width.div_ceil(step), height.div_ceil(step));
     let mut image = egui::ColorImage::filled([columns, rows], Color32::BLACK);
     for row in 0..rows {
@@ -167,6 +172,82 @@ fn render(buffer: &TextBuffer, target: usize) -> Option<egui::ColorImage> {
     let options: RenderOptions = Rectangle::from(0, 0, size.width, size.height).into();
     let (pixels, rgba) = buffer.render_to_rgba(&options, false);
     downsample(pixels.width.max(0) as usize, pixels.height.max(0) as usize, &rgba, target)
+}
+
+/// Renders the minimap fitted to `MINIMAP_PIXELS` in width, so tall documents keep
+/// their detail; only documents taller than `max_side` are reduced further.
+fn render_minimap(buffer: &TextBuffer, max_side: usize) -> Option<egui::ColorImage> {
+    let size = buffer.size();
+    if size.width <= 0 || size.height <= 0 {
+        return None;
+    }
+    let options: RenderOptions = Rectangle::from(0, 0, size.width, size.height).into();
+    let (pixels, rgba) = buffer.render_to_rgba(&options, false);
+    let (width, height) = (pixels.width.max(0) as usize, pixels.height.max(0) as usize);
+    let step = width.div_ceil(MINIMAP_PIXELS).max(height.div_ceil(max_side.max(1)));
+    downsample_by(width, height, &rgba, step)
+}
+
+/// Minimap geometry: the image fills the available width and, when taller than the
+/// available area, scrolls proportionally with the canvas so the viewport frame stays visible.
+struct MinimapLayout {
+    area: egui::Rect,
+    image: egui::Rect,
+    frame: egui::Rect,
+    /// Minimap pixels per canvas scroll unit.
+    scale: egui::Vec2,
+    /// Screen y of the frame's top edge at canvas offset zero.
+    base: f32,
+    /// Screen movement of the frame's top edge per vertical canvas scroll unit.
+    track: f32,
+}
+
+impl MinimapLayout {
+    fn new(area: egui::Rect, texture: [usize; 2], content: egui::Vec2, viewport: egui::Vec2, offset: egui::Vec2, max_offset: egui::Vec2) -> Option<Self> {
+        if texture[0] == 0 || texture[1] == 0 || content.x <= 0.0 || content.y <= 0.0 || area.width() <= 0.0 {
+            return None;
+        }
+        let size = egui::vec2(area.width(), area.width() * texture[1] as f32 / texture[0] as f32);
+        let overflow = (size.y - area.height()).max(0.0);
+        let scroll_rate = if overflow > 0.0 && max_offset.y > 0.0 { overflow / max_offset.y } else { 0.0 };
+        let base = if overflow > 0.0 { area.top() } else { area.center().y - size.y / 2.0 };
+        let scroll = (offset.y * scroll_rate).clamp(0.0, overflow);
+        let image = egui::Rect::from_min_size(egui::pos2(area.left(), base - scroll), size);
+        let scale = size / content;
+        let frame = egui::Rect::from_min_size(image.min + offset * scale, (viewport / content).min(egui::Vec2::splat(1.0)) * size);
+        Some(Self {
+            area,
+            image,
+            frame,
+            scale,
+            base,
+            track: scale.y - scroll_rate,
+        })
+    }
+
+    /// Canvas offset that centers the viewport on a minimap point.
+    fn offset_at(&self, point: egui::Pos2, viewport: egui::Vec2) -> egui::Vec2 {
+        (point - self.image.min) / self.scale - viewport / 2.0
+    }
+
+    /// Screen position of the frame's top-left corner for a canvas offset.
+    fn frame_corner(&self, offset: egui::Vec2) -> egui::Pos2 {
+        if self.track > f32::EPSILON {
+            egui::pos2(self.area.left() + offset.x * self.scale.x, self.base + offset.y * self.track)
+        } else {
+            self.image.min + offset * self.scale
+        }
+    }
+
+    /// Canvas offset that moves the frame's top-left corner to `corner`, so dragging the
+    /// frame behaves like a scrollbar thumb even while the minimap scrolls underneath it.
+    fn offset_for_frame(&self, corner: egui::Pos2) -> egui::Vec2 {
+        if self.track > f32::EPSILON {
+            egui::vec2((corner.x - self.area.left()) / self.scale.x, (corner.y - self.base) / self.track)
+        } else {
+            (corner - self.image.min) / self.scale
+        }
+    }
 }
 
 fn layer_preview(buffer: &TextBuffer, index: usize) -> Option<egui::ColorImage> {
@@ -654,6 +735,18 @@ impl DrawApp {
             });
             return;
         }
+        if self.collab.active {
+            // Moebius documents have a single layer, so the session only shows the minimap.
+            egui::Frame::new()
+                .inner_margin(egui::Margin {
+                    left: SECTION_MARGIN,
+                    right: SECTION_MARGIN,
+                    top: 2,
+                    bottom: 10,
+                })
+                .show(ui, |ui| self.minimap(ui, signature));
+            return;
+        }
         if self.charfont.is_none() {
             egui::TopBottomPanel::top("minimap")
                 .resizable(true)
@@ -673,7 +766,8 @@ impl DrawApp {
     fn minimap(&mut self, ui: &mut egui::Ui, signature: u64) {
         widgets::section_header(ui, "Minimap", |_| {});
         if self.chrome.minimap.as_ref().is_none_or(|(key, _)| *key != signature) {
-            if let Some(image) = self.document.with_state(|state| render(state.get_buffer(), MINIMAP_PIXELS)) {
+            let max_side = ui.ctx().input(|input| input.max_texture_side);
+            if let Some(image) = self.document.with_state(|state| render_minimap(state.get_buffer(), max_side)) {
                 let texture = ui.ctx().load_texture("minimap", image, egui::TextureOptions::LINEAR);
                 self.chrome.minimap = Some((signature, texture));
             }
@@ -683,35 +777,59 @@ impl DrawApp {
         };
         let (well, _) = ui.allocate_exact_size(ui.available_size(), egui::Sense::hover());
         ui.painter().rect_filled(well, 6, ui.visuals().extreme_bg_color);
-        let available = well.shrink(6.0).size();
-        let [width, height] = texture.size();
-        let scale = (available.x / width as f32).min(available.y / height as f32).max(0.01);
-        let size = egui::vec2(width as f32 * scale, height as f32 * scale);
-        let rect = egui::Rect::from_center_size(well.center(), size);
-        let response = ui.interact(rect, ui.id().with("minimap-image"), egui::Sense::click_and_drag());
-        ui.painter().image(
+        let area = well.shrink(6.0);
+        let viewport = self.canvas_rect.size();
+        let max_offset = self.view.max_offset;
+        let Some(layout) = MinimapLayout::new(area, texture.size(), self.content_size(), viewport, self.view.offset, max_offset) else {
+            return;
+        };
+        let id = ui.id().with("minimap-image");
+        let response = ui.interact(layout.image.intersect(area), id, egui::Sense::click_and_drag());
+        let painter = ui.painter_at(area);
+        painter.image(
             texture.id(),
-            rect,
+            layout.image,
             egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
             Color32::WHITE,
         );
-        let content = self.content_size();
-        if content.x > 0.0 && content.y > 0.0 {
-            let viewport = self.canvas_rect.size();
-            let visible = egui::Rect::from_min_size(
-                rect.min + egui::vec2(self.view.offset.x / content.x * size.x, self.view.offset.y / content.y * size.y),
-                egui::vec2((viewport.x / content.x).min(1.0) * size.x, (viewport.y / content.y).min(1.0) * size.y),
-            );
-            if visible.width() < size.x - 1.0 || visible.height() < size.y - 1.0 {
-                ui.painter().rect_filled(visible.intersect(rect), 0, PRIMARY.gamma_multiply(0.15));
-                ui.painter()
-                    .rect_stroke(visible.intersect(rect), 0, egui::Stroke::new(1.5, PRIMARY), egui::StrokeKind::Inside);
+        let frame = layout.frame.intersect(layout.image);
+        let shows_frame = layout.frame.width() < layout.image.width() - 1.0 || layout.frame.height() < layout.image.height() - 1.0;
+        if shows_frame {
+            painter.rect_filled(frame, 0, PRIMARY.gamma_multiply(0.15));
+            painter.rect_stroke(frame, 0, egui::Stroke::new(1.5, PRIMARY), egui::StrokeKind::Inside);
+        }
+        let clamp = |offset: egui::Vec2| offset.max(egui::Vec2::ZERO).min(max_offset);
+        let grab_id = id.with("grab");
+        let mut target = None;
+        if let Some(point) = response.interact_pointer_pos() {
+            if response.drag_started() || response.clicked() {
+                // Dragging the frame keeps the grab point; anywhere else jumps there first.
+                let grab = if shows_frame && !response.clicked() && frame.contains(point) {
+                    point - layout.frame.min
+                } else {
+                    let offset = clamp(layout.offset_at(point, viewport));
+                    target = Some(offset);
+                    point - layout.frame_corner(offset)
+                };
+                ui.data_mut(|data| data.insert_temp(grab_id, grab));
+            } else if response.dragged() {
+                let grab = ui.data(|data| data.get_temp(grab_id)).unwrap_or(layout.frame.size() / 2.0);
+                target = Some(clamp(layout.offset_for_frame(point - grab)));
             }
-            if let Some(point) = (response.clicked() || response.dragged()).then(|| response.interact_pointer_pos()).flatten() {
-                let normalized = (point - rect.min) / size;
-                let offset = egui::vec2(normalized.x * content.x, normalized.y * content.y) - viewport / 2.0;
-                self.view.scroll_to = Some(offset.max(egui::Vec2::ZERO).min(self.view.max_offset));
+        }
+        if response.hovered() && target.is_none() {
+            let delta = ui.input(|input| input.smooth_scroll_delta);
+            if delta != egui::Vec2::ZERO {
+                target = Some(clamp(self.view.offset - delta));
             }
+        }
+        if response.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        } else if shows_frame && response.hover_pos().is_some_and(|pos| frame.contains(pos)) {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+        if target.is_some() {
+            self.view.scroll_to = target;
         }
     }
 
@@ -1090,6 +1208,10 @@ impl DrawApp {
             if self.picker {
                 ui.spinner();
             }
+            if self.collab.in_session() {
+                ui.label(small("·".into()).weak());
+                self.collaboration_status(ui);
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 ui.add_space(6.0);
@@ -1241,6 +1363,63 @@ fn status_separator(ui: &mut egui::Ui) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn minimap_fills_width_and_follows_tall_documents() {
+        let area = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(300.0, 300.0));
+        let (content, viewport) = (egui::vec2(640.0, 6400.0), egui::vec2(640.0, 320.0));
+        let max_offset = content - viewport;
+        let layout = |offset_y: f32| MinimapLayout::new(area, [320, 3200], content, viewport, egui::vec2(0.0, offset_y), max_offset).unwrap();
+
+        let top = layout(0.0);
+        assert_eq!(top.image.width(), area.width());
+        assert_eq!(top.image.height(), 3000.0);
+        assert_eq!(top.image.top(), area.top());
+        assert_eq!(top.frame.top(), area.top());
+
+        let bottom = layout(max_offset.y);
+        assert!((bottom.image.bottom() - area.bottom()).abs() < 0.01);
+        assert!((bottom.frame.bottom() - area.bottom()).abs() < 0.01);
+
+        for offset_y in [100.0, 2500.0, 5000.0] {
+            let middle = layout(offset_y);
+            assert!(area.expand(0.01).contains_rect(middle.frame), "{offset_y}: {:?}", middle.frame);
+            let offset = egui::vec2(0.0, offset_y);
+            assert!((middle.frame_corner(offset) - middle.frame.min).length() < 0.01);
+            // Dragging the frame is a stable scrollbar mapping: geometry from any offset agrees.
+            let corner = egui::pos2(area.left(), area.top() + 123.0);
+            assert!((middle.offset_for_frame(corner) - top.offset_for_frame(corner)).length() < 0.01);
+            assert!((middle.offset_for_frame(middle.frame_corner(offset)) - offset).length() < 0.01);
+        }
+    }
+
+    #[test]
+    fn minimap_centers_documents_that_fit() {
+        let area = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(300.0, 300.0));
+        let layout = MinimapLayout::new(
+            area,
+            [640, 400],
+            egui::vec2(640.0, 400.0),
+            egui::vec2(320.0, 200.0),
+            egui::Vec2::ZERO,
+            egui::vec2(320.0, 200.0),
+        )
+        .unwrap();
+        assert_eq!(layout.image.size(), egui::vec2(300.0, 187.5));
+        assert_eq!(layout.image.center(), area.center());
+        let point = layout.image.center();
+        assert!((layout.offset_at(point, egui::vec2(320.0, 200.0)) - egui::vec2(160.0, 100.0)).length() < 0.01);
+        assert!(MinimapLayout::new(area, [0, 400], egui::vec2(640.0, 400.0), egui::Vec2::ZERO, egui::Vec2::ZERO, egui::Vec2::ZERO).is_none());
+    }
+
+    #[test]
+    fn minimap_texture_keeps_width_for_tall_documents() {
+        let short = render_minimap(&TextBuffer::create(icy_engine::Size::new(80, 25)), 8192).unwrap();
+        let tall = render_minimap(&TextBuffer::create(icy_engine::Size::new(80, 500)), 8192).unwrap();
+        assert_eq!(short.size[0], tall.size[0]);
+        assert!(tall.size[0] >= MINIMAP_PIXELS / 2);
+        let capped = render_minimap(&TextBuffer::create(icy_engine::Size::new(80, 500)), 1024).unwrap();
+        assert!(capped.size[1] <= 1024);
+    }
     #[test]
     fn shape_slots_toggle_like_legacy_registry() {
         assert_eq!(TOOL_SLOTS.len(), 10);
