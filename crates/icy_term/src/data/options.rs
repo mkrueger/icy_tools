@@ -179,7 +179,7 @@ impl Default for Options {
         Self {
             connect_timeout: Duration::from_secs(1000),
             //scaling: Scaling::default(),
-            monitor_settings: MonitorSettings::default(),
+            monitor_settings: Self::default_monitor_settings(),
             iemsi: IEMSISettings::default(),
             console_beep: true,
             audio_enabled: true,
@@ -332,8 +332,16 @@ impl Options {
         Ok(())
     }
 
+    /// Terminal sessions fill the window: integer scaling would leave wide margins at most sizes.
+    pub fn default_monitor_settings() -> MonitorSettings {
+        MonitorSettings {
+            use_integer_scaling: false,
+            ..Default::default()
+        }
+    }
+
     pub fn reset_monitor_settings(&mut self) {
-        self.monitor_settings = MonitorSettings::default();
+        self.monitor_settings = Self::default_monitor_settings();
     }
     /*
     pub(crate) fn reset_keybindings(&mut self) {
@@ -344,6 +352,15 @@ impl Options {
 #[cfg(test)]
 mod tests {
     use super::Options;
+
+    #[test]
+    fn terminal_defaults_to_fractional_scaling() {
+        assert!(!Options::default().monitor_settings.use_integer_scaling);
+        let mut options = Options::default();
+        options.monitor_settings.use_integer_scaling = true;
+        options.reset_monitor_settings();
+        assert_eq!(options.monitor_settings, Options::default_monitor_settings());
+    }
 
     #[test]
     fn audio_settings_roundtrip() {

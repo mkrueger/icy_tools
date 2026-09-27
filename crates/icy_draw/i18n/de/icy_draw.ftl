@@ -1325,3 +1325,4 @@ sauce-subtitle=Metadaten am Dateiende, die Viewer und BBS-Software anzeigen.
 sauce-record=Datensatz
 sauce-comment-too-long=Zeile { $line } ist länger als { $limit } Zeichen und wird gekürzt.
 sauce-display=Darstellung
+shortcuts-dialog-subtitle=Schnellreferenz für Icy Draw

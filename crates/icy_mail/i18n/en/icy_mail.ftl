@@ -196,6 +196,7 @@ dialog-mail-packet-file = File
 
 # Keyboard shortcuts
 shortcuts-title = Keyboard Shortcuts
+shortcuts-subtitle = Quick reference for Icy Mail
 shortcuts-section-reading = Reading
 shortcuts-reading-previous-next-entry = Previous or next entry
 shortcuts-reading-next-pane = Next pane

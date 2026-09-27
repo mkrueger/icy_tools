@@ -661,8 +661,8 @@ async fn gpu_overlays_and_shortcut_actions() {
             assert!(harness.controls.contains_key(&key), "help is missing {key} of {shortcut}");
         }
     }
-    for (_, entries) in hotkeys::help_entries() {
-        for entry in entries {
+    for group in hotkeys::help_entries() {
+        for entry in group.entries {
             assert!(!entry.action.contains("No localization"), "untranslated shortcut label: {}", entry.action);
             assert!(
                 !entry.description.contains("No localization"),

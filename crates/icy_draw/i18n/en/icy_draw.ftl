@@ -1341,3 +1341,4 @@ sauce-subtitle=Metadata stored at the end of the file and shown by viewers and B
 sauce-record=Record
 sauce-comment-too-long=Line { $line } is longer than { $limit } characters and will be shortened.
 sauce-display=Display
+shortcuts-dialog-subtitle=Quick reference for Icy Draw

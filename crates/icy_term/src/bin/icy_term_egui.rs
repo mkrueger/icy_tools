@@ -130,7 +130,7 @@ impl TerminalApp {
         Self {
             terminal: Terminal::new(Arc::new(Mutex::new(Box::new(screen)))),
             shader_state,
-            settings: MonitorSettings::default(),
+            settings: icy_term::Options::default_monitor_settings(),
             document_name,
             error: None,
             messages: Default::default(),
@@ -702,7 +702,7 @@ impl TerminalApp {
                 ]);
             });
         match response.action {
-            Some(false) => self.settings = MonitorSettings::default(),
+            Some(false) => self.settings = icy_term::Options::default_monitor_settings(),
             Some(true) => self.show_monitor = false,
             None => self.show_monitor &= !response.dismissed,
         }

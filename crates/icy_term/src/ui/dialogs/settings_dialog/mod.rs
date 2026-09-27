@@ -512,7 +512,7 @@ impl SettingsDialogState {
         let reset_button: Option<Element<'_, M>> = match self.current_category {
             SettingsCategory::Monitor => {
                 let current_settings = self.temp_options.lock().monitor_settings.clone();
-                let default_settings = icy_engine_gui::MonitorSettings::default();
+                let default_settings = crate::Options::default_monitor_settings();
                 let is_default = current_settings == default_settings;
                 Some(
                     icy_engine_gui::ui::restore_defaults_button(!is_default, on_message(SettingsDialogMessage::ResetCategory(self.current_category.clone())))

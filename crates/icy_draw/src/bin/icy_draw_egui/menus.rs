@@ -8,7 +8,7 @@ use icy_engine_edit::UndoState;
 use icy_engine_gui::{
     egui::{
         appearance::{self, labels, DialogButton, DialogSize},
-        shortcuts::keycaps,
+        shortcuts::{shortcuts_dialog, ShortcutEntry, ShortcutGroup},
     },
     ScalingMode,
 };
@@ -998,30 +998,11 @@ impl DrawApp {
                 ],
             ),
         ];
-        let response = appearance::Dialog::new("draw-shortcuts")
-            .title(fl!("shortcuts-dialog-title"))
-            .size(DialogSize::Large)
-            .max_height(620.0)
-            .show(context, |dialog| {
-                dialog.content(|ui| {
-                    for (title, entries) in &groups {
-                        appearance::compact_group(ui, title, |ui| {
-                            for (keys, description) in entries {
-                                ui.horizontal(|ui| {
-                                    ui.allocate_ui_with_layout(egui::vec2(170.0, 22.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                        ui.set_min_width(170.0);
-                                        ui.spacing_mut().item_spacing.x = 3.0;
-                                        keycaps(ui, keys);
-                                    });
-                                    ui.label(description.as_str());
-                                });
-                            }
-                        });
-                    }
-                });
-                dialog.buttons([DialogButton::primary(labels::close(), ()).cancels()]);
-            });
-        response.action.is_some() || response.dismissed
+        let groups: Vec<_> = groups
+            .into_iter()
+            .map(|(title, entries)| ShortcutGroup::new(title, entries.into_iter().map(|(keys, action)| ShortcutEntry::new(keys, action)).collect()))
+            .collect();
+        shortcuts_dialog(context, &fl!("shortcuts-dialog-title"), &fl!("shortcuts-dialog-subtitle"), &groups)
     }
 
     /// Shows the shared about dialog with Icy Draw's artwork.

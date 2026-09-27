@@ -1,6 +1,9 @@
 use eframe::egui::{self, Key, Modifiers};
 use i18n_embed_fl::fl;
-use icy_engine_gui::egui::{appearance, shortcuts::keycaps};
+use icy_engine_gui::egui::{
+    appearance,
+    shortcuts::{shortcuts_dialog, ShortcutEntry, ShortcutGroup},
+};
 use icy_mail::LANGUAGE_LOADER;
 
 use super::{
@@ -204,34 +207,16 @@ impl MailApp {
             );
             groups.remove(2);
         }
-        let response = appearance::Dialog::new("mail-shortcuts")
-            .title(fl!(LANGUAGE_LOADER, "shortcuts-title"))
-            .size(appearance::DialogSize::Medium)
-            .show(context, |dialog| {
-                dialog.content(|ui| {
-                    for (title, entries) in &groups {
-                        appearance::compact_group(ui, title, |ui| {
-                            for (keys, description) in entries {
-                                ui.horizontal(|ui| {
-                                    ui.allocate_ui_with_layout(egui::vec2(150.0, 22.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                        ui.set_min_width(150.0);
-                                        ui.spacing_mut().item_spacing.x = 3.0;
-                                        if keys.contains("\u{2191}") {
-                                            keycaps(ui, "\u{2191}");
-                                            keycaps(ui, "\u{2193}");
-                                        } else {
-                                            keycaps(ui, keys);
-                                        }
-                                    });
-                                    ui.label(description.as_str());
-                                });
-                            }
-                        });
-                    }
-                });
-                dialog.buttons([appearance::DialogButton::primary(appearance::labels::close(), ()).cancels()]);
-            });
-        response.action.is_some() || response.dismissed
+        let groups: Vec<_> = groups
+            .into_iter()
+            .map(|(title, entries)| ShortcutGroup::new(title, entries.into_iter().map(|(keys, action)| ShortcutEntry::new(keys, action)).collect()))
+            .collect();
+        shortcuts_dialog(
+            context,
+            &fl!(LANGUAGE_LOADER, "shortcuts-title"),
+            &fl!(LANGUAGE_LOADER, "shortcuts-subtitle"),
+            &groups,
+        )
     }
 
     fn packet_info(&self, context: &egui::Context) -> bool {

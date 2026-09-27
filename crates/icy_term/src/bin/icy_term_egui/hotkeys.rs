@@ -2,6 +2,9 @@
 
 use eframe::egui;
 use icy_engine_gui::commands::{CommandDef, CommandSet, KeyCode};
+#[cfg(test)]
+pub use icy_engine_gui::egui::shortcuts::key_parts;
+use icy_engine_gui::egui::shortcuts::{ShortcutEntry, ShortcutGroup};
 use std::sync::LazyLock;
 
 /// The merged set, not the individual statics: `icy_term` overrides some shared
@@ -229,35 +232,9 @@ fn translate(key: &str) -> Option<String> {
     None
 }
 
-pub struct HelpEntry {
-    pub shortcut: String,
-    pub action: String,
-    pub description: String,
-}
-
-/// Splits "Ctrl+Shift+N" into single keys; a trailing "++" means the literal plus key.
-pub fn key_parts(shortcut: &str) -> Vec<String> {
-    shortcut
-        .split(' ')
-        .filter(|chunk| !chunk.is_empty())
-        .flat_map(|chunk| {
-            if chunk == "+" {
-                return vec!["+".to_string()];
-            }
-            let literal_plus = chunk.ends_with("++");
-            let keys = if literal_plus { &chunk[..chunk.len() - 1] } else { chunk };
-            let mut parts: Vec<String> = keys.split('+').filter(|part| !part.is_empty()).map(str::to_string).collect();
-            if literal_plus {
-                parts.push("+".to_string());
-            }
-            parts
-        })
-        .collect()
-}
-
 /// Grouped for the shortcut overview, following the legacy help dialog.
-pub fn help_entries() -> Vec<(String, Vec<HelpEntry>)> {
-    let mut categories: Vec<(String, Vec<HelpEntry>)> = Vec::new();
+pub fn help_entries() -> Vec<ShortcutGroup> {
+    let mut categories: Vec<ShortcutGroup> = Vec::new();
     for (action, _) in bindings() {
         let command = command(action);
         let Some(shortcut) = command.primary_hotkey_display() else {
@@ -278,14 +255,10 @@ pub fn help_entries() -> Vec<(String, Vec<HelpEntry>)> {
             .fluent_category_key()
             .and_then(|key| translate(&key))
             .unwrap_or_else(|| tr!("egui-session"));
-        let entry = HelpEntry {
-            shortcut,
-            action: name,
-            description,
-        };
-        match categories.iter_mut().find(|(existing, _)| *existing == category) {
-            Some((_, entries)) => entries.push(entry),
-            None => categories.push((category, vec![entry])),
+        let entry = ShortcutEntry::new(shortcut, name).with_description(description);
+        match categories.iter_mut().find(|group| group.title == category) {
+            Some(group) => group.entries.push(entry),
+            None => categories.push(ShortcutGroup::new(category, vec![entry])),
         }
     }
     categories
