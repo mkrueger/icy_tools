@@ -2679,14 +2679,13 @@ impl AnsiEditorCore {
         // Cancels any in-progress shape preview/drag when switching tools.
         let _ = self.cancel_shape_drag();
 
-        let mut is_visble = matches!(tool, tools::ToolId::Click | tools::ToolId::Font);
-        is_visble &= self.with_edit_state(|state: &mut EditState| {
-            state.set_caret_visible(is_visble && state.selection().is_none());
-            state.selection().is_none()
-        });
+        let caret_tool = matches!(tool, tools::ToolId::Click | tools::ToolId::Font);
+        self.with_edit_state(|state: &mut EditState| state.set_caret_visible(caret_tool && state.selection().is_none()));
 
-        // Enable terminal focus for caret blinking in Click/Font tools
-        self.canvas.set_has_focus(is_visble);
+        // Enable terminal focus for caret blinking in Click/Font tools. This depends on the tool
+        // only: the view hides the caret while a selection exists, and a focus dropped here for an
+        // existing selection was never restored once the selection was removed.
+        self.canvas.set_has_focus(caret_tool);
 
         // Swap current tool with one from the registry.
         let new_tool = tool_registry.take_for(tool);
@@ -2709,5 +2708,43 @@ impl AnsiEditorCore {
             self.canvas.set_tool_overlay_mask(None, None);
         }
         // Fonts are loaded centrally via FontLibrary - no per-editor loading needed
+    }
+}
+
+#[cfg(test)]
+mod caret_focus_tests {
+    use super::*;
+    use crate::ui::settings::{FKeySets, MostRecentlyUsedFiles};
+
+    fn settings() -> Settings {
+        Settings {
+            recent_files: MostRecentlyUsedFiles::default(),
+            fkeys: FKeySets::default(),
+            monitor_settings: Default::default(),
+            font_outline_style: 0,
+            text_art_font_favorites: Vec::new(),
+            show_layer_borders: true,
+            show_line_numbers: false,
+            collaboration: Default::default(),
+            selected_taglist: String::new(),
+            last_export_directory: None,
+            export_settings: Default::default(),
+        }
+    }
+
+    #[test]
+    fn caret_returns_after_switching_to_the_click_tool_with_a_selection() {
+        let library = Arc::new(RwLock::new(crate::TextArtFontLibrary::default()));
+        let brush = tools::new_shared_brush();
+        let mut registry = tool_registry::ToolRegistry::new(tool_registry::ANSI_TOOL_SLOTS, library, brush.clone());
+        let select = registry.take_for(tools::ToolId::Select);
+        let (mut core, _, _) = AnsiEditorCore::from_buffer_inner(TextBuffer::new((20, 5)), Arc::new(RwLock::new(settings())), select, brush);
+        core.with_edit_state(|state| state.set_selection(icy_engine::Rectangle::from(0, 0, 4, 2)).unwrap());
+        core.change_tool(&mut registry, tools::ToolId::Click);
+        core.with_edit_state(|state| state.clear_selection().unwrap());
+        assert!(core.canvas.terminal.has_focus, "the caret must be drawn again once the selection is gone");
+
+        core.change_tool(&mut registry, tools::ToolId::Select);
+        assert!(!core.canvas.terminal.has_focus, "only the click and font tools show the caret");
     }
 }
