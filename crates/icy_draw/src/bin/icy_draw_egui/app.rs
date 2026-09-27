@@ -6,13 +6,14 @@ use icy_engine_edit::UndoState;
 use icy_engine_gui::{
     egui::{
         appearance::{self, labels, DialogButton, DialogSize, MessageBox, MessageKind},
+        export::{ExportAction, ExportDialog, ExportRequest},
         screen::ScreenView,
     },
     ScalingMode,
 };
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, Sender},
 };
 
@@ -49,7 +50,6 @@ enum Dialog {
     Script,
     Monitor,
     Overwrite(PathBuf),
-    ExportOverwrite(PathBuf),
     AnimationOverwrite(PathBuf, super::animation::ExportFormat),
     Error(String),
     ReferenceImage,
@@ -60,7 +60,6 @@ enum Dialog {
 enum FileAction {
     Open,
     Save,
-    Export(FileFormat),
     SaveFont,
     SaveTdf,
     SaveAnimation,
@@ -222,8 +221,7 @@ pub struct DrawApp {
     new_size: [i32; 2],
     show_inspector: bool,
     canvas_focus: bool,
-    export_format: FileFormat,
-    export_sauce: bool,
+    export_dialog: Option<ExportDialog>,
     font_editor: Option<super::font::FontEditor>,
     palette_editor: super::palette::PaletteEditor,
     charfont: Option<icy_draw::charfont::CharFontDocument>,
@@ -295,8 +293,7 @@ impl DrawApp {
             new_size: [80, 25],
             show_inspector: true,
             canvas_focus: true,
-            export_format: FileFormat::Ansi,
-            export_sauce: true,
+            export_dialog: None,
             font_editor: None,
             palette_editor: Default::default(),
             charfont: None,
@@ -477,10 +474,6 @@ impl DrawApp {
                     .add_filter(fl!("file-dialog-filter-icydraw-files"), &["icy"])
                     .set_file_name(format!("{untitled}.icy"))
                     .save_file(),
-                FileAction::Export(format) => dialog
-                    .add_filter(format.name(), &[format.primary_extension()])
-                    .set_file_name(format!("{untitled}.{}", format.primary_extension()))
-                    .save_file(),
                 FileAction::SaveFont => dialog
                     .add_filter(fl!("file-dialog-filter-font-files"), &["psf"])
                     .set_file_name(format!("{untitled}.psf"))
@@ -595,18 +588,40 @@ impl DrawApp {
         self.quitting = false;
     }
 
-    fn export_path(&mut self, path: PathBuf) {
+    /// The export dialog for the document, starting with the last used folder and options.
+    pub(super) fn export_dialog(&self) -> ExportDialog {
+        let (formats, sauce) = self.document.with_state(|state| {
+            (
+                FileFormat::save_formats_with_images_for_buffer_type(state.get_buffer().buffer_type),
+                state.get_sauce_meta().clone(),
+            )
+        });
+        let source = self.document.path.as_deref();
+        let directory = self
+            .settings
+            .last_export_directory
+            .clone()
+            .or_else(|| source.and_then(Path::parent).map(Path::to_path_buf))
+            .unwrap_or_default();
+        let name = source
+            .and_then(Path::file_stem)
+            .map_or_else(|| fl!("unsaved-title"), |name| name.to_string_lossy().into_owned());
+        ExportDialog::new(formats, directory, &name)
+            .with_settings(&self.settings.export_settings)
+            .with_sauce(Some(sauce))
+    }
+
+    pub(super) fn export(&mut self, request: &ExportRequest) -> Result<(), String> {
+        let path = &request.path;
         if self
             .document
             .path
             .as_ref()
-            .is_some_and(|source| source == &path || source.canonicalize().ok().is_some_and(|source| Some(source) == path.canonicalize().ok()))
+            .is_some_and(|source| source == path || source.canonicalize().ok().is_some_and(|source| Some(source) == path.canonicalize().ok()))
         {
-            self.dialog = Some(Dialog::Error(fl!("error-export-overwrites-document")));
-            return;
+            return Err(fl!("error-export-overwrites-document"));
         }
-        let result = super::export::write(&self.document, &path, self.export_format, &self.settings.export_settings, self.export_sauce);
-        self.result(result);
+        super::export::write(&self.document, request)
     }
 
     fn result(&mut self, result: Result<(), String>) {
@@ -2039,6 +2054,9 @@ impl DrawApp {
             return;
         };
         let mut keep = true;
+        if !matches!(dialog, Dialog::Export) {
+            self.export_dialog = None;
+        }
         match &dialog {
             Dialog::Shortcuts => keep = !self.shortcuts_dialog(context),
             Dialog::About => keep = self.about.as_mut().is_some_and(|about| about.show(context)),
@@ -2338,27 +2356,6 @@ impl DrawApp {
                 Some(super::palette::Action::Cancel) => keep = false,
                 None => {}
             },
-            Dialog::ExportOverwrite(path) => {
-                #[derive(Clone, Copy)]
-                enum Action {
-                    Cancel,
-                    Overwrite,
-                }
-                let response = MessageBox::new("export-overwrite", MessageKind::Warning, fl!("replace-export-file"), path.display().to_string())
-                    .buttons([
-                        DialogButton::cancel(labels::cancel(), Action::Cancel),
-                        DialogButton::destructive(labels::overwrite(), Action::Overwrite),
-                    ])
-                    .show(context);
-                match response.action {
-                    Some(Action::Overwrite) => {
-                        self.export_path(path.clone());
-                        keep = false;
-                    }
-                    Some(Action::Cancel) => keep = false,
-                    None => keep &= !response.dismissed,
-                }
-            }
             Dialog::Sauce(draft) => {
                 let mut draft = draft.clone();
                 keep = false;
@@ -2367,67 +2364,24 @@ impl DrawApp {
                 }
             }
             Dialog::Export => {
-                #[derive(Clone, Copy)]
-                enum Action {
-                    Cancel,
-                    Export,
-                }
-                let formats = self
-                    .document
-                    .with_state(|state| FileFormat::save_formats_with_images_for_buffer_type(state.get_buffer().buffer_type));
-                let response = appearance::Dialog::new("export").size(DialogSize::Medium).show(context, |dialog| {
-                    dialog.content(|ui| {
-                        appearance::group(ui, &fl!("file-settings-format"), |ui| {
-                            appearance::combo_row(ui, &fl!("export-file-format"), self.export_format.name(), |ui| {
-                                for format in formats {
-                                    ui.selectable_value(&mut self.export_format, format, format.name());
-                                }
-                            });
-                            appearance::check_row(ui, &fl!("export-save-sauce-label"), &mut self.export_sauce);
-                        });
-                        let settings = &mut self.settings.export_settings;
-                        if matches!(self.export_format, FileFormat::Ansi | FileFormat::AnsiMusic) {
-                            appearance::group(ui, &fl!("export-ansi-options"), |ui| {
-                                appearance::combo_row(ui, &fl!("export-compatibility"), settings.ansi_level.to_string(), |ui| {
-                                    for &level in icy_engine::AnsiCompatibilityLevel::all() {
-                                        ui.selectable_value(&mut settings.ansi_level, level, level.to_string());
-                                    }
-                                });
-                                appearance::check_row(ui, &fl!("export-rgb-colors"), &mut settings.ansi_rgb_output);
-                                appearance::check_row(ui, &fl!("export-limit-output-line-length-label"), &mut settings.max_line_length_enabled);
-                                if settings.max_line_length_enabled {
-                                    appearance::form_row(ui, &fl!("export-maximum_line_length"), |ui| {
-                                        ui.add(
-                                            egui::DragValue::new(&mut settings.max_line_length)
-                                                .range(1..=65535)
-                                                .suffix(format!(" {}", fl!("unit-characters"))),
-                                        );
-                                    });
-                                }
-                            });
+                let mut dialog = self.export_dialog.take().unwrap_or_else(|| self.export_dialog());
+                match dialog.show(context) {
+                    Some(ExportAction::Export(request)) => match self.export(&request) {
+                        Ok(()) => {
+                            self.settings.export_settings = dialog.settings();
+                            self.settings.last_export_directory = Some(PathBuf::from(dialog.directory()));
+                            if self.persist_settings {
+                                self.settings.store_persistent();
+                            }
+                            keep = false;
                         }
-                        appearance::group(ui, &fl!("export-output"), |ui| {
-                            appearance::combo_row(ui, &fl!("export-screen-preparation"), settings.screen_prep.to_string(), |ui| {
-                                for &preparation in icy_engine::ScreenPreperation::all() {
-                                    ui.selectable_value(&mut settings.screen_prep, preparation, preparation.to_string());
-                                }
-                            });
-                            appearance::check_row(ui, &fl!("export-utf8-output-label"), &mut settings.utf8_output);
-                            appearance::check_row(ui, &fl!("export-compression-label"), &mut settings.compress);
-                        });
-                    });
-                    dialog.buttons([
-                        DialogButton::cancel(labels::cancel(), Action::Cancel),
-                        DialogButton::primary(fl!("menu-export"), Action::Export),
-                    ]);
-                });
-                match response.action {
-                    Some(Action::Export) => {
-                        self.choose(context, FileAction::Export(self.export_format));
-                        keep = false;
-                    }
-                    Some(Action::Cancel) => keep = false,
-                    None => keep &= !response.dismissed,
+                        Err(error) => {
+                            dialog.set_error(error);
+                            self.export_dialog = Some(dialog);
+                        }
+                    },
+                    Some(ExportAction::Cancel) => keep = false,
+                    None => self.export_dialog = Some(dialog),
                 }
             }
             Dialog::Overwrite(path) => {
@@ -2696,17 +2650,6 @@ impl DrawApp {
                             self.dialog = Some(Dialog::Overwrite(path));
                         } else {
                             self.save_path(context, path, false);
-                        }
-                    }
-                    FileAction::Export(format) => {
-                        self.export_format = format;
-                        if path.extension().is_none() {
-                            path.set_extension(format.primary_extension());
-                        }
-                        if path.exists() {
-                            self.dialog = Some(Dialog::ExportOverwrite(path));
-                        } else {
-                            self.export_path(path);
                         }
                     }
                     FileAction::SaveFont => {

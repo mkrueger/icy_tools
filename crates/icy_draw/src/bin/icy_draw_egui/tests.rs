@@ -203,17 +203,26 @@ fn native_and_ansi_exports_preserve_sauce_without_clearing_dirty_state() {
     let reopened = Document::load(&native).unwrap();
     assert_eq!(reopened.with_state(|state| state.get_sauce_meta().title.to_string()), "Roundtrip");
     app.document.type_text("!").unwrap();
+    app.settings.last_export_directory = None;
+    app.settings.export_settings = Default::default();
+    let request = app.export_dialog().with_format(FileFormat::Ansi).request().unwrap();
     let output = directory.path().join("art.ans");
-    app.export_path(output.clone());
+    assert_eq!(request.path, output, "exports go next to the document by default");
+    app.export(&request).unwrap();
     assert!(app.document.modified());
     assert_eq!(app.document.path, Some(native));
     let reopened = Document::load(&output).unwrap();
     assert_eq!(reopened.with_state(|state| state.get_sauce_meta().author.to_string()), "Artist");
     assert_eq!(reopened.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch), 'A');
-    app.export_format = FileFormat::Image(icy_engine::formats::ImageFormat::Png);
-    let image = directory.path().join("art.png");
-    app.export_path(image.clone());
-    assert!(image::open(image).unwrap().width() > 0);
+    let image = app
+        .export_dialog()
+        .with_format(FileFormat::Image(icy_engine::formats::ImageFormat::Png))
+        .request()
+        .unwrap();
+    app.export(&image).unwrap();
+    assert!(image::open(&image.path).unwrap().width() > 0);
+    let native = app.export_dialog().with_format(FileFormat::IcyDraw).request().unwrap();
+    assert!(app.export(&native).is_err(), "exporting must not replace the document itself");
 }
 
 #[test]
@@ -677,9 +686,13 @@ fn export_dialog_has_no_header_or_close_glyph() {
             _ => None,
         })
         .collect();
-    let export = icy_draw::fl!("menu-export");
-    assert!(labels.contains(&export.as_str()));
-    assert!(!labels.contains(&"Export") && !labels.contains(&"×"));
+    let export = icy_engine_gui::egui::dialog::labels::export();
+    assert_eq!(
+        labels.iter().filter(|label| **label == export).count(),
+        1,
+        "only the button names the action: {labels:?}"
+    );
+    assert!(!labels.contains(&"×"));
 }
 
 #[test]

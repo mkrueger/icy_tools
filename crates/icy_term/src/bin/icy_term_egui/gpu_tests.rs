@@ -394,8 +394,8 @@ async fn gpu_remaining_dialogs_fit_viewport() {
                     tr!("egui-close")
                 }
                 "save-screen" => {
-                    app.save_screen = Some(export::SaveScreen::new(""));
-                    tr!("egui-save")
+                    app.save_screen();
+                    icy_engine_gui::egui::dialog::labels::export()
                 }
                 "capture" => {
                     app.capture = Some(export::Capture::new("", false));
@@ -428,7 +428,7 @@ async fn gpu_remaining_dialogs_fit_viewport() {
                     let first_field = match name {
                         "serial" => tr!("settings-modem-device"),
                         "live-terminal" => tr!("egui-terminal-emulation"),
-                        "save-screen" => tr!("egui-format"),
+                        "save-screen" => icy_engine_gui::LANGUAGE_LOADER.get("export-format"),
                         _ => tr!("settings-paths-download-dir"),
                     };
                     let field = harness.text_bounds.get(&first_field).unwrap_or_else(|| panic!("missing {first_field}: {name}"));

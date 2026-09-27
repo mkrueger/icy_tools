@@ -51,7 +51,7 @@ mod export_settings;
 pub use commands::{
     cmd, create_common_commands, load_commands_from_file, load_commands_from_str, CommandDef, CommandLoadError, CommandSet, Hotkey, KeyCode, Modifiers,
 };
-pub use export_settings::ExportSettings;
+pub use export_settings::{ExportOptionKind, ExportSettings};
 
 // Re-export proc macros
 pub use icy_engine_gui_macros::dialog_wrapper;

@@ -83,6 +83,46 @@ export-dialog-utf8-output = UTF-8 Ausgabe
 export-dialog-dir-not-exist = Verzeichnis existiert nicht!
 export-dialog-not-directory = Pfad ist kein Verzeichnis!
 
+# Gemeinsamer Export-Dialog
+export-button = Exportieren
+export-section-file = Datei
+export-section-options = Optionen
+export-format = Format
+export-folder = Ordner
+export-browse = Ordner auswählen
+export-file-name = Dateiname
+export-overwrite-question = Diese Datei existiert bereits. Ersetzen?
+export-invalid-name = Einen Dateinamen ohne Ordner eingeben.
+export-not-a-folder = Der Ordner ist eine Datei.
+export-save-sauce = SAUCE-Eintrag speichern
+export-optimize-colors = Farben optimieren
+export-normalize-whitespace = Leerraum vereinheitlichen
+export-utf8 = UTF-8-Ausgabe
+export-compress = Komprimieren
+export-compatibility = Kompatibilität
+export-truecolor = 24-Bit-RGB-Farben
+export-screen-preparation = Bildschirmvorbereitung
+export-prep-none = Keine
+export-prep-clear = Bildschirm löschen
+export-prep-home = Cursor nach oben links
+export-line-length = Zeilenlänge
+export-line-length-default = Bildbreite
+export-line-length-minimum = Mindestens
+export-line-length-maximum = Höchstens
+export-columns = Spalten
+export-line-break = Zeilenumbrüche
+export-line-break-wrap = Terminal bricht um
+export-line-break-force = Immer umbrechen
+export-line-break-gotoxy = Cursor positionieren (GotoXY)
+export-line-ending = Zeilenende
+export-control-chars = Steuerzeichen
+export-controls-keep = Unverändert schreiben
+export-controls-filter = Ersetzen
+export-controls-escape = Maskieren (IcyTerm)
+export-sixel-colors = Farben
+export-sixel-diffusion = Diffusion
+export-sixel-kmeans = K-means-Palette
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Gemeinsame Command-System Keys (geteilt zwischen icy_view und icy_term)
 # ═══════════════════════════════════════════════════════════════════════════════

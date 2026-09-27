@@ -877,14 +877,16 @@ fn gpu_viewer_and_dialogs_fit_desktop_narrow_short_and_hidpi() {
                 app.dialogs.open(mode, &app.options, &app.preview);
                 gpu.capture(&mut app, size, scale, vec![], "warmup");
                 gpu.capture(&mut app, size, scale, vec![], &format!("{name}-{dark}-{}", mode as u8));
-                let action = text(match mode {
-                    dialogs::Mode::Settings => "dialog-ok-button",
-                    dialogs::Mode::Export => "egui-save",
-                    _ => "dialog-close-button",
-                });
+                let action = match mode {
+                    dialogs::Mode::Settings => text("dialog-ok-button"),
+                    dialogs::Mode::Export => icy_engine_gui::egui::dialog::labels::export(),
+                    _ => text("dialog-close-button"),
+                };
                 assert!(gpu.labels.contains_key(&action), "{name}, mode {}: hidden {action}", mode as u8);
                 if mode == dialogs::Mode::Export {
-                    assert!(!gpu.labels.contains_key(&text("cmd-file-export-action")), "{name}: redundant export heading");
+                    if let Some(format) = gpu.labels.get(&icy_engine_gui::LANGUAGE_LOADER.get("export-format")) {
+                        assert!(gpu.labels[&action].top() > format.bottom(), "{name}: redundant export heading");
+                    }
                     assert!(!gpu.labels.contains_key("×"), "{name}: export dialog has a close glyph");
                     if name == "narrow" {
                         gpu.capture(
@@ -906,14 +908,14 @@ fn gpu_viewer_and_dialogs_fit_desktop_narrow_short_and_hidpi() {
                         }
                         let path = *gpu
                             .labels
-                            .get(&text("settings-paths-export-path"))
+                            .get(&icy_engine_gui::LANGUAGE_LOADER.get("export-folder"))
                             .unwrap_or_else(|| panic!("missing export path {dark}: {:?}", gpu.labels.keys()));
                         let filename = *gpu
                             .labels
-                            .get(&text("header-name"))
+                            .get(&icy_engine_gui::LANGUAGE_LOADER.get("export-file-name"))
                             .unwrap_or_else(|| panic!("missing filename {dark}: {:?}", gpu.labels.keys()));
                         let footer = gpu.labels[&action];
-                        assert!(filename.top() > path.top(), "{name}: filename must follow export path");
+                        assert!(filename.top() > path.top(), "{name}: filename must follow the folder");
                         assert!(
                             filename.top() - path.bottom() < 100.0,
                             "{name}: gap between path and filename: {path:?} -> {filename:?}"
@@ -940,7 +942,7 @@ fn gpu_viewer_and_dialogs_fit_desktop_narrow_short_and_hidpi() {
                             gpu.capture(&mut app, size, scale, vec![], "export-scroll-settle");
                         }
                         assert!(
-                            gpu.labels.contains_key(&text("egui-normalize-spaces")),
+                            gpu.labels.contains_key(&icy_engine_gui::LANGUAGE_LOADER.get("export-control-chars")),
                             "{name}: export options must scroll into view"
                         );
                         assert_eq!(gpu.labels[&action], footer, "{name}: scrolling must not move the footer");

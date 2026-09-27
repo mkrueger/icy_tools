@@ -14,6 +14,7 @@ icy_engine_gui_macros = { path = "../icy_engine_gui_macros" }
 codepages = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
+tempfile = "3"
 rustybuzz = "0.20.1"
 ttf-parser = "0.25.1"
 tiny-skia = "0.12"
@@ -64,7 +65,7 @@ cpal = { workspace = true }
 [features]
 default = ["legacy-ui", "opus-audio"]
 legacy-ui = ["dep:icy_ui", "dep:rfd"]
-egui = ["dep:egui", "dep:egui-wgpu", "wgpu/default"]
+egui = ["dep:egui", "dep:egui-wgpu", "dep:rfd", "wgpu/default"]
 # Ogg-Opus playback for the SyncTERM audio APC music tier. Links libopus,
 # so disabling it drops the C dependency; the capability reply follows suit.
 opus-audio = ["dep:opus", "dep:symphonia"]

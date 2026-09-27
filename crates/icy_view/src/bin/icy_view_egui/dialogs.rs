@@ -1,9 +1,14 @@
 use super::{preview::Preview, text};
 use eframe::egui;
 use icy_engine::formats::{FileFormat, ImageFormat};
-use icy_engine_gui::egui::{about::AboutDialog, appearance, monitor, shortcuts};
+use icy_engine_gui::egui::{
+    about::AboutDialog,
+    appearance,
+    export::{ExportAction, ExportDialog, ExportRequest},
+    monitor, shortcuts,
+};
 use icy_view::Options;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Mode {
@@ -53,6 +58,7 @@ pub const COMMANDS: &[&str] = &[
     "app.quit",
 ];
 
+#[derive(Default)]
 pub struct Dialogs {
     pub mode: Option<Mode>,
     pub error: Option<String>,
@@ -61,22 +67,9 @@ pub struct Dialogs {
     page: usize,
     about: Option<AboutDialog>,
     raw: bool,
-    export: Export,
-}
-
-impl Default for Dialogs {
-    fn default() -> Self {
-        Self {
-            mode: None,
-            error: None,
-            draft: Options::default(),
-            baseline: None,
-            page: 0,
-            about: None,
-            raw: false,
-            export: Export::default(),
-        }
-    }
+    export: Option<ExportDialog>,
+    /// Export options of this session, the next export starts with them.
+    export_settings: icy_engine_gui::ExportSettings,
 }
 
 impl Dialogs {
@@ -88,7 +81,7 @@ impl Dialogs {
             self.baseline = std::fs::read(icy_view::get_config_dir().join("options.toml")).ok();
         }
         if mode == Mode::Export {
-            self.export = Export::new(options, preview);
+            self.export = Some(export_dialog(options, preview, &self.export_settings));
         }
         if mode == Mode::About && self.about.is_none() {
             match AboutDialog::new(
@@ -112,6 +105,30 @@ impl Dialogs {
             }
             return;
         }
+        if mode == Mode::Help {
+            if shortcuts::shortcuts_dialog(context, &text("help-title"), &text("help-subtitle"), &help_groups()) {
+                self.mode = None;
+            }
+            return;
+        }
+        if mode == Mode::Export {
+            let Some(dialog) = &mut self.export else {
+                self.mode = None;
+                return;
+            };
+            match dialog.show(context) {
+                Some(ExportAction::Export(request)) => {
+                    self.export_settings = dialog.settings();
+                    match write_export(&request, preview) {
+                        Ok(()) => self.mode = None,
+                        Err(error) => dialog.set_error(error),
+                    }
+                }
+                Some(ExportAction::Cancel) => self.mode = None,
+                None => {}
+            }
+            return;
+        }
         #[derive(Clone, Copy, PartialEq, Eq)]
         enum Footer {
             Restore,
@@ -124,17 +141,10 @@ impl Dialogs {
             Mode::Settings => appearance::Dialog::untitled("viewer-settings")
                 .size(appearance::DialogSize::XLarge)
                 .fixed_height(560.0),
-            Mode::About => unreachable!("the about dialog is shown above"),
-            Mode::Help => appearance::Dialog::new("viewer-help")
-                .title(text("help-title"))
-                .size(appearance::DialogSize::Width(740.0))
-                .fixed_height(560.0),
+            Mode::About | Mode::Help | Mode::Export => unreachable!("the about, shortcut and export dialogs are shown above"),
             Mode::Sauce => appearance::Dialog::new("viewer-sauce")
                 .title(text("sauce-dialog-title"))
                 .size(appearance::DialogSize::Large),
-            Mode::Export => appearance::Dialog::new("viewer-export")
-                .size(appearance::DialogSize::Medium)
-                .confirm_on_enter(true),
         };
         let response = dialog.show(context, |dialog| {
             if mode == Mode::Settings {
@@ -147,11 +157,9 @@ impl Dialogs {
             }
             dialog.content(|ui| {
                 match mode {
-                    Mode::About => {}
+                    Mode::About | Mode::Help | Mode::Export => {}
                     Mode::Settings => self.settings_fields(ui),
-                    Mode::Help => help(ui),
                     Mode::Sauce => sauce(ui, preview, self.raw),
-                    Mode::Export => self.export.fields(ui),
                 }
                 if let Some(error) = &self.error {
                     ui.add_space(6.0);
@@ -167,14 +175,6 @@ impl Dialogs {
                     buttons.push(appearance::DialogButton::cancel(appearance::labels::cancel(), Footer::Cancel));
                     buttons.push(appearance::DialogButton::primary(appearance::labels::ok(), Footer::Save));
                 }
-                Mode::Export => {
-                    buttons.push(appearance::DialogButton::cancel(appearance::labels::cancel(), Footer::Cancel));
-                    buttons.push(if self.export.confirmed.is_some() {
-                        appearance::DialogButton::destructive(appearance::labels::overwrite(), Footer::Save)
-                    } else {
-                        appearance::DialogButton::primary(text("egui-save"), Footer::Save)
-                    });
-                }
                 Mode::Sauce => {
                     if preview.sauce.is_some() {
                         let label = text(if self.raw { "sauce-btn-formatted" } else { "sauce-btn-raw" });
@@ -182,30 +182,20 @@ impl Dialogs {
                     }
                     buttons.push(appearance::DialogButton::primary(appearance::labels::close(), Footer::Close).cancels());
                 }
-                Mode::About => {}
-                Mode::Help => {
-                    buttons.push(appearance::DialogButton::primary(appearance::labels::close(), Footer::Close).cancels());
-                }
+                Mode::About | Mode::Help | Mode::Export => {}
             }
             dialog.buttons(buttons);
         });
         let mut close = response.dismissed;
         match response.action {
             Some(Footer::Restore) => self.draft.monitor_settings = icy_engine_gui::MonitorSettings::default(),
-            Some(Footer::Save) => {
-                let result = if mode == Mode::Settings {
-                    self.save_settings().map(|()| {
-                        *options = self.draft.clone();
-                        true
-                    })
-                } else {
-                    self.export.save(preview)
-                };
-                match result {
-                    Ok(saved) => close |= saved,
-                    Err(error) => self.error = Some(error.to_string()),
+            Some(Footer::Save) => match self.save_settings() {
+                Ok(()) => {
+                    *options = self.draft.clone();
+                    close = true;
                 }
-            }
+                Err(error) => self.error = Some(error.to_string()),
+            },
             Some(Footer::Raw) => self.raw = !self.raw,
             Some(Footer::Cancel | Footer::Close) => close = true,
             None => {}
@@ -326,9 +316,9 @@ fn directory_row(ui: &mut egui::Ui, directory: &mut String) {
     });
 }
 
-fn help(ui: &mut egui::Ui) {
+fn help_groups() -> Vec<shortcuts::ShortcutGroup> {
     let commands = icy_view::commands::create_icy_view_commands();
-    let mut groups: Vec<(String, Vec<(String, String)>)> = Vec::new();
+    let mut groups: Vec<shortcuts::ShortcutGroup> = Vec::new();
     for id in COMMANDS {
         let Some(command) = commands.get(id) else {
             continue;
@@ -337,28 +327,22 @@ fn help(ui: &mut egui::Ui) {
             continue;
         };
         let category = command.fluent_category_key().map(|key| text(&key)).unwrap_or_default();
-        if groups.last().is_none_or(|(last, _)| *last != category) {
-            groups.push((category, Vec::new()));
+        if groups.last().is_none_or(|group| group.title != category) {
+            groups.push(shortcuts::ShortcutGroup::new(category, Vec::new()));
         }
-        groups.last_mut().unwrap().1.push((shortcut, text(&command.fluent_action_key())));
+        let description_key = command.fluent_desc_key();
+        let description = if icy_view::LANGUAGE_LOADER.has(&description_key) || icy_engine_gui::LANGUAGE_LOADER.has(&description_key) {
+            text(&description_key)
+        } else {
+            String::new()
+        };
+        let entry = shortcuts::ShortcutEntry::new(shortcut, text(&command.fluent_action_key())).with_description(description);
+        groups.last_mut().unwrap().entries.push(entry);
     }
-    if let Some((_, rows)) = groups.iter_mut().find(|(category, _)| *category == text("cmd-category-navigation")) {
-        rows.push(("0 … 5".into(), text("egui-rate-tooltip")));
+    if let Some(group) = groups.iter_mut().find(|group| group.title == text("cmd-category-navigation")) {
+        group.entries.push(shortcuts::ShortcutEntry::new("0–5", text("egui-rate-tooltip")));
     }
-    let key_width = (ui.available_width() * 0.4).clamp(120.0, 190.0);
-    for (category, rows) in groups {
-        appearance::compact_group(ui, &category, |ui| {
-            for (shortcut, action) in rows {
-                ui.horizontal(|ui| {
-                    ui.allocate_ui_with_layout(egui::vec2(key_width, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.set_min_width(key_width);
-                        shortcuts::keycaps(ui, &shortcut);
-                    });
-                    ui.add(egui::Label::new(action).wrap());
-                });
-            }
-        });
-    }
+    groups
 }
 
 fn sauce(ui: &mut egui::Ui, preview: &Preview, raw: bool) {
@@ -625,220 +609,25 @@ pub fn sauce_date(sauce: &icy_sauce::SauceRecord) -> Option<String> {
     (date.year > 0 || date.month > 0 || date.day > 0).then(|| format!("{:04}-{:02}-{:02}", date.year, date.month, date.day))
 }
 
-struct Export {
-    formats: Vec<FileFormat>,
-    format: usize,
-    directory: String,
-    filename: String,
-    confirmed: Option<PathBuf>,
-    save_sauce: bool,
-    options: icy_engine::SaveOptions,
+fn export_dialog(options: &Options, preview: &Preview, settings: &icy_engine_gui::ExportSettings) -> ExportDialog {
+    let formats = if preview.image.is_some() {
+        vec![FileFormat::Image(ImageFormat::Png), FileFormat::Image(ImageFormat::Gif)]
+    } else {
+        FileFormat::save_formats_with_images_for_buffer_type(preview.screen.terminal.screen.lock().buffer_type())
+    };
+    let name = Path::new(&preview.file).file_stem().unwrap_or_default().to_string_lossy();
+    ExportDialog::new(formats, options.export_path(), &name)
+        .with_settings(settings)
+        .with_sauce(preview.sauce.as_ref().map(|sauce| sauce.metadata().clone()))
 }
 
-impl Default for Export {
-    fn default() -> Self {
-        Self {
-            formats: vec![FileFormat::Ansi],
-            format: 0,
-            directory: String::new(),
-            filename: String::new(),
-            confirmed: None,
-            save_sauce: true,
-            options: Default::default(),
-        }
+/// Pictures are written as they are, text art in the requested format.
+fn write_export(request: &ExportRequest, preview: &mut Preview) -> Result<(), String> {
+    if let Some(image) = &preview.image_pixels {
+        request.write_with(|path| image.save(path).map_err(|error| error.to_string()))
+    } else {
+        request.write_screen(&mut **preview.screen.terminal.screen.lock())
     }
-}
-
-impl Export {
-    fn new(options: &Options, preview: &Preview) -> Self {
-        let formats = if preview.image.is_some() {
-            vec![FileFormat::Image(ImageFormat::Png), FileFormat::Image(ImageFormat::Gif)]
-        } else {
-            FileFormat::save_formats_with_images_for_buffer_type(preview.screen.terminal.screen.lock().buffer_type())
-        };
-        let filename = Path::new(&preview.file).file_stem().unwrap_or_default().to_string_lossy().into_owned();
-        Self {
-            formats,
-            filename,
-            directory: options.export_path().to_string_lossy().into_owned(),
-            ..Default::default()
-        }
-    }
-
-    fn target(&self) -> PathBuf {
-        Path::new(&self.directory).join(format!("{}.{}", self.filename, self.formats[self.format].primary_extension()))
-    }
-
-    fn fields(&mut self, ui: &mut egui::Ui) {
-        let before = self.target();
-        appearance::group(ui, "", |ui| {
-            appearance::combo_row(
-                ui,
-                &text("egui-format"),
-                format!("{} (.{})", self.formats[self.format], self.formats[self.format].primary_extension()),
-                |ui| {
-                    for (index, format) in self.formats.iter().enumerate() {
-                        ui.selectable_value(&mut self.format, index, format.to_string());
-                    }
-                },
-            );
-            directory_row(ui, &mut self.directory);
-            appearance::form_row(ui, &text("header-name"), |ui| {
-                ui.add_sized([ui.available_width(), 30.0], appearance::text_edit(&mut self.filename));
-            });
-            ui.add(egui::Label::new(egui::RichText::new(format!("→ {}", self.target().display())).weak().size(12.0)).truncate());
-        });
-        if before != self.target() {
-            self.confirmed = None;
-        }
-        if !matches!(self.formats[self.format], FileFormat::Image(_)) {
-            appearance::group(ui, "", |ui| {
-                appearance::check_row(ui, "SAUCE", &mut self.save_sauce);
-                appearance::check_row(ui, &text("egui-optimize-colors"), &mut self.options.preprocess.optimize_colors);
-                appearance::check_row(ui, &text("egui-normalize-spaces"), &mut self.options.preprocess.normalize_whitespaces);
-                if self.formats[self.format] == FileFormat::Ansi {
-                    let mut ansi = self.options.ansi_options();
-                    appearance::combo_row(ui, &text("egui-compatibility"), ansi.level.to_string(), |ui| {
-                        for level in [
-                            icy_engine::AnsiCompatibilityLevel::AnsiSys,
-                            icy_engine::AnsiCompatibilityLevel::Vt100,
-                            icy_engine::AnsiCompatibilityLevel::IcyTerm,
-                            icy_engine::AnsiCompatibilityLevel::Utf8Terminal,
-                        ] {
-                            ui.selectable_value(&mut ansi.level, level, level.to_string());
-                        }
-                    });
-                    screen_preparation(ui, &mut ansi.screen_prep);
-                    ui.add_enabled_ui(ansi.level.supports_truecolor(), |ui| {
-                        appearance::check_row(ui, "Truecolor", &mut ansi.always_use_rgb);
-                    });
-                    let mut length = match ansi.line_length {
-                        icy_engine::LineLength::Default => 0,
-                        icy_engine::LineLength::Minimum(_) => 1,
-                        icy_engine::LineLength::Maximum(_) => 2,
-                    };
-                    let mut columns = match ansi.line_length {
-                        icy_engine::LineLength::Minimum(value) | icy_engine::LineLength::Maximum(value) => value,
-                        _ => 80,
-                    };
-                    let lengths = [text("egui-line-default"), text("egui-line-min"), text("egui-line-max")];
-                    appearance::combo_row(ui, &text("egui-line-length"), &lengths[length], |ui| {
-                        for (index, label) in lengths.iter().enumerate() {
-                            ui.selectable_value(&mut length, index, label);
-                        }
-                    });
-                    if length != 0 {
-                        appearance::form_row(ui, &text("egui-columns"), |ui| {
-                            ui.add(egui::DragValue::new(&mut columns).range(1..=u16::MAX));
-                        });
-                    }
-                    ansi.line_length = match length {
-                        1 => icy_engine::LineLength::Minimum(columns),
-                        2 => icy_engine::LineLength::Maximum(columns),
-                        _ => icy_engine::LineLength::Default,
-                    };
-                    let mut line_break = match ansi.line_break {
-                        icy_engine::LineBreakBehavior::Wrap => 0,
-                        icy_engine::LineBreakBehavior::Force => 1,
-                        icy_engine::LineBreakBehavior::GotoXY => 2,
-                    };
-                    let breaks = [text("egui-line-wrap"), text("egui-line-force"), "GotoXY".into()];
-                    appearance::combo_row(ui, &text("egui-line-break"), &breaks[line_break], |ui| {
-                        for (index, label) in breaks.iter().enumerate() {
-                            ui.selectable_value(&mut line_break, index, label);
-                        }
-                    });
-                    ansi.line_break = match line_break {
-                        1 => icy_engine::LineBreakBehavior::Force,
-                        2 => icy_engine::LineBreakBehavior::GotoXY,
-                        _ => icy_engine::LineBreakBehavior::Wrap,
-                    };
-                    appearance::combo_row(ui, &text("egui-line-ending"), format!("{:?}", ansi.line_ending), |ui| {
-                        ui.selectable_value(&mut ansi.line_ending, icy_engine::LineEnding::Lf, "LF");
-                        ui.selectable_value(&mut ansi.line_ending, icy_engine::LineEnding::CrLf, "CRLF");
-                    });
-                    let controls = [
-                        (icy_engine::ControlCharHandling::Ignore, "egui-controls-keep"),
-                        (icy_engine::ControlCharHandling::FilterOut, "egui-controls-filter"),
-                        (icy_engine::ControlCharHandling::IcyTerm, "egui-controls-escape"),
-                    ];
-                    let selected = controls.iter().find(|(value, _)| *value == ansi.control_char_handling).unwrap().1;
-                    appearance::combo_row(ui, &text("egui-control-chars"), text(selected), |ui| {
-                        for (value, label) in controls {
-                            ui.selectable_value(&mut ansi.control_char_handling, value, text(label));
-                        }
-                    });
-                    if ansi.level.supports_sixel() {
-                        appearance::section(ui, "Sixel");
-                        appearance::form_row(ui, &text("egui-colors"), |ui| {
-                            ui.add(egui::DragValue::new(&mut ansi.sixel.max_colors).range(2..=256));
-                        });
-                        appearance::slider_row(ui, &text("egui-diffusion"), &mut ansi.sixel.diffusion, 0.0..=1.0);
-                        appearance::check_row(ui, "K-means", &mut ansi.sixel.use_kmeans);
-                    }
-                    self.options.format = icy_engine::formats::FormatOptions::Ansi(ansi);
-                } else if self.formats[self.format] == FileFormat::XBin {
-                    let mut compressed = self.options.compressed_options();
-                    appearance::check_row(ui, &text("egui-compress"), &mut compressed.compress);
-                    self.options.format = icy_engine::formats::FormatOptions::Compressed(compressed);
-                } else if self.formats[self.format] == FileFormat::IcyDraw {
-                    let mut native = self.options.icy_draw_options();
-                    appearance::check_row(ui, &text("egui-compress"), &mut native.compress);
-                    self.options.format = icy_engine::formats::FormatOptions::IcyDraw(native);
-                } else {
-                    let mut character = self.options.character_options();
-                    screen_preparation(ui, &mut character.screen_prep);
-                    appearance::check_row(ui, "UTF-8", &mut character.unicode);
-                    self.options.format = icy_engine::formats::FormatOptions::Character(character);
-                }
-            });
-        }
-        if self.confirmed.is_some() {
-            ui.colored_label(ui.visuals().warn_fg_color, text("egui-overwrite-question"));
-        }
-    }
-
-    fn save(&mut self, preview: &mut Preview) -> anyhow::Result<bool> {
-        anyhow::ensure!(
-            !self.filename.trim().is_empty() && Path::new(&self.filename).file_name() == Some(std::ffi::OsStr::new(&self.filename)),
-            "{}",
-            text("egui-invalid-name")
-        );
-        let target = self.target();
-        if target.exists() && self.confirmed.as_ref() != Some(&target) {
-            self.confirmed = Some(target);
-            return Ok(false);
-        }
-        std::fs::create_dir_all(&self.directory)?;
-        let format = self.formats[self.format];
-        if let Some(image) = &preview.image_pixels {
-            image.save(&target)?;
-        } else if let FileFormat::Image(format) = format {
-            format.save_screen(&**preview.screen.terminal.screen.lock(), &target)?;
-        } else {
-            let mut options = self.options.clone();
-            if self.save_sauce {
-                options.sauce = preview.sauce.as_ref().map(|sauce| sauce.metadata().clone());
-            }
-            let data = preview.screen.terminal.screen.lock().to_bytes(format.primary_extension(), &options)?;
-            std::fs::write(&target, data)?;
-        }
-        Ok(true)
-    }
-}
-
-fn screen_preparation(ui: &mut egui::Ui, preparation: &mut icy_engine::ScreenPreperation) {
-    let values = [
-        (icy_engine::ScreenPreperation::None, "egui-prep-none"),
-        (icy_engine::ScreenPreperation::ClearScreen, "egui-prep-clear"),
-        (icy_engine::ScreenPreperation::Home, "egui-prep-home"),
-    ];
-    let selected = values.iter().find(|(value, _)| value == preparation).unwrap().1;
-    appearance::combo_row(ui, &text("egui-screen-preparation"), text(selected), |ui| {
-        for (value, label) in values {
-            ui.selectable_value(preparation, value, text(label));
-        }
-    });
 }
 
 #[cfg(test)]
@@ -867,32 +656,24 @@ mod tests {
     }
 
     #[test]
-    fn export_writes_real_formats_and_confirmation_tracks_target() {
+    fn export_writes_the_screen_and_pictures() {
         let fixture = crate::tests::Fixture::new();
         let context = egui::Context::default();
         let mut preview = Preview::new(&context).unwrap();
         preview.load("art.ans".into(), b"HELLO".to_vec(), false, &context);
         crate::tests::wait_preview(&mut preview, &context);
-        let mut export = Export {
-            directory: fixture.0.to_string_lossy().into_owned(),
-            filename: "art".into(),
+        let options = Options {
+            export_path: fixture.0.to_string_lossy().into_owned(),
             ..Default::default()
         };
-        std::fs::write(export.target(), b"OLD").unwrap();
-        assert!(!export.save(&mut preview).unwrap());
-        assert_eq!(std::fs::read(export.target()).unwrap(), b"OLD");
-        export.filename = "other".into();
-        std::fs::write(export.target(), b"OTHER").unwrap();
-        assert!(!export.save(&mut preview).unwrap());
-        assert_eq!(std::fs::read(export.target()).unwrap(), b"OTHER");
-        assert!(export.save(&mut preview).unwrap());
-        let data = std::fs::read(export.target()).unwrap();
+        let dialog = export_dialog(&options, &preview, &Default::default());
+        let request = dialog.request().unwrap();
+        assert_eq!(request.path, fixture.0.join("art.ans"));
+        write_export(&request, &mut preview).unwrap();
+        let data = std::fs::read(&request.path).unwrap();
         assert!(data.windows(5).any(|bytes| bytes == b"HELLO"));
-        export.filename = "../outside".into();
-        assert!(export.save(&mut preview).is_err());
-        export.filename = "image".into();
-        export.formats = vec![FileFormat::Image(ImageFormat::Png)];
-        assert!(export.save(&mut preview).unwrap());
-        assert!(image::open(export.target()).unwrap().width() > 0);
+        let image = dialog.with_format(FileFormat::Image(ImageFormat::Png)).request().unwrap();
+        write_export(&image, &mut preview).unwrap();
+        assert!(image::open(&image.path).unwrap().width() > 0);
     }
 }

@@ -81,6 +81,46 @@ export-dialog-utf8-output = UTF-8 output
 export-dialog-dir-not-exist = Directory does not exist!
 export-dialog-not-directory = Path is not a directory!
 
+# Shared export dialog
+export-button = Export
+export-section-file = File
+export-section-options = Options
+export-format = Format
+export-folder = Folder
+export-browse = Choose a folder
+export-file-name = File name
+export-overwrite-question = This file already exists. Replace it?
+export-invalid-name = Enter a file name without folders.
+export-not-a-folder = The folder is a file.
+export-save-sauce = Save SAUCE record
+export-optimize-colors = Optimize colors
+export-normalize-whitespace = Normalize whitespace
+export-utf8 = UTF-8 output
+export-compress = Compress
+export-compatibility = Compatibility
+export-truecolor = 24-bit RGB colors
+export-screen-preparation = Screen preparation
+export-prep-none = None
+export-prep-clear = Clear screen
+export-prep-home = Cursor home
+export-line-length = Line length
+export-line-length-default = Picture width
+export-line-length-minimum = At least
+export-line-length-maximum = At most
+export-columns = Columns
+export-line-break = Line breaks
+export-line-break-wrap = Terminal wraps
+export-line-break-force = Always break
+export-line-break-gotoxy = Position the cursor (GotoXY)
+export-line-ending = Line ending
+export-control-chars = Control characters
+export-controls-keep = Write unchanged
+export-controls-filter = Replace
+export-controls-escape = Escape (IcyTerm)
+export-sixel-colors = Colors
+export-sixel-diffusion = Diffusion
+export-sixel-kmeans = K-means palette
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Common Command System Keys (shared between icy_view and icy_term)
 # ═══════════════════════════════════════════════════════════════════════════════

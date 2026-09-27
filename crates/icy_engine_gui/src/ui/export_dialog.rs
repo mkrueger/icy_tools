@@ -267,6 +267,7 @@ impl ExportDialogState {
             utf8_output: self.utf8_output,
             compress: self.compress,
             sixel_settings: self.sixel_settings.clone(),
+            ..Default::default()
         }
     }
 

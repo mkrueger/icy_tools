@@ -45,6 +45,9 @@ pub mod labels {
     pub fn overwrite() -> String {
         fl!(LANGUAGE_LOADER, "dialog-overwrite-button")
     }
+    pub fn export() -> String {
+        fl!(LANGUAGE_LOADER, "export-button")
+    }
     pub fn copy() -> String {
         fl!(LANGUAGE_LOADER, "cmd-edit-copy-action")
     }

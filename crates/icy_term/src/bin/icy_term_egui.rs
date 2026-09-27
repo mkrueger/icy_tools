@@ -112,7 +112,9 @@ struct TerminalApp {
     icons: Option<dialing_directory::Icons>,
     about_open: bool,
     about: Option<about::About>,
-    save_screen: Option<export::SaveScreen>,
+    save_screen: Option<icy_engine_gui::egui::export::ExportDialog>,
+    /// Export options of this session, the next save starts with them.
+    export_settings: icy_engine_gui::ExportSettings,
     capture: Option<export::Capture>,
     help_open: bool,
     bps_open: bool,
@@ -166,6 +168,10 @@ impl TerminalApp {
             about_open: false,
             about: None,
             save_screen: None,
+            export_settings: icy_engine_gui::ExportSettings {
+                ansi_level: icy_engine::AnsiCompatibilityLevel::Utf8Terminal,
+                ..Default::default()
+            },
             capture: None,
             help_open: false,
             bps_open: false,
@@ -1229,13 +1235,16 @@ impl TerminalApp {
             }
         }
         if let Some(dialog) = &mut self.save_screen {
-            let mut open = true;
-            let target = dialog.show(context, &mut open);
-            if !open {
-                self.save_screen = None;
-            }
-            if let Some((path, extension)) = target {
-                self.write_screen(path, extension);
+            match dialog.show(context) {
+                Some(icy_engine_gui::egui::export::ExportAction::Export(request)) => {
+                    self.export_settings = dialog.settings();
+                    match request.write_screen(&mut **self.terminal.screen.lock()) {
+                        Ok(()) => self.save_screen = None,
+                        Err(error) => dialog.set_error(error),
+                    }
+                }
+                Some(icy_engine_gui::egui::export::ExportAction::Cancel) => self.save_screen = None,
+                None => {}
             }
         }
         if std::mem::take(&mut self.transfers.request_capture) {
@@ -1663,20 +1672,15 @@ impl TerminalApp {
     }
 
     fn save_screen(&mut self) {
-        self.save_screen = Some(export::SaveScreen::new(&self.dialing_directory.options.capture_path));
-    }
-
-    fn write_screen(&mut self, path: PathBuf, extension: &str) {
-        let options = icy_engine::SaveOptions::ansi(icy_engine::AnsiCompatibilityLevel::Utf8Terminal);
-        let data = self.terminal.screen.lock().to_bytes(extension, &options);
-        match data {
-            Ok(data) => {
-                if let Err(error) = std::fs::write(path, data) {
-                    self.error = Some(error.to_string());
-                }
-            }
-            Err(error) => self.error = Some(error.to_string()),
-        }
+        let buffer_type = self.terminal.screen.lock().buffer_type();
+        self.save_screen = Some(
+            icy_engine_gui::egui::export::ExportDialog::new(
+                FileFormat::save_formats_with_images_for_buffer_type(buffer_type),
+                &self.dialing_directory.options.capture_path,
+                "screen",
+            )
+            .with_settings(&self.export_settings),
+        );
     }
 
     fn command(&mut self, command: icy_term::TerminalCommand, context: &egui::Context) {
