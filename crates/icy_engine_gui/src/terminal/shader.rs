@@ -55,6 +55,7 @@ struct CRTUniforms {
 
     // aspect_params[0] = aspect_ratio_y (1.0 = disabled)
     // aspect_params[1] = max_layer_height (for UV scaling in texture arrays)
+    // aspect_params[2..4] = physical screen pixels per texel (x, y)
     aspect_params: [f32; 4],
     // Packed slice heights (up to 10) + first_slice_start_y
     // slice_heights[0] = [h0, h1, h2, first_slice_start_y]
@@ -66,7 +67,8 @@ struct CRTUniforms {
     scroll_offset_x: f32,
     visible_width: f32,
     texture_width: f32,
-    _x_padding: f32, // Padding for alignment
+    /// 1.0 = crisp texels at any scale (sharp bilinear), 0.0 = plain bilinear filtering
+    sharp_sampling: f32,
 
     // Caret uniforms (rendered in shader to avoid texture cache invalidation)
     /// Caret position in pixels (x, y) relative to viewport
@@ -300,7 +302,7 @@ pub struct TerminalShader {
 
     // Reference image rendering
     /// Reference image texture data (RGBA bytes), None = no image
-    pub reference_image_data: Option<(Vec<u8>, u32, u32)>, // (data, width, height)
+    pub reference_image_data: Option<(Arc<Vec<u8>>, u32, u32)>, // (data, width, height)
     /// Reference image enabled
     pub reference_image_enabled: bool,
     /// Reference image alpha/opacity (0.0 - 1.0)
@@ -574,12 +576,11 @@ impl TextureArray {
 struct InstanceResources {
     /// Texture array for blink_off state
     texture_array_blink_off: TextureArray,
-    /// Texture array for blink_on state  
-    texture_array_blink_on: TextureArray,
-    /// Bind group for blink_off state
-    bind_group_blink_off: wgpu::BindGroup,
-    /// Bind group for blink_on state
-    bind_group_blink_on: wgpu::BindGroup,
+    /// Texture array for blink_on state; `None` while both states show the same tiles,
+    /// in which case the blink_off array is bound for both.
+    texture_array_blink_on: Option<TextureArray>,
+    /// Bind groups for (blink_off, blink_on); `None` when a bound resource changed.
+    bind_groups: Option<(wgpu::BindGroup, wgpu::BindGroup)>,
     /// Uniform buffer (shared between both states)
     uniform_buffer: wgpu::Buffer,
     /// Monitor color buffer (shared between both states)
@@ -596,17 +597,14 @@ struct InstanceResources {
     blink_on_data: Vec<Arc<Vec<u8>>>,
     /// Reference image texture (optional)
     reference_image_texture: Option<TextureSlice>,
-    /// Hash of reference image data for cache validation
-    reference_image_hash: u64,
+    /// Image the texture was uploaded from; holding it keeps the pointer comparison sound.
+    reference_image_source: Option<(Arc<Vec<u8>>, u32, u32)>,
     /// Selection mask texture (optional)
     selection_mask_texture: Option<TextureSlice>,
-    /// Hash of selection mask data for cache validation
-    selection_mask_hash: u64,
-
+    selection_mask_source: Option<(Vec<u8>, u32, u32)>,
     /// Tool overlay mask texture (optional)
     tool_overlay_mask_texture: Option<TextureSlice>,
-    /// Hash of tool overlay mask data for cache validation
-    tool_overlay_mask_hash: u64,
+    tool_overlay_mask_source: Option<(Vec<u8>, u32, u32)>,
 
     /// Physical pixel viewport for this widget instance (x, y, width, height).
     /// We must render into the widget bounds viewport and only use `clip_bounds`
@@ -615,12 +613,87 @@ struct InstanceResources {
     viewport_px: [f32; 4],
 }
 
+impl InstanceResources {
+    fn create_bind_groups(
+        &self,
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        sampler: &wgpu::Sampler,
+        dummy: &wgpu::TextureView,
+        id: u64,
+    ) -> (wgpu::BindGroup, wgpu::BindGroup) {
+        fn view_or<'a>(texture: &'a Option<TextureSlice>, dummy: &'a wgpu::TextureView) -> &'a wgpu::TextureView {
+            texture.as_ref().map_or(dummy, |texture| &texture.texture_view)
+        }
+        let reference_view = view_or(&self.reference_image_texture, dummy);
+        let selection_view = view_or(&self.selection_mask_texture, dummy);
+        let tool_view = view_or(&self.tool_overlay_mask_texture, dummy);
+        let create = |array: &TextureArray, label: &str| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
+                layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&array.texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: self.monitor_color_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(reference_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(selection_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: wgpu::BindingResource::TextureView(tool_view),
+                    },
+                ],
+            })
+        };
+        let blink_on = self.texture_array_blink_on.as_ref().unwrap_or(&self.texture_array_blink_off);
+        (create(&self.texture_array_blink_off, "BlinkOff"), create(blink_on, "BlinkOn"))
+    }
+}
+
+/// Uploads `source` into `texture` when it differs from `current`; returns whether it did.
+fn update_mask_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    source: &Option<(Vec<u8>, u32, u32)>,
+    current: &mut Option<(Vec<u8>, u32, u32)>,
+    texture: &mut Option<TextureSlice>,
+) -> bool {
+    if source == current {
+        return false;
+    }
+    *texture = source
+        .as_ref()
+        .map(|(data, width, height)| create_texture_with_data(device, queue, label, *width, *height, Some(data), wgpu::TextureFormat::Rgba8Unorm));
+    *current = source.clone();
+    true
+}
+
 /// The terminal shader renderer (GPU pipeline) with texture array support
 pub struct TerminalShaderRenderer {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
+    /// Always linear: nearest-style output is produced in the shader (see `sharp_sampling`).
     sampler: wgpu::Sampler,
-    filter_mode: wgpu::FilterMode,
     /// 1x1 transparent texture for unused 2D texture slots
     dummy_texture_view: wgpu::TextureView,
     instances: HashMap<u64, InstanceResources>,
@@ -631,7 +704,6 @@ static RENDERER_ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::At
 impl TerminalShaderRenderer {
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let renderer_id = RENDERER_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let filter_mode = wgpu::FilterMode::Linear;
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some(&format!("Terminal CRT Shader {}", renderer_id)),
@@ -765,8 +837,8 @@ impl TerminalShaderRenderer {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: filter_mode,
-            min_filter: filter_mode,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
@@ -792,106 +864,20 @@ impl TerminalShaderRenderer {
             pipeline,
             bind_group_layout,
             sampler,
-            filter_mode,
             dummy_texture_view,
             instances: HashMap::new(),
         }
     }
 }
 
-impl TerminalShader {
-    /// Compute a hash for reference image data
-    fn compute_ref_image_hash(data: &Option<(Vec<u8>, u32, u32)>) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        match data {
-            Some((bytes, w, h)) => {
-                // Use data pointer and dimensions for hash
-                bytes.as_ptr().hash(&mut hasher);
-                bytes.len().hash(&mut hasher);
-                w.hash(&mut hasher);
-                h.hash(&mut hasher);
-            }
-            None => {
-                0u64.hash(&mut hasher);
-            }
-        }
-        hasher.finish()
-    }
-
-    /// Compute a hash for selection mask data
-    fn compute_selection_mask_hash(data: &Option<(Vec<u8>, u32, u32)>) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        match data {
-            Some((bytes, w, h)) => {
-                // Use data content for hash (selection changes frequently)
-                bytes.hash(&mut hasher);
-                w.hash(&mut hasher);
-                h.hash(&mut hasher);
-            }
-            None => {
-                0u64.hash(&mut hasher);
-            }
-        }
-        hasher.finish()
-    }
-
-    /// Compute a hash for tool overlay mask data
-    fn compute_tool_overlay_mask_hash(data: &Option<(Vec<u8>, u32, u32)>, rect: &Option<[f32; 4]>) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        match data {
-            Some((bytes, w, h)) => {
-                // Overlay changes frequently while dragging
-                bytes.hash(&mut hasher);
-                w.hash(&mut hasher);
-                h.hash(&mut hasher);
-            }
-            None => {
-                0u64.hash(&mut hasher);
-            }
-        }
-
-        // Include placement in the hash as well
-        if let Some([x0, y0, x1, y1]) = rect {
-            x0.to_bits().hash(&mut hasher);
-            y0.to_bits().hash(&mut hasher);
-            x1.to_bits().hash(&mut hasher);
-            y1.to_bits().hash(&mut hasher);
-        }
-        hasher.finish()
-    }
+/// Both blink states show the same tiles, so one texture array can serve both.
+fn blink_states_identical(off: &[TextureSliceData], on: &[TextureSliceData]) -> bool {
+    off.len() == on.len() && off.iter().zip(on).all(|(off, on)| Arc::ptr_eq(&off.rgba_data, &on.rgba_data))
 }
 
 impl TerminalShader {
     pub fn prepare_frame(&self, pipeline: &mut TerminalShaderRenderer, device: &wgpu::Device, queue: &wgpu::Queue, bounds: [f32; 4], scale_factor: f32) {
         let [bounds_x, bounds_y, bounds_width, bounds_height] = bounds;
-
-        // Check if we need to recreate the sampler due to filter mode change
-        let desired_filter = if self.monitor_settings.use_bilinear_filtering {
-            wgpu::FilterMode::Linear
-        } else {
-            wgpu::FilterMode::Nearest
-        };
-        if desired_filter != pipeline.filter_mode {
-            pipeline.filter_mode = desired_filter;
-            pipeline.sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-                label: Some("Terminal Texture Sampler"),
-                address_mode_u: wgpu::AddressMode::ClampToEdge,
-                address_mode_v: wgpu::AddressMode::ClampToEdge,
-                address_mode_w: wgpu::AddressMode::ClampToEdge,
-                mag_filter: desired_filter,
-                min_filter: desired_filter,
-                mipmap_filter: wgpu::FilterMode::Nearest,
-                ..Default::default()
-            });
-            // Clear all instances to force bind group recreation
-            pipeline.instances.clear();
-        }
 
         // Remove pending instances
         {
@@ -906,6 +892,7 @@ impl TerminalShader {
         let num_slices = self.text_slice_count;
         let texture_width = self.texture_width.min(MAX_TEXTURE_DIMENSION);
         let total_height = self.total_content_height as u32;
+        let shared_blink = blink_states_identical(&self.slices_blink_off, &self.slices_blink_on);
 
         // Check if we need to recreate resources for either blink state
         let needs_recreate = match pipeline.instances.get(&id) {
@@ -915,21 +902,32 @@ impl TerminalShader {
                 let slices_changed = resources.num_slices != num_slices;
                 let width_changed = resources.texture_width != texture_width;
                 let height_changed = resources.total_height != total_height;
+                let sharing_changed = resources.texture_array_blink_on.is_none() != shared_blink;
                 // Slice heights can be redistributed without changing the total height;
                 // in-place uploads must never exceed the existing array layers.
-                let extent_changed =
-                    !resources.texture_array_blink_off.fits(&self.slices_blink_off) || !resources.texture_array_blink_on.fits(&self.slices_blink_on);
+                let extent_changed = !resources.texture_array_blink_off.fits(&self.slices_blink_off)
+                    || resources
+                        .texture_array_blink_on
+                        .as_ref()
+                        .is_some_and(|array| !array.fits(&self.slices_blink_on));
 
-                slices_changed || width_changed || height_changed || extent_changed
+                slices_changed || width_changed || height_changed || sharing_changed || extent_changed
+            }
+        };
+
+        let blink_on_data = || {
+            if shared_blink {
+                Vec::new()
+            } else {
+                self.slices_blink_on.iter().map(|slice| slice.rgba_data.clone()).collect()
             }
         };
 
         if needs_recreate {
-            // Create texture arrays for both blink states
             let texture_array_blink_off = create_texture_array(device, queue, &format!("Terminal BlinkOff Array Instance {}", id), &self.slices_blink_off);
-            let texture_array_blink_on = create_texture_array(device, queue, &format!("Terminal BlinkOn Array Instance {}", id), &self.slices_blink_on);
+            let texture_array_blink_on =
+                (!shared_blink).then(|| create_texture_array(device, queue, &format!("Terminal BlinkOn Array Instance {}", id), &self.slices_blink_on));
 
-            // Create shared uniform buffer
             let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(&format!("Terminal Uniforms Instance {}", id)),
                 size: std::mem::size_of::<CRTUniforms>() as u64,
@@ -944,81 +942,12 @@ impl TerminalShader {
                 mapped_at_creation: false,
             });
 
-            // Helper to create bind group for a texture array
-            let create_bind_group = |texture_array_view: &wgpu::TextureView,
-                                     ref_image_view: &wgpu::TextureView,
-                                     sel_mask_view: &wgpu::TextureView,
-                                     tool_mask_view: &wgpu::TextureView,
-                                     label: &str|
-             -> wgpu::BindGroup {
-                let bind_entries = vec![
-                    // Texture array at binding 0
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(texture_array_view),
-                    },
-                    // Sampler at binding 1
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&pipeline.sampler),
-                    },
-                    // Uniforms at binding 2
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: uniform_buffer.as_entire_binding(),
-                    },
-                    // Monitor color at binding 3
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: monitor_color_buffer.as_entire_binding(),
-                    },
-                    // Reference image at binding 4
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: wgpu::BindingResource::TextureView(ref_image_view),
-                    },
-                    // Selection mask at binding 5
-                    wgpu::BindGroupEntry {
-                        binding: 5,
-                        resource: wgpu::BindingResource::TextureView(sel_mask_view),
-                    },
-                    // Tool overlay mask at binding 6
-                    wgpu::BindGroupEntry {
-                        binding: 6,
-                        resource: wgpu::BindingResource::TextureView(tool_mask_view),
-                    },
-                ];
-
-                device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
-                    layout: &pipeline.bind_group_layout,
-                    entries: &bind_entries,
-                })
-            };
-
-            // Create bind groups for both blink states (using dummy for reference image and selection mask initially)
-            let bind_group_blink_off = create_bind_group(
-                &texture_array_blink_off.texture_view,
-                &pipeline.dummy_texture_view,
-                &pipeline.dummy_texture_view,
-                &pipeline.dummy_texture_view,
-                "BlinkOff",
-            );
-            let bind_group_blink_on = create_bind_group(
-                &texture_array_blink_on.texture_view,
-                &pipeline.dummy_texture_view,
-                &pipeline.dummy_texture_view,
-                &pipeline.dummy_texture_view,
-                "BlinkOn",
-            );
-
             pipeline.instances.insert(
                 id,
                 InstanceResources {
                     texture_array_blink_off,
                     texture_array_blink_on,
-                    bind_group_blink_off,
-                    bind_group_blink_on,
+                    bind_groups: None,
                     uniform_buffer,
                     monitor_color_buffer,
                     texture_width,
@@ -1026,333 +955,97 @@ impl TerminalShader {
                     num_slices,
                     render_generation,
                     blink_off_data: self.slices_blink_off.iter().map(|slice| slice.rgba_data.clone()).collect(),
-                    blink_on_data: self.slices_blink_on.iter().map(|slice| slice.rgba_data.clone()).collect(),
+                    blink_on_data: blink_on_data(),
                     reference_image_texture: None,
-                    reference_image_hash: 0,
+                    reference_image_source: None,
                     selection_mask_texture: None,
-                    selection_mask_hash: 0,
+                    selection_mask_source: None,
                     tool_overlay_mask_texture: None,
-                    tool_overlay_mask_hash: 0,
+                    tool_overlay_mask_source: None,
                     viewport_px: [0.0, 0.0, 1.0, 1.0],
                 },
             );
         } else if let Some(resources) = pipeline.instances.get_mut(&id) {
             if resources.render_generation != render_generation {
                 update_texture_array(queue, &resources.texture_array_blink_off, &self.slices_blink_off, &resources.blink_off_data);
-                update_texture_array(queue, &resources.texture_array_blink_on, &self.slices_blink_on, &resources.blink_on_data);
+                if let Some(array) = &resources.texture_array_blink_on {
+                    update_texture_array(queue, array, &self.slices_blink_on, &resources.blink_on_data);
+                }
                 resources.blink_off_data = self.slices_blink_off.iter().map(|slice| slice.rgba_data.clone()).collect();
-                resources.blink_on_data = self.slices_blink_on.iter().map(|slice| slice.rgba_data.clone()).collect();
+                resources.blink_on_data = blink_on_data();
                 resources.render_generation = render_generation;
             }
         }
 
-        // Check if reference image changed and needs update
-        let ref_image_hash = Self::compute_ref_image_hash(&self.reference_image_data);
-        let needs_ref_image_update = match pipeline.instances.get(&id) {
-            Some(resources) => resources.reference_image_hash != ref_image_hash,
-            None => false,
+        let TerminalShaderRenderer {
+            instances,
+            bind_group_layout,
+            sampler,
+            dummy_texture_view,
+            ..
+        } = pipeline;
+        let Some(resources) = instances.get_mut(&id) else {
+            return;
         };
 
-        if needs_ref_image_update {
-            if let Some(resources) = pipeline.instances.get_mut(&id) {
-                // Create or update reference image texture
-                if let Some((data, width, height)) = &self.reference_image_data {
-                    let label = format!("Reference Image Instance {}", id);
-                    let slice = create_texture_with_data(device, queue, &label, *width, *height, Some(data), wgpu::TextureFormat::Rgba8Unorm);
-                    resources.reference_image_texture = Some(slice);
-                } else {
-                    resources.reference_image_texture = None;
-                }
-
-                // Helper to create bind group
-                let create_bind_group = |texture_array_view: &wgpu::TextureView,
-                                         ref_view: &wgpu::TextureView,
-                                         sel_mask_view: &wgpu::TextureView,
-                                         tool_mask_view: &wgpu::TextureView,
-                                         label: &str|
-                 -> wgpu::BindGroup {
-                    let bind_entries = vec![
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(texture_array_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&pipeline.sampler),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: resources.uniform_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 3,
-                            resource: resources.monitor_color_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 4,
-                            resource: wgpu::BindingResource::TextureView(ref_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 5,
-                            resource: wgpu::BindingResource::TextureView(sel_mask_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 6,
-                            resource: wgpu::BindingResource::TextureView(tool_mask_view),
-                        },
-                    ];
-
-                    device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
-                        layout: &pipeline.bind_group_layout,
-                        entries: &bind_entries,
-                    })
-                };
-
-                // Recreate bind groups with new reference image
-                let ref_view = resources
-                    .reference_image_texture
-                    .as_ref()
-                    .map(|t| &t.texture_view)
-                    .unwrap_or(&pipeline.dummy_texture_view);
-                let sel_mask_view = resources
-                    .selection_mask_texture
-                    .as_ref()
-                    .map(|t| &t.texture_view)
-                    .unwrap_or(&pipeline.dummy_texture_view);
-                let tool_mask_view = resources
-                    .tool_overlay_mask_texture
-                    .as_ref()
-                    .map(|t| &t.texture_view)
-                    .unwrap_or(&pipeline.dummy_texture_view);
-                resources.bind_group_blink_off = create_bind_group(
-                    &resources.texture_array_blink_off.texture_view,
-                    ref_view,
-                    sel_mask_view,
-                    tool_mask_view,
-                    "BlinkOff",
-                );
-                resources.bind_group_blink_on = create_bind_group(
-                    &resources.texture_array_blink_on.texture_view,
-                    ref_view,
-                    sel_mask_view,
-                    tool_mask_view,
-                    "BlinkOn",
-                );
-                resources.reference_image_hash = ref_image_hash;
+        // The reference image is shared by `Arc`, so an unchanged image is never uploaded again.
+        let reference_changed = match (&self.reference_image_data, &resources.reference_image_source) {
+            (Some((data, width, height)), Some((current, current_width, current_height))) => {
+                !Arc::ptr_eq(data, current) || width != current_width || height != current_height
             }
+            (None, None) => false,
+            _ => true,
+        };
+        if reference_changed {
+            resources.reference_image_texture = self.reference_image_data.as_ref().map(|(data, width, height)| {
+                create_texture_with_data(
+                    device,
+                    queue,
+                    &format!("Reference Image Instance {}", id),
+                    *width,
+                    *height,
+                    Some(data),
+                    wgpu::TextureFormat::Rgba8Unorm,
+                )
+            });
+            resources.reference_image_source = self.reference_image_data.clone();
+            resources.bind_groups = None;
         }
 
-        // Check if selection mask changed and needs update
-        let sel_mask_hash = Self::compute_selection_mask_hash(&self.selection_mask_data);
-        let needs_sel_mask_update = match pipeline.instances.get(&id) {
-            Some(resources) => resources.selection_mask_hash != sel_mask_hash,
-            None => false,
-        };
-
-        if needs_sel_mask_update {
-            if let Some(resources) = pipeline.instances.get_mut(&id) {
-                // Create or update selection mask texture
-                if let Some((data, width, height)) = &self.selection_mask_data {
-                    let label = format!("Selection Mask Instance {}", id);
-                    let slice = create_texture_with_data(device, queue, &label, *width, *height, Some(data), wgpu::TextureFormat::Rgba8UnormSrgb);
-                    resources.selection_mask_texture = Some(slice);
-                } else {
-                    resources.selection_mask_texture = None;
-                }
-
-                // Helper to create bind group
-                let create_bind_group = |texture_array_view: &wgpu::TextureView,
-                                         ref_view: &wgpu::TextureView,
-                                         sel_mask_view: &wgpu::TextureView,
-                                         tool_mask_view: &wgpu::TextureView,
-                                         label: &str|
-                 -> wgpu::BindGroup {
-                    let bind_entries = vec![
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(texture_array_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&pipeline.sampler),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: resources.uniform_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 3,
-                            resource: resources.monitor_color_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 4,
-                            resource: wgpu::BindingResource::TextureView(ref_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 5,
-                            resource: wgpu::BindingResource::TextureView(sel_mask_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 6,
-                            resource: wgpu::BindingResource::TextureView(tool_mask_view),
-                        },
-                    ];
-
-                    device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
-                        layout: &pipeline.bind_group_layout,
-                        entries: &bind_entries,
-                    })
-                };
-
-                // Recreate bind groups with new selection mask
-                let ref_view = resources
-                    .reference_image_texture
-                    .as_ref()
-                    .map(|t| &t.texture_view)
-                    .unwrap_or(&pipeline.dummy_texture_view);
-                let sel_mask_view = resources
-                    .selection_mask_texture
-                    .as_ref()
-                    .map(|t| &t.texture_view)
-                    .unwrap_or(&pipeline.dummy_texture_view);
-                let tool_mask_view = resources
-                    .tool_overlay_mask_texture
-                    .as_ref()
-                    .map(|t| &t.texture_view)
-                    .unwrap_or(&pipeline.dummy_texture_view);
-                resources.bind_group_blink_off = create_bind_group(
-                    &resources.texture_array_blink_off.texture_view,
-                    ref_view,
-                    sel_mask_view,
-                    tool_mask_view,
-                    "BlinkOff",
-                );
-                resources.bind_group_blink_on = create_bind_group(
-                    &resources.texture_array_blink_on.texture_view,
-                    ref_view,
-                    sel_mask_view,
-                    tool_mask_view,
-                    "BlinkOn",
-                );
-                resources.selection_mask_hash = sel_mask_hash;
-            }
+        // Masks hold sRGB-encoded colors like the terminal tiles, so they must not be decoded on load.
+        if update_mask_texture(
+            device,
+            queue,
+            &format!("Selection Mask Instance {}", id),
+            &self.selection_mask_data,
+            &mut resources.selection_mask_source,
+            &mut resources.selection_mask_texture,
+        ) {
+            resources.bind_groups = None;
+        }
+        if update_mask_texture(
+            device,
+            queue,
+            &format!("Tool Overlay Mask Instance {}", id),
+            &self.tool_overlay_mask_data,
+            &mut resources.tool_overlay_mask_source,
+            &mut resources.tool_overlay_mask_texture,
+        ) {
+            resources.bind_groups = None;
         }
 
-        // Check if tool overlay mask changed and needs update
-        let tool_mask_hash = Self::compute_tool_overlay_mask_hash(&self.tool_overlay_mask_data, &self.tool_overlay_rect);
-        let needs_tool_mask_update = match pipeline.instances.get(&id) {
-            Some(resources) => resources.tool_overlay_mask_hash != tool_mask_hash,
-            None => false,
-        };
-
-        if needs_tool_mask_update {
-            if let Some(resources) = pipeline.instances.get_mut(&id) {
-                // Create or update tool overlay mask texture
-                if let Some((data, width, height)) = &self.tool_overlay_mask_data {
-                    let label = format!("Tool Overlay Mask Instance {}", id);
-                    let slice = create_texture_with_data(device, queue, &label, *width, *height, Some(data), wgpu::TextureFormat::Rgba8UnormSrgb);
-                    resources.tool_overlay_mask_texture = Some(slice);
-                } else {
-                    resources.tool_overlay_mask_texture = None;
-                }
-
-                // Helper to create bind group
-                let create_bind_group = |texture_array_view: &wgpu::TextureView,
-                                         ref_view: &wgpu::TextureView,
-                                         sel_mask_view: &wgpu::TextureView,
-                                         tool_mask_view: &wgpu::TextureView,
-                                         label: &str|
-                 -> wgpu::BindGroup {
-                    let bind_entries = vec![
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(texture_array_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&pipeline.sampler),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: resources.uniform_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 3,
-                            resource: resources.monitor_color_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 4,
-                            resource: wgpu::BindingResource::TextureView(ref_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 5,
-                            resource: wgpu::BindingResource::TextureView(sel_mask_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 6,
-                            resource: wgpu::BindingResource::TextureView(tool_mask_view),
-                        },
-                    ];
-
-                    device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some(&format!("Terminal BindGroup {} Instance {}", label, id)),
-                        layout: &pipeline.bind_group_layout,
-                        entries: &bind_entries,
-                    })
-                };
-
-                // Recreate bind groups with new tool overlay mask
-                let ref_view = resources
-                    .reference_image_texture
-                    .as_ref()
-                    .map(|t| &t.texture_view)
-                    .unwrap_or(&pipeline.dummy_texture_view);
-                let sel_mask_view = resources
-                    .selection_mask_texture
-                    .as_ref()
-                    .map(|t| &t.texture_view)
-                    .unwrap_or(&pipeline.dummy_texture_view);
-                let tool_mask_view = resources
-                    .tool_overlay_mask_texture
-                    .as_ref()
-                    .map(|t| &t.texture_view)
-                    .unwrap_or(&pipeline.dummy_texture_view);
-
-                resources.bind_group_blink_off = create_bind_group(
-                    &resources.texture_array_blink_off.texture_view,
-                    ref_view,
-                    sel_mask_view,
-                    tool_mask_view,
-                    "BlinkOff",
-                );
-                resources.bind_group_blink_on = create_bind_group(
-                    &resources.texture_array_blink_on.texture_view,
-                    ref_view,
-                    sel_mask_view,
-                    tool_mask_view,
-                    "BlinkOn",
-                );
-                resources.tool_overlay_mask_hash = tool_mask_hash;
-            }
+        if resources.bind_groups.is_none() {
+            resources.bind_groups = Some(resources.create_bind_groups(device, bind_group_layout, sampler, dummy_texture_view, id));
         }
 
         // Update per-frame physical viewport for this instance.
         // `render()` only receives `clip_bounds` (scissor), so we persist the
         // real widget bounds here to prevent viewport-based scaling.
-        if let Some(resources) = pipeline.instances.get_mut(&id) {
-            let vp_x = (bounds_x * scale_factor).round();
-            let vp_y = (bounds_y * scale_factor).round();
-            let vp_w = (bounds_width * scale_factor).round().max(1.0);
-            let vp_h = (bounds_height * scale_factor).round().max(1.0);
-            resources.viewport_px = [vp_x, vp_y, vp_w, vp_h];
-        }
-
-        // Update uniforms every frame
-        let Some(resources) = pipeline.instances.get(&id) else {
-            return;
-        };
+        let vp_x = (bounds_x * scale_factor).round();
+        let vp_y = (bounds_y * scale_factor).round();
+        let vp_w = (bounds_width * scale_factor).round().max(1.0);
+        let vp_h = (bounds_height * scale_factor).round().max(1.0);
+        resources.viewport_px = [vp_x, vp_y, vp_w, vp_h];
 
         // Calculate display size.
         // IMPORTANT: In manual mode the shader is already wrapped in a fixed-size content widget.
@@ -1391,10 +1084,14 @@ impl TerminalShader {
             ScalingMode::FitWidth => 0.0,
             _ => ((avail_h - scaled_h) / 2.0).max(0.0),
         };
+        // Start the texel grid on a physical pixel so integer scales stay exact.
+        let pixel = scale_factor.max(0.001);
         if use_int {
             offset_x = offset_x.round();
             offset_y = offset_y.round();
         }
+        offset_x = (offset_x * pixel).round() / pixel;
+        offset_y = (offset_y * pixel).round() / pixel;
         let start_x = offset_x / avail_w;
         let start_y = offset_y / avail_h;
         let width_n = scaled_w / avail_w;
@@ -1529,13 +1226,18 @@ impl TerminalShader {
             scroll_offset_y: self.scroll_offset_y,
             visible_height: self.visible_height,
             // Calculate max layer height for UV scaling in texture arrays
-            aspect_params: [self.aspect_ratio_y, self.slice_heights.iter().copied().max().unwrap_or(1) as f32, 0.0, 0.0],
+            aspect_params: [
+                self.aspect_ratio_y,
+                self.slice_heights.iter().copied().max().unwrap_or(1) as f32,
+                scaled_w / term_w * pixel,
+                scaled_h / term_h * pixel * self.aspect_ratio_y.max(1e-4),
+            ],
             slice_heights,
             // X-axis scrolling uniforms
             scroll_offset_x: self.scroll_offset_x,
             visible_width: self.visible_width,
             texture_width: self.texture_width as f32,
-            _x_padding: 0.0,
+            sharp_sampling: if self.monitor_settings.use_bilinear_filtering { 0.0 } else { 1.0 },
             // Caret uniforms
             caret_pos: self.caret_pos,
             caret_size: self.caret_size,
@@ -1661,6 +1363,9 @@ impl TerminalShader {
         let Some(resources) = pipeline.instances.get(&self.instance_id) else {
             return;
         };
+        let Some((blink_off, blink_on)) = &resources.bind_groups else {
+            return;
+        };
 
         // Use widget bounds as viewport; clipping must not rescale the terminal.
         let [vp_x, vp_y, vp_w, vp_h] = resources.viewport_px;
@@ -1674,12 +1379,7 @@ impl TerminalShader {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             render_pass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
             render_pass.set_pipeline(&pipeline.pipeline);
-            // Select bind group based on current blink state
-            let bind_group = if self.blink_on {
-                &resources.bind_group_blink_on
-            } else {
-                &resources.bind_group_blink_off
-            };
+            let bind_group = if self.blink_on { blink_on } else { blink_off };
             render_pass.set_bind_group(0, bind_group, &[]);
             render_pass.draw(0..3, 0..1);
         }

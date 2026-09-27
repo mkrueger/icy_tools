@@ -535,7 +535,7 @@ pub struct ReferenceImageSettings {
 
     /// Cached RGBA image data (not serialized)
     #[serde(skip)]
-    pub cached_data: Option<(Vec<u8>, u32, u32)>,
+    pub cached_data: Option<(std::sync::Arc<Vec<u8>>, u32, u32)>,
 
     /// Path hash when cached_data was loaded (to detect changes)
     #[serde(skip)]
@@ -583,7 +583,7 @@ impl ReferenceImageSettings {
 
     /// Load and cache the reference image data
     /// Returns the cached RGBA data (bytes, width, height) or None if loading fails
-    pub fn load_and_cache(&mut self) -> Option<&(Vec<u8>, u32, u32)> {
+    pub fn load_and_cache(&mut self) -> Option<&(std::sync::Arc<Vec<u8>>, u32, u32)> {
         let path_hash = Self::compute_path_hash(&self.path);
 
         // Return cached data if path hasn't changed
@@ -606,7 +606,7 @@ impl ReferenceImageSettings {
                 let rgba = img.to_rgba8();
                 let (width, height) = rgba.dimensions();
                 let data = rgba.into_raw();
-                self.cached_data = Some((data, width, height));
+                self.cached_data = Some((std::sync::Arc::new(data), width, height));
                 self.cached_path_hash = path_hash;
                 self.cached_data.as_ref()
             }
@@ -618,7 +618,7 @@ impl ReferenceImageSettings {
     }
 
     /// Get cached data without loading (returns None if not cached)
-    pub fn get_cached(&self) -> Option<&(Vec<u8>, u32, u32)> {
+    pub fn get_cached(&self) -> Option<&(std::sync::Arc<Vec<u8>>, u32, u32)> {
         self.cached_data.as_ref()
     }
 

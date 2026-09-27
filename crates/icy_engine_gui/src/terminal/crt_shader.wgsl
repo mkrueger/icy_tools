@@ -43,6 +43,8 @@ struct Uniforms {
     visible_height: f32,         // Visible viewport height in pixels
 
     // aspect_params[0] = aspect_ratio_y (1.0 = disabled)
+    // aspect_params[1] = max_layer_height (for UV scaling in texture arrays)
+    // aspect_params.zw = physical screen pixels per texel (x, y)
     aspect_params: vec4<f32>,
     // Packed slice heights (up to 10) + first_slice_start_y
     // slice_heights[0] = [h0, h1, h2, first_slice_start_y]
@@ -54,7 +56,7 @@ struct Uniforms {
     scroll_offset_x: f32,        // Current horizontal scroll offset in pixels
     visible_width: f32,          // Visible viewport width in pixels  
     texture_width: f32,          // Total texture width in pixels
-    _x_padding: f32,             // Padding for alignment
+    sharp_sampling: f32,         // 1.0 = crisp texels at any scale, 0.0 = plain bilinear
 
     // Caret uniforms (rendered in shader to avoid texture cache invalidation)
     caret_pos: vec2<f32>,        // Caret position in pixels (x, y) relative to viewport
@@ -211,106 +213,90 @@ fn get_max_layer_height() -> f32 {
     return uniforms.aspect_params.y;
 }
 
-fn sample_slice(index: i32, uv: vec2<f32>, slice_height: f32) -> vec4<f32> {
-    // All texture array layers have uniform size (max_layer_height).
-    // Scale UV.y to sample only the portion that contains actual data.
-    let max_layer_h = get_max_layer_height();
-    if max_layer_h > 0.0 {
-        let uv_scale_y = slice_height / max_layer_h;
-        let adjusted_uv = vec2<f32>(uv.x, uv.y * uv_scale_y);
-        return textureSample(t_slices, terminal_sampler, adjusted_uv, index);
+// Remaps a texel coordinate for the (always linear) sampler so every texel is drawn as a
+// flat block with at most a one pixel blended edge. At integer scales this is identical to
+// nearest sampling; at fractional scales (aspect ratio correction, fractional DPI, fit modes)
+// it avoids the uneven, doubled or dropped texel rows and columns that nearest sampling causes.
+fn sharpen_texel(texel: f32, pixels_per_texel: f32) -> f32 {
+    if uniforms.sharp_sampling < 0.5 {
+        return texel;
     }
-    return textureSample(t_slices, terminal_sampler, uv, index);
+    let scale = max(pixels_per_texel, 1.0);
+    let cell = floor(texel);
+    let offset = texel - cell - 0.5;
+    let region = 0.5 - 0.5 / scale;
+    return cell + 0.5 + (offset - clamp(offset, -region, region)) * scale;
+}
+
+// `texel` is (column, row within this slice) in texels.
+fn sample_slice(index: i32, texel: vec2<f32>, slice_height: f32) -> vec4<f32> {
+    // All texture array layers have uniform size (max_layer_height). Rows below
+    // `slice_height` hold stale data of taller tiles, so filtering must never reach them.
+    let layer_size = vec2<f32>(max(uniforms.texture_width, 1.0), max(get_max_layer_height(), 1.0));
+    let x = clamp(texel.x, 0.5, layer_size.x - 0.5);
+    let y = clamp(texel.y, 0.5, max(slice_height - 0.5, 0.5));
+    // Explicit LOD: this runs in non-uniform control flow, where implicit derivatives are undefined.
+    return textureSampleLevel(t_slices, terminal_sampler, vec2<f32>(x, y) / layer_size, index, 0.0);
 }
 
 // Sample from the appropriate texture slice based on pixel Y coordinate
-// Uses sliding window approach: 3 slices covering current viewport area
+// Uses sliding window approach: slices covering the current viewport area
 fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     let total_height_display = uniforms.total_image_height;
     let tex_width = uniforms.texture_width;
     if total_height_display <= 0.0 || tex_width <= 0.0 {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
-    
+
     // X-axis: uv.x goes 0-1 over the visible viewport width
     // scroll_offset_x tells us where in the full texture we're looking
-    // visible_width tells us how much of the texture is visible
     let visible_w = uniforms.visible_width;
     let max_scroll_x = max(0.0, tex_width - visible_w);
     let scroll_x = clamp(uniforms.scroll_offset_x, 0.0, max_scroll_x);
-    
-    // Screen pixel X (relative to visible viewport)
-    let screen_pixel_x = uv.x * visible_w;
-    
-    // Document pixel X (absolute position in full texture)
-    let doc_pixel_x = scroll_x + screen_pixel_x;
-    
-    // Convert to texture UV
-    let tex_uv_x = doc_pixel_x / tex_width;
-    
-    // Check if we're outside the texture in X
-    if tex_uv_x < 0.0 || tex_uv_x > 1.0 {
+
+    // Document pixel X (absolute position in full texture); one texel per document pixel
+    let doc_pixel_x = scroll_x + uv.x * visible_w;
+    if doc_pixel_x < 0.0 || doc_pixel_x > tex_width {
         return get_canvas_background();
     }
-    
+
     // Y-axis: uv.y goes 0-1 over the visible viewport
-    // scroll_offset_y tells us where in the full document we're looking
-    // visible_height tells us how much of the document is visible
-    
     let aspect_y = max(1e-4, uniforms.aspect_params.x);
     let visible_h = uniforms.visible_height;
     let max_scroll_y = max(0.0, total_height_display - visible_h);
     let scroll_y = clamp(uniforms.scroll_offset_y, 0.0, max_scroll_y);
-    
-    // Screen pixel Y (relative to visible viewport)
-    let screen_pixel_y = uv.y * visible_h;
-    
-    // Document pixel Y (absolute position in full document)
-    let doc_pixel_y_display = scroll_y + screen_pixel_y;
-    
-    // Check if we're outside the document
+    let doc_pixel_y_display = scroll_y + uv.y * visible_h;
     if doc_pixel_y_display < 0.0 || doc_pixel_y_display >= total_height_display {
         return get_canvas_background();
     }
 
-    // Convert to raw texture coordinate system (undo aspect ratio correction)
-    let doc_pixel_y = doc_pixel_y_display / aspect_y;
-    let total_height = total_height_display / aspect_y;
-    if doc_pixel_y < 0.0 || doc_pixel_y >= total_height {
-        return get_canvas_background();
-    }
-    
+    // Convert to raw texture rows (undo aspect ratio correction)
+    let texel_x = sharpen_texel(doc_pixel_x, uniforms.aspect_params.z);
+    let texel_y = sharpen_texel(doc_pixel_y_display / aspect_y, uniforms.aspect_params.w);
+
     // first_slice_start_y tells us where our sliding window starts in document space
-    let first_slice_start_y = get_first_slice_start_y();
-    
-    // Convert document Y to sliding window Y
-    let window_y = doc_pixel_y - first_slice_start_y;
-    
-    // If outside our rendered window, show background
+    let window_y = texel_y - get_first_slice_start_y();
     if window_y < 0.0 {
         return get_canvas_background();
     }
-    
+
     // Find which slice contains this Y coordinate
     var cumulative_height: f32 = 0.0;
     let num_slices = i32(uniforms.num_slices);
-    
+
     for (var i: i32 = 0; i < num_slices; i++) {
         let slice_height = get_slice_height(i);
         let next_cumulative = cumulative_height + slice_height;
-        
+
         if window_y < next_cumulative || i == num_slices - 1 {
-            // This is the slice we need
-            let local_y = (window_y - cumulative_height) / slice_height;
-            let slice_uv = vec2<f32>(tex_uv_x, clamp(local_y, 0.0, 1.0));
-            
-            let text_color = sample_slice(i, slice_uv, slice_height);
-            let overlay_color = sample_slice(i + num_slices, slice_uv, slice_height);
+            let texel = vec2<f32>(texel_x, window_y - cumulative_height);
+            let text_color = sample_slice(i, texel, slice_height);
+            let overlay_color = sample_slice(i + num_slices, texel, slice_height);
             return overlay_color + text_color * (1.0 - overlay_color.a);
         }
         cumulative_height = next_cumulative;
     }
-    
+
     // Fallback - outside rendered area
     return get_canvas_background();
 }
@@ -752,9 +738,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Sample from sliced textures with scroll offset handling
     let tex_color = sample_sliced_texture(distorted_uv);
     
-    // Blend texture with checkerboard background for transparency
+    // Blend texture with checkerboard background for transparency.
+    // Transparent texels are (0, 0, 0, 0), so filtered samples are premultiplied;
+    // compositing them as such avoids dark fringes at transparent edges.
     let bg_color = get_background_color_uv(distorted_uv);
-    let blended_rgb = mix(bg_color.rgb, tex_color.rgb, tex_color.a);
+    let blended_rgb = tex_color.rgb + bg_color.rgb * (1.0 - tex_color.a);
     var color = adjust_color(blended_rgb);
 
     // Blend reference image (if enabled)
@@ -785,7 +773,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         }
         
         if (in_bounds) {
-            let ref_color = textureSample(t_reference_image, terminal_sampler, ref_uv);
+            let ref_color = textureSampleLevel(t_reference_image, terminal_sampler, ref_uv, 0.0);
             // Blend with alpha: result = ref * alpha + color * (1 - alpha * ref_alpha)
             let blend_alpha = uniforms.ref_image_alpha * ref_color.a;
             color = mix(color, ref_color.rgb, blend_alpha);

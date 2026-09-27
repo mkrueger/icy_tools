@@ -51,6 +51,17 @@ pub fn clamp_terminal_height_to_viewport(editable: &mut dyn EditableScreen, boun
     }
 }
 
+/// Inclusive range of tiles covering the lines `first_line..end_line` (`end_line` exclusive).
+///
+/// `line_height` is in raw texture rows. A line may straddle a tile boundary, so both
+/// ends are mapped through pixel rows instead of assuming whole lines per tile.
+fn tiles_for_lines(first_line: i32, end_line: i32, line_height: f32) -> (i32, i32) {
+    let tile_height = TILE_HEIGHT as f32;
+    let first_row = first_line.max(0) as f32 * line_height;
+    let last_row = (end_line.max(first_line + 1) as f32 * line_height - 1.0).max(first_row);
+    ((first_row / tile_height).floor() as i32, (last_row / tile_height).floor() as i32)
+}
+
 /// Program wrapper that renders the terminal using sliding window tile approach
 pub struct CRTShaderProgram<'a> {
     pub term: &'a Terminal,
@@ -93,6 +104,7 @@ impl<'a> CRTShaderProgram<'a> {
         let resolution: icy_engine::Size;
         let tile_height: f32;
         let full_content_height_raw: f32;
+        let raw_line_height: f32;
 
         let mut slices_blink_off: Vec<TextureSliceData> = Vec::new();
         let mut slices_blink_on: Vec<TextureSliceData> = Vec::new();
@@ -135,6 +147,8 @@ impl<'a> CRTShaderProgram<'a> {
             // Raw render uses the font bitmap height (no aspect ratio correction).
             // Use the actual ratio (including rounding) so textures and overlays stay aligned.
             let raw_font_h = screen.font(0).map(|f| f.size().height as f32).unwrap_or(font_h as f32).max(1.0);
+            // Tiles are addressed in raw texture rows, where scan lines double every row.
+            raw_line_height = raw_font_h * if screen.scan_lines() { 2.0 } else { 1.0 };
 
             let display_font_h = font_h as f32;
 
@@ -387,20 +401,9 @@ impl<'a> CRTShaderProgram<'a> {
                 // A synchronized update leaves the range pending, so everything
                 // it touched repaints in one go once the update ends.
                 let dirty_lines = if synchronized { None } else { screen.get_dirty_lines() };
-                if let Some((first_dirty_line, last_dirty_line)) = dirty_lines {
-                    // Calculate tile indices from dirty line range
-                    let tile_height = crate::TILE_HEIGHT;
-                    let font_height = screen.font_dimensions().height.max(1) as u32;
-                    let tile_height_lines = tile_height / font_height;
-                    if let Some(first_tile) = (first_dirty_line as u32).checked_div(tile_height_lines) {
-                        let first_tile = first_tile as i32;
-                        let last_tile = (((last_dirty_line as u32).saturating_sub(1)) / tile_height_lines) as i32;
-                        // Selective invalidation: only remove tiles in dirty range
-                        cache.invalidate_tiles(first_tile, last_tile);
-                    } else {
-                        cache.invalidate();
-                    }
-                    // Clear dirty range after processing
+                if let Some((first_dirty_line, end_dirty_line)) = dirty_lines {
+                    let (first_tile, last_tile) = tiles_for_lines(first_dirty_line, end_dirty_line, raw_line_height);
+                    cache.invalidate_tiles(first_tile, last_tile);
                     screen.clear_dirty_lines();
                 }
 
@@ -595,8 +598,8 @@ impl<'a> CRTShaderProgram<'a> {
                 let selection_intersects = selection.is_some_and(|selection| {
                     let first_line = selection.anchor.y.min(selection.lead.y);
                     let last_line = selection.anchor.y.max(selection.lead.y);
-                    let tile_first_line = (tile_start_y / font_h.max(1) as f32).floor() as i32;
-                    let tile_last_line = ((tile_end_y - 1.0).max(tile_start_y) / font_h.max(1) as f32).floor() as i32;
+                    let tile_first_line = (tile_start_y / raw_line_height).floor() as i32;
+                    let tile_last_line = ((tile_end_y - 1.0).max(tile_start_y) / raw_line_height).floor() as i32;
                     first_line <= tile_last_line && last_line >= tile_first_line
                 });
 
