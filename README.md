@@ -48,6 +48,13 @@ cargo build --release
 ls target/release  
 ```
 
+# App icons
+
+Each GUI tool keeps its icon master at `crates/<tool>/build/icon.svg`. After
+editing one, regenerate the Linux, macOS, Windows and web icons with
+`python tools/render_app_icons.py` (requires Inkscape and ImageMagick).
+The design proposals are in `doc/icon-proposal*`.
+
 # CI and releases
 
 Pushes and pull requests run `cargo fmt`, the workspace tests, and one debug

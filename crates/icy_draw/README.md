@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="IcyDraw Logo" width="128" height="128">
+  <img src="build/icon.svg" alt="IcyDraw Logo" width="128" height="128">
 </p>
 
 <h1 align="center">IcyDraw</h1>

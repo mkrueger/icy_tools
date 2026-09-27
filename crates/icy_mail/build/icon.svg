@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Icy Mail icon</title>
+  <desc id="desc">Weißer Briefumschlag auf einer bernsteinfarbenen, facettierten Eis-Kachel.</desc>
+  <defs>
+    <linearGradient id="tile" x1="32" y1="16" x2="216" y2="240" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ad762e"/><stop offset="1" stop-color="#604020"/>
+    </linearGradient>
+    <linearGradient id="edge" x2="1" y2="1">
+      <stop stop-color="#ffedc6" stop-opacity=".8"/><stop offset="1" stop-color="#efc17a" stop-opacity=".15"/>
+    </linearGradient>
+    <clipPath id="clip"><rect x="16" y="16" width="224" height="224" rx="52"/></clipPath>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="52" fill="url(#tile)"/>
+  <g clip-path="url(#clip)">
+    <path d="M144 16H240V112Z" fill="#ffedc6" opacity=".19"/>
+    <path d="M16 144L112 240H16Z" fill="#362719" opacity=".24"/>
+    <path d="M144 16L240 112" fill="none" stroke="#ffedc6" stroke-opacity=".25" stroke-width="2"/>
+  </g>
+  <rect x="17" y="17" width="222" height="222" rx="51" fill="none" stroke="url(#edge)" stroke-width="2"/>
+  <rect x="56" y="80" width="144" height="104" rx="12" fill="none" stroke="#f2fcff" stroke-width="18"/>
+  <path d="M60 88L128 140L196 88" fill="none" stroke="#f2fcff" stroke-width="18" stroke-linejoin="round"/>
+</svg>

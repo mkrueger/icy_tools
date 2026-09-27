@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Icy Term icon</title>
+  <desc id="desc">Weißer Terminal-Prompt auf einer cyanblauen, facettierten Eis-Kachel.</desc>
+  <defs>
+    <linearGradient id="tile" x1="32" y1="16" x2="216" y2="240" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#168eae"/><stop offset="1" stop-color="#123953"/>
+    </linearGradient>
+    <linearGradient id="edge" x2="1" y2="1">
+      <stop stop-color="#b9f5ff" stop-opacity=".8"/><stop offset="1" stop-color="#5cddf5" stop-opacity=".15"/>
+    </linearGradient>
+    <clipPath id="clip"><rect x="16" y="16" width="224" height="224" rx="52"/></clipPath>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="52" fill="url(#tile)"/>
+  <g clip-path="url(#clip)">
+    <path d="M144 16H240V112Z" fill="#b9f5ff" opacity=".19"/>
+    <path d="M16 144L112 240H16Z" fill="#071e36" opacity=".24"/>
+    <path d="M144 16L240 112" fill="none" stroke="#b9f5ff" stroke-opacity=".25" stroke-width="2"/>
+  </g>
+  <rect x="17" y="17" width="222" height="222" rx="51" fill="none" stroke="url(#edge)" stroke-width="2"/>
+  <path d="M66 80L114 128L66 176L52 162L86 128L52 94Z" fill="#f2fcff"/>
+  <path d="M128 156H192V176H128Z" fill="#9aeeff"/>
+</svg>
