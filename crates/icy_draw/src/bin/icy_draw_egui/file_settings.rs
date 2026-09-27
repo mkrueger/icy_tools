@@ -1,5 +1,5 @@
-//! ANSI document formats: the templates of the New dialog, the classic File Settings dialog
-//! (canvas, font height, format, SAUCE and display flags) and the font slots of XBin Extended.
+//! ANSI document formats: the templates of the New dialog, the File Settings dialog (canvas,
+//! font height, format and display flags), the SAUCE dialog and the font slots of XBin Extended.
 
 use super::{Dialog, DrawApp};
 use eframe::egui;
@@ -80,14 +80,9 @@ pub struct FileSettingsDraft {
     size: [i32; 2],
     font_height: i32,
     format: FormatMode,
-    title: String,
-    author: String,
-    group: String,
-    comments: String,
     ice_colors: bool,
     legacy_aspect: bool,
     letter_spacing: bool,
-    show_comments: bool,
 }
 
 impl DrawApp {
@@ -95,19 +90,13 @@ impl DrawApp {
         self.document.finish();
         let draft = self.document.with_state(|state| {
             let buffer = state.get_buffer();
-            let sauce = state.get_sauce_meta();
             FileSettingsDraft {
                 size: [buffer.width(), buffer.height()],
                 font_height: buffer.font_dimensions().height,
                 format: state.get_format_mode(),
-                title: sauce.title.to_string(),
-                author: sauce.author.to_string(),
-                group: sauce.group.to_string(),
-                comments: sauce.comments.iter().map(|line| line.to_string()).collect::<Vec<_>>().join("\n"),
                 ice_colors: buffer.ice_mode.has_high_bg_colors(),
                 legacy_aspect: buffer.use_aspect_ratio(),
                 letter_spacing: buffer.use_letter_spacing(),
-                show_comments: false,
             }
         });
         self.dialog = Some(Dialog::FileSettings(Box::new(draft)));
@@ -117,7 +106,6 @@ impl DrawApp {
     pub(super) fn file_settings_dialog(&mut self, context: &egui::Context, draft: &mut FileSettingsDraft) -> bool {
         #[derive(Clone, Copy)]
         enum Action {
-            Toggle,
             Cancel,
             Apply,
         }
@@ -127,18 +115,6 @@ impl DrawApp {
             .max_height(720.0)
             .show(context, |dialog| {
                 dialog.content(|ui| {
-                    if draft.show_comments {
-                        appearance::group(ui, &fl!("file-settings-comments-title"), |ui| {
-                            ui.add(
-                                egui::TextEdit::multiline(&mut draft.comments)
-                                    .desired_width(f32::INFINITY)
-                                    .desired_rows(10)
-                                    .font(egui::TextStyle::Monospace),
-                            );
-                            ui.weak(fl!("file-settings-comments-info"));
-                        });
-                        return;
-                    }
                     appearance::group(ui, "", |ui| {
                         appearance::form_row(ui, &fl!("file-settings-canvas-size"), |ui| {
                             ui.add(egui::DragValue::new(&mut draft.size[0]).range(1..=1000));
@@ -158,41 +134,21 @@ impl DrawApp {
                             ui.weak(format_description(draft.format));
                         });
                     });
-                    appearance::group(ui, &fl!("file-settings-sauce"), |ui| {
-                        for (label, value, limit) in [
-                            (fl!("file-settings-title"), &mut draft.title, 35),
-                            (fl!("file-settings-author"), &mut draft.author, 20),
-                            (fl!("file-settings-group"), &mut draft.group, 20),
-                        ] {
-                            appearance::form_row(ui, &label, |ui| {
-                                ui.add(appearance::text_edit(value).char_limit(limit).desired_width(f32::INFINITY));
-                            });
-                        }
-                    });
-                    ui.add_space(4.0);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing.x = 18.0;
-                        ui.checkbox(&mut draft.ice_colors, fl!("file-settings-ice"));
-                        ui.checkbox(&mut draft.legacy_aspect, fl!("file-settings-legacy-ar"));
-                        ui.checkbox(&mut draft.letter_spacing, fl!("file-settings-9px-font"));
+                    appearance::group(ui, &fl!("sauce-display"), |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = 20.0;
+                            ui.checkbox(&mut draft.ice_colors, fl!("status-ice-colors"));
+                            ui.checkbox(&mut draft.letter_spacing, fl!("file-settings-9px-font"));
+                            ui.checkbox(&mut draft.legacy_aspect, fl!("file-settings-legacy-ar"));
+                        });
                     });
                 });
-                let toggle = if draft.show_comments {
-                    fl!("file-settings-settings-button")
-                } else {
-                    fl!("file-settings-comments-button")
-                };
                 dialog.buttons([
-                    DialogButton::secondary(toggle, Action::Toggle).leading(),
                     DialogButton::cancel(labels::cancel(), Action::Cancel),
                     DialogButton::primary(labels::ok(), Action::Apply),
                 ]);
             });
         match response.action {
-            Some(Action::Toggle) => {
-                draft.show_comments = !draft.show_comments;
-                true
-            }
             Some(Action::Cancel) => false,
             Some(Action::Apply) => {
                 self.apply_file_settings(draft);
@@ -214,13 +170,6 @@ impl DrawApp {
             if font_size.height != draft.font_height {
                 state.set_font_dimensions(Size::new(font_size.width, draft.font_height))?;
             }
-            let comments = draft.comments.lines().map(|line| line.into()).collect();
-            state.update_sauce_data(icy_engine_edit::SauceMetaData {
-                title: draft.title.as_str().into(),
-                author: draft.author.as_str().into(),
-                group: draft.group.as_str().into(),
-                comments,
-            })?;
             state.set_format_mode(draft.format);
             if draft.format == FormatMode::XBinExtended && !state.get_buffer().has_font(1) {
                 state.set_font_in_slot(1, BitFont::default())?;
@@ -293,16 +242,25 @@ fn sauce_comment_lines(comments: &str) -> Vec<String> {
 
 /// Label, edit field and "used / limit" counter of one SAUCE text row.
 fn sauce_text_row(ui: &mut egui::Ui, label: &str, value: &mut String, limit: usize) {
-    ui.label(label);
-    let used = value.chars().count();
-    ui.add(appearance::text_edit(value).char_limit(limit).desired_width(f32::INFINITY));
-    let color = if used >= limit {
-        ui.visuals().warn_fg_color
-    } else {
-        ui.visuals().weak_text_color()
-    };
-    ui.label(egui::RichText::new(format!("{used}/{limit}")).monospace().size(11.0).color(color));
-    ui.end_row();
+    const LABEL_WIDTH: f32 = 72.0;
+    const COUNTER_WIDTH: f32 = 44.0;
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(egui::vec2(LABEL_WIDTH, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.set_min_width(LABEL_WIDTH);
+            ui.label(label);
+        });
+        let used = value.chars().count();
+        let width = ui.available_width() - COUNTER_WIDTH - ui.spacing().item_spacing.x;
+        ui.add(appearance::text_edit(value).char_limit(limit).desired_width(width));
+        let color = if used >= limit {
+            ui.visuals().warn_fg_color
+        } else {
+            ui.visuals().weak_text_color()
+        };
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(egui::RichText::new(format!("{used}/{limit}")).monospace().size(11.0).color(color));
+        });
+    });
 }
 
 impl DrawApp {
@@ -341,22 +299,16 @@ impl DrawApp {
             .show(context, |dialog| {
                 dialog.content(|ui| {
                     appearance::group(ui, &fl!("sauce-record"), |ui| {
-                        egui::Grid::new("sauce-fields")
-                            .num_columns(3)
-                            .spacing([12.0, 8.0])
-                            .min_col_width(0.0)
-                            .show(ui, |ui| {
-                                sauce_text_row(ui, &fl!("file-settings-title"), &mut draft.title, SAUCE_TITLE);
-                                sauce_text_row(ui, &fl!("file-settings-author"), &mut draft.author, SAUCE_NAME);
-                                sauce_text_row(ui, &fl!("file-settings-group"), &mut draft.group, SAUCE_NAME);
-                            });
+                        sauce_text_row(ui, &fl!("file-settings-title"), &mut draft.title, SAUCE_TITLE);
+                        sauce_text_row(ui, &fl!("file-settings-author"), &mut draft.author, SAUCE_NAME);
+                        sauce_text_row(ui, &fl!("file-settings-group"), &mut draft.group, SAUCE_NAME);
                     });
                     appearance::group(ui, &fl!("sauce-comments"), |ui| {
                         ui.add(
                             egui::TextEdit::multiline(&mut draft.comments)
                                 .font(egui::TextStyle::Monospace)
                                 .desired_width(f32::INFINITY)
-                                .desired_rows(6),
+                                .desired_rows(4),
                         );
                         let lines = draft.comments.lines().count();
                         let too_long = draft.comments.lines().position(|line| line.chars().count() > SAUCE_COMMENT_WIDTH);
@@ -379,18 +331,17 @@ impl DrawApp {
                         });
                     });
                     appearance::group(ui, &fl!("sauce-display"), |ui| {
-                        appearance::check_row(ui, &fl!("file-settings-ice"), &mut draft.ice_colors);
-                        appearance::check_row(ui, &fl!("file-settings-9px-font"), &mut draft.letter_spacing);
-                        appearance::check_row(ui, &fl!("file-settings-legacy-ar"), &mut draft.legacy_aspect);
-                        ui.add_space(2.0);
-                        appearance::value_row(
-                            ui,
-                            &fl!("file-settings-canvas-size"),
-                            &format!("{} × {}", draft.size.width, draft.size.height),
-                        );
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = 20.0;
+                            ui.checkbox(&mut draft.ice_colors, fl!("status-ice-colors"));
+                            ui.checkbox(&mut draft.letter_spacing, fl!("file-settings-9px-font"));
+                            ui.checkbox(&mut draft.legacy_aspect, fl!("file-settings-legacy-ar"));
+                        });
+                        let mut facts = format!("{} {} × {}", fl!("file-settings-canvas-size"), draft.size.width, draft.size.height);
                         if !draft.font.is_empty() {
-                            appearance::value_row(ui, &fl!("glyph-font-label"), &draft.font);
+                            facts.push_str(&format!("  ·  {} {}", fl!("glyph-font-label"), draft.font));
                         }
+                        ui.weak(facts);
                     });
                 });
                 dialog.buttons([
@@ -466,8 +417,6 @@ mod tests {
         };
         draft.size = [60, 20];
         draft.format = FormatMode::XBinExtended;
-        draft.title = "Title".into();
-        draft.comments = "one\ntwo".into();
         draft.ice_colors = true;
         draft.letter_spacing = true;
         app.apply_file_settings(&draft);
@@ -477,8 +426,6 @@ mod tests {
             assert!(state.get_buffer().has_font(1));
             assert!(state.get_buffer().ice_mode.has_high_bg_colors());
             assert!(state.get_buffer().use_letter_spacing());
-            assert_eq!(state.get_sauce_meta().title.to_string(), "Title");
-            assert_eq!(state.get_sauce_meta().comments.len(), 2);
         });
         assert_eq!(app.font_slots().map(|(_, slot)| slot), Some(0));
         app.select_font_slot(1, false);
