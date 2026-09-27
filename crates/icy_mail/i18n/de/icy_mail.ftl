@@ -58,6 +58,7 @@ status-drafts = { $count ->
 }
 status-messages = { $count } Nachrichten · { $unread } ungelesen
 status-no-packet = Kein Paket geöffnet
+status-update-available = Update verfügbar: { $version }
 status-message-zoom = Nachrichtenzoom
 status-replies-to-send = { $count ->
     [one] 1 Antwort zum Senden

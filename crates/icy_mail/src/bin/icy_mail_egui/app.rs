@@ -125,6 +125,8 @@ pub struct MailApp {
     pub address_book: Option<AddressBook>,
     pub address_dialog: Option<AddressDialog>,
     pub about: Option<icy_engine_gui::egui::about::AboutDialog>,
+    pub latest_version: Option<semver::Version>,
+    version_check: Option<std::sync::mpsc::Receiver<semver::Version>>,
     /// The tagline found in a message, keyed by packet and message index.
     tagline_cache: Option<((usize, usize), Option<String>)>,
     children: Vec<(egui::ViewportId, Arc<Mutex<MailApp>>)>,
@@ -205,6 +207,8 @@ impl MailApp {
             address_book: None,
             address_dialog: None,
             about: None,
+            latest_version: None,
+            version_check: None,
             tagline_cache: None,
             children: Vec::new(),
         };
@@ -244,6 +248,16 @@ impl MailApp {
     }
 
     pub fn poll(&mut self, context: &egui::Context) {
+        if let Some(receiver) = &self.version_check {
+            match receiver.try_recv() {
+                Ok(latest) => {
+                    self.latest_version = Some(latest);
+                    self.version_check = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.version_check = None,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
         while let Ok(event) = self.loader.receiver.try_recv() {
             match event {
                 Event::Package(generation, path, result) if generation == self.loader.package_generation => {
@@ -321,6 +335,21 @@ impl MailApp {
             }
         }
         self.sync_body(context);
+    }
+
+    /// Checks GitHub in the background so startup is never blocked by the network.
+    pub fn check_for_updates(&mut self, context: &egui::Context) {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        self.version_check = Some(receiver);
+        let context = context.clone();
+        std::thread::spawn(move || {
+            if let Some(latest) = icy_engine_gui::release_check::latest_release("mkrueger/icy_tools", "IcyMail") {
+                if latest > *icy_mail::VERSION {
+                    let _ = sender.send(latest);
+                    context.request_repaint();
+                }
+            }
+        });
     }
 
     fn loaded(&mut self, context: &egui::Context, path: PathBuf, package: Arc<icy_mail::qwk::QwkPackage>) {
@@ -1246,8 +1275,14 @@ impl MailApp {
             self.new_window = false;
             let mut child = Self::create(context, self.storage.clone());
             child.settings = self.settings.clone();
+            child.latest_version = self.latest_version.clone();
             let id = egui::ViewportId::from_hash_of(("mail-window", child.screen.shader_state.instance_id));
             self.children.push((id, Arc::new(Mutex::new(child))));
+        }
+        if let Some(latest) = &self.latest_version {
+            for (_, child) in &self.children {
+                child.lock().latest_version = Some(latest.clone());
+            }
         }
         self.children.retain(|(_, child)| !child.lock().closed);
         for (id, child) in &self.children {

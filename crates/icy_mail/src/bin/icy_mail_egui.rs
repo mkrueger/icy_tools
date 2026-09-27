@@ -98,6 +98,7 @@ fn main() -> anyhow::Result<()> {
                 .insert(TerminalShaderRenderer::new(&render.device, render.target_format));
             appearance::apply(&creation.egui_ctx);
             let mut mail = app::MailApp::new(&creation.egui_ctx);
+            mail.check_for_updates(&creation.egui_ctx);
             if let Some(path) = args.file {
                 mail.open(path, &creation.egui_ctx);
             }

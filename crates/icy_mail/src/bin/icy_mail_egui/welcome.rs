@@ -28,7 +28,7 @@ impl MailApp {
         let mut open = None;
         egui::ScrollArea::vertical().id_salt("welcome").auto_shrink([false, false]).show(ui, |ui| {
             let width = ui.available_width().min(460.0);
-            let content_height = 330.0 + if recent.is_empty() { 0.0 } else { 40.0 + recent.len() as f32 * 44.0 };
+            let content_height = 266.0 + if recent.is_empty() { 0.0 } else { 40.0 + recent.len() as f32 * 44.0 };
             ui.add_space(((ui.available_height() - content_height) / 2.0).max(16.0));
             ui.vertical_centered(|ui| {
                 ui.set_max_width(width);
@@ -162,7 +162,7 @@ fn format_size(size: u64) -> String {
     }
 }
 
-/// `data/welcome.xb` is the stacked variant of `gj-icymail.xb` with a `@` version marker.
+/// `data/welcome.xb` is the wide variant of `gj-icymail.xb` with a `@` version marker.
 fn logo_buffer() -> Option<icy_engine::TextBuffer> {
     let mut buffer = FileFormat::XBin
         .from_bytes(include_bytes!("../../../data/welcome.xb"), None)

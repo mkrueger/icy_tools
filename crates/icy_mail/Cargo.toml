@@ -100,6 +100,7 @@ async-recursion = "1.1.1"
 
 [build-dependencies]
 winres = "0.1"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 
 [package.metadata.bundle]
 name = "Icy Mail"

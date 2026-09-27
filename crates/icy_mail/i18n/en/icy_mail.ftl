@@ -58,6 +58,7 @@ status-drafts = { $count ->
 }
 status-messages = { $count } messages · { $unread } unread
 status-no-packet = No packet open
+status-update-available = Update available: { $version }
 status-message-zoom = Message zoom
 status-replies-to-send = { $count ->
     [one] 1 reply to send

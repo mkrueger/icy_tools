@@ -39,6 +39,25 @@ fn click_label(context: &egui::Context, mail: &mut app::MailApp, size: egui::Vec
 }
 
 #[test]
+fn about_artwork_shows_version_and_build_date() {
+    use icy_engine::TextPane;
+    let build_date = option_env!("ICY_BUILD_DATE").expect("build.rs sets ICY_BUILD_DATE");
+    let mut screen = icy_engine::FileFormat::IcyDraw
+        .from_bytes(include_bytes!("../../../data/about.icy"), None)
+        .unwrap()
+        .screen;
+    icy_engine_gui::version_helper::replace_version_marker(&mut screen.buffer, &icy_mail::VERSION, Some(build_date.to_string()));
+    let buffer = &screen.buffer;
+    let text: String = (0..buffer.height())
+        .flat_map(|y| (0..buffer.width()).map(move |x| (x, y)))
+        .map(|(x, y)| buffer.char_at((x, y).into()).ch)
+        .collect();
+    assert!(text.contains(&format!("v{}", *icy_mail::VERSION)));
+    assert!(text.contains(&build_date[..10]), "build date missing from the about artwork");
+    assert!(!text.contains('@'));
+}
+
+#[test]
 fn about_dialog_shows_the_shared_artwork_dialog() {
     let context = egui::Context::default();
     icy_engine_gui::egui::appearance::apply(&context);
@@ -52,6 +71,16 @@ fn about_dialog_shows_the_shared_artwork_dialog() {
         .shapes
         .iter()
         .any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text() == close)));
+}
+
+#[test]
+fn available_update_is_shown_in_the_status_bar() {
+    crate::use_english();
+    let context = egui::Context::default();
+    let mut mail = app::MailApp::new(&context);
+    mail.latest_version = Some(semver::Version::new(9, 8, 7));
+    let output = settle(&context, &mut mail, egui::vec2(1100.0, 760.0));
+    label(&output, "Update available: 9.8.7");
 }
 
 /// Texts painted with a highlighted (search match) background.
@@ -1670,6 +1699,12 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
         let (_, output) = gpu.capture(&mut welcome, [1100, 760], 1.0, vec![], &format!("welcome-{theme:?}"));
         label(&output, "TEST.QWK");
     }
+    gpu.context.set_theme(egui::Theme::Dark);
+    welcome.open_about();
+    for _ in 0..3 {
+        gpu.capture(&mut welcome, [1100, 760], 1.0, vec![], "warmup");
+    }
+    gpu.capture(&mut welcome, [1100, 760], 1.0, vec![], "about");
 }
 
 #[test]

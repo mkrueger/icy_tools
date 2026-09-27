@@ -375,6 +375,19 @@ impl MailApp {
                 ui.weak(fl!(LANGUAGE_LOADER, "status-no-packet"));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if let Some(latest) = &self.latest_version {
+                    let label = fl!(LANGUAGE_LOADER, "status-update-available", version = latest.to_string());
+                    let link = egui::RichText::new(label).size(12.0).color(ui.visuals().hyperlink_color);
+                    if ui
+                        .add(egui::Label::new(link).sense(egui::Sense::click()))
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                    {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(format!(
+                            "https://github.com/mkrueger/icy_tools/releases/tag/IcyMail{latest}"
+                        )));
+                    }
+                }
                 if self.reader.package.is_none() {
                     return;
                 }
