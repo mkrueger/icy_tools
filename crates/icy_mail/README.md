@@ -174,6 +174,17 @@ with i18n-embed like the other icy tools. English (`i18n/en`) is the fallback, s
 another language only needs the messages it translates; the desktop language is
 picked at startup.
 
+German (`i18n/de`) covers the complete Icy Mail interface. To test it on Linux
+without changing the desktop language, launch a new process with:
+
+```sh
+LANGUAGE=de_DE LANG=de_DE.UTF-8 cargo run -p icy_mail -- [packet.qwk]
+```
+
+Use `LANGUAGE=en LANG=en_US.UTF-8` to compare the English interface. Catalog
+coverage, placeholders, German locale selection and plural forms are checked by
+`cargo test -p icy_mail --test localization`.
+
 The shared `icy_engine_gui::egui` appearance, fonts, dialog shell, screen widget
 and frame scheduling are also used by icy_term and icy_view. Native windows use
 `AutoNoVsync`, matching those applications.
