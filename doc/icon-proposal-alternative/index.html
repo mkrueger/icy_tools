@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icy Tools · Pixel Signal · Vorschlag 02</title>
+  <style>
+    :root { font-family: "Segoe UI", Arial, sans-serif; color: #e8f3f8; background: #0b1521; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    a { color: #8fe1e8; text-underline-offset: 4px; }
+    a:focus-visible { outline: 2px solid #8fe1e8; outline-offset: 4px; }
+    main { max-width: 1440px; margin: auto; padding: 32px 56px 48px; }
+    .mono { font: 11px ui-monospace, SFMono-Regular, monospace; letter-spacing: 1.6px; text-transform: uppercase; }
+    nav { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 0 0 22px; border-bottom: 1px solid #314758; }
+    .wordmark { font-size: 21px; font-weight: 800; letter-spacing: -1px; }
+    .wordmark span { font-weight: 400; color: #90aaba; }
+    .intro { display: grid; grid-template-columns: 1.2fr .8fr; gap: 50px; align-items: end; padding: 54px 0 48px; }
+    .kicker { color: #8fe1e8; margin: 0 0 16px; }
+    h1 { font-size: clamp(50px, 6vw, 88px); letter-spacing: -4px; font-weight: 720; line-height: .99; margin: 0; }
+    .intro p:last-child { color: #a8bdc9; max-width: 390px; line-height: 1.65; margin: 0 0 5px; font-size: 15px; }
+    .stage { border: 1px solid #395065; border-radius: 22px; padding: 24px 28px 36px; background: radial-gradient(ellipse at 50% 0, #284259, #162637 58%, #101e2d); }
+    .stage-head { display: flex; justify-content: space-between; gap: 16px; color: #a8bdc9; }
+    .set { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; }
+    .hero-set { margin-top: 24px; }
+    figure { margin: 0; min-width: 0; text-align: center; }
+    .hero-set img { width: 100%; max-width: 190px; height: auto; filter: drop-shadow(0 12px 14px #0007); }
+    figcaption { font-weight: 700; font-size: 17px; margin: 10px 0 4px; }
+    .sub { color: #a8bdc9; font-size: 11px; margin: 0; }
+    h2 { font-size: 22px; letter-spacing: -.6px; margin: 0 0 20px; }
+    .section { margin-top: 42px; }
+    .five { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+    .card { border-top: 2px solid var(--tone); padding: 16px 0 0; min-width: 0; }
+    .card strong { font-size: 13px; }
+    .card p { min-height: 55px; color: #a8bdc9; font-size: 12px; line-height: 1.6; }
+    .card a { font: 11px ui-monospace, monospace; }
+    .test { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .surface { border-radius: 16px; background: #e8eef2; color: #152535; padding: 18px 20px 24px; min-width: 0; }
+    .surface.dark { background: #1b2c3d; color: #e8f3f8; }
+    .surface p { font: 11px ui-monospace, monospace; margin: 0 0 18px; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+    .row img { max-width: 19%; height: auto; }
+    .sizes { display: flex; align-items: end; justify-content: space-between; gap: 5px; }
+    .sizes div { display: grid; justify-items: center; gap: 8px; }
+    .sizes span { color: #647988; font: 10px ui-monospace, monospace; }
+    .compare { border: 1px solid #395065; border-radius: 20px; padding: 24px 28px 30px; }
+    .compare p { color: #a8bdc9; font-size: 13px; line-height: 1.6; margin: 0 0 18px; }
+    .compare .set img { width: 100%; max-width: 110px; height: auto; }
+    .compare figure { font-size: 11px; color: #a8bdc9; }
+    footer { color: #a8bdc9; border-top: 1px solid #314758; margin-top: 38px; padding-top: 20px; line-height: 1.6; font-size: 12px; }
+    @media (max-width: 900px) {
+      main { padding: 24px; }
+      .intro { grid-template-columns: 1fr; gap: 24px; }
+      .test { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      main { padding: 20px 16px 36px; }
+      nav { align-items: start; flex-direction: column; }
+      h1 { letter-spacing: -2px; }
+      .intro { padding: 38px 0; }
+      .stage { padding: 18px 12px 24px; }
+      .stage-head { font-size: 9px; letter-spacing: .5px; }
+      .set, .five { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; }
+      .hero-set img { max-width: 145px; }
+      .card p { min-height: 0; }
+      .compare { padding: 20px 14px; }
+      .surface { padding: 18px 12px; }
+    }
+    @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <main>
+    <nav aria-label="Vorschläge">
+      <span class="wordmark">icy<span> tools</span></span>
+      <span class="mono">Konzept 02 / <a href="../icon-proposal/index.html">Konzept 01: Faceted Ice ↗</a></span>
+    </nav>
+    <header class="intro">
+      <div><p class="kicker mono">Alternative / Designstudie 02</p><h1>Pixel<br>Signal<span style="color:#8fe1e8">.</span></h1></div>
+      <p>Weniger Eis, mehr BBS. Ein gemeinsames dunkles Terminalgehäuse trägt fünf
+        grafische Signale. Der feine Monitorrahmen verbindet die Familie;
+        leuchtende Farbakzente und charakteristische Pixelmotive unterscheiden die Tools.</p>
+    </header>
+    <section class="stage" aria-label="Alternative Icy-Tools-Icons">
+      <div class="stage-head mono"><span>Collection / Fünf Programme</span><span>Master / 256 × 256</span></div>
+      <div class="set hero-set">
+        <figure><img src="icy-term.svg" width="190" height="190" alt="Icy Term, Pixel-Prompt"><figcaption>Icy Term</figcaption><p class="sub">Cyan / Verbindung</p></figure>
+        <figure><img src="icy-draw.svg" width="190" height="190" alt="Icy Draw, Pixel-Zeichenstift"><figcaption>Icy Draw</figcaption><p class="sub">Koralle / Kreation</p></figure>
+        <figure><img src="icy-view.svg" width="190" height="190" alt="Icy View, Pixel-Landschaft"><figcaption>Icy View</figcaption><p class="sub">Limette / Entdeckung</p></figure>
+        <figure><img src="icy-play.svg" width="190" height="190" alt="Icy Play, Filmstreifen"><figcaption>Icy Play</figcaption><p class="sub">Gold / Bewegung</p></figure>
+        <figure><img src="icy-mail.svg" width="190" height="190" alt="Icy Mail, Nachricht"><figcaption>Icy Mail</figcaption><p class="sub">Lavendel / Austausch</p></figure>
+      </div>
+    </section>
+    <section class="section" aria-labelledby="details">
+      <h2 id="details">Fünf eigenständige Zeichen.</h2>
+      <div class="five">
+        <article class="card" style="--tone:#61e6f0"><strong>01 / Verbindung</strong><p>Ein Terminal-Prompt mit leuchtendem Block-Cursor.</p><a href="icy-term.svg" download>Term als SVG ↗</a></article>
+        <article class="card" style="--tone:#ff9887"><strong>02 / Kreation</strong><p>Ein kantiger Stift mit gezeichneter Pixelspitze.</p><a href="icy-draw.svg" download>Draw als SVG ↗</a></article>
+        <article class="card" style="--tone:#b3ee81"><strong>03 / Entdeckung</strong><p>ANSI-Art als kleines Bild in einem digitalen Rahmen.</p><a href="icy-view.svg" download>View als SVG ↗</a></article>
+        <article class="card" style="--tone:#ffd17b"><strong>04 / Bewegung</strong><p>Filmstreifen und Startsignal für Animationen.</p><a href="icy-play.svg" download>Play als SVG ↗</a></article>
+        <article class="card" style="--tone:#c9a9ff"><strong>05 / Austausch</strong><p>Briefumschlag mit markierter neuer Nachricht.</p><a href="icy-mail.svg" download>Mail als SVG ↗</a></article>
+      </div>
+    </section>
+    <section class="section" aria-labelledby="sizes">
+      <h2 id="sizes">Kontrast und Maßstab.</h2>
+      <div class="test">
+        <div class="surface"><p>Heller Desktop · 48 px</p><div class="row">
+          <img src="icy-term.svg" width="48" height="48" alt="Term"><img src="icy-draw.svg" width="48" height="48" alt="Draw"><img src="icy-view.svg" width="48" height="48" alt="View"><img src="icy-play.svg" width="48" height="48" alt="Play"><img src="icy-mail.svg" width="48" height="48" alt="Mail">
+        </div></div>
+        <div class="surface dark"><p>Dunkler Desktop · 32 px</p><div class="row">
+          <img src="icy-term.svg" width="32" height="32" alt="Term"><img src="icy-draw.svg" width="32" height="32" alt="Draw"><img src="icy-view.svg" width="32" height="32" alt="View"><img src="icy-play.svg" width="32" height="32" alt="Play"><img src="icy-mail.svg" width="32" height="32" alt="Mail">
+        </div></div>
+        <div class="surface"><p>Größenprobe · Icy Term</p><div class="sizes">
+          <div><img src="icy-term.svg" width="16" height="16" alt="16 Pixel"><span>16</span></div>
+          <div><img src="icy-term.svg" width="24" height="24" alt="24 Pixel"><span>24</span></div>
+          <div><img src="icy-term.svg" width="32" height="32" alt="32 Pixel"><span>32</span></div>
+          <div><img src="icy-term.svg" width="48" height="48" alt="48 Pixel"><span>48</span></div>
+          <div><img src="icy-term.svg" width="64" height="64" alt="64 Pixel"><span>64</span></div>
+        </div></div>
+      </div>
+    </section>
+    <section class="section compare" aria-labelledby="comparison">
+      <h2 id="comparison">Zur Erinnerung: Konzept 01 / Faceted Ice.</h2>
+      <p>Konzept 01 ist separat gesichert und bleibt unverändert. Gleiche fünf Tools, andere Markenidee:
+        farbige, facettierte Flächen statt dunkler Monitore. <a href="../icon-proposal/index.html">Ersten Vorschlag vollständig ansehen ↗</a></p>
+      <div class="set">
+        <figure><img src="../icon-proposal/icy-term.svg" width="110" height="110" alt="Faceted Ice Term"><figcaption>Term</figcaption></figure>
+        <figure><img src="../icon-proposal/icy-draw.svg" width="110" height="110" alt="Faceted Ice Draw"><figcaption>Draw</figcaption></figure>
+        <figure><img src="../icon-proposal/icy-view.svg" width="110" height="110" alt="Faceted Ice View"><figcaption>View</figcaption></figure>
+        <figure><img src="../icon-proposal/icy-play.svg" width="110" height="110" alt="Faceted Ice Play"><figcaption>Play</figcaption></figure>
+        <figure><img src="../icon-proposal/icy-mail.svg" width="110" height="110" alt="Faceted Ice Mail"><figcaption>Mail</figcaption></figure>
+      </div>
+    </section>
+    <footer>Designentwurf, keine Änderung der produktiven App-Icons. Alle fünf neuen SVGs sind eigenständig und funktionieren offline;
+      für die Vergleichsreihe wird der gesicherte erste Vorschlag aus dem Nachbarordner geladen.</footer>
+  </main>
+</body>
+</html>

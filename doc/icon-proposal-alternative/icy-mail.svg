@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Icy Mail - Pixel Signal</title>
+  <desc id="desc">Kantiger Briefumschlag mit ungelesener Nachricht auf dunklem Terminalfeld mit lavendelfarbenem Signal.</desc>
+  <defs>
+    <linearGradient id="case" x2="0" y2="1"><stop stop-color="#233b50"/><stop offset="1" stop-color="#0d1a2b"/></linearGradient>
+    <linearGradient id="screen" x2="0" y2="1"><stop stop-color="#172e3c"/><stop offset="1" stop-color="#102333"/></linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="42" fill="url(#case)"/>
+  <rect x="19" y="19" width="218" height="218" rx="39" fill="none" stroke="#7b9aac" stroke-opacity=".55" stroke-width="2"/>
+  <rect x="35" y="36" width="186" height="184" rx="23" fill="url(#screen)" stroke="#4d6d81" stroke-width="3"/>
+  <path d="M54 68H202" stroke="#4d6d81" stroke-width="2"/>
+  <rect x="54" y="51" width="10" height="10" rx="2" fill="#c9a9ff"/>
+  <rect x="70" y="51" width="10" height="10" rx="2" fill="#c9a9ff" opacity=".42"/>
+  <rect x="86" y="51" width="10" height="10" rx="2" fill="#c9a9ff" opacity=".2"/>
+  <path d="M62 98H194V172H62Z" fill="none" stroke="#effcff" stroke-width="12" stroke-linejoin="miter"/>
+  <path d="M68 105L128 145L188 105" fill="none" stroke="#effcff" stroke-width="12" stroke-linejoin="miter"/>
+  <rect x="178" y="80" width="23" height="23" fill="#c9a9ff"/>
+  <path d="M55 202H81M91 202H117M127 202H153" stroke="#c9a9ff" stroke-width="4" opacity=".7"/>
+</svg>
