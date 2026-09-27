@@ -784,10 +784,11 @@ impl EditorUndoOp {
                 old_properties,
                 new_properties,
             } => {
-                std::mem::swap(old_properties, new_properties);
+                // `redo` left the previous properties in `new_properties`; restore them, then swap back.
                 if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*index) {
                     l.properties = new_properties.clone();
                 }
+                std::mem::swap(old_properties, new_properties);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }

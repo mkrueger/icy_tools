@@ -1,21 +1,75 @@
 use std::{
+    collections::HashSet,
     path::PathBuf,
-    sync::{mpsc, Arc},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
 };
 
 use eframe::egui;
 use i18n_embed_fl::fl;
 use icy_engine::TextScreen;
-use icy_mail::{drafts::DraftStore, qwk::QwkPackage, reader::render_body, LANGUAGE_LOADER};
+use icy_mail::{LANGUAGE_LOADER, drafts::DraftStore, qwk::QwkPackage, reader::render_body};
+use rayon::prelude::*;
 
 pub enum Event {
     Package(u64, PathBuf, Result<Arc<QwkPackage>, String>),
     Body(u64, Result<TextScreen, String>),
+    Search(u64, String, Result<HashSet<usize>, String>),
     Picked(Option<PathBuf>),
     Exported(Option<(PathBuf, Result<(), String>)>),
 }
 
 type Jobs<T> = mpsc::Sender<(T, egui::Context)>;
+
+enum SearchJob {
+    Scan(u64, Arc<QwkPackage>, String),
+    Clear,
+}
+
+#[derive(Debug)]
+enum SearchError {
+    Cancelled,
+    Message(String),
+}
+
+struct BodySearch {
+    package: Arc<QwkPackage>,
+    text: Vec<Option<String>>,
+}
+
+impl BodySearch {
+    fn new(package: Arc<QwkPackage>) -> Self {
+        Self {
+            text: vec![None; package.infos.len()],
+            package,
+        }
+    }
+
+    fn find(&mut self, query: &str, generation: u64, current: &AtomicU64) -> Result<HashSet<usize>, SearchError> {
+        let package = &self.package;
+        self.text
+            .par_iter_mut()
+            .with_min_len(256)
+            .zip(&package.infos)
+            .map(|(cached, info)| {
+                if current.load(Ordering::Relaxed) != generation {
+                    return Err(SearchError::Cancelled);
+                }
+                if cached.is_none() {
+                    let message = package
+                        .read_message(info.index)
+                        .map_err(|error| SearchError::Message(fl!(LANGUAGE_LOADER, "search-message-error", number = info.number, error = error.to_string())))?;
+                    *cached = Some(icy_mail::reader::body_search_text(&message.text));
+                }
+                Ok(cached.as_ref().is_some_and(|text| text.contains(query)).then_some(info.index))
+            })
+            .filter_map(Result::transpose)
+            .collect()
+    }
+}
 
 pub struct Loader {
     pub package_generation: u64,
@@ -26,6 +80,10 @@ pub struct Loader {
     pub receiver: mpsc::Receiver<Event>,
     packages: Jobs<(u64, PathBuf)>,
     bodies: Jobs<(u64, Arc<QwkPackage>, usize)>,
+    searches: Jobs<SearchJob>,
+    search_generation: Arc<AtomicU64>,
+    pub search_query: Option<String>,
+    pub searching: bool,
 }
 
 impl Default for Loader {
@@ -33,14 +91,36 @@ impl Default for Loader {
         let (sender, receiver) = mpsc::channel();
         let packages = latest_worker(sender.clone(), |(generation, path): (u64, PathBuf)| {
             let result = QwkPackage::load_from_file(&path).map(Arc::new).map_err(|error| error.to_string());
-            Event::Package(generation, path, result)
+            Some(Event::Package(generation, path, result))
         });
         let bodies = latest_worker(sender.clone(), |(generation, package, index): (u64, Arc<QwkPackage>, usize)| {
             let result = package
                 .get_message(index)
                 .and_then(|message| render_body(&message.text))
                 .map_err(|error| error.to_string());
-            Event::Body(generation, result)
+            Some(Event::Body(generation, result))
+        });
+        let search_generation = Arc::new(AtomicU64::new(0));
+        let current = search_generation.clone();
+        let mut index: Option<BodySearch> = None;
+        let searches = latest_worker(sender.clone(), move |job| {
+            let SearchJob::Scan(generation, package, query) = job else {
+                index = None;
+                return None;
+            };
+            if current.load(Ordering::Relaxed) != generation {
+                return None;
+            }
+            let index = match &mut index {
+                Some(index) if Arc::ptr_eq(&index.package, &package) => index,
+                slot => slot.insert(BodySearch::new(package)),
+            };
+            let result = match index.find(&query, generation, &current) {
+                Ok(matches) => Ok(matches),
+                Err(SearchError::Cancelled) => return None,
+                Err(SearchError::Message(error)) => Err(error),
+            };
+            Some(Event::Search(generation, query, result))
         });
         Self {
             package_generation: 0,
@@ -51,12 +131,20 @@ impl Default for Loader {
             receiver,
             packages,
             bodies,
+            searches,
+            search_generation,
+            search_query: None,
+            searching: false,
         }
     }
 }
 
 impl Loader {
     pub fn package(&mut self, path: PathBuf, context: &egui::Context) {
+        self.cancel_search();
+        if let Err(error) = self.searches.send((SearchJob::Clear, context.clone())) {
+            log::error!("Could not clear the message search cache: {error}");
+        }
         self.package_generation = self.package_generation.wrapping_add(1);
         self.body_generation = self.body_generation.wrapping_add(1);
         let _ = self.packages.send(((self.package_generation, path), context.clone()));
@@ -65,6 +153,33 @@ impl Loader {
     pub fn body(&mut self, package: Arc<QwkPackage>, index: usize, context: &egui::Context) {
         self.body_generation = self.body_generation.wrapping_add(1);
         let _ = self.bodies.send(((self.body_generation, package, index), context.clone()));
+    }
+
+    pub fn search_generation(&self) -> u64 {
+        self.search_generation.load(Ordering::Relaxed)
+    }
+
+    pub fn cancel_search(&mut self) {
+        self.search_generation.fetch_add(1, Ordering::Relaxed);
+        self.search_query = None;
+        self.searching = false;
+    }
+
+    pub fn search(&mut self, package: Arc<QwkPackage>, query: String, context: &egui::Context) -> Result<(), String> {
+        if self.search_query.as_ref() == Some(&query) {
+            return Ok(());
+        }
+        self.cancel_search();
+        self.search_query = Some(query.clone());
+        if query.is_empty() {
+            return Ok(());
+        }
+        self.searches
+            .send((SearchJob::Scan(self.search_generation(), package, query), context.clone()))
+            .map_err(|error| error.to_string())?;
+        self.searching = true;
+        context.request_repaint();
+        Ok(())
     }
 
     pub fn pick(&mut self, context: &egui::Context) {
@@ -114,7 +229,13 @@ impl Loader {
     }
 }
 
-fn latest_worker<T: Send + 'static>(events: mpsc::Sender<Event>, load: impl Fn(T) -> Event + Send + 'static) -> Jobs<T> {
+impl Drop for Loader {
+    fn drop(&mut self) {
+        self.cancel_search();
+    }
+}
+
+fn latest_worker<T: Send + 'static>(events: mpsc::Sender<Event>, mut load: impl FnMut(T) -> Option<Event> + Send + 'static) -> Jobs<T> {
     let (sender, receiver) = mpsc::channel::<(T, egui::Context)>();
     std::thread::spawn(move || {
         while let Ok(mut job) = receiver.recv() {
@@ -122,11 +243,79 @@ fn latest_worker<T: Send + 'static>(events: mpsc::Sender<Event>, load: impl Fn(T
                 job = newer;
             }
             let (request, context) = job;
-            if events.send(load(request)).is_err() {
-                break;
+            if let Some(event) = load(request) {
+                if events.send(event).is_err() {
+                    break;
+                }
+                context.request_repaint();
             }
-            context.request_repaint();
         }
     });
     sender
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn body_search_reuses_text_and_resumes_after_cancellation() {
+        let (_dir, package) = crate::packet_tests::load();
+        let mut index = BodySearch::new(Arc::new(package));
+        let generation = AtomicU64::new(1);
+        assert!(matches!(index.find("line", 0, &generation), Err(SearchError::Cancelled)));
+        assert!(index.text.iter().all(Option::is_none));
+        assert_eq!(index.find("line 4", 1, &generation).unwrap(), HashSet::from([2]));
+        assert!(index.text.iter().all(Option::is_some));
+        let allocations: Vec<_> = index.text.iter().map(|text| text.as_ref().unwrap().as_ptr()).collect();
+        generation.store(2, Ordering::Relaxed);
+        assert!(matches!(index.find("line", 1, &generation), Err(SearchError::Cancelled)));
+        assert_eq!(index.find("line 1", 2, &generation).unwrap(), HashSet::from([0, 2, 3]));
+        assert_eq!(
+            index.text.iter().map(|text| text.as_ref().unwrap().as_ptr()).collect::<Vec<_>>(),
+            allocations,
+            "changing the query must not decode or allocate message text again"
+        );
+    }
+
+    #[test]
+    fn opening_a_packet_releases_the_previous_search_cache() {
+        let (dir, package) = crate::packet_tests::load();
+        let package = Arc::new(package);
+        let previous = Arc::downgrade(&package);
+        let context = egui::Context::default();
+        let mut loader = Loader::default();
+        loader.search(package, "line 4".into(), &context).unwrap();
+        assert!(matches!(
+            loader.receiver.recv_timeout(std::time::Duration::from_secs(5)).unwrap(),
+            Event::Search(_, _, Ok(_))
+        ));
+        assert!(previous.upgrade().is_some(), "the current packet's text cache should be retained");
+        loader.package(dir.path().join("TEST.QWK"), &context);
+        assert!(matches!(
+            loader.receiver.recv_timeout(std::time::Duration::from_secs(5)).unwrap(),
+            Event::Package(_, _, Ok(_))
+        ));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while previous.upgrade().is_some() {
+            assert!(std::time::Instant::now() < deadline, "old packet search cache was not released");
+            std::thread::yield_now();
+        }
+    }
+
+    #[test]
+    fn parallel_body_search_reports_read_errors() {
+        let (_dir, mut package) = crate::packet_tests::load();
+        let base = package.infos[0].clone();
+        let descriptor = package.descriptors[0].clone();
+        for index in package.infos.len()..4096 {
+            let mut info = base.clone();
+            info.index = index;
+            package.infos.push(info);
+            package.descriptors.push(descriptor.clone());
+        }
+        package.descriptors.last_mut().unwrap().offset = u64::MAX;
+        let mut index = BodySearch::new(Arc::new(package));
+        assert!(matches!(index.find("line", 0, &AtomicU64::new(0)), Err(SearchError::Message(_))));
+    }
 }

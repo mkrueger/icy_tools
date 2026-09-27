@@ -6,7 +6,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use eframe::egui::{self, emath::GuiRounding, Color32, Key};
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, CaretShape, EditableScreen, IceMode, Position, Size, TextAttribute, TextScreen};
-use icy_engine_gui::{egui::screen::ScreenView, MonitorSettings};
+use icy_engine_gui::{egui::screen::ScreenView, MonitorSettings, ScalingMode};
 use icy_mail::{
     editor::{self, Attr, Editor, Motion, Pos},
     LANGUAGE_LOADER,
@@ -17,10 +17,6 @@ use super::widgets::{pill, Icon, Icons};
 pub const COLUMNS: usize = 80;
 const MIN_ROWS: usize = 6;
 const FIND_ID: &str = "editor-find";
-
-const BAR: Attr = Attr::new(7, 1, false);
-const BAR_KEY: Attr = Attr::new(14, 1, false);
-const BAR_TEXT: Attr = Attr::new(15, 1, false);
 
 /// The CP437 table beside (or below) the text.
 pub struct CharTable {
@@ -47,7 +43,6 @@ enum Command {
     Chars,
     Quote,
     Find,
-    Insert,
     Help,
 }
 
@@ -61,7 +56,10 @@ pub struct EditorOutput {
 pub struct TerminalEditor {
     pub editor: Editor,
     view: ScreenView,
+    /// Rows of the terminal screen, including a partially visible last row.
     rows: usize,
+    /// Rows that are completely visible; scrolling keeps the caret within these.
+    full_rows: usize,
     top: usize,
     follow: bool,
     /// Pending colors while the color picker is open.
@@ -83,7 +81,6 @@ pub struct TerminalEditor {
     zoom: f32,
     dragging: bool,
     wheel: f32,
-    hotspots: Vec<(i32, i32, Command)>,
     palette: [Color32; 16],
     glyphs: Option<egui::TextureHandle>,
     color_button: egui::Rect,
@@ -105,6 +102,7 @@ impl TerminalEditor {
             editor,
             view,
             rows: MIN_ROWS,
+            full_rows: MIN_ROWS,
             top: 0,
             follow: true,
             colors: None,
@@ -132,7 +130,6 @@ impl TerminalEditor {
             zoom: 1.0,
             dragging: false,
             wheel: 0.0,
-            hotspots: Vec::new(),
             palette,
             glyphs: None,
             color_button: egui::Rect::NOTHING,
@@ -156,7 +153,7 @@ impl TerminalEditor {
     }
 
     fn text_rows(&self) -> usize {
-        self.rows - 1
+        self.full_rows
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui, settings: &MonitorSettings, icons: &mut Icons, enabled: bool) -> EditorOutput {
@@ -198,7 +195,7 @@ impl TerminalEditor {
                 .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 6)))
                 .show_inside(ui, |ui| self.quote_panel(ui, icons));
         }
-        self.terminal(ui, settings, enabled, &mut output);
+        self.terminal(ui, settings, enabled);
         if enabled && self.colors.is_some() {
             self.color_picker(&context);
         }
@@ -979,23 +976,30 @@ impl TerminalEditor {
         texture
     }
 
-    fn terminal(&mut self, ui: &mut egui::Ui, settings: &MonitorSettings, enabled: bool, output: &mut EditorOutput) {
+    fn terminal(&mut self, ui: &mut egui::Ui, settings: &MonitorSettings, enabled: bool) {
         let available = ui.available_size().max(egui::vec2(1.0, 1.0));
         let font = self.font();
         self.zoom = settings
             .scaling_mode
             .compute_zoom(COLUMNS as f32 * font.x, font.y, available.x, available.y, settings.use_integer_scaling)
             .max(0.01);
-        let rows = ((available.y / (font.y * self.zoom)).floor() as usize).max(MIN_ROWS);
-        if rows != self.rows {
+        let row_height = font.y * self.zoom;
+        let full_rows = ((available.y / row_height).floor() as usize).max(MIN_ROWS);
+        // One more row than fits shows the top of the next line instead of leaving an empty gap.
+        let rows = ((available.y / row_height).ceil() as usize).max(full_rows);
+        if rows != self.rows || full_rows != self.full_rows {
             self.rows = rows;
+            self.full_rows = full_rows;
             self.view = screen_view(rows);
             self.drawn = None;
             self.follow = true;
         }
         self.view.terminal.has_focus = self.focused;
         self.redraw();
-        let response = self.view.show(ui, settings);
+        let mut settings = settings.clone();
+        settings.scaling_mode = ScalingMode::Manual(self.zoom);
+        settings.use_integer_scaling = false;
+        let response = self.view.show(ui, &settings);
         self.id = Some(response.id);
         self.rect = response.rect;
         if enabled && (self.focus_request || response.clicked() || response.drag_started()) {
@@ -1003,7 +1007,7 @@ impl TerminalEditor {
             response.request_focus();
         }
         if enabled {
-            self.pointer(ui, &response, output);
+            self.pointer(ui, &response);
         }
         if self.focused {
             let stroke = egui::Stroke::new(1.5, ui.visuals().selection.stroke.color);
@@ -1025,7 +1029,7 @@ impl TerminalEditor {
         ((local.x / size.x).floor() as i32, (local.y / size.y).floor() as i32)
     }
 
-    fn pointer(&mut self, ui: &egui::Ui, response: &egui::Response, output: &mut EditorOutput) {
+    fn pointer(&mut self, ui: &egui::Ui, response: &egui::Response) {
         let (position, pressed, down, shift, scroll) = ui.input(|input| {
             (
                 input.pointer.interact_pos(),
@@ -1042,7 +1046,7 @@ impl TerminalEditor {
         let text_rows = self.text_rows() as i32;
         if pressed && response.hovered() {
             self.status = None;
-            self.press(x, y, shift, output);
+            self.press(x, y, shift);
         } else if self.dragging && down {
             if y < 0 {
                 self.top = self.top.saturating_sub(1);
@@ -1071,30 +1075,14 @@ impl TerminalEditor {
         }
     }
 
-    fn press(&mut self, x: i32, y: i32, shift: bool, output: &mut EditorOutput) {
-        let text_rows = self.text_rows() as i32;
-        if y == self.rows as i32 - 1 {
-            let command = self
-                .hotspots
-                .iter()
-                .find(|(start, end, _)| (*start..*end).contains(&x))
-                .map(|(_, _, command)| *command);
-            match command {
-                Some(Command::Colors) => self.open_colors(),
-                Some(Command::Chars) => self.toggle_chars(false),
-                Some(Command::Quote) => self.toggle_quotes(),
-                Some(Command::Find) => self.open_find(),
-                Some(Command::Insert) => self.editor.toggle_insert(),
-                Some(Command::Help) => output.help = true,
-                None => {}
-            }
-        } else if (0..text_rows).contains(&y) {
+    fn press(&mut self, x: i32, y: i32, shift: bool) {
+        if (0..self.rows as i32).contains(&y) {
             self.editor.set_caret_visual(self.top + y as usize, x.max(0) as usize, shift);
             self.dragging = true;
         }
     }
 
-    /// Renders the text and status bar into the terminal screen when anything changed.
+    /// Renders the text into the terminal screen when anything changed.
     fn redraw(&mut self) -> bool {
         let text_rows = self.text_rows();
         let lines = self.editor.visual_lines().len();
@@ -1109,15 +1097,14 @@ impl TerminalEditor {
         }
         self.top = self.top.min(lines.saturating_sub(1));
         let mut hasher = DefaultHasher::new();
-        (self.editor.revision(), self.top, self.rows, &self.status, self.focused).hash(&mut hasher);
+        (self.editor.revision(), self.top, self.rows, self.full_rows, &self.status, self.focused).hash(&mut hasher);
         let key = hasher.finish();
         if self.drawn == Some(key) {
             return false;
         }
         self.drawn = Some(key);
         let mut canvas = Canvas::new(COLUMNS, self.rows);
-        let caret = self.draw_text(&mut canvas, text_rows);
-        self.draw_status(&mut canvas);
+        let caret = self.draw_text(&mut canvas, self.rows);
         let mut screen = self.view.terminal.screen.lock();
         let Some(screen) = screen.as_editable() else {
             return true;
@@ -1161,58 +1148,74 @@ impl TerminalEditor {
         (row >= self.top && row < self.top + text_rows).then(|| (column.min(COLUMNS - 1) as i32, (row - self.top) as i32))
     }
 
-    fn draw_status(&mut self, canvas: &mut Canvas) {
-        let y = self.rows as i32 - 1;
-        canvas.fill(0, y, COLUMNS as i32, 1, ' ', BAR);
-        self.hotspots.clear();
-        let (row, column) = self.editor.caret_visual();
-        let position = format!(
-            "{} {} {} {} ",
-            fl!(LANGUAGE_LOADER, "editor-status-line"),
-            row + 1,
-            fl!(LANGUAGE_LOADER, "editor-status-column"),
-            column + 1
-        );
-        let sample = format!(" {} ", fl!(LANGUAGE_LOADER, "editor-status-sample"));
-        let sample_width = sample.chars().count() as i32;
-        let sample_x = COLUMNS as i32 - sample_width;
-        let position_x = sample_x - 1 - position.chars().count() as i32;
-        canvas.text(position_x, y, &position, BAR);
-        let mode = if self.editor.insert_mode() {
-            fl!(LANGUAGE_LOADER, "editor-status-insert")
-        } else {
-            fl!(LANGUAGE_LOADER, "editor-status-overwrite")
-        };
-        let mode_width = mode.chars().count() as i32;
-        let mode_x = position_x - 2 - mode_width;
-        canvas.text(mode_x, y, &mode, BAR_TEXT);
-        self.hotspots.push((mode_x, mode_x + mode_width, Command::Insert));
-        canvas.text(sample_x, y, &sample, self.editor.attr());
-        self.hotspots.push((sample_x, sample_x + sample_width, Command::Colors));
+    /// Editor part of the window status bar: a message or the editing shortcuts on the left, insert
+    /// mode and caret position on the right. Returns true when help was asked for.
+    pub fn status_bar(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut help = false;
+        ui.spacing_mut().item_spacing.x = 10.0;
         if let Some(status) = &self.status {
-            let max_x = mode_x.saturating_sub(1).max(1);
-            canvas.text_limited(1, y, status, BAR_TEXT, max_x);
+            ui.add(egui::Label::new(egui::RichText::new(status).size(12.0).color(super::widgets::warning(ui))).truncate());
         } else {
-            let mut x = 1;
-            for (key, label, command) in [
-                ("^K", fl!(LANGUAGE_LOADER, "editor-status-color"), Command::Colors),
-                ("^G", fl!(LANGUAGE_LOADER, "editor-status-chars"), Command::Chars),
-                ("^Q", fl!(LANGUAGE_LOADER, "editor-status-quote"), Command::Quote),
-                ("^F", fl!(LANGUAGE_LOADER, "editor-status-find"), Command::Find),
+            for (keys, label, command) in [
+                ("Ctrl+K", fl!(LANGUAGE_LOADER, "editor-status-color"), Command::Colors),
+                ("Ctrl+G", fl!(LANGUAGE_LOADER, "editor-status-chars"), Command::Chars),
+                ("Ctrl+Q", fl!(LANGUAGE_LOADER, "editor-status-quote"), Command::Quote),
+                ("Ctrl+F", fl!(LANGUAGE_LOADER, "editor-status-find"), Command::Find),
                 ("F1", fl!(LANGUAGE_LOADER, "editor-status-help"), Command::Help),
             ] {
-                let max_x = mode_x.saturating_sub(1).max(1);
-                if x >= max_x {
+                if ui.available_width() < 260.0 {
                     break;
                 }
-                let start = x;
-                x = canvas.text_limited(x, y, key, BAR_KEY, max_x) + 1;
-                x = canvas.text_limited(x, y, &label, BAR, max_x);
-                self.hotspots.push((start, x, command));
-                x += 2;
+                if status_hint(ui, keys, &label).clicked() {
+                    match command {
+                        Command::Colors => self.open_colors(),
+                        Command::Chars => self.toggle_chars(false),
+                        Command::Quote => self.toggle_quotes(),
+                        Command::Find => self.open_find(),
+                        Command::Help => help = true,
+                    }
+                }
             }
         }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let (row, column) = self.editor.caret_visual();
+            let position = format!(
+                "{} {}, {} {}",
+                fl!(LANGUAGE_LOADER, "editor-status-line"),
+                row + 1,
+                fl!(LANGUAGE_LOADER, "editor-status-column"),
+                column + 1
+            );
+            ui.label(egui::RichText::new(position).size(12.0).weak());
+            let mode = if self.editor.insert_mode() {
+                fl!(LANGUAGE_LOADER, "editor-status-insert")
+            } else {
+                fl!(LANGUAGE_LOADER, "editor-status-overwrite")
+            };
+            if ui
+                .add(egui::Button::new(egui::RichText::new(mode).size(12.0)).frame(false))
+                .on_hover_text(fl!(LANGUAGE_LOADER, "editor-toggle-insert-tooltip"))
+                .clicked()
+            {
+                self.editor.toggle_insert();
+            }
+        });
+        help
     }
+}
+
+/// Clickable "keys label" hint of the status bar.
+fn status_hint(ui: &mut egui::Ui, keys: &str, label: &str) -> egui::Response {
+    let mut job = egui::text::LayoutJob::default();
+    let format = |color: Color32| egui::TextFormat {
+        font_id: egui::FontId::proportional(12.0),
+        color,
+        ..Default::default()
+    };
+    job.append(keys, 0.0, format(ui.visuals().strong_text_color()));
+    job.append(label, 5.0, format(ui.visuals().weak_text_color()));
+    ui.add(egui::Label::new(job).sense(egui::Sense::click()))
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 const CHAR_PANEL_WIDTH: f32 = 16.0 * 24.0 + 16.0;
@@ -1303,7 +1306,9 @@ fn screen_view(rows: usize) -> ScreenView {
     let mut screen = TextScreen::new(Size::new(COLUMNS as i32, rows as i32));
     screen.terminal_state_mut().is_terminal_buffer = false;
     screen.buffer.ice_mode = IceMode::Blink;
-    ScreenView::new(screen)
+    let mut view = ScreenView::new(screen);
+    view.clip = true;
+    view
 }
 
 /// Selection highlight: swapped colors, like DOS editors.
@@ -1343,36 +1348,6 @@ impl Canvas {
         let code = editor::cp437_byte(ch).unwrap_or(b'?');
         if x >= 0 && y >= 0 && (x as usize) < self.width && (y as usize) < self.height {
             self.cells[y as usize * self.width + x as usize] = (char::from(code), attr);
-        }
-    }
-
-    /// Writes `text` and returns the column after it.
-    fn text(&mut self, x: i32, y: i32, text: &str, attr: Attr) -> i32 {
-        let mut x = x;
-        for ch in text.chars() {
-            self.put(x, y, ch, attr);
-            x += 1;
-        }
-        x
-    }
-
-    fn text_limited(&mut self, x: i32, y: i32, text: &str, attr: Attr, max_x: i32) -> i32 {
-        let mut x = x;
-        for ch in text.chars() {
-            if x >= max_x {
-                break;
-            }
-            self.put(x, y, ch, attr);
-            x += 1;
-        }
-        x
-    }
-
-    fn fill(&mut self, x: i32, y: i32, width: i32, height: i32, ch: char, attr: Attr) {
-        for row in y..y + height {
-            for column in x..x + width {
-                self.put(column, row, ch, attr);
-            }
         }
     }
 }

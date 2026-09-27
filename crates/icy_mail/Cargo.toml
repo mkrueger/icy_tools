@@ -46,6 +46,7 @@ webbrowser = { workspace = true }
 icy_engine_gui = { path = "../icy_engine_gui", default-features = false, features = ["opus-audio"] }
 icy_parser_core = { workspace = true }
 parking_lot = { workspace = true }
+rayon = { workspace = true }
 bstr = { workspace = true }
 clap = { workspace = true }
 #sound

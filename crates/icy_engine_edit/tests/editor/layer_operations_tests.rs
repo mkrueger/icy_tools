@@ -408,6 +408,18 @@ fn test_set_layer_size_changes_dimensions() {
     assert_eq!(state.undo_stack_len(), initial_undo_len + 1);
 }
 
+#[test]
+fn test_set_layer_size_undo_redo() {
+    use icy_engine_edit::UndoState;
+    let mut state = create_test_state(20, 10);
+    state.set_layer_size(0, Size::new(30, 15)).unwrap();
+
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers[0].size(), Size::new(20, 10));
+    state.redo().unwrap();
+    assert_eq!(state.get_buffer().layers[0].size(), Size::new(30, 15));
+}
+
 // ============================================================================
 // Paste Rotate Tests
 // ============================================================================
@@ -553,6 +565,25 @@ fn test_update_layer_properties() {
     assert_eq!(state.get_buffer().layers[0].properties.title, "New Layer Name");
     assert!(!state.get_buffer().layers[0].properties.is_visible);
     assert_eq!(state.undo_stack_len(), initial_undo_len + 1);
+}
+
+#[test]
+fn test_update_layer_properties_undo_redo() {
+    use icy_engine_edit::UndoState;
+    let mut state = create_test_state(20, 10);
+    let old_title = state.get_buffer().layers[0].properties.title.clone();
+    let new_props = LayerProperties {
+        title: "Renamed".to_string(),
+        ..state.get_buffer().layers[0].properties.clone()
+    };
+    state.update_layer_properties(0, new_props).unwrap();
+
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers[0].properties.title, old_title);
+    state.redo().unwrap();
+    assert_eq!(state.get_buffer().layers[0].properties.title, "Renamed");
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers[0].properties.title, old_title);
 }
 
 // ============================================================================

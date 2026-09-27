@@ -130,6 +130,17 @@ impl Drop for TempDir {
 }
 
 #[test]
+fn bulk_reads_match_cached_message_text() {
+    let (_dir, package) = load();
+    for index in 0..package.infos.len() {
+        let bulk = package.read_message(index).unwrap();
+        assert_eq!(bulk.text, package.get_message(index).unwrap().text);
+        package.clear_cache();
+    }
+    assert!(package.read_message(package.infos.len()).is_err());
+}
+
+#[test]
 fn index_covers_every_message() {
     let (_dir, package) = load();
     assert_eq!(package.infos.len(), 4);

@@ -926,6 +926,9 @@ impl TerminalApp {
                     self.navigation.scroll_to = Some((self.terminal.scroll_y() - self.terminal.visible_content_height()).max(0.0));
                 }
             }
+            if self.terminal.is_in_scrollback_mode() && !blocked_at_start {
+                self.deselect_on_escape(context);
+            }
             if self.terminal.is_in_scrollback_mode() && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
                 self.toggle_scrollback();
             }
@@ -1303,6 +1306,18 @@ impl TerminalApp {
         self.send_input(context, blocked_at_start || message_was_open);
     }
 
+    fn deselect_on_escape(&mut self, context: &egui::Context) {
+        if context.input(|input| input.focused)
+            && self.terminal_input_id.is_some_and(|id| context.memory(|memory| memory.has_focus(id)))
+            && self.terminal.screen.lock().selection().is_some()
+            && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            if let Err(error) = self.terminal.screen.lock().clear_selection() {
+                self.error = Some(error.to_string());
+            }
+        }
+    }
+
     fn send_input(&mut self, context: &egui::Context, blocked_at_start: bool) {
         let focused = self.terminal_input_id.is_some_and(|id| context.memory(|memory| memory.has_focus(id)));
         let remote_focus =
@@ -1319,6 +1334,7 @@ impl TerminalApp {
         if blocked_at_start || !focused || self.blocks_terminal() || !context.input(|input| input.focused) || context.will_discard() {
             return;
         }
+        self.deselect_on_escape(context);
         if self.terminal.screen.lock().selection().is_some() {
             let copy = context.input(|input| input.events.iter().any(|event| matches!(event, egui::Event::Copy | egui::Event::Cut)));
             if copy {
@@ -1920,6 +1936,67 @@ mod tests {
     use super::*;
 
     #[test]
+    fn escape_clears_selection_before_leaving_scrollback_and_respects_focus() {
+        let context = egui::Context::default();
+        let mut app = TerminalApp::new(TextScreen::default(), "selection".into());
+        let run = |app: &mut TerminalApp, escape: bool| {
+            let _ = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 720.0))),
+                    focused: true,
+                    events: if escape {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Escape,
+                            physical_key: None,
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    } else {
+                        vec![]
+                    },
+                    ..Default::default()
+                },
+                |context| app.show(context),
+            );
+        };
+        run(&mut app, false);
+        run(&mut app, false);
+        for shape in [icy_engine::Shape::Lines, icy_engine::Shape::Rectangle] {
+            let mut selection = icy_engine::Selection::new((0, 0));
+            selection.shape = shape;
+            app.terminal.screen.lock().set_selection(selection).unwrap();
+            run(&mut app, true);
+            assert!(app.terminal.screen.lock().selection().is_none());
+            assert!(app.session.is_none(), "deselecting must not send input to the offline modem");
+        }
+
+        app.terminal.screen.lock().set_selection(icy_engine::Selection::new((0, 0))).unwrap();
+        app.show_monitor = true;
+        run(&mut app, true);
+        assert!(app.terminal.screen.lock().selection().is_some(), "dialog input must not clear the selection");
+        app.show_monitor = false;
+        context.memory_mut(|memory| memory.request_focus(egui::Id::new("other-widget")));
+        run(&mut app, true);
+        assert!(app.terminal.screen.lock().selection().is_some(), "another widget owns the keyboard");
+        app.focus_terminal = true;
+        run(&mut app, false);
+        run(&mut app, false);
+        assert!(app.terminal.has_focus);
+
+        app.terminal
+            .enter_scrollback_mode(Arc::new(parking_lot::Mutex::new(Box::new(TextScreen::default()))));
+        app.terminal.screen.lock().set_selection(icy_engine::Selection::new((0, 0))).unwrap();
+        run(&mut app, true);
+        assert!(app.terminal.screen.lock().selection().is_none());
+        assert!(app.terminal.is_in_scrollback_mode(), "first Escape must only deselect");
+        run(&mut app, false);
+        run(&mut app, true);
+        assert!(!app.terminal.is_in_scrollback_mode(), "next Escape must leave scrollback");
+        assert!(app.session.is_none());
+    }
+
+    #[test]
     fn offline_input_reaches_the_modem_without_bypassing_focus() {
         let context = egui::Context::default();
         let (wake_tx, wake_rx) = std::sync::mpsc::channel();
@@ -2099,6 +2176,19 @@ mod tests {
         run(&mut app, vec![egui::Event::Text("unfocused".into())]);
         app.focus_terminal = true;
         run(&mut app, Vec::new());
+        run(&mut app, Vec::new());
+        app.terminal.screen.lock().set_selection(icy_engine::Selection::new((0, 0))).unwrap();
+        run(
+            &mut app,
+            vec![egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert!(app.terminal.screen.lock().selection().is_none());
         run(
             &mut app,
             vec![

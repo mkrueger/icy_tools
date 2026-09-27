@@ -4,7 +4,7 @@ use eframe::egui::{self, Color32, FontId, Rect, Response, Sense, Stroke};
 use icy_engine_gui::egui::appearance;
 use icy_mail::{
     reader::SortDirection,
-    text::{find_ignore_case, HeaderText},
+    text::{HeaderText, find_ignore_case},
 };
 
 pub const ROW_HEIGHT: f32 = 24.0;
@@ -554,6 +554,14 @@ pub fn append_header(job: &mut egui::text::LayoutJob, ui: &egui::Ui, header: &He
     }
 }
 
+pub fn search_highlight_color(dark_mode: bool) -> Color32 {
+    if dark_mode {
+        Color32::from_rgb(230, 180, 40)
+    } else {
+        Color32::from_rgb(255, 214, 80)
+    }
+}
+
 /// Marks the search matches in the job's text from byte `start` on, like the find highlight of a browser.
 pub fn highlight(job: &mut egui::text::LayoutJob, start: usize, needle: &str, ui: &egui::Ui) {
     let Some(text) = job.text.get(start..) else {
@@ -566,11 +574,7 @@ pub fn highlight(job: &mut egui::text::LayoutJob, start: usize, needle: &str, ui
     if matches.is_empty() {
         return;
     }
-    let background = if ui.visuals().dark_mode {
-        Color32::from_rgb(230, 180, 40)
-    } else {
-        Color32::from_rgb(255, 214, 80)
-    };
+    let background = search_highlight_color(ui.visuals().dark_mode);
     let mut sections = Vec::with_capacity(job.sections.len() + matches.len() * 2);
     for section in std::mem::take(&mut job.sections) {
         let mut start = section.byte_range.start;

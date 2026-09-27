@@ -4,8 +4,9 @@ use bstr::ByteSlice;
 use eframe::egui::{self, Key, Vec2};
 use i18n_embed_fl::fl;
 use icy_engine::{BufferType, Position, Selection, Size, TextScreen};
-use icy_engine_gui::{egui::screen::ScreenView, MonitorSettings};
+use icy_engine_gui::{MonitorSettings, egui::screen::ScreenView};
 use icy_mail::{
+    LANGUAGE_LOADER,
     address_book::AddressBook,
     drafts::{Compose, Draft, DraftStore},
     editor,
@@ -14,7 +15,7 @@ use icy_mail::{
     reader::{NavigateDirection, Pane, Reader, ViewMode},
     state::{ReadState, RecentPackets},
     taglines::{self, Taglines},
-    text, LANGUAGE_LOADER,
+    text,
 };
 use parking_lot::Mutex;
 
@@ -105,7 +106,9 @@ pub struct MailApp {
     pub rendered: Option<usize>,
     /// The outbox draft (id and text) shown in `screen`.
     pub rendered_draft: Option<(u64, String)>,
-    pub selection_anchor: Option<Position>,
+    pub selection_anchor: Option<Selection>,
+    pub last_reader_click: Option<(egui::Pos2, f64, u8)>,
+    pub body_highlights: super::reader_view::BodyHighlights,
     pub reveal_sidebar: bool,
     pub reveal_message: bool,
     pub message_view: Vec2,
@@ -186,6 +189,8 @@ impl MailApp {
             rendered: None,
             rendered_draft: None,
             selection_anchor: None,
+            last_reader_click: None,
+            body_highlights: super::reader_view::BodyHighlights::default(),
             reveal_sidebar: false,
             reveal_message: false,
             message_view: Vec2::ZERO,
@@ -273,6 +278,18 @@ impl MailApp {
                             self.screen = ScreenView::new(TextScreen::new(Size::new(80, 25)));
                             self.error = Some(error);
                         }
+                    }
+                }
+                Event::Search(generation, query, result)
+                    if generation == self.loader.search_generation() && query == self.reader.filter.trim().to_lowercase() =>
+                {
+                    self.loader.searching = false;
+                    match result {
+                        Ok(matches) => {
+                            self.reader.set_body_matches(query, matches);
+                            self.reveal_message = true;
+                        }
+                        Err(error) => self.error = Some(error),
                     }
                 }
                 Event::Picked(path) => {
@@ -380,6 +397,7 @@ impl MailApp {
         self.rendered = self.reader.selected_message;
         self.rendered_draft = None;
         self.selection_anchor = None;
+        self.last_reader_click = None;
         self.reveal_message = true;
         if let (Some(package), Some(index)) = (&self.reader.package, self.reader.selected_message) {
             self.body_loading = true;
@@ -595,8 +613,27 @@ impl MailApp {
     }
 
     pub fn filter_changed(&mut self) {
+        if self
+            .loader
+            .search_query
+            .as_ref()
+            .is_some_and(|query| *query != self.reader.filter.trim().to_lowercase())
+        {
+            self.loader.cancel_search();
+        }
         self.reader.rebuild_messages();
         self.reveal_message = true;
+    }
+
+    fn search_bodies(&mut self, context: &egui::Context) {
+        if self.loading.is_some() || self.folder == Folder::Drafts {
+            return;
+        }
+        if let Some(package) = self.reader.package.clone() {
+            if let Err(error) = self.loader.search(package, self.reader.filter.trim().to_lowercase(), context) {
+                self.error = Some(error);
+            }
+        }
     }
 
     pub fn new_draft(&mut self, context: &egui::Context) {
@@ -831,6 +868,9 @@ impl MailApp {
             .show(context, |ui| {
                 ui.add_enabled_ui(!blocked && !composing, |ui| self.toolbar(ui));
             });
+        if !blocked && !context.will_discard() {
+            self.search_bodies(context);
+        }
         egui::TopBottomPanel::bottom("status")
             .frame(egui::Frame::side_top_panel(&context.style()).inner_margin(egui::Margin::symmetric(8, 2)))
             .exact_height(26.0)
@@ -912,10 +952,15 @@ impl MailApp {
 
     pub fn cell(&self, position: egui::Pos2) -> Option<Position> {
         let info = self.screen.terminal.render_info.read();
-        let (column, row) = info.screen_to_cell(position.x, position.y)?;
+        if info.font_width <= 0.0 || info.font_height <= 0.0 || info.display_scale <= 0.0 {
+            return None;
+        }
+        let (x, y) = info.screen_to_terminal_pixels_unclamped(position.x, position.y);
+        let y = if info.scan_lines { y / 2.0 } else { y };
+        let screen = self.screen.terminal.screen.lock();
         Some(Position::new(
-            column + (self.screen.terminal.scroll_x() / info.font_width.max(1.0)) as i32,
-            row + (self.screen.terminal.scroll_y() / info.font_height.max(1.0)) as i32,
+            (((x + self.screen.terminal.scroll_x()) / info.font_width).floor() as i32).clamp(0, (screen.width() - 1).max(0)),
+            (((y + self.screen.terminal.scroll_y()) / info.font_height).floor() as i32).clamp(0, (screen.height() - 1).max(0)),
         ))
     }
 
@@ -1105,6 +1150,14 @@ impl MailApp {
             }
             if key(context, Key::Enter, false, false) || key(context, Key::ArrowDown, false, false) {
                 self.set_focus(Pane::Messages, context);
+            }
+            return;
+        }
+        if self.focus == Pane::Content && self.screen.terminal.screen.lock().selection().is_some() && key(context, Key::Escape, false, false) {
+            self.selection_anchor = None;
+            self.last_reader_click = None;
+            if let Err(error) = self.screen.terminal.screen.lock().clear_selection() {
+                self.error = Some(error.to_string());
             }
             return;
         }

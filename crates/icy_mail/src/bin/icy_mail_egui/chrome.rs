@@ -1,8 +1,8 @@
 use eframe::egui::{self, Key, KeyboardShortcut, Modifiers};
 use i18n_embed_fl::fl;
 use icy_engine_gui::ScalingMode;
-use icy_mail::reader::ViewMode;
 use icy_mail::LANGUAGE_LOADER;
+use icy_mail::reader::ViewMode;
 
 use super::{
     app::{Folder, MailApp, Modal, NoticeKind},
@@ -152,6 +152,9 @@ impl MailApp {
         ui.add_enabled_ui(enabled, |ui| {
             widgets::field(ui, width, id, |ui| {
                 ui.add(self.icons.image(ui.ctx(), Icon::Search, 16.0).tint(weak));
+                if self.loader.searching {
+                    ui.spinner().on_hover_text(fl!(LANGUAGE_LOADER, "search-bodies-running"));
+                }
                 let clear = !self.reader.filter.is_empty();
                 let edit_width = ui.available_width() - if clear { 24.0 } else { 0.0 };
                 let response = ui.add_sized(
@@ -162,6 +165,17 @@ impl MailApp {
                         .margin(egui::vec2(4.0, 4.0))
                         .hint_text(fl!(LANGUAGE_LOADER, "toolbar-search-hint")),
                 );
+                if response.has_focus() {
+                    ui.memory_mut(|memory| {
+                        memory.set_focus_lock_filter(
+                            response.id,
+                            egui::EventFilter {
+                                escape: true,
+                                ..Default::default()
+                            },
+                        );
+                    });
+                }
                 if response.changed() {
                     if self.folder == Folder::Drafts {
                         self.select_folder(Folder::All);
@@ -329,6 +343,15 @@ impl MailApp {
 
     pub fn status_bar(&mut self, ui: &mut egui::Ui) {
         let context = ui.ctx().clone();
+        if self.notice.is_none() {
+            if let Some(composer) = &mut self.composer {
+                let help = ui.horizontal_centered(|ui| composer.editor.status_bar(ui)).inner;
+                if help {
+                    self.modal = Some(Modal::Shortcuts);
+                }
+                return;
+            }
+        }
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             if let Some(notice) = &self.notice {

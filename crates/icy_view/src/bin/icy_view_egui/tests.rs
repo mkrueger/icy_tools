@@ -1472,3 +1472,14 @@ fn gpu_music_bar_controls_tracker_modules() {
     gpu.click(&mut app, size, 1.0, &text("egui-playback-replay"));
     assert!(app.preview.music.as_ref().unwrap().playing());
 }
+
+#[test]
+fn welcome_screen_shows_the_current_version() {
+    let preview = preview::Preview::new(&egui::Context::default()).unwrap();
+    let screen = preview.screen.terminal.screen.lock();
+    let rows: Vec<String> = (0..screen.height())
+        .map(|y| (0..screen.width()).map(|x| screen.char_at((x, y).into()).ch).collect())
+        .collect();
+    let version = format!("v{}", *icy_view::VERSION);
+    assert!(rows.iter().any(|row| row.contains(&version)), "{rows:#?}");
+}

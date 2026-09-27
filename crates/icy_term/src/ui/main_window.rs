@@ -2028,6 +2028,12 @@ impl MainWindow {
                         repeat,
                         ..
                     }) => {
+                        if matches!(key, keyboard::Key::Named(keyboard::key::Named::Escape))
+                            && modifiers.is_empty()
+                            && self.terminal_window.terminal.screen.lock().selection().is_some()
+                        {
+                            return (Some(Message::ClearSelection), Task::none());
+                        }
                         if modifiers.alt() {
                             if let Some(digit) = Self::numpad_digit(physical_key) {
                                 if self.alt_numeric_input.len() < 6 {

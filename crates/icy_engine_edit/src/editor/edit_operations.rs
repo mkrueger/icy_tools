@@ -162,6 +162,88 @@ impl EditState {
         Ok(())
     }
 
+    /// Paste the visible composition as one editable layer without replacing document resources.
+    pub fn paste_buffer(&mut self, source: &crate::TextBuffer, title: String) -> Result<()> {
+        use crate::EngineError;
+        use icy_engine::AttributeColor;
+        use std::collections::HashMap;
+
+        let mut layer = Layer::new(title, source.size());
+        layer.properties.has_alpha_channel = true;
+        layer.set_offset(self.screen.caret.position());
+        let mut fonts = HashMap::new();
+        let mut added_fonts = Vec::new();
+        let target = self.get_buffer();
+        for y in 0..source.height() {
+            for x in 0..source.width() {
+                let mut ch = source.char_at((x, y).into());
+                if !ch.is_visible() {
+                    continue;
+                }
+                // Keep glyph indices together with their source font, including PETSCII/ATASCII.
+                for foreground in [true, false] {
+                    let color = if foreground {
+                        ch.attribute.foreground_color()
+                    } else {
+                        ch.attribute.background_color()
+                    };
+                    if let AttributeColor::Palette(index) = color {
+                        let rgb = source.palette.rgb(u32::from(index));
+                        if rgb != target.palette.rgb(u32::from(index)) {
+                            let color = AttributeColor::Rgb(rgb.0, rgb.1, rgb.2);
+                            if foreground {
+                                ch.attribute.set_foreground_color(color);
+                            } else {
+                                ch.attribute.set_background_color(color);
+                            }
+                        }
+                    }
+                }
+                let page = ch.font_page();
+                if let std::collections::hash_map::Entry::Vacant(entry) = fonts.entry(page) {
+                    let font = source
+                        .font(page)
+                        .ok_or_else(|| EngineError::Generic(format!("The imported font slot {page} is missing.")))?;
+                    let slot = target.font_iter().find_map(|(slot, existing)| (existing == font).then_some(*slot));
+                    let slot = if let Some(slot) = slot {
+                        slot
+                    } else {
+                        let slot = (0..=u8::MAX)
+                            .find(|slot| !target.has_font(*slot) && !added_fonts.iter().any(|(used, _)| used == slot))
+                            .ok_or_else(|| EngineError::Generic("No free font slot for the imported artwork.".into()))?;
+                        added_fonts.push((slot, font.clone()));
+                        slot
+                    };
+                    entry.insert(slot);
+                }
+                ch.set_font_page(fonts[&page]);
+                layer.set_char((x, y), ch);
+            }
+        }
+        for source_layer in source.layers.iter().filter(|layer| layer.properties.is_visible) {
+            for sixel in &source_layer.sixels {
+                let mut sixel = sixel.clone();
+                sixel.position += source_layer.offset();
+                layer.sixels.push(sixel);
+            }
+        }
+        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-paste"));
+        let current_layer = self.get_current_layer()?;
+        for (slot, font) in added_fonts {
+            self.push_undo_action(EditorUndoOp::AddFont {
+                old_font_page: self.screen.caret.font_page(),
+                new_font_page: slot,
+                font,
+            })?;
+        }
+        self.push_undo_action(EditorUndoOp::Paste {
+            current_layer,
+            layer: Box::new(layer),
+        })?;
+        self.selection_opt = None;
+        Ok(())
+    }
+
     pub fn paste_text(&mut self, text: &str) -> Result<()> {
         let x = self.screen.caret.position().x;
         let y = self.screen.caret.position().y;

@@ -41,7 +41,8 @@ const TOOL_SLOTS: [ToolPair; 10] = [
 pub struct Chrome {
     minimap: Option<(u64, egui::TextureHandle)>,
     previews: Vec<Option<(u64, Option<egui::TextureHandle>)>>,
-    layer_properties: Option<(usize, LayerProperties)>,
+    /// Layer index, the edited properties and the edited layer size.
+    layer_properties: Option<(usize, LayerProperties, icy_engine::Size)>,
     /// Rendered outline font for the preview beside the canvas, keyed by buffer signature and style.
     outline_preview: Option<(u64, usize, ScreenView)>,
     pub(super) outline_style: usize,
@@ -268,6 +269,19 @@ fn layer_preview(buffer: &TextBuffer, index: usize) -> Option<egui::ColorImage> 
     let region = Rectangle::from(0, 0, columns * (dimensions.width + 1), rows * dimensions.height * 2);
     let (pixels, rgba) = preview.render_region_to_rgba(region, &options, false);
     downsample(pixels.width.max(0) as usize, pixels.height.max(0) as usize, &rgba, LAYER_PREVIEW[0] * 2)
+}
+
+/// Largest layer width or height the layer dialog accepts.
+const MAX_LAYER_SIZE: i32 = 10_000;
+
+/// Applies the layer dialog as one undo step; the size only changes when it was edited.
+fn apply_layer_settings(state: &mut icy_engine_edit::EditState, index: usize, properties: LayerProperties, size: icy_engine::Size) -> icy_engine::Result<()> {
+    let _undo = state.begin_atomic_undo(fl!("edit-layer-dialog-title"));
+    state.update_layer_properties(index, properties)?;
+    if state.get_buffer().layers.get(index).is_some_and(|layer| layer.size() != size) {
+        state.set_layer_size(index, size)?;
+    }
+    Ok(())
 }
 
 impl DrawApp {
@@ -1085,12 +1099,7 @@ impl DrawApp {
             LayerAction::Select(index) => {
                 self.document.with_state(|state| state.set_current_layer(index));
             }
-            LayerAction::Properties(index) => {
-                self.chrome.layer_properties = self
-                    .document
-                    .with_state(|state| state.get_buffer().layers.get(index).map(|layer| (index, layer.properties.clone())));
-                self.canvas_focus = false;
-            }
+            LayerAction::Properties(index) => self.open_layer_properties(index),
             LayerAction::Visibility(index) => self.edit(|state| state.toggle_layer_visibility(index)),
             LayerAction::Lock(index) => self.edit(|state| {
                 let mut properties = state.get_buffer().layers[index].properties.clone();
@@ -1107,12 +1116,24 @@ impl DrawApp {
         }
     }
 
+    pub(super) fn open_layer_properties(&mut self, index: usize) {
+        self.chrome.layer_properties = self.document.with_state(|state| {
+            state
+                .get_buffer()
+                .layers
+                .get(index)
+                .map(|layer| (index, layer.properties.clone(), layer.size()))
+        });
+        self.canvas_focus = false;
+    }
+
     pub(super) fn layer_properties_open(&self) -> bool {
         self.chrome.layer_properties.is_some()
     }
 
+    /// Layer settings like the classic editor: name, size, offset, flags and mode.
     pub(super) fn layer_properties_dialog(&mut self, context: &egui::Context) {
-        let Some((index, mut properties)) = self.chrome.layer_properties.take() else {
+        let Some((index, mut properties, mut size)) = self.chrome.layer_properties.take() else {
             return;
         };
         #[derive(Clone, Copy)]
@@ -1125,25 +1146,48 @@ impl DrawApp {
             .confirm_on_enter(true)
             .show(context, |dialog| {
                 dialog.content(|ui| {
+                    ui.label(appearance::bold(ui, fl!("edit-layer-dialog-title")).size(18.0));
+                    ui.add_space(8.0);
                     appearance::group(ui, "", |ui| {
-                        ui.label(fl!("edit-layer-dialog-name-label"));
-                        ui.add(egui::TextEdit::singleline(&mut properties.title).desired_width(f32::INFINITY));
-                        ui.horizontal(|ui| {
-                            ui.checkbox(&mut properties.is_visible, fl!("edit-layer-dialog-is-visible-checkbox"));
-                            ui.checkbox(&mut properties.is_locked, fl!("edit-layer-dialog-is-edit-locked-checkbox"));
+                        appearance::form_row(ui, &fl!("edit-layer-dialog-name-label"), |ui| {
+                            ui.add(appearance::text_edit(&mut properties.title).desired_width(f32::INFINITY));
                         });
-                        ui.separator();
-                        ui.checkbox(&mut properties.is_position_locked, fl!("edit-layer-dialog-is-position-locked-checkbox"));
-                        ui.add_enabled_ui(!properties.is_position_locked, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.add(egui::DragValue::new(&mut properties.offset.x).prefix("X "));
-                                ui.add(egui::DragValue::new(&mut properties.offset.y).prefix("Y "));
-                            });
+                        ui.add_space(6.0);
+                        fn number(value: &mut i32, range: std::ops::RangeInclusive<i32>) -> egui::DragValue<'_> {
+                            egui::DragValue::new(value).range(range).speed(0.25)
+                        }
+                        appearance::form_row(ui, &fl!("edit-canvas-size-width-label"), |ui| {
+                            ui.add_sized([80.0, 28.0], number(&mut size.width, 1..=MAX_LAYER_SIZE));
                         });
-                        ui.checkbox(&mut properties.has_alpha_channel, fl!("edit-layer-dialog-has-alpha-checkbox"));
-                        ui.add_enabled_ui(properties.has_alpha_channel, |ui| {
-                            ui.checkbox(&mut properties.is_alpha_channel_locked, fl!("edit-layer-dialog-is-alpha-locked-checkbox"));
+                        appearance::form_row(ui, &fl!("edit-canvas-size-height-label"), |ui| {
+                            ui.add_sized([80.0, 28.0], number(&mut size.height, 1..=MAX_LAYER_SIZE));
                         });
+                        ui.add_space(6.0);
+                        appearance::form_row(ui, &fl!("edit-layer-dialog-is-x-offset-label"), |ui| {
+                            ui.add_sized([80.0, 28.0], number(&mut properties.offset.x, -MAX_LAYER_SIZE..=MAX_LAYER_SIZE));
+                        });
+                        appearance::form_row(ui, &fl!("edit-layer-dialog-is-y-offset-label"), |ui| {
+                            ui.add_sized([80.0, 28.0], number(&mut properties.offset.y, -MAX_LAYER_SIZE..=MAX_LAYER_SIZE));
+                        });
+                        ui.add_space(6.0);
+                        ui.columns(2, |columns| {
+                            appearance::check_row(&mut columns[0], &fl!("edit-layer-dialog-is-visible-checkbox"), &mut properties.is_visible);
+                            appearance::check_row(&mut columns[0], &fl!("edit-layer-dialog-is-edit-locked-checkbox"), &mut properties.is_locked);
+                            appearance::check_row(
+                                &mut columns[0],
+                                &fl!("edit-layer-dialog-is-position-locked-checkbox"),
+                                &mut properties.is_position_locked,
+                            );
+                            appearance::check_row(&mut columns[1], &fl!("edit-layer-dialog-has-alpha-checkbox"), &mut properties.has_alpha_channel);
+                            if properties.has_alpha_channel {
+                                appearance::check_row(
+                                    &mut columns[1],
+                                    &fl!("edit-layer-dialog-is-alpha-locked-checkbox"),
+                                    &mut properties.is_alpha_channel_locked,
+                                );
+                            }
+                        });
+                        ui.add_space(6.0);
                         let modes = [
                             (icy_engine::Mode::Normal, fl!("layer-mode-normal")),
                             (icy_engine::Mode::Chars, fl!("layer-mode-chars")),
@@ -1153,27 +1197,27 @@ impl DrawApp {
                             .iter()
                             .find(|(mode, _)| *mode == properties.mode)
                             .map_or_else(|| format!("{:?}", properties.mode), |(_, label)| label.clone());
-                        egui::ComboBox::from_label(fl!("reference-image-mode"))
-                            .selected_text(selected)
-                            .show_ui(ui, |ui| {
+                        appearance::form_row(ui, &fl!("reference-image-mode"), |ui| {
+                            egui::ComboBox::from_id_salt("layer-mode").selected_text(selected).show_ui(ui, |ui| {
                                 for (mode, label) in modes {
                                     ui.selectable_value(&mut properties.mode, mode, label);
                                 }
                             });
+                        });
                     });
                 });
                 dialog.buttons([
                     DialogButton::cancel(labels::cancel(), Action::Cancel),
-                    DialogButton::primary(fl!("button-apply"), Action::Apply),
+                    DialogButton::primary(labels::ok(), Action::Apply),
                 ]);
             });
         match response.action {
             Some(Action::Apply) => {
-                self.edit(|state| state.update_layer_properties(index, properties));
+                self.edit(|state| apply_layer_settings(state, index, properties, size));
                 self.canvas_focus = true;
             }
             Some(Action::Cancel) => self.canvas_focus = true,
-            None if !response.dismissed => self.chrome.layer_properties = Some((index, properties)),
+            None if !response.dismissed => self.chrome.layer_properties = Some((index, properties, size)),
             None => self.canvas_focus = true,
         }
     }
@@ -1580,11 +1624,31 @@ mod tests {
         }
         app.ensure_layer_preview(&context, 1, signature);
         assert_eq!(app.chrome.previews[1].as_ref().unwrap().1.as_ref().unwrap().id(), ids[1]);
-        app.chrome.layer_properties = Some((0, LayerProperties::default()));
+        app.chrome.layer_properties = Some((0, LayerProperties::default(), icy_engine::Size::new(80, 25)));
         app.replace(icy_draw::document::Document::new(icy_engine::Size::new(2, 2)));
         assert!(app.chrome.previews.is_empty());
         assert!(app.chrome.minimap.is_none());
         assert!(!app.layer_properties_open());
+    }
+
+    #[test]
+    fn layer_dialog_resizes_and_renames_in_one_undo_step() {
+        use icy_engine_edit::UndoState;
+        let document = icy_draw::document::Document::new(icy_engine::Size::new(80, 25));
+        document.with_state(|state| {
+            let mut properties = state.get_buffer().layers[0].properties.clone();
+            properties.title = "Resized".into();
+            properties.offset = Position::new(3, 4);
+            apply_layer_settings(state, 0, properties, icy_engine::Size::new(40, 50)).unwrap();
+            let layer = &state.get_buffer().layers[0];
+            assert_eq!(layer.size(), icy_engine::Size::new(40, 50));
+            assert_eq!(layer.properties.title, "Resized");
+            assert_eq!(layer.offset(), Position::new(3, 4));
+            state.undo().unwrap();
+            let layer = &state.get_buffer().layers[0];
+            assert_eq!(layer.size(), icy_engine::Size::new(80, 25));
+            assert_ne!(layer.properties.title, "Resized");
+        });
     }
 
     #[test]

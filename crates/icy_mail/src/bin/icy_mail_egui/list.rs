@@ -2,13 +2,13 @@ use eframe::egui;
 use i18n_embed_fl::fl;
 use icy_engine_gui::egui::appearance;
 use icy_mail::{
+    LANGUAGE_LOADER,
     drafts::DraftKind,
     reader::{MessageColumn, Pane, ViewMode},
-    LANGUAGE_LOADER,
 };
 
 use super::{
-    app::{draft_title, Folder, MailApp, Modal},
+    app::{Folder, MailApp, Modal, draft_title},
     widgets::{self, Cell, Icon, ROW_HEIGHT},
 };
 
@@ -204,7 +204,9 @@ impl MailApp {
                 });
                 self.message_view = egui::vec2(output.state.offset.y, output.inner_rect.height());
                 if self.reader.messages.is_empty() {
-                    let detail = if !self.reader.filter.trim().is_empty() {
+                    let detail = if self.loader.searching {
+                        fl!(LANGUAGE_LOADER, "search-bodies-running")
+                    } else if !self.reader.filter.trim().is_empty() {
                         fl!(LANGUAGE_LOADER, "list-nothing-matches", query = self.reader.filter.trim())
                     } else if self.reader.unread_only {
                         fl!(LANGUAGE_LOADER, "list-all-read")

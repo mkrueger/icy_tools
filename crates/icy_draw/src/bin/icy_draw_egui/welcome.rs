@@ -5,7 +5,7 @@ use super::super::widgets::Icons;
 use super::{menus, DrawApp, FileAction, NewKind};
 use eframe::egui::{self, Color32};
 use icy_draw::fl;
-use icy_engine::Size;
+use icy_engine::{FileFormat, Rectangle, RenderOptions, Size, TextPane};
 use icy_engine_gui::egui::appearance::{self, PRIMARY};
 
 /// Canvas size presets offered by the New and Canvas Size dialogs.
@@ -119,17 +119,21 @@ impl DrawApp {
         let mut create = None;
         let mut open = None;
         egui::ScrollArea::vertical().id_salt("start").auto_shrink([false, false]).show(ui, |ui| {
-            let columns = ((ui.available_width() - 48.0 + TILE_SPACING) / (TILE_SIZE.x + TILE_SPACING)).floor().clamp(1.0, 4.0) as usize;
+            let columns = ((ui.available_width() - 48.0 + TILE_SPACING) / (TILE_SIZE.x + TILE_SPACING))
+                .floor()
+                .clamp(1.0, 4.0) as usize;
             let width = columns as f32 * TILE_SIZE.x + (columns - 1) as f32 * TILE_SPACING;
             let rows = tiles.len().div_ceil(columns) as f32;
-            let content_height =
-                170.0 + rows * (TILE_SIZE.y + TILE_SPACING) + if recent.is_empty() { 0.0 } else { 44.0 + recent.len() as f32 * 40.0 };
+            let content_height = 240.0 + rows * (TILE_SIZE.y + TILE_SPACING) + if recent.is_empty() { 0.0 } else { 44.0 + recent.len() as f32 * 40.0 };
             ui.add_space(((ui.available_height() - content_height) / 2.0).max(24.0));
             ui.horizontal(|ui| {
                 ui.add_space(((ui.available_width() - width) / 2.0).max(0.0));
                 ui.vertical(|ui| {
                     ui.set_width(width);
-                    ui.label(appearance::bold(ui, "Icy Draw").size(26.0));
+                    if !logo(ui) {
+                        ui.label(appearance::bold(ui, "Icy Draw").size(26.0));
+                    }
+                    ui.add_space(6.0);
                     ui.label(egui::RichText::new(fl!("start-tagline")).weak());
                     ui.add_space(20.0);
                     caption(ui, &fl!("start-new"));
@@ -168,10 +172,7 @@ impl DrawApp {
                             ui.painter().rect_filled(rect, 6, ui.visuals().widgets.hovered.weak_bg_fill);
                         }
                         let icon = egui::Rect::from_center_size(egui::pos2(rect.left() + 18.0, rect.center().y), egui::Vec2::splat(18.0));
-                        self.icons
-                            .image(ui, "file_copy", 18.0)
-                            .tint(ui.visuals().weak_text_color())
-                            .paint_at(ui, icon);
+                        self.icons.image(ui, "file_copy", 18.0).tint(ui.visuals().weak_text_color()).paint_at(ui, icon);
                         let painter = ui.painter().with_clip_rect(rect);
                         painter.text(
                             egui::pos2(rect.left() + 38.0, rect.center().y - 1.0),
@@ -206,5 +207,72 @@ impl DrawApp {
         if let Some(path) = open {
             self.open(path);
         }
+    }
+}
+
+/// The Icy Draw logo with the version filled in, on a black screen like the other Icy tools.
+/// Returns false when the logo could not be rendered.
+fn logo(ui: &mut egui::Ui) -> bool {
+    let id = egui::Id::new("start-logo");
+    let texture = ui.ctx().data(|data| data.get_temp::<egui::TextureHandle>(id)).or_else(|| {
+        let texture = ui
+            .ctx()
+            .load_texture("start-logo", render_logo(&logo_buffer()?)?, egui::TextureOptions::NEAREST);
+        ui.ctx().data_mut(|data| data.insert_temp(id, texture.clone()));
+        Some(texture)
+    });
+    let Some(texture) = texture else {
+        return false;
+    };
+    const PADDING: f32 = 12.0;
+    let size = texture.size_vec2();
+    let (rect, _) = ui.allocate_exact_size(size + egui::Vec2::splat(PADDING * 2.0), egui::Sense::hover());
+    ui.painter().rect_filled(rect, 8.0, Color32::BLACK);
+    let image = egui::Rect::from_center_size(rect.center(), size);
+    ui.painter().image(
+        texture.id(),
+        image,
+        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        Color32::WHITE,
+    );
+    true
+}
+
+/// `data/welcome.xb` is the wide variant of `gj-icydraw.xb` with a `@` version marker.
+fn logo_buffer() -> Option<icy_engine::TextBuffer> {
+    let mut buffer = FileFormat::XBin
+        .from_bytes(include_bytes!("../../../data/welcome.xb"), None)
+        .ok()?
+        .screen
+        .buffer;
+    icy_engine_gui::version_helper::replace_version_marker(&mut buffer, &icy_draw::VERSION, None);
+    Some(buffer)
+}
+
+fn render_logo(buffer: &icy_engine::TextBuffer) -> Option<egui::ColorImage> {
+    let size = buffer.size();
+    let options: RenderOptions = Rectangle::from(0, 0, size.width, size.height).into();
+    let (pixels, rgba) = buffer.render_to_rgba(&options, false);
+    let (width, height) = (pixels.width.max(0) as usize, pixels.height.max(0) as usize);
+    (width > 0 && rgba.len() >= width * height * 4).then(|| egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba[..width * height * 4]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn logo_shows_the_current_version_without_blinking() {
+        let buffer = logo_buffer().unwrap();
+        let rows: Vec<String> = (0..buffer.height())
+            .map(|y| (0..buffer.width()).map(|x| buffer.char_at((x, y).into()).ch).collect())
+            .collect();
+        let version = format!("v{}", *icy_draw::VERSION);
+        assert!(rows.iter().any(|row| row.contains(&version)), "{rows:#?}");
+        assert!(!rows.iter().any(|row| row.contains('@')));
+        let blinking = (0..buffer.height()).any(|y| (0..buffer.width()).any(|x| buffer.char_at((x, y).into()).attribute.is_blinking()));
+        assert!(!blinking);
+        let image = render_logo(&buffer).unwrap();
+        assert_eq!(image.size, [buffer.width() as usize * 8, buffer.height() as usize * 16]);
     }
 }

@@ -18,6 +18,8 @@ toolbar-menu = Menu
 toolbar-threads-tooltip = Group messages into threads (Ctrl+T)
 toolbar-list-tooltip = Show messages as a list (Ctrl+T)
 toolbar-search-hint = Search messages
+search-bodies-running = Searching message text…
+search-message-error = Unable to search message { $number }: { $error }
 toolbar-search-clear = Clear Search (Esc)
 
 # Main menu
@@ -325,6 +327,7 @@ editor-status-chars = Chars
 editor-status-quote = Quote
 editor-status-find = Find
 editor-status-help = Help
+editor-toggle-insert-tooltip = Switch between insert and overwrite (Ins)
 editor-color-black = Black
 editor-color-blue = Blue
 editor-color-green = Green

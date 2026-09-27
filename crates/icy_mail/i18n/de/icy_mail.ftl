@@ -18,6 +18,8 @@ toolbar-menu = Menü
 toolbar-threads-tooltip = Nachrichten nach Diskussionsfäden gruppieren (Ctrl+T)
 toolbar-list-tooltip = Nachrichten als Liste anzeigen (Ctrl+T)
 toolbar-search-hint = Nachrichten durchsuchen
+search-bodies-running = Nachrichtentexte werden durchsucht…
+search-message-error = Nachricht { $number } konnte nicht durchsucht werden: { $error }
 toolbar-search-clear = Suche löschen (Esc)
 
 # Main menu
@@ -325,6 +327,7 @@ editor-status-chars = Zeichen
 editor-status-quote = Zitat
 editor-status-find = Suche
 editor-status-help = Hilfe
+editor-toggle-insert-tooltip = Zwischen Einfügen und Überschreiben wechseln (Einfg)
 editor-color-black = Schwarz
 editor-color-blue = Blau
 editor-color-green = Grün

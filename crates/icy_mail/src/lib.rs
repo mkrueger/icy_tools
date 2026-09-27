@@ -15,6 +15,8 @@ pub mod threading;
 #[folder = "i18n"]
 pub struct Localizations;
 
+pub static VERSION: std::sync::LazyLock<semver::Version> = std::sync::LazyLock::new(|| semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap());
+
 /// Translations of the user interface (`i18n/<language>/icy_mail.ftl`, English is the fallback).
 pub static LANGUAGE_LOADER: std::sync::LazyLock<i18n_embed::fluent::FluentLanguageLoader> = std::sync::LazyLock::new(|| {
     let loader = i18n_embed::fluent::fluent_language_loader!();

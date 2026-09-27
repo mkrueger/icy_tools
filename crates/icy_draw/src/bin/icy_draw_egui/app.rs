@@ -1,3 +1,4 @@
+use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext};
 use eframe::egui::{self, Color32, Key};
 use icy_draw::{brush::BrushPrimaryMode, document::Document, fl, Settings};
 use icy_engine::{FileFormat, Position, Selection, Size, TextPane};
@@ -22,6 +23,8 @@ use super::widgets::{self, Icons};
 mod chrome;
 #[path = "collab.rs"]
 mod collab;
+#[path = "settings_dialog.rs"]
+mod settings_dialog;
 #[path = "file_settings.rs"]
 mod file_settings;
 #[path = "font_select.rs"]
@@ -40,6 +43,7 @@ enum Dialog {
     Characters,
     FKeyCharacter(usize, usize),
     FileSettings(Box<file_settings::FileSettingsDraft>),
+    Settings(Box<settings_dialog::SettingsDraft>),
     Sauce(Box<file_settings::SauceDraft>),
     Export,
     FontSelect,
@@ -229,6 +233,7 @@ pub struct DrawApp {
     new_template: file_settings::AnsiTemplate,
     animation: Option<super::animation::AnimationEditor>,
     clipboard: Option<(String, Vec<u8>)>,
+    system_clipboard: Option<ClipboardContext>,
     font_selector: font_select::FontSelector,
     text_fonts: Option<icy_draw::text_art_fonts::SharedFontLibrary>,
     text_font: usize,
@@ -276,6 +281,12 @@ impl DrawApp {
         settings.monitor_settings.scaling_mode = ScalingMode::Manual(2.0);
         let show_line_numbers = settings.show_line_numbers;
         let (sender, receiver) = mpsc::channel();
+        #[cfg(not(test))]
+        let system_clipboard = ClipboardContext::new()
+            .inspect_err(|error| log::warn!("could not initialize the system clipboard: {error}"))
+            .ok();
+        #[cfg(test)]
+        let system_clipboard = None;
         Self {
             document,
             view,
@@ -301,6 +312,7 @@ impl DrawApp {
             new_template: file_settings::AnsiTemplate::default(),
             animation: None,
             clipboard: None,
+            system_clipboard,
             font_selector: Default::default(),
             text_fonts: None,
             text_font: 0,
@@ -490,7 +502,12 @@ impl DrawApp {
                     .add_filter(format.name(), &[format.extension()])
                     .set_file_name(format!("{untitled}.{}", format.extension()))
                     .save_file(),
-                FileAction::InsertImage | FileAction::ReferenceImage => dialog
+                FileAction::InsertImage => dialog
+                    .add_filter(fl!("file-dialog-filter-artwork"), &icy_draw::files::INSERT_ART_EXTENSIONS)
+                    .add_filter(fl!("file-dialog-filter-images"), &icy_draw::files::INSERT_IMAGE_EXTENSIONS)
+                    .add_filter(fl!("set-font-filter-all"), &["*"])
+                    .pick_file(),
+                FileAction::ReferenceImage => dialog
                     .add_filter(fl!("file-dialog-filter-images"), &["png", "jpg", "jpeg", "gif", "bmp", "webp", "tga", "tif", "tiff"])
                     .pick_file(),
                 FileAction::ImportPalette => dialog.add_filter(fl!("file-dialog-filter-palette"), icy_draw::palette_files::IMPORT_EXTENSIONS).pick_file(),
@@ -1363,6 +1380,19 @@ impl DrawApp {
         self.view.markers = Some(self.editor_markers());
         let mut response = self.view.show(ui, &self.settings.monitor_settings);
         self.canvas_rect = response.rect;
+        if !blocked {
+            ui.memory_mut(|memory| {
+                memory.set_focus_lock_filter(
+                    response.id,
+                    egui::EventFilter {
+                        tab: true,
+                        horizontal_arrows: true,
+                        vertical_arrows: true,
+                        escape: true,
+                    },
+                );
+            });
+        }
         if self.document.tool == Tool::Tag && !blocked {
             let hovering_tag = response
                 .hover_pos()
@@ -1564,7 +1594,18 @@ impl DrawApp {
         }
         let screen = self.document.screen.lock();
         if let Some(text) = screen.copy_text() {
-            self.clipboard = screen.clipboard_data().map(|data| (text.clone(), data));
+            let data = screen.clipboard_data();
+            self.clipboard = data.clone().map(|data| (text.clone(), data));
+            if let Some(clipboard) = &self.system_clipboard {
+                let mut contents = vec![ClipboardContent::Text(text.clone())];
+                if let Some(data) = data {
+                    contents.push(ClipboardContent::Other(icy_engine::clipboard::ICY_CLIPBOARD_TYPE.into(), data));
+                }
+                match clipboard.set(contents) {
+                    Ok(()) => return,
+                    Err(error) => log::warn!("could not copy Icy Draw data to the system clipboard: {error}"),
+                }
+            }
             context.copy_text(text);
         }
     }
@@ -1591,8 +1632,18 @@ impl DrawApp {
     }
 
     fn paste(&mut self, text: &str) {
-        let data = self.clipboard.as_ref().filter(|(copied, _)| copied == text).map(|(_, data)| data.as_slice());
-        let result = self.document.start_paste(text, data);
+        let data = self
+            .clipboard
+            .as_ref()
+            .filter(|(copied, _)| copied == text)
+            .map(|(_, data)| data.clone())
+            .or_else(|| {
+                let clipboard = self.system_clipboard.as_ref()?;
+                (clipboard.get_text().ok().as_deref() == Some(text))
+                    .then(|| clipboard.get_buffer(icy_engine::clipboard::ICY_CLIPBOARD_TYPE).ok())
+                    .flatten()
+            });
+        let result = self.document.start_paste(text, data.as_deref());
         self.result(result);
     }
 
@@ -2407,6 +2458,13 @@ impl DrawApp {
                             keep = false;
                         }
                     }
+                }
+            }
+            Dialog::Settings(draft) => {
+                let mut draft = draft.clone();
+                keep = false;
+                if self.settings_dialog(context, &mut draft) {
+                    self.dialog = Some(Dialog::Settings(draft));
                 }
             }
             Dialog::FileSettings(draft) => {

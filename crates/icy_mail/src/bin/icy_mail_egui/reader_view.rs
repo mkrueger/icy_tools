@@ -1,19 +1,67 @@
 use eframe::egui;
 use i18n_embed_fl::fl;
-use icy_engine::{Selection, Size, TextScreen};
+use icy_engine::{AttributedChar, Position, Selection, Size, TextScreen};
 use icy_engine_gui::egui::{appearance, screen::ScreenView};
 use icy_mail::{
+    LANGUAGE_LOADER,
     drafts::{Draft, DraftKind},
     editor,
     reader::{NavigateDirection, Pane},
-    LANGUAGE_LOADER,
 };
 
 use super::{
-    app::{draft_title, Folder, MailApp, Modal},
+    app::{Folder, MailApp, Modal, draft_title},
     list::display_date,
     widgets::{self, Icon},
 };
+
+#[derive(Default)]
+pub struct BodyHighlights {
+    key: Option<(u64, String, bool)>,
+    original: Vec<(Position, AttributedChar)>,
+}
+
+impl BodyHighlights {
+    pub fn update(&mut self, view: &mut ScreenView, query: &str, dark_mode: bool) -> Result<(), String> {
+        let key = (view.shader_state.instance_id, query.trim().to_lowercase(), dark_mode);
+        if self.key.as_ref() == Some(&key) {
+            return Ok(());
+        }
+        let mut screen = view.terminal.screen.lock();
+        let screen = screen.as_editable().ok_or("Message highlighting requires an editable text screen")?;
+        // Only restore cells on the same rendered message, never on its replacement.
+        if self.key.as_ref().is_some_and(|previous| previous.0 == key.0) {
+            for &(position, ch) in &self.original {
+                screen.set_char(position, ch);
+            }
+        }
+        self.original.clear();
+        if !key.1.is_empty() {
+            let background = widgets::search_highlight_color(dark_mode);
+            for row in 0..screen.height() {
+                let line: String = (0..screen.width())
+                    .map(|column| screen.buffer_type().convert_to_unicode(screen.char_at((column, row).into()).ch))
+                    .collect();
+                for found in icy_mail::text::find_ignore_case(&line, &key.1) {
+                    let start = line[..found.start].chars().count() as i32;
+                    let end = start + line[found].chars().count() as i32;
+                    for column in start..end {
+                        let position = Position::new(column, row);
+                        let mut ch = screen.char_at(position);
+                        self.original.push((position, ch));
+                        ch.attribute.set_foreground_rgb(0, 0, 0);
+                        ch.attribute.set_background_rgb(background.r(), background.g(), background.b());
+                        ch.attribute.set_is_blinking(false);
+                        ch.attribute.set_is_concealed(false);
+                        screen.set_char(position, ch);
+                    }
+                }
+            }
+        }
+        self.key = Some(key);
+        Ok(())
+    }
+}
 
 impl MailApp {
     pub fn content(&mut self, ui: &mut egui::Ui) {
@@ -256,25 +304,117 @@ impl MailApp {
 
     /// The message terminal with focus handling and mouse selection.
     fn terminal_body(&mut self, ui: &mut egui::Ui) -> egui::Response {
+        let query = if self.folder == Folder::Drafts { "" } else { &self.reader.filter };
+        if let Err(error) = self.body_highlights.update(&mut self.screen, query, ui.visuals().dark_mode) {
+            self.error = Some(error.to_string());
+        }
         let response = self.screen.show(ui, &self.settings);
         self.content_rect = response.rect;
         if response.clicked() || response.drag_started() {
             self.set_focus(Pane::Content, ui.ctx());
         }
-        if response.drag_started_by(egui::PointerButton::Primary) {
-            self.selection_anchor = ui.input(|input| input.pointer.press_origin()).and_then(|pos| self.cell(pos));
+        if ui.ctx().will_discard() {
+            return response;
         }
-        if response.dragged_by(egui::PointerButton::Primary) {
-            if let (Some(anchor), Some(lead)) = (self.selection_anchor, response.interact_pointer_pos().and_then(|pos| self.cell(pos))) {
-                let mut selection = Selection::new(anchor);
-                selection.lead = lead;
-                if ui.input(|input| input.modifiers.alt) {
-                    selection.shape = icy_engine::Shape::Rectangle;
+        if !ui.is_enabled() {
+            self.selection_anchor = None;
+            self.last_reader_click = None;
+            return response;
+        }
+        if !response.hovered() && ui.input(|input| input.pointer.primary_pressed()) {
+            self.last_reader_click = None;
+        }
+        if response.hovered() && ui.input(|input| input.pointer.primary_pressed()) {
+            self.selection_anchor = ui.input(|input| input.pointer.press_origin()).and_then(|pos| self.cell(pos)).map(|anchor| {
+                let mut selection = if ui.input(|input| input.modifiers.shift) {
+                    self.screen.terminal.screen.lock().selection().unwrap_or_else(|| Selection::new(anchor))
+                } else {
+                    Selection::new(anchor)
+                };
+                selection.shape = if ui.input(|input| input.modifiers.alt) {
+                    icy_engine::Shape::Rectangle
+                } else {
+                    icy_engine::Shape::Lines
+                };
+                selection
+            });
+            if !ui.input(|input| input.modifiers.shift) {
+                if let Err(error) = self.screen.terminal.screen.lock().clear_selection() {
+                    self.error = Some(error.to_string());
                 }
-                let _ = self.screen.terminal.screen.lock().set_selection(selection);
+                ui.ctx().request_repaint();
             }
-        } else if response.clicked() {
-            let _ = self.screen.terminal.screen.lock().clear_selection();
+        }
+        if response.dragged_by(egui::PointerButton::Primary) || response.drag_stopped_by(egui::PointerButton::Primary) {
+            self.last_reader_click = None;
+            if let (Some(mut selection), Some(lead)) = (
+                self.selection_anchor,
+                ui.input(|input| input.pointer.interact_pos()).and_then(|pos| self.cell(pos)),
+            ) {
+                selection.lead = lead;
+                if let Err(error) = self.screen.terminal.screen.lock().set_selection(selection) {
+                    self.error = Some(error.to_string());
+                }
+                ui.ctx().request_repaint();
+            }
+        } else if response.clicked_by(egui::PointerButton::Primary) {
+            if let Some(pointer) = response.interact_pointer_pos() {
+                let Some(position) = self.cell(pointer) else { return response };
+                let time = ui.input(|input| input.time);
+                let options = ui.ctx().options(|options| options.input_options);
+                // egui's click count is time-only and shared with other widgets.
+                let count = self.last_reader_click.map_or(1, |(previous, when, count)| {
+                    if pointer.distance(previous) <= options.max_click_dist && time - when < options.max_double_click_delay {
+                        (count + 1).min(3)
+                    } else {
+                        1
+                    }
+                });
+                self.last_reader_click = Some((pointer, time, count));
+                let mut screen = self.screen.terminal.screen.lock();
+                let selection = if ui.input(|input| input.modifiers.shift) {
+                    screen.selection().map(|mut selection| {
+                        selection.lead = position;
+                        selection
+                    })
+                } else if count == 3 {
+                    let mut selection = Selection::new((0, position.y));
+                    selection.lead = (screen.width() - 1, position.y).into();
+                    Some(selection)
+                } else if count == 2 {
+                    let is_space = |column| {
+                        screen
+                            .buffer_type()
+                            .convert_to_unicode(screen.char_at((column, position.y).into()).ch)
+                            .is_whitespace()
+                    };
+                    let whitespace = is_space(position.x);
+                    let mut left = position.x;
+                    let mut right = position.x;
+                    while left > 0 && is_space(left - 1) == whitespace {
+                        left -= 1;
+                    }
+                    while right + 1 < screen.width() && is_space(right + 1) == whitespace {
+                        right += 1;
+                    }
+                    let mut selection = Selection::new((left, position.y));
+                    selection.lead = (right, position.y).into();
+                    Some(selection)
+                } else {
+                    None
+                };
+                let result = match selection {
+                    Some(selection) => screen.set_selection(selection),
+                    None => screen.clear_selection(),
+                };
+                if let Err(error) = result {
+                    self.error = Some(error.to_string());
+                }
+                ui.ctx().request_repaint();
+            }
+        }
+        if !ui.input(|input| input.pointer.primary_down()) {
+            self.selection_anchor = None;
         }
         response
     }
@@ -292,6 +432,7 @@ impl MailApp {
         self.body_loading = false;
         self.rendered = None;
         self.selection_anchor = None;
+        self.last_reader_click = None;
         self.rendered_draft = Some((draft.id, text));
     }
 

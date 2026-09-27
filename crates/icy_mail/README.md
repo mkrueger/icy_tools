@@ -38,8 +38,19 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
 - Unread messages are bold with a dot; replied-to and private messages are
   flagged. Opening a folder selects its first unread message.
 - Sortable columns, list or thread view, and an **Unread** filter. Search
-  matches author, recipient and subject; matches are highlighted in the list
-  and the message header.
+  matches author, recipient, subject and message text, ignoring case. Message
+  bodies are searched in parallel using Rayon, in the background across the packet, including messages
+  not opened yet; folder and unread filters still apply to the results.
+  Decoded, case-normalized body text is cached for the current packet, so later
+  queries reuse it instead of reparsing every message. This cache uses additional
+  memory and is released when another packet is opened or the window is closed.
+  A spinner indicates an ongoing text search. Changing or clearing the query
+  cancels the previous search. ANSI formatting is ignored and CP437 characters
+  are decoded for searching. Malformed ANSI formatting is logged without
+  aborting the search; message-loading failures still show an error.
+  Matches are highlighted in the list, message header and displayed message
+  text. Body highlights update with the filter and disappear when it is cleared,
+  without changing the original message colors, text selection or copied text.
 - The reader header links to the referenced message (“reply to #n”) and offers
   reply, forward, mark read/unread, copy and previous/next actions.
 - ANSI/CP437 rendering, text/rectangular selection and copy, zoom, light/dark
@@ -53,7 +64,11 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
 
 Drag over the reader to select text; Alt-drag selects a rectangle. Ctrl/Cmd+C
 copies the selection, Ctrl/Cmd+A selects the body, and the copy button copies
-the entire message.
+the entire message. Double-click selects a word, triple-click selects a line,
+and Shift-click extends the current selection. A plain mouse press or Escape clears
+the selection; double/triple-clicks must be close together in both time and position.
+Escape in the reader clears the selection before clearing a
+message filter; search fields and open dialogs retain their own Escape behavior.
 
 ## Writing replies
 

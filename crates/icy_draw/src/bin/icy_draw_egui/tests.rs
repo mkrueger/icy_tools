@@ -503,6 +503,77 @@ fn character_assignment_keyboard_commits_or_cancels_without_typing() {
 }
 
 #[test]
+fn text_tool_keeps_canvas_focus_after_arrow_keys() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    app.document.tool = Tool::Click;
+    for _ in 0..2 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    let position = app.canvas_rect.center();
+    for pressed in [true, false] {
+        frame(&context, &mut app, size, pointer(position, pressed));
+    }
+    frame(&context, &mut app, size, vec![]);
+    let canvas = context.memory(|memory| memory.focused()).expect("clicking the canvas gives it keyboard focus");
+    app.document.with_state(|state| state.set_caret_position((4, 4).into()));
+    frame(&context, &mut app, size, vec![egui::Event::Text("A".into())]);
+    for (key, expected) in [
+        (Key::ArrowLeft, Position::new(4, 4)),
+        (Key::ArrowUp, Position::new(4, 3)),
+        (Key::ArrowRight, Position::new(5, 3)),
+        (Key::ArrowDown, Position::new(5, 4)),
+    ] {
+        frame(&context, &mut app, size, vec![key_event(key, egui::Modifiers::NONE)]);
+        frame(&context, &mut app, size, vec![]);
+        assert_eq!(context.memory(|memory| memory.focused()), Some(canvas), "{key:?} moved keyboard focus away from the canvas");
+        assert!(app.canvas_focus);
+        assert_eq!(app.document.with_state(|state| state.get_caret().position()), expected);
+    }
+    frame(&context, &mut app, size, vec![egui::Event::Text("B".into())]);
+    app.document.with_state(|state| {
+        assert_eq!(state.get_buffer().char_at((4, 4).into()).ch, 'A');
+        assert_eq!(state.get_buffer().char_at((5, 4).into()).ch, 'B');
+    });
+}
+
+#[test]
+fn text_tool_yields_to_focused_text_fields() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    let mut value = String::new();
+    let field = egui::Id::new("focus-test-field");
+    for (index, events) in [
+        vec![],
+        vec![egui::Event::Text("xy".into())],
+        vec![key_event(Key::ArrowLeft, egui::Modifiers::NONE)],
+        vec![egui::Event::Text("Z".into())],
+    ].into_iter().enumerate() {
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                events,
+                ..Default::default()
+            },
+            |context| {
+                egui::TopBottomPanel::top("focus-test-panel").show(context, |ui| {
+                    let response = ui.add(egui::TextEdit::singleline(&mut value).id(field));
+                    if index == 0 {
+                        response.request_focus();
+                    }
+                });
+                app.show(context);
+            },
+        );
+        assert_eq!(context.memory(|memory| memory.focused()), Some(field));
+        assert!(!app.canvas_focus);
+    }
+    assert_eq!(value, "xZy");
+    assert!(!app.document.modified(), "typing into a focused field must not edit the canvas");
+}
+
+#[test]
 fn app_keyboard_respects_tool_and_document_modes() {
     let context = egui::Context::default();
     let mut app = DrawApp::new();
@@ -791,6 +862,32 @@ fn gpu_editor_modes_and_dialogs_render() {
         gpu.capture(&mut app, [440, 700], 1.0, vec![], "palette-compact-warmup");
         gpu.capture(&mut app, [440, 700], 1.0, vec![], "palette-compact");
         app.dialog = None;
+        app.show_start = true;
+        for theme in [egui::Theme::Dark, egui::Theme::Light] {
+            gpu.context.set_theme(theme);
+            gpu.capture(&mut app, [1280, 820], 1.0, vec![], "start-warmup");
+            gpu.capture(&mut app, [1280, 820], 1.0, vec![], &format!("start-{theme:?}"));
+        }
+        gpu.context.set_theme(egui::Theme::Dark);
+        app.show_start = false;
+        for (page, name) in [
+            (settings_dialog::Page::Monitor, "settings-monitor"),
+            (settings_dialog::Page::FontOutline, "settings-outline"),
+            (settings_dialog::Page::Charset, "settings-charset"),
+            (settings_dialog::Page::Paths, "settings-paths"),
+        ] {
+            let mut draft = settings_dialog::SettingsDraft::new(&app.settings);
+            draft.page = page;
+            draft.slot = Some(2);
+            app.dialog = Some(Dialog::Settings(Box::new(draft)));
+            gpu.capture(&mut app, [1280, 820], 1.0, vec![], &format!("{name}-warmup"));
+            gpu.capture(&mut app, [1280, 820], 1.0, vec![], name);
+        }
+        app.dialog = None;
+        app.open_layer_properties(0);
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "layer-properties-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "layer-properties");
+        app.chrome = Default::default();
         app.open_font_selector();
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "font-select-warmup");
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "font-select");
@@ -1141,6 +1238,143 @@ fn classic_menu_commands_edit_colors_and_markers() {
     frame(&context, &mut app, size, vec![key_event(Key::R, egui::Modifiers::COMMAND)]);
     assert!(app.show_line_numbers);
     frame(&context, &mut app, size, vec![]);
+}
+
+#[test]
+fn insert_image_accepts_all_writable_art_formats() {
+    use icy_engine::{AttributedChar, FileFormat, TextBuffer, TextPane};
+
+    let directory = tempfile::tempdir().unwrap();
+    let mut source = TextBuffer::create((80, 2));
+    source.ice_mode = icy_engine::IceMode::Ice;
+    source.layers[0].set_char((0, 0), AttributedChar::new('A', Default::default()));
+    for format in FileFormat::ALL.iter().filter(|format| format.supports_load() && format.supports_save()) {
+        let bytes = if matches!(format, FileFormat::Petscii | FileFormat::Atascii) {
+            b"HELLO".to_vec()
+        } else {
+            format.to_bytes(&source, &icy_engine::SaveOptions::default()).unwrap_or_else(|error| panic!("{format}: {error}"))
+        };
+        let path = directory.path().join(format!("art.{}", format.primary_extension()));
+        std::fs::write(&path, bytes).unwrap();
+        let loaded = icy_draw::files::load_insert_art(&path).unwrap();
+        let mut app = DrawApp::new();
+        let count = app.document.with_state(|state| state.get_buffer().layers.len());
+        app.insert_image(&path);
+        if let Some(Dialog::Error(error)) = &app.dialog {
+            panic!("{format}: {error}");
+        }
+        app.document.with_state(|state| {
+            assert_eq!(state.get_buffer().layers.len(), count + 1, "{format}");
+            let ch = state.get_cur_layer().unwrap().char_at((0, 0).into());
+            let original = loaded.char_at((0, 0).into());
+            assert_eq!(ch.ch, original.ch, "{format}: glyph indices must not change");
+            assert_eq!(state.get_buffer().font(ch.font_page()), loaded.font(original.font_page()), "{format}: font must survive");
+        });
+        app.document.undo().unwrap();
+        assert_eq!(app.document.with_state(|state| state.get_buffer().layers.len()), count, "{format}");
+    }
+}
+
+#[test]
+fn insert_image_decodes_sixel_and_qoi_files() {
+    let directory = tempfile::tempdir().unwrap();
+    let sixel = directory.path().join("image.SIX");
+    std::fs::write(&sixel, b"\x1bPq\"1;1;2;6#0;2;100;0;0#0~~\x1b\\").unwrap();
+    let qoi = directory.path().join("image.qoi");
+    image::RgbaImage::from_pixel(3, 4, image::Rgba([255, 0, 0, 255])).save(&qoi).unwrap();
+    for path in [&sixel, &qoi] {
+        let mut app = DrawApp::new();
+        app.insert_image(path);
+        if let Some(Dialog::Error(error)) = &app.dialog {
+            panic!("{}: {error}", path.display());
+        }
+        assert!(app.document.paste_active());
+        assert_eq!(app.document.with_state(|state| state.get_cur_layer().unwrap().sixels.len()), 1);
+    }
+}
+
+#[test]
+fn insert_image_accepts_ansi_as_a_new_editable_layer() {
+    let mut app = DrawApp::new();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("art.ANS");
+    std::fs::write(&path, b"\x1b[31mHELLO\x1b[0m\r\nWORLD").unwrap();
+    app.document.with_state(|state| state.set_caret_position((4, 3).into()));
+    let original = app.document.with_state(|state| state.get_buffer().layers.len());
+    app.insert_image(&path);
+    assert!(app.dialog.is_none());
+    assert!(!app.document.paste_active(), "artwork stays on a new layer instead of being anchored into the old one");
+    app.document.with_state(|state| {
+        assert_eq!(state.get_buffer().layers.len(), original + 1);
+        let layer = state.get_cur_layer().unwrap();
+        assert_eq!(layer.role, icy_engine::Role::Normal);
+        assert_eq!(layer.offset(), icy_engine::Position::new(4, 3));
+        assert_eq!(layer.char_at((0, 0).into()).ch, 'H');
+        assert_eq!(layer.char_at((0, 1).into()).ch, 'W');
+        assert_eq!(layer.char_at((0, 0).into()).attribute.foreground(), 4);
+    });
+    app.document.undo().unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_buffer().layers.len()), original);
+    app.document.redo().unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_cur_layer().unwrap().char_at((0, 0).into()).ch), 'H');
+}
+
+#[test]
+fn insert_image_flattens_visible_icy_layers_without_replacing_document_colors() {
+    use icy_engine::{AttributeColor, AttributedChar, FileFormat, Layer, TextBuffer, TextPane};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("layers.icy");
+    let mut source = TextBuffer::create((5, 2));
+    source.layers[0].set_char((0, 0), AttributedChar::new('A', Default::default()));
+    source.palette.set_color_rgb(7, 12, 34, 56);
+    let mut overlay = Layer::new("Overlay", (2, 1));
+    overlay.properties.has_alpha_channel = true;
+    overlay.set_offset((1, 0));
+    overlay.set_char((0, 0), AttributedChar::new('B', Default::default()));
+    source.layers.push(overlay);
+    let mut hidden = Layer::new("Hidden", (5, 2));
+    hidden.properties.is_visible = false;
+    hidden.set_char((0, 0), AttributedChar::new('X', Default::default()));
+    source.layers.push(hidden);
+    let font = icy_engine::BitFont::from_basic(8, 16, &[0x55; 256 * 16]);
+    source.set_font(0, font.clone());
+    std::fs::write(&path, FileFormat::IcyDraw.to_bytes(&source, &icy_engine::SaveOptions::icy_draw()).unwrap()).unwrap();
+    let mut app = DrawApp::new();
+    let palette = app.document.with_state(|state| state.get_buffer().palette.clone());
+    let count = app.document.with_state(|state| state.get_buffer().layers.len());
+    let fonts = app.document.with_state(|state| state.get_buffer().font_table());
+    app.insert_image(&path);
+    assert!(app.dialog.is_none());
+    app.document.with_state(|state| {
+        assert_eq!(state.get_buffer().layers.len(), count + 1);
+        assert!(state.get_buffer().palette.are_colors_equal(&palette));
+        let layer = state.get_cur_layer().unwrap();
+        assert_eq!(layer.size(), icy_engine::Size::new(5, 2));
+        assert_eq!(layer.char_at((0, 0).into()).ch, 'A');
+        assert_eq!(layer.char_at((1, 0).into()).ch, 'B');
+        assert_eq!(layer.char_at((0, 0).into()).attribute.foreground_color(), AttributeColor::Rgb(12, 34, 56));
+        assert_eq!(state.get_buffer().font(layer.char_at((0, 0).into()).font_page()), Some(&font));
+    });
+    app.document.undo().unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_buffer().layers.len()), count);
+    assert_eq!(app.document.with_state(|state| state.get_buffer().font_table()), fonts);
+    app.document.redo().unwrap();
+    app.document.with_state(|state| {
+        let page = state.get_cur_layer().unwrap().char_at((0, 0).into()).font_page();
+        assert_eq!(state.get_buffer().font(page), Some(&font));
+    });
+}
+
+#[test]
+fn insert_image_reports_broken_icy_without_changing_document() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("broken.icy");
+    std::fs::write(&path, b"not an icy file").unwrap();
+    let mut app = DrawApp::new();
+    let layers = app.document.with_state(|state| state.get_buffer().layers.len());
+    app.insert_image(&path);
+    assert!(matches!(app.dialog, Some(Dialog::Error(_))));
+    assert_eq!(app.document.with_state(|state| state.get_buffer().layers.len()), layers);
 }
 
 #[test]

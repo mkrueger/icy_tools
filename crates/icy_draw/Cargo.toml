@@ -30,6 +30,7 @@ required-features = ["legacy-ui"]
 # Frontends
 icy_ui = { workspace = true, optional = true, features = ["wgpu", "highlighter"] }
 eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
+clipboard-rs = { version = "0.3.5", optional = true, default-features = false, features = ["wayland"] }
 
 # GPU/Shader support
 bytemuck = { workspace = true, features = ["derive"] }
@@ -126,7 +127,7 @@ schemars = "1.2"
 [features]
 default = ["egui"]
 legacy-ui = ["dep:icy_ui", "dep:rfd", "icy_engine_edit/legacy-ui", "icy_engine_gui/legacy-ui"]
-egui = ["dep:eframe", "dep:rfd", "icy_engine_gui/egui"]
+egui = ["dep:clipboard-rs", "dep:eframe", "dep:rfd", "icy_engine_gui/egui"]
 
 # Opt-in: enable rav1e's NASM-based assembly optimizations.
 rav1e-asm = ["rav1e/asm"]

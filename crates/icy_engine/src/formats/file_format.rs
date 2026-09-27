@@ -259,7 +259,7 @@ impl FileFormat {
         let ext_lower = ext.to_ascii_lowercase();
         match ext_lower.as_str() {
             // ANSI variants
-            "ans" | "diz" | "nfo" | "ice" | "gfx" => Some(FileFormat::Ansi),
+            "ans" | "ansi" | "diz" | "nfo" | "ice" | "gfx" => Some(FileFormat::Ansi),
 
             // ANSI Music
             "ams" | "mus" => Some(FileFormat::AnsiMusic),
@@ -469,7 +469,7 @@ impl FileFormat {
     /// A slice of all extensions (without leading dots) that map to this format.
     pub fn all_extensions(&self) -> &'static [&'static str] {
         match self {
-            FileFormat::Ansi => &["ans", "diz", "nfo", "ice"],
+            FileFormat::Ansi => &["ans", "ansi", "diz", "nfo", "ice", "gfx"],
             FileFormat::AnsiMusic => &["ams", "mus"],
             FileFormat::Ascii => &["asc", "txt"],
             FileFormat::Avatar => &["avt"],
@@ -859,6 +859,29 @@ impl FileFormat {
                 | FileFormat::SkyPix
                 | FileFormat::Vt52
                 | FileFormat::Igs
+        )
+    }
+
+    /// Whether `from_bytes` can load this format as an editable text document.
+    pub fn supports_load(&self) -> bool {
+        matches!(
+            self,
+            Self::Ansi
+                | Self::AnsiMusic
+                | Self::Ascii
+                | Self::Avatar
+                | Self::PCBoard
+                | Self::CtrlA
+                | Self::Renegade
+                | Self::Atascii
+                | Self::Petscii
+                | Self::Bin
+                | Self::XBin
+                | Self::IcyDraw
+                | Self::IceDraw
+                | Self::TundraDraw
+                | Self::Artworx
+                | Self::RexPaint
         )
     }
 

@@ -1,12 +1,17 @@
-use std::{cmp::Ordering, collections::HashMap, sync::Arc};
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use i18n_embed_fl::fl;
 use icy_engine::{EditableScreen, Size, TextScreen};
+use rayon::prelude::*;
 
 use crate::{
+    LANGUAGE_LOADER, Res,
     qwk::{MessageInfo, QwkPackage},
     threading::{self, Row},
-    Res, LANGUAGE_LOADER,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,6 +122,8 @@ pub struct Reader {
     numbers: HashMap<(u16, u32), usize>,
     /// Lowercased `from`, `to` and `subject` per package index, built on the first search.
     search: Vec<String>,
+    /// Body matches supplied by a background search, keyed by its normalized query.
+    body_matches: Option<(String, HashSet<usize>)>,
 }
 
 impl Default for Reader {
@@ -138,6 +145,7 @@ impl Default for Reader {
             unread: 0,
             numbers: HashMap::new(),
             search: Vec::new(),
+            body_matches: None,
         }
     }
 }
@@ -153,6 +161,7 @@ impl Reader {
         self.unread_only = false;
         self.numbers.clear();
         self.search.clear();
+        self.body_matches = None;
         self.rebuild_conferences();
         self.rebuild_messages();
     }
@@ -201,7 +210,8 @@ impl Reader {
         if !needle.is_empty() && self.search.len() != package.infos.len() {
             self.search = package
                 .infos
-                .iter()
+                .par_iter()
+                .with_min_len(1024)
                 .map(|info| {
                     [&info.from, &info.to, &info.subject]
                         .iter()
@@ -212,14 +222,16 @@ impl Reader {
                 .collect();
         }
         let personal = self.personal.as_ref().map(|name| name.trim().to_string());
+        let body_matches = self.body_matches.as_ref().filter(|(query, _)| *query == needle).map(|(_, matches)| matches);
         let mut infos: Vec<_> = package
             .infos
-            .iter()
+            .par_iter()
+            .with_min_len(1024)
             .filter(|info| {
                 self.selected_conference.is_none_or(|number| info.conference == number)
                     && personal.as_ref().is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name))
                     && (!self.unread_only || !self.read[info.index])
-                    && (needle.is_empty() || self.search[info.index].contains(&needle))
+                    && (needle.is_empty() || self.search[info.index].contains(&needle) || body_matches.is_some_and(|matches| matches.contains(&info.index)))
             })
             .collect();
         self.messages = match self.view_mode {
@@ -282,6 +294,11 @@ impl Reader {
         if self.contains(index) {
             self.selected_message = Some(index);
         }
+    }
+
+    pub fn set_body_matches(&mut self, query: String, matches: HashSet<usize>) {
+        self.body_matches = Some((query, matches));
+        self.rebuild_messages();
     }
 
     /// Whether the message with this package index is in the current list.
@@ -433,6 +450,49 @@ pub fn render_body(data: &[u8]) -> Res<TextScreen> {
     Ok(screen)
 }
 
+/// Searches CP437 message text without ANSI commands or display-width wrapping.
+pub fn body_contains(data: &[u8], needle: &str) -> bool {
+    body_search_text(data).contains(needle)
+}
+
+/// Query-independent, lowercased text for the packet's background search cache.
+pub fn body_search_text(data: &[u8]) -> String {
+    use icy_parser_core::{AnsiParser, CommandParser, CommandSink, ErrorLevel, ParseError, TerminalCommand};
+
+    struct Text {
+        plain: String,
+    }
+
+    impl CommandSink for Text {
+        fn print(&mut self, text: &[u8]) {
+            self.plain.extend(text.iter().map(|&byte| crate::editor::cp437_char(byte)));
+        }
+
+        fn emit(&mut self, command: TerminalCommand) {
+            match command {
+                TerminalCommand::LineFeed => self.plain.push('\n'),
+                TerminalCommand::Tab => self.plain.push('\t'),
+                _ => {}
+            }
+        }
+
+        fn report_error(&mut self, error: ParseError, level: ErrorLevel) {
+            // Like the reader renderer, keep the parser's recovered text despite malformed formatting.
+            match level {
+                ErrorLevel::Error => log::error!("Message search parser error: {error:?}"),
+                ErrorLevel::Warning => log::warn!("Message search parser warning: {error:?}"),
+                ErrorLevel::Info => log::info!("Message search parser info: {error:?}"),
+            }
+        }
+    }
+
+    let mut text = Text {
+        plain: String::with_capacity(data.len()),
+    };
+    AnsiParser::new().parse(data, &mut text);
+    text.plain.to_lowercase()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -443,6 +503,56 @@ mod tests {
         let mut reader = Reader::default();
         reader.set_package(Arc::new(package));
         (dir, reader)
+    }
+
+    #[test]
+    fn body_search_decodes_cp437_and_ignores_ansi_formatting() {
+        assert!(body_contains(b"Hello \x1b[31mWOR\x1b[0mLD\nGr\x81\xE1e", "hello world"));
+        assert!(body_contains(b"Gr\x81\xE1e", "grüße"));
+        assert!(!body_contains(b"\x1b[31mhello\x1b[0m", "31m"));
+        assert!(!body_contains(b"hello", "missing"));
+        assert!(body_contains(format!("{}needle", "x".repeat(79)).as_bytes(), "xneedle"));
+        assert!(body_contains(b"one\r\ntwo", "one\ntwo"));
+        assert!(!body_contains(b"\x1b]0;hidden title\x07hello", "hidden"));
+        assert!(body_contains(b"hello |07world", "|07world"), "literal pipe text is searchable");
+    }
+
+    #[test]
+    fn body_search_continues_after_malformed_ansi_colors() {
+        for sequence in ["\x1b[48m", "\x1b[38m", "\x1b[48;5m", "\x1b[48;2;255m", "\x1b[999m"] {
+            let body = format!("before {sequence}NEEDLE\x1b[0m after");
+            assert!(body_contains(body.as_bytes(), "before needle after"), "{sequence:?}");
+            assert!(!body_contains(body.as_bytes(), "missing"), "{sequence:?}");
+        }
+    }
+
+    #[test]
+    fn body_results_combine_with_headers_and_existing_filters() {
+        let (_dir, mut reader) = loaded();
+        reader.filter = "coffee".into();
+        reader.set_body_matches("coffee".into(), HashSet::from([2, 3]));
+        assert_eq!(reader.messages.len(), 4, "header and body hits are combined");
+        reader.select_conference(Some(2));
+        assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [2, 3]);
+        reader.set_read(2, true);
+        reader.unread_only = true;
+        reader.rebuild_messages();
+        assert_eq!(reader.selected_message, Some(3));
+        reader.view_mode = ViewMode::Threads;
+        reader.rebuild_messages();
+        assert_eq!(reader.messages.len(), 1);
+        reader.personal = Some("nobody".into());
+        reader.rebuild_messages();
+        assert!(reader.messages.is_empty());
+        reader.personal = None;
+        reader.filter = "missing".into();
+        reader.rebuild_messages();
+        assert!(reader.messages.is_empty(), "body hits only apply to their own query");
+        let package = reader.package.clone().unwrap();
+        reader.set_package(package);
+        reader.filter = "coffee".into();
+        reader.rebuild_messages();
+        assert_eq!(reader.messages.len(), 2, "changing packets clears body hits");
     }
 
     #[test]

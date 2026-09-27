@@ -15,6 +15,9 @@ pub struct ScreenView {
     pub zoom: f32,
     /// Editor overlays (selection, layer bounds, caret origin). `None` keeps the terminal selection rendering.
     pub markers: Option<EditorMarkers>,
+    /// Draws the screen from the top into the available space without scrolling, cutting off what does
+    /// not fit, e.g. a partially visible last row.
+    pub clip: bool,
 }
 
 impl ScreenView {
@@ -33,6 +36,7 @@ impl ScreenView {
             max_offset: Vec2::ZERO,
             zoom: 1.0,
             markers: None,
+            clip: false,
         }
     }
 
@@ -51,7 +55,9 @@ impl ScreenView {
             )
             .max(0.01);
         let content = egui::vec2(self.terminal.content_width(), self.terminal.content_height()) * self.zoom;
-        let size = if settings.scaling_mode.is_fit_width() {
+        let size = if self.clip {
+            available
+        } else if settings.scaling_mode.is_fit_width() {
             egui::vec2(available.x, content.y)
         } else if settings.scaling_mode.is_auto() {
             available

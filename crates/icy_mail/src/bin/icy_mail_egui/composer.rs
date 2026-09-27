@@ -8,7 +8,6 @@ use icy_mail::{
 
 use super::{
     app::{key, AfterDiscard, MailApp, Modal, NoticeKind},
-    reader_view::issue_box,
     terminal_editor::TerminalEditor,
     widgets::Icon,
 };
@@ -95,6 +94,13 @@ impl MailApp {
         let (Some(composer), Some(store)) = (&mut self.composer, &self.drafts) else {
             return;
         };
+        let issues = store.issues(&composer.draft);
+        if let Some(issue) = issues.first() {
+            // The save button is disabled for the same reason; this covers the keyboard shortcut.
+            let message = issue.message.clone();
+            self.notify(context, NoticeKind::Warning, message);
+            return;
+        }
         let mut next = store.clone();
         let result = if composer.existing {
             next.update(composer.draft.clone())
@@ -104,16 +110,11 @@ impl MailApp {
         match result {
             Ok(()) => {
                 let id = composer.draft.id;
-                let problems = !next.issues(&composer.draft).is_empty();
                 self.drafts = Some(next);
                 self.composer = None;
                 self.selected_draft = Some(id);
-                if problems {
-                    self.notify(context, NoticeKind::Warning, fl!(LANGUAGE_LOADER, "composer-draft-saved-needs-changes"));
-                } else {
-                    let count = self.draft_count();
-                    self.notify(context, NoticeKind::Success, fl!(LANGUAGE_LOADER, "composer-draft-saved-outbox", count = count));
-                }
+                let count = self.draft_count();
+                self.notify(context, NoticeKind::Success, fl!(LANGUAGE_LOADER, "composer-draft-saved-outbox", count = count));
             }
             Err(error) => composer.error = Some(fl!(LANGUAGE_LOADER, "composer-save-error", error = error.to_string())),
         }
@@ -171,9 +172,11 @@ impl MailApp {
                         }
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let missing = problems.join("\n");
                         if ui
-                            .add(appearance::primary_button(fl!(LANGUAGE_LOADER, "composer-save-draft")))
+                            .add_enabled(problems.is_empty(), appearance::primary_button(fl!(LANGUAGE_LOADER, "composer-save-draft")))
                             .on_hover_text(fl!(LANGUAGE_LOADER, "composer-save-draft-tooltip"))
+                            .on_disabled_hover_text(&missing)
                             .clicked()
                         {
                             action = Some(Action::Save);
@@ -264,10 +267,6 @@ impl MailApp {
                 if let Some(error) = &composer.error {
                     ui.colored_label(ui.visuals().error_fg_color, error);
                     ui.add_space(4.0);
-                }
-                if !problems.is_empty() && (composer.existing || composer.dirty()) {
-                    issue_box(ui, &mut self.icons, &problems);
-                    ui.add_space(6.0);
                 }
                 egui::TopBottomPanel::bottom("composer-tagline")
                     .frame(egui::Frame::new().inner_margin(egui::Margin { top: 6, ..Default::default() }))

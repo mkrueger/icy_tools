@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
-use crate::{text::HeaderText, Res, LANGUAGE_LOADER};
+use crate::{LANGUAGE_LOADER, Res, text::HeaderText};
 
 #[cfg(test)]
 pub mod tests;
@@ -289,12 +289,7 @@ impl QwkPackage {
             }
         }
 
-        // Load message from raw data
-        let header = &self.descriptors[index];
-        let mut cursor = Cursor::new(&*self.messages_data);
-        cursor.seek(SeekFrom::Start(header.offset))?;
-
-        let msg = QWKMessage::read(&mut cursor, true)?;
+        let msg = self.read_message(index)?;
 
         // Store in cache
         {
@@ -315,6 +310,17 @@ impl QwkPackage {
         }
 
         Ok(msg)
+    }
+
+    /// Read without locking or populating the interactive message cache, for bulk scans.
+    pub fn read_message(&self, index: usize) -> Res<QWKMessage> {
+        let header = self
+            .descriptors
+            .get(index)
+            .ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-message-index-out-of-range"))?;
+        let mut cursor = Cursor::new(&*self.messages_data);
+        cursor.seek(SeekFrom::Start(header.offset))?;
+        QWKMessage::read(&mut cursor, true)
     }
 
     /// Clear the message cache to free memory

@@ -112,6 +112,12 @@ file. It supports file selection, drag-and-drop, fit-to-window, manual zoom,
 horizontal and vertical scrolling, and live monitor controls. Small windows use
 proportional downscaling even when integer scaling is enabled.
 
+With the terminal focused, **Escape** clears an active text selection without
+sending Escape to the remote system. In scrollback, it clears the selection
+first; a second Escape returns to the live terminal. Without a selection,
+Escape retains its normal terminal behavior. Open dialogs and search keep
+priority over terminal selection handling.
+
 **Dialing Directory** opens the existing local phonebook in the same format and
 location as the legacy client. It provides name/address/notes search, favorites,
 name/call-count/last-call sorting, quick connect, and entry details. Double-click

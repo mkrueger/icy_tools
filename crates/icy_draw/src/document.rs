@@ -202,6 +202,14 @@ impl Document {
         self.start_floating_paste(|state| state.paste_sixel(sixel))
     }
 
+    pub fn insert_buffer(&mut self, buffer: &icy_engine::TextBuffer, title: String) -> DrawResult<()> {
+        if self.paste_active() || !self.can_paint() {
+            return Err("Finish the current paste and select an editable layer before inserting artwork.".into());
+        }
+        self.start_floating_paste(|state| state.paste_buffer(buffer, title))?;
+        self.paste_action(PasteAction::Keep)
+    }
+
     fn start_floating_paste(&mut self, paste: impl FnOnce(&mut EditState) -> icy_engine::Result<()>) -> DrawResult<()> {
         self.finish();
         if self.paste_active() || !self.can_paint() {

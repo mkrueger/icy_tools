@@ -38,6 +38,17 @@ The egui frontend currently includes:
   caret or selection, and font selection.
 - ANSI/ASCII editing, brushes, shapes, half-block drawing, flood fill, rectangular
   selection, layers, palette editing, tags, SAUCE, and undo/redo.
+  While the canvas has keyboard focus, arrow keys move the text caret rather
+  than switching focus to other controls; Tab and Escape also stay with the
+  canvas. Clicking another control or opening a dialog still transfers input.
+- **Insert Image from File** accepts all formats supported by the text-document
+  loader (including ANSI/ASCII, ICY, XBin, BIN, IDF, Tundra, Artworx, REXPaint,
+  Avatar, PCBoard, Ctrl-A, Renegade, PETSCII and ATASCII) and the image decoders
+  (including Sixel, PCX, IFF/ILBM and BSAVE). The dialog uses the central format
+  registries rather than a separate extension whitelist. Visible
+  layers are combined into one new editable layer at the caret, retaining colors
+  and fonts without replacing the current document. Hidden layers are excluded;
+  the insertion can be undone in one step. Raster images still use Sixel layers.
 - Bitmap font editing and PSF saving; TDF collection/glyph editing; TDF/FIGlet
   text drawing with the existing watched font library.
 - Lua animation editing, frame preview/playback, GIF and Asciicast export.

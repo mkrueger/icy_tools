@@ -1453,7 +1453,8 @@ impl MainWindow {
                 Task::perform(
                     async {
                         rfd::AsyncFileDialog::new()
-                            .add_filter("Images", &["png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "ico"])
+                            .add_filter(fl!("file-dialog-filter-artwork"), &icy_draw::files::INSERT_ART_EXTENSIONS)
+                            .add_filter(fl!("file-dialog-filter-images"), &icy_draw::files::INSERT_IMAGE_EXTENSIONS)
                             .add_filter("All files", &["*"])
                             .pick_file()
                             .await
@@ -1471,9 +1472,31 @@ impl MainWindow {
             Message::InsertSixelFromPath(path) => {
                 use icy_engine::{Position, Sixel};
 
+                if icy_draw::files::is_insert_art(&path) {
+                    match icy_draw::files::load_insert_art(&path) {
+                        Ok(buffer) => {
+                            if let ModeState::Ansi(editor) = &mut self.mode_state {
+                                editor.with_edit_state(|state| {
+                                    let mut undo = state.begin_atomic_undo("Insert artwork");
+                                    let title = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                                    let offset = state.get_cur_layer().map(|layer| layer.offset()).unwrap_or_default();
+                                    let result = state.paste_buffer(&buffer, title)
+                                        .and_then(|()| state.move_layer(state.get_cur_layer().unwrap().offset() + offset))
+                                        .and_then(|()| state.add_floating_layer());
+                                    if let Err(error) = result {
+                                        undo.discard_and_undo(state);
+                                        log::error!("Failed to insert artwork from {path:?}: {error}");
+                                    }
+                                });
+                            }
+                        }
+                        Err(error) => log::error!("Failed to load artwork from {path:?}: {error}"),
+                    }
+                    return Task::none();
+                }
+
                 // Load the image file
-                if let Ok(img) = image::open(&path) {
-                    let rgba = img.to_rgba8();
+                if let Ok(rgba) = icy_draw::files::load_insert_image(&path) {
                     let (w, h) = rgba.dimensions();
 
                     let mut sixel = Sixel::new(Position::default());

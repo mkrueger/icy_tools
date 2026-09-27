@@ -1,4 +1,46 @@
-use std::{io::Write, path::Path};
+use icy_engine::{FileFormat, ImageFormat};
+use std::{io::Write, path::Path, sync::LazyLock};
+
+pub static INSERT_ART_EXTENSIONS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+    FileFormat::ALL
+        .iter()
+        .filter(|format| format.supports_load())
+        .flat_map(FileFormat::all_extensions)
+        .copied()
+        .collect()
+});
+
+pub static INSERT_IMAGE_EXTENSIONS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+    ImageFormat::ALL
+        .iter()
+        .flat_map(|format| FileFormat::Image(*format).all_extensions())
+        .copied()
+        .collect()
+});
+
+pub fn is_insert_art(path: &Path) -> bool {
+    FileFormat::from_path(path).is_some_and(|format| format.supports_load())
+}
+
+pub fn load_insert_image(path: &Path) -> Result<image::RgbaImage, String> {
+    let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
+    if let Some(format) = ImageFormat::from_path(path).or_else(|| ImageFormat::sniff(&bytes)) {
+        format.decode_rgba_at(&bytes, path)
+    } else {
+        image::load_from_memory(&bytes)
+            .map(image::DynamicImage::into_rgba8)
+            .map_err(|error| error.to_string())
+    }
+}
+
+pub fn load_insert_art(path: &Path) -> Result<icy_engine::TextBuffer, String> {
+    let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
+    let format = icy_engine::FileFormat::from_path(path).ok_or_else(|| format!("Unknown file format: {}", path.display()))?;
+    format
+        .from_bytes(&bytes, None)
+        .map(|loaded| loaded.screen.buffer)
+        .map_err(|error| error.to_string())
+}
 
 pub fn same_file(first: &Path, second: &Path) -> bool {
     first == second || first.canonicalize().ok().is_some_and(|first| second.canonicalize().ok() == Some(first))
@@ -42,6 +84,25 @@ pub fn save_bytes(path: &Path, bytes: &[u8], original: Option<(&Path, &[u8])>, o
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn insert_filters_cover_the_document_and_image_registries() {
+        for format in FileFormat::ALL.iter().filter(|format| format.supports_load()) {
+            for extension in format.all_extensions() {
+                assert!(INSERT_ART_EXTENSIONS.contains(extension), "{format}: {extension}");
+                assert!(is_insert_art(Path::new(&format!("art.{}", extension.to_uppercase()))));
+            }
+        }
+        for format in ImageFormat::ALL {
+            for extension in FileFormat::Image(*format).all_extensions() {
+                assert!(INSERT_IMAGE_EXTENSIONS.contains(extension), "{format:?}: {extension}");
+                assert!(!is_insert_art(Path::new(&format!("image.{extension}"))), "{extension}");
+            }
+        }
+        for extension in ["pal", "psf", "tdf", "zip", "icyanim"] {
+            assert!(!is_insert_art(Path::new(&format!("not-art.{extension}"))));
+        }
+    }
 
     #[test]
     fn preserves_external_changes_and_detects_removal() {
