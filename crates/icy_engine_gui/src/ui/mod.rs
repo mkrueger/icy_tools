@@ -2,7 +2,7 @@ use i18n_embed_fl::fl;
 use icy_ui::widget::{button, column, container, row, space, text, tooltip, Space};
 use icy_ui::{Background, Border, Color, Element, Length, Padding, Shadow, Theme};
 
-mod icons;
+pub use crate::file_icons as icons;
 pub use icons::*;
 
 mod dialog;
@@ -32,7 +32,7 @@ pub use menu::{Menu, MenuBar, MenuItem};
 pub mod window_manager;
 pub use window_manager::*;
 
-pub mod version_helper;
+pub use crate::version_helper;
 
 // Button styling
 pub const BUTTON_FONT_SIZE: f32 = 14.0;

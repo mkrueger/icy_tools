@@ -16,6 +16,26 @@ pub fn render_scrollback_region(screen: &dyn Screen, height: i32) -> (Size, Vec<
 pub struct ScrollbackChunk {
     pub rgba_data: Vec<u8>,
     pub size: Size,
+    pub text: Vec<Vec<AttributedChar>>,
+}
+
+impl ScrollbackChunk {
+    pub fn from_screen(screen: &dyn Screen, height: i32) -> Self {
+        let (size, rgba_data) = render_scrollback_region(screen, height);
+        let rows = (size.height / screen.font_dimensions().height.max(1)).min(screen.height());
+        let text = (0..rows)
+            .map(|row| {
+                (0..screen.width())
+                    .map(|column| {
+                        let mut character = screen.char_at((column, row).into());
+                        character.ch = screen.buffer_type().convert_to_unicode(character.ch);
+                        character
+                    })
+                    .collect()
+            })
+            .collect();
+        Self { rgba_data, size, text }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -44,6 +64,7 @@ impl ScrollbackBuffer {
             cur_screen: ScrollbackChunk {
                 rgba_data: Vec::new(),
                 size: Size { width: 0, height: 0 },
+                text: Vec::new(),
             },
             font_dimensions: Size::new(8, 16),
             palette: Palette::default(),
@@ -63,10 +84,17 @@ impl ScrollbackBuffer {
     }
 
     pub fn add_chunk(&mut self, rgba_data: Vec<u8>, size: Size) {
-        if rgba_data.is_empty() {
+        self.push_chunk(ScrollbackChunk {
+            rgba_data,
+            size,
+            text: Vec::new(),
+        });
+    }
+
+    pub fn push_chunk(&mut self, chunk: ScrollbackChunk) {
+        if chunk.rgba_data.is_empty() {
             return;
         }
-        let chunk = ScrollbackChunk { rgba_data, size };
         self.chunks.push(chunk);
         if self.chunks.len() > self.buffer_size {
             self.chunks.remove(0);
@@ -78,12 +106,7 @@ impl ScrollbackBuffer {
     }
 
     pub fn snapshot_current_screen(&mut self, screen: &dyn Screen) {
-        let mut opt = RenderOptions::default();
-        opt.override_scan_lines = Some(false);
-
-        let (size, rgba_data) = screen.render_region_to_rgba(Rectangle::new(Position::new(0, 0), screen.resolution()), &opt);
-
-        self.cur_screen = ScrollbackChunk { rgba_data, size };
+        self.cur_screen = ScrollbackChunk::from_screen(screen, screen.resolution().height);
 
         // Inherit properties from the screen being snapshotted
         self.scan_lines = screen.scan_lines();
@@ -100,8 +123,22 @@ impl ScrollbackBuffer {
 }
 
 impl TextPane for ScrollbackBuffer {
-    fn char_at(&self, _pos: Position) -> AttributedChar {
-        // ScrollbackBuffer doesn't have character-level access, return default
+    fn char_at(&self, pos: Position) -> AttributedChar {
+        if pos.x < 0 || pos.x >= self.width() || pos.y < 0 {
+            return AttributedChar::default();
+        }
+        let mut pixel_y = pos.y * self.font_dimensions.height.max(1);
+        for chunk in self.chunks.iter().chain(std::iter::once(&self.cur_screen)) {
+            if pixel_y < chunk.size.height {
+                let row = pixel_y as usize * chunk.text.len() / chunk.size.height.max(1) as usize;
+                if let Some(line) = chunk.text.get(row) {
+                    let column = pos.x as usize * line.len() / self.width().max(1) as usize;
+                    return line.get(column).copied().unwrap_or_default();
+                }
+                break;
+            }
+            pixel_y -= chunk.size.height;
+        }
         AttributedChar::default()
     }
 
@@ -110,7 +147,7 @@ impl TextPane for ScrollbackBuffer {
     }
 
     fn width(&self) -> i32 {
-        self.cur_screen_size.width / self.font_dimensions.width
+        self.cur_screen_size.width
     }
 
     fn height(&self) -> i32 {
@@ -132,7 +169,7 @@ impl TextPane for ScrollbackBuffer {
 
 impl Screen for ScrollbackBuffer {
     fn buffer_type(&self) -> crate::BufferType {
-        crate::BufferType::CP437
+        crate::BufferType::Unicode
     }
 
     fn resolution(&self) -> Size {
@@ -174,7 +211,7 @@ impl Screen for ScrollbackBuffer {
         self.scan_lines
     }
 
-    fn render_region_to_rgba(&self, mut px_region: Rectangle, _options: &RenderOptions) -> (Size, Vec<u8>) {
+    fn render_region_to_rgba(&self, mut px_region: Rectangle, options: &RenderOptions) -> (Size, Vec<u8>) {
         if self.scan_lines {
             px_region.start.y /= 2;
             px_region.size.height /= 2;
@@ -299,6 +336,18 @@ impl Screen for ScrollbackBuffer {
             }
         }
 
+        if let Some(selection) = options.selection {
+            for (index, pixel) in region_data.chunks_exact_mut(4).enumerate() {
+                let column = (x + index as i32 % region_width) / self.font_dimensions.width.max(1);
+                let row = (y + index as i32 / region_width) / self.font_dimensions.height.max(1);
+                if selection.is_inside((column, row)) {
+                    for channel in &mut pixel[..3] {
+                        *channel = 255 - *channel;
+                    }
+                }
+            }
+        }
+
         // Apply scan_lines if needed (double the height)
         if self.scan_lines {
             let mut doubled_data = Vec::with_capacity(region_data.len() * 2);
@@ -395,9 +444,16 @@ impl Screen for ScrollbackBuffer {
         &self.caret
     }
 
-    fn to_bytes(&mut self, _extension: &str, _options: &SaveOptions) -> Result<Vec<u8>> {
-        // ScrollbackBuffer doesn't support saving
-        Ok(Vec::new())
+    fn to_bytes(&mut self, extension: &str, options: &SaveOptions) -> Result<Vec<u8>> {
+        use crate::EditableScreen;
+        let mut screen = crate::TextScreen::new(self.size());
+        screen.buffer.buffer_type = crate::BufferType::Unicode;
+        for row in 0..self.height() {
+            for column in 0..self.width() {
+                screen.set_char((column, row).into(), self.char_at((column, row).into()));
+            }
+        }
+        screen.to_bytes(extension, options)
     }
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -418,9 +474,5 @@ impl Screen for ScrollbackBuffer {
 /// Helper method to render a region from a screen and add it to the scrollback buffer.
 /// Always starts at x=0, renders full width with the specified height.
 pub fn add_screen_region(buffer: &mut ScrollbackBuffer, screen: &dyn Screen, height: i32) {
-    let region = Rectangle::from(0, 0, screen.resolution().width, height);
-    let mut opt = RenderOptions::default();
-    opt.override_scan_lines = Some(false);
-    let (size, rgba_data) = screen.render_region_to_rgba(region, &opt);
-    buffer.add_chunk(rgba_data, size);
+    buffer.push_chunk(ScrollbackChunk::from_screen(screen, height));
 }

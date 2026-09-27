@@ -83,6 +83,9 @@ tokio-tungstenite = "0.30.0"
 futures-util = "0.3"
 anstream = "1.0.0"
 rodio = { version = "0.22.2" }
+# Tracker modules (MOD/XM/S3M/IT); SID and David Whittaker importers left out
+xmrs = { version = "0.14", default-features = false, features = ["std", "import_mod", "import_xm", "import_s3m", "import_it"] }
+xmrsplayer = { version = "0.14", default-features = false, features = ["std", "import_mod", "import_xm", "import_s3m", "import_it"] }
 # Pinned to whatever rodio depends on; a mismatch makes Device types incompatible.
 cpal = "0.17.3"
 # Atari ST GIST sound emulation (IGS)

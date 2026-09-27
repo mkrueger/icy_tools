@@ -6,9 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use icy_engine::Screen;
+use icy_engine_gui::terminal_keys::{self, Code, Key, NamedKey};
 use icy_engine_scripting::{LuaExtension, LuaScreen};
 use icy_net::telnet::TerminalEmulation;
-use icy_ui::keyboard;
 use mlua::Lua;
 use parking_lot::Mutex;
 use regex::Regex;
@@ -375,55 +375,50 @@ impl TerminalLuaExtension {
 #[must_use]
 pub fn parse_key_string(terminal_type: TerminalEmulation, key_str: &str) -> Option<Vec<u8>> {
     let key = match key_str.to_lowercase().as_str() {
-        "enter" | "return" => keyboard::Key::Named(keyboard::key::Named::Enter),
-        "escape" | "esc" => keyboard::Key::Named(keyboard::key::Named::Escape),
-        "tab" => keyboard::Key::Named(keyboard::key::Named::Tab),
-        "backspace" => keyboard::Key::Named(keyboard::key::Named::Backspace),
-        "delete" | "del" => keyboard::Key::Named(keyboard::key::Named::Delete),
-        "home" => keyboard::Key::Named(keyboard::key::Named::Home),
-        "end" => keyboard::Key::Named(keyboard::key::Named::End),
-        "pageup" | "pgup" => keyboard::Key::Named(keyboard::key::Named::PageUp),
-        "pagedown" | "pgdn" => keyboard::Key::Named(keyboard::key::Named::PageDown),
-        "up" | "arrowup" => keyboard::Key::Named(keyboard::key::Named::ArrowUp),
-        "down" | "arrowdown" => keyboard::Key::Named(keyboard::key::Named::ArrowDown),
-        "left" | "arrowleft" => keyboard::Key::Named(keyboard::key::Named::ArrowLeft),
-        "right" | "arrowright" => keyboard::Key::Named(keyboard::key::Named::ArrowRight),
-        "f1" => keyboard::Key::Named(keyboard::key::Named::F1),
-        "f2" => keyboard::Key::Named(keyboard::key::Named::F2),
-        "f3" => keyboard::Key::Named(keyboard::key::Named::F3),
-        "f4" => keyboard::Key::Named(keyboard::key::Named::F4),
-        "f5" => keyboard::Key::Named(keyboard::key::Named::F5),
-        "f6" => keyboard::Key::Named(keyboard::key::Named::F6),
-        "f7" => keyboard::Key::Named(keyboard::key::Named::F7),
-        "f8" => keyboard::Key::Named(keyboard::key::Named::F8),
-        "f9" => keyboard::Key::Named(keyboard::key::Named::F9),
-        "f10" => keyboard::Key::Named(keyboard::key::Named::F10),
-        "f11" => keyboard::Key::Named(keyboard::key::Named::F11),
-        "f12" => keyboard::Key::Named(keyboard::key::Named::F12),
+        "enter" | "return" => Key::Named(NamedKey::Enter),
+        "escape" | "esc" => Key::Named(NamedKey::Escape),
+        "tab" => Key::Named(NamedKey::Tab),
+        "backspace" => Key::Named(NamedKey::Backspace),
+        "delete" | "del" => Key::Named(NamedKey::Delete),
+        "home" => Key::Named(NamedKey::Home),
+        "end" => Key::Named(NamedKey::End),
+        "pageup" | "pgup" => Key::Named(NamedKey::PageUp),
+        "pagedown" | "pgdn" => Key::Named(NamedKey::PageDown),
+        "up" | "arrowup" => Key::Named(NamedKey::ArrowUp),
+        "down" | "arrowdown" => Key::Named(NamedKey::ArrowDown),
+        "left" | "arrowleft" => Key::Named(NamedKey::ArrowLeft),
+        "right" | "arrowright" => Key::Named(NamedKey::ArrowRight),
+        "f1" => Key::Named(NamedKey::F1),
+        "f2" => Key::Named(NamedKey::F2),
+        "f3" => Key::Named(NamedKey::F3),
+        "f4" => Key::Named(NamedKey::F4),
+        "f5" => Key::Named(NamedKey::F5),
+        "f6" => Key::Named(NamedKey::F6),
+        "f7" => Key::Named(NamedKey::F7),
+        "f8" => Key::Named(NamedKey::F8),
+        "f9" => Key::Named(NamedKey::F9),
+        "f10" => Key::Named(NamedKey::F10),
+        "f11" => Key::Named(NamedKey::F11),
+        "f12" => Key::Named(NamedKey::F12),
         _ => return None,
     };
 
-    let modifiers = keyboard::Modifiers::empty();
-    let physical = keyboard::key::Physical::Unidentified(keyboard::key::NativeCode::Unidentified);
+    let modifiers = icy_engine::KeyModifiers::default();
+    let physical = None;
 
     map_key_to_bytes(terminal_type, &key, &physical, modifiers)
 }
 
 /// Map a keyboard key event to bytes for the given terminal emulation
-fn map_key_to_bytes(
-    terminal_type: TerminalEmulation,
-    key: &keyboard::Key,
-    physical: &keyboard::key::Physical,
-    modifiers: keyboard::Modifiers,
-) -> Option<Vec<u8>> {
+fn map_key_to_bytes(terminal_type: TerminalEmulation, key: &Key, physical: &Option<Code>, modifiers: icy_engine::KeyModifiers) -> Option<Vec<u8>> {
     let key_map = match terminal_type {
-        TerminalEmulation::PETscii => icy_engine_gui::key_map::C64_KEY_MAP,
-        TerminalEmulation::ViewData => icy_engine_gui::key_map::VIDEOTERM_KEY_MAP,
-        TerminalEmulation::Mode7 => icy_engine_gui::key_map::MODE7_KEY_MAP,
-        TerminalEmulation::ATAscii => icy_engine_gui::key_map::ATASCII_KEY_MAP,
-        TerminalEmulation::AtariST => icy_engine_gui::key_map::ATARI_ST_KEY_MAP,
-        _ => icy_engine_gui::key_map::ANSI_KEY_MAP,
+        TerminalEmulation::PETscii => terminal_keys::C64_KEY_MAP,
+        TerminalEmulation::ViewData => terminal_keys::VIDEOTERM_KEY_MAP,
+        TerminalEmulation::Mode7 => terminal_keys::MODE7_KEY_MAP,
+        TerminalEmulation::ATAscii => terminal_keys::ATASCII_KEY_MAP,
+        TerminalEmulation::AtariST => terminal_keys::ATARI_ST_KEY_MAP,
+        _ => terminal_keys::ANSI_KEY_MAP,
     };
 
-    icy_engine_gui::key_map::lookup_key(key, physical, modifiers, key_map)
+    terminal_keys::lookup_key(key, physical, modifiers, key_map)
 }

@@ -22,6 +22,11 @@ impl McpServer {
     }
 
     pub async fn start(self: Arc<Self>, port: u16) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let listener = TcpListener::bind(("127.0.0.1", port)).await?;
+        self.serve(listener).await
+    }
+
+    pub async fn serve(self: Arc<Self>, listener: TcpListener) -> std::result::Result<(), Box<dyn std::error::Error>> {
         let session_manager = Arc::new(LocalSessionManager::default());
         let config = StreamableHttpServerConfig::default();
 
@@ -31,8 +36,7 @@ impl McpServer {
 
         let app = Router::new().route_service("/", mcp_service);
 
-        let listener = TcpListener::bind(("127.0.0.1", port)).await?;
-        log::info!("MCP Streamable HTTP server listening on http://127.0.0.1:{port}");
+        log::info!("MCP Streamable HTTP server listening on {}", listener.local_addr()?);
 
         axum::serve(listener, app).await?;
         Ok(())

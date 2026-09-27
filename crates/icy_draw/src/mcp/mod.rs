@@ -3,6 +3,7 @@
 //! Provides remote control and automation capabilities for `icy_draw` via HTTP.
 //! Enables AI assistants to interact with the editor programmatically.
 
+pub mod edit;
 pub mod handlers;
 pub mod server;
 pub mod types;

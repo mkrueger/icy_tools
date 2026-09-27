@@ -1,0 +1,1472 @@
+use super::*;
+use eframe::egui;
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
+
+pub struct Fixture(pub PathBuf);
+
+impl Fixture {
+    pub fn new() -> Self {
+        let path = std::env::temp_dir().join(format!("icy-view-egui-{}-{}", std::process::id(), fastrand::u64(..)));
+        std::fs::create_dir_all(&path).unwrap();
+        Self(path)
+    }
+}
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+pub fn config() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| icy_view::init_config_dir(false, Some(std::env::temp_dir().join(format!("icy-view-egui-config-{}", std::process::id())))));
+}
+
+pub fn wait_browser(browser: &mut browser::Browser, context: &egui::Context) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while browser.loading {
+        browser.poll(context);
+        assert!(Instant::now() < deadline, "browser timed out");
+        std::thread::yield_now();
+    }
+    assert!(browser.error.is_none(), "{:?}", browser.error);
+}
+
+pub fn wait_preview(preview: &mut preview::Preview, context: &egui::Context) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while preview.loading {
+        preview.poll(context);
+        assert!(Instant::now() < deadline, "preview timed out: {}", preview.file);
+        std::thread::yield_now();
+    }
+}
+
+#[test]
+fn browser_preserves_selection_across_history_and_enters_archives() {
+    use std::io::Write;
+    let fixture = Fixture::new();
+    std::fs::write(fixture.0.join("art.ans"), b"ANSI").unwrap();
+    let mut archive = zip::ZipWriter::new(std::fs::File::create(fixture.0.join("pack.zip")).unwrap());
+    archive.start_file("sub/inner.ans", zip::write::SimpleFileOptions::default()).unwrap();
+    archive.write_all(b"INNER").unwrap();
+    archive.finish().unwrap();
+    let context = egui::Context::default();
+    let mut browser = browser::Browser::new(fixture.0.clone(), Default::default()).unwrap();
+    browser.refresh(&context);
+    wait_browser(&mut browser, &context);
+    let art = browser.items.iter().position(|item| item.get_label() == "art.ans").unwrap();
+    browser.select(art, &context);
+    let archive = browser.items.iter().position(|item| item.get_label() == "pack.zip").unwrap();
+    browser.enter(archive, &context);
+    wait_browser(&mut browser, &context);
+    assert_eq!(browser.items[0].get_label(), "sub");
+    browser.enter(0, &context);
+    wait_browser(&mut browser, &context);
+    assert_eq!(browser.items[0].get_label(), "inner.ans");
+    browser.up(&context);
+    wait_browser(&mut browser, &context);
+    browser.history(false, &context);
+    wait_browser(&mut browser, &context);
+    assert_eq!(browser.items[browser.selected.unwrap()].get_label(), "art.ans");
+    browser.history(true, &context);
+    wait_browser(&mut browser, &context);
+    assert_eq!(browser.items[0].get_label(), "sub");
+}
+
+#[test]
+fn list_double_click_enters_containers_without_invalidating_remaining_rows() {
+    use std::io::Write;
+
+    let fixture = Fixture::new();
+    std::fs::create_dir(fixture.0.join("folder")).unwrap();
+    std::fs::write(fixture.0.join("folder/inner.ans"), b"INNER").unwrap();
+    std::fs::write(fixture.0.join("tail.ans"), b"TAIL").unwrap();
+    let mut archive = zip::ZipWriter::new(std::fs::File::create(fixture.0.join("pack.zip")).unwrap());
+    archive.start_file("inner.ans", zip::write::SimpleFileOptions::default()).unwrap();
+    archive.write_all(b"INNER").unwrap();
+    archive.finish().unwrap();
+
+    for size in [egui::vec2(1100.0, 760.0), egui::vec2(360.0, 640.0)] {
+        for container in ["folder", "pack.zip"] {
+            let context = egui::Context::default();
+            icy_engine_gui::egui::appearance::apply(&context);
+            let mut viewer = app::Viewer::new(fixture.0.clone(), Default::default(), &context).unwrap();
+            wait_browser(&mut viewer.browser, &context);
+            let mut time = 0.0;
+            let mut frame = |viewer: &mut app::Viewer, events| {
+                time += 0.05;
+                context.run(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                        time: Some(time),
+                        events,
+                        ..Default::default()
+                    },
+                    |context| viewer.show(context),
+                )
+            };
+            for _ in 0..3 {
+                frame(&mut viewer, vec![]);
+            }
+            let output = frame(&mut viewer, vec![]);
+            let label_bounds = |label: &str| {
+                output
+                    .shapes
+                    .iter()
+                    .find_map(|shape| match &shape.shape {
+                        egui::Shape::Text(text) if text.galley.text() == label => {
+                            let bounds = text.galley.rect.translate(text.pos.to_vec2());
+                            shape.clip_rect.contains_rect(bounds).then_some(bounds)
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| panic!("missing visible row: {label}"))
+            };
+            let row = label_bounds(container);
+            assert!(label_bounds("tail.ans").top() > row.bottom());
+            let position = row.center();
+            let original_path = viewer.browser.location.point.path.clone();
+            for click in 0..2 {
+                for pressed in [true, false] {
+                    frame(
+                        &mut viewer,
+                        vec![
+                            egui::Event::PointerMoved(position),
+                            egui::Event::PointerButton {
+                                pos: position,
+                                button: egui::PointerButton::Primary,
+                                pressed,
+                                modifiers: egui::Modifiers::NONE,
+                            },
+                        ],
+                    );
+                }
+                if click == 0 {
+                    assert_eq!(viewer.browser.location.point.path, original_path);
+                    assert_eq!(viewer.browser.items[viewer.browser.selected.unwrap()].get_label(), container);
+                }
+            }
+            assert_ne!(viewer.browser.location.point.path, original_path);
+            assert_eq!(viewer.browser.back.len(), 1);
+            wait_browser(&mut viewer.browser, &context);
+            assert_eq!(viewer.browser.items.len(), 1);
+            assert_eq!(viewer.browser.items[0].get_label(), "inner.ans");
+            frame(&mut viewer, vec![]);
+        }
+    }
+}
+
+#[test]
+fn preview_loads_text_images_and_reports_corrupt_formats() {
+    let context = egui::Context::default();
+    let mut preview = preview::Preview::new(&context).unwrap();
+    preview.load("art.ans".into(), b"\x1b[31mHELLO\r\n".to_vec(), false, &context);
+    wait_preview(&mut preview, &context);
+    assert!(preview.error.is_none());
+    assert_eq!(preview.screen.terminal.screen.lock().char_at((0, 0).into()).ch, 'H');
+    preview.load("icon.png".into(), include_bytes!("../../../build/linux/128x128.png").to_vec(), false, &context);
+    wait_preview(&mut preview, &context);
+    assert!(preview.image.is_some());
+    assert_eq!(preview.image_pixels.as_ref().unwrap().dimensions(), (128, 128));
+    preview.load("invalid.icy".into(), b"invalid".to_vec(), false, &context);
+    wait_preview(&mut preview, &context);
+    assert!(preview.error.is_some());
+}
+
+#[test]
+fn preview_plays_tracker_modules_and_shows_other_mod_files_as_text() {
+    let context = egui::Context::default();
+    let mut preview = preview::Preview::new(&context).unwrap();
+    preview.audio = false;
+    let row = |preview: &preview::Preview, y: i32| -> String {
+        let screen = preview.screen.terminal.screen.lock();
+        (0..40).map(|x| screen.char_at((x, y).into()).ch).collect()
+    };
+    preview.load("song.mod".into(), icy_view::tracker::test_module(), false, &context);
+    wait_preview(&mut preview, &context);
+    let music = preview.music.as_ref().expect("module plays");
+    assert!(music.playing());
+    assert!((music.duration() - 15.36).abs() < 0.01);
+    assert!(row(&preview, 0).starts_with(" test song"), "{:?}", row(&preview, 0));
+    preview.toggle_music();
+    assert!(preview.music.as_ref().unwrap().paused());
+    preview.replay_music();
+    assert!(preview.music.as_ref().unwrap().playing());
+
+    preview.load("kernel.mod".into(), b"HELLO FROM A KERNEL MODULE".to_vec(), false, &context);
+    wait_preview(&mut preview, &context);
+    assert!(preview.music.is_none(), "switching files stops the music");
+    assert!(preview.error.is_none(), "{:?}", preview.error);
+    assert!(row(&preview, 0).starts_with("HELLO FROM"), "{:?}", row(&preview, 0));
+}
+
+#[test]
+fn shortcuts_use_exact_modifiers_and_all_viewer_commands_resolve() {
+    let commands = icy_view::commands::create_icy_view_commands();
+    for id in dialogs::COMMANDS {
+        let command = commands.get(id).unwrap();
+        for hotkey in command.active_hotkeys() {
+            assert!(icy_engine_gui::egui::shortcuts::key(hotkey.key).is_some(), "{id}: {:?}", hotkey.key);
+        }
+        let label = text(&command.fluent_action_key());
+        assert!(!label.contains("No localization"), "{id}: {label}");
+    }
+    let context = egui::Context::default();
+    let mut matched = true;
+    let _ = context.run(
+        egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::F3,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::SHIFT,
+            }],
+            ..Default::default()
+        },
+        |context| {
+            matched = icy_engine_gui::egui::shortcuts::consume(context, commands.get("playback.baud_rate").unwrap());
+            assert!(icy_engine_gui::egui::shortcuts::consume(
+                context,
+                commands.get("playback.baud_rate_back").unwrap()
+            ));
+        },
+    );
+    assert!(!matched);
+}
+
+struct Gpu {
+    device: eframe::wgpu::Device,
+    queue: eframe::wgpu::Queue,
+    renderer: eframe::egui_wgpu::Renderer,
+    context: egui::Context,
+    time: f64,
+    labels: std::collections::HashMap<String, egui::Rect>,
+    copied: Vec<String>,
+}
+
+impl Gpu {
+    async fn new() -> Self {
+        use eframe::{egui_wgpu, wgpu};
+        let adapter = wgpu::Instance::default().request_adapter(&Default::default()).await.unwrap();
+        let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
+        let mut renderer = egui_wgpu::Renderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, Default::default());
+        renderer
+            .callback_resources
+            .insert(icy_engine_gui::TerminalShaderRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm));
+        Self {
+            device,
+            queue,
+            renderer,
+            context: egui::Context::default(),
+            time: 0.0,
+            labels: Default::default(),
+            copied: Vec::new(),
+        }
+    }
+
+    fn capture(&mut self, app: &mut app::Viewer, size: [u32; 2], scale: f32, events: Vec<egui::Event>, name: &str) -> Vec<u8> {
+        use eframe::{egui_wgpu, wgpu};
+        self.time += 0.1;
+        let mut input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(size[0] as f32 / scale, size[1] as f32 / scale),
+            )),
+            time: Some(self.time),
+            events,
+            ..Default::default()
+        };
+        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().native_pixels_per_point = Some(scale);
+        let output = self.context.run(input, |context| app.show(context));
+        for command in &output.platform_output.commands {
+            if let egui::OutputCommand::CopyText(text) = command {
+                self.copied.push(text.clone());
+            }
+        }
+        self.labels.clear();
+        for shape in &output.shapes {
+            if let egui::Shape::Text(text) = &shape.shape {
+                let bounds = text.galley.rect.translate(text.pos.to_vec2());
+                if shape.clip_rect.contains_rect(bounds) && self.context.content_rect().contains_rect(bounds) {
+                    self.labels.insert(text.galley.text().to_string(), bounds);
+                }
+            }
+        }
+        let jobs = self.context.tessellate(output.shapes, output.pixels_per_point);
+        for (id, delta) in &output.textures_delta.set {
+            self.renderer.update_texture(&self.device, &self.queue, *id, delta);
+        }
+        let descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: size,
+            pixels_per_point: scale,
+        };
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("viewer capture"),
+            size: wgpu::Extent3d {
+                width: size[0],
+                height: size[1],
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let stride = (size[0] * 4).div_ceil(256) * 256;
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: u64::from(stride * size[1]),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let commands = self.renderer.update_buffers(&self.device, &self.queue, &mut encoder, &jobs, &descriptor);
+        {
+            let view = texture.create_view(&Default::default());
+            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                ..Default::default()
+            });
+            self.renderer.render(&mut pass.forget_lifetime(), &jobs, &descriptor);
+        }
+        encoder.copy_texture_to_buffer(
+            texture.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(stride),
+                    rows_per_image: None,
+                },
+            },
+            texture.size(),
+        );
+        self.queue.submit(commands.into_iter().chain([encoder.finish()]));
+        let (sender, receiver) = std::sync::mpsc::channel();
+        buffer.slice(..).map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        self.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        receiver.recv().unwrap().unwrap();
+        let pixels: Vec<_> = buffer
+            .slice(..)
+            .get_mapped_range()
+            .chunks(stride as usize)
+            .flat_map(|row| row[..size[0] as usize * 4].iter().copied())
+            .collect();
+        buffer.unmap();
+        for id in output.textures_delta.free {
+            self.renderer.free_texture(&id);
+        }
+        if let Some(directory) = std::env::var_os("ICY_EGUI_SCREENSHOTS") {
+            std::fs::create_dir_all(&directory).unwrap();
+            image::save_buffer(
+                PathBuf::from(directory).join(format!("{name}.png")),
+                &pixels,
+                size[0],
+                size[1],
+                image::ColorType::Rgba8,
+            )
+            .unwrap();
+        }
+        pixels
+    }
+
+    fn click(&mut self, app: &mut app::Viewer, size: [u32; 2], scale: f32, label: &str) {
+        let position = self
+            .labels
+            .get(label)
+            .unwrap_or_else(|| panic!("missing visible control {label}: {:?}", self.labels.keys()))
+            .center();
+        self.click_at(app, size, scale, position);
+    }
+
+    fn click_at(&mut self, app: &mut app::Viewer, size: [u32; 2], scale: f32, position: egui::Pos2) {
+        for pressed in [true, false] {
+            self.capture(
+                app,
+                size,
+                scale,
+                vec![
+                    egui::Event::PointerMoved(position),
+                    egui::Event::PointerButton {
+                        pos: position,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                "click",
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_file_navigation_selection_copy_and_large_image_tiles() {
+    config();
+    let fixture = Fixture::new();
+    std::fs::write(fixture.0.join("first.ans"), b"HELLO WORLD\r\nSECOND LINE").unwrap();
+    std::fs::write(fixture.0.join("second.ans"), b"NEXT").unwrap();
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let options = icy_view::Options {
+        auto_scroll_enabled: false,
+        ..Default::default()
+    };
+    let mut app = app::Viewer::new(fixture.0.clone(), options, &gpu.context).unwrap();
+    wait_browser(&mut app.browser, &gpu.context);
+    gpu.capture(&mut app, [1100, 760], 1.0, vec![], "workflow-warmup");
+    let key = |key| egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    gpu.capture(&mut app, [1100, 760], 1.0, vec![key(egui::Key::ArrowDown)], "workflow-selected");
+    assert_eq!(app.browser.items[app.browser.selected.unwrap()].get_label(), "first.ans");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.browser.preview_loading || app.preview.loading {
+        gpu.capture(&mut app, [1100, 760], 1.0, vec![], "workflow-loading");
+        assert!(Instant::now() < deadline);
+    }
+    app.options.monitor_settings.scaling_mode = icy_engine_gui::ScalingMode::Manual(1.0);
+    gpu.capture(&mut app, [1100, 760], 1.0, vec![], "selection-warmup");
+    gpu.capture(&mut app, [1100, 760], 1.0, vec![], "selection-before");
+    let info = app.preview.screen.terminal.render_info.read().clone();
+    let origin = egui::pos2(
+        info.bounds_x + info.viewport_x + info.font_width * info.display_scale * 0.5,
+        info.bounds_y + info.viewport_y + info.font_height * info.display_scale * 0.5,
+    );
+    let end = origin + egui::vec2(info.font_width * info.display_scale * 4.0, 0.0);
+    gpu.capture(
+        &mut app,
+        [1100, 760],
+        1.0,
+        vec![
+            egui::Event::PointerMoved(origin),
+            egui::Event::PointerButton {
+                pos: origin,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        "selection-press",
+    );
+    gpu.capture(&mut app, [1100, 760], 1.0, vec![egui::Event::PointerMoved(end)], "selection-drag");
+    gpu.capture(
+        &mut app,
+        [1100, 760],
+        1.0,
+        vec![
+            egui::Event::PointerButton {
+                pos: end,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::Copy,
+        ],
+        "selection-copy",
+    );
+    assert_eq!(gpu.copied.last().map(String::as_str), Some("HELLO"));
+    gpu.capture(&mut app, [1100, 760], 1.0, vec![key(egui::Key::ArrowDown)], "workflow-next");
+    assert_eq!(app.browser.items[app.browser.selected.unwrap()].get_label(), "second.ans");
+    while app.browser.preview_loading || app.preview.loading {
+        gpu.capture(&mut app, [1100, 760], 1.0, vec![], "workflow-next-loading");
+        assert!(Instant::now() < deadline);
+    }
+    let image = image::RgbaImage::from_fn(64, 20000, |column, row| {
+        image::Rgba([if column < 32 { 250 } else { 20 }, (row % 256) as u8, 100, 255])
+    });
+    let mut data = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image).write_to(&mut data, image::ImageFormat::Png).unwrap();
+    app.preview.load("tall.png".into(), data.into_inner(), false, &gpu.context);
+    wait_preview(&mut app.preview, &gpu.context);
+    assert_eq!(app.preview.image_pixels.as_ref().unwrap().height(), 20000);
+    gpu.capture(&mut app, [1100, 760], 1.0, vec![], "tall-top");
+    for enabled in [true, false] {
+        gpu.click_at(&mut app, [1100, 760], 1.0, egui::pos2(323.0, 64.0));
+        assert_eq!(
+            app.options.auto_scroll_enabled, enabled,
+            "the top-bar auto-scroll icon must also work for images"
+        );
+    }
+    app.preview.screen.scroll_to = Some(egui::vec2(0.0, f32::MAX));
+    let pixels = gpu.capture(&mut app, [1100, 760], 1.0, vec![], "tall-bottom");
+    assert!(app.preview.screen.offset.y > 19000.0);
+    assert!(
+        pixels.chunks_exact(4).filter(|pixel| pixel[0] == 250 && pixel[2] == 100).count() > 10000,
+        "tall image lost its bottom tiles"
+    );
+    app.options.view_mode = icy_view::ViewMode::Tiles;
+    for _ in 0..6 {
+        gpu.capture(&mut app, [1100, 760], 1.0, vec![], "tiles");
+    }
+    assert!(gpu.labels.contains_key("first.ans") && gpu.labels.contains_key("second.ans"));
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_original_masonry_and_sauce_list_navigation() {
+    use icy_engine::{AttributedChar, FileFormat, SaveOptions, TextAttribute, TextBuffer};
+    config();
+    let fixture = Fixture::new();
+    for (name, columns, rows) in [("a-80.xb", 80, 80), ("b-160.xb", 160, 14), ("c-240.xb", 240, 18)] {
+        let mut buffer = TextBuffer::new((columns, rows));
+        for row in 0..rows {
+            for column in 0..columns {
+                buffer.layers[0].set_char(
+                    (column, row),
+                    AttributedChar::new('\u{00db}', TextAttribute::from_color(((column / 8 + row / 8) % 15 + 1) as u8, 0)),
+                );
+            }
+        }
+        let options = SaveOptions {
+            sauce: Some(icy_sauce::MetaData {
+                title: "COLOR STUDY".into(),
+                author: "Test Artist".into(),
+                group: "TEST GROUP".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        std::fs::write(fixture.0.join(name), FileFormat::XBin.to_bytes(&buffer, &options).unwrap()).unwrap();
+    }
+    image::RgbaImage::from_fn(320, 2600, |column, row| {
+        image::Rgba([if column < 160 { 250 } else { 20 }, (row % 256) as u8, 100, 255])
+    })
+    .save(fixture.0.join("d-tall.png"))
+    .unwrap();
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let mut app = app::Viewer::new(
+        fixture.0.clone(),
+        icy_view::Options {
+            view_mode: icy_view::ViewMode::Tiles,
+            auto_scroll_enabled: false,
+            ..Default::default()
+        },
+        &gpu.context,
+    )
+    .unwrap();
+    wait_browser(&mut app.browser, &gpu.context);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        gpu.capture(&mut app, [1400, 1000], 1.0, vec![], "masonry-loading");
+        let items = &app.tiles.layout.as_ref().unwrap().items;
+        if items[0].height > 600.0 && items[1].width == 680.0 && items[2].width == 1028.0 && items[3].height > 2500.0 {
+            break;
+        }
+        assert!(Instant::now() < deadline, "thumbnail dimensions not loaded: {items:?}");
+    }
+    let pixels = gpu.capture(&mut app, [1400, 1000], 1.0, vec![], "masonry-desktop");
+    assert!(
+        pixels
+            .chunks_exact(4)
+            .filter(|pixel| pixel[0].abs_diff(pixel[1]) > 60 || pixel[1].abs_diff(pixel[2]) > 60)
+            .count()
+            > 150000
+    );
+    let key = |key| egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    for (size, scale, name) in [([360, 640], 1.0, "masonry-narrow"), ([1600, 1200], 2.0, "masonry-hidpi")] {
+        for _ in 0..2 {
+            gpu.capture(&mut app, size, scale, vec![], name);
+        }
+        let items = &app.tiles.layout.as_ref().unwrap().items;
+        for (index, item) in items.iter().enumerate() {
+            let bounds = egui::Rect::from_min_size(egui::pos2(item.x, item.y), egui::vec2(item.width, item.height));
+            assert!(bounds.right() <= size[0] as f32 / scale);
+            for other in &items[index + 1..] {
+                assert!(!bounds.intersects(egui::Rect::from_min_size(egui::pos2(other.x, other.y), egui::vec2(other.width, other.height))));
+            }
+        }
+    }
+    gpu.capture(&mut app, [1400, 1000], 1.0, vec![key(egui::Key::End)], "masonry-end");
+    let last = app.browser.selected.unwrap();
+    assert_eq!(app.browser.items[last].get_label(), "d-tall.png");
+    for _ in 0..8 {
+        gpu.capture(&mut app, [1400, 1000], 1.0, vec![], "masonry-end");
+    }
+    let selected_tile = app.tiles.layout.as_ref().unwrap().items.iter().find(|tile| tile.index == last).unwrap();
+    assert!(app.tiles.offset > 0.0 && selected_tile.y >= app.tiles.offset - 1.0 && selected_tile.y < app.tiles.offset + app.tiles.viewport_height);
+    gpu.capture(
+        &mut app,
+        [1400, 1000],
+        1.0,
+        vec![
+            egui::Event::PointerMoved(egui::pos2(500.0, 500.0)),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -4000.0),
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        "masonry-scrolling",
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.tiles.offset + app.tiles.viewport_height < app.tiles.layout.as_ref().unwrap().content_height - 2.0 {
+        gpu.capture(&mut app, [1400, 1000], 1.0, vec![], "masonry-scrolling");
+        assert!(Instant::now() < deadline, "tile grid did not scroll to the image bottom");
+    }
+    let pixels = gpu.capture(&mut app, [1400, 1000], 1.0, vec![], "masonry-bottom");
+    assert!(pixels.chunks_exact(4).filter(|pixel| pixel[0] == 250 && pixel[2] == 100).count() > 10000);
+    app.options.view_mode = icy_view::ViewMode::List;
+    for _ in 0..2 {
+        gpu.capture(&mut app, [1400, 1000], 1.0, vec![], "list-compact");
+    }
+    gpu.click(&mut app, [1400, 1000], 1.0, "SAUCE");
+    assert!(app.options.sauce_mode);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !gpu.labels.contains_key("TEST GROUP") {
+        gpu.capture(&mut app, [1400, 1000], 1.0, vec![], "list-sauce");
+        assert!(Instant::now() < deadline, "missing SAUCE columns: {:?}", gpu.labels.keys());
+    }
+    assert!(gpu.labels["COLOR STUDY"].right() < gpu.labels["Test Artist"].left());
+    assert!(gpu.labels["Test Artist"].right() < gpu.labels["TEST GROUP"].left());
+    gpu.click(&mut app, [1400, 1000], 1.0, &text("header-name"));
+    assert_eq!(app.browser.sort, icy_view::sort_order::SortOrder::NameDesc);
+    assert_eq!(app.browser.items[app.browser.selected.unwrap()].get_label(), "d-tall.png");
+    for (keycode, expected) in [
+        (egui::Key::End, "a-80.xb"),
+        (egui::Key::Home, "d-tall.png"),
+        (egui::Key::PageDown, "a-80.xb"),
+        (egui::Key::PageUp, "d-tall.png"),
+    ] {
+        gpu.capture(&mut app, [1400, 1000], 1.0, vec![key(keycode)], "list-navigation");
+        assert_eq!(app.browser.items[app.browser.selected.unwrap()].get_label(), expected);
+    }
+    gpu.context.set_visuals(egui::Visuals::light());
+    for _ in 0..2 {
+        gpu.capture(&mut app, [360, 640], 1.0, vec![], "list-sauce-narrow");
+    }
+    assert!(gpu.labels.contains_key("SAUCE") && gpu.labels.contains_key("d-tall.png"));
+}
+
+#[test]
+fn tile_toolbar_overlays_the_grid_and_returns_through_the_hover_zone() {
+    let fixture = Fixture::new();
+    std::fs::create_dir(fixture.0.join("folder")).unwrap();
+    std::fs::write(fixture.0.join("folder/inner.ans"), b"INNER").unwrap();
+    let context = egui::Context::default();
+    icy_engine_gui::egui::appearance::apply(&context);
+    let options = icy_view::Options {
+        view_mode: icy_view::ViewMode::Tiles,
+        ..Default::default()
+    };
+    let mut viewer = app::Viewer::new(fixture.0.join("folder"), options, &context).unwrap();
+    wait_browser(&mut viewer.browser, &context);
+    let size = egui::vec2(1100.0, 760.0);
+    let mut time = 0.0;
+    let mut frame = |viewer: &mut app::Viewer, events| {
+        time += 0.05;
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                time: Some(time),
+                events,
+                ..Default::default()
+            },
+            |context| viewer.show(context),
+        );
+    };
+    for _ in 0..3 {
+        frame(&mut viewer, vec![]);
+    }
+    assert!(viewer.tile_toolbar.visible, "the toolbar starts visible");
+    let bar = viewer.tile_toolbar.rect;
+    assert!(bar.width() > 0.0 && bar.width() < size.x * 0.5, "the toolbar only covers a corner: {bar:?}");
+    assert!(bar.top() > 0.0 && bar.top() < size.y * 0.5, "the toolbar sits at the top of the tiles: {bar:?}");
+
+    let position = bar.min + egui::vec2(20.0, bar.height() / 2.0);
+    let original = viewer.browser.location.point.path.clone();
+    for pressed in [true, false] {
+        frame(
+            &mut viewer,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+    }
+    assert_ne!(viewer.browser.location.point.path, original, "the overlay up button must work");
+    wait_browser(&mut viewer.browser, &context);
+
+    viewer.tile_toolbar.visible = false;
+    frame(&mut viewer, vec![egui::Event::PointerMoved(bar.center() + egui::vec2(0.0, size.y * 0.5))]);
+    assert!(!viewer.tile_toolbar.visible, "pointing at the tiles keeps the toolbar hidden");
+    frame(&mut viewer, vec![egui::Event::PointerMoved(bar.min + egui::Vec2::splat(4.0))]);
+    assert!(viewer.tile_toolbar.visible, "the top left corner brings the toolbar back");
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_status_bar_sauce_info_and_shuffle_overlay() {
+    use icy_engine::{AttributedChar, FileFormat, SaveOptions, TextAttribute, TextBuffer};
+    config();
+    let fixture = Fixture::new();
+    for (name, title) in [("a.xb", "FIRST ART"), ("b.xb", "SECOND ART")] {
+        let mut buffer = TextBuffer::new((80, 25));
+        for row in 0..25 {
+            for column in 0..80 {
+                buffer.layers[0].set_char((column, row), AttributedChar::new('\u{00b1}', TextAttribute::from_color(7, 0)));
+            }
+        }
+        let options = SaveOptions {
+            sauce: Some(icy_sauce::MetaData {
+                title: title.into(),
+                author: "Test Artist".into(),
+                group: "TEST GROUP".into(),
+                comments: vec!["FIRST COMMENT LINE".into(), "SECOND COMMENT LINE".into()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        std::fs::write(fixture.0.join(name), FileFormat::XBin.to_bytes(&buffer, &options).unwrap()).unwrap();
+    }
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let options = icy_view::Options {
+        auto_scroll_enabled: false,
+        ..Default::default()
+    };
+    let mut app = app::Viewer::new(fixture.0.clone(), options, &gpu.context).unwrap();
+    wait_browser(&mut app.browser, &gpu.context);
+    let size = [1100, 760];
+    gpu.capture(&mut app, size, 1.0, vec![], "status-warmup");
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![egui::Event::Key {
+            key: egui::Key::ArrowDown,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        "status-selected",
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.browser.preview_loading || app.preview.loading {
+        gpu.capture(&mut app, size, 1.0, vec![], "status-loading");
+        assert!(Instant::now() < deadline, "preview timed out");
+    }
+    gpu.capture(&mut app, size, 1.0, vec![], "status-sauce");
+    let summary = gpu
+        .labels
+        .keys()
+        // The info panel shows the bare title too; the status bar joins it with the other fields.
+        .find(|label| label.starts_with("FIRST ART") && label.contains(" • "))
+        .cloned()
+        .unwrap_or_else(|| panic!("status bar misses the SAUCE summary: {:?}", gpu.labels.keys()));
+    for part in ["Test Artist", "TEST GROUP", "80\u{00d7}25"] {
+        assert!(summary.contains(part), "status bar misses {part}: {summary}");
+    }
+    assert!(!summary.contains("0000"), "an empty SAUCE date must stay hidden: {summary}");
+    gpu.click(&mut app, size, 1.0, &summary);
+    assert_eq!(app.dialogs.mode, Some(dialogs::Mode::Sauce), "clicking the SAUCE summary must open the dialog");
+    for _ in 0..2 {
+        gpu.capture(&mut app, size, 1.0, vec![], "sauce-dialog");
+    }
+    for label in ["FIRST ART", "Test Artist  •  TEST GROUP", "80 × 25"] {
+        assert!(gpu.labels.contains_key(label), "SAUCE dialog misses {label}: {:?}", gpu.labels.keys());
+    }
+    assert!(
+        gpu.labels
+            .keys()
+            .any(|label| label.contains("FIRST COMMENT LINE") && label.contains("SECOND COMMENT LINE")),
+        "SAUCE dialog misses the comments: {:?}",
+        gpu.labels.keys()
+    );
+    gpu.click(&mut app, size, 1.0, &text("sauce-btn-raw"));
+    for _ in 0..2 {
+        gpu.capture(&mut app, size, 1.0, vec![], "sauce-dialog-raw");
+    }
+    assert!(
+        gpu.labels.contains_key(&text("sauce-section-technical")) && gpu.labels.contains_key(&text("sauce-btn-formatted")),
+        "raw SAUCE view: {:?}",
+        gpu.labels.keys()
+    );
+    gpu.click(&mut app, size, 1.0, &text("sauce-btn-formatted"));
+    app.dialogs.mode = None;
+
+    app.shuffle_start(&gpu.context);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.browser.preview_loading || app.preview.loading {
+        gpu.capture(&mut app, size, 1.0, vec![], "shuffle-loading");
+        assert!(Instant::now() < deadline, "shuffle preview timed out");
+    }
+    let playing = app.browser.items[app.browser.selected.unwrap()].get_label();
+    gpu.capture(&mut app, size, 1.0, vec![], "shuffle-overlay");
+    let title = if playing == "a.xb" { "FIRST ART" } else { "SECOND ART" };
+    for label in [title, "by Test Artist", "TEST GROUP"] {
+        assert!(gpu.labels.contains_key(label), "shuffle overlay misses {label}: {:?}", gpu.labels.keys());
+    }
+    // The slideshow shows the artwork alone.
+    assert!(!gpu.labels.contains_key("a.xb") && !gpu.labels.contains_key("b.xb"));
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_viewer_and_dialogs_fit_desktop_narrow_short_and_hidpi() {
+    config();
+    let fixture = Fixture::new();
+    std::fs::write(fixture.0.join("welcome.xb"), include_bytes!("../../../data/welcome.xb")).unwrap();
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let mut app = app::Viewer::new(fixture.0.clone(), Default::default(), &gpu.context).unwrap();
+    wait_browser(&mut app.browser, &gpu.context);
+    gpu.capture(&mut app, [1100, 760], 1.0, vec![], "desktop-warmup");
+    let pixels = gpu.capture(&mut app, [1100, 760], 1.0, vec![], "desktop");
+    let info = app.preview.screen.terminal.render_info.read().clone();
+    let mut colors = std::collections::HashSet::new();
+    for row in info.bounds_y as usize..(info.bounds_y + info.bounds_height) as usize {
+        for column in info.bounds_x as usize..(info.bounds_x + info.bounds_width) as usize {
+            let offset = (row * 1100 + column) * 4;
+            colors.insert(&pixels[offset..offset + 3]);
+        }
+    }
+    assert!(colors.len() > 8, "blank terminal preview: {} colors", colors.len());
+    app.preview
+        .load("welcome.xb".into(), include_bytes!("../../../data/welcome.xb").to_vec(), false, &gpu.context);
+    wait_preview(&mut app.preview, &gpu.context);
+    for (size, scale, name) in [
+        ([1100, 760], 1.0, "desktop"),
+        ([360, 640], 1.0, "narrow"),
+        ([1600, 1200], 2.0, "hidpi"),
+        ([360, 240], 1.0, "short"),
+    ] {
+        for dark in [true, false] {
+            gpu.context.set_visuals(if dark { egui::Visuals::dark() } else { egui::Visuals::light() });
+            for mode in [
+                dialogs::Mode::Settings,
+                dialogs::Mode::About,
+                dialogs::Mode::Help,
+                dialogs::Mode::Sauce,
+                dialogs::Mode::Export,
+            ] {
+                app.dialogs.open(mode, &app.options, &app.preview);
+                gpu.capture(&mut app, size, scale, vec![], "warmup");
+                gpu.capture(&mut app, size, scale, vec![], &format!("{name}-{dark}-{}", mode as u8));
+                let action = text(match mode {
+                    dialogs::Mode::Settings => "dialog-ok-button",
+                    dialogs::Mode::Export => "egui-save",
+                    _ => "dialog-close-button",
+                });
+                assert!(gpu.labels.contains_key(&action), "{name}, mode {}: hidden {action}", mode as u8);
+                if mode == dialogs::Mode::Export {
+                    assert!(!gpu.labels.contains_key(&text("cmd-file-export-action")), "{name}: redundant export heading");
+                    assert!(!gpu.labels.contains_key("×"), "{name}: export dialog has a close glyph");
+                    if name == "narrow" {
+                        gpu.capture(
+                            &mut app,
+                            size,
+                            scale,
+                            vec![
+                                egui::Event::PointerMoved(egui::pos2(180.0, 300.0)),
+                                egui::Event::MouseWheel {
+                                    unit: egui::MouseWheelUnit::Point,
+                                    delta: egui::vec2(0.0, 4000.0),
+                                    modifiers: egui::Modifiers::NONE,
+                                },
+                            ],
+                            "export-scroll-top",
+                        );
+                        for _ in 0..5 {
+                            gpu.capture(&mut app, size, scale, vec![], "export-scroll-top-settle");
+                        }
+                        let path = *gpu
+                            .labels
+                            .get(&text("settings-paths-export-path"))
+                            .unwrap_or_else(|| panic!("missing export path {dark}: {:?}", gpu.labels.keys()));
+                        let filename = *gpu
+                            .labels
+                            .get(&text("header-name"))
+                            .unwrap_or_else(|| panic!("missing filename {dark}: {:?}", gpu.labels.keys()));
+                        let footer = gpu.labels[&action];
+                        assert!(filename.top() > path.top(), "{name}: filename must follow export path");
+                        assert!(
+                            filename.top() - path.bottom() < 100.0,
+                            "{name}: gap between path and filename: {path:?} -> {filename:?}"
+                        );
+                        assert!(
+                            filename.bottom() < footer.top(),
+                            "{name}: filename must be visible above footer: {filename:?} / {footer:?}"
+                        );
+                        gpu.capture(
+                            &mut app,
+                            size,
+                            scale,
+                            vec![
+                                egui::Event::PointerMoved(filename.center()),
+                                egui::Event::MouseWheel {
+                                    unit: egui::MouseWheelUnit::Point,
+                                    delta: egui::vec2(0.0, -400.0),
+                                    modifiers: egui::Modifiers::NONE,
+                                },
+                            ],
+                            "export-scroll",
+                        );
+                        for _ in 0..5 {
+                            gpu.capture(&mut app, size, scale, vec![], "export-scroll-settle");
+                        }
+                        assert!(
+                            gpu.labels.contains_key(&text("egui-normalize-spaces")),
+                            "{name}: export options must scroll into view"
+                        );
+                        assert_eq!(gpu.labels[&action], footer, "{name}: scrolling must not move the footer");
+                    }
+                }
+                if mode == dialogs::Mode::Settings {
+                    let before = gpu.labels[&action];
+                    for tab in ["settings-commands-category", "settings-paths-category", "settings-monitor-category"] {
+                        gpu.click(&mut app, size, scale, &text(tab));
+                        gpu.capture(&mut app, size, scale, vec![], &format!("{name}-{dark}-{tab}"));
+                        let after = gpu.labels[&action];
+                        assert!(
+                            (after.center() - before.center()).length() <= 1.5 && after.size() == before.size(),
+                            "dialog jumps between tabs: {name}: {before:?} -> {after:?}"
+                        );
+                    }
+                }
+                app.dialogs.mode = None;
+            }
+        }
+    }
+}
+
+fn press(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    }
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_info_panel_ratings_palette_minimap_and_font_preview() {
+    config();
+    let fixture = Fixture::new();
+    let mut tall = Vec::new();
+    for row in 0..200 {
+        tall.extend_from_slice(format!("\x1b[{}mROW {row:03} ", 31 + row % 7).as_bytes());
+        tall.extend(std::iter::repeat_n(b'\xdb', 60));
+        tall.extend_from_slice(b"\r\n");
+    }
+    std::fs::write(fixture.0.join("a-tall.ans"), &tall).unwrap();
+    std::fs::write(fixture.0.join("b-short.ans"), b"SHORT").unwrap();
+    std::fs::write(fixture.0.join("zetrax.tdf"), include_bytes!("../../items/sixteencolors/ZETRAX.TDF")).unwrap();
+    std::fs::create_dir(fixture.0.join("release")).unwrap();
+    std::fs::write(fixture.0.join("release").join("FILE_ID.DIZ"), b"RELEASE INFO\r\nDISK 1/1").unwrap();
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let options = icy_view::Options {
+        auto_scroll_enabled: false,
+        ..Default::default()
+    };
+    let mut app = app::Viewer::new(fixture.0.clone(), options, &gpu.context).unwrap();
+    wait_browser(&mut app.browser, &gpu.context);
+    let size = [1100, 760];
+    gpu.capture(&mut app, size, 1.0, vec![], "features-warmup");
+    let name = fixture.0.file_name().unwrap().to_string_lossy().to_string();
+    assert!(
+        gpu.labels.contains_key(&name),
+        "the address bar shows the folder as a crumb: {:?}",
+        gpu.labels.keys()
+    );
+
+    let tall_index = app.browser.items.iter().position(|item| item.get_label() == "a-tall.ans").unwrap();
+    app.browser.select(tall_index, &gpu.context);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.browser.preview_loading || app.preview.loading {
+        gpu.capture(&mut app, size, 1.0, vec![], "features-loading");
+        assert!(Instant::now() < deadline, "preview timed out");
+    }
+    for _ in 0..8 {
+        gpu.capture(&mut app, size, 1.0, vec![], "features-osd");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(app.osd.is_visible(), "opening a file shows the info panel");
+    assert!(gpu.labels.contains_key("a-tall.ans"), "info panel title: {:?}", gpu.labels.keys());
+    let key = library::key(&app.browser.location.point, &*app.browser.items[tall_index]);
+    assert!(app.library.viewed(&key).is_some(), "opened files are marked as viewed");
+
+    let (strip, button) = app.minimap.rects.expect("tall art shows the minimap");
+    let hover = egui::Event::PointerMoved(strip.center());
+    gpu.capture(&mut app, size, 1.0, vec![hover.clone()], "features-minimap-hover");
+    gpu.capture(&mut app, size, 1.0, vec![hover], "features-minimap-hover");
+    gpu.click_at(&mut app, size, 1.0, button.center());
+    assert!(!app.options.show_minimap, "the corner button hides the minimap");
+    gpu.capture(&mut app, size, 1.0, vec![], "features-minimap-hidden");
+    let (_, button) = app.minimap.rects.expect("a hidden minimap leaves its toggle");
+    assert!(button.width() < 30.0);
+    gpu.click_at(&mut app, size, 1.0, button.center());
+    assert!(app.options.show_minimap, "the toggle brings the minimap back");
+    gpu.capture(&mut app, size, 1.0, vec![egui::Event::PointerGone], "features-minimap-back");
+
+    gpu.capture(&mut app, size, 1.0, vec![press(egui::Key::Num4, egui::Modifiers::NONE)], "features-rated");
+    gpu.capture(&mut app, size, 1.0, vec![], "features-rated");
+    assert_eq!(app.library.rating(&key), 4, "digit keys rate the selected file");
+    assert!(
+        gpu.labels.keys().any(|label| label.contains("★★★★")),
+        "status bar shows the rating: {:?}",
+        gpu.labels.keys()
+    );
+
+    app.min_rating = 3;
+    app.update_rating_filter();
+    let visible: Vec<_> = app.browser.visible().into_iter().map(|index| app.browser.items[index].get_label()).collect();
+    assert_eq!(visible, ["release", "a-tall.ans"], "the rating filter keeps folders and rated files");
+    app.min_rating = 0;
+    app.update_rating_filter();
+    assert_eq!(app.browser.visible().len(), 4);
+
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![press(egui::Key::P, egui::Modifiers::CTRL | egui::Modifiers::COMMAND)],
+        "features-palette",
+    );
+    assert!(app.palette.is_some(), "Ctrl+P opens quick open");
+    gpu.capture(&mut app, size, 1.0, vec![], "features-palette");
+    gpu.capture(&mut app, size, 1.0, vec![egui::Event::Text("ztx".into())], "features-palette");
+    gpu.capture(&mut app, size, 1.0, vec![], "features-palette");
+    assert!(gpu.labels.contains_key("zetrax.tdf"), "quick open lists the match: {:?}", gpu.labels.keys());
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![press(egui::Key::Enter, egui::Modifiers::NONE)],
+        "features-palette-done",
+    );
+    assert!(app.palette.is_none());
+    assert_eq!(app.browser.items[app.browser.selected.unwrap()].get_label(), "zetrax.tdf");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.browser.preview_loading || app.preview.loading || app.preview.file.is_empty() {
+        gpu.capture(&mut app, size, 1.0, vec![], "features-loading");
+        assert!(Instant::now() < deadline, "font preview timed out");
+    }
+    for _ in 0..3 {
+        gpu.capture(&mut app, size, 1.0, vec![], "features-font");
+    }
+    assert!(app.dialogs.error.is_none(), "font preview failed: {:?}", app.dialogs.error);
+    let lines = app.preview.screen.terminal.screen.lock().height();
+    assert!(lines > 10, "fonts preview as a sample sheet, got {lines} lines");
+
+    let fonts = app.font_bar.fonts.clone();
+    assert!(!fonts.is_empty(), "the font bar lists the fonts of the bundle");
+    let all = format!("{} ({})", super::text("egui-font-all"), fonts.len());
+    assert!(gpu.labels.contains_key(&all), "font bar picker: {:?}", gpu.labels.keys());
+    let row = |app: &app::Viewer, y: i32| -> String {
+        let screen = app.preview.screen.terminal.screen.lock();
+        (0..screen.width()).map(|x| screen.char_at(icy_engine::Position::new(x, y)).ch).collect()
+    };
+    gpu.click(&mut app, size, 1.0, &super::text("egui-font-sample"));
+    gpu.capture(&mut app, size, 1.0, vec![egui::Event::Text("ICY".into())], "features-font-text");
+    gpu.capture(&mut app, size, 1.0, vec![], "features-font-text");
+    assert_eq!(app.font_bar.options.text, "ICY", "typing goes into the sample field");
+    assert_eq!(
+        app.browser.items[app.browser.selected.unwrap()].get_label(),
+        "zetrax.tdf",
+        "typing does not trigger shortcuts"
+    );
+    let expected = icy_view::format_preview::render_font_sample(include_bytes!("../../items/sixteencolors/ZETRAX.TDF"), None, &app.font_bar.options).unwrap();
+    assert_eq!(
+        app.preview.screen.terminal.screen.lock().height(),
+        icy_engine::TextPane::height(&expected),
+        "the overview shows the typed text"
+    );
+
+    gpu.click(&mut app, size, 1.0, &all);
+    gpu.capture(&mut app, size, 1.0, vec![], "features-font-picker");
+    let entry = format!("{}  ·  {}  ·  {}", fonts[0].name, fonts[0].kind, fonts[0].glyphs);
+    gpu.click(&mut app, size, 1.0, &entry);
+    gpu.capture(&mut app, size, 1.0, vec![], "features-font-single");
+    assert_eq!(app.font_bar.selected, Some(0), "picking a font shows it alone");
+    assert!(row(&app, 0).starts_with(&fonts[0].name));
+    let height = app.preview.screen.terminal.screen.lock().height();
+    assert!((0..height).any(|y| row(&app, y).contains("glyphs")), "single font view has a glyph table");
+
+    app.font_bar.options.ruler = 132;
+    app.font_bar.options.foreground = Some(14);
+    gpu.capture(&mut app, size, 1.0, vec![], "features-font-ruler");
+    gpu.capture(&mut app, size, 1.0, vec![], "features-font-ruler");
+    assert!(app.preview.screen.terminal.screen.lock().width() > 132, "the width guide widens the canvas");
+    gpu.click(&mut app, size, 1.0, &super::text("egui-font-reset"));
+    gpu.capture(&mut app, size, 1.0, vec![], "features-font-reset");
+    assert_eq!(app.font_bar.options, icy_view::format_preview::FontSampleOptions::default());
+
+    gpu.capture(&mut app, size, 1.0, vec![press(egui::Key::Escape, egui::Modifiers::NONE)], "features-font");
+    app.options.view_mode = icy_view::ViewMode::Tiles;
+    for _ in 0..120 {
+        gpu.capture(&mut app, size, 1.0, vec![], "features-tiles");
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_playback_bar_controls_streamed_files() {
+    config();
+    let fixture = Fixture::new();
+    let mut data = Vec::new();
+    for row in 0..60 {
+        data.extend_from_slice(format!("\x1b[1;3{}mPLAYBACK ROW {row:02}\r\n", row % 8).as_bytes());
+    }
+
+    std::fs::write(fixture.0.join("stream.ans"), &data).unwrap();
+    std::fs::write(fixture.0.join("stream2.ans"), b"SECOND FILE").unwrap();
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let options = icy_view::Options {
+        auto_scroll_enabled: false,
+        ..Default::default()
+    };
+    let mut app = app::Viewer::new(fixture.0.clone(), options, &gpu.context).unwrap();
+    app.preview.set_baud(2400);
+    wait_browser(&mut app.browser, &gpu.context);
+    let size = [1100, 760];
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-warmup");
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![egui::Event::Key {
+            key: egui::Key::ArrowDown,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        "playback-selected",
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.preview.playback.is_none_or(|playback| playback.position < 200) {
+        gpu.capture(&mut app, size, 1.0, vec![], "playback-loading");
+        assert!(Instant::now() < deadline, "playback did not start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-streaming");
+    for label in [
+        text("egui-playback-pause"),
+        text("egui-playback-replay"),
+        "2400 BPS".into(),
+        text("egui-playback-bytes"),
+    ] {
+        assert!(gpu.labels.contains_key(&label), "playback bar misses {label}: {:?}", gpu.labels.keys());
+    }
+    assert!(
+        gpu.labels.keys().any(|label| label.ends_with(&app::format_size(data.len() as u64))),
+        "playback bar misses the size: {:?}",
+        gpu.labels.keys()
+    );
+    gpu.click(&mut app, size, 1.0, &text("egui-playback-pause"));
+    assert!(app.preview.playback.unwrap().paused);
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-paused");
+    assert!(gpu.labels.contains_key(&text("egui-playback-play")), "{:?}", gpu.labels.keys());
+    let position = app.preview.playback.unwrap().position;
+    std::thread::sleep(Duration::from_millis(200));
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-paused");
+    assert_eq!(app.preview.playback.unwrap().position, position, "paused playback advanced");
+    app.preview.seek(data.len() * 3 / 4);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.preview.playback.is_none_or(|playback| playback.cursor_px < 25 * 16) {
+        gpu.capture(&mut app, size, 1.0, vec![], "playback-seeking");
+        assert!(Instant::now() < deadline, "seek did not update the cursor");
+    }
+    let pixels = gpu.capture(&mut app, size, 1.0, vec![], "playback-blank-canvas");
+    let sample = &pixels[((600 * size[0] + 700) * 4) as usize..][..3];
+    assert!(
+        sample.iter().all(|channel| *channel < 60),
+        "unrevealed playback canvas should be dark, not checkerboard: {sample:?}"
+    );
+    gpu.click(&mut app, size, 1.0, &text("egui-playback-play"));
+    assert!(app.preview.playback.unwrap().playing());
+    gpu.click_at(&mut app, size, 1.0, egui::pos2(323.0, 64.0));
+    assert!(app.options.auto_scroll_enabled && app.preview.follow_cursor);
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-following");
+    let before_wheel = app.preview.screen.offset.y;
+    assert!(before_wheel > 0.0, "playback must follow the cursor before manual input");
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![
+            egui::Event::PointerMoved(egui::pos2(600.0, 300.0)),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 250.0),
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        "playback-manual-wheel",
+    );
+    assert!(!app.options.auto_scroll_enabled && !app.preview.follow_cursor);
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-manual-wheel-settle");
+    assert!(
+        app.preview.screen.offset.y < before_wheel,
+        "wheel scroll must take priority over cursor following"
+    );
+    let manual_offset = app.preview.screen.offset.y;
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-manual-stays");
+    assert!(
+        (app.preview.screen.offset.y - manual_offset).abs() < 1.0,
+        "playback snapped back after manual scroll"
+    );
+    app.action("playback.toggle_scroll", &gpu.context);
+    assert!(app.options.auto_scroll_enabled && app.preview.follow_cursor);
+    let pan_start = egui::pos2(600.0, 400.0);
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![
+            egui::Event::PointerMoved(pan_start),
+            egui::Event::PointerButton {
+                pos: pan_start,
+                button: egui::PointerButton::Middle,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        "playback-pan-start",
+    );
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![egui::Event::PointerMoved(pan_start - egui::vec2(0.0, 80.0))],
+        "playback-pan-drag",
+    );
+    assert!(
+        !app.options.auto_scroll_enabled && !app.preview.follow_cursor,
+        "manual panning must stop auto-scroll"
+    );
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![egui::Event::PointerButton {
+            pos: pan_start - egui::vec2(0.0, 80.0),
+            button: egui::PointerButton::Middle,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        "playback-pan-release",
+    );
+    app.action("playback.toggle_scroll", &gpu.context);
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![press(egui::Key::PageUp, egui::Modifiers::NONE)],
+        "playback-manual-page",
+    );
+    assert!(
+        !app.options.auto_scroll_enabled && !app.preview.follow_cursor,
+        "page scrolling must stop auto-scroll"
+    );
+    app.preview.seek(data.len());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.preview.loading {
+        gpu.capture(&mut app, size, 1.0, vec![], "playback-finish-for-scrollbar");
+        assert!(Instant::now() < deadline);
+    }
+    gpu.capture(&mut app, size, 1.0, vec![], "playback-finished-for-scrollbar");
+    app.action("playback.toggle_scroll", &gpu.context);
+    let bar_top = egui::pos2(1096.0, 260.0);
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![
+            egui::Event::PointerMoved(bar_top),
+            egui::Event::PointerButton {
+                pos: bar_top,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        "playback-manual-scrollbar",
+    );
+    assert!(
+        !app.options.auto_scroll_enabled && !app.preview.follow_cursor,
+        "dragging the scrollbar must stop auto-scroll"
+    );
+    let before_drag = app.preview.screen.offset.y;
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![egui::Event::PointerMoved(egui::pos2(bar_top.x, 520.0))],
+        "playback-scrollbar-drag",
+    );
+    gpu.capture(
+        &mut app,
+        size,
+        1.0,
+        vec![
+            egui::Event::PointerMoved(egui::pos2(bar_top.x, 520.0)),
+            egui::Event::PointerButton {
+                pos: egui::pos2(bar_top.x, 520.0),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        "playback-scrollbar-release",
+    );
+    let pixels = gpu.capture(&mut app, size, 1.0, vec![], "playback-scrollbar-settle");
+    assert!(app.preview.screen.offset.y > before_drag, "the scrollbar drag must move the preview");
+    assert!(preview_bright_pixels(&pixels, size) > 100, "manual scrolling must keep the art visible");
+    app.browser.select(1, &gpu.context);
+    app.preview.stop();
+    assert!(app.preview.file.is_empty());
+    assert_ne!(app.preview.screen.terminal.screen.lock().char_at((0, 0).into()).ch, 'P');
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !app.preview.file.ends_with("stream2.ans") || app.preview.loading {
+        gpu.capture(&mut app, size, 1.0, vec![], "playback-next-file");
+        assert!(
+            Instant::now() < deadline,
+            "selecting the next file did not replace the preview: {:?}, selected {:?}",
+            app.preview.file,
+            app.browser.selected
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(app.preview.screen.terminal.screen.lock().char_at((0, 0).into()).ch, 'S');
+    let pixels = gpu.capture(&mut app, size, 1.0, vec![], "playback-next-file-visible");
+    assert!(
+        preview_bright_pixels(&pixels, size) > 20,
+        "the next file is present in the screen buffer but missing from the rendered preview"
+    );
+}
+
+fn preview_bright_pixels(pixels: &[u8], size: [u32; 2]) -> usize {
+    (100..350)
+        .flat_map(|y| (300..750).map(move |x| ((y * size[0] + x) * 4) as usize))
+        .filter(|&index| pixels[index..index + 3].iter().any(|&c| c > 130))
+        .count()
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_completed_text_playback_is_visible() {
+    config();
+    let fixture = Fixture::new();
+    let data = b"VISIBLE POSTER\r\n".repeat(8);
+    std::fs::write(fixture.0.join("poster.txt"), &data).unwrap();
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let options = icy_view::Options {
+        auto_scroll_enabled: false,
+        ..Default::default()
+    };
+    let mut app = app::Viewer::new(fixture.0.clone(), options, &gpu.context).unwrap();
+    wait_browser(&mut app.browser, &gpu.context);
+    let size = [860, 700];
+    gpu.capture(&mut app, size, 1.0, vec![], "poster-warmup");
+    app.preview.set_baud(2400);
+    app.preview.load("poster.Txt".into(), data, false, &gpu.context);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut visible_during_playback = false;
+    while app.preview.loading {
+        let pixels = gpu.capture(&mut app, size, 1.0, vec![], "poster-playing");
+        if app.preview.playback.is_some_and(|playback| playback.position > 16) {
+            visible_during_playback |= preview_bright_pixels(&pixels, size) > 100;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(visible_during_playback, "text was not rendered while playing");
+    let pixels = gpu.capture(&mut app, size, 1.0, vec![], "poster-completed");
+    assert_eq!(app.preview.screen.terminal.screen.lock().char_at((0, 0).into()).ch, 'V');
+    assert_eq!(app.preview.playback.unwrap().position, app.preview.playback.unwrap().length);
+    let visible_pixels = preview_bright_pixels(&pixels, size);
+    assert!(visible_pixels > 100, "loaded text is blank in GPU preview: {visible_pixels} visible pixels");
+
+    app.preview.set_baud(0);
+    app.preview.replay();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.preview.loading {
+        gpu.capture(&mut app, size, 1.0, vec![], "poster-off-loading");
+        assert!(Instant::now() < deadline, "baud-off replay timed out");
+    }
+    let pixels = gpu.capture(&mut app, size, 1.0, vec![], "poster-off-completed");
+    assert_eq!(app.preview.playback.unwrap().position, app.preview.playback.unwrap().length);
+    assert!(
+        preview_bright_pixels(&pixels, size) > 100,
+        "completed baud-off replay is missing from the rendered preview"
+    );
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_music_bar_controls_tracker_modules() {
+    config();
+    let fixture = Fixture::new();
+    std::fs::write(fixture.0.join("song.mod"), icy_view::tracker::test_module()).unwrap();
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let options = icy_view::Options {
+        auto_scroll_enabled: false,
+        ..Default::default()
+    };
+    let mut app = app::Viewer::new(fixture.0.clone(), options, &gpu.context).unwrap();
+    app.preview.audio = false;
+    wait_browser(&mut app.browser, &gpu.context);
+    let size = [1100, 760];
+    gpu.capture(&mut app, size, 1.0, vec![], "music-warmup");
+    gpu.capture(&mut app, size, 1.0, vec![press(egui::Key::ArrowDown, egui::Modifiers::NONE)], "music-selected");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.browser.preview_loading || app.preview.loading || app.preview.music.is_none() {
+        gpu.capture(&mut app, size, 1.0, vec![], "music-loading");
+        assert!(Instant::now() < deadline, "module did not load");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    gpu.capture(&mut app, size, 1.0, vec![], "music-playing");
+    for label in [text("egui-playback-pause"), text("egui-playback-replay"), "0:00 / 0:15".into()] {
+        assert!(gpu.labels.contains_key(&label), "music bar misses {label}: {:?}", gpu.labels.keys());
+    }
+    assert!(!gpu.labels.contains_key(&text("egui-playback-bytes")), "no byte slider for modules");
+    gpu.click(&mut app, size, 1.0, &text("egui-playback-pause"));
+    assert!(app.preview.music.as_ref().unwrap().paused());
+    gpu.capture(&mut app, size, 1.0, vec![], "music-paused");
+    assert!(gpu.labels.contains_key(&text("egui-playback-play")), "{:?}", gpu.labels.keys());
+    gpu.click(&mut app, size, 1.0, &text("egui-playback-replay"));
+    assert!(app.preview.music.as_ref().unwrap().playing());
+}

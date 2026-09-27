@@ -2,15 +2,19 @@ use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU32, AtomicU64};
 use std::sync::Arc;
 
-use super::{CRTShaderProgram, TextureSliceData};
-use crate::{Blink, MonitorSettings, Terminal, TerminalMessage, UnicodeGlyphCache};
+#[cfg(feature = "legacy-ui")]
+use super::CRTShaderProgram;
+use super::TextureSliceData;
+use crate::{Blink, UnicodeGlyphCache};
+#[cfg(feature = "legacy-ui")]
+use crate::{MonitorSettings, Terminal, TerminalMessage};
 use icy_engine::GraphicsType;
 use icy_engine::MouseState;
 use icy_engine::Position;
 use icy_engine::Screen;
 use icy_engine::Size;
-use icy_ui::widget::shader;
-use icy_ui::Element;
+#[cfg(feature = "legacy-ui")]
+use icy_ui::{widget::shader, Element};
 
 pub static TERMINAL_SHADER_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 pub static PENDING_INSTANCE_REMOVALS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
@@ -236,7 +240,7 @@ impl CRTShaderState {
     /// Map mouse coordinates to cell position without bounds checking.
     /// Used during drag operations where mouse can leave the viewport.
     /// Returns absolute document coordinates (with scroll offset applied).
-    pub(crate) fn map_mouse_to_cell_unclamped(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, scroll_x: f32, scroll_y: f32) -> Position {
+    pub fn map_mouse_to_cell_unclamped(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, scroll_x: f32, scroll_y: f32) -> Position {
         // RenderInfo is now in logical coordinates, matching mouse coordinates
         // No need to scale - both are in logical coords
 
@@ -304,6 +308,7 @@ impl Default for CRTShaderState {
 }
 
 // Helper function to create shader with terminal and monitor settings
+#[cfg(feature = "legacy-ui")]
 pub fn create_crt_shader<'a>(
     term: &'a Terminal,
     monitor_settings: Arc<MonitorSettings>,

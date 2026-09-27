@@ -17,6 +17,7 @@ log = { workspace = true }
 rfind_url = "0.4.4"
 chrono = { workspace = true }
 png = "0.18.1"
+flate2 = "1"
 regex = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

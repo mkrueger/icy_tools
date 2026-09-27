@@ -7,8 +7,8 @@
 //! The clipboard operations return Tasks that need to be executed
 //! by the iced runtime.
 
-use icy_ui::clipboard::STANDARD;
-use icy_ui::Task;
+#[cfg(feature = "legacy-ui")]
+use icy_ui::{clipboard::STANDARD, Task};
 
 /// Custom clipboard type identifier for BitFont pixel data
 pub const BITFONT_CLIPBOARD_TYPE: &str = "application/x-icy-bitfont";
@@ -145,6 +145,7 @@ impl BitFontClipboardData {
 }
 
 /// Copy pixel data to clipboard (returns a Task to be executed by iced runtime)
+#[cfg(feature = "legacy-ui")]
 pub fn copy_to_clipboard<Message: Send + 'static>(
     data: &BitFontClipboardData,
     on_complete: impl Fn(Result<(), BitFontClipboardError>) -> Message + Send + 'static,
@@ -154,6 +155,7 @@ pub fn copy_to_clipboard<Message: Send + 'static>(
 }
 
 /// Get pixel data from clipboard (returns a Task to be executed by iced runtime)
+#[cfg(feature = "legacy-ui")]
 pub fn get_from_clipboard<Message: Send + 'static>(
     on_complete: impl Fn(Result<BitFontClipboardData, BitFontClipboardError>) -> Message + Send + 'static,
 ) -> Task<Message> {
@@ -167,6 +169,7 @@ pub fn get_from_clipboard<Message: Send + 'static>(
 }
 
 /// Check if clipboard has BitFont data (returns a Task to be executed by iced runtime)
+#[cfg(feature = "legacy-ui")]
 pub fn has_bitfont_data<Message: Send + 'static>(on_result: impl Fn(bool) -> Message + Send + 'static) -> Task<Message> {
     STANDARD.has_format(vec![BITFONT_CLIPBOARD_TYPE.to_string()]).map(on_result)
 }

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use icy_engine::formats::FileFormat;
-use icy_engine_gui::ui::FileIcon;
+use icy_engine_gui::file_icons::FileIcon;
 use tokio_util::sync::CancellationToken;
 
 use crate::items::{load_image_to_rgba, sort_folder, ArchiveContainer, Item, ItemError};

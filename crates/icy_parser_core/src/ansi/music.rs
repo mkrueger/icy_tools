@@ -296,6 +296,7 @@ impl AnsiParser {
             b'P' => {
                 self.music_state = MusicState::Pause(0);
             }
+            b' ' => {}
             _ => {
                 // Unknown music command - reset state and return to ground
                 self.music_state = MusicState::Default;

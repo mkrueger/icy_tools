@@ -38,11 +38,54 @@ pub enum ImageFormat {
     Bmp,
     /// Sixel graphics format (.six, .sixel)
     Sixel,
+    /// Truevision TGA (recognition and decoding only)
+    Tga,
+    /// TIFF (recognition and decoding only)
+    Tiff,
+    /// WebP (recognition and decoding only)
+    WebP,
+    /// Quite OK Image format (recognition and decoding only)
+    Qoi,
+    /// Windows icon (recognition and decoding only)
+    Ico,
+    /// `ZSoft` PC Paintbrush (decoding only)
+    Pcx,
+    /// Amiga IFF ILBM / Deluxe Paint PBM (decoding only)
+    Ilbm,
+    /// BASIC BSAVE screen dump: CGA or VGA mode 13h (decoding only)
+    Bsave,
+    /// Windows raster font (.fon/.fnt), shown as a specimen sheet
+    WindowsFont,
+    /// Amiga disk font, including `ColorFonts`, shown as a specimen sheet
+    AmigaFont,
+    /// Borland BGI stroke font (.chr), shown as a specimen sheet
+    BgiFont,
 }
 
 impl ImageFormat {
     /// All available image formats
-    pub const ALL: &'static [ImageFormat] = &[ImageFormat::Png, ImageFormat::Gif, ImageFormat::Jpeg, ImageFormat::Bmp, ImageFormat::Sixel];
+    pub const ALL: &'static [ImageFormat] = &[
+        ImageFormat::Png,
+        ImageFormat::Gif,
+        ImageFormat::Jpeg,
+        ImageFormat::Bmp,
+        ImageFormat::Sixel,
+        ImageFormat::Tga,
+        ImageFormat::Tiff,
+        ImageFormat::WebP,
+        ImageFormat::Qoi,
+        ImageFormat::Ico,
+        ImageFormat::Pcx,
+        ImageFormat::Ilbm,
+        ImageFormat::Bsave,
+        ImageFormat::WindowsFont,
+        ImageFormat::AmigaFont,
+        ImageFormat::BgiFont,
+    ];
+
+    /// Extensions of Amiga font files: the `.font` contents file and `ColorFont` size files
+    /// (`<height>.<colors>c`); plain size files have no extension, see [`ImageFormat::sniff`].
+    pub const AMIGA_FONT_EXTENSIONS: &'static [&'static str] = &["font", "2c", "4c", "8c", "16c", "32c", "64c", "128c", "256c"];
 
     /// Get the file extension for this image format.
     pub fn extension(&self) -> &'static str {
@@ -52,6 +95,17 @@ impl ImageFormat {
             ImageFormat::Jpeg => "jpg",
             ImageFormat::Bmp => "bmp",
             ImageFormat::Sixel => "six",
+            ImageFormat::Tga => "tga",
+            ImageFormat::Tiff => "tif",
+            ImageFormat::WebP => "webp",
+            ImageFormat::Qoi => "qoi",
+            ImageFormat::Ico => "ico",
+            ImageFormat::Pcx => "pcx",
+            ImageFormat::Ilbm => "iff",
+            ImageFormat::Bsave => "bsv",
+            ImageFormat::WindowsFont => "fon",
+            ImageFormat::AmigaFont => "font",
+            ImageFormat::BgiFont => "chr",
         }
     }
 
@@ -63,6 +117,17 @@ impl ImageFormat {
             ImageFormat::Jpeg => "JPEG Image",
             ImageFormat::Bmp => "BMP Image",
             ImageFormat::Sixel => "Sixel Graphics",
+            ImageFormat::Tga => "TGA Image",
+            ImageFormat::Tiff => "TIFF Image",
+            ImageFormat::WebP => "WebP Image",
+            ImageFormat::Qoi => "QOI Image",
+            ImageFormat::Ico => "Windows Icon",
+            ImageFormat::Pcx => "PCX Image",
+            ImageFormat::Ilbm => "IFF ILBM Image",
+            ImageFormat::Bsave => "BSAVE Image",
+            ImageFormat::WindowsFont => "Windows Font",
+            ImageFormat::AmigaFont => "Amiga Font",
+            ImageFormat::BgiFont => "BGI Stroke Font",
         }
     }
 
@@ -74,6 +139,17 @@ impl ImageFormat {
             ImageFormat::Jpeg => "JPEG image (recognition only)",
             ImageFormat::Bmp => "BMP image (recognition only)",
             ImageFormat::Sixel => "Sixel terminal graphics",
+            ImageFormat::Tga => "Truevision TGA image (recognition only)",
+            ImageFormat::Tiff => "TIFF image (recognition only)",
+            ImageFormat::WebP => "WebP image (recognition only)",
+            ImageFormat::Qoi => "QOI image (recognition only)",
+            ImageFormat::Ico => "Windows icon (recognition only)",
+            ImageFormat::Pcx => "ZSoft PC Paintbrush image (recognition only)",
+            ImageFormat::Ilbm => "Amiga IFF ILBM/PBM image (recognition only)",
+            ImageFormat::Bsave => "BASIC BSAVE CGA/VGA screen dump (recognition only)",
+            ImageFormat::WindowsFont => "Windows raster font, rendered as specimen",
+            ImageFormat::AmigaFont => "Amiga bitmap/color font, rendered as specimen",
+            ImageFormat::BgiFont => "Borland BGI stroke font, rendered as specimen",
         }
     }
 
@@ -95,13 +171,87 @@ impl ImageFormat {
             "jpg" | "jpeg" => Some(ImageFormat::Jpeg),
             "bmp" => Some(ImageFormat::Bmp),
             "six" | "sixel" => Some(ImageFormat::Sixel),
+            "tga" => Some(ImageFormat::Tga),
+            "tif" | "tiff" => Some(ImageFormat::Tiff),
+            "webp" => Some(ImageFormat::WebP),
+            "qoi" => Some(ImageFormat::Qoi),
+            "ico" => Some(ImageFormat::Ico),
+            "pcx" => Some(ImageFormat::Pcx),
+            "iff" | "ilbm" | "lbm" => Some(ImageFormat::Ilbm),
+            "bsv" | "bsave" => Some(ImageFormat::Bsave),
+            "fon" | "fnt" => Some(ImageFormat::WindowsFont),
+            "chr" => Some(ImageFormat::BgiFont),
+            ext if Self::AMIGA_FONT_EXTENSIONS.contains(&ext) => Some(ImageFormat::AmigaFont),
             _ => None,
         }
+    }
+
+    /// Detects formats that are commonly stored without a usable extension from their content.
+    ///
+    /// Currently this recognizes Amiga font size files (named after their height, e.g. `topaz/8`).
+    pub fn sniff(data: &[u8]) -> Option<ImageFormat> {
+        super::font_specimen::amiga::is_size_file(data).then_some(ImageFormat::AmigaFont)
     }
 
     /// Detect image format from file path.
     pub fn from_path(path: &Path) -> Option<ImageFormat> {
         path.extension().and_then(|ext| ext.to_str()).and_then(ImageFormat::from_extension)
+    }
+
+    fn image_crate_format(&self) -> Option<image::ImageFormat> {
+        match self {
+            ImageFormat::Png => Some(image::ImageFormat::Png),
+            ImageFormat::Gif => Some(image::ImageFormat::Gif),
+            ImageFormat::Jpeg => Some(image::ImageFormat::Jpeg),
+            ImageFormat::Bmp => Some(image::ImageFormat::Bmp),
+            ImageFormat::Tga => Some(image::ImageFormat::Tga),
+            ImageFormat::Tiff => Some(image::ImageFormat::Tiff),
+            ImageFormat::WebP => Some(image::ImageFormat::WebP),
+            ImageFormat::Qoi => Some(image::ImageFormat::Qoi),
+            ImageFormat::Ico => Some(image::ImageFormat::Ico),
+            ImageFormat::Sixel
+            | ImageFormat::Pcx
+            | ImageFormat::Ilbm
+            | ImageFormat::Bsave
+            | ImageFormat::WindowsFont
+            | ImageFormat::AmigaFont
+            | ImageFormat::BgiFont => None,
+        }
+    }
+
+    /// Decodes an image file of this format into RGBA pixels.
+    ///
+    /// The extension picks the decoder (TGA has no signature); files whose content does not
+    /// match fall back to detection from the data.
+    /// Fonts are rendered as a specimen sheet.
+    pub fn decode_rgba(&self, data: &[u8]) -> std::result::Result<image::RgbaImage, String> {
+        let Some(format) = self.image_crate_format() else {
+            return match self {
+                ImageFormat::Pcx => super::legacy_images::pcx::decode(data),
+                ImageFormat::Ilbm => super::legacy_images::ilbm::decode(data),
+                ImageFormat::Bsave => super::legacy_images::bsave::decode(data),
+                ImageFormat::WindowsFont => super::font_specimen::windows::decode(data),
+                ImageFormat::AmigaFont => super::font_specimen::amiga::decode(data),
+                ImageFormat::BgiFont => super::font_specimen::bgi::decode(data),
+                _ => {
+                    let image = icy_sixel::SixelImage::decode(data).map_err(|error| error.to_string())?;
+                    image::RgbaImage::from_raw(image.width as u32, image.height as u32, image.pixels).ok_or_else(|| "Invalid Sixel dimensions".to_string())
+                }
+            };
+        };
+        image::load_from_memory_with_format(data, format)
+            .or_else(|error| image::load_from_memory(data).map_err(|_| error))
+            .map(|image| image.into_rgba8())
+            .map_err(|error| error.to_string())
+    }
+
+    /// Like [`ImageFormat::decode_rgba`], but for files that reference siblings on disk: an Amiga
+    /// `.font` contents file is rendered from the size files in its directory.
+    pub fn decode_rgba_at(&self, data: &[u8], path: &Path) -> std::result::Result<image::RgbaImage, String> {
+        match self {
+            ImageFormat::AmigaFont => super::font_specimen::amiga::decode_path(data, path),
+            _ => self.decode_rgba(data),
+        }
     }
 
     /// Save a Screen to an image file.
@@ -122,7 +272,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_screen_png(screen, path, rect),
             ImageFormat::Gif => self.save_screen_gif(screen, path, rect),
-            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => Err(crate::EngineError::FormatNotSupported {
+            _ => Err(crate::EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "saving".to_string(),
             }),
@@ -134,7 +284,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_screen_png(screen, path, region),
             ImageFormat::Gif => self.save_screen_gif(screen, path, region),
-            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => Err(crate::EngineError::FormatNotSupported {
+            _ => Err(crate::EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "saving".to_string(),
             }),
@@ -207,7 +357,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_png(buffer, path, rect),
             ImageFormat::Gif => self.save_gif(buffer, path, rect),
-            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => Err(crate::EngineError::FormatNotSupported {
+            _ => Err(crate::EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "saving".to_string(),
             }),
@@ -224,7 +374,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => self.save_png(buffer, path, region),
             ImageFormat::Gif => self.save_gif(buffer, path, region),
-            ImageFormat::Jpeg | ImageFormat::Bmp | ImageFormat::Sixel => Err(crate::EngineError::FormatNotSupported {
+            _ => Err(crate::EngineError::FormatNotSupported {
                 name: self.name().to_string(),
                 operation: "saving".to_string(),
             }),

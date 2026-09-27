@@ -27,6 +27,18 @@ fn auto_compute_zoom_integer_scaling_never_below_one() {
 }
 
 #[test]
+fn fit_width_scales_by_width_so_tall_content_stays_scrollable() {
+    // Content 640x4000 in a 1280x800 viewport: width-based zoom, height overflows and scrolls.
+    let z = ScalingMode::FitWidth.compute_zoom(640.0, 4000.0, 1280.0, 800.0, false);
+    assert_approx(z, 2.0, 1e-6);
+    assert!(4000.0 * z > 800.0, "tall content must exceed the viewport height");
+
+    // A requested minimum visible height still clamps the zoom.
+    let clamped = ScalingMode::FitWidth.compute_zoom_with_min_rows(640.0, 4000.0, 1280.0, 800.0, false, Some(800.0));
+    assert_approx(clamped, 1.0, 1e-6);
+}
+
+#[test]
 fn manual_compute_zoom_respects_integer_rounding() {
     let z = ScalingMode::Manual(1.6).compute_zoom(100.0, 100.0, 200.0, 200.0, true);
     assert_approx(z, 2.0, 1e-6);

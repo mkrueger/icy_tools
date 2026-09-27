@@ -6,6 +6,30 @@ const ICYD_CHUNK_TYPE: [u8; 4] = *b"icYD";
 const ICYD_RECORD_VERSION: u8 = 1;
 const ZSTD_FRAME_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
+#[test]
+fn icy_preview_and_sauce_preserve_display_geometry() {
+    use icy_engine::formats::SauceBuilder;
+    for (spacing, aspect) in [(false, false), (true, false), (true, true)] {
+        let mut buffer = TextBuffer::new((40, 12));
+        buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::default()));
+        buffer.set_use_letter_spacing(spacing);
+        buffer.set_use_aspect_ratio(aspect);
+        let metadata = icy_engine::formats::SauceMetaData::default();
+        let mut options = SaveOptions::icy_draw();
+        options.sauce = Some(metadata.clone());
+        let bytes = FileFormat::IcyDraw.to_bytes(&buffer, &options).unwrap();
+        let preview = image::load_from_memory(&bytes).unwrap();
+        let (size, _) = buffer.render_to_rgba(&icy_engine::Rectangle::from(0, 0, 40, 12).into(), false);
+        assert_eq!((preview.width(), preview.height()), (size.width as u32, size.height as u32));
+        let loaded = FileFormat::IcyDraw.from_bytes(&bytes, None).unwrap().screen.buffer;
+        assert_eq!((loaded.use_letter_spacing(), loaded.use_aspect_ratio()), (spacing, aspect));
+        let sauce = buffer.build_character_sauce(&metadata, icy_sauce::CharacterFormat::Ansi);
+        let mut loaded = TextBuffer::new((1, 1));
+        icy_engine::formats::apply_sauce_to_buffer(&mut loaded, &sauce);
+        assert_eq!((loaded.use_letter_spacing(), loaded.use_aspect_ratio()), (spacing, aspect));
+    }
+}
+
 fn extract_png_chunks_by_type(png: &[u8], wanted: [u8; 4]) -> Vec<Vec<u8>> {
     assert!(png.len() >= PNG_SIGNATURE.len());
     assert_eq!(&png[..PNG_SIGNATURE.len()], &PNG_SIGNATURE);

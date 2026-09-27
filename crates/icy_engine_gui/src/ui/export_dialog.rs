@@ -13,7 +13,6 @@ use icy_ui::{
     Alignment, Element, Length,
 };
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -90,60 +89,7 @@ enum FormatCategory {
     Other,
 }
 
-/// Persisted export dialog settings.
-///
-/// This struct captures the format-specific options from the export dialog
-/// so they can be saved to disk and restored on the next export.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExportSettings {
-    /// Last used export format extension (e.g. "ans", "pcb", "icy")
-    #[serde(default)]
-    pub export_format_ext: Option<String>,
-
-    #[serde(default)]
-    pub ansi_level: AnsiCompatibilityLevel,
-
-    #[serde(default)]
-    pub ansi_rgb_output: bool,
-
-    #[serde(default)]
-    pub screen_prep: ScreenPreperation,
-
-    #[serde(default)]
-    pub max_line_length_enabled: bool,
-
-    #[serde(default = "default_max_line_length")]
-    pub max_line_length: u16,
-
-    #[serde(default)]
-    pub utf8_output: bool,
-
-    #[serde(default)]
-    pub compress: bool,
-
-    #[serde(default)]
-    pub sixel_settings: SixelSettings,
-}
-
-fn default_max_line_length() -> u16 {
-    80
-}
-
-impl Default for ExportSettings {
-    fn default() -> Self {
-        Self {
-            export_format_ext: None,
-            ansi_level: AnsiCompatibilityLevel::default(),
-            ansi_rgb_output: false,
-            screen_prep: ScreenPreperation::None,
-            max_line_length_enabled: false,
-            max_line_length: 80,
-            utf8_output: false,
-            compress: false,
-            sixel_settings: SixelSettings::default(),
-        }
-    }
-}
+pub use crate::ExportSettings;
 
 /// State for the export dialog
 #[dialog_wrapper(result_type = (PathBuf, ExportSettings))]

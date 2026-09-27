@@ -445,6 +445,9 @@ impl EditableScreen for TextScreen {
     fn set_char(&mut self, pos: Position, ch: AttributedChar) {
         self.finish_grapheme();
         self.buffer.layers[self.current_layer].set_char(pos, ch);
+        if pos.x >= 0 && pos.x < self.width() && pos.y >= 0 && pos.y < self.height() {
+            self.buffer.mark_line_dirty(pos.y);
+        }
     }
 
     fn end_grapheme(&mut self) {
@@ -490,8 +493,8 @@ impl EditableScreen for TextScreen {
         // Add top line to scrollback before scrolling (while data is still there)
         if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state().is_terminal_buffer {
             let font_height = self.font_dimensions().height;
-            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, font_height);
-            self.scrollback_buffer.add_chunk(rgba_data, size);
+            let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, font_height);
+            self.scrollback_buffer.push_chunk(chunk);
         }
 
         let font_dims = self.font_dimensions();
@@ -866,8 +869,8 @@ impl EditableScreen for TextScreen {
     fn clear_screen(&mut self) {
         // Add entire screen to scrollback
         if self.terminal_state().is_terminal_buffer {
-            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, self.resolution().height);
-            self.scrollback_buffer.add_chunk(rgba_data, size);
+            let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, self.resolution().height);
+            self.scrollback_buffer.push_chunk(chunk);
         }
 
         self.set_caret_position(Position::default());
@@ -949,5 +952,24 @@ impl EditableScreen for TextScreen {
 
     fn set_letter_spacing(&mut self, enabled: bool) {
         self.buffer.use_letter_spacing = enabled;
+    }
+}
+
+#[cfg(test)]
+mod dirty_line_tests {
+    use super::*;
+
+    #[test]
+    fn writing_text_invalidates_its_rendered_line() {
+        let mut screen = TextScreen::new(Size::new(80, 25));
+        let ch = AttributedChar::new('X', Default::default());
+        screen.set_char(Position::new(1, 2), ch);
+        assert_eq!(screen.get_dirty_lines(), Some((2, 3)));
+        screen.clear_dirty_lines();
+
+        screen.set_unicode_width(true);
+        screen.caret.set_position(Position::new(1, 4));
+        screen.print_char(ch);
+        assert_eq!(screen.get_dirty_lines(), Some((4, 5)));
     }
 }

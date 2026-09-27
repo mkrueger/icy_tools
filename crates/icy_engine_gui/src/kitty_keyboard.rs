@@ -9,41 +9,10 @@
 
 use icy_ui::keyboard::{self, key::Code, key::Named, Location};
 
-pub const DISAMBIGUATE: u8 = 0b1;
-pub const REPORT_EVENT_TYPES: u8 = 0b10;
-pub const REPORT_ALTERNATE_KEYS: u8 = 0b100;
-pub const REPORT_ALL_KEYS: u8 = 0b1000;
-pub const REPORT_ASSOCIATED_TEXT: u8 = 0b1_0000;
-
-/// Flags this terminal implements. Alternate-key reporting is not supported.
-pub const SUPPORTED_FLAGS: u8 = DISAMBIGUATE | REPORT_EVENT_TYPES | REPORT_ALL_KEYS | REPORT_ASSOCIATED_TEXT;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum KeyId {
-    /// `CSI <number> u`
-    Unicode(u32),
-    /// `CSI <number> ~`
-    Tilde(u32),
-    /// `CSI 1 ; <mods> <final>`
-    Final(u8),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KeyEventKind {
-    Press,
-    Repeat,
-    Release,
-}
-
-impl KeyEventKind {
-    fn code(self) -> u8 {
-        match self {
-            KeyEventKind::Press => 1,
-            KeyEventKind::Repeat => 2,
-            KeyEventKind::Release => 3,
-        }
-    }
-}
+use crate::kitty_protocol::KeyId;
+pub use crate::kitty_protocol::{
+    KeyEventKind, DISAMBIGUATE, REPORT_ALL_KEYS, REPORT_ALTERNATE_KEYS, REPORT_ASSOCIATED_TEXT, REPORT_EVENT_TYPES, SUPPORTED_FLAGS,
+};
 
 fn modifier_bits(modifiers: keyboard::Modifiers) -> u8 {
     let mut bits = 0;
@@ -201,66 +170,17 @@ pub fn encode_key_event(
     text: Option<&str>,
     kind: KeyEventKind,
 ) -> Option<Vec<u8>> {
-    if flags == 0 {
-        return None;
-    }
-    let report_events = flags & REPORT_EVENT_TYPES != 0;
-    if kind != KeyEventKind::Press && !report_events {
-        return None;
-    }
-
-    let all_keys = flags & REPORT_ALL_KEYS != 0;
-    if let keyboard::Key::Named(named) = key {
-        // Modifier keys only report themselves when all keys are requested.
-        if is_modifier_key(*named) && !all_keys {
-            return None;
-        }
-    }
-
     let id = key_id(key, physical, location)?;
     let bits = modifier_bits(modifiers);
-
-    // Without `report all keys`, plain text still travels as text.
-    if !all_keys && matches!(id, KeyId::Unicode(_)) && matches!(key, keyboard::Key::Character(_)) && bits & 0b1110 == 0 {
-        return None;
-    }
-
-    let mut sequence = String::from("\x1b[");
-    let number = match id {
-        KeyId::Unicode(number) => number,
-        KeyId::Tilde(number) => number,
-        KeyId::Final(_) => 1,
-    };
-
-    let event = kind.code();
-    let associated = if flags & REPORT_ASSOCIATED_TEXT != 0 && kind != KeyEventKind::Release {
-        text.filter(|text| !text.is_empty() && !text.chars().any(|c| c.is_control()))
-    } else {
-        None
-    };
-    let needs_modifiers = bits != 0 || (report_events && event != 1) || associated.is_some();
-
-    sequence.push_str(&number.to_string());
-    if needs_modifiers {
-        sequence.push(';');
-        sequence.push_str(&(bits + 1).to_string());
-        if report_events && event != 1 {
-            sequence.push(':');
-            sequence.push_str(&event.to_string());
-        }
-        if let Some(associated) = associated {
-            sequence.push(';');
-            let codepoints: Vec<String> = associated.chars().map(|c| (c as u32).to_string()).collect();
-            sequence.push_str(&codepoints.join(":"));
-        }
-    }
-
-    match id {
-        KeyId::Unicode(_) => sequence.push('u'),
-        KeyId::Tilde(_) => sequence.push('~'),
-        KeyId::Final(final_byte) => sequence.push(final_byte as char),
-    }
-    Some(sequence.into_bytes())
+    crate::kitty_protocol::encode(
+        flags,
+        id,
+        bits,
+        text,
+        kind,
+        matches!(key, keyboard::Key::Character(_)),
+        matches!(key, keyboard::Key::Named(named) if is_modifier_key(*named)),
+    )
 }
 
 #[cfg(test)]

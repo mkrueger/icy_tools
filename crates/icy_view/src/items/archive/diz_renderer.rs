@@ -15,7 +15,7 @@ pub fn render_diz_to_thumbnail(data: &[u8]) -> Option<RgbaData> {
     let (mut screen, mut parser) = mode.create_screen(emulation, None);
 
     // Prepare data
-    let (file_data, is_unicode) = crate::ui::preview::prepare_parser_data(stripped_data, "diz");
+    let (file_data, is_unicode) = crate::view_thread::prepare_parser_data(stripped_data, "diz");
 
     if is_unicode {
         if let Some(editable) = screen.as_editable() {

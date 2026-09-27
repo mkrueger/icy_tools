@@ -42,19 +42,23 @@
 pub mod macros;
 
 mod command_def;
+#[cfg(feature = "legacy-ui")]
 mod command_handler;
 pub mod command_ref;
 mod command_set;
 mod defaults;
 mod hotkey;
+#[cfg(feature = "legacy-ui")]
 mod iced_adapter;
 mod toml_loader;
 
 pub use command_def::CommandDef;
+#[cfg(feature = "legacy-ui")]
 pub use command_handler::CommandHandler;
 pub use command_set::{format_command_set_debug, CategoryMeta, CommandSet, HelpCommandInfo};
 pub use defaults::{cmd, create_common_commands};
 pub use hotkey::{Hotkey, KeyCode, Modifiers, MouseBinding, MouseButton};
+#[cfg(feature = "legacy-ui")]
 pub use iced_adapter::{from_iced_key, from_iced_modifiers, from_iced_mouse_button, hotkey_from_iced, mouse_binding_from_iced, IntoHotkey};
 pub use toml_loader::{load_commands_from_file, load_commands_from_str, CommandLoadError, CommandToml};
 

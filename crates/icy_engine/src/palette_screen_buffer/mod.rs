@@ -7,12 +7,12 @@ pub mod igs;
 pub use igs::{TerminalResolution, TerminalResolutionExt};
 
 use crate::{
-    AttributedChar, BitFont, BufferType, Caret, DOS_DEFAULT_PALETTE, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette, Position, Rectangle,
-    RenderOptions, Result, SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalState, TextPane,
     amiga_screen_buffer::skypix_impl::SKYPIX_SCREEN_SIZE,
-    bgi::{Bgi, DEFAULT_BITFONT, MouseField},
+    bgi::{Bgi, MouseField, DEFAULT_BITFONT},
     limits,
     palette_screen_buffer::rip_impl::RIP_SCREEN_SIZE,
+    AttributedChar, BitFont, BufferType, Caret, EditableScreen, GraphicsType, HyperLink, IceMode, Line, Palette, Position, Rectangle, RenderOptions, Result,
+    SaveOptions, SavedCaretState, Screen, ScrollbackBuffer, Selection, SelectionMask, Size, TerminalState, TextPane, DOS_DEFAULT_PALETTE,
 };
 use parking_lot::Mutex;
 use std::path::PathBuf;
@@ -343,7 +343,11 @@ impl Screen for PaletteScreenBuffer {
     }
 
     fn font_dimensions(&self) -> Size {
-        if let Some(font) = self.font(0) { font.size() } else { Size::new(8, 16) }
+        if let Some(font) = self.font(0) {
+            font.size()
+        } else {
+            Size::new(8, 16)
+        }
     }
     fn set_font_dimensions(&mut self, _size: Size) {
         // nothing
@@ -646,8 +650,8 @@ impl EditableScreen for PaletteScreenBuffer {
 
         // Add top line to scrollback before scrolling (while data is still there)
         if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state.is_terminal_buffer {
-            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, line_height as i32);
-            self.scrollback_buffer.add_chunk(rgba_data, size);
+            let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, line_height as i32);
+            self.scrollback_buffer.push_chunk(chunk);
         }
 
         let row_len = screen_width; // bytes per pixel row (1 byte per pixel)
@@ -729,8 +733,8 @@ impl EditableScreen for PaletteScreenBuffer {
     fn clear_screen(&mut self) {
         // Add entire screen to scrollback
         if self.terminal_state.is_terminal_buffer {
-            let (size, rgba_data) = crate::scrollback_buffer::render_scrollback_region(self, self.pixel_size.height);
-            self.scrollback_buffer.add_chunk(rgba_data, size);
+            let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, self.pixel_size.height);
+            self.scrollback_buffer.push_chunk(chunk);
         }
 
         self.set_caret_position(Position::default());

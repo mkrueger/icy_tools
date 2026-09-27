@@ -164,25 +164,7 @@ pub struct SelectedTagInfo {
     pub replacement: String,
 }
 
-/// Primary brush mode (exclusive).
-///
-/// Note: only `colorize_fg`/`colorize_bg` are additive flags.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum BrushPrimaryMode {
-    /// Paint with a chosen character
-    #[default]
-    Char,
-    /// Half-block drawing mode
-    HalfBlock,
-    /// Shade up/down drawing mode
-    Shading,
-    /// Replace-color mode
-    Replace,
-    /// Blink attribute mode
-    Blink,
-    /// Colorize mode (only affects attributes)
-    Colorize,
-}
+pub use crate::brush::BrushPrimaryMode;
 
 /// Brush mode options
 ///

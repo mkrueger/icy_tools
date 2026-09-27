@@ -28,43 +28,62 @@
 // Self-reference for proc macros to work within this crate
 extern crate self as icy_engine_gui;
 
+#[cfg(feature = "legacy-ui")]
 pub mod double_click;
+#[cfg(feature = "legacy-ui")]
 pub use double_click::*;
 
+#[cfg(feature = "legacy-ui")]
 pub mod focus;
+#[cfg(feature = "legacy-ui")]
 pub use focus::{
     default_style, focus, list_focus_style, no_border_style, Catalog as FocusCatalog, Focus, OnEvent, Style as FocusStyle, StyleFn as FocusStyleFn,
 };
 
+#[cfg(feature = "egui")]
+pub mod egui;
 pub mod terminal;
 use icy_engine::Color;
 pub use terminal::*;
 
 pub mod commands;
+mod export_settings;
 pub use commands::{
     cmd, create_common_commands, load_commands_from_file, load_commands_from_str, CommandDef, CommandLoadError, CommandSet, Hotkey, KeyCode, Modifiers,
 };
+pub use export_settings::ExportSettings;
 
 // Re-export proc macros
 pub use icy_engine_gui_macros::dialog_wrapper;
 
+#[cfg(feature = "legacy-ui")]
 pub mod clipboard;
+#[cfg(feature = "legacy-ui")]
 pub use clipboard::*;
 
+#[cfg(feature = "legacy-ui")]
 pub mod scroll_viewport;
+#[cfg(feature = "legacy-ui")]
 pub use scroll_viewport::ScrollViewport;
 
 // Re-export mouse event types from icy_engine
 pub use icy_engine::{KeyModifiers, MouseButton, MouseEvent, MouseEventType};
 
+#[cfg(feature = "legacy-ui")]
 pub mod key_map;
+#[cfg(feature = "legacy-ui")]
 pub mod kitty_keyboard;
+pub mod kitty_protocol;
+#[cfg(feature = "legacy-ui")]
 pub mod settings;
+pub mod terminal_keys;
 
 pub mod blink;
 pub use blink::*;
 
+#[cfg(feature = "legacy-ui")]
 pub mod theme;
+#[cfg(feature = "legacy-ui")]
 pub use theme::*;
 
 pub mod render_unicode;
@@ -76,7 +95,9 @@ pub use unicode_glyph_cache::*;
 pub mod calculations;
 pub use calculations::*;
 
+#[cfg(feature = "legacy-ui")]
 pub mod ui;
+#[cfg(feature = "legacy-ui")]
 pub use ui::*;
 
 pub mod util;
@@ -84,6 +105,12 @@ pub mod util;
 pub mod music;
 
 pub mod release_check;
+
+#[path = "ui/icons.rs"]
+pub mod file_icons;
+
+#[path = "ui/version_helper.rs"]
+pub mod version_helper;
 
 //pub mod terminal_shader_widget;
 
@@ -102,6 +129,23 @@ pub enum MonitorType {
 }
 
 impl MonitorType {
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            0 => MonitorType::Color,
+            1 => MonitorType::Grayscale,
+            2 => MonitorType::Amber,
+            3 => MonitorType::Green,
+            4 => MonitorType::Apple2,
+            5 => MonitorType::Futuristic,
+            6 => MonitorType::CustomMonochrome,
+            _ => MonitorType::Color,
+        }
+    }
+
+    pub fn to_index(&self) -> usize {
+        *self as usize
+    }
+
     pub fn color(&self) -> Color {
         match self {
             MonitorType::Color => Color::new(0, 0, 0),
@@ -239,17 +283,13 @@ impl ScalingMode {
                 // Scale based on width to fill horizontal space
                 let scale_x = viewport_width / content_width.max(1.0);
 
-                // But clamp so that min_visible_height rows are always visible
-                // (prevents cutting off content vertically)
-                let max_scale_for_min_rows = if let Some(min_h) = min_visible_height {
-                    viewport_height / min_h.max(1.0)
-                } else {
-                    // If no min specified, use content_height (show all)
-                    viewport_height / content_height.max(1.0)
-                };
-
-                // Use the smaller of width-based scale and max allowed scale
-                let fit_scale = scale_x.min(max_scale_for_min_rows).max(0.1);
+                // Taller content scrolls vertically instead of being squeezed, so only an
+                // explicitly requested minimum visible height clamps the width-based scale.
+                let fit_scale = match min_visible_height {
+                    Some(min_h) => scale_x.min(viewport_height / min_h.max(1.0)),
+                    None => scale_x,
+                }
+                .max(0.1);
 
                 if use_integer_scaling {
                     fit_scale.floor().max(1.0)
@@ -301,6 +341,7 @@ impl ScalingMode {
 
     /// Apply a zoom message and return the new scaling mode
     /// This is the central zoom handling logic for all applications
+    #[cfg(feature = "legacy-ui")]
     pub fn apply_zoom(&self, msg: ZoomMessage, current_zoom: f32, use_integer_scaling: bool) -> ScalingMode {
         match msg {
             ZoomMessage::In => {
@@ -358,6 +399,7 @@ impl ScalingMode {
 /// Unified zoom message for all icy_tools applications
 /// Used by ScalingMode::apply_zoom() for consistent zoom handling
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg(feature = "legacy-ui")]
 pub enum ZoomMessage {
     /// Zoom in by one step (respects integer scaling if enabled)
     In,
@@ -826,6 +868,7 @@ impl MonitorSettings {
         }
     }
 
+    #[cfg(feature = "legacy-ui")]
     pub fn get_theme(&self) -> icy_ui::Theme {
         // New Theme API: Theme is now a struct, use name to find matching theme
         // or default to light/dark based on stored name
@@ -837,6 +880,7 @@ impl MonitorSettings {
         }
     }
 
+    #[cfg(feature = "legacy-ui")]
     pub fn set_theme(&mut self, theme: icy_ui::Theme) {
         // New Theme API: Theme is now a struct with a name field
         self.theme = theme.name.clone();

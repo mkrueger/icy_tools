@@ -78,7 +78,7 @@ fn control_dat() -> Vec<u8> {
 fn write_packet(dir: &std::path::Path) -> std::path::PathBuf {
     let mut messages = vec![b' '; 128]; // packet header block
 
-    message(&mut messages, 10, "01-02-2010:00", "alice", "Coffee machine", 0, 1, 3);
+    message(&mut messages, 10, "01/02/2010:00", "alice", "Coffee machine", 0, 1, 3);
     message(&mut messages, 11, "01-02-2011:00", "bob", "Re: Coffee machine", 10, 1, 1);
     message(&mut messages, 12, "01-03-2009:00", "carol", "Amiga demos", 0, 2, 5);
     message(&mut messages, 13, "01-04-2009:00", "dave", "Re: Amiga demos", 0, 2, 2);
@@ -109,7 +109,8 @@ pub fn load() -> (TempDir, QwkPackage) {
 pub struct TempDir(std::path::PathBuf);
 
 impl TempDir {
-    fn new() -> Self {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
         static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!("icy_mail_qwk_{}_{id}", std::process::id()));
@@ -117,7 +118,7 @@ impl TempDir {
         Self(path)
     }
 
-    fn path(&self) -> &std::path::Path {
+    pub fn path(&self) -> &std::path::Path {
         &self.0
     }
 }
@@ -177,8 +178,29 @@ fn threading_groups_replies_under_their_root() {
     let retro: Vec<&crate::qwk::MessageInfo> = package.infos.iter().filter(|info| info.conference == 2).collect();
 
     // #13 has no ref number, so it must attach via the normalized subject.
-    let rows = crate::ui::threading::build_threads(&retro);
+    let rows = crate::threading::build_threads(&retro);
     assert_eq!(rows.iter().map(|r| r.depth).collect::<Vec<_>>(), vec![0, 1]);
     assert_eq!(package.infos[rows[0].index].number, 12);
     assert_eq!(package.infos[rows[1].index].number, 13);
+}
+
+#[test]
+fn packets_open_from_other_archive_formats() {
+    for name in ["TEST_ARJ.QWK", "TEST_7Z.QWK"] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/qwk/test_data").join(name);
+        let package = QwkPackage::load_from_file(&path).unwrap_or_else(|error| panic!("{name}: {error}"));
+        let (_dir, zip) = load();
+        assert_eq!(package.infos.len(), 4, "{name}");
+        assert_eq!(package.bbs_name, zip.bbs_name, "{name}");
+        assert_eq!(package.infos[0].from, "alice", "{name}");
+        assert_eq!(package.conferences(), zip.conferences(), "{name}");
+    }
+}
+
+#[test]
+fn unknown_archives_are_rejected() {
+    let dir = TempDir::new();
+    let path = dir.path().join("BROKEN.QWK");
+    std::fs::write(&path, b"this is not an archive").unwrap();
+    assert!(QwkPackage::load_from_file(&path).is_err());
 }

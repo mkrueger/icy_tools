@@ -14,6 +14,95 @@ fn char_at(state: &EditState, x: i32, y: i32) -> char {
     state.get_buffer().layers[0].char_at(Position::new(x, y)).ch
 }
 
+#[test]
+fn selection_mask_covers_exactly_the_selected_cells() {
+    let mut state = create_test_state(20, 10);
+    let selection = icy_engine::Selection::from(icy_engine::Rectangle::from(2, 3, 4, 2));
+    state.set_selection(selection).unwrap();
+    state.add_selection_to_mask().unwrap();
+    state.deselect().unwrap();
+    for (x, y) in [(2, 3), (5, 3), (2, 4), (5, 4)] {
+        assert!(state.get_is_mask_selected(Position::new(x, y)), "({x}, {y}) belongs to the selection");
+    }
+    for (x, y) in [(1, 3), (6, 3), (2, 2), (2, 5)] {
+        assert!(!state.get_is_mask_selected(Position::new(x, y)), "({x}, {y}) is outside the selection");
+    }
+    let bounds = state.selected_rectangle();
+    assert_eq!((bounds.start, bounds.size()), (Position::new(2, 3), icy_engine::Size::new(4, 2)));
+}
+
+#[test]
+fn selection_deselect_and_subtract_roundtrip() {
+    let mut state = create_test_state(20, 10);
+    let mut selection = icy_engine::Selection::from(icy_engine::Rectangle::from(2, 2, 6, 3));
+    state.set_selection(selection).unwrap();
+    state.deselect().unwrap();
+    assert!(state.selection().is_none());
+    state.undo().unwrap();
+    assert_eq!(state.selection(), Some(selection));
+    state.redo().unwrap();
+    assert!(state.selection().is_none());
+    state.set_selection(selection).unwrap();
+    state.add_selection_to_mask().unwrap();
+    state.deselect().unwrap();
+    selection = icy_engine::Selection::from(icy_engine::Rectangle::from(3, 2, 2, 2));
+    selection.add_type = icy_engine::AddType::Subtract;
+    state.set_selection(selection).unwrap();
+    {
+        let _undo = state.begin_atomic_undo("Subtract mask");
+        state.add_selection_to_mask().unwrap();
+        state.deselect().unwrap();
+    }
+    assert!(state.is_selected(Position::new(2, 2)));
+    assert!(!state.is_selected(Position::new(3, 2)));
+    state.undo().unwrap();
+    assert_eq!(state.selection(), Some(selection));
+    state.redo().unwrap();
+    assert!(state.selection().is_none());
+    assert!(!state.is_selected(Position::new(3, 2)));
+    assert!(state.is_selected(Position::new(2, 2)));
+}
+
+#[test]
+fn tag_properties_and_position_roundtrip() {
+    let mut state = create_test_state(20, 10);
+    let tag = icy_engine::Tag {
+        is_enabled: true,
+        preview: "TAG".into(),
+        replacement_value: String::new(),
+        position: Position::new(2, 3),
+        length: 3,
+        alignment: std::fmt::Alignment::Left,
+        tag_placement: icy_engine::TagPlacement::InText,
+        tag_role: icy_engine::TagRole::Displaycode,
+        attribute: TextAttribute::default(),
+    };
+    state.add_new_tag(tag.clone()).unwrap();
+    state.clone_tag(0).unwrap();
+    assert_eq!(state.get_buffer().tags.len(), 2);
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().tags, vec![tag.clone()]);
+    state.redo().unwrap();
+    assert_eq!(state.get_buffer().tags.len(), 2);
+    state.undo().unwrap();
+    let mut edited = tag.clone();
+    edited.preview = "EDITED".into();
+    state.update_tag(edited.clone(), 0).unwrap();
+    for _ in 0..2 {
+        state.undo().unwrap();
+        assert_eq!(state.get_buffer().tags[0], tag);
+        state.redo().unwrap();
+        assert_eq!(state.get_buffer().tags[0], edited);
+    }
+    state.move_tag(0, Position::new(5, 6)).unwrap();
+    for _ in 0..2 {
+        state.undo().unwrap();
+        assert_eq!(state.get_buffer().tags[0].position, tag.position);
+        state.redo().unwrap();
+        assert_eq!(state.get_buffer().tags[0].position, Position::new(5, 6));
+    }
+}
+
 // ============================================================================
 // Set Char Tests
 // ============================================================================

@@ -20,7 +20,8 @@ tiny-skia = "0.12"
 parking_lot = { workspace = true}
 bitflags = { workspace = true}
 
-icy_ui = { workspace = true, features = [ "tokio", "svg", "image", "advanced", "debug", "canvas", "lazy", "wgpu"  ]  }
+icy_ui = { workspace = true, optional = true, features = [ "tokio", "svg", "image", "advanced", "debug", "canvas", "lazy", "wgpu"  ]  }
+wgpu = { version = "27.0.1", default-features = false, features = ["std", "wgsl"] }
 
 lazy_static = { workspace = true }
  
@@ -40,6 +41,9 @@ regex = { workspace = true }
 
 bytemuck = { workspace = true, features = ["derive"] }
 
+egui = { version = "0.33.3", optional = true, default-features = false }
+egui-wgpu = { version = "0.33.3", optional = true, default-features = false }
+
 # Sound/Music dependencies
 anyhow = { workspace = true }
 fastrand = { workspace = true }
@@ -51,14 +55,16 @@ semver = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 
 # File dialog
-rfd = { workspace = true }
+rfd = { workspace = true, optional = true }
 
 # for Atari ST GIST sounds (IGS)
 ym2149-gist-replayer = { workspace = true }
 cpal = { workspace = true }
 
 [features]
-default = ["opus-audio"]
+default = ["legacy-ui", "opus-audio"]
+legacy-ui = ["dep:icy_ui", "dep:rfd"]
+egui = ["dep:egui", "dep:egui-wgpu", "wgpu/default"]
 # Ogg-Opus playback for the SyncTERM audio APC music tier. Links libopus,
 # so disabling it drops the C dependency; the capability reply follows suit.
 opus-audio = ["dep:opus", "dep:symphonia"]

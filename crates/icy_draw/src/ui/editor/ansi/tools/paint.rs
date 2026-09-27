@@ -7,7 +7,7 @@ use icy_engine_edit::brushes::{BrushMode as EngineBrushMode, ColorMode as Engine
 use icy_engine_edit::{AtomicUndoGuard, AttributedChar, EditState};
 use parking_lot::RwLock;
 
-use crate::ui::editor::ansi::widget::toolbar::top::BrushPrimaryMode;
+use crate::brush::BrushPrimaryMode;
 
 /// Default FG color index when filter is disabled (light gray)
 pub const DEFAULT_FG: u32 = 7;

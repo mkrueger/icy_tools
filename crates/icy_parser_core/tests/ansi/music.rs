@@ -8,6 +8,7 @@ use icy_parser_core::{AnsiMusic, AnsiParser, CommandParser, CommandSink, MusicAc
 struct TestSink {
     commands: Vec<TerminalCommand>,
     music: Option<AnsiMusic>,
+    printed: Vec<u8>,
 }
 
 impl TestSink {
@@ -15,6 +16,7 @@ impl TestSink {
         Self {
             commands: Vec::new(),
             music: None,
+            printed: Vec::new(),
         }
     }
 
@@ -24,7 +26,9 @@ impl TestSink {
 }
 
 impl CommandSink for TestSink {
-    fn print(&mut self, _text: &[u8]) {}
+    fn print(&mut self, text: &[u8]) {
+        self.printed.extend_from_slice(text);
+    }
     fn emit(&mut self, cmd: TerminalCommand) {
         self.commands.push(cmd);
     }
@@ -145,6 +149,19 @@ fn test_music_option_both_with_csi_n() {
 
     let music = sink.get_music().expect("Should have music with Both + N");
     assert_eq!(1, music.music_actions.len());
+}
+
+#[test]
+fn test_music_allows_spaces_between_phrases() {
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Both);
+    let mut sink = TestSink::new();
+
+    parser.parse(b"\x1B[MMBO2G8BBA8G8F8E8D8C2 A16G16E16G8D2 A8O3C8O2G8E8C8\x0E", &mut sink);
+
+    let music = sink.get_music().expect("spaced ANSI music should produce music");
+    assert!(!music.music_actions.is_empty());
+    assert!(sink.printed.is_empty(), "music text leaked into terminal output: {:?}", sink.printed);
 }
 
 #[test]

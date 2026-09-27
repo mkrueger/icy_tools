@@ -14,16 +14,16 @@ impl OverlayMask {
     }
 
     pub fn add_rectangle(&mut self, rect: Rectangle) {
-        for y in rect.y_range_inclusive() {
-            for x in rect.x_range_inclusive() {
+        for y in rect.y_range() {
+            for x in rect.x_range() {
                 self.set_is_selected((x, y), true);
             }
         }
     }
 
     pub fn remove_rectangle(&mut self, rect: Rectangle) {
-        for y in rect.y_range_inclusive() {
-            for x in rect.x_range_inclusive() {
+        for y in rect.y_range() {
+            for x in rect.x_range() {
                 self.set_is_selected((x, y), false);
             }
         }

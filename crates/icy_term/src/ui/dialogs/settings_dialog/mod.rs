@@ -721,12 +721,6 @@ impl std::fmt::Display for FlowControlOption {
 #[derive(Debug, Clone, PartialEq)]
 struct ThemeOption(icy_ui::Theme);
 
-impl ThemeOption {
-    fn all() -> Vec<ThemeOption> {
-        icy_ui::Theme::all().into_iter().map(ThemeOption).collect()
-    }
-}
-
 impl From<icy_ui::Theme> for ThemeOption {
     fn from(value: icy_ui::Theme) -> Self {
         ThemeOption(value)
