@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icy Tools · ANSI Block · Vorschlag 03</title>
+  <style>
+    :root { font-family: "Segoe UI", Arial, sans-serif; color: #e6e6e6; background: #000; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    a { color: #55ffff; text-underline-offset: 4px; }
+    a:focus-visible { outline: 2px solid #ffff55; outline-offset: 4px; }
+    img.px { image-rendering: pixelated; }
+    main { max-width: 1440px; margin: auto; padding: 32px 56px 48px; }
+    .mono { font: 12px ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", monospace; letter-spacing: 1px; text-transform: uppercase; }
+    nav { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-bottom: 20px; border-bottom: 2px solid #0000aa; }
+    .wordmark { font-size: 21px; font-weight: 800; letter-spacing: -1px; }
+    .wordmark span { font-weight: 400; color: #aaaaaa; }
+    nav .links { display: flex; gap: 18px; flex-wrap: wrap; }
+    .intro { display: grid; grid-template-columns: 1.2fr .8fr; gap: 50px; align-items: end; padding: 52px 0 44px; }
+    .kicker { color: #ffff55; margin: 0 0 16px; }
+    h1 { font: 700 clamp(46px, 6vw, 86px)/1 ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", monospace; letter-spacing: -3px; margin: 0; }
+    h1 .shade { color: #55ffff; letter-spacing: 0; }
+    .intro p:last-child { color: #aaaaaa; max-width: 400px; line-height: 1.65; margin: 0 0 6px; font-size: 15px; }
+    .stage { border: 2px solid #0000aa; padding: 24px 28px 34px; background: #0000aa22; }
+    .stage-head { display: flex; justify-content: space-between; gap: 16px; color: #aaaaaa; }
+    .set { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; }
+    .hero-set { margin-top: 24px; }
+    figure { margin: 0; min-width: 0; text-align: center; }
+    .hero-set img { width: 100%; max-width: 192px; height: auto; }
+    figcaption { font-weight: 700; font-size: 17px; margin: 10px 0 4px; }
+    .sub { color: #aaaaaa; font-size: 11px; margin: 0; }
+    h2 { font-size: 22px; letter-spacing: -.5px; margin: 0 0 20px; }
+    .section { margin-top: 44px; }
+    .five { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+    .card { border-top: 4px solid var(--tone); padding: 16px 0 0; min-width: 0; }
+    .card strong { font-size: 13px; }
+    .card p { min-height: 55px; color: #aaaaaa; font-size: 12px; line-height: 1.6; }
+    .card a { font: 11px ui-monospace, monospace; }
+    .rules { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .rule { border: 1px solid #333; padding: 16px; min-width: 0; }
+    .rule b { display: block; font-size: 13px; margin-bottom: 6px; }
+    .rule span { color: #aaaaaa; font-size: 12px; line-height: 1.6; }
+    .palette { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+    .palette i { width: 16px; height: 16px; display: block; outline: 1px solid #444; }
+    .test { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .surface { background: #e8eef2; color: #152535; padding: 18px 20px 24px; min-width: 0; }
+    .surface.dark { background: #1b2c3d; color: #e8f3f8; }
+    .surface p { font: 11px ui-monospace, monospace; margin: 0 0 18px; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+    .row img { max-width: 19%; height: auto; }
+    .sizes { display: flex; align-items: end; justify-content: space-between; gap: 5px; }
+    .sizes div { display: grid; justify-items: center; gap: 8px; }
+    .sizes span { color: #647988; font: 10px ui-monospace, monospace; }
+    .compare { border: 2px solid #333; padding: 24px 28px 18px; }
+    .compare > p { color: #aaaaaa; font-size: 13px; line-height: 1.6; margin: 0 0 22px; }
+    .concept { display: grid; grid-template-columns: 190px 1fr; gap: 20px; align-items: center; padding: 16px 0; border-top: 1px solid #333; }
+    .concept h3 { font-size: 15px; margin: 0 0 4px; }
+    .concept p { margin: 0; color: #aaaaaa; font-size: 12px; line-height: 1.5; }
+    .concept .set img { width: 100%; max-width: 96px; height: auto; }
+    footer { color: #aaaaaa; border-top: 2px solid #0000aa; margin-top: 40px; padding-top: 20px; line-height: 1.6; font-size: 12px; }
+    @media (max-width: 900px) {
+      main { padding: 24px; }
+      .intro { grid-template-columns: 1fr; gap: 24px; }
+      .test { grid-template-columns: 1fr; }
+      .rules { grid-template-columns: 1fr 1fr; }
+      .concept { grid-template-columns: 1fr; gap: 12px; }
+    }
+    @media (max-width: 600px) {
+      main { padding: 20px 16px 36px; }
+      nav { align-items: start; flex-direction: column; }
+      h1 { letter-spacing: -1px; }
+      .intro { padding: 36px 0; }
+      .stage { padding: 18px 12px 24px; }
+      .stage-head { font-size: 9px; letter-spacing: .5px; }
+      .set, .five { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; }
+      .concept .set { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+      .concept .set figcaption { display: none; }
+      .hero-set img { max-width: 145px; }
+      .card p { min-height: 0; }
+      .rules { grid-template-columns: 1fr; }
+      .compare { padding: 20px 14px 10px; }
+      .surface { padding: 18px 12px; }
+    }
+    @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <main>
+    <nav aria-label="Vorschläge">
+      <span class="wordmark">icy<span> tools</span></span>
+      <span class="links mono">
+        <a href="../icon-proposal/index.html">01 Faceted Ice</a>
+        <a href="../icon-proposal-alternative/index.html">02 Pixel Signal</a>
+        <span aria-current="page">03 ANSI Block</span>
+      </span>
+    </nav>
+    <header class="intro">
+      <div><p class="kicker mono">Alternative / Designstudie 03</p><h1>ANSI<br>Block<span class="shade">░▒▓</span></h1></div>
+      <p>Die Icons sind selbst ANSI-Art: jedes Pixel sitzt auf einem 32 × 32-Raster, jede Farbe stammt
+        aus der klassischen 16-Farben-VGA-Palette. Gestufte Ecken, ein Lichtband oben, ░▒-Schattierung unten
+        und der typische schwarze Schlagschatten – so, wie man es in einem BBS-Menü malen würde.</p>
+    </header>
+    <section class="stage" aria-label="ANSI-Block-Icons">
+      <div class="stage-head mono"><span>Collection / Fünf Programme</span><span>32 × 32 Raster · SVG 256 × 256</span></div>
+      <div class="set hero-set">
+        <figure><img class="px" src="icy-term.svg" width="192" height="192" alt="Icy Term, Prompt mit gelbem Cursor auf Cyan"><figcaption>Icy Term</figcaption><p class="sub">Cyan / Verbindung</p></figure>
+        <figure><img class="px" src="icy-draw.svg" width="192" height="192" alt="Icy Draw, Bleistift auf Magenta"><figcaption>Icy Draw</figcaption><p class="sub">Magenta / Kreation</p></figure>
+        <figure><img class="px" src="icy-view.svg" width="192" height="192" alt="Icy View, Auge mit gelber Pixel-Pupille auf Blau"><figcaption>Icy View</figcaption><p class="sub">Blau / Entdeckung</p></figure>
+        <figure><img class="px" src="icy-play.svg" width="192" height="192" alt="Icy Play, Play-Dreieck mit Fortschrittsbalken auf Grün"><figcaption>Icy Play</figcaption><p class="sub">Grün / Bewegung</p></figure>
+        <figure><img class="px" src="icy-mail.svg" width="192" height="192" alt="Icy Mail, Briefumschlag mit gelber Markierung auf Braun"><figcaption>Icy Mail</figcaption><p class="sub">Braun / Austausch</p></figure>
+      </div>
+    </section>
+    <section class="section" aria-labelledby="details">
+      <h2 id="details">Fünf Zeichen, ein gelber Funke.</h2>
+      <div class="five">
+        <article class="card" style="--tone:#00aaaa"><strong>01 / Verbindung</strong><p>Prompt-Chevron und blinkender Block-Cursor in Gelb.</p><a href="icy-term.svg" download>Term als SVG ↗</a></article>
+        <article class="card" style="--tone:#aa00aa"><strong>02 / Kreation</strong><p>Bleistift mit Radiergummi, Zwinge und gelbem Holzkonus.</p><a href="icy-draw.svg" download>Draw als SVG ↗</a></article>
+        <article class="card" style="--tone:#0000aa"><strong>03 / Entdeckung</strong><p>Ein Auge mit quadratischer Pixel-Pupille.</p><a href="icy-view.svg" download>View als SVG ↗</a></article>
+        <article class="card" style="--tone:#00aa00"><strong>04 / Bewegung</strong><p>Play-Dreieck über einem Fortschrittsbalken für Animationen.</p><a href="icy-play.svg" download>Play als SVG ↗</a></article>
+        <article class="card" style="--tone:#aa5500"><strong>05 / Austausch</strong><p>Briefumschlag mit Lasche und gelbem Neu-Badge.</p><a href="icy-mail.svg" download>Mail als SVG ↗</a></article>
+      </div>
+    </section>
+    <section class="section" aria-labelledby="rules">
+      <h2 id="rules">Die Regeln der Familie.</h2>
+      <div class="rules">
+        <div class="rule"><b>Nur 16 Farben</b><span>Kachel in der dunklen VGA-Farbe, Lichtband in der hellen Variante.</span>
+          <div class="palette" aria-hidden="true"><i style="background:#000"></i><i style="background:#0000aa"></i><i style="background:#00aa00"></i><i style="background:#00aaaa"></i><i style="background:#aa0000"></i><i style="background:#aa00aa"></i><i style="background:#aa5500"></i><i style="background:#aaaaaa"></i><i style="background:#555555"></i><i style="background:#5555ff"></i><i style="background:#55ff55"></i><i style="background:#55ffff"></i><i style="background:#ff5555"></i><i style="background:#ff55ff"></i><i style="background:#ffff55"></i><i style="background:#ffffff"></i></div></div>
+        <div class="rule"><b>Weiß + Gelb</b><span>Symbole sind weiß; genau ein gelber Akzent markiert das Wesentliche.</span></div>
+        <div class="rule"><b>Harter Schatten</b><span>Ein Pixel versetzter schwarzer Schatten, wie bei ANSI-Logos.</span></div>
+        <div class="rule"><b>░▒ statt Verlauf</b><span>Schattierung entsteht aus Rastermustern, nicht aus weichen Verläufen.</span></div>
+      </div>
+    </section>
+    <section class="section" aria-labelledby="sizes">
+      <h2 id="sizes">Kontrast und Maßstab.</h2>
+      <div class="test">
+        <div class="surface"><p>Heller Desktop · 48 px</p><div class="row">
+          <img src="icy-term.svg" width="48" height="48" alt="Term"><img src="icy-draw.svg" width="48" height="48" alt="Draw"><img src="icy-view.svg" width="48" height="48" alt="View"><img src="icy-play.svg" width="48" height="48" alt="Play"><img src="icy-mail.svg" width="48" height="48" alt="Mail">
+        </div></div>
+        <div class="surface dark"><p>Dunkler Desktop · 32 px</p><div class="row">
+          <img src="icy-term.svg" width="32" height="32" alt="Term"><img src="icy-draw.svg" width="32" height="32" alt="Draw"><img src="icy-view.svg" width="32" height="32" alt="View"><img src="icy-play.svg" width="32" height="32" alt="Play"><img src="icy-mail.svg" width="32" height="32" alt="Mail">
+        </div></div>
+        <div class="surface"><p>Größenprobe · Icy Term</p><div class="sizes">
+          <div><img src="icy-term.svg" width="16" height="16" alt="16 Pixel"><span>16</span></div>
+          <div><img src="icy-term.svg" width="24" height="24" alt="24 Pixel"><span>24</span></div>
+          <div><img class="px" src="icy-term.svg" width="32" height="32" alt="32 Pixel"><span>32</span></div>
+          <div><img src="icy-term.svg" width="48" height="48" alt="48 Pixel"><span>48</span></div>
+          <div><img class="px" src="icy-term.svg" width="64" height="64" alt="64 Pixel"><span>64</span></div>
+        </div></div>
+      </div>
+    </section>
+    <section class="section compare" aria-labelledby="comparison">
+      <h2 id="comparison">Alle drei Vorschläge im Vergleich.</h2>
+      <p>Gleiche fünf Tools, gleiche Symbolidee – drei unterschiedliche Markencharaktere. Alle drei Sätze sind unverändert gesichert.</p>
+      <div class="concept">
+        <div><h3><a href="../icon-proposal/index.html">01 · Faceted Ice</a></h3><p>Modern und hell, farbige Eisflächen mit Lichtfacette. Am nächsten an heutigen Desktop-Icons.</p></div>
+        <div class="set">
+          <figure><img src="../icon-proposal/icy-term.svg" width="96" height="96" alt="Faceted Ice Term"><figcaption>Term</figcaption></figure>
+          <figure><img src="../icon-proposal/icy-draw.svg" width="96" height="96" alt="Faceted Ice Draw"><figcaption>Draw</figcaption></figure>
+          <figure><img src="../icon-proposal/icy-view.svg" width="96" height="96" alt="Faceted Ice View"><figcaption>View</figcaption></figure>
+          <figure><img src="../icon-proposal/icy-play.svg" width="96" height="96" alt="Faceted Ice Play"><figcaption>Play</figcaption></figure>
+          <figure><img src="../icon-proposal/icy-mail.svg" width="96" height="96" alt="Faceted Ice Mail"><figcaption>Mail</figcaption></figure>
+        </div>
+      </div>
+      <div class="concept">
+        <div><h3><a href="../icon-proposal-alternative/index.html">02 · Pixel Signal</a></h3><p>Dunkles Monitorgehäuse, Neon-Akzente. Retro-Stimmung, aber mit glatter Vektoranmutung.</p></div>
+        <div class="set">
+          <figure><img src="../icon-proposal-alternative/icy-term.svg" width="96" height="96" alt="Pixel Signal Term"><figcaption>Term</figcaption></figure>
+          <figure><img src="../icon-proposal-alternative/icy-draw.svg" width="96" height="96" alt="Pixel Signal Draw"><figcaption>Draw</figcaption></figure>
+          <figure><img src="../icon-proposal-alternative/icy-view.svg" width="96" height="96" alt="Pixel Signal View"><figcaption>View</figcaption></figure>
+          <figure><img src="../icon-proposal-alternative/icy-play.svg" width="96" height="96" alt="Pixel Signal Play"><figcaption>Play</figcaption></figure>
+          <figure><img src="../icon-proposal-alternative/icy-mail.svg" width="96" height="96" alt="Pixel Signal Mail"><figcaption>Mail</figcaption></figure>
+        </div>
+      </div>
+      <div class="concept">
+        <div><h3>03 · ANSI Block</h3><p>Echte Pixel-Art in der VGA-Palette. Am lautesten und am nächsten an der ANSI-Szene selbst.</p></div>
+        <div class="set">
+          <figure><img class="px" src="icy-term.svg" width="96" height="96" alt="ANSI Block Term"><figcaption>Term</figcaption></figure>
+          <figure><img class="px" src="icy-draw.svg" width="96" height="96" alt="ANSI Block Draw"><figcaption>Draw</figcaption></figure>
+          <figure><img class="px" src="icy-view.svg" width="96" height="96" alt="ANSI Block View"><figcaption>View</figcaption></figure>
+          <figure><img class="px" src="icy-play.svg" width="96" height="96" alt="ANSI Block Play"><figcaption>Play</figcaption></figure>
+          <figure><img class="px" src="icy-mail.svg" width="96" height="96" alt="ANSI Block Mail"><figcaption>Mail</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <footer>Designentwurf, keine Änderung der produktiven App-Icons. Die fünf SVGs sind eigenständig, offline nutzbar und
+      rendern mit <code>shape-rendering="crispEdges"</code> pixelscharf. Wegen des 32er-Rasters wirken sie bei 32, 64, 128 und 256 px am saubersten.
+      Neu erzeugen: <code>python doc/icon-proposal-ansi/generate.py doc/icon-proposal-ansi</code>.</footer>
+  </main>
+</body>
+</html>
