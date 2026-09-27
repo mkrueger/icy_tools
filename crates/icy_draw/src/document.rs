@@ -211,6 +211,14 @@ impl Document {
         let result = self.with_state(|state| {
             let offset = state.get_cur_layer().map(|layer| layer.offset()).unwrap_or_default();
             let count = state.get_buffer().layers.len();
+            // While the caret still sits on a corner of the selection (where the drag began or ended), the paste
+            // starts at the selection's upper left corner instead, whichever direction it was dragged.
+            if let Some(selection) = state.selection() {
+                let caret = state.layer_to_document_position(state.get_caret().position());
+                if caret == selection.anchor || caret == selection.lead {
+                    state.set_caret_from_document_position(selection.as_rectangle().start);
+                }
+            }
             state.clear_selection()?;
             paste(state)?;
             if state.get_buffer().layers.len() == count {
@@ -853,6 +861,36 @@ impl Document {
 mod tests {
     use super::*;
     use icy_engine::TextPane;
+
+    #[test]
+    fn paste_starts_at_the_upper_left_corner_of_the_selection() {
+        let mut document = Document::new(Size::new(30, 20));
+        document.type_text("AB").unwrap();
+        document.tool = Tool::Click;
+        // Drag from the lower right to the upper left, as reported by users.
+        document.begin(Position::new(12, 8), MouseButton::Left);
+        document.update(Position::new(5, 3));
+        document.finish();
+        document.start_paste("XY", None).unwrap();
+        let offset = document.with_state(|state| state.get_cur_layer().unwrap().offset());
+        assert_eq!(offset, Position::new(5, 3));
+        document.paste_action(PasteAction::Cancel).unwrap();
+
+        // Once the caret was moved away from the selection, the paste follows the caret.
+        document.begin(Position::new(12, 8), MouseButton::Left);
+        document.update(Position::new(5, 3));
+        document.finish();
+        document.with_state(|state| state.set_caret_position(Position::new(20, 2)));
+        document.start_paste("XY", None).unwrap();
+        assert_eq!(document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::new(20, 2));
+        document.paste_action(PasteAction::Cancel).unwrap();
+
+        // Without a selection the paste starts at the caret.
+        document.begin(Position::new(7, 9), MouseButton::Left);
+        document.finish();
+        document.start_paste("XY", None).unwrap();
+        assert_eq!(document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::new(7, 9));
+    }
 
     #[test]
     fn click_and_select_tools_differ_in_mask_handling() {
