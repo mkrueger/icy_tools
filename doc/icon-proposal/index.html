@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Icy Tools · Iconfamilie / Vorschlag 01</title>
+  <style>
+    :root { font-family: Inter, "Segoe UI", sans-serif; color: #16283a; background: #edf2f5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1440px; margin: auto; padding: 48px 56px 32px; }
+    header { display: flex; justify-content: space-between; gap: 24px; align-items: center; border-bottom: 1px solid #cbd7df; padding-bottom: 20px; }
+    .brand { font-weight: 800; font-size: 20px; letter-spacing: -.6px; }
+    .brand span { color: #44778c; font-weight: 400; }
+    .eyebrow { font: 11px ui-monospace, monospace; text-transform: uppercase; letter-spacing: 2px; color: #526779; }
+    .intro { display: flex; justify-content: space-between; gap: 48px; padding: 38px 0 30px; align-items: end; }
+    h1 { font-size: clamp(36px, 4.3vw, 60px); line-height: 1.05; letter-spacing: -2.7px; margin: 10px 0 0; font-weight: 650; }
+    .intro p { max-width: 385px; font-size: 14px; line-height: 1.7; margin: 0; color: #526779; }
+    .stage { border-radius: 24px; background: radial-gradient(ellipse at 50% 0%, #243c53, #101c2a 75%); padding: 24px 28px 32px; color: #f2fcff; }
+    .stage-heading { display: flex; justify-content: space-between; gap: 16px; color: #a1b5c9; font: 10px ui-monospace, monospace; letter-spacing: 1.5px; text-transform: uppercase; }
+    .family { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 22px; margin-top: 24px; }
+    figure { margin: 0; text-align: center; }
+    .family img { width: 100%; max-width: 184px; height: auto; filter: drop-shadow(0 12px 12px #0003); }
+    figcaption { margin-top: 12px; font-size: 18px; font-weight: 650; letter-spacing: -.3px; }
+    figcaption span { display: block; font: 10px ui-monospace, monospace; margin-top: 8px; color: #a1b5c9; text-transform: uppercase; letter-spacing: 1px; }
+    h2 { font-size: 13px; margin: 0; font-weight: 650; }
+    .section-heading { display: flex; justify-content: space-between; align-items: center; margin: 30px 0 14px; gap: 12px; }
+    .details { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 22px; }
+    .detail { padding-top: 14px; border-top: 3px solid var(--accent); }
+    .detail h3 { font-size: 14px; margin: 0 0 8px; }
+    .detail p { color: #526779; font-size: 12px; line-height: 1.65; margin: 0 0 10px; }
+    a { color: #214d69; text-underline-offset: 4px; }
+    a:focus-visible { outline: 2px solid #214d69; outline-offset: 4px; }
+    .detail a { font: 10px ui-monospace, monospace; }
+    .proofs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .proof { border: 1px solid #d4dfe6; border-radius: 14px; padding: 18px 20px; background: #fff; }
+    .proof.dark { background: #142233; color: #edf7ff; border-color: #142233; }
+    .proof p { font-size: 11px; margin: 0 0 18px; color: #526779; }
+    .proof.dark p { color: #a1b5c9; }
+    .icon-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; }
+    .sizes { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+    .sizes div { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+    .sizes span { color: #526779; font: 9px ui-monospace, monospace; }
+    .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; padding: 26px 0; }
+    .notes p { color: #526779; font-size: 12px; line-height: 1.7; margin: 8px 0 0; }
+    footer { border-top: 1px solid #cbd7df; padding-top: 16px; display: flex; justify-content: space-between; gap: 24px; font: 10px ui-monospace, monospace; color: #526779; line-height: 1.7; }
+    @media (max-width: 900px) {
+      main { padding: 28px 24px; }
+      .intro { display: block; }
+      .intro p { margin-top: 20px; max-width: 540px; }
+      .family, .details { gap: 12px; }
+      figcaption { font-size: 14px; }
+      figcaption span { font-size: 8px; }
+      .proofs { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      main { padding: 24px 16px; }
+      header, footer { align-items: start; flex-direction: column; gap: 10px; }
+      h1 { letter-spacing: -1.5px; }
+      .family, .details { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
+      .stage { padding: 20px 16px 28px; }
+      .stage-heading { font-size: 8px; letter-spacing: .7px; }
+      .family img { max-width: 144px; }
+      .proof { padding: 18px 12px; }
+      .icon-row { gap: 4px; }
+      .notes { grid-template-columns: 1fr; gap: 20px; }
+      .section-heading .eyebrow { font-size: 9px; letter-spacing: .5px; }
+    }
+    @media print {
+      body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      main { padding: 16px; }
+      .stage, .proofs, .notes { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand">icy<span> tools</span></div>
+      <div class="eyebrow">Iconfamilie / Designvorschlag 01</div>
+    </header>
+    <section class="intro" aria-labelledby="concept">
+      <div>
+        <div class="eyebrow">Konzept · Faceted Ice</div>
+        <h1>Fünf Tools.<br>Eine Familie.</h1>
+      </div>
+      <p>Kühle Flächen, präzise Lichtkanten und eindeutige Zeichen.
+        Eine gemeinsame Form verbindet die Tools; Symbol und Farbe machen
+        jede Anwendung auf den ersten Blick unterscheidbar.</p>
+    </section>
+    <section class="stage" aria-label="Die fünf vorgeschlagenen App-Icons">
+      <div class="stage-heading"><span>Icy Tools / Core Collection</span><span>SVG · 256 × 256</span></div>
+      <div class="family">
+        <figure><img src="icy-term.svg" width="184" height="184" alt="Icy Term: Terminal-Prompt auf Cyan"><figcaption>Icy Term<span>Connect</span></figcaption></figure>
+        <figure><img src="icy-draw.svg" width="184" height="184" alt="Icy Draw: Zeichenstift auf Violett"><figcaption>Icy Draw<span>Create</span></figcaption></figure>
+        <figure><img src="icy-view.svg" width="184" height="184" alt="Icy View: Auge auf Blau"><figcaption>Icy View<span>Explore</span></figcaption></figure>
+        <figure><img src="icy-play.svg" width="184" height="184" alt="Icy Play: Wiedergabe-Dreieck auf Mint"><figcaption>Icy Play<span>Animate</span></figcaption></figure>
+        <figure><img src="icy-mail.svg" width="184" height="184" alt="Icy Mail: Briefumschlag auf Bernstein"><figcaption>Icy Mail<span>Correspond</span></figcaption></figure>
+      </div>
+    </section>
+    <div class="section-heading"><h2>Ein Symbol pro Aufgabe.</h2><span class="eyebrow">Form + Farbe, nicht Farbe allein</span></div>
+    <section class="details" aria-label="Bedeutung und SVG-Dateien">
+      <article class="detail" style="--accent:#168eae"><h3>01 / Terminal</h3><p>Prompt und Block-Cursor.<br>Direkter Bezug zu BBS, Konsole und Verbindung.</p><a href="icy-term.svg" download>SVG herunterladen ↗</a></article>
+      <article class="detail" style="--accent:#8561cb"><h3>02 / Zeichnen</h3><p>Ein kräftiger Zeichenstift.<br>Die Diagonale greift den Winkel der Eis-Facette auf.</p><a href="icy-draw.svg" download>SVG herunterladen ↗</a></article>
+      <article class="detail" style="--accent:#487bd3"><h3>03 / Betrachten</h3><p>Auge mit Pixel-Pupille.<br>Ein kleiner Verweis auf ANSI-Art statt eines generischen Fotos.</p><a href="icy-view.svg" download>SVG herunterladen ↗</a></article>
+      <article class="detail" style="--accent:#238c78"><h3>04 / Abspielen</h3><p>Ein klares Play-Zeichen.<br>Für ANSI-Animationen; auch als Marke des CLI-Tools einsetzbar.</p><a href="icy-play.svg" download>SVG herunterladen ↗</a></article>
+      <article class="detail" style="--accent:#ad762e"><h3>05 / Nachrichten</h3><p>Ein reduzierter Briefumschlag.<br>Der warme Akzent unterscheidet den QWK-Mailreader.</p><a href="icy-mail.svg" download>SVG herunterladen ↗</a></article>
+    </section>
+    <div class="section-heading"><h2>Im Alltag, nicht nur auf dem Poster.</h2><span class="eyebrow">Heller / dunkler Hintergrund</span></div>
+    <section class="proofs" aria-label="Vorschau auf verschiedenen Hintergründen und in kleinen Größen">
+      <div class="proof">
+        <p>Heller Hintergrund · 48 px</p>
+        <div class="icon-row">
+          <img src="icy-term.svg" width="48" height="48" alt="Term, 48 Pixel">
+          <img src="icy-draw.svg" width="48" height="48" alt="Draw, 48 Pixel">
+          <img src="icy-view.svg" width="48" height="48" alt="View, 48 Pixel">
+          <img src="icy-play.svg" width="48" height="48" alt="Play, 48 Pixel">
+          <img src="icy-mail.svg" width="48" height="48" alt="Mail, 48 Pixel">
+        </div>
+      </div>
+      <div class="proof dark">
+        <p>Dunkler Hintergrund · 32 px</p>
+        <div class="icon-row">
+          <img src="icy-term.svg" width="32" height="32" alt="Term, 32 Pixel">
+          <img src="icy-draw.svg" width="32" height="32" alt="Draw, 32 Pixel">
+          <img src="icy-view.svg" width="32" height="32" alt="View, 32 Pixel">
+          <img src="icy-play.svg" width="32" height="32" alt="Play, 32 Pixel">
+          <img src="icy-mail.svg" width="32" height="32" alt="Mail, 32 Pixel">
+        </div>
+      </div>
+      <div class="proof">
+        <p>Größenprobe · Icy Term</p>
+        <div class="sizes">
+          <div><img src="icy-term.svg" width="16" height="16" alt="Term, 16 Pixel"><span>16</span></div>
+          <div><img src="icy-term.svg" width="24" height="24" alt="Term, 24 Pixel"><span>24</span></div>
+          <div><img src="icy-term.svg" width="32" height="32" alt="Term, 32 Pixel"><span>32</span></div>
+          <div><img src="icy-term.svg" width="48" height="48" alt="Term, 48 Pixel"><span>48</span></div>
+          <div><img src="icy-term.svg" width="64" height="64" alt="Term, 64 Pixel"><span>64</span></div>
+        </div>
+      </div>
+    </section>
+    <section class="notes" aria-label="Gestaltungsregeln und Lieferumfang">
+      <div><h2>Die gemeinsame DNA</h2><p>Identische Kachel mit 52 Einheiten Eckradius, 16 Einheiten Außenabstand und einer
+        45°-Lichtfacette. Große, helle Zeichen ohne Schrift oder filigrane Details.
+        Die Pixel-Pupille und der Block-Cursor schlagen die Brücke zur ANSI-Welt.</p></div>
+      <div><h2>Entwurf, kein Austausch der App-Assets</h2><p>Fünf eigenständige SVG-Master mit transparentem Außenbereich, ohne externe Schriften,
+        Bilder oder Bibliotheken. Diese Seite funktioniert lokal und offline.
+        ICO-/ICNS-/PNG-Pakete und pixeloptimierte 16-px-Varianten folgen erst nach Freigabe der Richtung.</p></div>
+    </section>
+    <footer><span>ICY TOOLS / FACETED ICE / 01</span><span>Umfang: Term · Draw · View · Play · Mail<br>Interne Engine-/Parser-Crates sind keine eigenständigen Apps.</span></footer>
+  </main>
+</body>
+</html>
