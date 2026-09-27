@@ -3,9 +3,11 @@
 
 use super::{widgets, Dialog, DrawApp};
 use eframe::egui::{self, Color32};
+use icy_draw::fl;
 use icy_engine::{LayerProperties, Position, Rectangle, RenderOptions, Role, TextBuffer, TextPane};
 use icy_engine_edit::tools::{Tool, ToolPair};
 use icy_engine_gui::egui::appearance::{self, labels, Dialog as SharedDialog, DialogButton, DialogSize, PRIMARY};
+use icy_engine_gui::egui::screen::ScreenView;
 
 /// Width of the left palette and tool rail.
 pub const SIDEBAR_WIDTH: f32 = 52.0;
@@ -13,6 +15,7 @@ pub const SIDEBAR_WIDTH: f32 = 52.0;
 pub const PANEL_WIDTH: f32 = 320.0;
 /// Height of the full-width tool options bar.
 pub const TOOLBAR_HEIGHT: f32 = 44.0;
+/// Maximum height of the outline glyph preview, leaving room for the style grid below it.
 pub const STATUS_HEIGHT: f32 = 28.0;
 const TOOL_ICON: f32 = 36.0;
 const LAYER_PREVIEW: [usize; 2] = [56, 36];
@@ -39,8 +42,9 @@ pub struct Chrome {
     minimap: Option<(u64, egui::TextureHandle)>,
     previews: Vec<Option<(u64, Option<egui::TextureHandle>)>>,
     layer_properties: Option<(usize, LayerProperties)>,
-    outline_preview: Option<(u64, usize, egui::TextureHandle)>,
-    outline_style: usize,
+    /// Rendered outline font for the preview beside the canvas, keyed by buffer signature and style.
+    outline_preview: Option<(u64, usize, ScreenView)>,
+    pub(super) outline_style: usize,
 }
 
 enum LayerAction {
@@ -61,7 +65,7 @@ fn mix(hash: &mut u64, value: u64) {
     *hash ^= value.wrapping_add(0x9e37_79b9_7f4a_7c15).wrapping_add(*hash << 6).wrapping_add(*hash >> 2);
 }
 
-pub(super) fn color_sample(ui: &mut egui::Ui, label: &str, index: u32, (red, green, blue): (u8, u8, u8), selected: bool) {
+pub(super) fn color_sample(ui: &mut egui::Ui, label: &str, (red, green, blue): (u8, u8, u8), selected: bool) {
     const LABEL_WIDTH: f32 = 48.0;
     const GAP: f32 = 6.0;
     const SWATCH_WIDTH: f32 = 82.0;
@@ -79,7 +83,7 @@ pub(super) fn color_sample(ui: &mut egui::Ui, label: &str, index: u32, (red, gre
     ui.painter().text(
         label_rect.right_center(),
         egui::Align2::RIGHT_CENTER,
-        format!("{label} {index}"),
+        label,
         egui::FontId::monospace(13.0),
         label_color,
     );
@@ -100,7 +104,7 @@ pub(super) fn color_sample(ui: &mut egui::Ui, label: &str, index: u32, (red, gre
         egui::FontId::monospace(13.0),
         text,
     );
-    response.on_hover_text(format!("{label} {index}: #{red:02X}{green:02X}{blue:02X}"));
+    response.on_hover_text(format!("{label}: #{red:02X}{green:02X}{blue:02X}"));
 }
 
 /// Cache key built on the engine's buffer version, like the original layer view.
@@ -162,16 +166,6 @@ fn downsample_by(width: usize, height: usize, rgba: &[u8], step: usize) -> Optio
         }
     }
     Some(image)
-}
-
-fn render(buffer: &TextBuffer, target: usize) -> Option<egui::ColorImage> {
-    let size = buffer.size();
-    if size.width <= 0 || size.height <= 0 {
-        return None;
-    }
-    let options: RenderOptions = Rectangle::from(0, 0, size.width, size.height).into();
-    let (pixels, rgba) = buffer.render_to_rgba(&options, false);
-    downsample(pixels.width.max(0) as usize, pixels.height.max(0) as usize, &rgba, target)
 }
 
 /// Renders the minimap fitted to `MINIMAP_PIXELS` in width, so tall documents keep
@@ -295,13 +289,13 @@ impl DrawApp {
         let default = egui::Rect::from_min_size(egui::pos2(rect.left(), rect.bottom() - 14.0), egui::Vec2::splat(14.0));
         let colors = ui
             .interact(foreground_rect.union(background_rect), ui.id().with("caret-colors"), egui::Sense::click())
-            .on_hover_text("Foreground / Background – click to pick a palette color");
+            .on_hover_text(fl!("color-switcher-tooltip"));
         let swap_response = ui
             .interact(swap, ui.id().with("swap-colors"), egui::Sense::click())
-            .on_hover_text("Swap Foreground and Background");
+            .on_hover_text(fl!("menu-toggle_color"));
         let default_response = ui
             .interact(default, ui.id().with("default-colors"), egui::Sense::click())
-            .on_hover_text("Default Colors");
+            .on_hover_text(fl!("menu-default_color"));
 
         let visuals = ui.visuals().clone();
         let painter = ui.painter();
@@ -347,26 +341,22 @@ impl DrawApp {
             .align_alternatives(&[egui::RectAlign::RIGHT_START, egui::RectAlign::RIGHT])
             .show(|ui| {
                 ui.set_width(208.0);
-                ui.weak("Left click: foreground · Right click: background");
+                ui.weak(fl!("palette-click-hint"));
                 self.palette_grid(ui, 208.0);
-                if ui.button("Edit Palette…").clicked() {
+                if ui.button(fl!("menu-edit_palette")).clicked() {
                     self.open_palette_editor(true);
                     ui.close();
                 }
             });
     }
 
-    fn open_palette_editor(&mut self, foreground: bool) {
-        self.palette_edit = self.document.with_state(|state| state.get_buffer().palette.clone());
-        self.palette_index = self.document.with_state(|state| {
+    pub(super) fn open_palette_editor(&mut self, foreground: bool) {
+        let (palette, index) = self.document.with_state(|state| {
             let attribute = state.get_caret().attribute;
-            if foreground {
-                attribute.foreground()
-            } else {
-                attribute.background()
-            }
-        }) as usize;
-        self.palette_index = self.palette_index.min(self.palette_edit.len().saturating_sub(1));
+            let index = if foreground { attribute.foreground() } else { attribute.background() };
+            (state.get_buffer().palette.clone(), index as usize)
+        });
+        self.palette_editor = super::super::palette::PaletteEditor::new(palette, index);
         self.dialog = Some(Dialog::Palette);
     }
 
@@ -660,7 +650,7 @@ impl DrawApp {
             self.color_switcher(ui);
             widgets::divider(ui);
             let (icon, name) = if self.document.paste_active() {
-                ("anchor", "Paste")
+                ("anchor", fl!("menu-paste"))
             } else {
                 (self.document.tool.icon(), tool_label(self.document.tool))
             };
@@ -692,6 +682,38 @@ impl DrawApp {
         });
     }
 
+    /// Outline font rendered with the selected style, shown beside the canvas at the same zoom.
+    pub(super) fn outline_preview_pane(&mut self, ui: &mut egui::Ui) {
+        let signature = self.document.with_state(|state| signature(state.get_buffer()));
+        let style = self.chrome.outline_style;
+        if self
+            .chrome
+            .outline_preview
+            .as_ref()
+            .is_none_or(|(key, shown, _)| *key != signature || *shown != style)
+        {
+            let buffer = icy_draw::charfont::outline_preview(&self.document, style);
+            let view = ScreenView::new(icy_engine::TextScreen::from_buffer(buffer));
+            self.chrome.outline_preview = Some((signature, style, view));
+        }
+        let rect = ui.max_rect();
+        if let Some((_, _, view)) = &mut self.chrome.outline_preview {
+            view.show(ui, &self.settings.monitor_settings);
+        }
+        let caption = format!(
+            "{} \u{00b7} {}",
+            fl!("tdf-editor-outline_preview_label"),
+            fl!("outline-style-label", style = (style + 1))
+        );
+        let painter = ui.painter().with_clip_rect(rect);
+        let galley = painter.layout_no_wrap(caption, egui::FontId::proportional(12.0), Color32::WHITE);
+        // Bottom right, as glyphs start at the top left.
+        let size = galley.size() + egui::vec2(16.0, 8.0);
+        let plate = egui::Rect::from_min_size(rect.max - size - egui::vec2(8.0, 8.0), size);
+        painter.rect_filled(plate, 4, Color32::from_black_alpha(140));
+        painter.galley(plate.min + egui::vec2(8.0, 4.0), galley, Color32::WHITE);
+    }
+
     /// Right sidebar: minimap and layers as separated sections.
     pub(super) fn panel(&mut self, ui: &mut egui::Ui) {
         let signature = self.document.with_state(|state| signature(state.get_buffer()));
@@ -700,38 +722,16 @@ impl DrawApp {
         }
         if self.document.outline_font {
             section(ui, |ui| {
-                let style = &mut self.chrome.outline_style;
-                widgets::section_header(ui, "Outline Preview", |ui| {
-                    egui::ComboBox::from_id_salt("outline-preview-style")
-                        .width(90.0)
-                        .selected_text(format!("Style {}", *style + 1))
-                        .show_ui(ui, |ui| {
-                            for index in 0..19 {
-                                ui.selectable_value(style, index, format!("Style {}", index + 1));
-                            }
-                        });
+                let style = self.chrome.outline_style;
+                widgets::section_header(ui, &fl!("outline-styles-title"), |ui| {
+                    ui.weak(fl!("outline-style-label", style = (style + 1)));
                 });
-                if self
-                    .chrome
-                    .outline_preview
-                    .as_ref()
-                    .is_none_or(|(key, style, _)| *key != signature || *style != self.chrome.outline_style)
-                {
-                    let buffer = icy_draw::charfont::outline_preview(&self.document, self.chrome.outline_style);
-                    if let Some(image) = render(&buffer, MINIMAP_PIXELS) {
-                        self.chrome.outline_preview = Some((
-                            signature,
-                            self.chrome.outline_style,
-                            ui.ctx().load_texture("outline-preview", image, egui::TextureOptions::NEAREST),
-                        ));
-                    }
-                }
-                if let Some((_, _, texture)) = &self.chrome.outline_preview {
-                    ui.add(egui::Image::new(texture).corner_radius(4).fit_to_exact_size(egui::vec2(
-                        ui.available_width(),
-                        ui.available_width() * texture.size()[1] as f32 / texture.size()[0] as f32,
-                    )));
-                }
+                egui::ScrollArea::vertical()
+                    .id_salt("outline-styles")
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        widgets::outline_style_grid(ui, &mut self.chrome.outline_style);
+                    });
             });
             return;
         }
@@ -741,30 +741,31 @@ impl DrawApp {
                 .inner_margin(egui::Margin {
                     left: SECTION_MARGIN,
                     right: SECTION_MARGIN,
-                    top: 2,
+                    top: 8,
                     bottom: 10,
                 })
                 .show(ui, |ui| self.minimap(ui, signature));
             return;
         }
-        if self.charfont.is_none() {
-            egui::TopBottomPanel::top("minimap")
-                .resizable(true)
-                .default_height(340.0)
-                .height_range(160.0..=520.0)
-                .frame(egui::Frame::new().inner_margin(egui::Margin {
-                    left: SECTION_MARGIN,
-                    right: SECTION_MARGIN,
-                    top: 2,
-                    bottom: 10,
-                }))
-                .show_inside(ui, |ui| self.minimap(ui, signature));
+        if self.charfont.is_some() {
+            // A TDF glyph is edited on a single layer, so neither the minimap nor the layer list apply.
+            return;
         }
+        egui::TopBottomPanel::top("minimap")
+            .resizable(true)
+            .default_height(340.0)
+            .height_range(160.0..=520.0)
+            .frame(egui::Frame::new().inner_margin(egui::Margin {
+                left: SECTION_MARGIN,
+                right: SECTION_MARGIN,
+                top: 8,
+                bottom: 10,
+            }))
+            .show_inside(ui, |ui| self.minimap(ui, signature));
         self.layers(ui, signature);
     }
 
     fn minimap(&mut self, ui: &mut egui::Ui, signature: u64) {
-        widgets::section_header(ui, "Minimap", |_| {});
         if self.chrome.minimap.as_ref().is_none_or(|(key, _)| *key != signature) {
             let max_side = ui.ctx().input(|input| input.max_texture_side);
             if let Some(image) = self.document.with_state(|state| render_minimap(state.get_buffer(), max_side)) {
@@ -861,7 +862,7 @@ impl DrawApp {
                 && !rows[index - 1].0.is_locked
         };
         egui::Frame::new().inner_margin(egui::Margin::symmetric(SECTION_MARGIN, 0)).show(ui, |ui| {
-            widgets::section_header(ui, "Layers", |ui| {
+            widgets::section_header(ui, &fl!("layer_tool_title"), |ui| {
                 ui.weak(rows.len().to_string());
             });
         });
@@ -871,35 +872,35 @@ impl DrawApp {
             .show_inside(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
-                    if self.icons.button(ui, "add_layer", "Add Layer", false).clicked() {
+                    if self.icons.button(ui, "add_layer", &fl!("add_layer_tooltip"), false).clicked() {
                         action = Some(LayerAction::Add(current));
                     }
-                    if self.icons.button(ui, "file_copy", "Duplicate Layer", false).clicked() {
+                    if self.icons.button(ui, "file_copy", &fl!("layer_tool_menu_duplicate_layer"), false).clicked() {
                         action = Some(LayerAction::Duplicate(current));
                     }
                     ui.add_enabled_ui(current_unlocked && current + 1 < rows.len(), |ui| {
-                        if self.icons.button(ui, "move_up", "Raise Layer", false).clicked() {
+                        if self.icons.button(ui, "move_up", &fl!("move_layer_up_tooltip"), false).clicked() {
                             action = Some(LayerAction::Raise(current));
                         }
                     });
                     ui.add_enabled_ui(current_unlocked && current > 0, |ui| {
-                        if self.icons.button(ui, "move_down", "Lower Layer", false).clicked() {
+                        if self.icons.button(ui, "move_down", &fl!("move_layer_down_tooltip"), false).clicked() {
                             action = Some(LayerAction::Lower(current));
                         }
                     });
                     ui.add_enabled_ui(can_merge(current), |ui| {
-                        if self.icons.button(ui, "anchor", "Merge Down", false).clicked() {
+                        if self.icons.button(ui, "anchor", &fl!("layer_tool_menu_merge_layer"), false).clicked() {
                             action = Some(LayerAction::Merge(current));
                         }
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
                         ui.add_enabled_ui(current_unlocked && rows.len() > 1, |ui| {
-                            if self.icons.button(ui, "delete", "Delete Layer", false).clicked() {
+                            if self.icons.button(ui, "delete", &fl!("delete_layer_tooltip"), false).clicked() {
                                 action = Some(LayerAction::Remove(current));
                             }
                         });
-                        if self.icons.button(ui, "measure", "Layer Properties", false).clicked() {
+                        if self.icons.button(ui, "measure", &fl!("layer_tool_menu_layer_properties"), false).clicked() {
                             action = Some(LayerAction::Properties(current));
                         }
                     });
@@ -947,7 +948,7 @@ impl DrawApp {
                                     .button_sized(
                                         ui,
                                         if properties.is_visible { "visibility" } else { "visibility_off" },
-                                        if properties.is_visible { "Hide Layer" } else { "Show Layer" },
+                                        &if properties.is_visible { fl!("layer-hide") } else { fl!("layer-show") },
                                         false,
                                         26.0,
                                     )
@@ -1008,7 +1009,7 @@ impl DrawApp {
                                 let lock = self.icons.subtle_button(
                                     ui,
                                     if properties.is_locked { "lock" } else { "lock_open" },
-                                    if properties.is_locked { "Unlock Layer" } else { "Lock Layer" },
+                                    &if properties.is_locked { fl!("layer-unlock") } else { fl!("layer-lock") },
                                     !properties.is_locked,
                                     lock_width,
                                 );
@@ -1024,35 +1025,41 @@ impl DrawApp {
                         action = Some(LayerAction::Select(index));
                     }
                     response.context_menu(|ui| {
-                        if ui.button("Layer Properties...").clicked() {
+                        if ui.button(fl!("layer-properties-menu")).clicked() {
                             action = Some(LayerAction::Properties(index));
                             ui.close();
                         }
-                        if ui.button(if properties.is_locked { "Unlock Layer" } else { "Lock Layer" }).clicked() {
+                        if ui.button(if properties.is_locked { fl!("layer-unlock") } else { fl!("layer-lock") }).clicked() {
                             action = Some(LayerAction::Lock(index));
                             ui.close();
                         }
                         ui.separator();
-                        if ui.button("New Layer").clicked() {
+                        if ui.button(fl!("layer_tool_menu_new_layer")).clicked() {
                             action = Some(LayerAction::Add(index));
                             ui.close();
                         }
-                        if ui.button("Duplicate Layer").clicked() {
+                        if ui.button(fl!("layer_tool_menu_duplicate_layer")).clicked() {
                             action = Some(LayerAction::Duplicate(index));
                             ui.close();
                         }
-                        if ui.add_enabled(can_merge(index), egui::Button::new("Merge Down")).clicked() {
+                        if ui
+                            .add_enabled(can_merge(index), egui::Button::new(fl!("layer_tool_menu_merge_layer")))
+                            .clicked()
+                        {
                             action = Some(LayerAction::Merge(index));
                             ui.close();
                         }
                         if ui
-                            .add_enabled(!properties.is_locked && rows.len() > 1, egui::Button::new("Delete Layer"))
+                            .add_enabled(!properties.is_locked && rows.len() > 1, egui::Button::new(fl!("layer_tool_menu_delete_layer")))
                             .clicked()
                         {
                             action = Some(LayerAction::Remove(index));
                             ui.close();
                         }
-                        if ui.add_enabled(!properties.is_locked, egui::Button::new("Clear Layer")).clicked() {
+                        if ui
+                            .add_enabled(!properties.is_locked, egui::Button::new(fl!("layer_tool_menu_clear_layer")))
+                            .clicked()
+                        {
                             action = Some(LayerAction::Clear(index));
                             ui.close();
                         }
@@ -1119,32 +1126,37 @@ impl DrawApp {
             .show(context, |dialog| {
                 dialog.content(|ui| {
                     appearance::group(ui, "", |ui| {
-                        ui.label("Name");
+                        ui.label(fl!("edit-layer-dialog-name-label"));
                         ui.add(egui::TextEdit::singleline(&mut properties.title).desired_width(f32::INFINITY));
                         ui.horizontal(|ui| {
-                            ui.checkbox(&mut properties.is_visible, "Visible");
-                            ui.checkbox(&mut properties.is_locked, "Locked");
+                            ui.checkbox(&mut properties.is_visible, fl!("edit-layer-dialog-is-visible-checkbox"));
+                            ui.checkbox(&mut properties.is_locked, fl!("edit-layer-dialog-is-edit-locked-checkbox"));
                         });
                         ui.separator();
-                        ui.checkbox(&mut properties.is_position_locked, "Lock Position");
+                        ui.checkbox(&mut properties.is_position_locked, fl!("edit-layer-dialog-is-position-locked-checkbox"));
                         ui.add_enabled_ui(!properties.is_position_locked, |ui| {
                             ui.horizontal(|ui| {
                                 ui.add(egui::DragValue::new(&mut properties.offset.x).prefix("X "));
                                 ui.add(egui::DragValue::new(&mut properties.offset.y).prefix("Y "));
                             });
                         });
-                        ui.checkbox(&mut properties.has_alpha_channel, "Transparency");
+                        ui.checkbox(&mut properties.has_alpha_channel, fl!("edit-layer-dialog-has-alpha-checkbox"));
                         ui.add_enabled_ui(properties.has_alpha_channel, |ui| {
-                            ui.checkbox(&mut properties.is_alpha_channel_locked, "Lock Transparency");
+                            ui.checkbox(&mut properties.is_alpha_channel_locked, fl!("edit-layer-dialog-is-alpha-locked-checkbox"));
                         });
-                        egui::ComboBox::from_label("Mode")
-                            .selected_text(format!("{:?}", properties.mode))
+                        let modes = [
+                            (icy_engine::Mode::Normal, fl!("layer-mode-normal")),
+                            (icy_engine::Mode::Chars, fl!("layer-mode-chars")),
+                            (icy_engine::Mode::Attributes, fl!("layer-mode-attributes")),
+                        ];
+                        let selected = modes
+                            .iter()
+                            .find(|(mode, _)| *mode == properties.mode)
+                            .map_or_else(|| format!("{:?}", properties.mode), |(_, label)| label.clone());
+                        egui::ComboBox::from_label(fl!("reference-image-mode"))
+                            .selected_text(selected)
                             .show_ui(ui, |ui| {
-                                for (mode, label) in [
-                                    (icy_engine::Mode::Normal, "Normal"),
-                                    (icy_engine::Mode::Chars, "Characters"),
-                                    (icy_engine::Mode::Attributes, "Attributes"),
-                                ] {
+                                for (mode, label) in modes {
                                     ui.selectable_value(&mut properties.mode, mode, label);
                                 }
                             });
@@ -1152,7 +1164,7 @@ impl DrawApp {
                 });
                 dialog.buttons([
                     DialogButton::cancel(labels::cancel(), Action::Cancel),
-                    DialogButton::primary("Apply", Action::Apply),
+                    DialogButton::primary(fl!("button-apply"), Action::Apply),
                 ]);
             });
         match response.action {
@@ -1173,7 +1185,7 @@ impl DrawApp {
             let font = buffer
                 .font(state.get_caret().attribute.font_page())
                 .map(|font| font.name.to_string())
-                .unwrap_or_else(|| "Unknown".into());
+                .unwrap_or_else(|| fl!("status-unknown-font"));
             (
                 buffer.size(),
                 state.get_caret().position(),
@@ -1190,20 +1202,20 @@ impl DrawApp {
             ui.add_space(8.0);
             let small = |text: String| egui::RichText::new(text).size(12.0);
             ui.label(small(format!("{} × {}", size.width, size.height)))
-                .on_hover_text("Canvas size in characters");
+                .on_hover_text(fl!("status-canvas-size-tooltip"));
             ui.label(small("·".into()).weak());
             if let Some(bounds) = selection {
-                ui.label(small(format!("Selection {} × {}", bounds.width(), bounds.height())).weak())
-                    .on_hover_text(format!(
-                        "Selection: {}, {} to {}, {}",
-                        bounds.left(),
-                        bounds.top(),
-                        bounds.right() - 1,
-                        bounds.bottom() - 1
+                ui.label(small(fl!("status-selection", width = bounds.width(), height = bounds.height())).weak())
+                    .on_hover_text(fl!(
+                        "status-selection-tooltip",
+                        left = bounds.left(),
+                        top = bounds.top(),
+                        right = (bounds.right() - 1),
+                        bottom = (bounds.bottom() - 1)
                     ));
             } else {
                 ui.label(small(format!("{}, {}", caret.x, caret.y)).weak())
-                    .on_hover_text("Caret position (column, row)");
+                    .on_hover_text(fl!("status-caret-tooltip"));
             }
             if self.picker {
                 ui.spinner();
@@ -1218,23 +1230,27 @@ impl DrawApp {
                 let zoom = widgets::status_button(
                     ui,
                     &format!("{:.0}%", self.view.zoom * 100.0),
-                    &format!("Zoom: {}", super::menus::zoom_label(self.settings.monitor_settings.scaling_mode)),
+                    &format!(
+                        "{}: {}",
+                        fl!("menu-zoom"),
+                        super::menus::zoom_label(self.settings.monitor_settings.scaling_mode)
+                    ),
                 );
                 egui::Popup::menu(&zoom).show(|ui| {
-                    if ui.button("Zoom In").clicked() {
+                    if ui.button(fl!("menu-zoom_in")).clicked() {
                         self.zoom_step(1);
                     }
-                    if ui.button("Zoom Out").clicked() {
+                    if ui.button(fl!("menu-zoom_out")).clicked() {
                         self.zoom_step(-1);
                     }
                     ui.separator();
                     for (label, mode) in [
-                        ("Fit to Window", icy_engine_gui::ScalingMode::Auto),
-                        ("Fit Width", icy_engine_gui::ScalingMode::FitWidth),
-                        ("50%", icy_engine_gui::ScalingMode::Manual(0.5)),
-                        ("100%", icy_engine_gui::ScalingMode::Manual(1.0)),
-                        ("200%", icy_engine_gui::ScalingMode::Manual(2.0)),
-                        ("400%", icy_engine_gui::ScalingMode::Manual(4.0)),
+                        (fl!("menu-zoom-fit_window"), icy_engine_gui::ScalingMode::Auto),
+                        (fl!("menu-zoom-fit_width"), icy_engine_gui::ScalingMode::FitWidth),
+                        ("50%".to_owned(), icy_engine_gui::ScalingMode::Manual(0.5)),
+                        ("100%".to_owned(), icy_engine_gui::ScalingMode::Manual(1.0)),
+                        ("200%".to_owned(), icy_engine_gui::ScalingMode::Manual(2.0)),
+                        ("400%".to_owned(), icy_engine_gui::ScalingMode::Manual(4.0)),
                     ] {
                         if ui.selectable_label(self.settings.monitor_settings.scaling_mode == mode, label).clicked() {
                             self.settings.monitor_settings.scaling_mode = mode;
@@ -1243,56 +1259,78 @@ impl DrawApp {
                     }
                 });
                 status_separator(ui);
-                let font_label = if compact {
-                    "Font".to_owned()
-                } else if font.chars().count() > 26 {
-                    format!("{}…", font.chars().take(25).collect::<String>())
-                } else {
-                    font.clone()
+                let shorten = |font: &str, limit: usize| {
+                    if font.chars().count() > limit {
+                        format!("{}…", font.chars().take(limit - 1).collect::<String>())
+                    } else {
+                        font.to_owned()
+                    }
                 };
-                if widgets::status_button(ui, &font_label, &format!("Font: {font}\nClick to choose a different font")).clicked() {
-                    self.dialog = Some(Dialog::FontSelect);
+                if let Some((names, current)) = self.font_slots() {
+                    // XBin Extended: one button per font slot; the caret's slot is outlined.
+                    for slot in [1, 0] {
+                        let label = if compact {
+                            slot.to_string()
+                        } else {
+                            format!("{slot}: {}", shorten(&names[slot], 18))
+                        };
+                        let response = widgets::status_button(ui, &label, &fl!("status-font-slot-tooltip", slot = slot, font = names[slot].as_str()));
+                        if slot == current {
+                            ui.painter()
+                                .rect_stroke(response.rect, 4, egui::Stroke::new(1.0, PRIMARY), egui::StrokeKind::Inside);
+                        }
+                        if response.double_clicked() {
+                            self.select_font_slot(slot, true);
+                        } else if response.clicked() {
+                            self.select_font_slot(slot, false);
+                        }
+                    }
+                } else {
+                    let font_label = if compact { fl!("glyph-font-label") } else { shorten(&font, 26) };
+                    if widgets::status_button(ui, &font_label, &fl!("status-font-tooltip", font = font.as_str())).clicked() {
+                        self.open_font_selector();
+                    }
                 }
                 status_separator(ui);
                 let aspect_label = match (aspect, compact) {
-                    (true, true) => "4:3",
-                    (true, false) => "DOS Aspect",
-                    (false, true) => "1:1",
-                    (false, false) => "Square Pixels",
+                    (true, true) => "4:3".to_owned(),
+                    (true, false) => fl!("status-dos-aspect"),
+                    (false, true) => "1:1".to_owned(),
+                    (false, false) => fl!("status-square-pixels"),
                 };
                 let aspect_tip = if aspect {
-                    "Pixels are stretched like on a 4:3 DOS monitor.\nClick to use square pixels."
+                    fl!("status-dos-aspect-tooltip")
                 } else {
-                    "Pixels are square.\nClick to stretch them like on a 4:3 DOS monitor."
+                    fl!("status-square-pixels-tooltip")
                 };
-                if widgets::status_button(ui, aspect_label, aspect_tip).clicked() {
+                if widgets::status_button(ui, &aspect_label, &aspect_tip).clicked() {
                     self.edit(|state| state.set_use_aspect_ratio(!aspect));
                 }
                 let spacing_label = match (spacing, compact) {
-                    (true, true) => "9px",
-                    (true, false) => "9 px Font",
-                    (false, true) => "8px",
-                    (false, false) => "8 px Font",
+                    (true, true) => "9px".to_owned(),
+                    (true, false) => fl!("status-9px-font"),
+                    (false, true) => "8px".to_owned(),
+                    (false, false) => fl!("status-8px-font"),
                 };
                 let spacing_tip = if spacing {
-                    "Characters are 9 pixels wide (VGA letter spacing).\nClick to use 8 pixel wide characters."
+                    fl!("status-9px-font-tooltip")
                 } else {
-                    "Characters are 8 pixels wide.\nClick to add the 9th pixel column of VGA text mode."
+                    fl!("status-8px-font-tooltip")
                 };
-                if widgets::status_button(ui, spacing_label, spacing_tip).clicked() {
+                if widgets::status_button(ui, &spacing_label, &spacing_tip).clicked() {
                     self.edit(|state| state.set_use_letter_spacing(!spacing));
                 }
                 let ice_label = match (ice, compact) {
-                    (true, _) => "iCE Colors",
-                    (false, true) => "Blink",
-                    (false, false) => "Blinking",
+                    (true, _) => fl!("status-ice-colors"),
+                    (false, true) => fl!("color-is_blinking"),
+                    (false, false) => fl!("status-blinking"),
                 };
                 let ice_tip = if ice {
-                    "The blink bit selects 8 additional bright background colors (iCE colors).\nClick to make it blink instead."
+                    fl!("status-ice-colors-tooltip")
                 } else {
-                    "The blink bit makes characters blink.\nClick to use it for 8 bright background colors (iCE colors)."
+                    fl!("status-blinking-tooltip")
                 };
-                if widgets::status_button(ui, ice_label, ice_tip).clicked() {
+                if widgets::status_button(ui, &ice_label, &ice_tip).clicked() {
                     let mode = if ice { icy_engine::IceMode::Blink } else { icy_engine::IceMode::Ice };
                     self.edit(|state| state.set_ice_mode(mode));
                 }
@@ -1302,25 +1340,38 @@ impl DrawApp {
 }
 
 /// Display name of a tool in this frontend.
-pub(super) fn tool_label(tool: Tool) -> &'static str {
+pub(super) fn tool_label(tool: Tool) -> String {
     match tool {
-        Tool::Click => "Text",
-        Tool::Pipette => "Color Picker",
-        Tool::Font => "Text Art",
-        tool => tool.name(),
+        Tool::Click => fl!("tool-click_name"),
+        Tool::Select => fl!("tool-select_name"),
+        Tool::Pencil => fl!("tool-pencil_name"),
+        Tool::Line => fl!("tool-line_name"),
+        Tool::RectangleOutline => fl!("tool-rectangle_name"),
+        Tool::RectangleFilled => fl!("tool-filled_rectangle_name"),
+        Tool::EllipseOutline => fl!("tool-ellipse_name"),
+        Tool::EllipseFilled => fl!("tool-filled_ellipse_name"),
+        Tool::Fill => fl!("tool-fill_name"),
+        Tool::Pipette => fl!("tool-pipette_name"),
+        Tool::Font => fl!("tool-tdf_name"),
+        Tool::Tag => fl!("tool-tag_name"),
     }
 }
 
 /// One line description shown in the tool rail tooltips.
-fn tool_hint(tool: Tool) -> &'static str {
+fn tool_hint(tool: Tool) -> String {
     match tool {
-        Tool::Click => "Type text, move the caret and use F-key characters",
-        Tool::Select => "Select areas, characters or colors",
-        Tool::Pencil => "Paint with the brush",
-        Tool::Pipette => "Pick colors from the canvas",
-        Tool::Font => "Type with TheDraw and FIGlet fonts",
-        Tool::Tag => "Place and edit annotation tags",
-        tool => tool.tooltip(),
+        Tool::Click => fl!("tool-click_tooltip"),
+        Tool::Select => fl!("tool-select_tooltip"),
+        Tool::Pencil => fl!("tool-pencil_tooltip"),
+        Tool::Line => fl!("tool-line_tooltip"),
+        Tool::RectangleOutline => fl!("tool-rectangle_tooltip"),
+        Tool::RectangleFilled => fl!("tool-filled_rectangle_tooltip"),
+        Tool::EllipseOutline => fl!("tool-ellipse_tooltip"),
+        Tool::EllipseFilled => fl!("tool-filled_ellipse_tooltip"),
+        Tool::Fill => fl!("tool-fill_tooltip"),
+        Tool::Pipette => fl!("tool-pipette_tooltip"),
+        Tool::Font => fl!("tool-tdf_tooltip"),
+        Tool::Tag => fl!("tool-tag_tooltip"),
     }
 }
 

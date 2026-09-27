@@ -74,7 +74,7 @@ impl DrawApp {
         let busy = self.picker
             || self.layer_properties_open()
             || self.document.paste_active()
-            || self.dialog.as_ref().is_some_and(|dialog| !matches!(dialog, Dialog::Font));
+            || self.dialog.is_some();
         match command {
             McpCommand::GetHelp { editor_type, response } => respond(
                 &response,
@@ -145,8 +145,7 @@ impl DrawApp {
                             Ok(())
                         }
                         "bitfont" => {
-                            self.font_editor = Some(crate::font::FontEditor::new(icy_engine::BitFont::create_8("Untitled", 8, 16, &[0; 4096])));
-                            self.dialog = Some(Dialog::Font);
+                            self.create(super::NewKind::BitmapFont, Size::new(80, 25));
                             Ok(())
                         }
                         _ => Err("Unknown editor type".into()),
@@ -407,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn opening_a_file_keeps_unsaved_bitmap_font_visible() {
+    fn opening_a_file_asks_before_dropping_an_unsaved_bitmap_font() {
         let mut app = DrawApp::new();
         let (response, mut result) = response();
         app.mcp_command(McpCommand::NewDocument {
@@ -417,7 +416,7 @@ mod tests {
         result.try_recv().unwrap().unwrap();
         app.font_editor.as_mut().unwrap().state.set_pixel('A', 0, 0, true).unwrap();
         app.open(PathBuf::from("missing.icy"));
-        assert!(matches!(app.dialog, Some(Dialog::Font)));
+        assert!(matches!(app.dialog, Some(Dialog::Close)));
         assert!(app.font_editor.as_ref().unwrap().modified());
         assert!(app.font_editor.as_ref().unwrap().state.get_glyph_pixels('A')[0][0]);
     }

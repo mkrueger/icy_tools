@@ -4,17 +4,20 @@
 use super::super::widgets::Icons;
 use super::{menus, DrawApp, FileAction, NewKind};
 use eframe::egui::{self, Color32};
+use icy_draw::fl;
 use icy_engine::Size;
 use icy_engine_gui::egui::appearance::{self, PRIMARY};
 
 /// Canvas size presets offered by the New and Canvas Size dialogs.
-pub(super) const SIZE_PRESETS: [(i32, i32, &str); 5] = [
-    (80, 25, "Standard"),
-    (80, 50, "VGA 50 lines"),
-    (132, 25, "Wide"),
-    (132, 50, "Wide, 50 lines"),
-    (40, 25, "40 columns"),
-];
+pub(super) fn size_presets() -> [(i32, i32, String); 5] {
+    [
+        (80, 25, fl!("size-preset-standard")),
+        (80, 50, fl!("size-preset-vga50")),
+        (132, 25, fl!("size-preset-wide")),
+        (132, 50, fl!("size-preset-wide50")),
+        (40, 25, fl!("size-preset-40columns")),
+    ]
+}
 
 const TILE_SIZE: egui::Vec2 = egui::vec2(170.0, 92.0);
 const TILE_SPACING: f32 = 10.0;
@@ -101,14 +104,17 @@ impl DrawApp {
     pub(super) fn start_screen(&mut self, ui: &mut egui::Ui) {
         let context = ui.ctx().clone();
         let recent: Vec<_> = self.settings.recent_files.files().into_iter().rev().take(8).collect();
-        let mut tiles: Vec<(Option<NewKind>, &str, &str, &str)> = vec![
-            (Some(NewKind::Ansi), "pencil", "ANSI Art", "80 × 25 canvas"),
-            (None, "measure", "Custom…", "Choose type and size"),
+        let mut tiles: Vec<(Option<NewKind>, &str, String, String)> = vec![
+            (Some(NewKind::Ansi), "pencil", NewKind::Ansi.name(), fl!("start-ansi-subtitle")),
+            (None, "measure", fl!("start-custom"), fl!("start-custom-subtitle")),
         ];
         for kind in NewKind::ALL.into_iter().skip(1) {
-            let name = kind.name().trim_start_matches("TheDraw ");
-            let subtitle = if matches!(kind, NewKind::TheDraw(_)) { "TheDraw font" } else { kind.description() };
-            tiles.push((Some(kind), kind.icon(), name, subtitle));
+            let subtitle = if matches!(kind, NewKind::TheDraw(_)) {
+                fl!("start-tdf-subtitle")
+            } else {
+                kind.description()
+            };
+            tiles.push((Some(kind), kind.icon(), kind.name(), subtitle));
         }
         let mut create = None;
         let mut open = None;
@@ -124,9 +130,9 @@ impl DrawApp {
                 ui.vertical(|ui| {
                     ui.set_width(width);
                     ui.label(appearance::bold(ui, "Icy Draw").size(26.0));
-                    ui.label(egui::RichText::new("Create ANSI art, TheDraw fonts, bitmap fonts and animations.").weak());
+                    ui.label(egui::RichText::new(fl!("start-tagline")).weak());
                     ui.add_space(20.0);
-                    caption(ui, "New");
+                    caption(ui, &fl!("start-new"));
                     for row in tiles.chunks(columns) {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = TILE_SPACING;
@@ -140,20 +146,20 @@ impl DrawApp {
                     }
                     ui.add_space(14.0);
                     ui.horizontal(|ui| {
-                        let open_button = appearance::primary_button("Open…")
+                        let open_button = appearance::primary_button(fl!("menu-open"))
                             .shortcut_text(egui::RichText::new(context.format_shortcut(&menus::OPEN)).color(Color32::from_white_alpha(190)))
                             .min_size(egui::vec2(150.0, 32.0));
                         if ui.add_enabled(!self.picker, open_button).clicked() {
                             self.choose(&context, FileAction::Open);
                         }
                         ui.add_space(8.0);
-                        ui.label(egui::RichText::new("or drop a file anywhere in this window").weak().size(12.0));
+                        ui.label(egui::RichText::new(fl!("start-drop-hint")).weak().size(12.0));
                     });
                     if recent.is_empty() {
                         return;
                     }
                     ui.add_space(24.0);
-                    caption(ui, "Recent");
+                    caption(ui, &fl!("start-recent"));
                     for path in &recent {
                         let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
                         let folder = path.parent().map(|parent| parent.display().to_string()).unwrap_or_default();

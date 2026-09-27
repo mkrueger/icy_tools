@@ -9,7 +9,7 @@ lazy_static::lazy_static! {
 
     static ref PAL_REGEX: Regex = Regex::new(r"(\d+)\s+(\d+)\s+(\d+)").unwrap();
 
-    static ref GPL_COLOR_REGEX: Regex = Regex::new(r"(\d+)\s+(\d+)\s+(\d+)\s+(.+)").unwrap();
+    static ref GPL_COLOR_REGEX: Regex = Regex::new(r"(\d+)\s+(\d+)\s+(\d+)\s*(.*)").unwrap();
     static ref GPL_NAME_REGEX: Regex = Regex::new(r"\s*#Palette Name:\s*(.*)\s*").unwrap();
     static ref GPL_DESCRIPTION_REGEX: Regex = Regex::new(r"\s*#Description:\s*(.*)\s*").unwrap();
 
@@ -184,6 +184,7 @@ impl FileFormat {
                                     let g = g.parse::<u32>()?;
                                     let b = b.parse::<u32>()?;
                                     let mut c = Color::new(r as u8, g as u8, b as u8);
+                                    let descr = descr.trim();
                                     if !descr.is_empty() {
                                         c.name = Some(descr.to_string());
                                     }

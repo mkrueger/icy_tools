@@ -1,45 +1,58 @@
-use super::widgets::{self, Icons};
-use eframe::egui;
-use icy_engine_gui::{egui::screen::ScreenView, MonitorSettings, ScalingMode};
+//! Lua animation editor: highlighted source with a log on the left, a player-style preview with
+//! transport controls on the right, and an export dialog for GIF, AV1 and Asciicast.
+
+pub use super::animation_export::ExportFormat;
+use super::{
+    animation_export::{export_frames, ExportProgress},
+    widgets::Icons,
+};
+use eframe::egui::{self, Color32, Stroke, StrokeKind};
+use icy_draw::fl;
+use icy_engine_gui::{
+    egui::{
+        appearance::{self, labels, DialogButton, DialogSize, PRIMARY},
+        dialog::DANGER,
+        screen::ScreenView,
+    },
+    MonitorSettings, ScalingMode,
+};
 use icy_engine_scripting::Animator;
 use parking_lot::Mutex;
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
+    atomic::Ordering,
     mpsc::{self, Receiver},
 };
 use std::{
-    io::Write,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
 
-#[derive(Clone, Copy)]
-pub enum ExportFormat {
-    Gif,
-    Cast,
-}
-
-impl ExportFormat {
-    pub fn extension(self) -> &'static str {
-        match self {
-            Self::Gif => "gif",
-            Self::Cast => "cast",
-        }
-    }
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Gif => "GIF Animation",
-            Self::Cast => "Asciicast v2",
-        }
-    }
-}
+const SPEEDS: [f32; 5] = [0.25, 0.5, 1.0, 2.0, 4.0];
+const TRANSPORT_BUTTON: f32 = 30.0;
+const PLAY_BUTTON: f32 = 40.0;
+const SCRUBBER_HEIGHT: f32 = 22.0;
+const CONTROL_BAR_HEIGHT: f32 = 54.0;
+const STATUS_HEIGHT: f32 = 24.0;
+const PLAY: Color32 = Color32::from_rgb(46, 160, 67);
 
 struct ExportJob {
     result: Receiver<Result<(), String>>,
-    cancelled: Arc<AtomicBool>,
-    progress: Arc<AtomicUsize>,
-    count: usize,
+    progress: Arc<ExportProgress>,
+}
+
+/// State of the export dialog; the path is kept as typed so it can be edited freely.
+struct ExportDialog {
+    format: ExportFormat,
+    path: String,
+}
+
+/// Work the editor needs from the application window, which owns the file pickers and confirmations.
+pub enum Request {
+    /// Pick the export target; answer with [`AnimationEditor::set_export_path`].
+    Browse(ExportFormat),
+    /// Export after confirming an overwrite; continue with [`AnimationEditor::export`].
+    Export(PathBuf, ExportFormat),
 }
 
 pub struct AnimationEditor {
@@ -59,9 +72,13 @@ pub struct AnimationEditor {
     preview: Option<ScreenView>,
     monitor: MonitorSettings,
     icons: Icons,
-    export_request: Option<ExportFormat>,
+    request: Option<Request>,
+    export_dialog: Option<ExportDialog>,
     export_job: Option<ExportJob>,
     export_error: Option<String>,
+    log_visible: bool,
+    /// Caret line and column, both starting at 0.
+    cursor: (usize, usize),
     undo: Vec<String>,
     redo: Vec<String>,
 }
@@ -88,9 +105,12 @@ impl AnimationEditor {
                 ..Default::default()
             },
             icons: Icons::default(),
-            export_request: None,
+            request: None,
+            export_dialog: None,
             export_job: None,
             export_error: None,
+            log_visible: false,
+            cursor: (0, 0),
             undo: Vec::new(),
             redo: Vec::new(),
         }
@@ -169,13 +189,44 @@ impl AnimationEditor {
         }
     }
 
-    pub fn take_export_request(&mut self) -> Option<ExportFormat> {
-        self.export_request.take()
+    pub fn take_request(&mut self) -> Option<Request> {
+        self.request.take()
+    }
+
+    pub fn open_export_dialog(&mut self) {
+        if self.export_dialog.is_none() {
+            let path = self.path.as_ref().map(|path| path.with_extension(ExportFormat::Gif.extension()));
+            self.export_dialog = Some(ExportDialog {
+                format: ExportFormat::Gif,
+                path: path.map(|path| path.display().to_string()).unwrap_or_default(),
+            });
+            self.export_error = None;
+        }
+    }
+
+    /// Picked export target; its extension also selects the format.
+    pub fn set_export_path(&mut self, mut path: PathBuf) {
+        if let Some(dialog) = &mut self.export_dialog {
+            match ExportFormat::ALL
+                .into_iter()
+                .find(|format| path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case(format.extension())))
+            {
+                Some(format) => dialog.format = format,
+                None => {
+                    path.set_extension(dialog.format.extension());
+                }
+            }
+            dialog.path = path.display().to_string();
+            self.export_error = None;
+        }
     }
 
     #[cfg(test)]
     pub fn compile_for_test(&mut self) {
-        self.compile();
+        if self.compiling.is_none() {
+            self.compile();
+        }
+        self.pending = false;
         let deadline = Instant::now() + Duration::from_secs(5);
         while self.compiling.is_some() {
             self.poll();
@@ -192,6 +243,16 @@ impl AnimationEditor {
     }
 
     #[cfg(test)]
+    pub fn export_dialog_open(&self) -> bool {
+        self.export_dialog.is_some()
+    }
+
+    #[cfg(test)]
+    pub fn show_log_for_test(&mut self, visible: bool) {
+        self.log_visible = visible;
+    }
+
+    #[cfg(test)]
     pub fn preview_rect_for_test(&self) -> egui::Rect {
         let info = self.preview.as_ref().unwrap().terminal.render_info.read();
         egui::Rect::from_min_size(egui::pos2(info.bounds_x, info.bounds_y), egui::vec2(info.viewport_width, info.viewport_height))
@@ -204,22 +265,20 @@ impl AnimationEditor {
         if self.path.as_deref().is_some_and(|source| icy_draw::files::same_file(source, &path))
             || !path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case(format.extension()))
         {
-            self.export_error = Some(format!("Choose a different filename with a .{} extension.", format.extension()));
+            self.export_error = Some(fl!("animation-export-extension", extension = format.extension()));
             return;
         }
         let animator = self.animator.clone();
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let progress = Arc::new(AtomicUsize::new(0));
+        let progress = Arc::new(ExportProgress::default());
+        progress.total.store(animator.lock().frames.len(), Ordering::Relaxed);
         let (sender, result) = mpsc::channel();
         self.export_job = Some(ExportJob {
             result,
-            cancelled: cancelled.clone(),
             progress: progress.clone(),
-            count: animator.lock().frames.len(),
         });
         self.export_error = None;
         std::thread::spawn(move || {
-            let result = export_frames(&animator, &path, format, &cancelled, &progress);
+            let result = export_frames(&animator, &path, format, &progress);
             let _ = sender.send(result);
             context.request_repaint();
         });
@@ -288,8 +347,17 @@ impl AnimationEditor {
         }
     }
 
+    /// Playback position and total duration in milliseconds, from the frame delays.
+    fn time_info(&self) -> (u64, u64) {
+        let animator = self.animator.lock();
+        let delays = animator.frames.iter().map(|(_, _, delay)| u64::from(*delay));
+        let current = delays.clone().take(self.frame).sum();
+        (current, delays.sum())
+    }
+
     pub fn show(&mut self, context: &egui::Context, blocked: bool) {
-        if !blocked {
+        let locked = blocked || self.export_dialog.is_some();
+        if !locked {
             let history = context.input_mut(|input| {
                 if input.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Z)
                     || input.consume_key(egui::Modifiers::COMMAND, egui::Key::Y)
@@ -304,10 +372,16 @@ impl AnimationEditor {
             if let Some(redo) = history {
                 self.undo_source(redo);
             }
+            if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F5)) {
+                self.compile();
+            }
         }
         self.poll();
         if let Some(job) = &self.export_job {
             if let Ok(result) = job.result.try_recv() {
+                if result.is_ok() {
+                    self.export_dialog = None;
+                }
                 self.export_error = result.err();
                 self.export_job = None;
             }
@@ -315,136 +389,196 @@ impl AnimationEditor {
         if self.compiling.is_some() || self.pending || self.playing || self.export_job.is_some() {
             context.request_repaint_after(Duration::from_millis(16));
         }
-        let panel_fill = context.style().visuals.panel_fill;
-        egui::TopBottomPanel::top("animation-controls")
-            .exact_height(44.0)
-            .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::symmetric(8, 0)))
-            .show(context, |ui| {
-                if blocked {
-                    ui.disable();
-                }
-                let count = self.animator.lock().frames.len();
-                ui.horizontal_centered(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    if self.icons.button(ui, "replay", "Compile", false).clicked() {
-                        self.compile();
-                    }
-                    if self.compiling.is_some() {
-                        ui.spinner();
-                    }
-                    widgets::divider(ui);
-                    ui.spacing_mut().item_spacing.x = 2.0;
-                    if self.icons.button(ui, "navigate_prev", "Previous Frame", false).clicked() {
-                        self.frame = self.frame.saturating_sub(1);
-                        self.playing = false;
-                    }
-                    if self
-                        .icons
-                        .button(ui, if self.playing { "pause" } else { "play" }, "Play / Pause", self.playing)
-                        .clicked()
-                    {
-                        self.playing = !self.playing;
-                        self.tick = Instant::now();
-                    }
-                    if self.icons.button(ui, "navigate_next", "Next Frame", false).clicked() {
-                        self.frame = (self.frame + 1).min(count.saturating_sub(1));
-                        self.playing = false;
-                    }
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    widgets::divider(ui);
-                    widgets::toggle(ui, "Loop", &mut self.looping, "Restart at the first frame after the last one");
-                    ui.add(egui::DragValue::new(&mut self.speed).range(0.1..=8.0).speed(0.1).suffix("×"))
-                        .on_hover_text("Playback speed");
-                    widgets::divider(ui);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.add_enabled_ui(count > 0 && self.export_job.is_none(), |ui| {
-                            ui.menu_button("Export", |ui| {
-                                for format in [ExportFormat::Gif, ExportFormat::Cast] {
-                                    if ui.button(format.name()).clicked() {
-                                        self.export_request = Some(format);
-                                        ui.close();
-                                    }
-                                }
-                            });
-                        });
-                        if let Some(job) = &self.export_job {
-                            if ui.button("Cancel").clicked() {
-                                job.cancelled.store(true, Ordering::Relaxed);
-                            }
-                            ui.add(egui::ProgressBar::new(job.progress.load(Ordering::Relaxed) as f32 / job.count.max(1) as f32).desired_width(90.0));
-                        }
-                        if count > 0 {
-                            ui.label(
-                                egui::RichText::new(format!("{} / {count}", self.frame + 1))
-                                    .size(12.0)
-                                    .color(ui.visuals().weak_text_color()),
-                            );
-                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                ui.spacing_mut().slider_width = (ui.available_width() - 8.0).max(40.0);
-                                ui.add(egui::Slider::new(&mut self.frame, 0..=count - 1).show_value(false))
-                                    .on_hover_text("Frame");
-                            });
-                        }
-                    });
-                });
-            });
-        let error = self.export_error.clone().unwrap_or_else(|| self.animator.lock().error.clone());
-        if !error.is_empty() {
-            egui::TopBottomPanel::bottom("animation-error")
-                .max_height(130.0)
-                .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::symmetric(12, 8)))
-                .show(context, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        ui.colored_label(ui.visuals().error_fg_color, error);
-                    });
-                });
-        }
+        self.status_bar(context, locked);
         let source_frame = egui::Frame::new().fill(context.style().visuals.extreme_bg_color);
-        if context.content_rect().width() >= 850.0 {
+        let width = context.content_rect().width();
+        if width >= 850.0 {
             egui::SidePanel::left("animation-source")
-                .default_width(500.0)
+                .default_width((width * 0.45).clamp(420.0, 700.0))
                 .width_range(260.0..=900.0)
                 .resizable(true)
                 .frame(source_frame)
-                .show(context, |ui| self.code(ui, blocked));
+                .show(context, |ui| self.source_pane(ui, locked));
         } else {
             egui::TopBottomPanel::top("animation-source-compact")
                 .resizable(true)
                 .default_height(220.0)
                 .min_height(80.0)
                 .frame(source_frame)
-                .show(context, |ui| self.code(ui, blocked));
+                .show(context, |ui| self.source_pane(ui, locked));
         }
-        let well = if context.style().visuals.dark_mode {
-            egui::Color32::from_gray(22)
-        } else {
-            egui::Color32::from_gray(212)
-        };
-        egui::CentralPanel::default().frame(egui::Frame::new().fill(well)).show(context, |ui| {
-            if let Some(preview) = &mut self.preview {
-                preview.show(ui, &self.monitor);
-            }
-        });
+        let panel_fill = context.style().visuals.panel_fill;
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(panel_fill).inner_margin(8))
+            .show(context, |ui| {
+                if locked {
+                    ui.disable();
+                }
+                self.player(ui);
+            });
+        self.export_dialog(context, blocked);
     }
 
-    fn code(&mut self, ui: &mut egui::Ui, blocked: bool) {
-        if blocked {
+    /// Caret position, the latest log line (toggling the log) and the modified state.
+    fn status_bar(&mut self, context: &egui::Context, locked: bool) {
+        let visuals = context.style().visuals.clone();
+        egui::TopBottomPanel::bottom("animation-status")
+            .exact_height(STATUS_HEIGHT)
+            .frame(egui::Frame::new().fill(visuals.panel_fill).inner_margin(egui::Margin::symmetric(10, 0)))
+            .show(context, |ui| {
+                if locked {
+                    ui.disable();
+                }
+                let rect = ui.max_rect();
+                let third = rect.width() / 3.0;
+                let column =
+                    |index: f32, width: f32| egui::Rect::from_min_size(egui::pos2(rect.left() + third * index, rect.top()), egui::vec2(width, rect.height()));
+                let small = |text: String| egui::RichText::new(text).size(12.0);
+                let (line, col): (usize, usize) = (self.cursor.0 + 1, self.cursor.1 + 1);
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .max_rect(column(0.0, third))
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                    |ui| ui.label(small(fl!("animation-cursor", line = line, column = col))),
+                );
+                let (message, error) = {
+                    let animator = self.animator.lock();
+                    if animator.error.is_empty() {
+                        let message = animator
+                            .log
+                            .iter()
+                            .rfind(|entry| entry.frame <= self.frame)
+                            .map(|entry| format!("[{}] {}", entry.frame, entry.text));
+                        (message.unwrap_or_else(|| fl!("animation-log")), false)
+                    } else {
+                        (animator.error.lines().next().unwrap_or_default().to_owned(), true)
+                    }
+                };
+                let color = if error { visuals.error_fg_color } else { visuals.text_color() };
+                let galley = ui.painter().layout_no_wrap(message, egui::FontId::proportional(12.0), color);
+                let width = (14.0 + 4.0 + galley.size().x).min(third * 2.0);
+                let toggle = egui::Rect::from_center_size(rect.center(), egui::vec2(width + 8.0, rect.height() - 4.0));
+                let response = ui
+                    .interact(toggle, egui::Id::new("animation-log-toggle"), egui::Sense::click())
+                    .on_hover_text(fl!("animation-toggle-log"))
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if response.hovered() {
+                    ui.painter().rect_filled(toggle, 4, visuals.widgets.hovered.weak_bg_fill);
+                }
+                let angle = if self.log_visible { std::f32::consts::FRAC_PI_2 } else { 0.0 };
+                let icon = egui::Rect::from_center_size(egui::pos2(toggle.left() + 4.0 + 7.0, rect.center().y), egui::Vec2::splat(14.0));
+                self.icons
+                    .image(ui, "navigate_next", 14.0)
+                    .tint(color)
+                    .rotate(angle, egui::Vec2::splat(0.5))
+                    .paint_at(ui, icon);
+                let text = egui::pos2(icon.right() + 4.0, rect.center().y - galley.size().y / 2.0);
+                ui.painter().with_clip_rect(toggle).galley(text, galley, color);
+                if response.clicked() && !locked {
+                    self.log_visible = !self.log_visible;
+                }
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .max_rect(column(2.0, third))
+                        .layout(egui::Layout::right_to_left(egui::Align::Center)),
+                    |ui| {
+                        if self.modified() {
+                            ui.label(small(fl!("animation-modified")).color(visuals.weak_text_color()));
+                        }
+                        if self.compiling.is_some() || self.pending {
+                            ui.label(small(fl!("animation-compiling")).color(visuals.weak_text_color()));
+                            ui.add(egui::Spinner::new().size(12.0));
+                        }
+                    },
+                );
+            });
+    }
+
+    fn source_pane(&mut self, ui: &mut egui::Ui, locked: bool) {
+        if locked {
             ui.disable();
         }
-        let previous = self.source.clone();
-        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-            if ui
-                .add(
-                    egui::TextEdit::multiline(&mut self.source)
-                        .id(egui::Id::new("animation-source-editor"))
-                        .code_editor()
-                        .frame(false)
-                        .margin(egui::Margin::symmetric(12, 10))
-                        .desired_width(f32::INFINITY)
-                        .desired_rows(30),
+        if self.log_visible {
+            let visuals = ui.visuals().clone();
+            egui::TopBottomPanel::bottom("animation-log")
+                .resizable(true)
+                .default_height(140.0)
+                .height_range(60.0..=400.0)
+                .frame(
+                    egui::Frame::new()
+                        .fill(visuals.panel_fill)
+                        .inner_margin(egui::Margin::symmetric(10, 6))
+                        .stroke(visuals.widgets.noninteractive.bg_stroke),
                 )
-                .changed()
-            {
+                .show_inside(ui, |ui| self.log(ui));
+        }
+        self.code(ui);
+    }
+
+    /// Script error, or the log entries written up to the shown frame.
+    fn log(&self, ui: &mut egui::Ui) {
+        let (error, entries) = {
+            let animator = self.animator.lock();
+            let entries: Vec<_> = animator
+                .log
+                .iter()
+                .filter(|entry| entry.frame <= self.frame)
+                .map(|entry| (entry.frame, entry.text.clone()))
+                .collect();
+            (animator.error.clone(), entries)
+        };
+        egui::ScrollArea::vertical()
+            .id_salt("animation-log-entries")
+            .auto_shrink([false, false])
+            .stick_to_bottom(true)
+            .show(ui, |ui| {
+                if !error.is_empty() {
+                    ui.label(egui::RichText::new(error).monospace().color(ui.visuals().error_fg_color));
+                } else if entries.is_empty() {
+                    ui.weak(fl!("animation-no-log"));
+                } else {
+                    for (frame, text) in entries {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(format!("[{frame}]")).monospace().weak());
+                            ui.label(egui::RichText::new(text).monospace());
+                        });
+                    }
+                }
+            });
+    }
+
+    fn code(&mut self, ui: &mut egui::Ui) {
+        let previous = self.source.clone();
+        let colors = SyntaxColors::new(ui.visuals());
+        let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+            let font = egui::TextStyle::Monospace.resolve(ui.style());
+            let mut job = egui::text::LayoutJob::default();
+            for (span, color) in lua_spans(text.as_str(), &colors) {
+                job.append(span, 0.0, egui::TextFormat::simple(font.clone(), color));
+            }
+            // Code is not wrapped; the scroll area scrolls horizontally instead.
+            let _ = wrap_width;
+            job.wrap.max_width = f32::INFINITY;
+            ui.fonts_mut(|fonts| fonts.layout_job(job))
+        };
+        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+            let output = egui::TextEdit::multiline(&mut self.source)
+                .id(egui::Id::new("animation-source-editor"))
+                .code_editor()
+                .frame(false)
+                .margin(egui::Margin::symmetric(12, 10))
+                .desired_width(f32::INFINITY)
+                .desired_rows(30)
+                .layouter(&mut layouter)
+                .show(ui);
+            if let Some(range) = output.cursor_range {
+                let index = range.primary.index;
+                let before: String = self.source.chars().take(index).collect();
+                let line = before.matches('\n').count();
+                let col = before.rsplit('\n').next().map_or(0, |line| line.chars().count());
+                self.cursor = (line, col);
+            }
+            if output.response.changed() {
                 self.pending = true;
                 self.changed = Instant::now();
                 self.undo.push(previous);
@@ -452,90 +586,505 @@ impl AnimationEditor {
             }
         });
     }
+
+    /// Preview well with frame and time overlays, the frame scrubber and the transport bar.
+    fn player(&mut self, ui: &mut egui::Ui) {
+        let count = self.animator.lock().frames.len();
+        let full = ui.available_rect_before_wrap();
+        let controls = SCRUBBER_HEIGHT + CONTROL_BAR_HEIGHT + 12.0;
+        let preview = egui::Rect::from_min_max(full.min, egui::pos2(full.right(), (full.bottom() - controls).max(full.top() + 40.0)));
+        let scrubber = egui::Rect::from_min_size(egui::pos2(full.left(), preview.bottom() + 6.0), egui::vec2(full.width(), SCRUBBER_HEIGHT));
+        let bar = egui::Rect::from_min_size(egui::pos2(full.left(), scrubber.bottom() + 6.0), egui::vec2(full.width(), CONTROL_BAR_HEIGHT));
+        self.preview_well(ui, preview, count);
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(scrubber.shrink2(egui::vec2(4.0, 0.0)))
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            |ui| {
+                ui.add_enabled_ui(count > 1, |ui| {
+                    let mut position = self.frame as f32;
+                    let max = count.saturating_sub(1).max(1) as f32;
+                    if appearance::slider(ui, &mut position, 0.0..=max, ui.available_width())
+                        .on_hover_text(fl!("animation-frame"))
+                        .changed()
+                    {
+                        self.frame = (position.round() as usize).min(count.saturating_sub(1));
+                        self.tick = Instant::now();
+                    }
+                });
+            },
+        );
+        ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| self.transport(ui, count));
+        ui.advance_cursor_after_rect(full);
+    }
+
+    fn preview_well(&mut self, ui: &mut egui::Ui, rect: egui::Rect, count: usize) {
+        let visuals = ui.visuals().clone();
+        let well = if visuals.dark_mode { Color32::from_gray(22) } else { Color32::from_gray(212) };
+        ui.painter().rect(rect, 6, well, visuals.widgets.noninteractive.bg_stroke, StrokeKind::Inside);
+        let inner = rect.shrink(4.0);
+        let error = self.animator.lock().error.clone();
+        let message = if !error.is_empty() {
+            Some(egui::RichText::new(error).color(visuals.error_fg_color))
+        } else if count == 0 && (self.compiling.is_some() || self.pending) {
+            Some(egui::RichText::new(fl!("animation-compiling")).weak())
+        } else if count == 0 {
+            Some(egui::RichText::new(fl!("animation-no-frames")).weak())
+        } else {
+            None
+        };
+        if let Some(message) = message {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(inner.shrink(16.0)), |ui| {
+                ui.centered_and_justified(|ui| ui.add(egui::Label::new(message.size(14.0)).wrap()));
+            });
+            return;
+        }
+        if let Some(preview) = &mut self.preview {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| preview.show(ui, &self.monitor));
+        }
+        let (current, total) = self.time_info();
+        let painter = ui.painter().with_clip_rect(inner);
+        let current_frame: usize = self.frame + 1;
+        let frame = fl!("animation-frame-display", current = current_frame, total = count);
+        overlay_label(&painter, inner.left_top() + egui::vec2(8.0, 8.0), egui::Align::LEFT, frame);
+        let time = format!("{} / {}", format_time(current), format_time(total));
+        overlay_label(&painter, inner.right_top() + egui::vec2(-8.0, 8.0), egui::Align::RIGHT, time);
+    }
+
+    fn transport(&mut self, ui: &mut egui::Ui, count: usize) {
+        let visuals = ui.visuals().clone();
+        let rect = ui.max_rect();
+        ui.painter()
+            .rect(rect, 8, visuals.faint_bg_color, visuals.widgets.noninteractive.bg_stroke, StrokeKind::Inside);
+        let ready = count > 0;
+        let last = count.saturating_sub(1);
+        // first, previous, play, next, last, restart, loop; with wider gaps around play and before restart.
+        let group = 6.0 * TRANSPORT_BUTTON + PLAY_BUTTON + 4.0 * 7.0 + 4.0 * 2.0 + 12.0;
+        let speed_width = 76.0;
+        let left = (rect.center().x - group / 2.0)
+            .min(rect.right() - 12.0 - speed_width - 12.0 - group)
+            .max(rect.left() + 12.0);
+        let buttons = egui::Rect::from_min_max(egui::pos2(left, rect.top()), egui::pos2(rect.right(), rect.bottom()));
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(buttons)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                let stop = |editor: &mut Self, frame: usize| {
+                    editor.frame = frame;
+                    editor.playing = false;
+                };
+                if transport_button(&mut self.icons, ui, "first_page", &fl!("animation-first-frame"), ready && self.frame > 0, false).clicked() {
+                    stop(self, 0);
+                }
+                if transport_button(
+                    &mut self.icons,
+                    ui,
+                    "skip_previous",
+                    &fl!("animation-previous-frame"),
+                    ready && self.frame > 0,
+                    false,
+                )
+                .clicked()
+                {
+                    stop(self, self.frame.saturating_sub(1));
+                }
+                ui.add_space(4.0);
+                if play_button(&mut self.icons, ui, self.playing, ready).clicked() {
+                    if !self.playing && self.frame >= last && !self.looping {
+                        self.frame = 0;
+                    }
+                    self.playing = !self.playing;
+                    self.tick = Instant::now();
+                }
+                ui.add_space(4.0);
+                if transport_button(
+                    &mut self.icons,
+                    ui,
+                    "skip_next",
+                    &fl!("animation-next-frame"),
+                    ready && self.frame < last,
+                    false,
+                )
+                .clicked()
+                {
+                    stop(self, (self.frame + 1).min(last));
+                }
+                if transport_button(
+                    &mut self.icons,
+                    ui,
+                    "last_page",
+                    &fl!("animation-last-frame"),
+                    ready && self.frame < last,
+                    false,
+                )
+                .clicked()
+                {
+                    stop(self, last);
+                }
+                ui.add_space(12.0);
+                if transport_button(&mut self.icons, ui, "replay", &fl!("animation-restart"), ready, false).clicked() {
+                    self.frame = 0;
+                    self.playing = true;
+                    self.tick = Instant::now();
+                }
+                let tooltip = format!("{}\n{}", fl!("animation-loop"), fl!("animation-loop-tooltip"));
+                if transport_button(&mut self.icons, ui, "repeat", &tooltip, ready, self.looping).clicked() {
+                    self.looping = !self.looping;
+                }
+            },
+        );
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(rect.shrink2(egui::vec2(12.0, 0.0)))
+                .layout(egui::Layout::right_to_left(egui::Align::Center)),
+            |ui| {
+                egui::ComboBox::from_id_salt("animation-speed")
+                    .width(speed_width - 12.0)
+                    .selected_text(speed_label(self.speed))
+                    .show_ui(ui, |ui| {
+                        for speed in SPEEDS {
+                            ui.selectable_value(&mut self.speed, speed, speed_label(speed));
+                        }
+                    })
+                    .response
+                    .on_hover_text(fl!("animation-speed"));
+            },
+        );
+    }
+
+    /// Format, target and progress of an export; the export itself runs in the background.
+    fn export_dialog(&mut self, context: &egui::Context, blocked: bool) {
+        #[derive(Clone, Copy)]
+        enum Action {
+            Close,
+            Stop,
+            Export,
+        }
+        if self.export_dialog.is_none() {
+            return;
+        }
+        let (frames, size) = {
+            let animator = self.animator.lock();
+            let size = animator.frames.first().map(|(screen, _, _)| (screen.width(), screen.height()));
+            (animator.frames.len(), size)
+        };
+        let (_, duration) = self.time_info();
+        let progress = self.export_job.as_ref().map(|job| {
+            let progress = &job.progress;
+            (
+                progress.frame.load(Ordering::Relaxed),
+                progress.total.load(Ordering::Relaxed),
+                progress.encoding.load(Ordering::Relaxed),
+            )
+        });
+        let error = self.export_error.clone();
+        let dialog = self.export_dialog.as_mut().unwrap();
+        let mut browse = false;
+        let export = fl!("menu-export").trim_end_matches(['…', '.']).to_string();
+        let buttons = if progress.is_some() {
+            vec![DialogButton::cancel(labels::cancel(), Action::Stop)]
+        } else {
+            vec![
+                DialogButton::cancel(labels::cancel(), Action::Close),
+                DialogButton::primary(export, Action::Export).enabled(frames > 0 && !dialog.path.trim().is_empty()),
+            ]
+        };
+        let response = appearance::Dialog::new("animation-export").size(DialogSize::Medium).show(context, |frame| {
+            frame.content(|ui| {
+                if blocked {
+                    ui.disable();
+                }
+                ui.add_enabled_ui(progress.is_none(), |ui| {
+                    appearance::group(ui, "", |ui| {
+                        appearance::combo_row(ui, &fl!("animation-export-format"), dialog.format.name(), |ui| {
+                            for format in ExportFormat::ALL {
+                                if ui.selectable_value(&mut dialog.format, format, format.name()).changed() && !dialog.path.trim().is_empty() {
+                                    dialog.path = PathBuf::from(dialog.path.trim()).with_extension(format.extension()).display().to_string();
+                                }
+                            }
+                        });
+                        appearance::form_row(ui, &fl!("animation-export-path"), |ui| {
+                            ui.horizontal(|ui| {
+                                let label = fl!("animation-export-browse");
+                                let width = (ui.available_width() - 96.0).max(80.0);
+                                ui.add(
+                                    appearance::text_edit(&mut dialog.path)
+                                        .desired_width(width)
+                                        .hint_text(fl!("animation-export-no-path")),
+                                );
+                                browse = ui.button(label).clicked();
+                            });
+                        });
+                    });
+                });
+                ui.add_space(4.0);
+                let summary = match size {
+                    Some((width, height)) => fl!(
+                        "animation-export-summary",
+                        frames = frames,
+                        width = width,
+                        height = height,
+                        duration = format_time(duration)
+                    ),
+                    None => fl!("animation-export-no-frames"),
+                };
+                ui.label(egui::RichText::new(summary).weak().size(12.0));
+                if let Some((current, total, encoding)) = progress {
+                    ui.add_space(8.0);
+                    let fraction = if encoding { 1.0 } else { current as f32 / total.max(1) as f32 };
+                    let text = if encoding {
+                        fl!("animation-export-encoding")
+                    } else {
+                        fl!("animation-export-exporting-frame", current = current, total = total)
+                    };
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(text).size(12.0));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(egui::RichText::new(format!("{}%", (fraction * 100.0).round())).size(12.0).weak());
+                        });
+                    });
+                    ui.add(egui::ProgressBar::new(fraction).desired_height(8.0).animate(encoding));
+                }
+                if let Some(error) = &error {
+                    ui.add_space(8.0);
+                    ui.colored_label(DANGER, error);
+                }
+            });
+            frame.buttons(buttons);
+        });
+        if blocked {
+            return;
+        }
+        match response.action {
+            Some(Action::Stop) => {
+                if let Some(job) = &self.export_job {
+                    job.progress.cancelled.store(true, Ordering::Relaxed);
+                }
+            }
+            Some(Action::Export) => {
+                let mut path = PathBuf::from(dialog.path.trim());
+                if path.extension().is_none() {
+                    path.set_extension(dialog.format.extension());
+                    dialog.path = path.display().to_string();
+                }
+                self.request = Some(Request::Export(path, dialog.format));
+            }
+            Some(Action::Close) => {
+                self.export_dialog = None;
+                self.export_error = None;
+            }
+            None if response.dismissed && progress.is_none() => {
+                self.export_dialog = None;
+                self.export_error = None;
+            }
+            None if browse => self.request = Some(Request::Browse(dialog.format)),
+            None => {}
+        }
+    }
+}
+
+fn speed_label(speed: f32) -> String {
+    format!("{speed}×")
+}
+
+/// `MM:SS.t`
+fn format_time(milliseconds: u64) -> String {
+    let seconds = milliseconds / 1000;
+    format!("{:02}:{:02}.{}", seconds / 60, seconds % 60, (milliseconds % 1000) / 100)
+}
+
+/// Monospace caption on a translucent dark plate, drawn over the preview.
+fn overlay_label(painter: &egui::Painter, anchor: egui::Pos2, align: egui::Align, text: String) {
+    let galley = painter.layout_no_wrap(text, egui::FontId::monospace(12.0), Color32::WHITE);
+    let size = galley.size() + egui::vec2(20.0, 8.0);
+    let left = if align == egui::Align::RIGHT { anchor.x - size.x } else { anchor.x };
+    let rect = egui::Rect::from_min_size(egui::pos2(left, anchor.y), size);
+    painter.rect_filled(rect, 4, Color32::from_black_alpha(128));
+    painter.galley(rect.min + egui::vec2(10.0, 4.0), galley, Color32::WHITE);
+}
+
+/// Framed square transport button, filled with the accent color while `active`.
+fn transport_button(icons: &mut Icons, ui: &mut egui::Ui, icon: &str, tooltip: &str, enabled: bool, active: bool) -> egui::Response {
+    let image = icons.image(ui, icon, 18.0);
+    let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(TRANSPORT_BUTTON), sense);
+    let visuals = ui.visuals();
+    let (fill, stroke, tint) = if active && enabled {
+        (PRIMARY, PRIMARY, Color32::WHITE)
+    } else if !enabled {
+        (
+            visuals.widgets.inactive.weak_bg_fill.gamma_multiply(0.5),
+            visuals.widgets.noninteractive.bg_stroke.color,
+            visuals.weak_text_color().gamma_multiply(0.5),
+        )
+    } else if response.is_pointer_button_down_on() {
+        (
+            visuals.widgets.active.weak_bg_fill,
+            visuals.widgets.active.bg_stroke.color,
+            visuals.text_color(),
+        )
+    } else if response.hovered() {
+        (
+            visuals.widgets.hovered.weak_bg_fill,
+            visuals.widgets.hovered.bg_stroke.color,
+            visuals.text_color(),
+        )
+    } else {
+        (
+            visuals.widgets.inactive.weak_bg_fill,
+            visuals.widgets.noninteractive.bg_stroke.color,
+            visuals.text_color(),
+        )
+    };
+    ui.painter().rect(rect, 6, fill, Stroke::new(1.0, stroke), StrokeKind::Inside);
+    image
+        .tint(tint)
+        .paint_at(ui, egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(18.0)));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, active, tooltip));
+    response.on_hover_text(tooltip)
+}
+
+/// Round play/pause button: green to start playback, red while playing.
+fn play_button(icons: &mut Icons, ui: &mut egui::Ui, playing: bool, enabled: bool) -> egui::Response {
+    let image = icons.image(ui, if playing { "pause" } else { "play" }, 22.0);
+    let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(PLAY_BUTTON), sense);
+    let base = if !enabled {
+        ui.visuals().widgets.inactive.weak_bg_fill
+    } else if playing {
+        DANGER
+    } else {
+        PLAY
+    };
+    let fill = if enabled && response.hovered() { base.gamma_multiply(1.15) } else { base };
+    let painter = ui.painter();
+    painter.circle_filled(rect.center() + egui::vec2(0.0, 2.0), PLAY_BUTTON / 2.0, Color32::from_black_alpha(60));
+    painter.circle_filled(rect.center(), PLAY_BUTTON / 2.0, fill);
+    let tint = if enabled { Color32::WHITE } else { ui.visuals().weak_text_color() };
+    // The play triangle looks centred when nudged right a little.
+    let offset = if playing { 0.0 } else { 1.5 };
+    image.tint(tint).paint_at(
+        ui,
+        egui::Rect::from_center_size(rect.center() + egui::vec2(offset, 0.0), egui::Vec2::splat(22.0)),
+    );
+    let label = fl!("animation-play-pause");
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, playing, &label));
+    response.on_hover_text(fl!("animation-play-pause"))
+}
+
+/// Solarized accents, which read well on both the dark and the light editor background.
+struct SyntaxColors {
+    text: Color32,
+    keyword: Color32,
+    string: Color32,
+    number: Color32,
+    comment: Color32,
+    function: Color32,
+}
+
+impl SyntaxColors {
+    fn new(visuals: &egui::Visuals) -> Self {
+        Self {
+            text: visuals.text_color(),
+            keyword: Color32::from_rgb(133, 153, 0),
+            string: Color32::from_rgb(42, 161, 152),
+            number: Color32::from_rgb(108, 113, 196),
+            comment: if visuals.dark_mode {
+                Color32::from_rgb(110, 128, 134)
+            } else {
+                Color32::from_rgb(120, 130, 136)
+            },
+            function: Color32::from_rgb(38, 139, 210),
+        }
+    }
+}
+
+const LUA_KEYWORDS: [&str; 19] = [
+    "and", "break", "do", "else", "elseif", "end", "for", "function", "goto", "if", "in", "local", "not", "or", "repeat", "return", "then", "until", "while",
+];
+
+/// Level of a Lua long bracket (`[[`, `[==[`) at the start of `text`.
+fn long_bracket(text: &str) -> Option<usize> {
+    let rest = text.strip_prefix('[')?;
+    let level = rest.bytes().take_while(|byte| *byte == b'=').count();
+    rest[level..].starts_with('[').then_some(level)
+}
+
+/// End of the long string or comment opened at `start` with the given bracket level.
+fn long_bracket_end(text: &str, start: usize, level: usize) -> usize {
+    let close = format!("]{}]", "=".repeat(level));
+    let open = start + level + 2;
+    text[open.min(text.len())..].find(&close).map_or(text.len(), |end| open + end + close.len())
+}
+
+/// Splits Lua source into colored spans that together cover the whole text.
+fn lua_spans<'a>(text: &'a str, colors: &SyntaxColors) -> Vec<(&'a str, Color32)> {
+    let bytes = text.as_bytes();
+    let mut spans: Vec<(usize, usize, Color32)> = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        let start = index;
+        let byte = bytes[index];
+        let color = if text[index..].starts_with("--") {
+            index = match long_bracket(&text[index + 2..]) {
+                Some(level) => long_bracket_end(text, index + 2, level),
+                None => text[index..].find('\n').map_or(text.len(), |end| index + end),
+            };
+            colors.comment
+        } else if byte == b'"' || byte == b'\'' {
+            index += 1;
+            while index < bytes.len() && bytes[index] != byte && bytes[index] != b'\n' {
+                index += if bytes[index] == b'\\' { 2 } else { 1 };
+            }
+            index = (index + usize::from(index < bytes.len() && bytes[index] == byte)).min(bytes.len());
+            colors.string
+        } else if let Some(level) = long_bracket(&text[index..]) {
+            index = long_bracket_end(text, index, level);
+            colors.string
+        } else if byte.is_ascii_digit() || (byte == b'.' && bytes.get(index + 1).is_some_and(u8::is_ascii_digit)) {
+            index += 1;
+            while index < bytes.len()
+                && (bytes[index].is_ascii_alphanumeric()
+                    || bytes[index] == b'.'
+                    || (matches!(bytes[index], b'+' | b'-') && matches!(bytes[index - 1], b'e' | b'E' | b'p' | b'P')))
+            {
+                index += 1;
+            }
+            colors.number
+        } else if byte.is_ascii_alphabetic() || byte == b'_' {
+            while index < bytes.len() && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_') {
+                index += 1;
+            }
+            let word = &text[start..index];
+            if LUA_KEYWORDS.contains(&word) {
+                colors.keyword
+            } else if matches!(word, "true" | "false" | "nil") {
+                colors.number
+            } else if text[index..].trim_start_matches([' ', '\t']).starts_with('(') {
+                colors.function
+            } else {
+                colors.text
+            }
+        } else {
+            index += text[index..].chars().next().map_or(1, char::len_utf8);
+            colors.text
+        };
+        match spans.last_mut() {
+            Some((_, end, last)) if *last == color && *end == start && color == colors.text => *end = index,
+            _ => spans.push((start, index, color)),
+        }
+    }
+    spans.into_iter().map(|(start, end, color)| (&text[start..end], color)).collect()
 }
 
 impl Drop for AnimationEditor {
     fn drop(&mut self) {
         if let Some(job) = &self.export_job {
-            job.cancelled.store(true, Ordering::Relaxed);
+            job.progress.cancelled.store(true, Ordering::Relaxed);
         }
     }
-}
-
-fn export_frames(
-    animator: &Arc<Mutex<Animator>>,
-    path: &Path,
-    format: ExportFormat,
-    cancelled: &AtomicBool,
-    progress: &Arc<AtomicUsize>,
-) -> Result<(), String> {
-    let mut frames: Vec<_> = animator.lock().frames.iter().map(|(screen, _, delay)| (screen.clone_box(), *delay)).collect();
-    let first = frames.first().ok_or("No frames to export")?;
-    let parent = path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or(Path::new("."));
-    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
-    match format {
-        ExportFormat::Gif => {
-            use icy_engine::gif_encoder::{GifEncoder, GifFrame, RepeatCount};
-            let mut images = Vec::new();
-            let mut dimensions = None;
-            for (screen, delay) in &frames {
-                if cancelled.load(Ordering::Relaxed) {
-                    return Err("Export cancelled".into());
-                }
-                let options = icy_engine::RenderOptions {
-                    rect: icy_engine::Rectangle::from_coords(0, 0, screen.width(), screen.height()).into(),
-                    blink_on: true,
-                    ..Default::default()
-                };
-                let (size, pixels) = screen.render_to_rgba(&options);
-                if size.width <= 0 || size.height <= 0 || size.width > u16::MAX as i32 || size.height > u16::MAX as i32 {
-                    return Err("Invalid GIF frame dimensions".into());
-                }
-                if dimensions.is_some_and(|previous| previous != size) {
-                    return Err("GIF export requires frames of equal size.".into());
-                }
-                dimensions = Some(size);
-                images.push(GifFrame::new(pixels, *delay));
-            }
-            let size = dimensions.unwrap();
-            let mut encoder = GifEncoder::new(size.width as u16, size.height as u16);
-            encoder.set_repeat(RepeatCount::Infinite);
-            let progress = progress.clone();
-            encoder
-                .encode_to_file_with_progress(
-                    temporary.path(),
-                    images,
-                    move |current, _| {
-                        progress.store(current, Ordering::Relaxed);
-                    },
-                    || cancelled.load(Ordering::Relaxed),
-                )
-                .map_err(|error| error.to_string())?;
-        }
-        ExportFormat::Cast => {
-            let header = serde_json::json!({ "version": 2, "width": first.0.width(), "height": first.0.height() });
-            writeln!(temporary, "{header}").map_err(|error| error.to_string())?;
-            let mut timestamp = 0.0;
-            for (index, (screen, delay)) in frames.iter_mut().enumerate() {
-                if cancelled.load(Ordering::Relaxed) {
-                    return Err("Export cancelled".into());
-                }
-                let options = icy_engine::SaveOptions::ansi(icy_engine::AnsiCompatibilityLevel::Utf8Terminal);
-                let bytes = screen.to_bytes("ans", &options).map_err(|error| error.to_string())?;
-                let text = String::from_utf8(bytes).map_err(|error| error.to_string())?;
-                let event = serde_json::json!([timestamp, "o", format!("\u{001b}[2J\u{001b}[H{text}")]);
-                writeln!(temporary, "{event}").map_err(|error| error.to_string())?;
-                timestamp += *delay as f64 / 1000.0;
-                progress.store(index + 1, Ordering::Relaxed);
-            }
-        }
-    }
-    if cancelled.load(Ordering::Relaxed) {
-        return Err("Export cancelled".into());
-    }
-    temporary.as_file().sync_all().map_err(|error| error.to_string())?;
-    temporary.persist(path).map_err(|error| error.to_string())?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -569,34 +1118,46 @@ mod tests {
     }
 
     #[test]
-    fn exports_gif_and_cast_and_keeps_target_on_cancellation() {
-        let animator = Arc::new(Mutex::new(Animator::default()));
-        for _ in 0..2 {
-            animator.lock().frames.push((
+    fn lua_highlighting_colors_keywords_strings_numbers_and_comments() {
+        let colors = SyntaxColors::new(&egui::Visuals::dark());
+        let source = "local s = \"x\" -- note\nbuf:print(12) --[[ a\nb ]] t = [[ long ]]";
+        let spans = lua_spans(source, &colors);
+        let color_of = |text: &str| spans.iter().find(|(span, _)| *span == text).map(|(_, color)| *color);
+        assert_eq!(color_of("local"), Some(colors.keyword));
+        assert_eq!(color_of("\"x\""), Some(colors.string));
+        assert_eq!(color_of("-- note"), Some(colors.comment));
+        assert_eq!(color_of("print"), Some(colors.function));
+        assert_eq!(color_of("12"), Some(colors.number));
+        assert_eq!(color_of("--[[ a\nb ]]"), Some(colors.comment));
+        assert_eq!(color_of("[[ long ]]"), Some(colors.string));
+        assert_eq!(spans.iter().map(|(span, _)| *span).collect::<String>(), source);
+        let unicode = "x = \"░▒\\\"\" y";
+        assert_eq!(lua_spans(unicode, &colors).iter().map(|(span, _)| *span).collect::<String>(), unicode);
+    }
+
+    #[test]
+    fn time_is_the_sum_of_frame_delays() {
+        assert_eq!(format_time(0), "00:00.0");
+        assert_eq!(format_time(65_430), "01:05.4");
+        let mut editor = AnimationEditor::new();
+        for delay in [100, 250, 400] {
+            editor.animator.lock().frames.push((
                 Box::new(icy_engine::TextScreen::new((10, 3))),
                 icy_engine_scripting::MonitorSettings::neutral(),
-                100,
+                delay,
             ));
         }
-        let directory = tempfile::tempdir().unwrap();
-        let cancelled = AtomicBool::new(false);
-        let progress = Arc::new(AtomicUsize::new(0));
-        let gif = directory.path().join("test.gif");
-        export_frames(&animator, &gif, ExportFormat::Gif, &cancelled, &progress).unwrap();
-        assert_eq!(image::open(gif).unwrap().width(), 80);
-        let cast = directory.path().join("test.cast");
-        export_frames(&animator, &cast, ExportFormat::Cast, &cancelled, &progress).unwrap();
-        let original = std::fs::read(&cast).unwrap();
-        let events: Vec<serde_json::Value> = std::str::from_utf8(&original)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect();
-        assert_eq!(events.len(), 3);
-        assert_eq!(events[0]["version"], 2);
-        assert_eq!(events[2][0], 0.1);
-        cancelled.store(true, Ordering::Relaxed);
-        assert!(export_frames(&animator, &cast, ExportFormat::Cast, &cancelled, &progress).is_err());
-        assert_eq!(std::fs::read(cast).unwrap(), original);
+        editor.frame = 2;
+        assert_eq!(editor.time_info(), (350, 750));
+    }
+
+    #[test]
+    fn picked_export_paths_select_the_format() {
+        let mut editor = AnimationEditor::new();
+        editor.open_export_dialog();
+        editor.set_export_path(PathBuf::from("/tmp/demo.ivf"));
+        assert_eq!(editor.export_dialog.as_ref().unwrap().format, ExportFormat::Av1);
+        editor.set_export_path(PathBuf::from("/tmp/demo"));
+        assert_eq!(editor.export_dialog.as_ref().unwrap().path, "/tmp/demo.ivf");
     }
 }

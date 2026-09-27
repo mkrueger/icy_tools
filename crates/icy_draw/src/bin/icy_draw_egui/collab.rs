@@ -2,7 +2,7 @@
 
 use super::{Dialog, DrawApp};
 use eframe::egui::{self, Color32, Key};
-use icy_draw::document::Document;
+use icy_draw::{document::Document, fl};
 use icy_engine::{AttributedChar, BitFont, Color, IceMode, Layer, Palette, Position, Rectangle, TextBuffer, TextPane};
 use icy_engine_edit::collaboration::{
     self, Block, Blocks, ChatMessage, ClientCommand, ClientConfig, CollaborationCoreState, CollaborationEvent, ConnectedDocument, CursorMode, User, UserId,
@@ -43,28 +43,24 @@ const AVATARS: [(&str, &[u8]); 13] = [
 ];
 
 /// Moebius user status bytes: Active, Idle, Away, Web.
-const STATUSES: [(&str, &str, &[u8], Color32); 4] = [
+const STATUSES: [(&str, &[u8], Color32); 4] = [
     (
         "status_active",
-        "Active",
         include_bytes!("../../ui/collaboration/icons/circle_filled.svg"),
         Color32::from_rgb(77, 204, 77),
     ),
     (
         "status_idle",
-        "Idle",
         include_bytes!("../../ui/collaboration/icons/schedule.svg"),
         Color32::from_rgb(230, 179, 51),
     ),
     (
         "status_away",
-        "Away",
         include_bytes!("../../ui/collaboration/icons/bedtime.svg"),
         Color32::from_rgb(204, 77, 77),
     ),
     (
         "status_web",
-        "Web",
         include_bytes!("../../ui/collaboration/icons/public.svg"),
         Color32::from_rgb(77, 128, 230),
     ),
@@ -74,8 +70,17 @@ fn avatar_index(user_id: UserId) -> usize {
     user_id.wrapping_mul(2_654_435_761) as usize % AVATARS.len()
 }
 
-fn status_entry(status: u8) -> &'static (&'static str, &'static str, &'static [u8], Color32) {
+fn status_entry(status: u8) -> &'static (&'static str, &'static [u8], Color32) {
     &STATUSES[(status as usize).min(STATUSES.len() - 1)]
+}
+
+fn status_label(status: u8) -> String {
+    match status {
+        0 => fl!("collab-status-active"),
+        1 => fl!("collab-status-idle"),
+        2 => fl!("collab-status-away"),
+        _ => fl!("collab-status-web"),
+    }
 }
 
 #[derive(Default)]
@@ -227,9 +232,9 @@ impl Collaboration {
         if announce && Some(user.id) != self.core.our_user_id {
             let nick = display_nick(&user.nick);
             let text = if user.group.is_empty() {
-                format!("{nick} has joined")
+                fl!("collab-user-joined", nick = nick)
             } else {
-                format!("{nick} <{}> has joined", user.group)
+                fl!("collab-user-joined-group", nick = nick, group = user.group.as_str())
             };
             self.core.add_system_message(&text);
         }
@@ -245,9 +250,9 @@ impl Collaboration {
         };
         let nick = display_nick(&nick);
         self.core.add_system_message(&if group.is_empty() {
-            format!("{nick} has left")
+            fl!("collab-user-left", nick = nick)
         } else {
-            format!("{nick} <{group}> has left")
+            fl!("collab-user-left-group", nick = nick, group = group)
         });
         self.core.remove_user(user_id);
         self.remote_paste.remove(&user_id);
@@ -261,7 +266,7 @@ impl Collaboration {
         self.core
             .get_user(user_id)
             .map(|user| display_nick(&user.user.nick))
-            .unwrap_or_else(|| "Someone".into())
+            .unwrap_or_else(|| fl!("collab-someone"))
     }
 
     fn user_color(&self, user_id: UserId) -> Color32 {
@@ -288,7 +293,7 @@ impl Collaboration {
 
 fn display_nick(nick: &str) -> String {
     if nick.trim().is_empty() {
-        "Guest".into()
+        fl!("collab-guest")
     } else {
         nick.to_owned()
     }
@@ -326,8 +331,8 @@ pub(super) fn format_time(timestamp: u64) -> String {
     };
     match (Local::now().date_naive() - time.date_naive()).num_days() {
         ..=0 => time.format("%H:%M").to_string(),
-        1 => format!("yesterday {}", time.format("%H:%M")),
-        days => format!("{days}d ago"),
+        1 => format!("{} {}", fl!("collab-yesterday"), time.format("%H:%M")),
+        days => fl!("collab-days-ago", days = days),
     }
 }
 
@@ -505,20 +510,20 @@ impl DrawApp {
         let servers = self.settings.collaboration_servers_list();
         let mut submit = false;
         let response = appearance::Dialog::new("connect-to-server")
-            .title("Connect to Server")
-            .subtitle("Join a Moebius-compatible collaboration session.")
+            .title(fl!("collab-connect-title"))
+            .subtitle(fl!("collab-connect-subtitle"))
             .size(DialogSize::Medium)
             .show(context, |dialog| {
                 dialog.content(|ui| {
                     let form = &mut self.collab.form;
                     let enter = |ui: &egui::Ui, response: &egui::Response| response.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter));
-                    appearance::group(ui, "Server", |ui| {
-                        appearance::form_row(ui, "Server URL", |ui| {
+                    appearance::group(ui, &fl!("collab-server"), |ui| {
+                        appearance::form_row(ui, &fl!("collab-server-url"), |ui| {
                             ui.horizontal(|ui| {
                                 let recent = if servers.is_empty() { 0.0 } else { 30.0 + ui.spacing().item_spacing.x };
                                 let response = ui.add_sized(
                                     [(ui.available_width() - recent).max(80.0), ui.spacing().interact_size.y],
-                                    appearance::text_edit(&mut form.url).hint_text("host:port or ws://host:port"),
+                                    appearance::text_edit(&mut form.url).hint_text(fl!("collab-server-url-placeholder")),
                                 );
                                 if ui.memory(|memory| memory.focused().is_none()) && form.url.is_empty() {
                                     response.request_focus();
@@ -527,7 +532,7 @@ impl DrawApp {
                                 if !servers.is_empty() {
                                     let button = ui
                                         .add_sized([30.0, ui.spacing().interact_size.y], egui::Button::new("▾"))
-                                        .on_hover_text("Recent servers");
+                                        .on_hover_text(fl!("collab-recent-servers"));
                                     egui::Popup::menu(&button).show(|ui| {
                                         for server in servers.iter().rev() {
                                             if ui.selectable_label(form.url == *server, server).clicked() {
@@ -538,39 +543,49 @@ impl DrawApp {
                                 }
                             });
                         });
-                        appearance::form_row(ui, "Password", |ui| {
+                        appearance::form_row(ui, &fl!("collab-password"), |ui| {
                             ui.horizontal(|ui| {
                                 let width = (ui.available_width() - 30.0 - ui.spacing().item_spacing.x).max(80.0);
                                 let response = ui.add_sized(
                                     [width, ui.spacing().interact_size.y],
-                                    appearance::text_edit(&mut form.password).hint_text("Optional").password(!form.show_password),
+                                    appearance::text_edit(&mut form.password)
+                                        .hint_text(fl!("collab-password-placeholder"))
+                                        .password(!form.show_password),
                                 );
                                 submit |= enter(ui, &response);
                                 let (icon, tooltip) = if form.show_password {
-                                    ("visibility_off", "Hide password")
+                                    ("visibility_off", fl!("collab-hide-password"))
                                 } else {
-                                    ("visibility", "Show password")
+                                    ("visibility", fl!("collab-show-password"))
                                 };
-                                if self.icons.subtle_button(ui, icon, tooltip, false, 30.0).clicked() {
+                                if self.icons.subtle_button(ui, icon, &tooltip, false, 30.0).clicked() {
                                     form.show_password = !form.show_password;
                                 }
                             });
                         });
                     });
-                    appearance::group(ui, "Identity", |ui| {
-                        appearance::form_row(ui, "Nickname", |ui| {
-                            let response = ui.add(appearance::text_edit(&mut form.nick).hint_text("Your name").desired_width(f32::INFINITY));
+                    appearance::group(ui, &fl!("collab-identity"), |ui| {
+                        appearance::form_row(ui, &fl!("collab-nickname"), |ui| {
+                            let response = ui.add(
+                                appearance::text_edit(&mut form.nick)
+                                    .hint_text(fl!("collab-nickname-placeholder"))
+                                    .desired_width(f32::INFINITY),
+                            );
                             submit |= enter(ui, &response);
                         });
-                        appearance::form_row(ui, "Group", |ui| {
-                            let response = ui.add(appearance::text_edit(&mut form.group).hint_text("Optional").desired_width(f32::INFINITY));
+                        appearance::form_row(ui, &fl!("collab-group"), |ui| {
+                            let response = ui.add(
+                                appearance::text_edit(&mut form.group)
+                                    .hint_text(fl!("collab-group-placeholder"))
+                                    .desired_width(f32::INFINITY),
+                            );
                             submit |= enter(ui, &response);
                         });
                     });
                 });
                 dialog.buttons([
                     DialogButton::cancel(labels::cancel(), Action::Cancel),
-                    DialogButton::primary("Connect", Action::Connect).enabled(self.collab.form.valid()),
+                    DialogButton::primary(fl!("collab-connect-button"), Action::Connect).enabled(self.collab.form.valid()),
                 ]);
             });
         let action = if submit && self.collab.form.valid() {
@@ -620,8 +635,8 @@ impl DrawApp {
                 self.collab.chat_visible = true;
             }
             CollaborationEvent::Refused { reason } => {
-                let reason = if reason.is_empty() { "Wrong password".into() } else { reason };
-                self.collaboration_error(format!("The collaboration server refused the connection.\n\n{reason}"));
+                let reason = if reason.is_empty() { fl!("collab-wrong-password") } else { reason };
+                self.collaboration_error(format!("{}\n\n{reason}", fl!("collab-refused")));
             }
             CollaborationEvent::UserJoined(user) => self.collab.add_user(user, true),
             CollaborationEvent::UserLeft { user_id, nick } => self.collab.remove_user(user_id, &nick),
@@ -666,7 +681,7 @@ impl DrawApp {
                     })
                 });
                 let nick = self.collab.user_nick(sauce.id);
-                self.collab.core.add_system_message(&format!("{nick} changed the SAUCE record"));
+                self.collab.core.add_system_message(&fl!("collab-changed-sauce", nick = nick));
             }
             CollaborationEvent::CanvasResized { user_id, columns, rows } => {
                 self.resize_remote_canvas(columns, rows);
@@ -674,7 +689,7 @@ impl DrawApp {
                 let nick = self.collab.user_nick(user_id);
                 self.collab
                     .core
-                    .add_system_message(&format!("{nick} changed the canvas size to {columns} × {rows}"));
+                    .add_system_message(&fl!("collab-changed-size", nick = nick, columns = columns, rows = rows));
             }
             CollaborationEvent::IceColorsChanged { user_id, value } => {
                 self.document.with_state(|state| {
@@ -684,9 +699,11 @@ impl DrawApp {
                 });
                 self.collab.core.ice_colors = value;
                 let nick = self.collab.user_nick(user_id);
-                self.collab
-                    .core
-                    .add_system_message(&format!("{nick} turned iCE colors {}", if value { "on" } else { "off" }));
+                self.collab.core.add_system_message(&if value {
+                    fl!("collab-ice-on", nick = nick)
+                } else {
+                    fl!("collab-ice-off", nick = nick)
+                });
             }
             CollaborationEvent::Use9pxChanged { user_id, value } => {
                 self.document.with_state(|state| {
@@ -696,9 +713,11 @@ impl DrawApp {
                 });
                 self.collab.core.use_9px = value;
                 let nick = self.collab.user_nick(user_id);
-                self.collab
-                    .core
-                    .add_system_message(&format!("{nick} turned letter spacing {}", if value { "on" } else { "off" }));
+                self.collab.core.add_system_message(&if value {
+                    fl!("collab-spacing-on", nick = nick)
+                } else {
+                    fl!("collab-spacing-off", nick = nick)
+                });
             }
             CollaborationEvent::FontChanged { user_id, font_name } => {
                 if let Ok(font) = BitFont::from_sauce_name(&font_name) {
@@ -710,7 +729,9 @@ impl DrawApp {
                 }
                 self.collab.core.font = font_name.clone();
                 let nick = self.collab.user_nick(user_id);
-                self.collab.core.add_system_message(&format!("{nick} changed the font to {font_name}"));
+                self.collab
+                    .core
+                    .add_system_message(&fl!("collab-changed-font", nick = nick, font = font_name.as_str()));
             }
             CollaborationEvent::PasteAsSelection { user_id, blocks } => {
                 let (col, row) = self
@@ -727,17 +748,19 @@ impl DrawApp {
             CollaborationEvent::FlipY { user_id } => self.collab.remote_paste_changed(user_id, flip_y_blocks),
             CollaborationEvent::BackgroundChanged { user_id, .. } => {
                 let nick = self.collab.user_nick(user_id);
-                self.collab.core.add_system_message(&format!("{nick} changed the background"));
+                self.collab.core.add_system_message(&fl!("collab-changed-background", nick = nick));
             }
             CollaborationEvent::Disconnected => {
                 if self.collab.in_session() {
-                    self.collaboration_error("Collaboration disconnected\n\nThe connection to the collaboration server was lost.".into());
+                    self.collaboration_error(format!("{}\n\n{}", fl!("collab-connection-lost-title"), fl!("collab-connection-lost-message")));
                 }
             }
             CollaborationEvent::Error(error) => {
                 if self.collab.in_session() {
                     self.collaboration_error(format!(
-                        "Collaboration connection error\n\nThe connection to the collaboration server failed.\n\nError: {error}"
+                        "{}\n\n{}\n\n{error}",
+                        fl!("collab-connection-error-title"),
+                        fl!("collab-connection-error-message")
                     ));
                 }
             }
@@ -947,7 +970,7 @@ impl DrawApp {
         let uv = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0));
         ui.painter().image(texture, rect, uv, color);
         if let Some(status) = status {
-            let (name, _, svg, fill) = *status_entry(status);
+            let (name, svg, fill) = *status_entry(status);
             let badge = egui::Rect::from_min_size(rect.max - egui::Vec2::splat(STATUS_BADGE_SIZE), egui::Vec2::splat(STATUS_BADGE_SIZE));
             ui.painter()
                 .circle_filled(badge.center(), STATUS_BADGE_SIZE / 2.0 + 2.0, ui.visuals().panel_fill);
@@ -1006,14 +1029,14 @@ impl DrawApp {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     if users.is_empty() {
                         ui.add_space(6.0);
-                        ui.label(egui::RichText::new("No other users").size(12.0).weak());
+                        ui.label(egui::RichText::new(fl!("collab-no-other-users")).size(12.0).weak());
                     }
                     for (id, nick, group, status) in users {
-                        let status_label = status_entry(status).1;
+                        let status_label = status_label(status);
                         let detail = if group.is_empty() { String::new() } else { format!("<{group}>") };
                         let response = self.user_entry(ui, id, &nick, &detail, status, true);
                         if response
-                            .on_hover_text(format!("{nick} · {status_label}\nClick to jump to their cursor"))
+                            .on_hover_text(format!("{nick} · {status_label}\n{}", fl!("collab-jump-to-user")))
                             .clicked()
                         {
                             self.goto_user(id);
@@ -1025,9 +1048,9 @@ impl DrawApp {
         let own_id = self.collab.core.our_user_id.unwrap_or(0);
         let nick = display_nick(&self.collab.nick);
         let detail = if self.collab.group.is_empty() {
-            "You".to_owned()
+            fl!("collab-you")
         } else {
-            format!("<{}> · You", self.collab.group)
+            format!("<{}> · {}", self.collab.group, fl!("collab-you"))
         };
         self.user_entry(ui, own_id, &nick, &detail, 0, false);
     }
@@ -1041,7 +1064,7 @@ impl DrawApp {
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 12.0;
                 if items.is_empty() {
-                    ui.label(egui::RichText::new("No messages yet").size(12.0).weak());
+                    ui.label(egui::RichText::new(fl!("collab-no-messages")).size(12.0).weak());
                 }
                 for item in items {
                     match item {
@@ -1096,7 +1119,7 @@ impl DrawApp {
                 let response = ui.add(
                     appearance::text_edit(&mut self.collab.chat_input)
                         .id_salt("collab-chat-input")
-                        .hint_text("Type a message...")
+                        .hint_text(fl!("collab-type-message"))
                         .desired_width(f32::INFINITY),
                 );
                 if response.lost_focus() && ui.input(|input| input.key_pressed(Key::Enter)) {
@@ -1126,16 +1149,20 @@ impl DrawApp {
     pub(super) fn collaboration_status(&mut self, ui: &mut egui::Ui) {
         if self.collab.active {
             let users = self.collab.core.remote_users.len() + 1;
-            let label = format!("● {} · {users} {}", self.collab.server, if users == 1 { "user" } else { "users" });
-            let response = super::widgets::status_button(ui, &label, "Collaboration session — click to show or hide the chat");
+            let label = format!("● {} · {}", self.collab.server, fl!("collab-user-count", count = users));
+            let response = super::widgets::status_button(ui, &label, &fl!("collab-status-tooltip"));
             ui.painter()
-                .circle_filled(egui::pos2(response.rect.left() + 10.0, response.rect.center().y), 3.5, STATUSES[0].3);
+                .circle_filled(egui::pos2(response.rect.left() + 10.0, response.rect.center().y), 3.5, STATUSES[0].2);
             if response.clicked() {
                 self.toggle_chat();
             }
         } else if self.collab.connecting {
             ui.spinner();
-            ui.label(egui::RichText::new(format!("Connecting to {}…", self.collab.server)).size(12.0).weak());
+            ui.label(
+                egui::RichText::new(fl!("collab-connecting", server = self.collab.server.as_str()))
+                    .size(12.0)
+                    .weak(),
+            );
         }
     }
 }

@@ -1,5 +1,5 @@
 use eframe::egui::{self, Color32, Key};
-use icy_draw::{brush::BrushPrimaryMode, document::Document, Settings};
+use icy_draw::{brush::BrushPrimaryMode, document::Document, fl, Settings};
 use icy_engine::{FileFormat, Position, Selection, Size, TextPane};
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::UndoState;
@@ -21,6 +21,10 @@ use super::widgets::{self, Icons};
 mod chrome;
 #[path = "collab.rs"]
 mod collab;
+#[path = "file_settings.rs"]
+mod file_settings;
+#[path = "font_select.rs"]
+mod font_select;
 #[path = "mcp.rs"]
 mod mcp;
 #[path = "menus.rs"]
@@ -34,10 +38,9 @@ enum Dialog {
     Close,
     Characters,
     FKeyCharacter(usize, usize),
-    Inspector,
-    Sauce,
+    FileSettings(Box<file_settings::FileSettingsDraft>),
+    Sauce(Box<file_settings::SauceDraft>),
     Export,
-    Font,
     FontSelect,
     TextArtFontSelect,
     Palette,
@@ -47,7 +50,6 @@ enum Dialog {
     Monitor,
     Overwrite(PathBuf),
     ExportOverwrite(PathBuf),
-    FontOverwrite(PathBuf),
     AnimationOverwrite(PathBuf, super::animation::ExportFormat),
     Error(String),
     ReferenceImage,
@@ -65,6 +67,9 @@ enum FileAction {
     ExportAnimation(super::animation::ExportFormat),
     InsertImage,
     ReferenceImage,
+    ImportPalette,
+    ExportPalette,
+    LoadFont,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -94,6 +99,15 @@ impl TextArtFontKind {
         }
     }
 
+    fn label(self) -> String {
+        match self {
+            Self::Outline => fl!("tdf-font-selector-type_outline"),
+            Self::Block => fl!("tdf-font-selector-type_block"),
+            Self::Color => fl!("tdf-font-selector-type_color"),
+            Self::Figlet => fl!("tdf-font-selector-type_figlet"),
+        }
+    }
+
     fn index(self) -> usize {
         match self {
             Self::Outline => 0,
@@ -101,6 +115,15 @@ impl TextArtFontKind {
             Self::Color => 2,
             Self::Figlet => 3,
         }
+    }
+}
+
+fn tdf_type_label(kind: icy_engine_edit::charset::TdfFontType) -> String {
+    use icy_engine_edit::charset::TdfFontType;
+    match kind {
+        TdfFontType::Color => fl!("tdf-editor-font_type_color"),
+        TdfFontType::Block => fl!("tdf-editor-font_type_block"),
+        TdfFontType::Outline => fl!("tdf-editor-font_type_outline"),
     }
 }
 
@@ -135,27 +158,27 @@ impl NewKind {
         NewKind::TheDraw(icy_engine_edit::charset::TdfFontType::Outline),
     ];
 
-    pub fn name(self) -> &'static str {
+    pub fn name(self) -> String {
         use icy_engine_edit::charset::TdfFontType;
         match self {
-            NewKind::Ansi => "ANSI Art",
-            NewKind::Animation => "Animation",
-            NewKind::BitmapFont => "Bitmap Font",
-            NewKind::TheDraw(TdfFontType::Color) => "TheDraw Color Font",
-            NewKind::TheDraw(TdfFontType::Block) => "TheDraw Block Font",
-            NewKind::TheDraw(TdfFontType::Outline) => "TheDraw Outline Font",
+            NewKind::Ansi => fl!("new-file-editor-ansi"),
+            NewKind::Animation => fl!("new-file-editor-animation"),
+            NewKind::BitmapFont => fl!("new-file-template-bit_font-title"),
+            NewKind::TheDraw(TdfFontType::Color) => fl!("new-file-template-color_font-title"),
+            NewKind::TheDraw(TdfFontType::Block) => fl!("new-file-template-block_font-title"),
+            NewKind::TheDraw(TdfFontType::Outline) => fl!("new-file-template-outline_font-title"),
         }
     }
 
-    pub fn description(self) -> &'static str {
+    pub fn description(self) -> String {
         use icy_engine_edit::charset::TdfFontType;
         match self {
-            NewKind::Ansi => "Text mode canvas with layers",
-            NewKind::Animation => "Lua scripted ANSI animation",
-            NewKind::BitmapFont => "8 × 16 pixel console font",
-            NewKind::TheDraw(TdfFontType::Color) => "Characters with colors",
-            NewKind::TheDraw(TdfFontType::Block) => "Block characters, one color",
-            NewKind::TheDraw(TdfFontType::Outline) => "Outline placeholders",
+            NewKind::Ansi => fl!("new-kind-ansi-description"),
+            NewKind::Animation => fl!("new-kind-animation-description"),
+            NewKind::BitmapFont => fl!("new-kind-bitfont-description"),
+            NewKind::TheDraw(TdfFontType::Color) => fl!("new-kind-color_font-description"),
+            NewKind::TheDraw(TdfFontType::Block) => fl!("new-kind-block_font-description"),
+            NewKind::TheDraw(TdfFontType::Outline) => fl!("new-kind-outline_font-description"),
         }
     }
 
@@ -199,17 +222,16 @@ pub struct DrawApp {
     new_size: [i32; 2],
     show_inspector: bool,
     canvas_focus: bool,
-    sauce_fields: [String; 4],
     export_format: FileFormat,
     export_sauce: bool,
     font_editor: Option<super::font::FontEditor>,
-    palette_edit: icy_engine::Palette,
-    palette_index: usize,
+    palette_editor: super::palette::PaletteEditor,
     charfont: Option<icy_draw::charfont::CharFontDocument>,
     new_kind: NewKind,
+    new_template: file_settings::AnsiTemplate,
     animation: Option<super::animation::AnimationEditor>,
     clipboard: Option<(String, Vec<u8>)>,
-    font_filter: String,
+    font_selector: font_select::FontSelector,
     text_fonts: Option<icy_draw::text_art_fonts::SharedFontLibrary>,
     text_font: usize,
     text_preview: Option<(usize, egui::TextureHandle)>,
@@ -242,11 +264,14 @@ pub struct DrawApp {
     reference_path: String,
     pipette_hover: Option<(Position, egui::Modifiers)>,
     pub canvas_rect: egui::Rect,
+    about: Option<icy_engine_gui::egui::about::AboutDialog>,
     collab: collab::Collaboration,
 }
 
 impl DrawApp {
     pub fn new() -> Self {
+        #[cfg(test)]
+        tests::use_english();
         let document = Document::new(Size::new(80, 25));
         let view = ScreenView::from_shared(document.screen.clone());
         let mut settings = Settings::load();
@@ -270,17 +295,16 @@ impl DrawApp {
             new_size: [80, 25],
             show_inspector: true,
             canvas_focus: true,
-            sauce_fields: Default::default(),
             export_format: FileFormat::Ansi,
             export_sauce: true,
             font_editor: None,
-            palette_edit: icy_engine::Palette::default(),
-            palette_index: 0,
+            palette_editor: Default::default(),
             charfont: None,
             new_kind: NewKind::Ansi,
+            new_template: file_settings::AnsiTemplate::default(),
             animation: None,
             clipboard: None,
-            font_filter: String::new(),
+            font_selector: Default::default(),
             text_fonts: None,
             text_font: 0,
             text_preview: None,
@@ -313,6 +337,7 @@ impl DrawApp {
             reference_path: String::new(),
             pipette_hover: None,
             canvas_rect: egui::Rect::NOTHING,
+            about: None,
             collab: collab::Collaboration::default(),
         }
     }
@@ -320,14 +345,20 @@ impl DrawApp {
     /// Replaces the current document with a new, empty one of the given kind.
     pub(super) fn create(&mut self, kind: NewKind, size: Size) {
         match kind {
-            NewKind::Ansi => self.replace(Document::new(size)),
+            NewKind::Ansi => {
+                let document = Document::new(size);
+                let template = self.new_template;
+                document.with_state(|state| template.apply(state.get_buffer_mut()));
+                self.replace(document);
+            }
             NewKind::Animation => {
                 self.replace(Document::new(Size::new(80, 25)));
                 self.animation = Some(super::animation::AnimationEditor::new());
             }
             NewKind::BitmapFont => {
-                self.font_editor = Some(super::font::FontEditor::new(icy_engine::BitFont::create_8("Untitled", 8, 16, &[0; 4096])));
-                self.dialog = Some(Dialog::Font);
+                self.replace(Document::new(Size::new(80, 25)));
+                // New fonts start from the IBM VGA font (CP437), like the classic editor.
+                self.font_editor = Some(super::font::FontEditor::new(icy_engine::BitFont::default()));
             }
             NewKind::TheDraw(kind) => {
                 let font = icy_draw::charfont::CharFontDocument::new(kind);
@@ -350,9 +381,6 @@ impl DrawApp {
         self.charfont = None;
         self.animation = None;
         self.font_editor = None;
-        if matches!(self.dialog, Some(Dialog::Font)) {
-            self.dialog = None;
-        }
         self.document = document;
         self.chrome = chrome::Chrome::default();
         self.pipette_hover = None;
@@ -365,24 +393,6 @@ impl DrawApp {
         self.document.finish();
         if let Some(editor) = &mut self.font_editor {
             editor.finish();
-            if editor.modified() {
-                self.dialog = Some(Dialog::Font);
-                return;
-            }
-        }
-        if path.extension().is_some_and(|extension| {
-            ["psf", "psfu", "fnt", "fon", "f08", "f14", "f16", "yaff"]
-                .iter()
-                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
-        }) {
-            match super::font::FontEditor::load(&path) {
-                Ok(editor) => {
-                    self.font_editor = Some(editor);
-                    self.dialog = Some(Dialog::Font);
-                }
-                Err(error) => self.dialog = Some(Dialog::Error(error)),
-            }
-            return;
         }
         if self.modified() {
             self.pending = Some(path);
@@ -401,6 +411,20 @@ impl DrawApp {
     }
 
     fn load_document(&mut self, path: PathBuf) {
+        if path.extension().is_some_and(|extension| {
+            ["psf", "psfu", "fnt", "fon", "f08", "f14", "f16", "yaff"]
+                .iter()
+                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+        }) {
+            match super::font::FontEditor::load(&path) {
+                Ok(editor) => {
+                    self.replace(Document::new(Size::new(80, 25)));
+                    self.font_editor = Some(editor);
+                }
+                Err(error) => self.dialog = Some(Dialog::Error(error)),
+            }
+            return;
+        }
         if path
             .extension()
             .is_some_and(|extension| extension.eq_ignore_ascii_case("icyanim") || extension.eq_ignore_ascii_case("lua"))
@@ -446,23 +470,45 @@ impl DrawApp {
                     dialog = dialog.set_directory(parent);
                 }
             }
+            let untitled = fl!("unsaved-title");
             let path = match action {
                 FileAction::Open => dialog.pick_file(),
-                FileAction::Save => dialog.add_filter("Icy Draw", &["icy"]).set_file_name("Untitled.icy").save_file(),
+                FileAction::Save => dialog
+                    .add_filter(fl!("file-dialog-filter-icydraw-files"), &["icy"])
+                    .set_file_name(format!("{untitled}.icy"))
+                    .save_file(),
                 FileAction::Export(format) => dialog
                     .add_filter(format.name(), &[format.primary_extension()])
-                    .set_file_name(format!("Untitled.{}", format.primary_extension()))
+                    .set_file_name(format!("{untitled}.{}", format.primary_extension()))
                     .save_file(),
-                FileAction::SaveFont => dialog.add_filter("PSF Bitmap Font", &["psf"]).set_file_name("Untitled.psf").save_file(),
-                FileAction::SaveTdf => dialog.add_filter("TheDraw Font", &["tdf"]).set_file_name("Untitled.tdf").save_file(),
-                FileAction::SaveAnimation => dialog.add_filter("Icy Animation", &["icyanim"]).set_file_name("Untitled.icyanim").save_file(),
+                FileAction::SaveFont => dialog
+                    .add_filter(fl!("file-dialog-filter-font-files"), &["psf"])
+                    .set_file_name(format!("{untitled}.psf"))
+                    .save_file(),
+                FileAction::SaveTdf => dialog
+                    .add_filter(fl!("file-dialog-filter-tdf-files"), &["tdf"])
+                    .set_file_name(format!("{untitled}.tdf"))
+                    .save_file(),
+                FileAction::SaveAnimation => dialog
+                    .add_filter(fl!("file-dialog-filter-animation-files"), &["icyanim"])
+                    .set_file_name(format!("{untitled}.icyanim"))
+                    .save_file(),
                 FileAction::ExportAnimation(format) => dialog
                     .add_filter(format.name(), &[format.extension()])
-                    .set_file_name(format!("Untitled.{}", format.extension()))
+                    .set_file_name(format!("{untitled}.{}", format.extension()))
                     .save_file(),
                 FileAction::InsertImage | FileAction::ReferenceImage => dialog
-                    .add_filter("Images", &["png", "jpg", "jpeg", "gif", "bmp", "webp", "tga", "tif", "tiff"])
+                    .add_filter(fl!("file-dialog-filter-images"), &["png", "jpg", "jpeg", "gif", "bmp", "webp", "tga", "tif", "tiff"])
                     .pick_file(),
+                FileAction::ImportPalette => dialog.add_filter(fl!("file-dialog-filter-palette"), icy_draw::palette_files::IMPORT_EXTENSIONS).pick_file(),
+                FileAction::LoadFont => dialog
+                    .add_filter(fl!("set-font-filter-fonts"), font_select::FONT_EXTENSIONS)
+                    .add_filter(fl!("set-font-filter-all"), &["*"])
+                    .pick_file(),
+                FileAction::ExportPalette => icy_draw::palette_files::EXPORT_FILTERS
+                    .iter()
+                    .fold(dialog.set_file_name("palette.gpl"), |dialog, (name, extensions)| dialog.add_filter(*name, extensions))
+                    .save_file(),
             };
             let _ = sender.send(Picked { action, path });
             context.request_repaint();
@@ -470,6 +516,14 @@ impl DrawApp {
     }
 
     fn save(&mut self, context: &egui::Context, save_as: bool) {
+        if let Some(editor) = &mut self.font_editor {
+            editor.finish();
+            match editor.path.clone().filter(|_| !save_as && !editor.apply_target) {
+                Some(path) => self.save_path(context, path, false),
+                None => self.choose(context, FileAction::SaveFont),
+            }
+            return;
+        }
         if self.animation.is_some() {
             if let Some(path) = self.animation.as_ref().and_then(|editor| editor.path.clone()).filter(|_| !save_as) {
                 self.save_path(context, path, false);
@@ -501,7 +555,9 @@ impl DrawApp {
     }
 
     fn save_path(&mut self, context: &egui::Context, path: PathBuf, overwrite: bool) {
-        let result = if let Some(editor) = &mut self.animation {
+        let result = if let Some(editor) = &mut self.font_editor {
+            editor.save(&path, overwrite)
+        } else if let Some(editor) = &mut self.animation {
             editor.save(&path, overwrite)
         } else if let Some(font) = &mut self.charfont {
             font.save_with_overwrite(&mut self.document, &path, overwrite)
@@ -546,9 +602,7 @@ impl DrawApp {
             .as_ref()
             .is_some_and(|source| source == &path || source.canonicalize().ok().is_some_and(|source| Some(source) == path.canonicalize().ok()))
         {
-            self.dialog = Some(Dialog::Error(
-                "Export must not overwrite the current editable document. Choose a different filename.".into(),
-            ));
+            self.dialog = Some(Dialog::Error(fl!("error-export-overwrites-document")));
             return;
         }
         let result = super::export::write(&self.document, &path, self.export_format, &self.settings.export_settings, self.export_sauce);
@@ -566,10 +620,30 @@ impl DrawApp {
         self.result(result);
     }
 
+    pub(super) fn open_font_selector(&mut self) {
+        self.font_selector = self.document.with_state(|state| font_select::FontSelector::new(state));
+        self.dialog = Some(Dialog::FontSelect);
+    }
+
+    /// Puts `font` into the font slot of the caret, like the classic font selector.
+    fn apply_font(&mut self, font: icy_engine::BitFont) {
+        self.edit(|state| {
+            let slot = state.get_caret().font_page();
+            state.set_font_in_slot(slot, font)
+        });
+        if matches!(self.dialog, Some(Dialog::FontSelect)) {
+            self.dialog = None;
+        }
+    }
+
     fn modified(&self) -> bool {
         // The collaboration server persists the shared document.
         if self.collab.active {
             return false;
+        }
+        // A font of its own is the document; a font taken from the drawing only changes it once applied.
+        if let Some(editor) = self.font_editor.as_ref().filter(|editor| !editor.apply_target) {
+            return editor.modified();
         }
         self.document.modified()
             || self.charfont.as_ref().is_some_and(|font| font.modified())
@@ -577,6 +651,10 @@ impl DrawApp {
     }
 
     fn undo(&mut self, redo: bool) {
+        if let Some(editor) = &mut self.font_editor {
+            editor.undo(redo);
+            return;
+        }
         if let Some(animation) = &mut self.animation {
             animation.undo_source(redo);
             return;
@@ -630,7 +708,7 @@ impl DrawApp {
             }
             ui.horizontal_wrapped(|ui| {
                 egui::ComboBox::from_id_salt("tdf-font")
-                    .selected_text(format!("Font {}", selected + 1))
+                    .selected_text(fl!("tdf-font-number", index = (selected + 1)))
                     .show_ui(ui, |ui| {
                         for (index, name) in fonts.iter().enumerate() {
                             if ui.selectable_value(&mut selected, index, name).changed() {
@@ -641,29 +719,36 @@ impl DrawApp {
                 if ui.add(egui::TextEdit::singleline(&mut name).desired_width(120.0).char_limit(12)).changed() {
                     self.change_charfont(|state| state.set_font_name(name));
                 }
-                if ui.add(egui::DragValue::new(&mut spacing).range(0..=40).prefix("Spacing ")).changed() {
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut spacing)
+                            .range(0..=40)
+                            .prefix(format!("{} ", fl!("tdf-editor-spacing_label"))),
+                    )
+                    .changed()
+                {
                     self.change_charfont(|state| state.set_font_spacing(spacing));
                 }
-                if self.icons.button(ui, "file_copy", "Duplicate Font", false).clicked() {
+                if self.icons.button(ui, "file_copy", &fl!("tdf-duplicate-font"), false).clicked() {
                     self.change_charfont(|state| state.clone_font());
                 }
-                if self.icons.button(ui, "delete", "Delete Font", false).clicked() && fonts.len() > 1 {
+                if self.icons.button(ui, "delete", &fl!("tdf-delete-font"), false).clicked() && fonts.len() > 1 {
                     self.change_charfont(|state| state.delete_font());
                 }
-                ui.menu_button("Add Font", |ui| {
+                ui.menu_button(fl!("tdf-dialog-add-font-title"), |ui| {
                     for kind in [
                         icy_engine_edit::charset::TdfFontType::Color,
                         icy_engine_edit::charset::TdfFontType::Block,
                         icy_engine_edit::charset::TdfFontType::Outline,
                     ] {
-                        if ui.button(format!("{kind:?}")).clicked() {
-                            self.change_charfont(|state| state.add_font(kind, "New Font".into(), 1));
+                        if ui.button(tdf_type_label(kind)).clicked() {
+                            self.change_charfont(|state| state.add_font(kind, fl!("tdf-new-font-name"), 1));
                             ui.close();
                         }
                     }
                 });
                 egui::ComboBox::from_id_salt("tdf-character")
-                    .selected_text(format!("Character {character}"))
+                    .selected_text(format!("{} {character}", fl!("tool-character")))
                     .show_ui(ui, |ui| {
                         egui::Grid::new("tdf-chars").show(ui, |ui| {
                             for code in 33..=126 {
@@ -692,26 +777,26 @@ impl DrawApp {
         let mut name = font.state.selected_font().map(|font| font.name.clone()).unwrap_or_default();
         let mut spacing = font.state.selected_font().map_or(0, |font| font.spacing);
         let glyphs: Vec<bool> = (33..=126u32).map(|code| font.state.has_glyph(char::from_u32(code).unwrap())).collect();
-        widgets::section_header(ui, "TDF Font", |ui| {
-            let add = self.icons.button_sized(ui, "add", "Add Font", false, 26.0);
+        widgets::section_header(ui, &fl!("new-file-editor-tdf"), |ui| {
+            let add = self.icons.button_sized(ui, "add", &fl!("tdf-dialog-add-font-title"), false, 26.0);
             egui::Popup::menu(&add).show(|ui| {
                 for kind in [
                     icy_engine_edit::charset::TdfFontType::Color,
                     icy_engine_edit::charset::TdfFontType::Block,
                     icy_engine_edit::charset::TdfFontType::Outline,
                 ] {
-                    if ui.button(format!("{kind:?} Font")).clicked() {
-                        self.change_charfont(|state| state.add_font(kind, "New Font".into(), 1));
+                    if ui.button(tdf_type_label(kind)).clicked() {
+                        self.change_charfont(|state| state.add_font(kind, fl!("tdf-new-font-name"), 1));
                         ui.close();
                     }
                 }
             });
             ui.add_enabled_ui(fonts.len() > 1, |ui| {
-                if self.icons.button_sized(ui, "delete", "Delete Font", false, 26.0).clicked() {
+                if self.icons.button_sized(ui, "delete", &fl!("tdf-delete-font"), false, 26.0).clicked() {
                     self.change_charfont(|state| state.delete_font());
                 }
             });
-            if self.icons.button_sized(ui, "file_copy", "Duplicate Font", false, 26.0).clicked() {
+            if self.icons.button_sized(ui, "file_copy", &fl!("tdf-duplicate-font"), false, 26.0).clicked() {
                 self.change_charfont(|state| state.clone_font());
             }
         });
@@ -726,23 +811,20 @@ impl DrawApp {
                 }
             });
         ui.add_space(2.0);
-        ui.horizontal(|ui| {
-            ui.label("Name");
-            let spacing_width = 124.0;
+        egui::Grid::new("tdf-font-properties").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
+            ui.label(fl!("edit-layer-dialog-name-label"));
             if ui
-                .add(
-                    egui::TextEdit::singleline(&mut name)
-                        .desired_width(ui.available_width() - spacing_width)
-                        .char_limit(12),
-                )
+                .add(egui::TextEdit::singleline(&mut name).desired_width(f32::INFINITY).char_limit(12))
                 .changed()
             {
                 self.change_charfont(|state| state.set_font_name(name));
             }
-            ui.label("Spacing");
+            ui.end_row();
+            ui.label(fl!("tdf-editor-spacing_label").trim_end_matches(':'));
             if ui.add(egui::DragValue::new(&mut spacing).range(0..=40)).changed() {
                 self.change_charfont(|state| state.set_font_spacing(spacing));
             }
+            ui.end_row();
         });
         ui.add_space(4.0);
         let columns = 12;
@@ -785,9 +867,9 @@ impl DrawApp {
                 self.change_charfont(|state| state.select_char(code));
             }
             response.on_hover_text(if glyphs[index] {
-                format!("Edit '{code}'")
+                fl!("tdf-edit-glyph", ch = code.to_string())
             } else {
-                format!("Create '{code}'")
+                fl!("tdf-create-glyph", ch = code.to_string())
             });
         }
     }
@@ -797,19 +879,22 @@ impl DrawApp {
         if self.document.paste_active() {
             use icy_draw::document::PasteAction;
             for (icon, label, action) in [
-                ("anchor", "Anchor (Enter)", PasteAction::Anchor),
-                ("add_layer", "Keep as Layer", PasteAction::Keep),
-                ("file_copy", "Stamp (S)", PasteAction::Stamp),
-                ("replay", "Rotate (R)", PasteAction::Rotate),
-                ("flip_tool", "Flip Horizontal (X)", PasteAction::FlipX),
-                ("swap", "Flip Vertical (Y)", PasteAction::FlipY),
-                ("invisible", "Make Transparent (T)", PasteAction::Transparent),
-                ("delete", "Cancel Paste (Escape)", PasteAction::Cancel),
+                ("anchor", fl!("paste-tool-anchor"), PasteAction::Anchor),
+                ("add_layer", fl!("paste-tool-keep"), PasteAction::Keep),
+                ("file_copy", fl!("paste-tool-stamp"), PasteAction::Stamp),
+                ("replay", fl!("paste-tool-rotate"), PasteAction::Rotate),
+                ("flip_tool", format!("{} (X)", fl!("paste-tool-flip-x")), PasteAction::FlipX),
+                ("swap", format!("{} (Y)", fl!("paste-tool-flip-y")), PasteAction::FlipY),
+                ("invisible", fl!("paste-tool-transparent"), PasteAction::Transparent),
+                ("delete", fl!("paste-tool-cancel"), PasteAction::Cancel),
             ] {
+                if action == PasteAction::Keep && self.charfont.is_some() {
+                    continue;
+                }
                 if action == PasteAction::Cancel {
                     widgets::divider(ui);
                 }
-                if self.icons.button(ui, icon, label, false).clicked() {
+                if self.icons.button(ui, icon, &label, false).clicked() {
                     let result = self.document.paste_action(action);
                     self.result(result);
                     self.canvas_focus = true;
@@ -820,17 +905,29 @@ impl DrawApp {
         if self.document.outline_font && self.document.tool == Tool::Click {
             let font = self.document.with_state(|state| state.get_buffer().font(0).cloned());
             if let Some(font) = font {
-                for index in 0..10 {
-                    let code = char::from_u32('A' as u32 + index as u32).unwrap();
-                    if widgets::fkey(ui, &font, code, index).clicked() {
-                        let result = self.document.type_text(&code.to_string());
-                        self.result(result);
-                        self.canvas_focus = true;
+                let style = self.chrome.outline_style;
+                ui.spacing_mut().item_spacing.x = 0.0;
+                widgets::outline_sheet_captions(ui);
+                for (index, (key, code)) in icy_draw::document::OUTLINE_KEYS.iter().enumerate() {
+                    if index == 10 {
+                        widgets::divider(ui);
                     }
-                }
-                widgets::divider(ui);
-                for code in ['K', 'L', 'M', 'N', 'O', 'P', 'Q', '@', '&', ' ', '\u{00ff}'] {
-                    if widgets::glyph(ui, &font, code, false, 28.0).clicked() {
+                    let (label, result) = match *code {
+                        '@' | '&' => (code.to_string(), Some(*code)),
+                        '\u{00ff}' => ("FF".to_owned(), None),
+                        code => (code.to_string(), Some(widgets::outline_result(style, code as u8))),
+                    };
+                    let hover = match *code {
+                        '@' => fl!("outline-code-fill"),
+                        '&' => fl!("outline-code-end"),
+                        'O' => fl!("outline-code-hole"),
+                        '\u{00ff}' => fl!("shortcut-hard-blank"),
+                        _ => fl!("outline-code-placeholder", code = label.as_str()),
+                    };
+                    if widgets::outline_key(ui, &font, key, &label, result)
+                        .on_hover_text(format!("{key}: {hover}"))
+                        .clicked()
+                    {
                         let result = self.document.type_text(&code.to_string());
                         self.result(result);
                         self.canvas_focus = true;
@@ -848,18 +945,18 @@ impl DrawApp {
                     ui,
                     &mut self.document.brush.primary,
                     &[
-                        (BrushPrimaryMode::Char, "Character", "Paint with the selected character and colors"),
-                        (BrushPrimaryMode::HalfBlock, "Half Block", "Paint half-block pixels with twice the vertical resolution"),
-                        (BrushPrimaryMode::Shading, "Shade", "Shade characters: left click lighter, right click darker"),
-                        (BrushPrimaryMode::Replace, "Replace", "Replace existing characters, keep the colors"),
-                        (BrushPrimaryMode::Blink, "Blink", "Toggle the blink attribute"),
-                        (BrushPrimaryMode::Colorize, "Colorize", "Change only the colors of existing characters"),
+                        (BrushPrimaryMode::Char, fl!("tool-character"), fl!("brush-mode-char-tooltip")),
+                        (BrushPrimaryMode::HalfBlock, fl!("tool-half-block"), fl!("brush-mode-half_block-tooltip")),
+                        (BrushPrimaryMode::Shading, fl!("tool-shade"), fl!("brush-mode-shading-tooltip")),
+                        (BrushPrimaryMode::Replace, fl!("brush-mode-replace"), fl!("brush-mode-replace-tooltip")),
+                        (BrushPrimaryMode::Blink, fl!("color-is_blinking"), fl!("brush-mode-blink-tooltip")),
+                        (BrushPrimaryMode::Colorize, fl!("tool-colorize"), fl!("brush-mode-colorize-tooltip")),
                     ],
                 );
                 widgets::divider(ui);
                 if let Some(font) = &font {
                     if widgets::glyph(ui, font, self.document.brush.paint_char, false, widgets::CONTROL_HEIGHT)
-                        .on_hover_text("Brush character – click to choose from the character table")
+                        .on_hover_text(fl!("brush-char-tooltip"))
                         .clicked()
                     {
                         self.dialog = Some(Dialog::Characters);
@@ -867,25 +964,40 @@ impl DrawApp {
                 }
                 if self.document.tool == Tool::Pencil {
                     widgets::divider(ui);
-                    ui.weak("Brush size");
+                    ui.weak(fl!("brush-size"));
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    if self.icons.button(ui, "arrow_left", "Smaller Brush", false).clicked() {
+                    if self.icons.button(ui, "arrow_left", &fl!("shortcut-brush-smaller"), false).clicked() {
                         self.document.brush.brush_size = self.document.brush.brush_size.saturating_sub(1).max(1);
                     }
                     ui.add(egui::DragValue::new(&mut self.document.brush.brush_size).range(1..=9))
-                        .on_hover_text("Brush size in cells (Alt+Plus / Alt+Minus)");
-                    if self.icons.button(ui, "arrow_right", "Larger Brush", false).clicked() {
+                        .on_hover_text(fl!("brush-size-tooltip"));
+                    if self.icons.button(ui, "arrow_right", &fl!("shortcut-brush-larger"), false).clicked() {
                         self.document.brush.brush_size = (self.document.brush.brush_size + 1).min(9);
                     }
                     ui.spacing_mut().item_spacing.x = 4.0;
                 }
                 widgets::divider(ui);
-                ui.weak("Apply");
-                widgets::toggle(ui, "Foreground", &mut self.document.brush.colorize_fg, "Apply the foreground color");
-                widgets::toggle(ui, "Background", &mut self.document.brush.colorize_bg, "Apply the background color");
+                ui.weak(fl!("brush-apply"));
+                widgets::toggle(
+                    ui,
+                    &fl!("channel_tool_fg"),
+                    &mut self.document.brush.colorize_fg,
+                    &fl!("brush-apply-fg-tooltip"),
+                );
+                widgets::toggle(
+                    ui,
+                    &fl!("channel_tool_bg"),
+                    &mut self.document.brush.colorize_bg,
+                    &fl!("brush-apply-bg-tooltip"),
+                );
                 if self.document.tool == Tool::Fill {
                     widgets::divider(ui);
-                    widgets::toggle(ui, "Exact Match", &mut self.document.brush.exact, "Only fill cells that match character and colors exactly");
+                    widgets::toggle(
+                        ui,
+                        &fl!("tool-fill-exact_match_label"),
+                        &mut self.document.brush.exact,
+                        &fl!("brush-exact-tooltip"),
+                    );
                 }
                 let variants = match self.document.tool {
                     Tool::RectangleOutline | Tool::RectangleFilled => Some([Tool::RectangleOutline, Tool::RectangleFilled]),
@@ -895,7 +1007,7 @@ impl DrawApp {
                 if let Some(variants) = variants {
                     widgets::divider(ui);
                     for tool in variants {
-                        if self.icons.button(ui, tool.icon(), chrome::tool_label(tool), self.document.tool == tool).clicked() {
+                        if self.icons.button(ui, tool.icon(), &chrome::tool_label(tool), self.document.tool == tool).clicked() {
                             self.select_tool(tool);
                         }
                     }
@@ -903,10 +1015,13 @@ impl DrawApp {
             }
             Tool::Font => {
                 if let Some(library) = &self.text_fonts {
-                    let font_name = library.read().font_name(self.text_font).unwrap_or("No fonts").to_owned();
+                    let font_name = library
+                        .read()
+                        .font_name(self.text_font)
+                        .map_or_else(|| fl!("font-tool-no_fonts"), str::to_owned);
                     if ui
                         .add_sized([290.0, widgets::CONTROL_HEIGHT], egui::Button::new(font_name).truncate())
-                        .on_hover_text("Choose a text-art font")
+                        .on_hover_text(fl!("font-tool-select_font"))
                         .clicked()
                     {
                         self.text_font_pending = self.text_font;
@@ -914,7 +1029,7 @@ impl DrawApp {
                         self.dialog = Some(Dialog::TextArtFontSelect);
                     }
                     widgets::divider(ui);
-                    ui.weak("Outline");
+                    ui.weak(fl!("tdf-font-selector-type_outline"));
                     let style = &mut self.settings.font_outline_style;
                     widgets::outline_style_picker(ui, style);
                     let mut library = library.write();
@@ -938,7 +1053,7 @@ impl DrawApp {
             Tool::Click => {
                 if let Some(font) = &font {
                     ui.spacing_mut().item_spacing.x = 2.0;
-                    if self.icons.button(ui, "navigate_prev", "Previous Character Set", false).clicked() {
+                    if self.icons.button(ui, "navigate_prev", &fl!("shortcut-fkey-prev"), false).clicked() {
                         self.settings.fkeys.current_set =
                             (self.settings.fkeys.current_set + self.settings.fkeys.set_count() - 1) % self.settings.fkeys.set_count();
                     }
@@ -952,15 +1067,19 @@ impl DrawApp {
                             self.canvas_focus = true;
                         }
                     }
-                    if self.icons.button(ui, "navigate_next", "Next Character Set", false).clicked() {
+                    if self.icons.button(ui, "navigate_next", &fl!("shortcut-fkey-next"), false).clicked() {
                         self.settings.fkeys.current_set = (self.settings.fkeys.current_set + 1) % self.settings.fkeys.set_count();
                     }
                     ui.add_space(4.0);
-                    ui.weak(format!("Set {} of {}", self.settings.fkeys.current_set + 1, self.settings.fkeys.set_count()))
-                        .on_hover_text("F-key character set (Ctrl+Comma / Ctrl+Period to switch, right click a key to reassign)");
+                    ui.weak(fl!(
+                        "fkey-set-of",
+                        set = (self.settings.fkeys.current_set + 1),
+                        count = self.settings.fkeys.set_count()
+                    ))
+                    .on_hover_text(fl!("fkey-set-tooltip"));
                     ui.spacing_mut().item_spacing.x = 4.0;
                     widgets::divider(ui);
-                    if self.icons.button(ui, "font", "Character Table", false).clicked() {
+                    if self.icons.button(ui, "font", &fl!("char_table_tool_title"), false).clicked() {
                         self.dialog = Some(Dialog::Characters);
                     }
                 }
@@ -975,11 +1094,11 @@ impl DrawApp {
                     ui,
                     &mut mode,
                     &[
-                        (SelectionMode::Rectangle, "Rectangle", "Drag a rectangular selection"),
-                        (SelectionMode::Character, "Character", "Select every cell with the clicked character"),
-                        (SelectionMode::Attribute, "Attribute", "Select every cell with the clicked colors"),
-                        (SelectionMode::Foreground, "Foreground", "Select every cell with the clicked foreground color"),
-                        (SelectionMode::Background, "Background", "Select every cell with the clicked background color"),
+                        (SelectionMode::Rectangle, fl!("tool-select-normal"), fl!("select-mode-normal-tooltip")),
+                        (SelectionMode::Character, fl!("tool-select-character"), fl!("select-mode-character-tooltip")),
+                        (SelectionMode::Attribute, fl!("tool-select-attribute"), fl!("select-mode-attribute-tooltip")),
+                        (SelectionMode::Foreground, fl!("tool-select-foreground"), fl!("select-mode-foreground-tooltip")),
+                        (SelectionMode::Background, fl!("tool-select-background"), fl!("select-mode-background-tooltip")),
                     ],
                 ) {
                     self.document.finish();
@@ -987,24 +1106,24 @@ impl DrawApp {
                 }
                 widgets::divider(ui);
                 let selected = self.document.with_state(|state| state.is_something_selected());
-                if self.icons.button(ui, "select", "Select All", false).clicked() {
+                if self.icons.button(ui, "select", &fl!("menu-select-all"), false).clicked() {
                     self.select_all();
                 }
                 ui.add_enabled_ui(selected, |ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    if self.icons.button(ui, "file_copy", "Copy Selection", false).clicked() {
+                    if self.icons.button(ui, "file_copy", &fl!("select-copy"), false).clicked() {
                         self.copy(context);
                     }
                     ui.add_enabled_ui(self.document.can_paint(), |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
-                        if self.icons.button(ui, "flip_tool", "Flip Horizontally", false).clicked() {
+                        if self.icons.button(ui, "flip_tool", &fl!("menu-flip-x"), false).clicked() {
                             self.edit(|state| state.flip_x());
                         }
-                        if self.icons.button(ui, "swap", "Flip Vertically", false).clicked() {
+                        if self.icons.button(ui, "swap", &fl!("menu-flip-y"), false).clicked() {
                             self.edit(|state| state.flip_y());
                         }
                     });
-                    if self.icons.button(ui, "delete", "Deselect", false).clicked() {
+                    if self.icons.button(ui, "delete", &fl!("menu-select_nothing"), false).clicked() {
                         self.edit(|state| state.clear_selection());
                     }
                 });
@@ -1012,23 +1131,23 @@ impl DrawApp {
                 if let Some(bounds) = self.document.with_state(|state| state.selection().map(|selection| selection.as_rectangle())) {
                     ui.weak(format!("{}, {}  ·  {} × {}", bounds.left(), bounds.top(), bounds.width(), bounds.height()));
                 } else {
-                    ui.weak("Shift adds to the selection, Ctrl removes from it");
+                    ui.weak(fl!("tool-select-description"));
                 }
             }
 
             Tool::Tag => {
-                if self.icons.button(ui, "tag", "Tag List", false).clicked() {
+                if self.icons.button(ui, "tag", &fl!("tag-list-title"), false).clicked() {
                     self.dialog = Some(Dialog::Tags);
                 }
-                if self.icons.button(ui, "add", "New Tag", false).clicked() {
+                if self.icons.button(ui, "add", &fl!("tag-new"), false).clicked() {
                     self.open_tag_properties(None);
                 }
                 ui.add_enabled_ui(!self.document.selected_tags.is_empty(), |ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    if self.icons.button(ui, "text", "Edit Tag", false).clicked() {
+                    if self.icons.button(ui, "text", &fl!("tag-edit"), false).clicked() {
                         self.open_tag_properties(self.document.selected_tags.first().copied());
                     }
-                    if self.icons.button(ui, "delete", "Delete Selected Tags", false).clicked() {
+                    if self.icons.button(ui, "delete", &fl!("tag-delete-selected"), false).clicked() {
                         let result = self.document.delete_selected_tags();
                         self.result(result);
                     }
@@ -1036,18 +1155,18 @@ impl DrawApp {
                 widgets::divider(ui);
                 match self.document.selected_tags.len() {
                     0 => {
-                        ui.weak("Click to place a tag, drag to move it");
+                        ui.weak(fl!("tag-place-hint"));
                     }
                     1 => {
                         let index = self.document.selected_tags[0];
                         if let Some(tag) = self.document.with_state(|state| state.get_buffer().tags.get(index).cloned()) {
                             let preview: String = tag.preview.chars().take(20).collect();
-                            ui.strong(if preview.is_empty() { "(empty)" } else { &preview });
-                            ui.weak(format!("at {}, {}  ·  {} chars", tag.position.x, tag.position.y, tag.len()));
+                            ui.strong(if preview.is_empty() { fl!("tag-empty") } else { preview.clone() });
+                            ui.weak(fl!("tag-info", x = tag.position.x, y = tag.position.y, length = tag.len()));
                         }
                     }
                     count => {
-                        ui.weak(format!("{count} tags selected"));
+                        ui.weak(fl!("tag-toolbar-selected-tags", count = count));
                     }
                 };
             }
@@ -1057,9 +1176,9 @@ impl DrawApp {
 
     fn pipette_options(&mut self, ui: &mut egui::Ui) {
         let Some((position, modifiers)) = self.pipette_hover else {
-            ui.weak("Hover over the canvas to preview sampled colors");
+            ui.weak(fl!("pipette-hover_hint"));
             widgets::divider(ui);
-            ui.weak("Shift: foreground only  ·  Ctrl/right click: background only");
+            ui.weak(fl!("pipette-modifier-hint"));
             return;
         };
         let Some((character, font, foreground, background, preview_foreground, preview_background)) = self.document.with_state(|state| {
@@ -1103,158 +1222,92 @@ impl DrawApp {
             Color32::from_rgb(preview_background.0, preview_background.1, preview_background.2),
             34.0,
         );
-        chrome::color_sample(ui, "FG", character.attribute.foreground(), foreground, take_foreground);
-        chrome::color_sample(ui, "BG", character.attribute.background(), background, take_background);
+        chrome::color_sample(
+            ui,
+            &fl!("pipette-foreground", index = character.attribute.foreground()),
+            foreground,
+            take_foreground,
+        );
+        chrome::color_sample(
+            ui,
+            &fl!("pipette-background", index = character.attribute.background()),
+            background,
+            take_background,
+        );
         widgets::divider(ui);
-        ui.weak("Shift: foreground only  ·  Ctrl/right click: background only");
+        ui.weak(fl!("pipette-modifier-hint"));
     }
 
-    fn palette(&mut self, ui: &mut egui::Ui) {
-        let (palette, foreground, background) = self.document.with_state(|state| {
-            (
-                state.get_buffer().palette.clone(),
-                state.get_caret().attribute.foreground(),
-                state.get_caret().attribute.background(),
-            )
-        });
-        ui.horizontal_wrapped(|ui| {
-            for index in 0..palette.len().min(256) {
-                let (red, green, blue) = palette.rgb(index as u32);
-                let response = widgets::swatch(ui, Color32::from_rgb(red, green, blue), foreground == index as u32, 22.0)
-                    .on_hover_text(format!("{index}: #{red:02X}{green:02X}{blue:02X}"));
-                if response.clicked() {
-                    let result = self.document.set_caret_foreground(index as u32);
-                    self.result(result);
-                }
-                if response.secondary_clicked() {
-                    let result = self.document.set_caret_background(index as u32);
-                    self.result(result);
-                }
-                if background == index as u32 {
-                    ui.painter().circle_filled(response.rect.center(), 2.0, Color32::WHITE);
-                }
+    /// Canvas size controls of the New and Canvas Size dialogs, with the ANSI format for new documents.
+    fn new_size_group(&mut self, ui: &mut egui::Ui, resize: bool, current: Size) {
+        let title = if resize {
+            fl!("file-settings-canvas-size")
+        } else {
+            fl!("new-file-size-section")
+        };
+        appearance::group(ui, &title, |ui| {
+            if !resize && self.new_kind == NewKind::Ansi {
+                appearance::combo_row(ui, &fl!("file-settings-format"), self.new_template.title(), |ui| {
+                    for template in file_settings::AnsiTemplate::ALL {
+                        ui.selectable_value(&mut self.new_template, template, template.title())
+                            .on_hover_text(template.description());
+                    }
+                });
+                ui.add(egui::Label::new(egui::RichText::new(self.new_template.description()).weak()).wrap());
             }
-            if self.icons.button(ui, "swap", "Swap Foreground and Background", false).clicked() {
-                let result = self.document.swap_caret_colors();
-                self.result(result);
+            let presets = welcome::size_presets();
+            let preset = presets
+                .iter()
+                .find(|(columns, rows, _)| [*columns, *rows] == self.new_size)
+                .map_or_else(|| fl!("new-file-custom-size"), |(columns, rows, name)| format!("{columns} × {rows}  ·  {name}"));
+            appearance::combo_row(ui, &fl!("new-file-preset"), preset, |ui| {
+                for (columns, rows, name) in &presets {
+                    ui.selectable_value(&mut self.new_size, [*columns, *rows], format!("{columns} × {rows}  ·  {name}"));
+                }
+            });
+            appearance::form_row(ui, &fl!("new-file-width"), |ui| {
+                ui.add(
+                    egui::DragValue::new(&mut self.new_size[0])
+                        .range(1..=1000)
+                        .suffix(format!(" {}", fl!("unit-characters"))),
+                );
+            });
+            appearance::form_row(ui, &fl!("new-file-height"), |ui| {
+                ui.add(
+                    egui::DragValue::new(&mut self.new_size[1])
+                        .range(1..=10000)
+                        .suffix(format!(" {}", fl!("unit-lines"))),
+                );
+            });
+            if resize {
+                appearance::value_row(ui, &fl!("canvas-current-size"), &format!("{} × {}", current.width, current.height));
             }
         });
     }
 
-    fn inspector(&mut self, ui: &mut egui::Ui) {
-        ui.strong("Palette");
-        self.palette(ui);
-        if ui.button("Edit Palette...").clicked() {
-            self.palette_edit = self.document.with_state(|state| state.get_buffer().palette.clone());
-            self.palette_index = 0;
-            self.dialog = Some(Dialog::Palette);
+    /// Leaves the bitmap font editor; a font of its own returns to the start screen.
+    fn close_font_editor(&mut self) {
+        let standalone = self.font_editor.take().is_some_and(|editor| !editor.apply_target);
+        self.canvas_focus = !standalone;
+        self.show_start |= standalone;
+    }
+
+    /// File name of the active document, or the localized "Untitled".
+    fn document_name(&self) -> String {
+        if let Some(editor) = self.font_editor.as_ref().filter(|editor| !editor.apply_target) {
+            return editor
+                .path
+                .as_ref()
+                .and_then(|path| path.file_name())
+                .map_or_else(|| fl!("unsaved-title"), |name| name.to_string_lossy().into_owned());
         }
-        ui.separator();
-        ui.strong("Layers");
-        let (layers, current) = self.document.with_state(|state| {
-            (
-                state
-                    .get_buffer()
-                    .layers
-                    .iter()
-                    .map(|layer| (layer.properties.clone(), layer.is_visible(), layer.offset()))
-                    .collect::<Vec<_>>(),
-                state.get_current_layer().unwrap_or(0),
-            )
-        });
-        for (index, (properties, visible, _offset)) in layers.iter().enumerate().rev() {
-            ui.horizontal(|ui| {
-                let mut properties = properties.clone();
-                let mut visible = *visible;
-                if ui.checkbox(&mut visible, "").changed() {
-                    self.edit(|state| state.toggle_layer_visibility(index));
-                }
-                if ui.selectable_label(index == current, &properties.title).clicked() {
-                    self.document.with_state(|state| state.set_current_layer(index));
-                }
-                if ui.checkbox(&mut properties.is_locked, "").on_hover_text("Lock Layer").changed() {
-                    self.edit(|state| state.update_layer_properties(index, properties));
-                }
-            });
-        }
-        ui.horizontal_wrapped(|ui| {
-            if self.icons.button(ui, "add_layer", "Add Layer", false).clicked() {
-                self.edit(|state| state.add_new_layer(current));
-            }
-            if self.icons.button(ui, "file_copy", "Duplicate Layer", false).clicked() {
-                self.edit(|state| state.duplicate_layer(current));
-            }
-            if self.icons.button(ui, "up", "Raise Layer", false).clicked() && current + 1 < layers.len() {
-                self.edit(|state| state.raise_layer(current));
-            }
-            if self.icons.button(ui, "down", "Lower Layer", false).clicked() {
-                self.edit(|state| state.lower_layer(current));
-            }
-            if self.icons.button(ui, "delete", "Delete Layer", false).clicked() && layers.len() > 1 {
-                self.edit(|state| state.remove_layer(current));
-            }
-            if self.icons.button(ui, "anchor", "Anchor Pasted Layer", false).clicked() {
-                self.edit(|state| state.anchor_layer());
-            }
-        });
-        if let Some((properties, _visible, offset)) = layers.get(current) {
-            let mut title = properties.title.clone();
-            if ui.text_edit_singleline(&mut title).changed() {
-                let mut properties = properties.clone();
-                properties.title = title;
-                self.edit(|state| state.update_layer_properties(current, properties));
-            }
-            let mut offset = *offset;
-            ui.horizontal(|ui| {
-                if properties.is_position_locked {
-                    ui.disable();
-                }
-                let changed =
-                    ui.add(egui::DragValue::new(&mut offset.x).prefix("X ")).changed() | ui.add(egui::DragValue::new(&mut offset.y).prefix("Y ")).changed();
-                if changed {
-                    self.edit(|state| state.move_layer(offset));
-                }
-            });
-        }
-        ui.separator();
-        ui.strong("Character");
-        let mut code = self.document.brush.paint_char as u32;
-        if ui.add(egui::DragValue::new(&mut code).range(0..=255).prefix("Code ")).changed() {
-            self.document.brush.paint_char = char::from_u32(code).unwrap_or(' ');
-        }
-        if ui.button("Characters...").clicked() {
-            self.dialog = Some(Dialog::Characters);
-        }
-        if ui.button("Select Font...").clicked() {
-            self.dialog = Some(Dialog::FontSelect);
-        }
-        if ui.button("Edit Bitmap Font...").clicked() {
-            self.edit_bitmap_font();
-        }
-        let mut mirror = self.document.with_state(|state| state.get_mirror_mode());
-        if ui.checkbox(&mut mirror, "Mirror").changed() {
-            self.document.with_state(|state| state.set_mirror_mode(mirror));
-        }
-        let (mut spacing, mut aspect, mut ice) = self.document.with_state(|state| {
-            (
-                state.get_buffer().use_letter_spacing(),
-                state.get_buffer().use_aspect_ratio(),
-                state.get_buffer().ice_mode,
-            )
-        });
-        if ui.checkbox(&mut spacing, "9-pixel letter spacing").changed() {
-            self.edit(|state| state.set_use_letter_spacing(spacing));
-        }
-        if ui.checkbox(&mut aspect, "Legacy aspect ratio").changed() {
-            self.edit(|state| state.set_use_aspect_ratio(aspect));
-        }
-        egui::ComboBox::from_id_salt("ice-mode").selected_text(format!("{ice:?}")).show_ui(ui, |ui| {
-            for mode in [icy_engine::IceMode::Blink, icy_engine::IceMode::Ice, icy_engine::IceMode::Unlimited] {
-                if ui.selectable_value(&mut ice, mode, format!("{mode:?}")).changed() {
-                    self.edit(|state| state.set_ice_mode(mode));
-                }
-            }
-        });
+        self.animation
+            .as_ref()
+            .and_then(|editor| editor.path.as_ref())
+            .or(self.charfont.as_ref().and_then(|font| font.path.as_ref()))
+            .or(self.document.path.as_ref())
+            .and_then(|path| path.file_name())
+            .map_or_else(|| fl!("unsaved-title"), |name| name.to_string_lossy().into_owned())
     }
 
     fn half_blocks(&self) -> bool {
@@ -1454,20 +1507,20 @@ impl DrawApp {
         }
         if self.document.tool == Tool::Tag {
             response.context_menu(|ui| {
-                if ui.button("New Tag...").clicked() {
+                if ui.button(fl!("tag-new-menu")).clicked() {
                     self.open_tag_properties(None);
                     ui.close();
                 }
                 ui.add_enabled_ui(!self.document.selected_tags.is_empty(), |ui| {
-                    if ui.button("Properties...").clicked() {
+                    if ui.button(fl!("tag-properties-menu")).clicked() {
                         self.open_tag_properties(self.document.selected_tags.first().copied());
                         ui.close();
                     }
-                    if ui.button("Duplicate").clicked() {
+                    if ui.button(fl!("tag-duplicate")).clicked() {
                         self.document.finish();
                         let selected = self.document.selected_tags.clone();
                         self.edit(|state| {
-                            let _undo = state.begin_atomic_undo("Duplicate tags");
+                            let _undo = state.begin_atomic_undo(fl!("tag-duplicate"));
                             for index in selected {
                                 state.clone_tag(index)?;
                             }
@@ -1475,7 +1528,7 @@ impl DrawApp {
                         });
                         ui.close();
                     }
-                    if ui.button("Delete").clicked() {
+                    if ui.button(fl!("tag-toolbar-delete")).clicked() {
                         let result = self.document.delete_selected_tags();
                         self.result(result);
                         ui.close();
@@ -1705,21 +1758,21 @@ impl DrawApp {
         let bytes = match font.to_bytes() {
             Ok(bytes) => bytes,
             Err(error) => {
-                self.dialog = Some(Dialog::Error(format!("Failed to export font: {error}")));
+                self.dialog = Some(Dialog::Error(fl!("error-export-font", error = error.to_string())));
                 return;
             }
         };
         drop(library);
         let Some(path) = rfd::FileDialog::new()
-            .set_title("Export Text-Art Font")
+            .set_title(fl!("tdf-font-selector-export_title"))
             .set_file_name(format!("{name}.{extension}"))
-            .add_filter("Font file", &[extension])
+            .add_filter(fl!("file-dialog-filter-font-files"), &[extension])
             .save_file()
         else {
             return;
         };
         if let Err(error) = std::fs::write(path, bytes) {
-            self.dialog = Some(Dialog::Error(format!("Failed to export font: {error}")));
+            self.dialog = Some(Dialog::Error(fl!("error-export-font", error = error.to_string())));
         }
     }
 
@@ -1781,36 +1834,55 @@ impl DrawApp {
                     ui.horizontal(|ui| {
                         ui.add(
                             appearance::text_edit(&mut self.text_font_filter)
-                                .hint_text("Filter fonts...")
+                                .hint_text(fl!("tdf-font-selector-filter_placeholder"))
                                 .desired_width(220.0),
                         );
                         ui.add(
                             appearance::text_edit(&mut self.text_font_preview_text)
-                                .hint_text("Preview text")
+                                .hint_text(fl!("font-preview-text-hint"))
                                 .desired_width(180.0),
                         );
-                        if ui.add(egui::Button::selectable(self.text_font_favorites_only, "★ Favorites")).clicked() {
+                        if ui
+                            .add(egui::Button::selectable(self.text_font_favorites_only, format!("★ {}", fl!("font-favorites"))))
+                            .clicked()
+                        {
                             self.text_font_favorites_only = !self.text_font_favorites_only;
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.weak(format!("{} fonts", fonts.len()));
+                            ui.weak(fl!("tdf-font-selector-font_count", count = fonts.len()));
                         });
                     });
                     ui.horizontal(|ui| {
-                        for (kind, label) in TextArtFontKind::ALL {
+                        for (kind, _) in TextArtFontKind::ALL {
                             let enabled = &mut self.text_font_types[kind.index()];
-                            if ui.add(egui::Button::selectable(*enabled, label)).clicked() {
+                            if ui.add(egui::Button::selectable(*enabled, kind.label())).clicked() {
                                 *enabled = !*enabled;
                             }
                         }
                         ui.separator();
-                        ui.weak("Width");
-                        ui.add(egui::DragValue::new(&mut self.text_font_size_filter[0]).range(0..=255).prefix("min "));
-                        ui.add(egui::DragValue::new(&mut self.text_font_size_filter[1]).range(0..=255).prefix("max "));
-                        ui.weak("Height");
-                        ui.add(egui::DragValue::new(&mut self.text_font_size_filter[2]).range(0..=255).prefix("min "));
-                        ui.add(egui::DragValue::new(&mut self.text_font_size_filter[3]).range(0..=255).prefix("max "));
-                        ui.weak("0 = any");
+                        ui.weak(fl!("font-size-width"));
+                        ui.add(
+                            egui::DragValue::new(&mut self.text_font_size_filter[0])
+                                .range(0..=255)
+                                .prefix(format!("{} ", fl!("font-filter-min"))),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.text_font_size_filter[1])
+                                .range(0..=255)
+                                .prefix(format!("{} ", fl!("font-filter-max"))),
+                        );
+                        ui.weak(fl!("font-size-height"));
+                        ui.add(
+                            egui::DragValue::new(&mut self.text_font_size_filter[2])
+                                .range(0..=255)
+                                .prefix(format!("{} ", fl!("font-filter-min"))),
+                        );
+                        ui.add(
+                            egui::DragValue::new(&mut self.text_font_size_filter[3])
+                                .range(0..=255)
+                                .prefix(format!("{} ", fl!("font-filter-max"))),
+                        );
+                        ui.weak(fl!("font-filter-any"));
                     });
                     ui.add_space(8.0);
 
@@ -1881,7 +1953,7 @@ impl DrawApp {
                             ui.painter().text(
                                 preview_header.left_center(),
                                 egui::Align2::LEFT_CENTER,
-                                TextArtFontKind::ALL[kind.index()].1,
+                                kind.label(),
                                 egui::FontId::proportional(11.0),
                                 ui.visuals().weak_text_color(),
                             );
@@ -1937,9 +2009,9 @@ impl DrawApp {
                     });
                 });
                 dialog.buttons([
-                    DialogButton::secondary("Export...", Action::Export).leading(),
+                    DialogButton::secondary(fl!("tdf-font-selector-export"), Action::Export).leading(),
                     DialogButton::cancel(labels::cancel(), Action::Cancel),
-                    DialogButton::primary("OK", Action::Apply),
+                    DialogButton::primary(labels::ok(), Action::Apply),
                 ]);
             });
         match response.action {
@@ -1969,7 +2041,7 @@ impl DrawApp {
         let mut keep = true;
         match &dialog {
             Dialog::Shortcuts => keep = !self.shortcuts_dialog(context),
-            Dialog::About => keep = !self.about_dialog(context),
+            Dialog::About => keep = self.about.as_mut().is_some_and(|about| about.show(context)),
             Dialog::ReferenceImage => keep = !self.reference_image_dialog(context),
             Dialog::Connect => keep = !self.connect_dialog(context),
             Dialog::Monitor => {
@@ -1982,7 +2054,7 @@ impl DrawApp {
                 let response = appearance::Dialog::new("monitor").size(DialogSize::Medium).show(context, |dialog| {
                     dialog.content(|ui| icy_engine_gui::egui::monitor::fields(ui, &mut self.settings.monitor_settings));
                     dialog.buttons([
-                        DialogButton::secondary("Save Defaults", Action::SaveDefaults)
+                        DialogButton::secondary(fl!("monitor-save-defaults"), Action::SaveDefaults)
                             .leading()
                             .enabled(self.persist_settings),
                         DialogButton::secondary(labels::restore_defaults(), Action::Reset).leading(),
@@ -2010,24 +2082,24 @@ impl DrawApp {
                     .fixed_height(460.0)
                     .show(context, |dialog| {
                         dialog.content(|ui| {
-                            appearance::group(ui, "Lua Script", |ui| {
+                            appearance::group(ui, &fl!("script-group"), |ui| {
                                 ui.add(
                                     egui::TextEdit::multiline(&mut self.script)
                                         .code_editor()
-                                        .hint_text("-- Runs against the current document, e.g.\n-- buf:set_char(0, 0, \"A\")")
+                                        .hint_text(fl!("script-hint"))
                                         .desired_width(f32::INFINITY)
                                         .desired_rows(if self.script_output.is_empty() { 16 } else { 10 }),
                                 );
                             });
                             if !self.script_output.is_empty() {
-                                appearance::group(ui, "Output", |ui| {
+                                appearance::group(ui, &fl!("script-output"), |ui| {
                                     ui.add(egui::Label::new(egui::RichText::new(&self.script_output).monospace()).wrap().selectable(true));
                                 });
                             }
                         });
                         dialog.buttons([
                             DialogButton::cancel(labels::close(), Action::Close),
-                            DialogButton::primary("Run", Action::Run).enabled(self.document.can_paint() && !self.picker),
+                            DialogButton::primary(fl!("script-run"), Action::Run).enabled(self.document.can_paint() && !self.picker),
                         ]);
                     });
                 match response.action {
@@ -2043,7 +2115,6 @@ impl DrawApp {
             Dialog::Tags => {
                 let mut edit = None;
                 let mut delete = None;
-                let mut add = false;
                 #[derive(Clone, Copy)]
                 enum Action {
                     Add,
@@ -2052,12 +2123,12 @@ impl DrawApp {
                 let response = appearance::Dialog::new("tags").size(DialogSize::Large).show(context, |dialog| {
                     dialog.content(|ui| {
                         let tags = self.document.with_state(|state| state.get_buffer().tags.clone());
-                        appearance::group(ui, &format!("Tags ({})", tags.len()), |ui| {
+                        appearance::group(ui, &format!("{} ({})", fl!("tag-list-title"), tags.len()), |ui| {
                             if tags.is_empty() {
                                 ui.add_space(8.0);
                                 ui.vertical_centered(|ui| {
-                                    ui.weak("This document has no tags yet.");
-                                    ui.weak("Add one here or place it with the Tag tool.");
+                                    ui.weak(fl!("tag-list-no-tags"));
+                                    ui.weak(fl!("tag-list-empty-hint"));
                                 });
                                 ui.add_space(8.0);
                                 return;
@@ -2067,10 +2138,11 @@ impl DrawApp {
                                     ui.push_id(index, |ui| {
                                         ui.horizontal(|ui| {
                                             let selected = self.document.selected_tags.contains(&index);
-                                            let preview = egui::RichText::new(if tag.preview.is_empty() { "(empty)" } else { &tag.preview }).monospace();
+                                            let preview =
+                                                egui::RichText::new(if tag.preview.is_empty() { fl!("tag-empty") } else { tag.preview.clone() }).monospace();
                                             let response = ui
                                                 .add_sized([180.0, 26.0], egui::Button::selectable(selected, preview))
-                                                .on_hover_text("Double click to edit");
+                                                .on_hover_text(fl!("tag-double-click-edit"));
                                             if response.clicked() {
                                                 self.document.selected_tags = vec![index];
                                                 self.document.with_state(|state| state.set_current_tag(index));
@@ -2079,18 +2151,18 @@ impl DrawApp {
                                                 edit = Some(index);
                                             }
                                             let role = match tag.tag_role {
-                                                icy_engine::TagRole::Displaycode => "Display code",
-                                                icy_engine::TagRole::Hyperlink => "Hyperlink",
+                                                icy_engine::TagRole::Displaycode => fl!("edit-tag-role-displaycode"),
+                                                icy_engine::TagRole::Hyperlink => fl!("edit-tag-role-hyperlink"),
                                             };
                                             ui.weak(format!("{}, {}  ·  {role}", tag.position.x, tag.position.y));
                                             if !tag.is_enabled {
-                                                ui.weak("· disabled");
+                                                ui.weak(format!("· {}", fl!("tag-disabled")));
                                             }
                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                if self.icons.button(ui, "delete", "Delete Tag", false).clicked() {
+                                                if self.icons.button(ui, "delete", &fl!("delete_tag_tooltip"), false).clicked() {
                                                     delete = Some(index);
                                                 }
-                                                if self.icons.button(ui, "text", "Edit Tag…", false).clicked() {
+                                                if self.icons.button(ui, "text", &fl!("tag-edit-menu"), false).clicked() {
                                                     edit = Some(index);
                                                 }
                                             });
@@ -2101,11 +2173,11 @@ impl DrawApp {
                         });
                     });
                     dialog.buttons([
-                        DialogButton::secondary("Add Tag…", Action::Add).leading(),
+                        DialogButton::secondary(fl!("tag-add-menu"), Action::Add).leading(),
                         DialogButton::primary(labels::close(), Action::Close).cancels(),
                     ]);
                 });
-                add = matches!(response.action, Some(Action::Add));
+                let add = matches!(response.action, Some(Action::Add));
                 if response.action.is_some() || response.dismissed {
                     keep = false;
                 }
@@ -2131,53 +2203,61 @@ impl DrawApp {
                     .confirm_on_enter(true)
                     .show(context, |dialog| {
                         dialog.content(|ui| {
-                            appearance::group(ui, if index.is_some() { "Tag" } else { "New Tag" }, |ui| {
-                                appearance::check_row(ui, "Enabled", &mut tag.is_enabled);
-                                appearance::form_row(ui, "Preview", |ui| {
-                                    ui.add(appearance::text_edit(&mut tag.preview).hint_text("Shown in the editor").desired_width(f32::INFINITY));
+                            appearance::group(ui, &if index.is_some() { fl!("edit-tag-title") } else { fl!("tag-new") }, |ui| {
+                                appearance::check_row(ui, &fl!("tag-enabled"), &mut tag.is_enabled);
+                                appearance::form_row(ui, &fl!("tag-edit-preview"), |ui| {
+                                    ui.add(
+                                        appearance::text_edit(&mut tag.preview)
+                                            .hint_text(fl!("tag-preview-hint"))
+                                            .desired_width(f32::INFINITY),
+                                    );
                                 });
-                                appearance::form_row(ui, "Replacement", |ui| {
+                                appearance::form_row(ui, &fl!("tag-edit-replacement"), |ui| {
                                     ui.add(
                                         appearance::text_edit(&mut tag.replacement_value)
-                                            .hint_text("Inserted by the BBS")
+                                            .hint_text(fl!("tag-replacement-hint"))
                                             .desired_width(f32::INFINITY),
                                     );
                                 });
                                 let role = |role: icy_engine::TagRole| match role {
-                                    icy_engine::TagRole::Displaycode => "Display Code",
-                                    icy_engine::TagRole::Hyperlink => "Hyperlink",
+                                    icy_engine::TagRole::Displaycode => fl!("edit-tag-role-displaycode"),
+                                    icy_engine::TagRole::Hyperlink => fl!("edit-tag-role-hyperlink"),
                                 };
-                                appearance::combo_row(ui, "Role", role(tag.tag_role), |ui| {
+                                appearance::combo_row(ui, &fl!("tag-role"), role(tag.tag_role), |ui| {
                                     for value in [icy_engine::TagRole::Displaycode, icy_engine::TagRole::Hyperlink] {
                                         ui.selectable_value(&mut tag.tag_role, value, role(value));
                                     }
                                 });
                             });
-                            appearance::group(ui, "Layout", |ui| {
-                                appearance::form_row(ui, "Column", |ui| {
+                            appearance::group(ui, &fl!("tag-layout"), |ui| {
+                                appearance::form_row(ui, &fl!("tag-column"), |ui| {
                                     ui.add(egui::DragValue::new(&mut tag.position.x).range(0..=10000));
                                 });
-                                appearance::form_row(ui, "Row", |ui| {
+                                appearance::form_row(ui, &fl!("tag-row"), |ui| {
                                     ui.add(egui::DragValue::new(&mut tag.position.y).range(0..=10000));
                                 });
-                                appearance::form_row(ui, "Length", |ui| {
-                                    ui.add(egui::DragValue::new(&mut tag.length).range(1..=1000).suffix(" characters"));
+                                appearance::form_row(ui, &fl!("tag-length"), |ui| {
+                                    ui.add(
+                                        egui::DragValue::new(&mut tag.length)
+                                            .range(1..=1000)
+                                            .suffix(format!(" {}", fl!("unit-characters"))),
+                                    );
                                 });
                                 let alignment = |alignment: std::fmt::Alignment| match alignment {
-                                    std::fmt::Alignment::Left => "Left",
-                                    std::fmt::Alignment::Center => "Center",
-                                    std::fmt::Alignment::Right => "Right",
+                                    std::fmt::Alignment::Left => fl!("edit-tag-alignment-left"),
+                                    std::fmt::Alignment::Center => fl!("edit-tag-alignment-center"),
+                                    std::fmt::Alignment::Right => fl!("edit-tag-alignment-right"),
                                 };
-                                appearance::combo_row(ui, "Alignment", alignment(tag.alignment), |ui| {
+                                appearance::combo_row(ui, &fl!("tag-alignment"), alignment(tag.alignment), |ui| {
                                     for value in [std::fmt::Alignment::Left, std::fmt::Alignment::Center, std::fmt::Alignment::Right] {
                                         ui.selectable_value(&mut tag.alignment, value, alignment(value));
                                     }
                                 });
                                 let placement = |placement: icy_engine::TagPlacement| match placement {
-                                    icy_engine::TagPlacement::InText => "In Text",
-                                    icy_engine::TagPlacement::WithGotoXY => "At Cursor Position",
+                                    icy_engine::TagPlacement::InText => fl!("tag-list-in-text"),
+                                    icy_engine::TagPlacement::WithGotoXY => fl!("tag-list-with-gotoxy"),
                                 };
-                                appearance::combo_row(ui, "Placement", placement(tag.tag_placement), |ui| {
+                                appearance::combo_row(ui, &fl!("tag-list-placement"), placement(tag.tag_placement), |ui| {
                                     for value in [icy_engine::TagPlacement::InText, icy_engine::TagPlacement::WithGotoXY] {
                                         ui.selectable_value(&mut tag.tag_placement, value, placement(value));
                                     }
@@ -2186,7 +2266,7 @@ impl DrawApp {
                         });
                         dialog.buttons([
                             DialogButton::cancel(labels::cancel(), Action::Cancel),
-                            DialogButton::primary(if index.is_some() { "Apply" } else { "Add Tag" }, Action::Apply),
+                            DialogButton::primary(if index.is_some() { fl!("button-apply") } else { fl!("add_tag_tooltip") }, Action::Apply),
                         ]);
                     });
                 match response.action {
@@ -2208,50 +2288,15 @@ impl DrawApp {
                     self.canvas_focus = true;
                 }
             }
-            Dialog::FontSelect => {
-                let response = appearance::Dialog::new("font-select")
-                    .size(DialogSize::Medium)
-                    .fixed_height(380.0)
-                    .show(context, |dialog| {
-                        dialog.content(|ui| {
-                            appearance::group(ui, "Font", |ui| {
-                                ui.add(
-                                    appearance::text_edit(&mut self.font_filter)
-                                        .hint_text("Search fonts")
-                                        .desired_width(f32::INFINITY),
-                                );
-                                let filter = self.font_filter.to_lowercase();
-                                let current = self.document.with_state(|state| {
-                                    state
-                                        .get_buffer()
-                                        .font(state.get_caret().attribute.font_page())
-                                        .map(|font| font.name().to_string())
-                                        .unwrap_or_default()
-                                });
-                                let names: Vec<_> = icy_engine::get_sauce_font_names()
-                                    .into_iter()
-                                    .filter(|name| name.to_lowercase().contains(&filter))
-                                    .collect();
-                                if names.is_empty() {
-                                    ui.weak("No font matches the search.");
-                                }
-                                egui::ScrollArea::vertical().max_height(270.0).show_rows(ui, 24.0, names.len(), |ui, rows| {
-                                    for row in rows {
-                                        let name = names[row];
-                                        if ui.selectable_label(name == current, name).clicked() {
-                                            self.edit(|state| state.set_sauce_font(name));
-                                            keep = false;
-                                        }
-                                    }
-                                });
-                            });
-                        });
-                        dialog.buttons([DialogButton::cancel(labels::cancel(), ())]);
-                    });
-                if response.action.is_some() || response.dismissed {
+            Dialog::FontSelect => match self.font_selector.show(context, self.picker) {
+                Some(font_select::Action::Load) => self.choose(context, FileAction::LoadFont),
+                Some(font_select::Action::Apply(font)) => {
+                    self.apply_font(*font);
                     keep = false;
                 }
-            }
+                Some(font_select::Action::Cancel) => keep = false,
+                None => {}
+            },
             Dialog::TextArtFontSelect => {
                 keep = self.text_art_font_dialog(context);
             }
@@ -2261,12 +2306,17 @@ impl DrawApp {
                     Cancel,
                     Overwrite,
                 }
-                let response = MessageBox::new("animation-overwrite", MessageKind::Warning, "Replace Export File?", path.display().to_string())
-                    .buttons([
-                        DialogButton::cancel(labels::cancel(), Action::Cancel),
-                        DialogButton::destructive(labels::overwrite(), Action::Overwrite),
-                    ])
-                    .show(context);
+                let response = MessageBox::new(
+                    "animation-overwrite",
+                    MessageKind::Warning,
+                    fl!("replace-export-file"),
+                    path.display().to_string(),
+                )
+                .buttons([
+                    DialogButton::cancel(labels::cancel(), Action::Cancel),
+                    DialogButton::destructive(labels::overwrite(), Action::Overwrite),
+                ])
+                .show(context);
                 match response.action {
                     Some(Action::Overwrite) => {
                         if let Some(editor) = &mut self.animation {
@@ -2278,129 +2328,23 @@ impl DrawApp {
                     None => keep &= !response.dismissed,
                 }
             }
-            Dialog::Palette => {
-                #[derive(Clone, Copy)]
-                enum Action {
-                    Restore,
-                    Cancel,
-                    Apply,
-                }
-                let response = appearance::Dialog::new("palette-edit").size(DialogSize::Large).show(context, |dialog| {
-                    dialog.content(|ui| {
-                        appearance::group(ui, &format!("Palette ({} colors)", self.palette_edit.len()), |ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.spacing_mut().item_spacing = egui::Vec2::splat(4.0);
-                                for index in 0..self.palette_edit.len().min(256) {
-                                    let (red, green, blue) = self.palette_edit.rgb(index as u32);
-                                    if widgets::swatch(ui, Color32::from_rgb(red, green, blue), index == self.palette_index, 28.0)
-                                        .on_hover_text(format!("{index}: #{red:02X}{green:02X}{blue:02X}"))
-                                        .clicked()
-                                    {
-                                        self.palette_index = index;
-                                    }
-                                }
-                            });
-                        });
-                        appearance::group(ui, &format!("Color {}", self.palette_index), |ui| {
-                            let (red, green, blue) = self.palette_edit.rgb(self.palette_index as u32);
-                            let mut rgb = [red, green, blue];
-                            let mut changed = false;
-                            appearance::form_row(ui, "Color", |ui| {
-                                changed |= ui.color_edit_button_srgb(&mut rgb).changed();
-                                ui.weak(format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]));
-                            });
-                            for (index, channel) in ["Red", "Green", "Blue"].into_iter().enumerate() {
-                                appearance::form_row(ui, channel, |ui| {
-                                    changed |= ui.add(egui::DragValue::new(&mut rgb[index]).range(0..=255)).changed();
-                                });
-                            }
-                            if changed {
-                                self.palette_edit
-                                    .set_color(self.palette_index as u32, icy_engine::Color::new(rgb[0], rgb[1], rgb[2]));
-                            }
-                        });
-                    });
-                    dialog.buttons([
-                        DialogButton::secondary("Restore DOS Palette", Action::Restore).leading(),
-                        DialogButton::cancel(labels::cancel(), Action::Cancel),
-                        DialogButton::primary("Apply", Action::Apply),
-                    ]);
-                });
-                match response.action {
-                    Some(Action::Restore) => {
-                        self.palette_edit = icy_engine::Palette::default();
-                        self.palette_index = 0;
-                    }
-                    Some(Action::Apply) => {
-                        let palette = self.palette_edit.clone();
-                        self.edit(|state| state.switch_to_palette(palette));
-                        keep = false;
-                    }
-                    Some(Action::Cancel) => keep = false,
-                    None => keep &= !response.dismissed,
-                }
-            }
-            Dialog::Font => {
-                if let Some(editor) = &mut self.font_editor {
-                    match editor.show(context, self.picker) {
-                        Some(super::font::Action::Apply(font)) => {
-                            match self.document.with_state(|state| state.set_font(font)) {
-                                Ok(()) => self.font_editor = None,
-                                Err(error) => self.dialog = Some(Dialog::Error(error.to_string())),
-                            }
-                            keep = false;
-                        }
-                        Some(super::font::Action::Save) => {
-                            self.choose(context, FileAction::SaveFont);
-                        }
-                        Some(super::font::Action::Close) => {
-                            self.font_editor = None;
-                            keep = false;
-                        }
-                        None => {}
-                    }
-                } else {
+            Dialog::Palette => match self.palette_editor.show(context, self.picker) {
+                Some(super::palette::Action::Import) => self.choose(context, FileAction::ImportPalette),
+                Some(super::palette::Action::Export) => self.choose(context, FileAction::ExportPalette),
+                Some(super::palette::Action::Apply(palette)) => {
+                    self.edit(|state| state.switch_to_palette(palette));
                     keep = false;
                 }
-            }
-            Dialog::FontOverwrite(path) => {
-                #[derive(Clone, Copy)]
-                enum Action {
-                    Cancel,
-                    Overwrite,
-                }
-                let response = MessageBox::new("font-overwrite", MessageKind::Warning, "Replace Font File?", path.display().to_string())
-                    .buttons([
-                        DialogButton::cancel(labels::cancel(), Action::Cancel),
-                        DialogButton::destructive(labels::overwrite(), Action::Overwrite),
-                    ])
-                    .show(context);
-                match response.action {
-                    Some(Action::Overwrite) => {
-                        if let Some(editor) = &mut self.font_editor {
-                            let result = editor.save(path, true);
-                            self.result(result);
-                        }
-                        if self.dialog.is_none() {
-                            self.dialog = Some(Dialog::Font);
-                        }
-                        keep = false;
-                    }
-                    Some(Action::Cancel) | None => {
-                        if response.action.is_some() || response.dismissed {
-                            self.dialog = Some(Dialog::Font);
-                            keep = false;
-                        }
-                    }
-                }
-            }
+                Some(super::palette::Action::Cancel) => keep = false,
+                None => {}
+            },
             Dialog::ExportOverwrite(path) => {
                 #[derive(Clone, Copy)]
                 enum Action {
                     Cancel,
                     Overwrite,
                 }
-                let response = MessageBox::new("export-overwrite", MessageKind::Warning, "Replace Export File?", path.display().to_string())
+                let response = MessageBox::new("export-overwrite", MessageKind::Warning, fl!("replace-export-file"), path.display().to_string())
                     .buttons([
                         DialogButton::cancel(labels::cancel(), Action::Cancel),
                         DialogButton::destructive(labels::overwrite(), Action::Overwrite),
@@ -2415,53 +2359,11 @@ impl DrawApp {
                     None => keep &= !response.dismissed,
                 }
             }
-            Dialog::Sauce => {
-                #[derive(Clone, Copy)]
-                enum Action {
-                    Cancel,
-                    Apply,
-                }
-                let response = appearance::Dialog::new("sauce").size(DialogSize::Medium).show(context, |dialog| {
-                    dialog.content(|ui| {
-                        appearance::group(ui, "SAUCE Information", |ui| {
-                            for (index, (label, limit)) in [("Title", 35), ("Author", 20), ("Group", 20)].into_iter().enumerate() {
-                                appearance::form_row(ui, label, |ui| {
-                                    ui.add(
-                                        appearance::text_edit(&mut self.sauce_fields[index])
-                                            .char_limit(limit)
-                                            .hint_text(format!("Up to {limit} characters"))
-                                            .desired_width(f32::INFINITY),
-                                    );
-                                });
-                            }
-                        });
-                        appearance::group(ui, "Comments", |ui| {
-                            ui.add(
-                                egui::TextEdit::multiline(&mut self.sauce_fields[3])
-                                    .hint_text("One comment line per line, up to 64 characters each")
-                                    .desired_width(f32::INFINITY)
-                                    .desired_rows(5),
-                            );
-                        });
-                    });
-                    dialog.buttons([
-                        DialogButton::cancel(labels::cancel(), Action::Cancel),
-                        DialogButton::primary("Apply", Action::Apply),
-                    ]);
-                });
-                match response.action {
-                    Some(Action::Apply) => {
-                        let metadata = icy_engine::formats::SauceMetaData {
-                            title: self.sauce_fields[0].clone().into(),
-                            author: self.sauce_fields[1].clone().into(),
-                            group: self.sauce_fields[2].clone().into(),
-                            comments: self.sauce_fields[3].lines().map(|line| line.to_string().into()).collect(),
-                        };
-                        self.edit(|state| state.update_sauce_data(metadata));
-                        keep = false;
-                    }
-                    Some(Action::Cancel) => keep = false,
-                    None => keep &= !response.dismissed,
+            Dialog::Sauce(draft) => {
+                let mut draft = draft.clone();
+                keep = false;
+                if self.sauce_dialog(context, &mut draft) {
+                    self.dialog = Some(Dialog::Sauce(draft));
                 }
             }
             Dialog::Export => {
@@ -2475,44 +2377,48 @@ impl DrawApp {
                     .with_state(|state| FileFormat::save_formats_with_images_for_buffer_type(state.get_buffer().buffer_type));
                 let response = appearance::Dialog::new("export").size(DialogSize::Medium).show(context, |dialog| {
                     dialog.content(|ui| {
-                        appearance::group(ui, "Format", |ui| {
-                            appearance::combo_row(ui, "File format", self.export_format.name(), |ui| {
+                        appearance::group(ui, &fl!("file-settings-format"), |ui| {
+                            appearance::combo_row(ui, &fl!("export-file-format"), self.export_format.name(), |ui| {
                                 for format in formats {
                                     ui.selectable_value(&mut self.export_format, format, format.name());
                                 }
                             });
-                            appearance::check_row(ui, "Include SAUCE record", &mut self.export_sauce);
+                            appearance::check_row(ui, &fl!("export-save-sauce-label"), &mut self.export_sauce);
                         });
                         let settings = &mut self.settings.export_settings;
                         if matches!(self.export_format, FileFormat::Ansi | FileFormat::AnsiMusic) {
-                            appearance::group(ui, "ANSI Options", |ui| {
-                                appearance::combo_row(ui, "Compatibility", settings.ansi_level.to_string(), |ui| {
+                            appearance::group(ui, &fl!("export-ansi-options"), |ui| {
+                                appearance::combo_row(ui, &fl!("export-compatibility"), settings.ansi_level.to_string(), |ui| {
                                     for &level in icy_engine::AnsiCompatibilityLevel::all() {
                                         ui.selectable_value(&mut settings.ansi_level, level, level.to_string());
                                     }
                                 });
-                                appearance::check_row(ui, "24-bit RGB colors", &mut settings.ansi_rgb_output);
-                                appearance::check_row(ui, "Limit line length", &mut settings.max_line_length_enabled);
+                                appearance::check_row(ui, &fl!("export-rgb-colors"), &mut settings.ansi_rgb_output);
+                                appearance::check_row(ui, &fl!("export-limit-output-line-length-label"), &mut settings.max_line_length_enabled);
                                 if settings.max_line_length_enabled {
-                                    appearance::form_row(ui, "Maximum length", |ui| {
-                                        ui.add(egui::DragValue::new(&mut settings.max_line_length).range(1..=65535).suffix(" characters"));
+                                    appearance::form_row(ui, &fl!("export-maximum_line_length"), |ui| {
+                                        ui.add(
+                                            egui::DragValue::new(&mut settings.max_line_length)
+                                                .range(1..=65535)
+                                                .suffix(format!(" {}", fl!("unit-characters"))),
+                                        );
                                     });
                                 }
                             });
                         }
-                        appearance::group(ui, "Output", |ui| {
-                            appearance::combo_row(ui, "Screen preparation", settings.screen_prep.to_string(), |ui| {
+                        appearance::group(ui, &fl!("export-output"), |ui| {
+                            appearance::combo_row(ui, &fl!("export-screen-preparation"), settings.screen_prep.to_string(), |ui| {
                                 for &preparation in icy_engine::ScreenPreperation::all() {
                                     ui.selectable_value(&mut settings.screen_prep, preparation, preparation.to_string());
                                 }
                             });
-                            appearance::check_row(ui, "UTF-8 output", &mut settings.utf8_output);
-                            appearance::check_row(ui, "Compress", &mut settings.compress);
+                            appearance::check_row(ui, &fl!("export-utf8-output-label"), &mut settings.utf8_output);
+                            appearance::check_row(ui, &fl!("export-compression-label"), &mut settings.compress);
                         });
                     });
                     dialog.buttons([
                         DialogButton::cancel(labels::cancel(), Action::Cancel),
-                        DialogButton::primary("Export…", Action::Export),
+                        DialogButton::primary(fl!("menu-export"), Action::Export),
                     ]);
                 });
                 match response.action {
@@ -2530,7 +2436,7 @@ impl DrawApp {
                     Cancel,
                     Overwrite,
                 }
-                let response = MessageBox::new("overwrite", MessageKind::Warning, "Replace File?", path.display().to_string())
+                let response = MessageBox::new("overwrite", MessageKind::Warning, fl!("replace-file"), path.display().to_string())
                     .buttons([
                         DialogButton::cancel(labels::cancel(), Action::Cancel),
                         DialogButton::destructive(labels::overwrite(), Action::Overwrite),
@@ -2549,12 +2455,12 @@ impl DrawApp {
                     }
                 }
             }
-            Dialog::Inspector => {
-                let response = appearance::Dialog::new("inspector-dialog").size(DialogSize::Medium).show(context, |dialog| {
-                    dialog.content(|ui| appearance::group(ui, "", |ui| self.inspector(ui)));
-                    dialog.buttons([DialogButton::primary(labels::close(), ()).cancels()]);
-                });
-                keep &= response.action.is_none() && !response.dismissed && self.dialog.is_none();
+            Dialog::FileSettings(draft) => {
+                let mut draft = draft.clone();
+                keep = false;
+                if self.file_settings_dialog(context, &mut draft) {
+                    self.dialog = Some(Dialog::FileSettings(draft));
+                }
             }
             Dialog::Characters | Dialog::FKeyCharacter(_, _) => {
                 #[derive(Clone, Copy)]
@@ -2595,7 +2501,7 @@ impl DrawApp {
                         }
                     }
                 }
-                let title = target.map_or("Characters".to_owned(), |(_, slot)| format!("Assign F{}", slot + 1));
+                let title = target.map_or_else(|| fl!("characters-title"), |(_, slot)| fl!("characters-assign-fkey", key = (slot + 1)));
                 let response = appearance::Dialog::new("characters")
                     .size(DialogSize::Width(500.0))
                     .scroll(false)
@@ -2624,7 +2530,7 @@ impl DrawApp {
                         });
                         dialog.buttons([
                             DialogButton::cancel(labels::cancel(), Action::Cancel),
-                            DialogButton::primary("Select", Action::Select),
+                            DialogButton::primary(fl!("select-font-dialog-select"), Action::Select),
                         ]);
                     });
                 match response.action {
@@ -2657,9 +2563,6 @@ impl DrawApp {
                     .buttons([DialogButton::primary(labels::ok(), ()).cancels()])
                     .show(context);
                 keep &= response.action.is_none() && !response.dismissed;
-                if !keep && self.font_editor.is_some() {
-                    self.dialog = Some(Dialog::Font);
-                }
             }
             Dialog::New | Dialog::Resize => {
                 #[derive(Clone, Copy)]
@@ -2670,47 +2573,42 @@ impl DrawApp {
                 let resize = matches!(dialog, Dialog::Resize);
                 let current = self.document.with_state(|state| state.get_buffer().size());
                 let response = appearance::Dialog::new(if resize { "resize" } else { "new" })
-                    .size(DialogSize::Medium)
+                    .size(if resize { DialogSize::Medium } else { DialogSize::Width(780.0) })
                     .confirm_on_enter(true)
                     .show(context, |dialog| {
                         dialog.content(|ui| {
-                            if !resize {
-                                appearance::group(ui, "Type", |ui| {
+                            if resize {
+                                self.new_size_group(ui, true, current);
+                                return;
+                            }
+                            let kinds = |this: &mut Self, ui: &mut egui::Ui| {
+                                appearance::group(ui, &fl!("new-file-type"), |ui| {
                                     ui.spacing_mut().item_spacing.y = 2.0;
                                     for kind in NewKind::ALL {
-                                        let response = welcome::kind_row(&mut self.icons, ui, kind, self.new_kind == kind);
+                                        let response = welcome::kind_row(&mut this.icons, ui, kind, this.new_kind == kind);
                                         if response.clicked() {
-                                            self.new_kind = kind;
+                                            this.new_kind = kind;
                                         }
                                     }
                                 });
-                            }
-                            if resize || self.new_kind.has_size() {
-                                appearance::group(ui, if resize { "Canvas Size" } else { "Size" }, |ui| {
-                                    let preset = welcome::SIZE_PRESETS
-                                        .iter()
-                                        .find(|(columns, rows, _)| [*columns, *rows] == self.new_size)
-                                        .map_or("Custom".to_owned(), |(columns, rows, name)| format!("{columns} × {rows}  ·  {name}"));
-                                    appearance::combo_row(ui, "Preset", preset, |ui| {
-                                        for (columns, rows, name) in welcome::SIZE_PRESETS {
-                                            ui.selectable_value(&mut self.new_size, [columns, rows], format!("{columns} × {rows}  ·  {name}"));
-                                        }
-                                    });
-                                    appearance::form_row(ui, "Columns", |ui| {
-                                        ui.add(egui::DragValue::new(&mut self.new_size[0]).range(1..=1000).suffix(" characters"));
-                                    });
-                                    appearance::form_row(ui, "Rows", |ui| {
-                                        ui.add(egui::DragValue::new(&mut self.new_size[1]).range(1..=10000).suffix(" lines"));
-                                    });
-                                    if resize {
-                                        appearance::value_row(ui, "Current size", &format!("{} × {}", current.width, current.height));
+                            };
+                            if ui.available_width() >= 640.0 {
+                                ui.columns(2, |columns| {
+                                    kinds(self, &mut columns[0]);
+                                    if self.new_kind.has_size() {
+                                        self.new_size_group(&mut columns[1], false, current);
                                     }
                                 });
+                            } else {
+                                kinds(self, ui);
+                                if self.new_kind.has_size() {
+                                    self.new_size_group(ui, false, current);
+                                }
                             }
                         });
                         dialog.buttons([
                             DialogButton::cancel(labels::cancel(), Action::Cancel),
-                            DialogButton::primary(if resize { "Resize" } else { "Create" }, Action::Confirm),
+                            DialogButton::primary(if resize { fl!("edit-canvas-size-resize") } else { fl!("new-file-create") }, Action::Confirm),
                         ]);
                     });
                 match response.action {
@@ -2734,13 +2632,18 @@ impl DrawApp {
                     Cancel,
                     Save,
                 }
-                let response = MessageBox::new("close", MessageKind::Question, "Unsaved Changes", "Save changes before closing this document?")
-                    .buttons([
-                        DialogButton::destructive("Discard", Action::Discard).leading(),
-                        DialogButton::cancel(labels::cancel(), Action::Cancel),
-                        DialogButton::primary("Save", Action::Save),
-                    ])
-                    .show(context);
+                let response = MessageBox::new(
+                    "close",
+                    MessageKind::Question,
+                    fl!("save-changes-title", filename = self.document_name()),
+                    fl!("save-changes-description"),
+                )
+                .buttons([
+                    DialogButton::destructive(fl!("ask_close_file_dialog-dont_save_button"), Action::Discard).leading(),
+                    DialogButton::cancel(labels::cancel(), Action::Cancel),
+                    DialogButton::primary(fl!("ask_close_file_dialog-save_button"), Action::Save),
+                ])
+                .show(context);
                 match response.action {
                     Some(Action::Save) => {
                         self.continue_after_save = true;
@@ -2811,10 +2714,9 @@ impl DrawApp {
                             path.set_extension("psf");
                         }
                         if path.exists() {
-                            self.dialog = Some(Dialog::FontOverwrite(path));
-                        } else if let Some(editor) = &mut self.font_editor {
-                            let result = editor.save(&path, false);
-                            self.result(result);
+                            self.dialog = Some(Dialog::Overwrite(path));
+                        } else {
+                            self.save_path(context, path, false);
                         }
                     }
                     FileAction::SaveTdf => {
@@ -2841,10 +2743,8 @@ impl DrawApp {
                         if path.extension().is_none() {
                             path.set_extension(format.extension());
                         }
-                        if path.exists() {
-                            self.dialog = Some(Dialog::AnimationOverwrite(path, format));
-                        } else if let Some(editor) = &mut self.animation {
-                            editor.export(path, format, context.clone());
+                        if let Some(editor) = &mut self.animation {
+                            editor.set_export_path(path);
                         }
                     }
                     FileAction::InsertImage => self.insert_image(&path),
@@ -2852,6 +2752,18 @@ impl DrawApp {
                         self.reference_path = path.display().to_string();
                         self.reference_draft.path = path;
                         self.reference_draft.visible = true;
+                    }
+                    FileAction::ImportPalette => self.palette_editor.import(&path),
+                    FileAction::LoadFont => {
+                        if let Some(font) = self.font_selector.load(&path) {
+                            self.apply_font(font);
+                        }
+                    }
+                    FileAction::ExportPalette => {
+                        if path.extension().is_none() {
+                            path.set_extension("gpl");
+                        }
+                        self.palette_editor.export(&path);
                     }
                 }
             } else {
@@ -2873,9 +2785,11 @@ impl DrawApp {
             self.quitting = true;
             self.dialog = Some(Dialog::Close);
         }
-        if close_requested && !self.picker && self.font_editor.as_ref().is_some_and(|editor| editor.modified()) {
-            context.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.dialog = Some(Dialog::Font);
+        if let Some(editor) = self.font_editor.as_mut().filter(|editor| editor.apply_target && editor.modified()) {
+            if close_requested && !self.picker && !self.allow_close {
+                context.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                editor.confirm_close = true;
+            }
         }
         if self.dialog.is_none() && !self.picker {
             for file in context.input(|input| input.raw.dropped_files.clone()) {
@@ -2886,34 +2800,49 @@ impl DrawApp {
             }
         }
         let blocked = self.dialog.is_some() || self.picker || self.layer_properties_open();
-        let path = self
-            .animation
-            .as_ref()
-            .and_then(|editor| editor.path.as_ref())
-            .or(self.charfont.as_ref().and_then(|font| font.path.as_ref()))
-            .or(self.document.path.as_ref());
         let title = if self.show_start {
             "Icy Draw".to_owned()
         } else if self.collab.active {
             format!("{} — Icy Draw", self.collab.server)
         } else {
-            format!(
-                "{}{} — Icy Draw",
-                if self.modified() { "*" } else { "" },
-                path.and_then(|path| path.file_name())
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "Untitled".into())
-            )
+            format!("{}{} — Icy Draw", if self.modified() { "*" } else { "" }, self.document_name())
         };
         context.send_viewport_cmd(egui::ViewportCommand::Title(title));
         if blocked {
             self.document.finish();
         }
         self.menu(context);
+        if let Some(editor) = &mut self.font_editor {
+            let layout = super::font::Layout {
+                toolbar_height: chrome::TOOLBAR_HEIGHT,
+                status_height: chrome::STATUS_HEIGHT,
+                rail_width: chrome::SIDEBAR_WIDTH,
+            };
+            let action = editor.show(context, blocked, layout);
+            self.canvas_focus = false;
+            match action {
+                Some(super::font::Action::Apply(font)) => match self.document.with_state(|state| state.set_font(*font)) {
+                    Ok(()) => self.close_font_editor(),
+                    Err(error) => self.dialog = Some(Dialog::Error(error.to_string())),
+                },
+                Some(super::font::Action::Close) => self.close_font_editor(),
+                None => {}
+            }
+            if !blocked {
+                self.keys(context);
+            }
+            self.dialogs(context);
+            return;
+        }
         if let Some(editor) = &mut self.animation {
             editor.show(context, blocked || self.dialog.is_some() || self.picker);
-            if let Some(format) = editor.take_export_request() {
-                self.choose(context, FileAction::ExportAnimation(format));
+            match editor.take_request() {
+                Some(super::animation::Request::Browse(format)) => self.choose(context, FileAction::ExportAnimation(format)),
+                Some(super::animation::Request::Export(path, format)) if path.exists() => {
+                    self.dialog = Some(Dialog::AnimationOverwrite(path, format));
+                }
+                Some(super::animation::Request::Export(path, format)) => editor.export(path, format, context.clone()),
+                None => {}
             }
             self.canvas_focus = false;
             if !blocked {
@@ -3000,7 +2929,38 @@ impl DrawApp {
                 });
         }
         egui::CentralPanel::default().frame(egui::Frame::new().fill(well)).show(context, |ui| {
-            self.canvas(ui, blocked || self.dialog.is_some() || self.picker || self.layer_properties_open())
+            let blocked = blocked || self.dialog.is_some() || self.picker || self.layer_properties_open();
+            if !self.document.outline_font {
+                self.canvas(ui, blocked);
+                return;
+            }
+            // Outline fonts show the styled result beside (or below, when narrow) the editor.
+            let full = ui.available_rect_before_wrap();
+            let side_by_side = full.width() >= full.height() || full.width() >= 700.0;
+            let (editor, preview) = if side_by_side {
+                let middle = full.center().x.round();
+                (
+                    egui::Rect::from_min_max(full.min, egui::pos2(middle - 1.0, full.bottom())),
+                    egui::Rect::from_min_max(egui::pos2(middle + 1.0, full.top()), full.max),
+                )
+            } else {
+                let middle = full.center().y.round();
+                (
+                    egui::Rect::from_min_max(full.min, egui::pos2(full.right(), middle - 1.0)),
+                    egui::Rect::from_min_max(egui::pos2(full.left(), middle + 1.0), full.max),
+                )
+            };
+            ui.scope_builder(egui::UiBuilder::new().id_salt("outline-editor").max_rect(editor), |ui| self.canvas(ui, blocked));
+            let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
+            if side_by_side {
+                ui.painter().vline(full.center().x.round(), full.y_range(), stroke);
+            } else {
+                ui.painter().hline(full.x_range(), full.center().y.round(), stroke);
+            }
+            ui.scope_builder(egui::UiBuilder::new().id_salt("outline-preview").max_rect(preview), |ui| {
+                self.outline_preview_pane(ui)
+            });
+            ui.advance_cursor_after_rect(full);
         });
         if !blocked && !self.layer_properties_open() {
             self.keys(context);

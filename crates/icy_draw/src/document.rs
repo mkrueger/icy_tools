@@ -59,6 +59,34 @@ struct PasteState {
     undo: AtomicUndoGuard,
 }
 
+/// Outline font keys of TheDraw: F1–F10 type the placeholders `A`–`J`, the digits 1–8 type
+/// `K`–`O`, the fill marker `@`, the end marker `&` and the hard blank.
+pub const OUTLINE_KEYS: [(&str, char); 18] = [
+    ("F1", 'A'),
+    ("F2", 'B'),
+    ("F3", 'C'),
+    ("F4", 'D'),
+    ("F5", 'E'),
+    ("F6", 'F'),
+    ("F7", 'G'),
+    ("F8", 'H'),
+    ("F9", 'I'),
+    ("F10", 'J'),
+    ("1", 'K'),
+    ("2", 'L'),
+    ("3", 'M'),
+    ("4", 'N'),
+    ("5", 'O'),
+    ("6", '@'),
+    ("7", '&'),
+    ("8", '\u{00ff}'),
+];
+
+/// Outline code typed by the digit keys 1–8.
+fn outline_digit(character: char) -> Option<char> {
+    OUTLINE_KEYS[10..].iter().find(|(key, _)| key.starts_with(character)).map(|(_, code)| *code)
+}
+
 pub struct Document {
     pub screen: Arc<Mutex<Box<dyn Screen>>>,
     pub path: Option<PathBuf>,
@@ -596,7 +624,7 @@ impl Document {
                     '\t' => state.handle_tab(),
                     _ => {
                         let encoded = if self.outline_font {
-                            let upper = character.to_ascii_uppercase();
+                            let upper = outline_digit(character).unwrap_or(character.to_ascii_uppercase());
                             if !matches!(upper, 'A'..='Q' | '@' | '&' | ' ' | '\u{00ff}') {
                                 continue;
                             }

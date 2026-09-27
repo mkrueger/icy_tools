@@ -2,6 +2,7 @@
 
 use super::{Dialog, DrawApp, FileAction};
 use eframe::egui::{self, Key, KeyboardShortcut, Modifiers};
+use icy_draw::fl;
 use icy_engine::TextPane;
 use icy_engine_edit::UndoState;
 use icy_engine_gui::{
@@ -119,25 +120,25 @@ impl AreaOp {
         AreaOp::ScrollRight,
     ];
 
-    pub(super) fn label(self) -> &'static str {
+    pub(super) fn label(self) -> String {
         match self {
-            AreaOp::JustifyLineLeft => "Left Justify Line",
-            AreaOp::JustifyLineCenter => "Center Line",
-            AreaOp::JustifyLineRight => "Right Justify Line",
-            AreaOp::InsertRow => "Insert Row",
-            AreaOp::DeleteRow => "Delete Row",
-            AreaOp::InsertColumn => "Insert Column",
-            AreaOp::DeleteColumn => "Delete Column",
-            AreaOp::EraseRow => "Erase Row",
-            AreaOp::EraseRowToStart => "Erase Row to Start",
-            AreaOp::EraseRowToEnd => "Erase Row to End",
-            AreaOp::EraseColumn => "Erase Column",
-            AreaOp::EraseColumnToStart => "Erase Column to Start",
-            AreaOp::EraseColumnToEnd => "Erase Column to End",
-            AreaOp::ScrollUp => "Scroll Area Up",
-            AreaOp::ScrollDown => "Scroll Area Down",
-            AreaOp::ScrollLeft => "Scroll Area Left",
-            AreaOp::ScrollRight => "Scroll Area Right",
+            AreaOp::JustifyLineLeft => fl!("menu-justify_line_left"),
+            AreaOp::JustifyLineCenter => fl!("menu-justify_line_center"),
+            AreaOp::JustifyLineRight => fl!("menu-justify_line_right"),
+            AreaOp::InsertRow => fl!("menu-insert_row"),
+            AreaOp::DeleteRow => fl!("menu-delete_row"),
+            AreaOp::InsertColumn => fl!("menu-insert_colum"),
+            AreaOp::DeleteColumn => fl!("menu-delete_colum"),
+            AreaOp::EraseRow => fl!("menu-erase_row"),
+            AreaOp::EraseRowToStart => fl!("menu-erase_row_to_start"),
+            AreaOp::EraseRowToEnd => fl!("menu-erase_row_to_end"),
+            AreaOp::EraseColumn => fl!("menu-erase_column"),
+            AreaOp::EraseColumnToStart => fl!("menu-erase_column_to_start"),
+            AreaOp::EraseColumnToEnd => fl!("menu-erase_column_to_end"),
+            AreaOp::ScrollUp => fl!("menu-scroll_area_up"),
+            AreaOp::ScrollDown => fl!("menu-scroll_area_down"),
+            AreaOp::ScrollLeft => fl!("menu-scroll_area_left"),
+            AreaOp::ScrollRight => fl!("menu-scroll_area_right"),
         }
     }
 
@@ -248,11 +249,16 @@ fn check_item(ui: &mut egui::Ui, label: &str, shortcut: Option<&KeyboardShortcut
     clicked
 }
 
+/// Menu bar title without the `&` mnemonic markers of the original menu strings.
+fn menu_title(label: String) -> String {
+    label.replace('&', "")
+}
+
 /// Short, human readable label of a scaling mode.
 pub(super) fn zoom_label(mode: ScalingMode) -> String {
     match mode {
-        ScalingMode::Auto => "Fit to Window".into(),
-        ScalingMode::FitWidth => "Fit Width".into(),
+        ScalingMode::Auto => fl!("menu-zoom-fit_window"),
+        ScalingMode::FitWidth => fl!("menu-zoom-fit_width"),
         ScalingMode::Manual(zoom) => format!("{:.0}%", zoom * 100.0),
     }
 }
@@ -265,35 +271,35 @@ impl DrawApp {
                 ui.disable();
             }
             egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("File", |ui| self.file_menu(ui, context));
+                ui.menu_button(menu_title(fl!("menu-file")), |ui| self.file_menu(ui, context));
                 if !self.show_start {
-                    ui.menu_button("Edit", |ui| self.edit_menu(ui, context));
+                    ui.menu_button(menu_title(fl!("menu-edit")), |ui| self.edit_menu(ui, context));
                 }
-                if self.animation.is_none() && !self.show_start {
-                    ui.menu_button("Selection", |ui| self.selection_menu(ui));
-                    ui.menu_button("Colors", |ui| self.colors_menu(ui));
-                    ui.menu_button("Document", |ui| self.document_menu(ui));
-                    ui.menu_button("View", |ui| self.view_menu(ui, context));
-                    ui.menu_button("Extensions", |ui| self.extensions_menu(ui));
+                if self.animation.is_none() && self.font_editor.is_none() && !self.show_start {
+                    ui.menu_button(menu_title(fl!("menu-selection")), |ui| self.selection_menu(ui));
+                    ui.menu_button(menu_title(fl!("menu-colors")), |ui| self.colors_menu(ui));
+                    ui.menu_button(menu_title(fl!("menu-document")), |ui| self.document_menu(ui));
+                    ui.menu_button(menu_title(fl!("menu-view")), |ui| self.view_menu(ui, context));
+                    ui.menu_button(menu_title(fl!("menu-plugins")), |ui| self.extensions_menu(ui));
                 }
-                ui.menu_button("Help", |ui| {
-                    if item(ui, "Discuss on GitHub", None, true) {
+                ui.menu_button(menu_title(fl!("menu-help")), |ui| {
+                    if item(ui, &fl!("menu-discuss"), None, true) {
                         self.open_url("https://github.com/mkrueger/icy_tools/discussions");
                     }
-                    if item(ui, "Report a Bug", None, true) {
+                    if item(ui, &fl!("menu-report-bug"), None, true) {
                         self.open_url("https://github.com/mkrueger/icy_tools/issues");
                     }
-                    if item(ui, "Open Log File", None, icy_draw::Settings::log_file().is_some()) {
+                    if item(ui, &fl!("menu-open_log_file"), None, icy_draw::Settings::log_file().is_some()) {
                         self.open_log_file();
                     }
                     ui.separator();
-                    if item(ui, "Keyboard Shortcuts…", None, true) {
+                    if item(ui, &fl!("menu-keyboard-shortcuts"), None, true) {
                         self.dialog = Some(Dialog::Shortcuts);
                     }
                     ui.separator();
-                    ui.hyperlink_to("Icy Draw on GitHub", "https://github.com/mkrueger/icy_tools");
-                    if item(ui, "About Icy Draw…", None, true) {
-                        self.dialog = Some(Dialog::About);
+                    ui.hyperlink_to(fl!("menu-github"), "https://github.com/mkrueger/icy_tools");
+                    if item(ui, &fl!("menu-about"), None, true) {
+                        self.open_about();
                     }
                 });
             });
@@ -301,15 +307,15 @@ impl DrawApp {
     }
 
     fn file_menu(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
-        if item(ui, "New…", Some(&NEW), true) {
+        if item(ui, &fl!("menu-new"), Some(&NEW), true) {
             self.request_new();
         }
-        if item(ui, "Open…", Some(&OPEN), true) {
+        if item(ui, &fl!("menu-open"), Some(&OPEN), true) {
             self.choose(context, FileAction::Open);
         }
         let recent = self.settings.recent_files.files();
         ui.add_enabled_ui(!recent.is_empty(), |ui| {
-            ui.menu_button("Open Recent", |ui| {
+            ui.menu_button(fl!("menu-open_recent"), |ui| {
                 for path in recent.iter().rev() {
                     let name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
                     if ui.button(name).on_hover_text(path.display().to_string()).clicked() {
@@ -318,39 +324,47 @@ impl DrawApp {
                     }
                 }
                 ui.separator();
-                if item(ui, "Clear Recent Files", None, true) {
+                if item(ui, &fl!("menu-clear_recent_files"), None, true) {
                     self.settings.recent_files.clear_recent_files();
                 }
             });
         });
         ui.separator();
-        if item(ui, "Save", Some(&SAVE), true) {
+        if item(ui, &fl!("menu-save"), Some(&SAVE), true) {
             self.save(context, false);
         }
-        if item(ui, "Save As…", Some(&SAVE_AS), true) {
+        if item(ui, &fl!("menu-save-as"), Some(&SAVE_AS), true) {
             self.save(context, true);
         }
-        if self.animation.is_none() && item(ui, "Export…", Some(&EXPORT), true) {
+        if let Some(editor) = &mut self.animation {
+            if item(ui, &fl!("menu-export"), Some(&EXPORT), true) {
+                editor.open_export_dialog();
+            }
+        } else if self.font_editor.is_none() && item(ui, &fl!("menu-export"), Some(&EXPORT), true) {
             self.dialog = Some(Dialog::Export);
         }
         ui.separator();
         if self.collab.in_session() {
-            if item(ui, "Disconnect", None, true) {
+            if item(ui, &fl!("menu-disconnect"), None, true) {
                 self.disconnect_collaboration();
             }
-        } else if item(ui, "Connect to Server…", None, true) {
+        } else if item(ui, &fl!("menu-connect-to-server"), None, true) {
             self.open_connect_dialog();
         }
         ui.separator();
-        if item(ui, "New Window", Some(&NEW_WINDOW), true) {
+        if item(ui, &fl!("menu-new-window"), Some(&NEW_WINDOW), true) {
             self.new_window();
         }
-        if item(ui, "Quit", Some(&QUIT), true) {
+        if item(ui, &fl!("menu-quit-app"), Some(&QUIT), true) {
             context.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
 
     fn edit_menu(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        if self.font_editor.is_some() {
+            self.font_edit_menu(ui);
+            return;
+        }
         let animation = self.animation.is_some();
         let (undo, redo, selected) = self.document.with_state(|state| {
             let describe = |description: Option<String>| description.filter(|text| !text.is_empty());
@@ -362,19 +376,23 @@ impl DrawApp {
         });
         let font_undo = self.charfont.as_ref().is_some_and(|font| font.state.can_undo());
         let font_redo = self.charfont.as_ref().is_some_and(|font| font.state.can_redo());
-        let label = |verb: &str, description: &Option<Option<String>>| match description {
-            Some(Some(text)) => format!("{verb} {text}"),
-            _ => verb.to_owned(),
+        let undo_label = match &undo {
+            Some(Some(text)) => fl!("menu-undo-op", op = text.as_str()),
+            _ => fl!("menu-undo"),
         };
-        if item(ui, &label("Undo", &undo), Some(&UNDO), animation || undo.is_some() || font_undo) {
+        let redo_label = match &redo {
+            Some(Some(text)) => fl!("menu-redo-op", op = text.as_str()),
+            _ => fl!("menu-redo"),
+        };
+        if item(ui, &undo_label, Some(&UNDO), animation || undo.is_some() || font_undo) {
             self.undo(false);
         }
-        if item(ui, &label("Redo", &redo), Some(&REDO), animation || redo.is_some() || font_redo) {
+        if item(ui, &redo_label, Some(&REDO), animation || redo.is_some() || font_redo) {
             self.undo(true);
         }
         ui.separator();
         let paint = self.document.can_paint();
-        if item(ui, "Cut", Some(&CUT), animation || (selected && paint)) {
+        if item(ui, &fl!("menu-cut"), Some(&CUT), animation || (selected && paint)) {
             if animation {
                 context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
                 context.input_mut(|input| input.events.push(egui::Event::Cut));
@@ -383,10 +401,10 @@ impl DrawApp {
                 self.edit(|state| state.erase_selection());
             }
         }
-        if item(ui, "Copy", Some(&COPY), animation || selected) {
+        if item(ui, &fl!("menu-copy"), Some(&COPY), animation || selected) {
             self.copy(context);
         }
-        if item(ui, "Paste", Some(&PASTE), animation || paint) {
+        if item(ui, &fl!("menu-paste"), Some(&PASTE), animation || paint) {
             if animation {
                 context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
             }
@@ -394,7 +412,7 @@ impl DrawApp {
         }
         if animation {
             ui.separator();
-            if item(ui, "Select All", Some(&SELECT_ALL), true) {
+            if item(ui, &fl!("menu-select-all"), Some(&SELECT_ALL), true) {
                 context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
                 context.input_mut(|input| {
                     input.events.push(egui::Event::Key {
@@ -408,16 +426,16 @@ impl DrawApp {
             }
             return;
         }
-        if item(ui, "Insert Image from File…", None, paint && !self.document.paste_active()) {
+        if item(ui, &fl!("menu-insert-image"), None, paint && !self.document.paste_active()) {
             self.choose(context, FileAction::InsertImage);
         }
         ui.separator();
         ui.add_enabled_ui(paint, |ui| {
-            ui.menu_button("Area Operations", |ui| {
+            ui.menu_button(fl!("menu-area-operations"), |ui| {
                 for entry in AREA_MENU {
                     match entry {
                         Some(operation) => {
-                            if item(ui, operation.label(), operation.shortcut().as_ref(), true) {
+                            if item(ui, &operation.label(), operation.shortcut().as_ref(), true) {
                                 self.area_operation(operation);
                             }
                         }
@@ -429,74 +447,68 @@ impl DrawApp {
             });
         });
         ui.separator();
-        if item(ui, "Select Font…", None, true) {
-            self.dialog = Some(Dialog::FontSelect);
+        if item(ui, &fl!("menu-open_font_selector"), None, true) {
+            self.open_font_selector();
         }
         ui.separator();
         let mut mirror = self.document.with_state(|state| state.get_mirror_mode());
-        if check_item(ui, "Mirror Mode", None, &mut mirror) {
+        if check_item(ui, &fl!("menu-mirror_mode"), None, &mut mirror) {
             self.document.with_state(|state| state.set_mirror_mode(mirror));
-        }
-        ui.separator();
-        if item(ui, "Document Settings…", None, true) {
-            self.dialog = Some(Dialog::Inspector);
         }
     }
 
     fn selection_menu(&mut self, ui: &mut egui::Ui) {
         let selected = self.document.with_state(|state| state.is_something_selected());
         let paint = self.document.can_paint();
-        if item(ui, "Select All", Some(&SELECT_ALL), true) {
+        if item(ui, &fl!("menu-select-all"), Some(&SELECT_ALL), true) {
             self.select_all();
         }
-        if item(ui, "Deselect", Some(&DESELECT), selected) {
+        if item(ui, &fl!("menu-select_nothing"), Some(&DESELECT), selected) {
             self.edit(|state| state.clear_selection());
         }
-        if item(ui, "Invert Selection", Some(&INVERT_SELECTION), true) {
+        if item(ui, &fl!("cmd-select-inverse-menu"), Some(&INVERT_SELECTION), true) {
             self.edit(|state| state.inverse_selection());
         }
         ui.separator();
-        if item(ui, "Flip Horizontally", None, paint) {
+        if item(ui, &fl!("menu-flip-x"), None, paint) {
             self.edit(|state| state.flip_x());
         }
-        if item(ui, "Flip Vertically", None, paint) {
+        if item(ui, &fl!("menu-flip-y"), None, paint) {
             self.edit(|state| state.flip_y());
         }
-        if item(ui, "Crop to Selection", None, selected && paint) {
+        if item(ui, &fl!("menu-crop"), None, selected && paint) {
             self.edit(|state| state.crop());
         }
         ui.separator();
-        if item(ui, "Justify Left", None, paint) {
+        if item(ui, &fl!("menu-justifyleft"), None, paint) {
             self.edit(|state| state.justify_left());
         }
-        if item(ui, "Justify Center", None, paint) {
+        if item(ui, &fl!("menu-justifycenter"), None, paint) {
             self.edit(|state| state.center());
         }
-        if item(ui, "Justify Right", None, paint) {
+        if item(ui, &fl!("menu-justifyright"), None, paint) {
             self.edit(|state| state.justify_right());
         }
     }
 
     fn colors_menu(&mut self, ui: &mut egui::Ui) {
-        if item(ui, "Edit Palette…", None, true) {
-            self.palette_edit = self.document.with_state(|state| state.get_buffer().palette.clone());
-            self.palette_index = 0;
-            self.dialog = Some(Dialog::Palette);
+        if item(ui, &fl!("menu-edit_palette"), None, true) {
+            self.open_palette_editor(true);
         }
         ui.separator();
         for (operation, label, shortcut) in [
-            (ColorOp::NextForeground, "Next Foreground Color", Some(&NEXT_FG)),
-            (ColorOp::PreviousForeground, "Previous Foreground Color", Some(&PREV_FG)),
-            (ColorOp::NextBackground, "Next Background Color", Some(&NEXT_BG)),
-            (ColorOp::PreviousBackground, "Previous Background Color", Some(&PREV_BG)),
-            (ColorOp::PickAttributeUnderCaret, "Pick Attribute under Caret", Some(&PICK_ATTRIBUTE)),
-            (ColorOp::Swap, "Swap Foreground/Background", Some(&SWAP_COLORS)),
-            (ColorOp::Default, "Default Colors", None),
+            (ColorOp::NextForeground, fl!("menu-next_fg_color"), Some(&NEXT_FG)),
+            (ColorOp::PreviousForeground, fl!("menu-prev_fg_color"), Some(&PREV_FG)),
+            (ColorOp::NextBackground, fl!("menu-next_bg_color"), Some(&NEXT_BG)),
+            (ColorOp::PreviousBackground, fl!("menu-prev_bg_color"), Some(&PREV_BG)),
+            (ColorOp::PickAttributeUnderCaret, fl!("menu-pick_attribute_under_caret"), Some(&PICK_ATTRIBUTE)),
+            (ColorOp::Swap, fl!("menu-toggle_color"), Some(&SWAP_COLORS)),
+            (ColorOp::Default, fl!("menu-default_color"), None),
         ] {
             if matches!(operation, ColorOp::NextBackground | ColorOp::PickAttributeUnderCaret) {
                 ui.separator();
             }
-            if item(ui, label, shortcut, true) {
+            if item(ui, &label, shortcut, true) {
                 self.color_operation(operation);
             }
         }
@@ -541,28 +553,32 @@ impl DrawApp {
     }
 
     fn document_menu(&mut self, ui: &mut egui::Ui) {
-        if item(ui, "Canvas Size…", None, self.charfont.is_none()) {
+        if item(ui, &fl!("menu-file-settings"), None, self.charfont.is_none()) {
+            self.open_file_settings();
+        }
+        ui.separator();
+        if item(ui, &fl!("menu-set-canvas-size"), None, self.charfont.is_none()) {
             self.open_resize();
         }
-        if item(ui, "SAUCE Information…", None, self.charfont.is_none()) {
+        if item(ui, &fl!("menu-edit-sauce"), None, self.charfont.is_none()) {
             self.open_sauce();
         }
         ui.separator();
-        if item(ui, "Edit Bitmap Font…", None, true) {
+        if item(ui, &fl!("menu-edit-bitmap-font"), None, true) {
             self.edit_bitmap_font();
         }
-        if item(ui, "Tags…", None, self.charfont.is_none()) {
+        if item(ui, &fl!("tag-toolbar-tags"), None, self.charfont.is_none()) {
             self.dialog = Some(Dialog::Tags);
         }
     }
 
     fn view_menu(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
         let current = self.settings.monitor_settings.scaling_mode;
-        ui.menu_button(format!("Zoom ({})", zoom_label(current)), |ui| {
-            if item(ui, "Zoom In", Some(&ZOOM_IN), true) {
+        ui.menu_button(format!("{} ({})", fl!("menu-zoom"), zoom_label(current)), |ui| {
+            if item(ui, &fl!("menu-zoom_in"), Some(&ZOOM_IN), true) {
                 self.zoom_step(1);
             }
-            if item(ui, "Zoom Out", Some(&ZOOM_OUT), true) {
+            if item(ui, &fl!("menu-zoom_out"), Some(&ZOOM_OUT), true) {
                 self.zoom_step(-1);
             }
             ui.separator();
@@ -582,9 +598,9 @@ impl DrawApp {
             }
         });
         ui.separator();
-        ui.menu_button("Guides", |ui| {
+        ui.menu_button(fl!("menu-guides"), |ui| {
             let mut off = self.guide.is_none();
-            if check_item(ui, "Off", None, &mut off) {
+            if check_item(ui, &fl!("menu-off"), None, &mut off) {
                 self.guide = None;
             }
             ui.separator();
@@ -597,12 +613,12 @@ impl DrawApp {
             }
             ui.separator();
             ui.add_enabled_ui(self.guide.is_some(), |ui| {
-                check_item(ui, "Show Guide", Some(&TOGGLE_GUIDE), &mut self.show_guide);
+                check_item(ui, &fl!("menu-show-guide"), Some(&TOGGLE_GUIDE), &mut self.show_guide);
             });
         });
-        ui.menu_button("Raster", |ui| {
+        ui.menu_button(fl!("menu-raster"), |ui| {
             let mut off = self.raster.is_none();
-            if check_item(ui, "Off", None, &mut off) {
+            if check_item(ui, &fl!("menu-off"), None, &mut off) {
                 self.raster = None;
             }
             ui.separator();
@@ -615,44 +631,44 @@ impl DrawApp {
             }
             ui.separator();
             ui.add_enabled_ui(self.raster.is_some(), |ui| {
-                check_item(ui, "Show Raster", None, &mut self.show_raster);
+                check_item(ui, &fl!("menu-show-raster"), None, &mut self.show_raster);
             });
         });
-        check_item(ui, "Character Grid", Some(&GRID), &mut self.show_grid);
-        check_item(ui, "Layer Borders", None, &mut self.show_layer_bounds);
-        if check_item(ui, "Line Numbers", Some(&LINE_NUMBERS), &mut self.show_line_numbers) {
+        check_item(ui, &fl!("menu-character-grid"), Some(&GRID), &mut self.show_grid);
+        check_item(ui, &fl!("menu-show_layer_borders"), None, &mut self.show_layer_bounds);
+        if check_item(ui, &fl!("menu-show_line_numbers"), Some(&LINE_NUMBERS), &mut self.show_line_numbers) {
             self.store_line_numbers();
         }
-        check_item(ui, "Side Panel", Some(&PANELS), &mut self.show_inspector);
+        check_item(ui, &fl!("menu-side-panel"), Some(&PANELS), &mut self.show_inspector);
         if self.collab.active {
             let mut chat = self.collab.chat_visible;
-            if check_item(ui, "Chat Panel", None, &mut chat) {
+            if check_item(ui, &fl!("menu-chat-panel"), None, &mut chat) {
                 self.toggle_chat();
             }
         }
         ui.separator();
-        if item(ui, "Reference Image…", Some(&REFERENCE_IMAGE), true) {
+        if item(ui, &fl!("menu-reference-image"), Some(&REFERENCE_IMAGE), true) {
             self.open_reference_image();
         }
         let mut reference_visible = self.reference_image.as_ref().is_some_and(|image| image.visible);
         ui.add_enabled_ui(self.reference_image.is_some(), |ui| {
-            if check_item(ui, "Show Reference Image", Some(&TOGGLE_REFERENCE_IMAGE), &mut reference_visible) {
+            if check_item(ui, &fl!("menu-toggle-reference-image"), Some(&TOGGLE_REFERENCE_IMAGE), &mut reference_visible) {
                 self.toggle_reference_image();
             }
         });
         ui.separator();
         let mut fullscreen = context.input(|input| input.viewport().fullscreen.unwrap_or(false));
-        if check_item(ui, "Fullscreen", Some(&FULLSCREEN), &mut fullscreen) {
+        if check_item(ui, &fl!("menu-toggle_fullscreen"), Some(&FULLSCREEN), &mut fullscreen) {
             context.send_viewport_cmd(egui::ViewportCommand::Fullscreen(fullscreen));
         }
-        ui.menu_button("Appearance", |ui| {
+        ui.menu_button(fl!("menu-appearance"), |ui| {
             egui::widgets::global_theme_preference_buttons(ui);
         });
         ui.separator();
-        if item(ui, "Character Table…", None, true) {
+        if item(ui, &fl!("menu-character-table"), None, true) {
             self.dialog = Some(Dialog::Characters);
         }
-        if item(ui, "Monitor Settings…", None, true) {
+        if item(ui, &fl!("menu-monitor-settings"), None, true) {
             self.dialog = Some(Dialog::Monitor);
         }
     }
@@ -705,10 +721,10 @@ impl DrawApp {
     }
 
     fn extensions_menu(&mut self, ui: &mut egui::Ui) {
-        if item(ui, "Run Lua Script…", None, true) {
+        if item(ui, &fl!("menu-run-script"), None, true) {
             self.dialog = Some(Dialog::Script);
         }
-        if ui.button("Reload Plugins").clicked() {
+        if ui.button(fl!("menu-reload-plugins")).clicked() {
             self.plugins = None;
         }
         let paint = self.document.can_paint();
@@ -743,19 +759,6 @@ impl DrawApp {
         self.result(result);
     }
 
-    pub(super) fn open_sauce(&mut self) {
-        self.sauce_fields = self.document.with_state(|state| {
-            let sauce = state.get_sauce_meta();
-            [
-                sauce.title.to_string(),
-                sauce.author.to_string(),
-                sauce.group.to_string(),
-                sauce.comments.iter().map(|line| line.to_string()).collect::<Vec<_>>().join("\n"),
-            ]
-        });
-        self.dialog = Some(Dialog::Sauce);
-    }
-
     pub(super) fn open_resize(&mut self) {
         let size = self.document.with_state(|state| state.get_buffer().size());
         self.new_size = [size.width, size.height];
@@ -770,12 +773,11 @@ impl DrawApp {
             return;
         };
         if font.size().width <= 8 {
-            self.font_editor = Some(super::super::font::FontEditor::new(font));
-            self.dialog = Some(Dialog::Font);
+            let mut editor = super::super::font::FontEditor::new(font);
+            editor.apply_target = true;
+            self.font_editor = Some(editor);
         } else {
-            self.dialog = Some(Dialog::Error(
-                "The bitmap font editor currently supports glyphs up to 8 pixels wide.".into(),
-            ));
+            self.dialog = Some(Dialog::Error(fl!("error-bitmap-font-width")));
         }
     }
 
@@ -790,13 +792,53 @@ impl DrawApp {
         self.settings.monitor_settings.scaling_mode = ScalingMode::Manual(next);
     }
 
+    fn font_edit_menu(&mut self, ui: &mut egui::Ui) {
+        use super::super::font::GlyphOperation;
+        let Some(editor) = &mut self.font_editor else {
+            return;
+        };
+        if item(ui, &fl!("menu-undo"), Some(&UNDO), editor.can_undo()) {
+            editor.undo(false);
+        }
+        if item(ui, &fl!("menu-redo"), Some(&REDO), editor.can_redo()) {
+            editor.undo(true);
+        }
+        ui.separator();
+        if item(ui, &fl!("menu-cut"), Some(&CUT), true) {
+            editor.cut();
+        }
+        if item(ui, &fl!("menu-copy"), Some(&COPY), true) {
+            editor.copy();
+        }
+        let paste = editor.has_clipboard();
+        if item(ui, &fl!("menu-paste"), Some(&PASTE), paste) {
+            editor.paste();
+        }
+        if item(ui, &fl!("menu-select-all"), Some(&SELECT_ALL), true) {
+            editor.select_all();
+        }
+        ui.separator();
+        for (operation, label) in [
+            (GlyphOperation::FlipX, fl!("menu-flip-x")),
+            (GlyphOperation::FlipY, fl!("menu-flip-y")),
+            (GlyphOperation::Inverse, fl!("font-editor-inverse")),
+            (GlyphOperation::Clear, fl!("menu-clear-glyph")),
+        ] {
+            if item(ui, &label, None, true) {
+                editor.glyph_operation(operation);
+            }
+        }
+    }
+
     /// Handles the application-wide command shortcuts; returns true when `key` was consumed.
     pub(super) fn command_key(&mut self, context: &egui::Context, key: Key, modifiers: Modifiers) -> bool {
         let shift = modifiers.shift;
-        let animation = self.animation.is_some();
+        // Canvas commands only apply to the ANSI editor.
+        let animation = self.animation.is_some() || self.font_editor.is_some();
         match key {
             Key::N if shift => self.new_window(),
             Key::Q if !shift => context.send_viewport_cmd(egui::ViewportCommand::Close),
+            Key::E if !shift && self.animation.is_some() => self.animation.as_mut().unwrap().open_export_dialog(),
             Key::E if !shift && !animation => self.dialog = Some(Dialog::Export),
             Key::Plus | Key::Equals if !animation => self.zoom_step(1),
             Key::Minus if !animation => self.zoom_step(-1),
@@ -856,111 +898,108 @@ impl DrawApp {
 
     pub(super) fn shortcuts_dialog(&mut self, context: &egui::Context) -> bool {
         let format = |shortcut: &KeyboardShortcut| context.format_shortcut(shortcut);
-        let groups: Vec<(&str, Vec<(String, &str)>)> = vec![
+        let groups: Vec<(String, Vec<(String, String)>)> = vec![
             (
-                "File",
+                menu_title(fl!("menu-file")),
                 vec![
-                    (format(&NEW), "New document"),
-                    (format(&OPEN), "Open"),
-                    (format(&SAVE), "Save"),
-                    (format(&SAVE_AS), "Save as"),
-                    (format(&EXPORT), "Export"),
-                    (format(&NEW_WINDOW), "New window"),
-                    (format(&QUIT), "Quit"),
+                    (format(&NEW), fl!("shortcut-new-document")),
+                    (format(&OPEN), fl!("shortcut-open")),
+                    (format(&SAVE), fl!("shortcut-save")),
+                    (format(&SAVE_AS), fl!("shortcut-save-as")),
+                    (format(&EXPORT), fl!("shortcut-export")),
+                    (format(&NEW_WINDOW), fl!("shortcut-new-window")),
+                    (format(&QUIT), fl!("shortcut-quit")),
                 ],
             ),
             (
-                "Edit",
+                menu_title(fl!("menu-edit")),
                 vec![
-                    (format(&UNDO), "Undo"),
-                    (format(&REDO), "Redo"),
-                    (format(&CUT), "Cut"),
-                    (format(&COPY), "Copy"),
-                    (format(&PASTE), "Paste as floating layer"),
-                    (format(&SELECT_ALL), "Select all"),
-                    (format(&DESELECT), "Deselect"),
-                    (format(&INVERT_SELECTION), "Invert selection"),
-                    ("Del".into(), "Erase selection"),
-                    ("Esc".into(), "Cancel stroke / clear selection"),
+                    (format(&UNDO), fl!("shortcut-undo")),
+                    (format(&REDO), fl!("shortcut-redo")),
+                    (format(&CUT), fl!("shortcut-cut")),
+                    (format(&COPY), fl!("shortcut-copy")),
+                    (format(&PASTE), fl!("shortcut-paste")),
+                    (format(&SELECT_ALL), fl!("shortcut-select-all")),
+                    (format(&DESELECT), fl!("shortcut-deselect")),
+                    (format(&INVERT_SELECTION), fl!("shortcut-invert-selection")),
+                    ("Del".into(), fl!("shortcut-erase-selection")),
+                    ("Esc".into(), fl!("shortcut-cancel-stroke")),
                 ],
             ),
             (
-                "View",
+                menu_title(fl!("menu-view")),
                 vec![
-                    (format(&ZOOM_IN), "Zoom in"),
-                    (format(&ZOOM_OUT), "Zoom out"),
-                    (format(&ZOOM_FIT), "Fit to window"),
-                    (format(&ZOOM_ACTUAL), "Actual size (100%)"),
-                    (
-                        if cfg!(target_os = "macos") { "Cmd+Wheel" } else { "Ctrl+Wheel" }.into(),
-                        "Zoom",
-                    ),
-                    (format(&GRID), "Toggle character grid"),
-                    (format(&LINE_NUMBERS), "Toggle line numbers"),
-                    (format(&TOGGLE_GUIDE), "Toggle guide"),
-                    (format(&REFERENCE_IMAGE), "Reference image"),
-                    (format(&TOGGLE_REFERENCE_IMAGE), "Toggle reference image"),
-                    (format(&PANELS), "Toggle side panel"),
-                    (format(&FULLSCREEN), "Fullscreen"),
+                    (format(&ZOOM_IN), fl!("shortcut-zoom-in")),
+                    (format(&ZOOM_OUT), fl!("shortcut-zoom-out")),
+                    (format(&ZOOM_FIT), fl!("shortcut-zoom-fit")),
+                    (format(&ZOOM_ACTUAL), fl!("shortcut-zoom-actual")),
+                    (if cfg!(target_os = "macos") { "Cmd+Wheel" } else { "Ctrl+Wheel" }.into(), fl!("shortcut-zoom")),
+                    (format(&GRID), fl!("shortcut-toggle-grid")),
+                    (format(&LINE_NUMBERS), fl!("shortcut-toggle-line-numbers")),
+                    (format(&TOGGLE_GUIDE), fl!("shortcut-toggle-guide")),
+                    (format(&REFERENCE_IMAGE), fl!("shortcut-reference-image")),
+                    (format(&TOGGLE_REFERENCE_IMAGE), fl!("shortcut-toggle-reference-image")),
+                    (format(&PANELS), fl!("shortcut-toggle-side-panel")),
+                    (format(&FULLSCREEN), fl!("shortcut-fullscreen")),
                 ],
             ),
             (
-                "Colors",
+                menu_title(fl!("menu-colors")),
                 vec![
-                    (format(&NEXT_FG), "Next foreground color"),
-                    (format(&PREV_FG), "Previous foreground color"),
-                    (format(&NEXT_BG), "Next background color"),
-                    (format(&PREV_BG), "Previous background color"),
-                    (format(&PICK_ATTRIBUTE), "Pick attribute under caret"),
-                    (format(&SWAP_COLORS), "Swap foreground / background"),
+                    (format(&NEXT_FG), fl!("shortcut-next-fg")),
+                    (format(&PREV_FG), fl!("shortcut-prev-fg")),
+                    (format(&NEXT_BG), fl!("shortcut-next-bg")),
+                    (format(&PREV_BG), fl!("shortcut-prev-bg")),
+                    (format(&PICK_ATTRIBUTE), fl!("shortcut-pick-attribute")),
+                    (format(&SWAP_COLORS), fl!("shortcut-swap-colors")),
                 ],
             ),
             (
-                "Area Operations",
+                fl!("menu-area-operations"),
                 AreaOp::ALL
                     .into_iter()
                     .filter_map(|operation| operation.shortcut().map(|shortcut| (format(&shortcut), operation.label())))
                     .collect(),
             ),
             (
-                "Text Cursor Tool",
+                fl!("shortcut-group-text"),
                 vec![
-                    ("F1–F12".into(), "Type character from the active F-key set"),
-                    ("Alt+F1–F10".into(), "Choose F-key set 1–10"),
-                    ("Alt+Shift+F1–F10".into(), "Choose F-key set 11–20"),
-                    (format(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma)), "Previous F-key set"),
-                    (format(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Period)), "Next F-key set"),
-                    (format(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Slash)), "Default F-key set"),
-                    ("Shift+Arrows".into(), "Extend selection"),
-                    ("Ins".into(), "Toggle insert / overwrite"),
-                    ("Shift+Space".into(), "Hard blank (0xFF)"),
-                    ("Tab".into(), "Next tab stop"),
+                    ("F1–F12".into(), fl!("shortcut-fkey-type")),
+                    ("Alt+F1–F10".into(), fl!("shortcut-fkey-set-low")),
+                    ("Alt+Shift+F1–F10".into(), fl!("shortcut-fkey-set-high")),
+                    (format(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Comma)), fl!("shortcut-fkey-prev")),
+                    (format(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Period)), fl!("shortcut-fkey-next")),
+                    (format(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Slash)), fl!("shortcut-fkey-default")),
+                    ("Shift+Arrows".into(), fl!("shortcut-extend-selection")),
+                    ("Ins".into(), fl!("shortcut-toggle-insert")),
+                    ("Shift+Space".into(), fl!("shortcut-hard-blank")),
+                    ("Tab".into(), fl!("shortcut-tab-stop")),
                 ],
             ),
             (
-                "Brushes & Shapes",
+                fl!("shortcut-group-brushes"),
                 vec![
-                    ("Alt++".into(), "Larger brush"),
-                    ("Alt+-".into(), "Smaller brush"),
-                    ("Alt+]".into(), "Reset brush size"),
+                    ("Alt++".into(), fl!("shortcut-brush-larger")),
+                    ("Alt+-".into(), fl!("shortcut-brush-smaller")),
+                    ("Alt+]".into(), fl!("shortcut-brush-reset")),
                 ],
             ),
             (
-                "Floating Paste",
+                fl!("shortcut-group-paste"),
                 vec![
-                    ("Arrows".into(), "Move"),
-                    ("Enter".into(), "Anchor"),
-                    ("S".into(), "Stamp copy"),
-                    ("R".into(), "Rotate"),
-                    ("X".into(), "Flip horizontally"),
-                    ("Y".into(), "Flip vertically"),
-                    ("T".into(), "Toggle transparency"),
-                    ("Esc".into(), "Cancel"),
+                    ("Arrows".into(), fl!("shortcut-paste-move")),
+                    ("Enter".into(), fl!("shortcut-paste-anchor")),
+                    ("S".into(), fl!("shortcut-paste-stamp")),
+                    ("R".into(), fl!("shortcut-paste-rotate")),
+                    ("X".into(), fl!("shortcut-paste-flip-x")),
+                    ("Y".into(), fl!("shortcut-paste-flip-y")),
+                    ("T".into(), fl!("shortcut-paste-transparent")),
+                    ("Esc".into(), fl!("shortcut-paste-cancel")),
                 ],
             ),
         ];
         let response = appearance::Dialog::new("draw-shortcuts")
-            .title("Keyboard Shortcuts")
+            .title(fl!("shortcuts-dialog-title"))
             .size(DialogSize::Large)
             .max_height(620.0)
             .show(context, |dialog| {
@@ -974,7 +1013,7 @@ impl DrawApp {
                                         ui.spacing_mut().item_spacing.x = 3.0;
                                         keycaps(ui, keys);
                                     });
-                                    ui.label(*description);
+                                    ui.label(description.as_str());
                                 });
                             }
                         });
@@ -985,31 +1024,27 @@ impl DrawApp {
         response.action.is_some() || response.dismissed
     }
 
-    pub(super) fn about_dialog(&mut self, context: &egui::Context) -> bool {
-        let response = appearance::Dialog::new("draw-about")
-            .title("Icy Draw")
-            .subtitle(format!("Version {}", env!("CARGO_PKG_VERSION")))
-            .size(DialogSize::Medium)
-            .show(context, |dialog| {
-                dialog.content(|ui| {
-                    appearance::group(ui, "", |ui| {
-                        ui.label("ANSI, ASCII and PETSCII art editor with layers, TheDraw fonts, bitmap fonts and animations.");
-                        ui.add_space(4.0);
-                        appearance::value_row(ui, "Author", "Mike Krüger");
-                        appearance::value_row(ui, "License", env!("CARGO_PKG_LICENSE"));
-                        ui.horizontal(|ui| {
-                            ui.hyperlink_to("github.com/mkrueger/icy_tools", "https://github.com/mkrueger/icy_tools");
-                        });
-                    });
-                });
-                dialog.buttons([DialogButton::primary(labels::close(), ()).cancels()]);
-            });
-        response.action.is_some() || response.dismissed
+    /// Shows the shared about dialog with Icy Draw's artwork.
+    pub(super) fn open_about(&mut self) {
+        if self.about.is_none() {
+            match icy_engine_gui::egui::about::AboutDialog::new(
+                include_bytes!("../../../data/about.icy"),
+                &icy_draw::VERSION,
+                option_env!("ICY_BUILD_DATE").map(String::from),
+            ) {
+                Ok(about) => self.about = Some(about),
+                Err(error) => {
+                    self.dialog = Some(Dialog::Error(error));
+                    return;
+                }
+            }
+        }
+        self.dialog = Some(Dialog::About);
     }
 
     pub(super) fn insert_image(&mut self, path: &std::path::Path) {
         let result = image::open(path)
-            .map_err(|error| format!("Could not load {}: {error}", path.display()))
+            .map_err(|error| fl!("error-load-image", path = path.display().to_string(), error = error.to_string()))
             .and_then(|image| self.document.start_image_paste(&image.to_rgba8()).map_err(|error| error.to_string()));
         if result.is_ok() {
             self.canvas_focus = true;
@@ -1025,67 +1060,72 @@ impl DrawApp {
             Cancel,
             Apply,
         }
-        const MODES: [(ReferenceImageMode, &str); 6] = [
-            (ReferenceImageMode::Stretch, "Stretch to Canvas"),
-            (ReferenceImageMode::Contain, "Fit to Canvas"),
-            (ReferenceImageMode::FitWidth, "Fit Width"),
-            (ReferenceImageMode::FitHeight, "Fit Height"),
-            (ReferenceImageMode::Original, "Original Size"),
-            (ReferenceImageMode::Tile, "Tile"),
+        let modes = [
+            (ReferenceImageMode::Stretch, fl!("reference-image-mode-stretch")),
+            (ReferenceImageMode::Contain, fl!("reference-image-mode-contain")),
+            (ReferenceImageMode::FitWidth, fl!("reference-image-mode-fit_width")),
+            (ReferenceImageMode::FitHeight, fl!("reference-image-mode-fit_height")),
+            (ReferenceImageMode::Original, fl!("reference-image-mode-original")),
+            (ReferenceImageMode::Tile, fl!("reference-image-mode-tile")),
         ];
-        let mode_label = |mode| MODES.iter().find(|(candidate, _)| *candidate == mode).map_or("", |(_, label)| *label);
+        let mode_label = |mode| {
+            modes
+                .iter()
+                .find(|(candidate, _)| *candidate == mode)
+                .map_or_else(String::new, |(_, label)| label.clone())
+        };
         let mut browse = false;
         let path_valid = {
             let path = std::path::Path::new(self.reference_path.trim());
             !path.as_os_str().is_empty() && path.is_file()
         };
         let response = appearance::Dialog::new("reference-image")
-            .title("Reference Image")
-            .subtitle("Shown semi-transparent behind the canvas; not saved into exported files.")
+            .title(fl!("reference-image-dialog-title"))
+            .subtitle(fl!("reference-image-info"))
             .size(DialogSize::Medium)
             .show(context, |dialog| {
                 dialog.content(|ui| {
-                    appearance::group(ui, "Image", |ui| {
-                        appearance::form_row(ui, "File", |ui| {
+                    appearance::group(ui, &fl!("reference-image-image"), |ui| {
+                        appearance::form_row(ui, &fl!("reference-image-path"), |ui| {
                             ui.horizontal(|ui| {
                                 let button_width = 80.0;
                                 let width = (ui.available_width() - button_width - ui.spacing().item_spacing.x).max(80.0);
                                 ui.add_sized([width, ui.spacing().interact_size.y], appearance::text_edit(&mut self.reference_path));
                                 browse = ui
-                                    .add_sized([button_width, ui.spacing().interact_size.y], egui::Button::new("Browse…"))
+                                    .add_sized([button_width, ui.spacing().interact_size.y], egui::Button::new(fl!("reference-image-browse")))
                                     .clicked();
                             });
                         });
                         if !self.reference_path.trim().is_empty() && !path_valid {
                             appearance::form_row(ui, "", |ui| {
-                                ui.colored_label(ui.visuals().error_fg_color, "File not found");
+                                ui.colored_label(ui.visuals().error_fg_color, fl!("reference-image-not-found"));
                             });
                         }
                     });
-                    appearance::group(ui, "Display", |ui| {
+                    appearance::group(ui, &fl!("reference-image-display"), |ui| {
                         let draft = &mut self.reference_draft;
-                        appearance::combo_row(ui, "Mode", mode_label(draft.mode), |ui| {
-                            for (mode, label) in MODES {
-                                ui.selectable_value(&mut draft.mode, mode, label);
+                        appearance::combo_row(ui, &fl!("reference-image-mode"), mode_label(draft.mode), |ui| {
+                            for (mode, label) in &modes {
+                                ui.selectable_value(&mut draft.mode, *mode, label.as_str());
                             }
                         });
                         let mut opacity = draft.alpha * 100.0;
-                        appearance::slider_row(ui, "Opacity %", &mut opacity, 5.0..=100.0);
+                        appearance::slider_row(ui, &format!("{} %", fl!("reference-image-alpha")), &mut opacity, 5.0..=100.0);
                         draft.alpha = (opacity / 100.0).clamp(0.05, 1.0);
                         if matches!(draft.mode, ReferenceImageMode::Original | ReferenceImageMode::Tile) {
-                            appearance::form_row(ui, "Scale", |ui| {
+                            appearance::form_row(ui, &fl!("reference-image-scale"), |ui| {
                                 ui.add(egui::DragValue::new(&mut draft.scale).range(0.05..=16.0).speed(0.01).fixed_decimals(2));
                             });
                         }
-                        appearance::form_row(ui, "Offset", |ui| {
+                        appearance::form_row(ui, &fl!("reference-image-offset"), |ui| {
                             ui.add(egui::DragValue::new(&mut draft.offset.0).prefix("x ").suffix(" px"));
                             ui.add(egui::DragValue::new(&mut draft.offset.1).prefix("y ").suffix(" px"));
                         });
-                        appearance::check_row(ui, "Visible", &mut draft.visible);
+                        appearance::check_row(ui, &fl!("edit-layer-dialog-is-visible-checkbox"), &mut draft.visible);
                     });
                 });
                 dialog.buttons([
-                    DialogButton::destructive("Remove", Action::Clear)
+                    DialogButton::destructive(fl!("reference-image-clear"), Action::Clear)
                         .leading()
                         .enabled(self.reference_image.is_some()),
                     DialogButton::cancel(labels::cancel(), Action::Cancel),
@@ -1105,7 +1145,7 @@ impl DrawApp {
                 let mut image = self.reference_draft.clone();
                 image.path = std::path::PathBuf::from(self.reference_path.trim());
                 if image.load_and_cache().is_none() {
-                    self.dialog = Some(Dialog::Error(format!("Could not load reference image {}", image.path.display())));
+                    self.dialog = Some(Dialog::Error(fl!("error-load-reference-image", path = image.path.display().to_string())));
                     return true;
                 }
                 self.reference_image = Some(image);
@@ -1113,5 +1153,27 @@ impl DrawApp {
             }
             None => response.dismissed,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn about_dialog_shows_the_shared_artwork_dialog() {
+        let context = eframe::egui::Context::default();
+        icy_engine_gui::egui::appearance::apply(&context);
+        let mut app = super::DrawApp::new();
+        app.open_about();
+        assert!(matches!(app.dialog, Some(super::Dialog::About)));
+        let mut found = false;
+        for _ in 0..3 {
+            let output = context.run(Default::default(), |context| app.show(context));
+            let close = icy_engine_gui::egui::appearance::labels::close();
+            found = output
+                .shapes
+                .iter()
+                .any(|shape| matches!(&shape.shape, eframe::egui::Shape::Text(text) if text.galley.text() == close));
+        }
+        assert!(found && app.about.is_some());
     }
 }

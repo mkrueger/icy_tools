@@ -5,6 +5,7 @@ pub mod files;
 pub mod fill;
 pub mod host;
 pub mod mcp;
+pub mod palette_files;
 #[path = "ui/editor/ansi/tools/paint.rs"]
 pub mod paint;
 #[path = "util/plugins.rs"]
@@ -29,8 +30,17 @@ pub static LANGUAGE_LOADER: std::sync::LazyLock<i18n_embed::fluent::FluentLangua
     let loader = i18n_embed::fluent::fluent_language_loader!();
     let languages = i18n_embed::DesktopLanguageRequester::requested_languages();
     let _ = i18n_embed::select(&loader, &Localizations, &languages);
+    // Directional isolation marks around arguments are not needed for left-to-right text and
+    // would show up in fixed-width labels.
+    loader.set_use_isolating(false);
     loader
 });
+
+/// Switches the user interface to `languages` (used by tests, which match English labels).
+pub fn select_languages(languages: &[i18n_embed::unic_langid::LanguageIdentifier]) {
+    let _ = i18n_embed::select(&*LANGUAGE_LOADER, &Localizations, languages);
+    LANGUAGE_LOADER.set_use_isolating(false);
+}
 
 #[macro_export]
 macro_rules! fl {

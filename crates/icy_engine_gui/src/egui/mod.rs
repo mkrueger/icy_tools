@@ -1,3 +1,4 @@
+pub mod about;
 pub mod appearance;
 pub mod dialog;
 pub mod monitor;

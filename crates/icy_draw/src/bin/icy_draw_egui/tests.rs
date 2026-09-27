@@ -2,6 +2,20 @@ use super::*;
 use eframe::{egui_wgpu, wgpu};
 use icy_engine_gui::TerminalShaderRenderer;
 
+#[derive(rust_embed::RustEmbed)]
+#[folder = "../icy_engine_gui/i18n"]
+struct GuiLocalizations;
+
+/// Tests assert on English labels, so pin both loaders to English regardless of the system locale.
+pub(super) fn use_english() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let english: [i18n_embed::unic_langid::LanguageIdentifier; 1] = ["en".parse().unwrap()];
+        icy_draw::select_languages(&english);
+        i18n_embed::select(&*icy_engine_gui::LANGUAGE_LOADER, &GuiLocalizations, &english).unwrap();
+    });
+}
+
 fn frame(context: &egui::Context, app: &mut DrawApp, size: egui::Vec2, events: Vec<egui::Event>) -> egui::FullOutput {
     let time = context.input(|input| input.time) + 0.05;
     context.run(
@@ -239,7 +253,7 @@ fn editor_chrome_matches_the_original_panel_layout() {
             })
         };
         assert!(app.canvas_rect.left() >= chrome::SIDEBAR_WIDTH, "{size:?}: tool column missing");
-        assert_eq!(rendered("Minimap"), panel, "{size:?}: minimap");
+        assert!(!rendered("Minimap"), "{size:?}: minimap needs no header");
         assert_eq!(rendered("Layers"), panel, "{size:?}: layers");
         if panel {
             assert!(app.canvas_rect.right() <= size.x - chrome::PANEL_WIDTH, "{size:?}: right panel missing");
@@ -535,6 +549,55 @@ fn animation_menu_undo_never_changes_the_ansi_document() {
 }
 
 #[test]
+fn animation_export_dialog_exports_and_asks_before_overwriting() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let mut animation = super::super::animation::AnimationEditor::new();
+    animation.source = "local screen = new_buffer(10, 3)\nnext_frame(screen)\nnext_frame(screen)".into();
+    animation.compile_for_test();
+    app.animation = Some(animation);
+    let size = egui::vec2(1280.0, 820.0);
+    frame(&context, &mut app, size, vec![key_event(Key::E, egui::Modifiers::COMMAND)]);
+    assert!(app.animation.as_ref().unwrap().export_dialog_open(), "Ctrl+E opens the export dialog");
+    let directory = tempfile::tempdir().unwrap();
+    let target = directory.path().join("demo");
+    app.animation.as_mut().unwrap().set_export_path(target.clone());
+    let export = icy_draw::fl!("menu-export").trim_end_matches(['…', '.']).to_string();
+    let click_export = |app: &mut DrawApp| {
+        let mut output = frame(&context, app, size, vec![]);
+        for _ in 0..3 {
+            output = frame(&context, app, size, vec![]);
+        }
+        let labels: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) => Some((text.galley.text().to_string(), text.visual_bounding_rect())),
+                _ => None,
+            })
+            .collect();
+        let (_, rect) = labels.iter().rev().find(|(label, _)| *label == export).expect("export button");
+        for pressed in [true, false] {
+            frame(&context, app, size, pointer(rect.center(), pressed));
+        }
+    };
+    click_export(&mut app);
+    let gif = target.with_extension("gif");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while app.animation.as_ref().unwrap().export_dialog_open() {
+        assert!(std::time::Instant::now() < deadline, "export did not finish");
+        frame(&context, &mut app, size, vec![]);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(image::open(&gif).is_ok(), "a GIF was written");
+    app.animation.as_mut().unwrap().open_export_dialog();
+    app.animation.as_mut().unwrap().set_export_path(gif.clone());
+    click_export(&mut app);
+    assert!(matches!(app.dialog, Some(Dialog::AnimationOverwrite(ref path, _)) if *path == gif));
+}
+
+#[test]
 fn tag_draft_cancel_does_not_create_or_change_a_tag() {
     let context = egui::Context::default();
     let mut app = DrawApp::new();
@@ -614,7 +677,8 @@ fn export_dialog_has_no_header_or_close_glyph() {
             _ => None,
         })
         .collect();
-    assert!(labels.contains(&"Export..."));
+    let export = icy_draw::fl!("menu-export");
+    assert!(labels.contains(&export.as_str()));
     assert!(!labels.contains(&"Export") && !labels.contains(&"×"));
 }
 
@@ -703,11 +767,41 @@ fn gpu_editor_modes_and_dialogs_render() {
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "characters");
         gpu.capture(&mut app, [440, 700], 1.0, vec![], "characters-compact-warmup");
         gpu.capture(&mut app, [440, 700], 1.0, vec![], "characters-compact");
+        app.open_palette_editor(true);
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "palette-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "palette");
+        let mut large = icy_engine::Palette::dos_default();
+        large.resize(256);
+        app.palette_editor = super::super::palette::PaletteEditor::new(large, 200);
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "palette-256-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "palette-256");
+        gpu.capture(&mut app, [440, 700], 1.0, vec![], "palette-compact-warmup");
+        gpu.capture(&mut app, [440, 700], 1.0, vec![], "palette-compact");
+        app.dialog = None;
+        app.open_font_selector();
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "font-select-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "font-select");
+        gpu.capture(&mut app, [440, 700], 1.0, vec![], "font-select-compact-warmup");
+        gpu.capture(&mut app, [440, 700], 1.0, vec![], "font-select-compact");
+        app.dialog = None;
         let font = app.document.with_state(|state| state.get_buffer().font(0).unwrap().clone());
-        app.font_editor = Some(super::super::font::FontEditor::new(font)); app.dialog = Some(Dialog::Font);
+        let mut editor = super::super::font::FontEditor::new(font);
+        editor.apply_target = true;
+        app.font_editor = Some(editor);
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "font-warmup");
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "font");
-        app.dialog = None; app.font_editor = None;
+        {
+            use icy_engine_edit::bitfont::BitFontFocusedPanel;
+            let state = &mut app.font_editor.as_mut().unwrap().state;
+            state.set_selection(Some((1, 2, 4, 6)));
+            state.set_charset_selection(Some((icy_engine::Position::new(14, 4), icy_engine::Position::new(3, 5), false)));
+            state.set_charset_cursor(3, 5);
+            state.set_focused_panel(BitFontFocusedPanel::CharSet);
+        }
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "font-selection");
+        gpu.capture(&mut app, [900, 600], 1.0, vec![], "font-small-warmup");
+        gpu.capture(&mut app, [900, 600], 1.0, vec![], "font-small");
+        app.font_editor = None;
         let font = icy_draw::charfont::CharFontDocument::new(icy_engine_edit::charset::TdfFontType::Color);
         app.replace(font.document()); app.charfont = Some(font);
         app.document.type_text("TDF").unwrap();
@@ -715,9 +809,11 @@ fn gpu_editor_modes_and_dialogs_render() {
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "tdf");
         let font = icy_draw::charfont::CharFontDocument::new(icy_engine_edit::charset::TdfFontType::Outline);
         app.replace(font.document()); app.charfont = Some(font);
-        app.document.type_text("AB@&").unwrap();
+        app.document.type_text("ABCDEFGHIJKLMNOPQ@&").unwrap();
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "outline-warmup");
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "outline");
+        gpu.capture(&mut app, [440, 700], 1.0, vec![], "outline-compact-warmup");
+        gpu.capture(&mut app, [440, 700], 1.0, vec![], "outline-compact");
         app.replace(Document::new(Size::new(80, 25)));
         app.document.type_text("SELECTION AND TAGS").unwrap();
         app.document.tool = Tool::Select;
@@ -768,6 +864,24 @@ fn gpu_editor_modes_and_dialogs_render() {
             }).count();
             assert!(changed > 30, "animation preview must change visible pixels: {changed}");
         }
+        let sample = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("samples/icy_animations/mandel.icyanim");
+        let mut mandel = super::super::animation::AnimationEditor::load(&sample).unwrap();
+        mandel.compile_for_test();
+        mandel.select_frame_for_test(4);
+        app.animation = Some(mandel);
+        for (size, name) in [([1280, 820], "animation-mandel"), ([440, 700], "animation-mandel-compact")] {
+            gpu.capture(&mut app, size, 1.0, vec![], "animation-mandel-warmup");
+            gpu.capture(&mut app, size, 1.0, vec![], name);
+        }
+        app.animation.as_mut().unwrap().show_log_for_test(true);
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "animation-log-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "animation-log");
+        app.animation.as_mut().unwrap().show_log_for_test(false);
+        app.animation.as_mut().unwrap().open_export_dialog();
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "animation-export-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "animation-export");
+        gpu.capture(&mut app, [440, 700], 1.0, vec![], "animation-export-compact-warmup");
+        gpu.capture(&mut app, [440, 700], 1.0, vec![], "animation-export-compact");
     });
 }
 
@@ -1215,4 +1329,40 @@ fn connecting_offers_to_save_unsaved_work_first() {
     app.dialog = None;
     app.complete_close(&context);
     assert!(matches!(app.dialog, Some(Dialog::Connect)), "discarding continues to the connect dialog");
+}
+
+#[test]
+fn outline_digits_type_the_thedraw_codes() {
+    let mut app = DrawApp::new();
+    let font = icy_draw::charfont::CharFontDocument::new(icy_engine_edit::charset::TdfFontType::Outline);
+    app.replace(font.document());
+    app.charfont = Some(font);
+    app.document.type_text("a15678").unwrap();
+    let typed: String = app
+        .document
+        .with_state(|state| (0..6).map(|x| state.get_buffer().char_at(Position::new(x, 0)).ch).collect());
+    assert_eq!(typed, "AKO@&\u{ff}");
+}
+
+#[test]
+fn tdf_editor_has_no_layer_panel() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let font = icy_draw::charfont::CharFontDocument::new(icy_engine_edit::charset::TdfFontType::Color);
+    app.replace(font.document());
+    app.charfont = Some(font);
+    let size = egui::vec2(1280.0, 820.0);
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    let output = frame(&context, &mut app, size, vec![]);
+    let rendered = |label: &str| {
+        output.shapes.iter().any(|shape| match &shape.shape {
+            egui::Shape::Text(text) => text.galley.text() == label,
+            _ => false,
+        })
+    };
+    assert!(rendered(&icy_draw::fl!("new-file-editor-tdf")), "TDF font section missing");
+    assert!(!rendered(&icy_draw::fl!("layer_tool_title")), "layer list shown in the TDF editor");
 }

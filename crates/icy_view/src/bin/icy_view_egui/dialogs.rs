@@ -1,7 +1,7 @@
 use super::{preview::Preview, text};
 use eframe::egui;
 use icy_engine::formats::{FileFormat, ImageFormat};
-use icy_engine_gui::egui::{appearance, monitor, screen::ScreenView, shortcuts};
+use icy_engine_gui::egui::{about::AboutDialog, appearance, monitor, shortcuts};
 use icy_view::Options;
 use std::path::{Path, PathBuf};
 
@@ -59,7 +59,7 @@ pub struct Dialogs {
     draft: Options,
     baseline: Option<Vec<u8>>,
     page: usize,
-    about: Option<ScreenView>,
+    about: Option<AboutDialog>,
     raw: bool,
     export: Export,
 }
@@ -91,17 +91,13 @@ impl Dialogs {
             self.export = Export::new(options, preview);
         }
         if mode == Mode::About && self.about.is_none() {
-            match FileFormat::IcyDraw.from_bytes(include_bytes!("../../../data/about.icy"), None) {
-                Ok(mut document) => {
-                    icy_engine_gui::version_helper::replace_version_marker(
-                        &mut document.screen.buffer,
-                        &icy_view::VERSION,
-                        option_env!("ICY_BUILD_DATE").map(String::from),
-                    );
-                    document.screen.caret.visible = false;
-                    self.about = Some(ScreenView::new(document.screen));
-                }
-                Err(error) => self.error = Some(error.to_string()),
+            match AboutDialog::new(
+                include_bytes!("../../../data/about.icy"),
+                &icy_view::VERSION,
+                option_env!("ICY_BUILD_DATE").map(String::from),
+            ) {
+                Ok(about) => self.about = Some(about),
+                Err(error) => self.error = Some(error),
             }
         }
     }
@@ -110,6 +106,12 @@ impl Dialogs {
         let Some(mode) = self.mode else {
             return;
         };
+        if mode == Mode::About {
+            if !self.about.as_mut().is_some_and(|about| about.show(context)) {
+                self.mode = None;
+            }
+            return;
+        }
         #[derive(Clone, Copy, PartialEq, Eq)]
         enum Footer {
             Restore,
@@ -122,10 +124,7 @@ impl Dialogs {
             Mode::Settings => appearance::Dialog::untitled("viewer-settings")
                 .size(appearance::DialogSize::XLarge)
                 .fixed_height(560.0),
-            Mode::About => appearance::Dialog::new("viewer-about")
-                .title("Icy View")
-                .size(appearance::DialogSize::Width(740.0))
-                .scroll(false),
+            Mode::About => unreachable!("the about dialog is shown above"),
             Mode::Help => appearance::Dialog::new("viewer-help")
                 .title(text("help-title"))
                 .size(appearance::DialogSize::Width(740.0))
@@ -148,19 +147,7 @@ impl Dialogs {
             }
             dialog.content(|ui| {
                 match mode {
-                    Mode::About => {
-                        let height = (context.content_rect().height() - 190.0).clamp(48.0, 440.0);
-                        ui.set_height(height);
-                        if let Some(about) = &mut self.about {
-                            let response = about.show(ui, &icy_engine_gui::MonitorSettings::neutral());
-                            if let Some(url) = super::link_at(&about.terminal, response.hover_pos()) {
-                                response.clone().on_hover_cursor(egui::CursorIcon::PointingHand);
-                                if response.clicked() {
-                                    context.open_url(egui::OpenUrl::new_tab(url));
-                                }
-                            }
-                        }
-                    }
+                    Mode::About => {}
                     Mode::Settings => self.settings_fields(ui),
                     Mode::Help => help(ui),
                     Mode::Sauce => sauce(ui, preview, self.raw),
@@ -195,7 +182,8 @@ impl Dialogs {
                     }
                     buttons.push(appearance::DialogButton::primary(appearance::labels::close(), Footer::Close).cancels());
                 }
-                Mode::About | Mode::Help => {
+                Mode::About => {}
+                Mode::Help => {
                     buttons.push(appearance::DialogButton::primary(appearance::labels::close(), Footer::Close).cancels());
                 }
             }

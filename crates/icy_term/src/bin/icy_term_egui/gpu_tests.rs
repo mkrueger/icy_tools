@@ -371,7 +371,7 @@ async fn gpu_remaining_dialogs_fit_viewport() {
                 }
                 "about" => {
                     app.about_open = true;
-                    tr!("egui-close")
+                    icy_engine_gui::egui::appearance::labels::close()
                 }
                 "help" => {
                     app.help_open = true;
@@ -639,7 +639,7 @@ async fn gpu_overlays_and_shortcut_actions() {
     );
 
     // Shortcuts open the shared dialogs and list the same keys as the command table.
-    for (action, expected) in [(hotkeys::Action::Help, tr!("help-title")), (hotkeys::Action::About, tr!("egui-close"))] {
+    for (action, expected) in [(hotkeys::Action::Help, tr!("help-title")), (hotkeys::Action::About, icy_engine_gui::egui::appearance::labels::close())] {
         app.shortcut(action, &harness.context.clone());
         harness.capture(&mut app, [360, 640], 1.0, vec![], "overlay-dialog-warmup");
         harness.capture(&mut app, [360, 640], 1.0, vec![], &format!("overlay-{action:?}"));

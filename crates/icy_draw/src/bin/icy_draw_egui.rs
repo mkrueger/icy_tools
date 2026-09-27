@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 #[path = "icy_draw_egui/animation.rs"]
 mod animation;
+#[path = "icy_draw_egui/animation_export.rs"]
+mod animation_export;
 #[path = "icy_draw_egui/app.rs"]
 mod app;
 #[path = "icy_draw_egui/export.rs"]
@@ -13,6 +15,8 @@ mod export;
 mod font;
 #[path = "icy_draw_egui/input.rs"]
 mod input;
+#[path = "icy_draw_egui/palette.rs"]
+mod palette;
 #[path = "icy_draw_egui/widgets.rs"]
 mod widgets;
 
