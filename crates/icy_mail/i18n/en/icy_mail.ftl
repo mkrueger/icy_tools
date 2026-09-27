@@ -45,6 +45,7 @@ menu-message-zoom = Message Zoom
 menu-appearance = Appearance
 menu-settings = Settings…
 menu-keyboard-shortcuts = Keyboard Shortcuts
+menu-about = About Icy Mail
 menu-new-window = New Window
 menu-close-window = Close Window
 

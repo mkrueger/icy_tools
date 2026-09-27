@@ -310,6 +310,9 @@ impl MailApp {
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-keyboard-shortcuts"), "F1", true) {
             self.modal = Some(Modal::Shortcuts);
         }
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-about"), "", true) {
+            self.open_about();
+        }
         ui.separator();
         if item(
             ui,

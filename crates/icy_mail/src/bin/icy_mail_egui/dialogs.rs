@@ -32,6 +32,12 @@ impl MailApp {
             return;
         };
         match modal {
+            Modal::About => {
+                let open = self.about.as_mut().is_some_and(|about| about.show(context));
+                if !open {
+                    self.modal = None;
+                }
+            }
             Modal::Shortcuts => {
                 if self.shortcuts(context) {
                     self.modal = None;
@@ -127,6 +133,23 @@ impl MailApp {
                 }
             }
         }
+    }
+
+    pub fn open_about(&mut self) {
+        if self.about.is_none() {
+            match icy_engine_gui::egui::about::AboutDialog::new(
+                include_bytes!("../../../data/about.icy"),
+                &icy_mail::VERSION,
+                option_env!("ICY_BUILD_DATE").map(String::from),
+            ) {
+                Ok(about) => self.about = Some(about),
+                Err(error) => {
+                    self.error = Some(error);
+                    return;
+                }
+            }
+        }
+        self.modal = Some(Modal::About);
     }
 
     fn shortcuts(&self, context: &egui::Context) -> bool {

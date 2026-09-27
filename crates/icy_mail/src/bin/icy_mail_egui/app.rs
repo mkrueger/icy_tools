@@ -59,6 +59,7 @@ pub enum AfterDiscard {
 }
 
 pub enum Modal {
+    About,
     Shortcuts,
     PacketInfo,
     DeleteDraft(u64),
@@ -120,6 +121,7 @@ pub struct MailApp {
     pub tagline_dialog: Option<TaglineDialog>,
     pub address_book: Option<AddressBook>,
     pub address_dialog: Option<AddressDialog>,
+    pub about: Option<icy_engine_gui::egui::about::AboutDialog>,
     /// The tagline found in a message, keyed by packet and message index.
     tagline_cache: Option<((usize, usize), Option<String>)>,
     children: Vec<(egui::ViewportId, Arc<Mutex<MailApp>>)>,
@@ -197,6 +199,7 @@ impl MailApp {
             tagline_dialog: None,
             address_book: None,
             address_dialog: None,
+            about: None,
             tagline_cache: None,
             children: Vec::new(),
         };

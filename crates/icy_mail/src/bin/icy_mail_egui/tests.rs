@@ -38,6 +38,22 @@ fn click_label(context: &egui::Context, mail: &mut app::MailApp, size: egui::Vec
     }
 }
 
+#[test]
+fn about_dialog_shows_the_shared_artwork_dialog() {
+    let context = egui::Context::default();
+    icy_engine_gui::egui::appearance::apply(&context);
+    let mut mail = app::MailApp::new(&context);
+    mail.open_about();
+    assert!(matches!(mail.modal, Some(app::Modal::About)));
+    let output = settle(&context, &mut mail, egui::vec2(1100.0, 760.0));
+    let close = icy_engine_gui::egui::appearance::labels::close();
+    assert!(mail.about.is_some());
+    assert!(output
+        .shapes
+        .iter()
+        .any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text() == close)));
+}
+
 /// Texts painted with a highlighted (search match) background.
 fn highlighted(output: &egui::FullOutput) -> Vec<String> {
     output
