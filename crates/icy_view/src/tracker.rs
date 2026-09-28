@@ -1,5 +1,6 @@
-//! Tracker modules (MOD/S3M/XM/IT/RAD): an info sheet for the preview and thumbnails, and a
-//! streaming player (xmrsplayer rendered on a worker thread, played through rodio).
+//! Music: tracker modules (MOD/S3M/XM/IT/RAD) and audio files (see [`crate::audio`]).
+//! An info sheet for the preview and thumbnails, and a streaming player (rendered or decoded
+//! on a worker thread, played through rodio).
 //!
 //! Names and song messages are read straight from the file because they are CP437 and
 //! often carry ASCII art; xmrs decodes them as lossy UTF-8.
@@ -19,7 +20,10 @@ use parking_lot::Mutex;
 use xmrs::{core::module::Module as XmModule, tracker::format::ModuleFormat};
 use xmrsplayer::xmrsplayer::XmrsPlayer;
 
-use crate::rad::RadTune;
+use crate::{
+    audio::{AudioFile, AudioStream},
+    rad::RadTune,
+};
 
 pub const EXTENSIONS: &[&str] = &["mod", "s3m", "xm", "it", "rad"];
 
@@ -36,15 +40,24 @@ pub fn is_tracker_file(path: &Path) -> bool {
     extension(path).is_some_and(|ext| EXTENSIONS.contains(&ext.as_str()))
 }
 
+/// Files the music player opens: tracker modules and audio files.
+pub fn is_music_file(path: &Path) -> bool {
+    is_tracker_file(path) || crate::audio::is_audio_file(path)
+}
+
 #[derive(Debug)]
 pub enum PlayableModule {
     Xm(Box<XmModule>),
     Rad(RadTune),
+    Audio(Box<AudioFile>),
 }
 
 /// The MOD importer accepts nearly anything, so the extension picks the importer and only
 /// unknown extensions fall back to content detection.
 pub fn load_module(path: &Path, data: &[u8]) -> anyhow::Result<PlayableModule> {
+    if crate::audio::is_audio_file(path) {
+        return AudioFile::load(path, data).map(|file| PlayableModule::Audio(Box::new(file)));
+    }
     if extension(path).as_deref() == Some("rad") {
         return RadTune::load(data).map(PlayableModule::Rad);
     }
@@ -68,6 +81,8 @@ pub struct ModuleInfo {
     pub channels: usize,
     pub tempo: usize,
     pub bpm: usize,
+    /// Sample rate of audio files, 0 for modules.
+    pub sample_rate: u32,
     pub duration: f64,
     pub instruments: Vec<Vec<u8>>,
     pub samples: Vec<Vec<u8>>,
@@ -89,6 +104,27 @@ impl ModuleInfo {
                 message: tune.message(),
                 ..Default::default()
             },
+            PlayableModule::Audio(file) => {
+                let cp437 = |text: &str| -> Vec<u8> {
+                    text.chars()
+                        .map(|ch| icy_engine::BufferType::CP437.convert_from_unicode(ch))
+                        .map(|ch| if (ch as u32) < 256 { ch as u8 } else { b'?' })
+                        .collect()
+                };
+                Self {
+                    title: cp437(&file.title),
+                    format: file.format,
+                    channels: file.channels,
+                    sample_rate: file.sample_rate,
+                    duration: file.duration,
+                    message: file
+                        .tags
+                        .iter()
+                        .flat_map(|(label, value)| value.lines().map(move |line| cp437(&format!("{label:<10}{line}"))))
+                        .collect(),
+                    ..Default::default()
+                }
+            }
         }
     }
 
@@ -283,19 +319,20 @@ fn write_bytes(buffer: &mut TextBuffer, x: i32, y: i32, text: &[u8], color: u8) 
 /// Title, format line, song message and the numbered instrument/sample lists.
 pub fn render_info(info: &ModuleInfo) -> TextBuffer {
     let cp437 = |text: &str| -> Vec<u8> { text.chars().map(|ch| icy_engine::BufferType::CP437.convert_from_unicode(ch) as u8).collect() };
-    let mut details = vec![
-        info.format.to_string(),
-        format!("{} channels", info.channels),
-        format!("Speed {} · {} BPM", info.tempo, info.bpm),
-        format_time(info.duration),
-    ];
+    let mut details = vec![info.format.to_string(), format!("{} channels", info.channels)];
+    if info.sample_rate > 0 {
+        details.push(format!("{} Hz", info.sample_rate));
+    } else {
+        details.push(format!("Speed {} · {} BPM", info.tempo, info.bpm));
+    }
+    details.push(format_time(info.duration));
     if !info.tracker.is_empty() {
         details.push(String::from_utf8_lossy(&info.tracker).into_owned());
     }
     // Each line is a list of (column, text, colour) segments.
     let mut lines: Vec<Vec<(i32, Vec<u8>, u8)>> = vec![vec![(1, info.title.clone(), TITLE)], vec![(1, cp437(&details.join(" · ")), TEXT)]];
     let sections: [(&str, &[Vec<u8>], bool); 3] = [
-        ("Message", &info.message, false),
+        (if info.sample_rate > 0 { "Tags" } else { "Message" }, &info.message, false),
         ("Instruments", &info.instruments, true),
         ("Samples", &info.samples, true),
     ];
@@ -357,12 +394,14 @@ fn module_duration(module: &PlayableModule) -> f64 {
     match module {
         PlayableModule::Xm(module) => XmrsPlayer::new(module, 48_000, 0).duration_seconds(),
         PlayableModule::Rad(tune) => tune.duration(),
+        PlayableModule::Audio(file) => file.duration,
     }
 }
 
 enum Synth<'a> {
     Xm(Box<XmrsPlayer<'a>>),
     Rad(Box<crate::rad::RadRenderer>),
+    Audio(Box<AudioStream>),
 }
 
 impl<'a> Synth<'a> {
@@ -374,6 +413,7 @@ impl<'a> Synth<'a> {
                 Synth::Xm(Box::new(player))
             }
             PlayableModule::Rad(tune) => Synth::Rad(Box::new(tune.renderer(rate)?)),
+            PlayableModule::Audio(file) => Synth::Audio(Box::new(AudioStream::new(file, rate)?)),
         })
     }
 
@@ -381,6 +421,7 @@ impl<'a> Synth<'a> {
         match self {
             Synth::Xm(player) => player.next().map(|sample| sample as f32 / 32768.0),
             Synth::Rad(player) => player.next_f32(),
+            Synth::Audio(stream) => stream.next_f32(),
         }
     }
 
@@ -398,6 +439,10 @@ impl<'a> Synth<'a> {
                     position
                 }
                 _ => player.position_seconds(),
+            },
+            Synth::Audio(stream) => match module {
+                PlayableModule::Audio(file) => stream.seek_seconds(file, rate, seconds),
+                _ => 0.0,
             },
         }
     }

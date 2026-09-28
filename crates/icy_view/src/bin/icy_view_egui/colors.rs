@@ -51,7 +51,7 @@ pub fn file_name(dark: bool, label: &str, container: bool, default: Color32) -> 
     if container {
         return Color32::from_rgb(0x55, 0x55, 255);
     }
-    if icy_view::tracker::is_tracker_file(std::path::Path::new(label)) {
+    if icy_view::tracker::is_music_file(std::path::Path::new(label)) {
         return if dark {
             Color32::from_rgb(0x55, 0xFF, 0xFF)
         } else {

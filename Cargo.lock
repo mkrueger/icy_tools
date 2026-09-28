@@ -4154,6 +4154,7 @@ dependencies = [
  "serde",
  "serde_json",
  "string-interner",
+ "symphonia",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",

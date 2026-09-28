@@ -244,7 +244,7 @@ impl Preview {
         let format =
             FileFormat::from_path(std::path::Path::new(&self.file)).or_else(|| icy_engine::formats::ImageFormat::sniff(&self.data).map(FileFormat::Image));
         self.loading_image = matches!(format, Some(FileFormat::Image(_)));
-        self.loading_music = tracker::is_tracker_file(std::path::Path::new(&self.file));
+        self.loading_music = tracker::is_music_file(std::path::Path::new(&self.file));
         if self.loading_music {
             let (path, data, generation) = (PathBuf::from(&self.file), self.data.clone(), self.generation);
             let (sender, context) = (self.music_sender.clone(), context.clone());
@@ -367,6 +367,11 @@ impl Preview {
                     self.music_info = Some(info);
                     self.loading = false;
                     self.loaded_at = Instant::now();
+                }
+                // Audio data is never shown as text.
+                Err(error) if icy_view::audio::is_audio_file(std::path::Path::new(&self.file)) => {
+                    self.loading = false;
+                    self.error = Some(error);
                 }
                 // Not a module after all (".mod" is also used for kernel and Fortran modules).
                 Err(_) => self.load_text(),

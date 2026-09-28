@@ -246,6 +246,36 @@ fn preview_plays_tracker_modules_and_shows_other_mod_files_as_text() {
 }
 
 #[test]
+fn preview_plays_audio_files_instead_of_showing_them_as_text() {
+    let context = egui::Context::default();
+    let mut preview = preview::Preview::new(&context).unwrap();
+    preview.audio = false;
+    let row = |preview: &preview::Preview, y: i32| -> String {
+        let screen = preview.screen.terminal.screen.lock();
+        (0..40).map(|x| screen.char_at((x, y).into()).ch).collect()
+    };
+    // Names as 16colo.rs lists them, in upper case.
+    preview.load(
+        "MELODIA-PICNIC.OGG".into(),
+        include_bytes!("../../test_data/sine.ogg").to_vec(),
+        false,
+        &context,
+    );
+    wait_preview(&mut preview, &context);
+    let music = preview.music.as_ref().expect("audio plays");
+    assert!(music.playing());
+    assert!((music.duration() - 0.5).abs() < 0.05, "{}", music.duration());
+    assert_eq!(preview.music_info.as_ref().unwrap().title(), "Fixture");
+    assert!(row(&preview, 0).starts_with(" Fixture"), "{:?}", row(&preview, 0));
+    assert!(row(&preview, 1).contains("Ogg Vorbis"), "{:?}", row(&preview, 1));
+
+    preview.load("BROKEN.MP3".into(), b"ID3\x04\x00 not audio".to_vec(), false, &context);
+    wait_preview(&mut preview, &context);
+    assert!(preview.music.is_none());
+    assert!(preview.error.is_some(), "broken audio reports an error instead of showing its bytes");
+}
+
+#[test]
 fn shortcuts_use_exact_modifiers_and_all_viewer_commands_resolve() {
     let commands = icy_view::commands::create_icy_view_commands();
     for id in dialogs::COMMANDS {

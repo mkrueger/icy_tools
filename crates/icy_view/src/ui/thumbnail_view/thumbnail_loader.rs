@@ -275,9 +275,15 @@ fn render_thumbnail(path: &String, data: &[u8], label: &str, cancel_token: &Canc
     let format = FileFormat::from_extension(&ext);
     log::debug!("[ThumbnailLoader] render_thumbnail: path={:?}, ext={:?}, format={:?}", path, ext, format);
 
-    // Tracker modules show their info sheet; other ".mod" files fall through to the text renderer.
-    if crate::tracker::is_tracker_file(&path_buf) {
-        if let Ok(buffer) = crate::tracker::render(&path_buf, data) {
+    // Music shows its info sheet; other ".mod" files fall through to the text renderer, while
+    // audio data is never shown as text.
+    if crate::tracker::is_music_file(&path_buf) {
+        let buffer = match crate::tracker::render(&path_buf, data) {
+            Ok(buffer) => Some(buffer),
+            Err(_) if crate::audio::is_audio_file(&path_buf) => Some(icy_engine::TextBuffer::new((80, 25))),
+            Err(_) => None,
+        };
+        if let Some(buffer) = buffer {
             let screen = icy_engine::TextScreen::from_buffer(buffer);
             return render_screen_to_thumbnail(path, &screen, false, None, label, cancel_token);
         }

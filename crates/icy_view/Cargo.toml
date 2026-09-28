@@ -42,6 +42,8 @@ unarc-rs = { workspace = true }
 icy_ui = { workspace = true, optional = true, features = ["tokio", "svg", "image", "wgpu"] }
 image = { workspace = true }
 rodio = { workspace = true }
+# Tags and length of audio files; rodio uses the same symphonia for decoding.
+symphonia = { workspace = true, features = ["mp3", "flac", "vorbis", "wav", "pcm", "isomp4", "aac"] }
 xmrs = { workspace = true }
 xmrsplayer = { workspace = true }
 clap = { workspace = true }
