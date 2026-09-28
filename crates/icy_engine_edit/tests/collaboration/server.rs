@@ -525,3 +525,87 @@ async fn test_broadcast_flip_y() {
     // Sender should NOT receive their own message
     expect_no_message(&mut user2.rx).await;
 }
+
+// ============================================================================
+// Moebius client compatibility
+// ============================================================================
+
+#[tokio::test]
+async fn test_set_canvas_size_names_the_user_and_is_clamped() {
+    let (state, mut user1, mut user2, _user3) = setup_server_with_3_users().await;
+    let addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
+    let msg = r#"{"type":16,"data":{"columns":120,"rows":60,"id":2}}"#;
+    handle_message(&state, &user2.tx, &mut Some(user2.id), &mut user2.nick, msg, addr)
+        .await
+        .unwrap();
+    // Moebius clients print `users[data.id].nick has changed the size of the canvas`.
+    let received = recv_json(&mut user1.rx).await;
+    assert_eq!(received["data"]["id"].as_u64(), Some(user2.id as u64));
+
+    let huge = r#"{"type":16,"data":{"columns":4294967295,"rows":4294967295,"id":2}}"#;
+    handle_message(&state, &user2.tx, &mut Some(user2.id), &mut user2.nick, huge, addr)
+        .await
+        .unwrap();
+    let (columns, rows) = state.session.get_dimensions();
+    assert_eq!(columns, icy_engine::limits::MAX_BUFFER_WIDTH as u32);
+    assert_eq!(rows, icy_engine::limits::MAX_BUFFER_HEIGHT as u32);
+    let received = recv_json(&mut user1.rx).await;
+    assert_eq!(received["data"]["columns"].as_u64(), Some(columns as u64));
+}
+
+#[tokio::test]
+async fn test_draw_outside_the_canvas_is_dropped() {
+    let (state, mut user1, mut user2, _user3) = setup_server_with_3_users().await;
+    let addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
+    for (x, y) in [(80, 0), (0, 25), (-1, 0), (0, -1)] {
+        let msg = json!({"type": 9, "data": {"x": x, "y": y, "block": {"code": 65, "fg": 7, "bg": 0}, "id": user2.id}}).to_string();
+        handle_message(&state, &user2.tx, &mut Some(user2.id), &mut user2.nick, &msg, addr)
+            .await
+            .unwrap();
+        expect_no_message(&mut user1.rx).await;
+    }
+}
+
+#[tokio::test]
+async fn test_chat_renames_the_user_for_everyone() {
+    let (state, mut user1, mut user2, _user3) = setup_server_with_3_users().await;
+    let addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
+    let msg = r#"{"type":10,"data":{"nick":"Renamed","group":"","text":"hello","id":2}}"#;
+    handle_message(&state, &user2.tx, &mut Some(user2.id), &mut user2.nick, msg, addr)
+        .await
+        .unwrap();
+    let received = recv_json(&mut user1.rx).await;
+    assert_eq!(received["data"]["nick"], "Renamed");
+    assert_eq!(received["data"]["group"], "", "an empty group clears the old one");
+    let user = state.session.get_user(user2.id).unwrap();
+    assert_eq!((user.nick.as_str(), user.group.as_str()), ("Renamed", ""));
+
+    // Late joiners see the new name in the user list and the chat history with its group.
+    let (tx, mut rx) = mpsc::channel::<String>(32);
+    let connect = json!({"type": 0, "data": {"nick": "Late", "group": "G", "pass": ""}}).to_string();
+    handle_message(&state, &tx, &mut None, &mut String::new(), &connect, addr).await.unwrap();
+    let connected = recv_json(&mut rx).await;
+    let users = connected["data"]["users"].as_array().unwrap();
+    assert!(users.iter().any(|user| user["nick"] == "Renamed"));
+    let history = connected["data"]["chat_history"].as_array().unwrap();
+    assert_eq!(history.last().unwrap()["nick"], "Renamed");
+    assert!(history.last().unwrap()["time"].as_u64().unwrap() > 0);
+}
+
+#[tokio::test]
+async fn test_web_viewer_cannot_become_a_user_through_status() {
+    let state = ServerState::new(ServerConfig::default());
+    let addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
+    let (web_tx, mut web_rx) = mpsc::channel::<String>(32);
+    let mut web_id = None;
+    let web_connect = json!({"type": 0, "data": {}}).to_string();
+    handle_message(&state, &web_tx, &mut web_id, &mut String::new(), &web_connect, addr)
+        .await
+        .unwrap();
+    let _ = recv_json(&mut web_rx).await;
+
+    let status = json!({"type": 11, "data": {"id": web_id.unwrap(), "status": 0}}).to_string();
+    handle_message(&state, &web_tx, &mut web_id, &mut String::new(), &status, addr).await.unwrap();
+    assert!(!state.session.get_registered_user_ids().contains(&web_id.unwrap()));
+    expect_no_message(&mut web_rx).await;
+}

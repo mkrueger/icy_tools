@@ -496,6 +496,12 @@ impl ServerState {
 
     /// Handle a draw message.
     pub async fn handle_draw(&self, user_id: UserId, msg: DrawMessage) {
+        // Like Moebius, drop draws outside the canvas instead of forwarding them: clients index
+        // their block array with `y * columns + x` and would write past its end.
+        let (columns, rows) = self.session.get_dimensions();
+        if msg.data.x < 0 || msg.data.y < 0 || msg.data.x >= columns as i32 || msg.data.y >= rows as i32 {
+            return;
+        }
         // Update document
         self.set_char(msg.data.x, msg.data.y, msg.data.block.clone()).await;
 
@@ -547,7 +553,7 @@ impl ServerState {
         let nick = user.as_ref().map(|u| u.nick.clone()).unwrap_or_else(|| "Unknown".to_string());
         let group = user.map(|u| u.group).unwrap_or_default();
 
-        self.session.add_chat_message(user_id, nick.clone(), text.clone());
+        self.session.add_chat_message_with_group(user_id, nick.clone(), group.clone(), text.clone());
 
         // Broadcast chat message to registered users only (not web clients)
         // Moebius uses send_all which excludes sender and web guests
@@ -1158,13 +1164,15 @@ pub async fn handle_message(
                 let group = data.get("group").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
                 if !chat_text.is_empty() {
-                    // Update nick/group if changed (Moebius behavior)
+                    // Moebius clients rename themselves through chat: the message carries the
+                    // current nick and group, which the server stores and forwards.
                     if let Some(ref new_nick) = nick {
                         if new_nick != user_nick {
                             *user_nick = new_nick.clone();
                         }
+                        state.session.update_nick(id, new_nick.clone());
                     }
-                    if !group.is_empty() {
+                    if data.get("group").is_some() {
                         state.session.update_group(id, group);
                     }
 
@@ -1186,6 +1194,12 @@ pub async fn handle_message(
             // STATUS - Moebius uses send_all_including_self (registered users including sender)
             if let Some(id) = *user_id {
                 let status = data.get("status").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
+                // Registered users are told apart from web viewers by their status, so a web
+                // viewer must not become a user (and receive chat) by sending STATUS.
+                let is_web = state.session.get_user(id).is_some_and(|user| user.status == super::user_status::WEB);
+                if is_web || status == super::user_status::WEB {
+                    return Ok(());
+                }
                 state.session.update_status(id, status);
 
                 #[derive(serde::Serialize)]
@@ -1349,8 +1363,17 @@ pub async fn handle_message(
         Some(16) => {
             // SET_CANVAS_SIZE
             if let Some(id) = *user_id {
-                let columns = data.get("columns").and_then(|v| v.as_u64()).unwrap_or(80) as u32;
-                let rows = data.get("rows").and_then(|v| v.as_u64()).unwrap_or(25) as u32;
+                // A single message must not make the server allocate an unbounded canvas.
+                let columns = data
+                    .get("columns")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(80)
+                    .clamp(1, icy_engine::limits::MAX_BUFFER_WIDTH as u64) as u32;
+                let rows = data
+                    .get("rows")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(25)
+                    .clamp(1, icy_engine::limits::MAX_BUFFER_HEIGHT as u64) as u32;
 
                 state.resize(columns, rows).await;
 
@@ -1361,14 +1384,17 @@ pub async fn handle_message(
                     msg_type: u8,
                     data: CanvasSizeData,
                 }
+                // Moebius clients announce the change in chat as `users[data.id].nick`, so a
+                // missing id throws in every connected Moebius client.
                 #[derive(serde::Serialize)]
                 struct CanvasSizeData {
+                    id: u32,
                     columns: u32,
                     rows: u32,
                 }
                 let msg = CanvasSizeBroadcast {
                     msg_type: ActionCode::SetCanvasSize as u8,
-                    data: CanvasSizeData { columns, rows },
+                    data: CanvasSizeData { id, columns, rows },
                 };
                 if let Ok(json) = serde_json::to_string(&msg) {
                     state.broadcast(&json, Some(id)).await;

@@ -140,6 +140,13 @@ impl Session {
         }
     }
 
+    /// Update a user's nickname; Moebius clients rename themselves through their chat messages.
+    pub fn update_nick(&self, id: UserId, nick: String) {
+        if let Some(user) = self.users.write().get_mut(&id) {
+            user.nick = nick;
+        }
+    }
+
     /// Update a user's group.
     pub fn update_group(&self, id: UserId, group: String) {
         if let Some(user) = self.users.write().get_mut(&id) {
@@ -183,11 +190,16 @@ impl Session {
     /// Add a chat message to the history.
     /// Moebius limits chat history to 32 messages.
     pub fn add_chat_message(&self, id: UserId, nick: String, text: String) {
+        self.add_chat_message_with_group(id, nick, String::new(), text);
+    }
+
+    /// Like [`Self::add_chat_message`], keeping the sender's group for the history sent on connect.
+    pub fn add_chat_message_with_group(&self, id: UserId, nick: String, group: String, text: String) {
         let msg = ChatMessage {
             id,
             nick,
             text,
-            group: String::new(),
+            group,
             time: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
