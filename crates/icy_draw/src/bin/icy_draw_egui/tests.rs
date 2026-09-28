@@ -1613,3 +1613,29 @@ fn tdf_editor_has_no_layer_panel() {
     assert!(rendered(&icy_draw::fl!("new-file-editor-tdf")), "TDF font section missing");
     assert!(!rendered(&icy_draw::fl!("layer_tool_title")), "layer list shown in the TDF editor");
 }
+
+#[test]
+fn chat_panel_keeps_its_default_height() {
+    use icy_engine_edit::collaboration::ChatMessage;
+
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.collab.active = true;
+    app.collab.chat_visible = true;
+    for index in 0..40 {
+        app.collab.core.add_chat_message(ChatMessage {
+            id: 1,
+            nick: "peer".into(),
+            group: String::new(),
+            text: format!("message {index}"),
+            time: 0,
+        });
+    }
+    for step in 0..12 {
+        let pointer = egui::Event::PointerMoved(egui::pos2(500.0, 300.0 + step as f32));
+        frame(&context, &mut app, egui::vec2(1178.0, 768.0), vec![pointer]);
+        let height = egui::containers::panel::PanelState::load(&context, egui::Id::new("chat")).map(|state| state.rect.height());
+        assert_eq!(height, Some(220.0), "chat panel grew on frame {step}");
+    }
+}

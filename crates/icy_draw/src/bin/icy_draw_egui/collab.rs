@@ -18,6 +18,8 @@ use tokio::sync::mpsc as async_mpsc;
 
 const USER_LIST_WIDTH: f32 = 180.0;
 const AVATAR_SIZE: f32 = 36.0;
+/// Space between the user list and your own entry below it.
+const OWN_ENTRY_MARGIN: f32 = 6.0;
 const CHAT_AVATAR_SIZE: f32 = 40.0;
 const STATUS_BADGE_SIZE: f32 = 12.0;
 const VISIBLE_CHAT_ITEMS: usize = 50;
@@ -1012,7 +1014,6 @@ impl DrawApp {
     }
 
     fn user_list(&mut self, ui: &mut egui::Ui) {
-        let own_height = AVATAR_SIZE + 8.0 + 9.0;
         let users: Vec<(UserId, String, String, u8)> = self
             .collab
             .core
@@ -1020,8 +1021,24 @@ impl DrawApp {
             .into_iter()
             .map(|user| (user.user.id, display_nick(&user.user.nick), user.user.group.clone(), user.status))
             .collect();
-        let list_height = (ui.available_height() - own_height).max(0.0);
-        ui.allocate_ui(egui::vec2(ui.available_width(), list_height), |ui| {
+        // A panel sizes the own entry itself; a guessed height made the chat panel grow every frame.
+        egui::TopBottomPanel::bottom("collab-own-user")
+            .exact_height(OWN_ENTRY_MARGIN + AVATAR_SIZE + 8.0)
+            .frame(egui::Frame::new().inner_margin(egui::Margin {
+                top: OWN_ENTRY_MARGIN as i8,
+                ..Default::default()
+            }))
+            .show_inside(ui, |ui| {
+                let own_id = self.collab.core.our_user_id.unwrap_or(0);
+                let nick = display_nick(&self.collab.nick);
+                let detail = if self.collab.group.is_empty() {
+                    fl!("collab-you")
+                } else {
+                    format!("<{}> · {}", self.collab.group, fl!("collab-you"))
+                };
+                self.user_entry(ui, own_id, &nick, &detail, 0, false);
+            });
+        egui::CentralPanel::default().frame(egui::Frame::new()).show_inside(ui, |ui| {
             egui::ScrollArea::vertical()
                 .id_salt("collab-user-list")
                 .auto_shrink([false, false])
@@ -1044,15 +1061,6 @@ impl DrawApp {
                     }
                 });
         });
-        ui.separator();
-        let own_id = self.collab.core.our_user_id.unwrap_or(0);
-        let nick = display_nick(&self.collab.nick);
-        let detail = if self.collab.group.is_empty() {
-            fl!("collab-you")
-        } else {
-            format!("<{}> · {}", self.collab.group, fl!("collab-you"))
-        };
-        self.user_entry(ui, own_id, &nick, &detail, 0, false);
     }
 
     fn chat_messages(&mut self, ui: &mut egui::Ui) {
