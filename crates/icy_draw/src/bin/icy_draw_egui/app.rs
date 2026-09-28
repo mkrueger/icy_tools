@@ -973,18 +973,28 @@ impl DrawApp {
             .with_state(|state| state.get_buffer().font(state.get_caret().attribute.font_page()).cloned());
         match self.document.tool {
             tool if tool == Tool::Pencil || tool == Tool::Fill || tool.is_shape_tool() => {
-                widgets::segmented(
-                    ui,
-                    &mut self.document.brush.primary,
-                    &[
-                        (BrushPrimaryMode::Char, fl!("tool-character"), fl!("brush-mode-char-tooltip")),
-                        (BrushPrimaryMode::HalfBlock, fl!("tool-half-block"), fl!("brush-mode-half_block-tooltip")),
-                        (BrushPrimaryMode::Shading, fl!("tool-shade"), fl!("brush-mode-shading-tooltip")),
-                        (BrushPrimaryMode::Replace, fl!("brush-mode-replace"), fl!("brush-mode-replace-tooltip")),
-                        (BrushPrimaryMode::Blink, fl!("color-is_blinking"), fl!("brush-mode-blink-tooltip")),
-                        (BrushPrimaryMode::Colorize, fl!("tool-colorize"), fl!("brush-mode-colorize-tooltip")),
-                    ],
-                );
+                let all_modes = [
+                    (BrushPrimaryMode::Char, fl!("tool-character"), fl!("brush-mode-char-tooltip")),
+                    (BrushPrimaryMode::HalfBlock, fl!("tool-half-block"), fl!("brush-mode-half_block-tooltip")),
+                    (BrushPrimaryMode::Shading, fl!("tool-shade"), fl!("brush-mode-shading-tooltip")),
+                    (BrushPrimaryMode::Replace, fl!("brush-mode-replace"), fl!("brush-mode-replace-tooltip")),
+                    (BrushPrimaryMode::Blink, fl!("color-is_blinking"), fl!("brush-mode-blink-tooltip")),
+                    (BrushPrimaryMode::Colorize, fl!("tool-colorize"), fl!("brush-mode-colorize-tooltip")),
+                ];
+                let fill_modes = [
+                    (BrushPrimaryMode::HalfBlock, fl!("tool-half-block"), fl!("brush-mode-half_block-tooltip")),
+                    (BrushPrimaryMode::Char, fl!("tool-character"), fl!("brush-mode-char-tooltip")),
+                    (BrushPrimaryMode::Colorize, fl!("tool-colorize"), fl!("brush-mode-colorize-tooltip")),
+                ];
+                let modes = if tool == Tool::Fill { fill_modes.as_slice() } else { all_modes.as_slice() };
+                let mut primary = match self.document.brush.primary {
+                    BrushPrimaryMode::Char | BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Colorize => self.document.brush.primary,
+                    _ if tool == Tool::Fill => BrushPrimaryMode::Char,
+                    mode => mode,
+                };
+                if widgets::segmented(ui, &mut primary, modes) {
+                    self.document.brush.primary = primary;
+                }
                 widgets::divider(ui);
                 if let Some(font) = &font {
                     if widgets::glyph(ui, font, self.document.brush.paint_char, false, widgets::CONTROL_HEIGHT)
@@ -1476,6 +1486,21 @@ impl DrawApp {
                 );
                 let (red, green, blue) = tag.attribute.foreground_color().as_rgb().unwrap_or_else(|| palette.rgb(tag.attribute.foreground()));
                 let color = Color32::from_rgb(red, green, blue);
+        let tool = self.document.tool;
+        let show_paint_hover = !blocked
+            && (tool == Tool::Pencil || tool == Tool::Fill || tool.is_shape_tool())
+            && !(tool.is_shape_tool() && self.document.stroke_active());
+        if show_paint_hover {
+            if let Some(position) = response.hover_pos().and_then(|point| self.position(point)) {
+                let brush_size = self.document.brush.brush_size.max(1) as i32;
+                let half = brush_size / 2;
+                let rect = egui::Rect::from_min_size(
+                    origin + egui::vec2((position.x - half) as f32 * cell_size.x, (position.y - half) as f32 * cell_size.y) * info.display_scale,
+                    cell_size * brush_size as f32 * info.display_scale,
+                );
+                painter.rect_stroke(rect, 0, egui::Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Inside);
+            }
+        }
                 let selected = self.document.selected_tags.contains(&index);
                 if selected {
                     painter.rect_filled(rect, 0, color.gamma_multiply(0.12));

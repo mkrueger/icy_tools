@@ -336,6 +336,86 @@ fn toolbar_color_switcher_swaps_and_opens_palette_popup() {
     let colors = |app: &DrawApp| {
         app.document.with_state(|state| {
             let attribute = state.get_caret().attribute;
+#[test]
+fn fill_toolbar_only_shows_supported_modes() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.document.tool = Tool::Fill;
+    app.document.brush.primary = BrushPrimaryMode::Shading;
+    let output = frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+    let rendered = |label: &str| {
+        output.shapes.iter().any(|shape| match &shape.shape {
+            egui::Shape::Text(text) => text.galley.text() == label,
+            _ => false,
+        })
+    };
+    assert!(rendered("Character"));
+    assert!(rendered("Half Block"));
+    assert!(rendered("Colorize"));
+    assert!(!rendered("Shade"));
+    assert!(!rendered("Replace"));
+    assert!(!rendered("Blinking"));
+}
+
+#[test]
+fn paint_tools_show_hover_preview_with_half_block_height() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    app.document.tool = Tool::Pencil;
+    frame(&context, &mut app, size, vec![]);
+    {
+        let mut info = app.view.terminal.render_info.write();
+        info.display_scale = 2.0;
+        info.viewport_width = app.canvas_rect.width();
+        info.viewport_height = app.canvas_rect.height();
+        info.font_width = 8.0;
+        info.font_height = 16.0;
+        info.bounds_x = app.canvas_rect.left();
+        info.bounds_y = app.canvas_rect.top();
+    }
+    let info = app.view.terminal.render_info.read().clone();
+    let pointer = egui::pos2(
+        info.bounds_x + info.viewport_x + info.font_width * info.display_scale * 0.5,
+        info.bounds_y + info.viewport_y + info.font_height * info.display_scale * 0.5,
+    );
+    assert!(
+        app.position(pointer).is_some(),
+        "preview point {pointer:?} is outside canvas {:?}; render info: {info:?}",
+        app.canvas_rect
+    );
+    let preview_size = |output: &egui::FullOutput| {
+        output.shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if rect.stroke.color == Color32::WHITE && rect.stroke.width == 2.0 && rect.rect.contains(pointer) => Some(rect.rect.size()),
+            _ => None,
+        })
+    };
+
+    app.document.brush.primary = BrushPrimaryMode::Char;
+    let mut full = None;
+    for tool in [Tool::Pencil, Tool::Fill, Tool::Line, Tool::RectangleOutline, Tool::EllipseFilled] {
+        app.document.tool = tool;
+        let preview = preview_size(&frame(&context, &mut app, size, vec![egui::Event::PointerMoved(pointer)]))
+            .unwrap_or_else(|| panic!("{tool:?} hover preview"));
+        full.get_or_insert(preview);
+    }
+    let full = full.unwrap();
+
+    app.document.brush.primary = BrushPrimaryMode::HalfBlock;
+    app.document.tool = Tool::Fill;
+    let half = preview_size(&frame(&context, &mut app, size, vec![egui::Event::PointerMoved(pointer)])).expect("half-block fill preview");
+
+    assert_eq!(half.x, full.x);
+    assert!((half.y * 2.0 - full.y).abs() <= 1.0, "{half:?} should be half the height of {full:?}");
+
+    app.document.tool = Tool::Line;
+    app.document.begin(Position::new(0, 0), icy_engine::MouseButton::Left);
+    assert!(preview_size(&frame(&context, &mut app, size, vec![egui::Event::PointerMoved(pointer)])).is_none());
+    app.document.cancel();
+}
+
             (attribute.foreground(), attribute.background())
         })
     };
