@@ -60,12 +60,16 @@ impl MailApp {
             },
             monitor_settings: self.settings.clone(),
             random_tagline: self.random_tagline,
+            view_mode: self.reader.view_mode,
         }
     }
 
     pub fn apply_options(&mut self, context: &egui::Context, options: &Options) {
         self.settings = options.monitor_settings.clone();
         self.random_tagline = options.random_tagline;
+        if self.reader.view_mode != options.view_mode {
+            self.set_mode(options.view_mode);
+        }
         if self.current_options(context).theme != options.theme {
             context.set_theme(theme_preference(options.theme));
         }

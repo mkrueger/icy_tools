@@ -10,7 +10,7 @@ use i18n_embed_fl::fl;
 use icy_engine_gui::{MonitorSettings, ScalingMode};
 use serde::{Deserialize, Serialize};
 
-use crate::{drafts::atomic_write, LANGUAGE_LOADER};
+use crate::{drafts::atomic_write, reader::ViewMode, LANGUAGE_LOADER};
 
 const FILE_NAME: &str = "settings.toml";
 
@@ -30,6 +30,8 @@ pub struct Options {
     pub monitor_settings: MonitorSettings,
     /// New messages start with a random tagline from the tagline list.
     pub random_tagline: bool,
+    /// Message list shown flat or as threads.
+    pub view_mode: ViewMode,
 }
 
 impl Default for Options {
@@ -43,6 +45,7 @@ impl Default for Options {
                 ..Default::default()
             },
             random_tagline: true,
+            view_mode: ViewMode::default(),
         }
     }
 }
@@ -90,6 +93,7 @@ mod tests {
         };
         options.monitor_settings.scaling_mode = ScalingMode::Manual(2.0);
         options.monitor_settings.use_scanlines = true;
+        options.view_mode = ViewMode::Threads;
         options.save_in(dir.path()).unwrap();
         assert_eq!(Options::load_in(dir.path()).unwrap(), options);
         fs::write(dir.path().join(FILE_NAME), "theme = \"Light\"\n").unwrap();
@@ -97,5 +101,6 @@ mod tests {
         assert_eq!(partial.theme, Theme::Light);
         assert_eq!(partial.monitor_settings, Options::default().monitor_settings);
         assert!(partial.random_tagline);
+        assert_eq!(partial.view_mode, ViewMode::List);
     }
 }

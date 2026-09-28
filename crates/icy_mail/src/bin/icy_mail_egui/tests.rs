@@ -428,6 +428,29 @@ fn settings_preview_live_cancel_restores_and_ok_persists() {
 }
 
 #[test]
+fn list_or_thread_view_is_remembered() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    assert_eq!(mail.reader.view_mode, ViewMode::List);
+    mail.set_mode(ViewMode::Threads);
+    frame(&context, &mut mail, size, vec![]);
+
+    let mut fresh = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    assert_eq!(fresh.reader.view_mode, ViewMode::Threads, "view mode is loaded with the settings");
+    fresh.open(dir.path().join("TEST.QWK"), &context);
+    wait(&mut fresh, &context);
+    assert_eq!(fresh.reader.view_mode, ViewMode::Threads, "opening a packet keeps the view mode");
+
+    fresh.set_mode(ViewMode::List);
+    frame(&context, &mut fresh, size, vec![]);
+    let reopened = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    assert_eq!(reopened.reader.view_mode, ViewMode::List);
+}
+
+#[test]
 fn composer_picks_taglines_and_recipients_from_the_lists() {
     let context = egui::Context::default();
     appearance::apply(&context);
