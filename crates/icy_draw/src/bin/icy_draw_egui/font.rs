@@ -426,6 +426,9 @@ impl FontEditor {
                     if modifiers.command && !matches!(key, egui::Key::Z | egui::Key::Y | egui::Key::A) && !key_is_arrow(key) {
                         continue;
                     }
+                    if key == egui::Key::Tab {
+                        context.input_mut(|input| input.consume_key(modifiers, key));
+                    }
                     self.key(key, modifiers);
                 }
                 egui::Event::Copy => self.copy(),
@@ -1302,6 +1305,38 @@ mod tests {
         assert_eq!(editor.state.focused_panel(), BitFontFocusedPanel::EditGrid);
         editor.key(Key::PageDown, Modifiers::NONE);
         assert_eq!(editor.state.cursor_pos().1, 15);
+    }
+
+    #[test]
+    fn tab_is_consumed_while_cycling_editor_areas() {
+        use egui::{Event, Key, Modifiers, RawInput};
+
+        let context = egui::Context::default();
+        let mut editor = FontEditor::new(BitFont::from_ansi_font_page(0, 16).unwrap().clone());
+        editor.state.set_focused_panel(BitFontFocusedPanel::EditGrid);
+        for (modifiers, expected) in [
+            (Modifiers::NONE, BitFontFocusedPanel::CharSet),
+            (Modifiers::SHIFT, BitFontFocusedPanel::EditGrid),
+        ] {
+            let output = context.run(
+                RawInput {
+                    events: vec![Event::Key {
+                        key: Key::Tab,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers,
+                    }],
+                    ..Default::default()
+                },
+                |context| {
+                    editor.handle_events(context);
+                    assert!(!context.input(|input| input.key_pressed(Key::Tab)));
+                },
+            );
+            assert!(output.platform_output.events.is_empty());
+            assert_eq!(editor.state.focused_panel(), expected);
+        }
     }
 
     #[test]
