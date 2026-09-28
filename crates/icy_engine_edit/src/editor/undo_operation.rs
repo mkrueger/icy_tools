@@ -229,6 +229,9 @@ pub enum EditorUndoOp {
     /// Add font
     AddFont { old_font_page: u8, new_font_page: u8, font: BitFont },
 
+    /// Add a font to a slot without changing the caret's current font.
+    AddFontInSlot { font_page: u8, font: BitFont },
+
     /// Switch palette mode
     SwitchPalette {
         old_palette: Palette,
@@ -338,6 +341,7 @@ impl EditorUndoOp {
             EditorUndoOp::SwitchToFontPage { .. } => fl!(crate::LANGUAGE_LOADER, "undo-switch_font_page"),
             EditorUndoOp::SetFont { .. } => fl!(crate::LANGUAGE_LOADER, "undo-switch_font_page"),
             EditorUndoOp::AddFont { .. } => fl!(crate::LANGUAGE_LOADER, "undo-switch_font_page"),
+            EditorUndoOp::AddFontInSlot { .. } => fl!(crate::LANGUAGE_LOADER, "undo-switch_font_page"),
             EditorUndoOp::SwitchPalette { .. } => fl!(crate::LANGUAGE_LOADER, "undo-switch_palette_mode"),
             EditorUndoOp::SetIceMode { .. } => fl!(crate::LANGUAGE_LOADER, "undo-switch_ice_mode"),
             EditorUndoOp::ReplaceFontUsage { .. } => fl!(crate::LANGUAGE_LOADER, "undo-replace_font"),
@@ -599,12 +603,13 @@ impl EditorUndoOp {
                 old_size,
                 new_size,
             } => {
-                std::mem::swap(old_lines, new_lines);
-                std::mem::swap(old_size, new_size);
+                // `redo` left the previous state in the `new_*` fields; restore it, then swap back.
                 if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
                     l.lines = new_lines.clone();
                     l.set_size(*new_size);
                 }
+                std::mem::swap(old_lines, new_lines);
+                std::mem::swap(old_size, new_size);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
@@ -615,28 +620,28 @@ impl EditorUndoOp {
                 old_size,
                 new_size,
             } => {
-                std::mem::swap(old_sixels, new_sixels);
-                std::mem::swap(old_size, new_size);
                 if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
                     l.sixels = new_sixels.iter().cloned().map(crate::Sixel::from).collect();
                     l.set_size(*new_size);
                 }
+                std::mem::swap(old_sixels, new_sixels);
+                std::mem::swap(old_size, new_size);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::PasteFlipX { layer, old_lines, new_lines } => {
-                std::mem::swap(old_lines, new_lines);
                 if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
                     l.lines = new_lines.clone();
                 }
+                std::mem::swap(old_lines, new_lines);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::PasteFlipY { layer, old_lines, new_lines } => {
-                std::mem::swap(old_lines, new_lines);
                 if let Some(l) = edit_state.get_buffer_mut().layers.get_mut(*layer) {
                     l.lines = new_lines.clone();
                 }
+                std::mem::swap(old_lines, new_lines);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
@@ -707,13 +712,13 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::SwitchToFontPage { old, new } => {
-                std::mem::swap(old, new);
                 edit_state.get_caret_mut().set_font_page(*new);
+                std::mem::swap(old, new);
                 Ok(())
             }
             EditorUndoOp::SetFont { font_page, old, new } => {
-                std::mem::swap(old, new);
                 edit_state.get_buffer_mut().set_font(*font_page, new.clone());
+                std::mem::swap(old, new);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
@@ -722,6 +727,11 @@ impl EditorUndoOp {
             } => {
                 edit_state.get_caret_mut().set_font_page(*old_font_page);
                 edit_state.get_buffer_mut().remove_font(*new_font_page);
+                edit_state.get_buffer_mut().mark_dirty();
+                Ok(())
+            }
+            EditorUndoOp::AddFontInSlot { font_page, .. } => {
+                edit_state.get_buffer_mut().remove_font(*font_page);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
@@ -743,10 +753,10 @@ impl EditorUndoOp {
                 new_mode,
                 new_layers,
             } => {
-                std::mem::swap(old_mode, new_mode);
-                std::mem::swap(old_layers, new_layers);
                 edit_state.get_buffer_mut().ice_mode = *new_mode;
                 edit_state.get_buffer_mut().layers = new_layers.clone();
+                std::mem::swap(old_mode, new_mode);
+                std::mem::swap(old_layers, new_layers);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
@@ -756,10 +766,10 @@ impl EditorUndoOp {
                 new_caret_page,
                 new_layers,
             } => {
-                std::mem::swap(old_caret_page, new_caret_page);
-                std::mem::swap(old_layers, new_layers);
                 edit_state.get_caret_mut().set_font_page(*new_caret_page);
                 edit_state.get_buffer_mut().layers = new_layers.clone();
+                std::mem::swap(old_caret_page, new_caret_page);
+                std::mem::swap(old_layers, new_layers);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
@@ -1201,6 +1211,11 @@ impl EditorUndoOp {
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
+            EditorUndoOp::AddFontInSlot { font_page, font } => {
+                edit_state.get_buffer_mut().set_font(*font_page, font.clone());
+                edit_state.get_buffer_mut().mark_dirty();
+                Ok(())
+            }
             EditorUndoOp::SwitchPalette {
                 old_palette: _,
                 old_layers: _,
@@ -1473,6 +1488,7 @@ mod collab_mapping {
                 | EditorUndoOp::SwitchToFontPage { .. }
                 | EditorUndoOp::SetFont { .. }
                 | EditorUndoOp::AddFont { .. }
+                | EditorUndoOp::AddFontInSlot { .. }
                 | EditorUndoOp::SwitchPalette { .. }
                 | EditorUndoOp::ReplaceFontUsage { .. }
                 | EditorUndoOp::RemoveFont { .. }

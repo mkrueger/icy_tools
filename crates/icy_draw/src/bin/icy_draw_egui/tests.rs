@@ -181,10 +181,110 @@ fn internal_copy_paste_preserves_colors() {
 }
 
 #[test]
+fn unrestricted_font_window_adds_selects_and_replaces_slots_with_undo() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.document
+        .with_state(|state| state.get_buffer_mut().font_mode = icy_engine::FontMode::Unlimited);
+    app.open_font_selector();
+    assert!(app.font_slots_open);
+    assert!(app.dialog.is_none());
+    let (slots, active) = app.font_slot_entries();
+    assert_eq!(active, 0);
+    assert_eq!(slots.len(), icy_engine::ANSI_SLOT_COUNT);
+    assert_eq!(
+        slots[42].1,
+        app.document.with_state(|state| state.get_buffer().font(42).unwrap().name().to_owned())
+    );
+    frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+    let output = frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+    let labels: Vec<_> = output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+            _ => None,
+        })
+        .collect();
+    assert!(labels.iter().any(|text| text.contains("Document Fonts")), "{labels:?}");
+    assert!(labels.iter().any(|text| text.contains("Predefined fonts")), "{labels:?}");
+
+    app.document.with_state(|state| state.switch_to_font_page(42)).unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_caret().font_page()), 42);
+    assert!(app.document.with_state(|state| state.get_buffer().has_font(42)));
+    app.document.undo().unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_caret().font_page()), 0);
+    assert!(!app.document.with_state(|state| state.get_buffer().has_font(42)));
+
+    let mut first = icy_engine::BitFont::default();
+    first.set_name("First");
+    app.choose_font(FontSelectionTarget::Add);
+    app.apply_font(first.clone());
+    let first_page = app.document.with_state(|state| state.get_caret().font_page());
+    let mut second = icy_engine::BitFont::default();
+    second.set_name("Second");
+    app.choose_font(FontSelectionTarget::Add);
+    app.apply_font(second.clone());
+    let second_page = app.document.with_state(|state| state.get_caret().font_page());
+    assert_ne!(first_page, second_page);
+    app.document.with_state(|state| {
+        assert_eq!(state.get_buffer().font(first_page), Some(&first));
+        assert_eq!(state.get_buffer().font(second_page), Some(&second));
+    });
+    app.document.undo().unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_caret().font_page()), first_page);
+    app.document.redo().unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_caret().font_page()), second_page);
+
+    let mut replacement = icy_engine::BitFont::default();
+    replacement.set_name("Replacement");
+    app.choose_font(FontSelectionTarget::Replace(first_page));
+    app.apply_font(replacement.clone());
+    assert_eq!(app.document.with_state(|state| state.get_buffer().font(first_page).cloned()), Some(replacement));
+    app.document.undo().unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_buffer().font(first_page).cloned()), Some(first));
+}
+
+#[test]
+fn sauce_font_status_keeps_the_existing_font_picker() {
+    let mut app = DrawApp::new();
+    app.open_font_selector();
+    assert!(!app.font_slots_open);
+    assert!(matches!(app.dialog, Some(Dialog::FontSelect)));
+}
+
+#[test]
+fn internal_copy_paste_starts_opaque_and_transparency_toggles() {
+    let mut app = DrawApp::new();
+    app.document.type_text("A B").unwrap();
+    app.document.with_state(|state| state.set_caret_position(Position::new(0, 2)));
+    app.document.type_text("XXX").unwrap();
+    let mut selection = Selection::new(Position::new(0, 0));
+    selection.lead = Position::new(2, 0);
+    app.document.with_state(|state| state.set_selection(selection)).unwrap();
+    app.copy(&egui::Context::default());
+    let text = app.clipboard.as_ref().unwrap().0.clone();
+    app.document.with_state(|state| state.set_caret_position(Position::new(0, 2)));
+    app.paste(&text);
+
+    let pasted = |app: &DrawApp| app.document.with_state(|state| state.get_buffer().char_at(Position::new(1, 2)));
+    assert!(app.document.paste_active());
+    assert!(!app.document.paste_transparent());
+    assert_eq!(pasted(&app).ch, ' ', "copied spaces must cover the content beneath");
+    app.document.paste_action(icy_draw::document::PasteAction::Transparent).unwrap();
+    assert_eq!(pasted(&app).ch, 'X');
+    app.document.paste_action(icy_draw::document::PasteAction::Transparent).unwrap();
+    assert_eq!(pasted(&app).ch, ' ');
+}
+
+#[test]
 fn copying_unpainted_cells_from_opaque_layer_covers_destination() {
     for alpha in [false, true] {
         let mut app = DrawApp::new();
-        app.document.with_state(|state| state.get_cur_layer_mut().unwrap().properties.has_alpha_channel = alpha);
+        app.document
+            .with_state(|state| state.get_cur_layer_mut().unwrap().properties.has_alpha_channel = alpha);
         app.document.type_text("A").unwrap();
         app.document.with_state(|state| state.set_caret_position(Position::new(2, 0)));
         app.document.type_text("B").unwrap();
@@ -200,6 +300,12 @@ fn copying_unpainted_cells_from_opaque_layer_covers_destination() {
 
         let at = |app: &DrawApp| app.document.with_state(|state| state.get_buffer().char_at(Position::new(1, 2)));
         assert_eq!(at(&app).ch, if alpha { 'X' } else { ' ' }, "alpha={alpha}");
+        if !alpha {
+            app.document.paste_action(icy_draw::document::PasteAction::Transparent).unwrap();
+            assert_eq!(at(&app).ch, 'X');
+            app.document.paste_action(icy_draw::document::PasteAction::Transparent).unwrap();
+            assert_eq!(at(&app).ch, ' ');
+        }
     }
 }
 
@@ -360,38 +466,6 @@ fn toolbar_height_stays_fixed_across_tools_and_window_sizes() {
 }
 
 #[test]
-fn toolbar_color_switcher_swaps_and_opens_palette_popup() {
-    let context = egui::Context::default();
-    appearance::apply(&context);
-    let mut app = DrawApp::new();
-    let rendered = |output: &egui::FullOutput, label: &str| {
-        output.shapes.iter().any(|shape| match &shape.shape {
-            egui::Shape::Text(text) => text.galley.text().contains(label),
-            _ => false,
-        })
-    };
-    let origin = std::cell::Cell::new(egui::Pos2::ZERO);
-    let draw = |app: &mut DrawApp, events: Vec<egui::Event>| {
-        context.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 100.0))),
-                events,
-                ..Default::default()
-            },
-            |context| {
-                egui::CentralPanel::default().show(context, |ui| {
-                    origin.set(ui.cursor().min);
-                    app.color_switcher(ui);
-                });
-            },
-        )
-    };
-    draw(&mut app, vec![]);
-    let swap = origin.get() + egui::vec2(33.0, 7.0);
-    let colors = |app: &DrawApp| {
-        app.document.with_state(|state| {
-            let attribute = state.get_caret().attribute;
-#[test]
 fn fill_toolbar_only_shows_supported_modes() {
     let context = egui::Context::default();
     appearance::apply(&context);
@@ -452,8 +526,8 @@ fn paint_tools_show_hover_preview_with_half_block_height() {
     let mut full = None;
     for tool in [Tool::Pencil, Tool::Fill, Tool::Line, Tool::RectangleOutline, Tool::EllipseFilled] {
         app.document.tool = tool;
-        let preview = preview_size(&frame(&context, &mut app, size, vec![egui::Event::PointerMoved(pointer)]))
-            .unwrap_or_else(|| panic!("{tool:?} hover preview"));
+        let preview =
+            preview_size(&frame(&context, &mut app, size, vec![egui::Event::PointerMoved(pointer)])).unwrap_or_else(|| panic!("{tool:?} hover preview"));
         full.get_or_insert(preview);
     }
     let full = full.unwrap();
@@ -471,6 +545,38 @@ fn paint_tools_show_hover_preview_with_half_block_height() {
     app.document.cancel();
 }
 
+#[test]
+fn toolbar_color_switcher_swaps_and_opens_palette_popup() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let rendered = |output: &egui::FullOutput, label: &str| {
+        output.shapes.iter().any(|shape| match &shape.shape {
+            egui::Shape::Text(text) => text.galley.text().contains(label),
+            _ => false,
+        })
+    };
+    let origin = std::cell::Cell::new(egui::Pos2::ZERO);
+    let draw = |app: &mut DrawApp, events: Vec<egui::Event>| {
+        context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 100.0))),
+                events,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    origin.set(ui.cursor().min);
+                    app.color_switcher(ui);
+                });
+            },
+        )
+    };
+    draw(&mut app, vec![]);
+    let swap = origin.get() + egui::vec2(33.0, 7.0);
+    let colors = |app: &DrawApp| {
+        app.document.with_state(|state| {
+            let attribute = state.get_caret().attribute;
             (attribute.foreground(), attribute.background())
         })
     };
@@ -662,7 +768,11 @@ fn text_tool_keeps_canvas_focus_after_arrow_keys() {
     ] {
         frame(&context, &mut app, size, vec![key_event(key, egui::Modifiers::NONE)]);
         frame(&context, &mut app, size, vec![]);
-        assert_eq!(context.memory(|memory| memory.focused()), Some(canvas), "{key:?} moved keyboard focus away from the canvas");
+        assert_eq!(
+            context.memory(|memory| memory.focused()),
+            Some(canvas),
+            "{key:?} moved keyboard focus away from the canvas"
+        );
         assert!(app.canvas_focus);
         assert_eq!(app.document.with_state(|state| state.get_caret().position()), expected);
     }
@@ -684,7 +794,10 @@ fn text_tool_yields_to_focused_text_fields() {
         vec![egui::Event::Text("xy".into())],
         vec![key_event(Key::ArrowLeft, egui::Modifiers::NONE)],
         vec![egui::Event::Text("Z".into())],
-    ].into_iter().enumerate() {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let _ = context.run(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
@@ -818,7 +931,10 @@ fn tag_draft_cancel_does_not_create_or_change_a_tag() {
     let mut app = DrawApp::new();
     let size = egui::vec2(1280.0, 820.0);
     app.open_tag_properties(None);
-    frame(&context, &mut app, size, vec![]);
+    // A modal dialog only takes keyboard input once it is the top modal, from its second frame.
+    for _ in 0..2 {
+        frame(&context, &mut app, size, vec![]);
+    }
     frame(&context, &mut app, size, vec![key_event(Key::Escape, egui::Modifiers::NONE)]);
     assert!(app.dialog.is_none());
     assert!(app.document.with_state(|state| state.get_buffer().tags.is_empty()));
@@ -1387,7 +1503,9 @@ fn insert_image_accepts_all_writable_art_formats() {
         let bytes = if matches!(format, FileFormat::Petscii | FileFormat::Atascii) {
             b"HELLO".to_vec()
         } else {
-            format.to_bytes(&source, &icy_engine::SaveOptions::default()).unwrap_or_else(|error| panic!("{format}: {error}"))
+            format
+                .to_bytes(&source, &icy_engine::SaveOptions::default())
+                .unwrap_or_else(|error| panic!("{format}: {error}"))
         };
         let path = directory.path().join(format!("art.{}", format.primary_extension()));
         std::fs::write(&path, bytes).unwrap();
@@ -1403,7 +1521,11 @@ fn insert_image_accepts_all_writable_art_formats() {
             let ch = state.get_cur_layer().unwrap().char_at((0, 0).into());
             let original = loaded.char_at((0, 0).into());
             assert_eq!(ch.ch, original.ch, "{format}: glyph indices must not change");
-            assert_eq!(state.get_buffer().font(ch.font_page()), loaded.font(original.font_page()), "{format}: font must survive");
+            assert_eq!(
+                state.get_buffer().font(ch.font_page()),
+                loaded.font(original.font_page()),
+                "{format}: font must survive"
+            );
         });
         app.document.undo().unwrap();
         assert_eq!(app.document.with_state(|state| state.get_buffer().layers.len()), count, "{format}");
@@ -1438,7 +1560,10 @@ fn insert_image_accepts_ansi_as_a_new_editable_layer() {
     let original = app.document.with_state(|state| state.get_buffer().layers.len());
     app.insert_image(&path);
     assert!(app.dialog.is_none());
-    assert!(!app.document.paste_active(), "artwork stays on a new layer instead of being anchored into the old one");
+    assert!(
+        !app.document.paste_active(),
+        "artwork stays on a new layer instead of being anchored into the old one"
+    );
     app.document.with_state(|state| {
         assert_eq!(state.get_buffer().layers.len(), original + 1);
         let layer = state.get_cur_layer().unwrap();
@@ -1969,7 +2094,10 @@ fn recovered_documents_never_silently_replace_files_changed_since() {
     restored.restore_offer(0);
     assert_eq!(restored.document.with_state(|state| state.get_buffer().char_at((0, 0).into()).ch), 'M');
     restored.save_path(&context, art.clone(), false);
-    assert!(matches!(restored.dialog, Some(Dialog::Error(_))), "saving over the newer file needs confirmation");
+    assert!(
+        matches!(restored.dialog, Some(Dialog::Error(_))),
+        "saving over the newer file needs confirmation"
+    );
     assert_eq!(std::fs::read(&art).unwrap(), theirs);
     assert!(restored.modified());
 }
@@ -2213,7 +2341,10 @@ fn gpu_shade_ramp_controls_render() {
         }
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "shade-ramps-warmup");
         let pixels = gpu.capture(&mut app, [1280, 820], 1.0, vec![], "shade-ramps");
-        assert!(pixels.chunks(4).any(|pixel| pixel[0] > 150 && pixel[1] < 90), "the invalid ramp is reported in red");
+        assert!(
+            pixels.chunks(4).any(|pixel| pixel[0] > 150 && pixel[1] < 90),
+            "the invalid ramp is reported in red"
+        );
     });
 }
 

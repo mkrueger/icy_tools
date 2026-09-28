@@ -16,8 +16,8 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex,
         mpsc::{self, Receiver, Sender},
+        Arc, Mutex,
     },
     thread::JoinHandle,
     time::{SystemTime, UNIX_EPOCH},

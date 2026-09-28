@@ -1480,7 +1480,8 @@ impl MainWindow {
                                     let mut undo = state.begin_atomic_undo("Insert artwork");
                                     let title = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
                                     let offset = state.get_cur_layer().map(|layer| layer.offset()).unwrap_or_default();
-                                    let result = state.paste_buffer(&buffer, title)
+                                    let result = state
+                                        .paste_buffer(&buffer, title)
                                         .and_then(|()| state.move_layer(state.get_cur_layer().unwrap().offset() + offset))
                                         .and_then(|()| state.add_floating_layer());
                                     if let Err(error) = result {

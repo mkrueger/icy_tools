@@ -680,3 +680,66 @@ fn test_discard_and_undo_reverts_multiple_operations() {
     // Everything should be reverted
     assert_eq!(state.get_buffer().layers.len(), initial_layer_count, "All operations should be reverted");
 }
+
+// ============================================================================
+// Undo/redo round trips for transforms that swap their stored state
+// ============================================================================
+
+/// Runs `operation`, then checks that undo restores the layer and redo reapplies it.
+fn assert_layer_undo_round_trip(name: &str, operation: impl Fn(&mut EditState) -> icy_engine::Result<()>) {
+    use icy_engine_edit::UndoState;
+    let mut state = create_test_state(6, 3);
+    for (x, y, ch) in [(0, 0, 'A'), (5, 0, 'B'), (0, 2, 'C')] {
+        state
+            .get_cur_layer_mut()
+            .unwrap()
+            .set_char(Position::new(x, y), AttributedChar::new(ch, TextAttribute::default()));
+    }
+    let snapshot = |state: &EditState| {
+        let layer = state.get_cur_layer().unwrap();
+        (layer.size(), layer.lines.clone())
+    };
+    let before = snapshot(&state);
+    operation(&mut state).unwrap();
+    let after = snapshot(&state);
+    assert_ne!(after, before, "{name} must change the layer");
+    state.undo().unwrap();
+    assert_eq!(snapshot(&state), before, "{name}: undo must restore the layer");
+    state.redo().unwrap();
+    assert_eq!(snapshot(&state), after, "{name}: redo must reapply it");
+    state.undo().unwrap();
+    assert_eq!(snapshot(&state), before, "{name}: a second undo must restore it again");
+}
+
+#[test]
+fn test_paste_transforms_undo_and_redo() {
+    assert_layer_undo_round_trip("rotate", |state| state.paste_rotate());
+    assert_layer_undo_round_trip("flip x", |state| state.paste_flip_x());
+    assert_layer_undo_round_trip("flip y", |state| state.paste_flip_y());
+}
+
+#[test]
+fn test_ice_mode_undo_and_redo() {
+    use icy_engine_edit::UndoState;
+    let mut state = create_test_state(4, 2);
+    let mut attribute = TextAttribute::default();
+    attribute.set_background(12);
+    state
+        .get_cur_layer_mut()
+        .unwrap()
+        .set_char(Position::new(1, 1), AttributedChar::new('X', attribute));
+    let snapshot = |state: &EditState| (state.get_buffer().ice_mode, state.get_cur_layer().unwrap().lines.clone());
+    let before = snapshot(&state);
+    let other = if before.0 == icy_engine::IceMode::Ice {
+        icy_engine::IceMode::Blink
+    } else {
+        icy_engine::IceMode::Ice
+    };
+    state.set_ice_mode(other).unwrap();
+    let after = snapshot(&state);
+    assert_ne!(after.0, before.0);
+    state.undo().unwrap();
+    assert_eq!(snapshot(&state), before, "undo must restore the iCE mode and colors");
+    state.redo().unwrap();
+    assert_eq!(snapshot(&state), after);
+}

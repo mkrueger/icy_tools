@@ -8,6 +8,21 @@ use super::{undo_operation::EditorUndoOp, EditState};
 
 impl EditState {
     pub fn switch_to_font_page(&mut self, page: u8) -> Result<()> {
+        if self.get_buffer().font_mode == crate::FontMode::Unlimited && !self.get_buffer().has_font(page) && usize::from(page) < icy_engine::ANSI_SLOT_COUNT {
+            let font = self
+                .get_buffer()
+                .font(page)
+                .ok_or_else(|| crate::EngineError::Generic(format!("Predefined font slot {page} is unavailable")))?
+                .clone();
+            return self.push_undo_action(EditorUndoOp::AddFont {
+                old_font_page: self.screen.caret.font_page(),
+                new_font_page: page,
+                font,
+            });
+        }
+        if self.screen.caret.font_page() == page {
+            return Ok(());
+        }
         let op = EditorUndoOp::SwitchToFontPage {
             old: self.screen.caret.font_page(),
             new: page,
@@ -78,16 +93,7 @@ impl EditState {
             }
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
                 let new_font = BitFont::from_ansi_font_page(page, 16).unwrap().clone();
-                if let Some(font) = self.get_buffer().font(0) {
-                    let op = EditorUndoOp::SetFont {
-                        font_page: self.screen.caret.font_page(),
-                        old: font.clone(),
-                        new: new_font,
-                    };
-                    self.push_undo_action(op)
-                } else {
-                    Err(crate::EngineError::Generic("No font found in buffer.".to_string()))
-                }
+                self.set_font_in_slot(self.screen.caret.font_page(), new_font)
             }
         }
     }
@@ -109,30 +115,53 @@ impl EditState {
             }
             crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
                 let new_font = BitFont::from_sauce_name(name)?;
-                if let Some(font) = self.get_buffer().font(0) {
-                    let op = EditorUndoOp::SetFont {
-                        font_page: self.screen.caret.font_page(),
-                        old: font.clone(),
-                        new: new_font,
-                    };
-                    self.push_undo_action(op)
-                } else {
-                    Err(crate::EngineError::Generic("No font found in buffer.".to_string()))
-                }
+                self.set_font_in_slot(self.screen.caret.font_page(), new_font)
             }
         }
+    }
+
+    /// Selects a font for drawing without replacing fonts already used in unrestricted buffers.
+    pub fn apply_font(&mut self, font: BitFont) -> Result<()> {
+        if self.get_buffer().font_mode != crate::FontMode::Unlimited {
+            return self.set_font_in_slot(self.screen.caret.font_page(), font);
+        }
+        let current = self.screen.caret.font_page();
+        if self.get_buffer().font(current) == Some(&font) {
+            return self.switch_to_font_page(current);
+        }
+        let existing_page = self
+            .get_buffer()
+            .font_iter()
+            .find(|(_, existing)| **existing == font)
+            .map(|(page, _)| *page)
+            .or_else(|| {
+                (0..icy_engine::ANSI_SLOT_COUNT).find_map(|page| {
+                    let page = page as u8;
+                    (!self.get_buffer().has_font(page) && self.get_buffer().font(page) == Some(&font)).then_some(page)
+                })
+            });
+        if let Some(page) = existing_page {
+            return self.switch_to_font_page(page);
+        }
+        self.add_font(font)
     }
 
     pub fn add_font(&mut self, new_font: BitFont) -> Result<()> {
         match self.get_buffer().font_mode {
             crate::FontMode::Unlimited => {
-                let mut page: u8 = 100;
-                for i in 100u8.. {
-                    if !self.get_buffer().has_font(i) {
-                        page = i;
-                        break;
-                    }
-                }
+                let buffer = self.get_buffer();
+                let used = |page| {
+                    buffer.layers.iter().any(|layer| {
+                        layer
+                            .lines
+                            .iter()
+                            .any(|line| line.chars.iter().any(|ch| ch.is_visible() && ch.font_page() == page))
+                    })
+                };
+                let page = (100..=u8::MAX)
+                    .chain(icy_engine::ANSI_SLOT_COUNT as u8..100)
+                    .find(|&page| !buffer.has_font(page) && page != self.screen.caret.font_page() && !used(page))
+                    .ok_or_else(|| crate::EngineError::Generic("No free font slots available.".to_string()))?;
 
                 let op = EditorUndoOp::AddFont {
                     old_font_page: self.screen.caret.font_page(),
@@ -162,25 +191,14 @@ impl EditState {
                     Err(crate::EngineError::Generic("No font found in buffer.".to_string()))
                 }
             }
-            crate::FontMode::Unlimited | crate::FontMode::FixedSize => {
-                if let Some(font) = self.get_buffer().font(0) {
-                    let op = EditorUndoOp::SetFont {
-                        font_page: self.screen.caret.font_page(),
-                        old: font.clone(),
-                        new: new_font,
-                    };
-                    self.push_undo_action(op)
-                } else {
-                    Err(crate::EngineError::Generic("No font found in buffer.".to_string()))
-                }
-            }
+            crate::FontMode::Unlimited | crate::FontMode::FixedSize => self.set_font_in_slot(self.screen.caret.font_page(), new_font),
         }
     }
 
     /// Set a font in a specific slot (with undo support).
     /// Use this for XBin Extended mode where you need to set fonts in specific slots.
     pub fn set_font_in_slot(&mut self, slot: u8, new_font: BitFont) -> Result<()> {
-        if let Some(old_font) = self.get_buffer().font(slot) {
+        if let Some(old_font) = self.get_buffer().font_for_render(slot) {
             let op = EditorUndoOp::SetFont {
                 font_page: slot,
                 old: old_font.clone(),
@@ -188,10 +206,10 @@ impl EditState {
             };
             self.push_undo_action(op)
         } else {
-            // Slot doesn't exist yet - just set it directly for now
-            // TODO: Consider adding an AddFont undo operation for new slots
-            self.get_buffer_mut().set_font(slot, new_font);
-            Ok(())
+            self.push_undo_action(EditorUndoOp::AddFontInSlot {
+                font_page: slot,
+                font: new_font,
+            })
         }
     }
 

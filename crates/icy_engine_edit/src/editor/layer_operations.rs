@@ -526,10 +526,32 @@ impl EditState {
                 old_chars: old_layer,
                 new_chars: new_layer,
             };
+            // The characters were changed in place, so the renderer has to be told.
+            self.screen.buffer.mark_dirty();
             self.push_plain_undo(op)
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
+    }
+
+    /// Replaces the characters of the current layer, starting at its top left corner (with undo).
+    pub fn replace_layer_chars(&mut self, chars: crate::CharGrid) -> Result<()> {
+        let layer_idx = self.screen.current_layer;
+        let Some(layer) = self.get_cur_layer() else {
+            return Err(crate::EngineError::Generic("Current layer is invalid".to_string()));
+        };
+        let size = crate::Size::new(chars.first().map_or(0, Vec::len) as i32, chars.len() as i32);
+        let area = crate::Rectangle {
+            start: Position::new(0, 0),
+            size,
+        };
+        let op = EditorUndoOp::LayerChange {
+            layer: layer_idx,
+            pos: area.start,
+            old_chars: crate::chars_from_area(layer, area),
+            new_chars: chars,
+        };
+        self.push_undo_action(op)
     }
 
     /// Returns the make layer transparent of this [`EditState`].

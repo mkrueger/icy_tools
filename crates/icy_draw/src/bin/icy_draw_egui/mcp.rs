@@ -71,10 +71,7 @@ impl DrawApp {
         if icy_draw::mcp::edit::handle(&mut self.document, &command, unavailable) {
             return;
         }
-        let busy = self.picker
-            || self.layer_properties_open()
-            || self.document.paste_active()
-            || self.dialog.is_some();
+        let busy = self.picker || self.layer_properties_open() || self.document.paste_active() || self.dialog.is_some();
         match command {
             McpCommand::GetHelp { editor_type, response } => respond(
                 &response,

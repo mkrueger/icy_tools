@@ -95,11 +95,6 @@ impl Default for FontSelector {
     }
 }
 
-fn font_key(font: &BitFont) -> (String, i32, i32) {
-    let size = font.size();
-    (font.name().to_string(), size.width, size.height)
-}
-
 impl FontSelector {
     /// Lists the SAUCE fonts, the ANSI font pages unless the document is SAUCE-only,
     /// and the document's own fonts, with the font of the caret's page selected.
@@ -108,8 +103,7 @@ impl FontSelector {
         let sauce_only = matches!(buffer.font_mode, FontMode::Sauce);
         let mut entries: Vec<Entry> = Vec::new();
         let add = |entries: &mut Vec<Entry>, font: BitFont, category: Category| -> usize {
-            let key = font_key(&font);
-            if let Some(index) = entries.iter().position(|entry| font_key(&entry.font) == key) {
+            if let Some(index) = entries.iter().position(|entry| entry.font == font) {
                 return index;
             }
             entries.push(Entry { font, category });
@@ -121,7 +115,7 @@ impl FontSelector {
             }
         }
         if !sauce_only {
-            for page in 0..icy_engine::ANSI_FONTS {
+            for page in 0..icy_engine::ANSI_SLOT_COUNT {
                 if let Some(font) = BitFont::from_ansi_font_page(page as u8, 16) {
                     add(&mut entries, font.clone(), Category::Ansi);
                 }
@@ -573,11 +567,12 @@ mod tests {
         let rows = selector.rows();
         assert!(matches!(rows[0], Row::Header(Category::Sauce, _)));
         assert!(selector.selectable().iter().all(|&index| selector.entries[index].font.size().height == 16));
-        let names: Vec<_> = selector.entries.iter().map(|entry| font_key(&entry.font)).collect();
-        let mut unique = names.clone();
-        unique.sort();
-        unique.dedup();
-        assert_eq!(names.len(), unique.len(), "fonts are listed once");
+        for (index, entry) in selector.entries.iter().enumerate() {
+            assert!(
+                selector.entries[..index].iter().all(|earlier| earlier.font != entry.font),
+                "identical fonts are listed once"
+            );
+        }
     }
 
     #[test]

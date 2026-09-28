@@ -798,7 +798,11 @@ impl DrawApp {
     pub(super) fn zoom_step(&mut self, direction: i32) {
         let zoom = self.view.zoom;
         let next = if direction > 0 {
-            ZOOM_STEPS.iter().copied().find(|step| *step > zoom + 0.01).unwrap_or(ZOOM_STEPS[ZOOM_STEPS.len() - 1])
+            ZOOM_STEPS
+                .iter()
+                .copied()
+                .find(|step| *step > zoom + 0.01)
+                .unwrap_or(ZOOM_STEPS[ZOOM_STEPS.len() - 1])
         } else {
             ZOOM_STEPS.iter().rev().copied().find(|step| *step < zoom - 0.01).unwrap_or(ZOOM_STEPS[0])
         };
@@ -1039,12 +1043,13 @@ impl DrawApp {
     pub(super) fn insert_image(&mut self, path: &std::path::Path) {
         let result = if icy_draw::files::is_insert_art(path) {
             icy_draw::files::load_insert_art(path).and_then(|buffer| {
-                self.document.insert_buffer(&buffer, path.file_name().unwrap_or_default().to_string_lossy().into_owned())
+                self.document
+                    .insert_buffer(&buffer, path.file_name().unwrap_or_default().to_string_lossy().into_owned())
             })
         } else {
             icy_draw::files::load_insert_image(path)
-            .map_err(|error| fl!("error-load-image", path = path.display().to_string(), error = error.to_string()))
-            .and_then(|image| self.document.start_image_paste(&image).map_err(|error| error.to_string()))
+                .map_err(|error| fl!("error-load-image", path = path.display().to_string(), error = error.to_string()))
+                .and_then(|image| self.document.start_image_paste(&image).map_err(|error| error.to_string()))
         };
         if result.is_ok() {
             self.canvas_focus = true;

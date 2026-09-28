@@ -1330,8 +1330,27 @@ impl DrawApp {
                         }
                     }
                 } else {
-                    let font_label = if compact { fl!("glyph-font-label") } else { shorten(&font, 26) };
-                    if widgets::status_button(ui, &font_label, &fl!("status-font-tooltip", font = font.as_str())).clicked() {
+                    let unrestricted = self
+                        .document
+                        .with_state(|state| state.get_buffer().font_mode == icy_engine::FontMode::Unlimited);
+                    let page = self.document.with_state(|state| state.get_caret().font_page());
+                    let font_label = if unrestricted {
+                        if compact {
+                            format!("#{page}")
+                        } else {
+                            format!("#{page}: {}", shorten(&font, 22))
+                        }
+                    } else if compact {
+                        fl!("glyph-font-label")
+                    } else {
+                        shorten(&font, 26)
+                    };
+                    let tooltip = if unrestricted {
+                        fl!("font-slots-title")
+                    } else {
+                        fl!("status-font-tooltip", font = font.as_str())
+                    };
+                    if widgets::status_button(ui, &font_label, &tooltip).clicked() {
                         self.open_font_selector();
                     }
                 }

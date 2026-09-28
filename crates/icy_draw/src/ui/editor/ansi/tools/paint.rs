@@ -220,7 +220,12 @@ pub fn apply_stamp_at_doc_pos(state: &mut EditState, settings: BrushSettings, do
             };
             // The color ramp replaces the caret foreground, so it follows the FG filter.
             let shade_colors: Vec<icy_engine::AttributeColor> = if settings.colorize_fg {
-                settings.shade_colors.as_slice().iter().map(|&index| icy_engine::AttributeColor::Palette(index)).collect()
+                settings
+                    .shade_colors
+                    .as_slice()
+                    .iter()
+                    .map(|&index| icy_engine::AttributeColor::Palette(index))
+                    .collect()
             } else {
                 Vec::new()
             };

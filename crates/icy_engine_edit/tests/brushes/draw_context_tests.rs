@@ -227,8 +227,12 @@ fn test_shade_down_on_empty_space() {
 fn test_custom_shade_ramp() {
     let mut target = TestTarget::new(80, 25);
     let pos = Position::new(3, 3);
-    let up = DrawContext::default().with_brush_mode(BrushMode::Shade).with_shade_ramps(vec!['.', 'o', 'O'], vec![]);
-    let down = DrawContext::default().with_brush_mode(BrushMode::ShadeDown).with_shade_ramps(vec!['.', 'o', 'O'], vec![]);
+    let up = DrawContext::default()
+        .with_brush_mode(BrushMode::Shade)
+        .with_shade_ramps(vec!['.', 'o', 'O'], vec![]);
+    let down = DrawContext::default()
+        .with_brush_mode(BrushMode::ShadeDown)
+        .with_shade_ramps(vec!['.', 'o', 'O'], vec![]);
     for expected in ['.', 'o', 'O', 'O'] {
         up.plot_point(&mut target, pos, PointRole::Fill);
         assert_eq!(target.get_at(3, 3).ch, expected);
@@ -297,7 +301,9 @@ fn test_color_ramp_can_keep_characters() {
         assert_eq!(cell.attribute.font_page(), 1, "the character keeps its font");
     }
     // Without any ramp, shading changes nothing.
-    let none = DrawContext::default().with_brush_mode(BrushMode::Shade).with_shade_ramps(Vec::new(), Vec::new());
+    let none = DrawContext::default()
+        .with_brush_mode(BrushMode::Shade)
+        .with_shade_ramps(Vec::new(), Vec::new());
     none.plot_point(&mut target, pos, PointRole::Fill);
     assert_eq!(target.get_at(2, 2).attribute.foreground(), 15);
 }

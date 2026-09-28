@@ -5,13 +5,13 @@ pub mod files;
 pub mod fill;
 pub mod host;
 pub mod mcp;
-pub mod palette_files;
-pub mod recovery;
-pub mod rip_document;
 #[path = "ui/editor/ansi/tools/paint.rs"]
 pub mod paint;
+pub mod palette_files;
 #[path = "util/plugins.rs"]
 pub mod plugins;
+pub mod recovery;
+pub mod rip_document;
 #[path = "ui/editor/ansi/selection_drag.rs"]
 pub mod selection_drag;
 #[path = "ui/settings/mod.rs"]

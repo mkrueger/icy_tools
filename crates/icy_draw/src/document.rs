@@ -57,6 +57,23 @@ pub enum PasteAction {
 struct PasteState {
     previous_tool: Tool,
     undo: AtomicUndoGuard,
+    /// Every state of the paste before and after it was made transparent, so undoing back to a
+    /// transparent state keeps the toggle working; see [`Document::paste_transparent`].
+    transparent: Vec<(icy_engine_edit::CharGrid, icy_engine_edit::CharGrid)>,
+}
+
+/// All characters of the current layer.
+fn layer_chars(state: &EditState) -> icy_engine_edit::CharGrid {
+    state.get_cur_layer().map_or_else(Vec::new, |layer| {
+        icy_engine_edit::chars_from_area(layer, icy_engine::Rectangle::from_min_size(Position::default(), layer.size()))
+    })
+}
+
+/// Makes the paste transparent and returns the characters before and after.
+fn make_transparent(state: &mut EditState) -> icy_engine::Result<(icy_engine_edit::CharGrid, icy_engine_edit::CharGrid)> {
+    let opaque = layer_chars(state);
+    state.make_layer_transparent()?;
+    Ok((opaque, layer_chars(state)))
 }
 
 /// Outline font keys of TheDraw: F1–F10 type the placeholders `A`–`J`, the digits 1–8 type
@@ -275,6 +292,7 @@ impl Document {
                 self.paste = Some(PasteState {
                     previous_tool: self.tool,
                     undo,
+                    transparent: Vec::new(),
                 });
                 self.tool = Tool::Click;
                 Ok(())
@@ -284,6 +302,26 @@ impl Document {
                 result.map(|_| ()).map_err(|error| error.to_string())
             }
         }
+    }
+
+    /// Whether the floating paste is transparent. Other edits of the paste turn it off.
+    pub fn paste_transparent(&self) -> bool {
+        self.transparent_source().is_some()
+    }
+
+    /// The opaque paste of the current transparent one.
+    fn transparent_source(&self) -> Option<icy_engine_edit::CharGrid> {
+        let paste = self.paste.as_ref()?;
+        if paste.transparent.is_empty() {
+            return None;
+        }
+        let current = self.with_state(|state| layer_chars(state));
+        paste
+            .transparent
+            .iter()
+            .rev()
+            .find(|(_, transparent)| *transparent == current)
+            .map(|(opaque, _)| opaque.clone())
     }
 
     pub fn paste_action(&mut self, action: PasteAction) -> DrawResult<()> {
@@ -298,18 +336,51 @@ impl Document {
             return Ok(());
         }
         self.finish();
+        // Transparency is a toggle: the opaque characters are kept to turn it off again, and
+        // rotating or flipping a transparent paste transforms the opaque one and reapplies it.
+        let opaque = self.transparent_source();
+        let mut transparent = None;
         self.with_state(|state| match action {
             PasteAction::Move(delta) => state.move_layer(state.get_cur_layer().unwrap().offset() + delta),
             PasteAction::Stamp => state.stamp_layer_down(),
-            PasteAction::Rotate => state.paste_rotate(),
-            PasteAction::FlipX => state.paste_flip_x(),
-            PasteAction::FlipY => state.paste_flip_y(),
-            PasteAction::Transparent => state.make_layer_transparent(),
+            PasteAction::Rotate | PasteAction::FlipX | PasteAction::FlipY => {
+                let name = match action {
+                    PasteAction::Rotate => crate::fl!("paste-tool-rotate"),
+                    PasteAction::FlipX => crate::fl!("paste-tool-flip-x"),
+                    _ => crate::fl!("paste-tool-flip-y"),
+                };
+                let _undo = opaque.as_ref().map(|_| state.begin_atomic_undo(name));
+                if let Some(chars) = &opaque {
+                    state.replace_layer_chars(chars.clone())?;
+                }
+                match action {
+                    PasteAction::Rotate => state.paste_rotate()?,
+                    PasteAction::FlipX => state.paste_flip_x()?,
+                    _ => state.paste_flip_y()?,
+                }
+                if opaque.is_some() {
+                    transparent = Some(make_transparent(state)?);
+                }
+                Ok(())
+            }
+            PasteAction::Transparent => {
+                if let Some(chars) = &opaque {
+                    state.replace_layer_chars(chars.clone())
+                } else {
+                    transparent = Some(make_transparent(state)?);
+                    Ok(())
+                }
+            }
             PasteAction::Anchor => state.paste_anchor(),
             PasteAction::Keep => state.add_floating_layer(),
             PasteAction::Cancel => Ok(()),
         })
         .map_err(|error| error.to_string())?;
+        if let (Some(paste), Some(pair)) = (&mut self.paste, transparent) {
+            if !paste.transparent.contains(&pair) {
+                paste.transparent.push(pair);
+            }
+        }
         if matches!(action, PasteAction::Anchor | PasteAction::Keep) {
             self.tool = self.paste.take().unwrap().previous_tool;
         }
@@ -1425,6 +1496,60 @@ mod tests {
             document.with_state(|state| state.get_buffer().char_at(Position::new(2, 2)).attribute),
             attribute
         );
+    }
+
+    #[test]
+    fn paste_transparency_toggles_redraws_and_survives_rotation() {
+        let mut document = Document::new(Size::new(30, 12));
+        document.start_paste("A B", None).unwrap();
+        let chars = |document: &Document| document.with_state(|state| super::layer_chars(state));
+        let visible = |document: &Document| chars(document).iter().flatten().filter(|ch| ch.is_visible()).count();
+        let opaque = chars(&document);
+        assert!(opaque[0][1].is_visible(), "the pasted space starts out opaque");
+        let all = visible(&document);
+
+        document.with_state(|state| state.get_buffer().clear_dirty());
+        document.paste_action(PasteAction::Transparent).unwrap();
+        assert!(
+            document.with_state(|state| state.get_buffer().is_dirty()),
+            "turning transparency on must redraw"
+        );
+        assert!(document.paste_transparent());
+        assert!(!chars(&document)[0][1].is_visible());
+        let see_through = visible(&document);
+        assert!(see_through < all);
+
+        document.with_state(|state| state.get_buffer().clear_dirty());
+        document.paste_action(PasteAction::Transparent).unwrap();
+        assert!(document.with_state(|state| state.get_buffer().is_dirty()), "turning it off must redraw");
+        assert!(!document.paste_transparent());
+        assert_eq!(chars(&document), opaque, "a second click restores the paste");
+
+        // Rotating a transparent paste keeps it transparent, and turning it off afterwards
+        // restores the rotated opaque paste.
+        document.paste_action(PasteAction::Transparent).unwrap();
+        let before_rotation = chars(&document);
+        document.paste_action(PasteAction::Rotate).unwrap();
+        assert!(document.paste_transparent());
+        assert_eq!(visible(&document), see_through);
+        document.paste_action(PasteAction::Transparent).unwrap();
+        assert_eq!(visible(&document), all);
+        document.with_state(|state| state.undo()).unwrap();
+        document.with_state(|state| state.undo()).unwrap();
+        assert_eq!(chars(&document), before_rotation, "rotating a transparent paste is one undo step");
+        assert!(document.paste_transparent());
+
+        // Undo keeps the toggle in sync with what is shown.
+        document.paste_action(PasteAction::Transparent).unwrap();
+        assert!(!document.paste_transparent());
+        document.with_state(|state| state.undo()).unwrap();
+        assert!(document.paste_transparent(), "undoing \"off\" shows the transparent paste again");
+        document.paste_action(PasteAction::Transparent).unwrap();
+        assert_eq!(chars(&document), opaque);
+        document.with_state(|state| state.undo()).unwrap();
+        document.with_state(|state| state.undo()).unwrap();
+        assert_eq!(chars(&document), opaque);
+        assert!(!document.paste_transparent(), "undoing \"on\" turns the toggle off");
     }
 
     #[test]

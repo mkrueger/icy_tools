@@ -23,10 +23,6 @@ use super::widgets::{self, Icons};
 mod chrome;
 #[path = "collab.rs"]
 mod collab;
-#[path = "settings_dialog.rs"]
-mod settings_dialog;
-#[path = "shade.rs"]
-mod shade;
 #[path = "file_settings.rs"]
 mod file_settings;
 #[path = "font_select.rs"]
@@ -37,6 +33,10 @@ mod mcp;
 mod menus;
 #[path = "recovery.rs"]
 mod recovery;
+#[path = "settings_dialog.rs"]
+mod settings_dialog;
+#[path = "shade.rs"]
+mod shade;
 #[path = "welcome.rs"]
 mod welcome;
 
@@ -67,6 +67,13 @@ enum Dialog {
     Recovery,
     ShadeRamps(Box<shade::RampDraft>),
 }
+
+#[derive(Clone, Copy)]
+enum FontSelectionTarget {
+    Add,
+    Replace(u8),
+}
+
 enum FileAction {
     Open,
     Save,
@@ -252,6 +259,8 @@ pub struct DrawApp {
     clipboard: Option<(String, Vec<u8>)>,
     system_clipboard: Option<ClipboardContext>,
     font_selector: font_select::FontSelector,
+    font_slots_open: bool,
+    font_selection_target: Option<FontSelectionTarget>,
     text_fonts: Option<icy_draw::text_art_fonts::SharedFontLibrary>,
     text_font: usize,
     text_preview: Option<(usize, egui::TextureHandle)>,
@@ -337,6 +346,8 @@ impl DrawApp {
             clipboard: None,
             system_clipboard,
             font_selector: Default::default(),
+            font_slots_open: false,
+            font_selection_target: None,
             text_fonts: None,
             text_font: 0,
             text_preview: None,
@@ -555,16 +566,23 @@ impl DrawApp {
                     .add_filter(fl!("set-font-filter-all"), &["*"])
                     .pick_file(),
                 FileAction::ReferenceImage => dialog
-                    .add_filter(fl!("file-dialog-filter-images"), &["png", "jpg", "jpeg", "gif", "bmp", "webp", "tga", "tif", "tiff"])
+                    .add_filter(
+                        fl!("file-dialog-filter-images"),
+                        &["png", "jpg", "jpeg", "gif", "bmp", "webp", "tga", "tif", "tiff"],
+                    )
                     .pick_file(),
-                FileAction::ImportPalette => dialog.add_filter(fl!("file-dialog-filter-palette"), icy_draw::palette_files::IMPORT_EXTENSIONS).pick_file(),
+                FileAction::ImportPalette => dialog
+                    .add_filter(fl!("file-dialog-filter-palette"), icy_draw::palette_files::IMPORT_EXTENSIONS)
+                    .pick_file(),
                 FileAction::LoadFont => dialog
                     .add_filter(fl!("set-font-filter-fonts"), font_select::FONT_EXTENSIONS)
                     .add_filter(fl!("set-font-filter-all"), &["*"])
                     .pick_file(),
                 FileAction::ExportPalette => icy_draw::palette_files::EXPORT_FILTERS
                     .iter()
-                    .fold(dialog.set_file_name("palette.gpl"), |dialog, (name, extensions)| dialog.add_filter(*name, extensions))
+                    .fold(dialog.set_file_name("palette.gpl"), |dialog, (name, extensions)| {
+                        dialog.add_filter(*name, extensions)
+                    })
                     .save_file(),
             };
             let _ = sender.send(Picked { action, path });
@@ -711,18 +729,119 @@ impl DrawApp {
     }
 
     pub(super) fn open_font_selector(&mut self) {
+        if self
+            .document
+            .with_state(|state| state.get_buffer().font_mode == icy_engine::FontMode::Unlimited)
+        {
+            self.font_slots_open = true;
+            return;
+        }
+        self.choose_font(FontSelectionTarget::Replace(self.document.with_state(|state| state.get_caret().font_page())));
+    }
+
+    fn choose_font(&mut self, target: FontSelectionTarget) {
+        self.font_selection_target = Some(target);
         self.font_selector = self.document.with_state(|state| font_select::FontSelector::new(state));
         self.dialog = Some(Dialog::FontSelect);
     }
 
-    /// Puts `font` into the font slot of the caret, like the classic font selector.
+    /// Selects a font for drawing, adding a slot rather than replacing one in unrestricted mode.
     fn apply_font(&mut self, font: icy_engine::BitFont) {
-        self.edit(|state| {
-            let slot = state.get_caret().font_page();
-            state.set_font_in_slot(slot, font)
-        });
-        if matches!(self.dialog, Some(Dialog::FontSelect)) {
+        let target = self.font_selection_target.take();
+        let result = self
+            .document
+            .with_state(|state| match target {
+                Some(FontSelectionTarget::Replace(slot)) => state.set_font_in_slot(slot, font),
+                _ => state.apply_font(font),
+            })
+            .map_err(|error| error.to_string());
+        let applied = result.is_ok();
+        self.result(result);
+        if applied && matches!(self.dialog, Some(Dialog::FontSelect)) {
             self.dialog = None;
+        }
+    }
+
+    fn font_slot_entries(&self) -> (Vec<(u8, String)>, u8) {
+        self.document.with_state(|state| {
+            let buffer = state.get_buffer();
+            let mut slots = (0..icy_engine::ANSI_SLOT_COUNT)
+                .filter_map(|page| {
+                    let page = page as u8;
+                    buffer.font(page).map(|font| (page, font.name().to_owned()))
+                })
+                .collect::<Vec<_>>();
+            slots.extend(
+                buffer
+                    .font_iter()
+                    .filter(|(page, _)| usize::from(**page) >= icy_engine::ANSI_SLOT_COUNT)
+                    .map(|(page, font)| (*page, font.name().to_owned())),
+            );
+            slots.sort_by_key(|(page, _)| *page);
+            (slots, state.get_caret().font_page())
+        })
+    }
+
+    fn font_slots_window(&mut self, context: &egui::Context, blocked: bool) {
+        if !self.font_slots_open
+            || self
+                .document
+                .with_state(|state| state.get_buffer().font_mode != icy_engine::FontMode::Unlimited)
+        {
+            self.font_slots_open = false;
+            return;
+        }
+        let (slots, active) = self.font_slot_entries();
+        let mut open = self.font_slots_open;
+        let mut selected = None;
+        let mut target = None;
+        egui::Window::new(fl!("font-slots-title"))
+            .id(egui::Id::new("font-slots"))
+            .open(&mut open)
+            .default_width(280.0)
+            .default_height(360.0)
+            .show(context, |ui| {
+                if blocked || self.document.paste_active() {
+                    ui.disable();
+                }
+                ui.label(fl!("font-slots-active", slot = i64::from(active)));
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(slots.len() < 256, egui::Button::new(fl!("font-slots-add"))).clicked() {
+                        target = Some(FontSelectionTarget::Add);
+                    }
+                    if ui.button(fl!("font-slots-replace")).on_hover_text(fl!("font-slots-replace-tip")).clicked() {
+                        target = Some(FontSelectionTarget::Replace(active));
+                    }
+                });
+                if slots.len() == 256 {
+                    ui.weak(fl!("font-slots-full"));
+                }
+                ui.separator();
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    let mut custom = false;
+                    for (slot, name) in &slots {
+                        if *slot == 0 {
+                            ui.weak(fl!("font-slots-predefined"));
+                        } else if !custom && usize::from(*slot) >= icy_engine::ANSI_SLOT_COUNT {
+                            ui.weak(fl!("font-slots-custom"));
+                            custom = true;
+                        }
+                        if ui
+                            .selectable_label(*slot == active, format!("{slot:3}  {name}"))
+                            .on_hover_text(fl!("status-font-slot-tooltip", slot = i64::from(*slot), font = name.as_str()))
+                            .clicked()
+                        {
+                            selected = Some(*slot);
+                        }
+                    }
+                });
+            });
+        self.font_slots_open = open;
+        if let Some(slot) = selected {
+            self.edit(|state| state.switch_to_font_page(slot));
+        }
+        if let Some(target) = target {
+            self.choose_font(target);
         }
     }
 
@@ -989,7 +1108,8 @@ impl DrawApp {
                 if action == PasteAction::Cancel {
                     widgets::divider(ui);
                 }
-                if self.icons.button(ui, icon, &label, false).clicked() {
+                let selected = action == PasteAction::Transparent && self.document.paste_transparent();
+                if self.icons.button(ui, icon, &label, selected).clicked() {
                     let result = self.document.paste_action(action);
                     self.result(result);
                     self.canvas_focus = true;
@@ -1114,7 +1234,11 @@ impl DrawApp {
                 if let Some(variants) = variants {
                     widgets::divider(ui);
                     for tool in variants {
-                        if self.icons.button(ui, tool.icon(), &chrome::tool_label(tool), self.document.tool == tool).clicked() {
+                        if self
+                            .icons
+                            .button(ui, tool.icon(), &chrome::tool_label(tool), self.document.tool == tool)
+                            .clicked()
+                        {
                             self.select_tool(tool);
                         }
                     }
@@ -1291,10 +1415,7 @@ impl DrawApp {
         let Some((character, font, foreground, background, preview_foreground, preview_background)) = self.document.with_state(|state| {
             let buffer = state.get_buffer();
             let character = buffer.char_at(position);
-            let font = buffer
-                .font(character.attribute.font_page())
-                .or_else(|| buffer.font(0))
-                .cloned()?;
+            let font = buffer.font(character.attribute.font_page()).or_else(|| buffer.font(0)).cloned()?;
             let palette = &buffer.palette;
             let color = |direct: icy_engine::AttributeColor, index| direct.as_rgb().unwrap_or_else(|| palette.rgb(index));
             let foreground = color(character.attribute.foreground_color(), character.attribute.foreground());
@@ -1467,10 +1588,10 @@ impl DrawApp {
             });
         }
         if self.document.tool == Tool::Tag && !blocked {
-            let hovering_tag = response
-                .hover_pos()
-                .and_then(|point| self.position(point))
-                .is_some_and(|position| self.document.with_state(|state| state.get_buffer().tags.iter().any(|tag| tag.contains(position))));
+            let hovering_tag = response.hover_pos().and_then(|point| self.position(point)).is_some_and(|position| {
+                self.document
+                    .with_state(|state| state.get_buffer().tags.iter().any(|tag| tag.contains(position)))
+            });
             response = response.on_hover_cursor(if self.document.tag_drag_active() {
                 egui::CursorIcon::Grabbing
             } else if hovering_tag {
@@ -1481,7 +1602,10 @@ impl DrawApp {
         }
         if self.document.tool == Tool::Pipette && !blocked {
             let modifiers = ui.input(|input| input.modifiers);
-            let hover = response.hover_pos().and_then(|point| self.position(point)).map(|position| (position, modifiers));
+            let hover = response
+                .hover_pos()
+                .and_then(|point| self.position(point))
+                .map(|position| (position, modifiers));
             if self.pipette_hover != hover {
                 self.pipette_hover = hover;
                 ui.ctx().request_repaint();
@@ -1532,27 +1656,9 @@ impl DrawApp {
             );
             painter.rect_filled(rect, 0, Color32::from_rgba_unmultiplied(red, green, blue, 160));
         }
-        if self.document.tool == Tool::Tag {
-            if let Some(selection) = self.document.tag_selection_rectangle() {
-                let rect = egui::Rect::from_min_size(
-                    origin + egui::vec2(selection.left() as f32 * cell_size.x, selection.top() as f32 * cell_size.y) * info.display_scale,
-                    egui::vec2(selection.width() as f32 * cell_size.x, selection.height() as f32 * cell_size.y) * info.display_scale,
-                );
-                painter.rect_stroke(rect, 0, ui.visuals().selection.stroke, egui::StrokeKind::Inside);
-            }
-            let (tags, palette) = self.document.with_state(|state| (state.get_buffer().tags.clone(), state.get_buffer().palette.clone()));
-            for (index, tag) in tags.iter().enumerate() {
-                let position = self.document.tag_preview_position(index, tag.position);
-                let rect = egui::Rect::from_min_size(
-                    origin + egui::vec2(position.x as f32 * cell_size.x, position.y as f32 * cell_size.y) * info.display_scale,
-                    egui::vec2(tag.length.max(1) as f32 * cell_size.x, cell_size.y) * info.display_scale,
-                );
-                let (red, green, blue) = tag.attribute.foreground_color().as_rgb().unwrap_or_else(|| palette.rgb(tag.attribute.foreground()));
-                let color = Color32::from_rgb(red, green, blue);
         let tool = self.document.tool;
-        let show_paint_hover = !blocked
-            && (tool == Tool::Pencil || tool == Tool::Fill || tool.is_shape_tool())
-            && !(tool.is_shape_tool() && self.document.stroke_active());
+        let show_paint_hover =
+            !blocked && (tool == Tool::Pencil || tool == Tool::Fill || tool.is_shape_tool()) && !(tool.is_shape_tool() && self.document.stroke_active());
         if show_paint_hover {
             if let Some(position) = response.hover_pos().and_then(|point| self.position(point)) {
                 let brush_size = self.document.brush.brush_size.max(1) as i32;
@@ -1564,6 +1670,29 @@ impl DrawApp {
                 painter.rect_stroke(rect, 0, egui::Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Inside);
             }
         }
+        if self.document.tool == Tool::Tag {
+            if let Some(selection) = self.document.tag_selection_rectangle() {
+                let rect = egui::Rect::from_min_size(
+                    origin + egui::vec2(selection.left() as f32 * cell_size.x, selection.top() as f32 * cell_size.y) * info.display_scale,
+                    egui::vec2(selection.width() as f32 * cell_size.x, selection.height() as f32 * cell_size.y) * info.display_scale,
+                );
+                painter.rect_stroke(rect, 0, ui.visuals().selection.stroke, egui::StrokeKind::Inside);
+            }
+            let (tags, palette) = self
+                .document
+                .with_state(|state| (state.get_buffer().tags.clone(), state.get_buffer().palette.clone()));
+            for (index, tag) in tags.iter().enumerate() {
+                let position = self.document.tag_preview_position(index, tag.position);
+                let rect = egui::Rect::from_min_size(
+                    origin + egui::vec2(position.x as f32 * cell_size.x, position.y as f32 * cell_size.y) * info.display_scale,
+                    egui::vec2(tag.length.max(1) as f32 * cell_size.x, cell_size.y) * info.display_scale,
+                );
+                let (red, green, blue) = tag
+                    .attribute
+                    .foreground_color()
+                    .as_rgb()
+                    .unwrap_or_else(|| palette.rgb(tag.attribute.foreground()));
+                let color = Color32::from_rgb(red, green, blue);
                 let selected = self.document.selected_tags.contains(&index);
                 if selected {
                     painter.rect_filled(rect, 0, color.gamma_multiply(0.12));
@@ -2053,8 +2182,7 @@ impl DrawApp {
                             let favorite = self.settings.text_art_font_favorites.contains(&Self::text_art_font_id(&name, kind));
                             let (width, height) = self.text_art_font_metrics(index).unwrap_or_default();
                             let selected = self.text_font_pending == index;
-                            let (rect, response) =
-                                ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height - 4.0), egui::Sense::click());
+                            let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height - 4.0), egui::Sense::click());
                             let fill = if selected {
                                 ui.visuals().selection.bg_fill
                             } else if response.hovered() {
@@ -2063,12 +2191,8 @@ impl DrawApp {
                                 ui.visuals().faint_bg_color
                             };
                             ui.painter().rect_filled(rect, 4, fill);
-                            ui.painter().rect_stroke(
-                                rect,
-                                4,
-                                ui.visuals().widgets.noninteractive.bg_stroke,
-                                egui::StrokeKind::Inside,
-                            );
+                            ui.painter()
+                                .rect_stroke(rect, 4, ui.visuals().widgets.noninteractive.bg_stroke, egui::StrokeKind::Inside);
                             let left = rect.shrink2(egui::vec2(16.0, 10.0));
                             let preview_width = (rect.width() * 0.46).min(420.0);
                             let preview_left = rect.right() - preview_width - 16.0;
@@ -2100,10 +2224,8 @@ impl DrawApp {
                                 egui::FontId::monospace(12.0),
                                 ui.visuals().text_color(),
                             );
-                            let preview_header = egui::Rect::from_min_max(
-                                egui::pos2(preview_left, rect.top() + 6.0),
-                                egui::pos2(rect.right() - 16.0, rect.top() + 26.0),
-                            );
+                            let preview_header =
+                                egui::Rect::from_min_max(egui::pos2(preview_left, rect.top() + 6.0), egui::pos2(rect.right() - 16.0, rect.top() + 26.0));
                             ui.painter().text(
                                 preview_header.left_center(),
                                 egui::Align2::LEFT_CENTER,
@@ -2118,10 +2240,7 @@ impl DrawApp {
                                 egui::FontId::monospace(11.0),
                                 ui.visuals().weak_text_color(),
                             );
-                            let star_rect = egui::Rect::from_center_size(
-                                egui::pos2(preview_left - 16.0, rect.bottom() - 18.0),
-                                egui::Vec2::splat(26.0),
-                            );
+                            let star_rect = egui::Rect::from_center_size(egui::pos2(preview_left - 16.0, rect.bottom() - 18.0), egui::Vec2::splat(26.0));
                             let star = ui.interact(star_rect, ui.id().with(("font-favorite", index)), egui::Sense::click());
                             ui.painter().text(
                                 star_rect.center(),
@@ -3114,6 +3233,7 @@ impl DrawApp {
             self.keys(context);
         }
         self.sync_collaboration();
+        self.font_slots_window(context, blocked || self.dialog.is_some());
         self.layer_properties_dialog(context);
         self.dialogs(context);
     }

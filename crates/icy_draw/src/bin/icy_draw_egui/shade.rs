@@ -1,7 +1,7 @@
 //! Shade ramps of the shading brush: toolbar pickers and the ramp editor.
 
 use super::*;
-use icy_draw::brush::{CharRamp, ColorRamp, Ramp, ShadeRamps, char_ramp_from_text, char_ramp_text};
+use icy_draw::brush::{char_ramp_from_text, char_ramp_text, CharRamp, ColorRamp, Ramp, ShadeRamps};
 
 const RAMP_CELL: f32 = 18.0;
 /// Narrower cells for the toolbar, which also shows the size and filter controls.

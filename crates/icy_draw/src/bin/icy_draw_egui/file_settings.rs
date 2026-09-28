@@ -200,7 +200,7 @@ impl DrawApp {
 
     /// Makes `slot` the font of newly typed and painted characters; a double click also picks its font.
     pub(super) fn select_font_slot(&mut self, slot: usize, choose_font: bool) {
-        self.document.with_state(|state| state.set_caret_font_page(slot.min(1) as u8));
+        self.edit(|state| state.switch_to_font_page(slot.min(1) as u8));
         if choose_font {
             self.open_font_selector();
         }
@@ -438,6 +438,9 @@ mod tests {
             "typed characters use the selected font slot"
         );
         app.document.undo().unwrap();
+        // Switching the font slot is an undo step of its own.
+        app.document.undo().unwrap();
+        assert_eq!(app.font_slots().map(|(_, slot)| slot), Some(0));
         app.document.undo().unwrap();
         assert_eq!(app.document.with_state(|state| state.get_buffer().size()), Size::new(80, 25));
     }
