@@ -465,7 +465,7 @@ async fn gpu_remaining_dialogs_fit_viewport() {
                         "serial" => tr!("settings-modem-device"),
                         "live-terminal" => tr!("egui-terminal-emulation"),
                         "save-screen" => icy_engine_gui::LANGUAGE_LOADER.get("export-format"),
-                        _ => tr!("settings-paths-download-dir"),
+                        _ => tr!("egui-output-folder"),
                     };
                     let field = harness.text_bounds.get(&first_field).unwrap_or_else(|| panic!("missing {first_field}: {name}"));
                     assert!(field.bottom() < harness.text_bounds[&footer].top(), "form overlaps footer: {name}");
