@@ -373,19 +373,40 @@ impl RipDocument {
     }
 
     pub fn render_through(&self, through: Option<usize>) -> RipResult<PaletteScreenBuffer> {
-        self.render_with(through, &[])
+        self.render_with(through, None, &[])
     }
 
     /// The scene with `extra` commands appended, e.g. a shape that is still being drawn.
     pub fn preview_with(&self, extra: &[RipCommand]) -> RipResult<RipPreview> {
         Ok(RipPreview {
-            screen: self.render_with(None, extra)?,
+            screen: self.render_with(None, None, extra)?,
             mode: ScreenMode::Rip,
         })
     }
 
-    fn render_with(&self, through: Option<usize>, extra: &[RipCommand]) -> RipResult<PaletteScreenBuffer> {
-        if extra.iter().any(|command| matches!(command, RipCommand::LoadIcon { .. })) {
+    /// The scene with the command at `index` replaced, e.g. a shape that is being moved.
+    pub fn preview_replacing(&self, index: usize, command: &RipCommand) -> RipResult<RipPreview> {
+        if index >= self.commands.len() {
+            return Err(RipDocumentError::InvalidIndex {
+                index,
+                len: self.commands.len(),
+            });
+        }
+        if index < self.preserved_commands {
+            return Err(RipDocumentError::PreservedCommand { index });
+        }
+        Ok(RipPreview {
+            screen: self.render_with(None, Some((index, command)), &[])?,
+            mode: ScreenMode::Rip,
+        })
+    }
+
+    fn render_with(&self, through: Option<usize>, replace: Option<(usize, &RipCommand)>, extra: &[RipCommand]) -> RipResult<PaletteScreenBuffer> {
+        if extra
+            .iter()
+            .chain(replace.map(|(_, command)| command))
+            .any(|command| matches!(command, RipCommand::LoadIcon { .. }))
+        {
             return Err(RipDocumentError::ExternalIcon);
         }
         if let Some(index) = through {
@@ -413,7 +434,11 @@ impl RipDocument {
                 parser.parse(b"\n", &mut sink);
             }
             if end > self.preserved_commands {
-                for command in &self.commands[self.preserved_commands..end] {
+                for (index, command) in self.commands.iter().enumerate().take(end).skip(self.preserved_commands) {
+                    let command = match replace {
+                        Some((replaced, replacement)) if replaced == index => replacement,
+                        _ => command,
+                    };
                     sink.emit_rip(command.clone());
                 }
             }
@@ -422,12 +447,48 @@ impl RipDocument {
             }
             return Ok(screen);
         }
-        if extra.is_empty() {
+        if extra.is_empty() && replace.is_none() {
             return Self::render(&self.commands[..end]);
         }
         let mut commands = self.commands[..end].to_vec();
+        if let Some((index, command)) = replace.filter(|(index, _)| *index < end) {
+            commands[index] = command.clone();
+        }
         commands.extend_from_slice(extra);
         Self::render(&commands)
+    }
+
+    /// The scene with every editable command replaced by `editable`, e.g. text whose font changes.
+    pub fn preview_editable(&self, editable: &[RipCommand]) -> RipResult<RipPreview> {
+        if editable.iter().any(|command| matches!(command, RipCommand::LoadIcon { .. })) {
+            return Err(RipDocumentError::ExternalIcon);
+        }
+        let screen = if let Some(prefix) = &self.preserved {
+            if self.commands[..self.preserved_commands]
+                .iter()
+                .any(|command| matches!(command, RipCommand::LoadIcon { .. }))
+            {
+                return Err(RipDocumentError::ExternalIcon);
+            }
+            let mut screen = PaletteScreenBuffer::new(GraphicsType::Rip);
+            let mut screen_sink = ScreenSink::new(&mut screen);
+            let mut sink = PreviewSink {
+                screen: &mut screen_sink,
+                remaining: self.preserved_commands,
+            };
+            let mut parser = RipParser::new();
+            parser.parse(prefix, &mut sink);
+            if !prefix.ends_with(b"\n") {
+                parser.parse(b"\n", &mut sink);
+            }
+            for command in editable {
+                screen_sink.emit_rip(command.clone());
+            }
+            screen
+        } else {
+            Self::render(editable)?
+        };
+        Ok(RipPreview { screen, mode: ScreenMode::Rip })
     }
 
     /// Replay an arbitrary command sequence without changing the document.
@@ -524,6 +585,24 @@ impl RipDocument {
             self.record_change();
             self.commands[index] = command;
         }
+        Ok(())
+    }
+
+    /// Replaces all editable commands in one undo step, e.g. text together with the font and
+    /// color commands inserted around it.
+    pub fn replace_editable(&mut self, editable: Vec<RipCommand>) -> RipResult<()> {
+        if self.commands[self.preserved_commands..] == editable[..] {
+            return Ok(());
+        }
+        encode_commands(&editable).map_err(|error| match error {
+            RipDocumentError::UnrepresentableCommand { index } => RipDocumentError::UnrepresentableCommand {
+                index: index + self.preserved_commands,
+            },
+            other => other,
+        })?;
+        self.record_change();
+        self.commands.truncate(self.preserved_commands);
+        self.commands.extend(editable);
         Ok(())
     }
 

@@ -4,7 +4,7 @@
 use eframe::egui::{self, Color32};
 use icy_draw::{fl, rip_document::RipDocument};
 use icy_engine::Screen;
-use icy_engine_gui::egui::appearance::{self, DialogButton, DialogSize, labels};
+use icy_engine_gui::egui::appearance::{self, labels, DialogButton, DialogSize};
 use icy_parser_core::RipCommand;
 
 // `|1B` flags
@@ -305,11 +305,15 @@ pub fn color32(palette: &icy_engine::Palette, color: u16) -> Color32 {
 
 /// A swatch that opens the 16 color palette.
 pub fn color_picker(ui: &mut egui::Ui, id: &str, palette: &icy_engine::Palette, value: &mut u16) -> bool {
+    color_picker_sized(ui, id, palette, value, egui::vec2(28.0, 18.0))
+}
+
+pub fn color_picker_sized(ui: &mut egui::Ui, id: &str, palette: &icy_engine::Palette, value: &mut u16, size: egui::Vec2) -> bool {
     let mut changed = false;
     let response = ui.add(
         egui::Button::new("")
             .fill(color32(palette, *value))
-            .min_size(egui::vec2(28.0, 18.0))
+            .min_size(size)
             .stroke(ui.visuals().widgets.noninteractive.bg_stroke),
     );
     egui::Popup::menu(&response).id(egui::Id::new(("rip-color", id))).show(|ui| {
@@ -367,6 +371,8 @@ pub struct ButtonDialog {
     pub options: ButtonOptions,
     /// The button being edited; `None` edits the settings for new buttons.
     pub target: Option<ButtonTarget>,
+    /// Placing the button follows the dialog.
+    pub create: bool,
     preview: Option<(ButtonOptions, egui::TextureHandle)>,
     page: Page,
 }
@@ -382,6 +388,7 @@ impl ButtonDialog {
         Self {
             options,
             target,
+            create: false,
             preview: None,
             page: Page::Button,
         }
@@ -443,10 +450,15 @@ impl ButtonDialog {
             (Page::Appearance, fl!("rip-button-group-appearance")),
             (Page::Behavior, fl!("rip-button-group-behavior")),
         ];
+        let create = self.create;
         let page = &mut self.page;
         let options = &mut self.options;
         let response = appearance::Dialog::new("rip-button-style")
-            .title(fl!("rip-button-style-title"))
+            .title(if self.create {
+                fl!("rip-button-create-title")
+            } else {
+                fl!("rip-button-style-title")
+            })
             .size(DialogSize::Width(720.0))
             .show(context, |dialog| {
                 dialog.tabs(page, &pages);
@@ -473,9 +485,10 @@ impl ButtonDialog {
                         ui.colored_label(ui.visuals().error_fg_color, problem);
                     }
                 });
+                let confirm = if create { fl!("rip-button-place") } else { labels::ok() };
                 dialog.buttons([
                     DialogButton::cancel(labels::cancel(), Action::Cancel),
-                    DialogButton::primary(labels::ok(), Action::Apply).enabled(problem.is_none()),
+                    DialogButton::primary(confirm, Action::Apply).enabled(problem.is_none()),
                 ]);
             });
         match response.action {

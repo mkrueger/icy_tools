@@ -9,6 +9,12 @@ use super::widgets::{self, Icons};
 #[path = "rip_button.rs"]
 mod button;
 use button::{ButtonDialog, ButtonKind, ButtonOptions, ButtonTarget, DialogResult};
+#[path = "rip_palette.rs"]
+mod palette;
+use palette::{PaletteDialog, PaletteResult};
+#[path = "rip_select.rs"]
+mod select;
+use select::{Geometry, Handle};
 
 const WIDTH: u16 = 640;
 const HEIGHT: u16 = 350;
@@ -18,6 +24,7 @@ const HANDLE_RADIUS: f32 = 8.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Tool {
+    Select,
     Pixel,
     Line,
     Rectangle,
@@ -25,13 +32,23 @@ enum Tool {
     Circle,
     Oval,
     FilledOval,
+    Polygon,
+    FilledPolygon,
+    PolyLine,
+    Arc,
+    OvalArc,
+    PieSlice,
+    OvalPieSlice,
     Text,
     Bezier,
     Button,
+    Mouse,
 }
 
 impl Tool {
-    const ALL: [Self; 10] = [
+    /// The tool column; buttons are placed through "Create Button…" instead.
+    const ALL: [Self; 18] = [
+        Self::Select,
         Self::Pixel,
         Self::Line,
         Self::Rectangle,
@@ -39,13 +56,21 @@ impl Tool {
         Self::Circle,
         Self::Oval,
         Self::FilledOval,
+        Self::Polygon,
+        Self::FilledPolygon,
+        Self::PolyLine,
+        Self::Arc,
+        Self::OvalArc,
+        Self::PieSlice,
+        Self::OvalPieSlice,
         Self::Text,
         Self::Bezier,
-        Self::Button,
+        Self::Mouse,
     ];
 
     fn label(self) -> String {
         match self {
+            Self::Select => fl!("rip-editor-select"),
             Self::Pixel => fl!("rip-editor-pixel"),
             Self::Line => fl!("rip-editor-line"),
             Self::Rectangle => fl!("rip-editor-rectangle"),
@@ -53,43 +78,87 @@ impl Tool {
             Self::Circle => fl!("rip-editor-circle"),
             Self::Oval => fl!("rip-editor-outline-oval"),
             Self::FilledOval => fl!("rip-editor-oval"),
+            Self::Polygon => fl!("rip-editor-polygon"),
+            Self::FilledPolygon => fl!("rip-editor-filled-polygon"),
+            Self::PolyLine => fl!("rip-editor-polyline"),
+            Self::Arc => fl!("rip-editor-arc"),
+            Self::OvalArc => fl!("rip-editor-oval-arc"),
+            Self::PieSlice => fl!("rip-editor-pie-slice"),
+            Self::OvalPieSlice => fl!("rip-editor-oval-pie-slice"),
             Self::Text => fl!("rip-editor-text"),
             Self::Bezier => fl!("rip-editor-bezier"),
             Self::Button => fl!("rip-editor-button"),
+            Self::Mouse => fl!("rip-editor-mouse"),
         }
     }
 
     fn icon(self) -> &'static str {
         match self {
+            Self::Select => "cursor",
             Self::Pixel => "pencil",
             Self::Line => "line",
             Self::Rectangle => "rectangle_outline",
             Self::Bar => "rectangle_filled",
             Self::Circle | Self::Oval => "ellipse_outline",
             Self::FilledOval => "ellipse_filled",
+            Self::Polygon => "rip_polygon",
+            Self::FilledPolygon => "rip_polygon_filled",
+            Self::PolyLine => "rip_polyline",
+            Self::Arc => "rip_arc",
+            Self::OvalArc => "rip_oval_arc",
+            Self::PieSlice => "rip_pie",
+            Self::OvalPieSlice => "rip_oval_pie",
             Self::Text => "text",
             Self::Bezier => "bezier",
             Self::Button => "rip_button",
+            Self::Mouse => "rip_mouse",
         }
     }
 
     fn uses_line_style(self) -> bool {
-        matches!(self, Self::Line | Self::Rectangle | Self::Circle | Self::Oval | Self::Bezier)
+        matches!(
+            self,
+            Self::Line
+                | Self::Rectangle
+                | Self::Circle
+                | Self::Oval
+                | Self::Bezier
+                | Self::Polygon
+                | Self::FilledPolygon
+                | Self::PolyLine
+                | Self::Arc
+                | Self::OvalArc
+                | Self::PieSlice
+                | Self::OvalPieSlice
+        )
     }
 
     fn uses_fill(self) -> bool {
-        matches!(self, Self::Bar | Self::FilledOval)
+        matches!(self, Self::Bar | Self::FilledOval | Self::FilledPolygon | Self::PieSlice | Self::OvalPieSlice)
+    }
+
+    fn is_poly(self) -> bool {
+        matches!(self, Self::Polygon | Self::FilledPolygon | Self::PolyLine)
+    }
+
+    fn has_angles(self) -> bool {
+        matches!(self, Self::Arc | Self::OvalArc | Self::PieSlice | Self::OvalPieSlice)
     }
 
     /// Whether the drawn shape needs a drag rather than a click.
     fn is_dragged(self) -> bool {
-        !matches!(self, Self::Pixel | Self::Text)
+        !matches!(
+            self,
+            Self::Select | Self::Pixel | Self::Text | Self::Polygon | Self::FilledPolygon | Self::PolyLine | Self::Mouse
+        )
     }
 
-    /// The shape command itself, without the color and style commands before it.
-    fn command(self, from: (u16, u16), to: (u16, u16), text: &str) -> RipCommand {
+    /// The shape command itself, without the color and style commands before it; the select
+    /// tool draws nothing.
+    fn command(self, from: (u16, u16), to: (u16, u16), text: &str) -> Option<RipCommand> {
         let ((x0, y0), (x1, y1)) = (from, to);
-        match self {
+        Some(match self {
+            Self::Select | Self::Mouse => return None,
             Self::Pixel => RipCommand::Pixel { x: x1, y: y1 },
             Self::Line => RipCommand::Line { x0, y0, x1, y1 },
             Self::Rectangle => RipCommand::Rectangle { x0, y0, x1, y1 },
@@ -113,6 +182,37 @@ impl Tool {
                 x_rad: x0.abs_diff(x1),
                 y_rad: y0.abs_diff(y1),
             },
+            Self::Arc => RipCommand::Arc {
+                x: x0,
+                y: y0,
+                st_ang: 0,
+                end_ang: 90,
+                radius: (x1 as f32 - x0 as f32).hypot(y1 as f32 - y0 as f32).round() as u16,
+            },
+            Self::PieSlice => RipCommand::PieSlice {
+                x: x0,
+                y: y0,
+                st_ang: 0,
+                end_ang: 90,
+                radius: (x1 as f32 - x0 as f32).hypot(y1 as f32 - y0 as f32).round() as u16,
+            },
+            Self::OvalArc => RipCommand::OvalArc {
+                x: x0,
+                y: y0,
+                st_ang: 0,
+                end_ang: 90,
+                x_rad: x0.abs_diff(x1),
+                y_rad: y0.abs_diff(y1),
+            },
+            Self::OvalPieSlice => RipCommand::OvalPieSlice {
+                x: x0,
+                y: y0,
+                st_ang: 0,
+                end_ang: 90,
+                x_rad: x0.abs_diff(x1),
+                y_rad: y0.abs_diff(y1),
+            },
+            Self::Polygon | Self::FilledPolygon | Self::PolyLine => return None,
             Self::Text => RipCommand::TextXY {
                 x: x0,
                 y: y0,
@@ -129,7 +229,7 @@ impl Tool {
                 res: 0,
                 text: format!("<>{text}<>"),
             },
-        }
+        })
     }
 }
 
@@ -156,6 +256,16 @@ fn bezier_command(points: [(u16, u16); 4], segments: u16) -> RipCommand {
         x4,
         y4,
         cnt: segments,
+    }
+}
+
+fn poly_command(tool: Tool, points: &[(u16, u16)]) -> RipCommand {
+    let points = points.iter().flat_map(|&(x, y)| [x, y]).collect();
+    match tool {
+        Tool::Polygon => RipCommand::Polygon { points },
+        Tool::FilledPolygon => RipCommand::FilledPolygon { points },
+        Tool::PolyLine => RipCommand::PolyLine { points },
+        _ => unreachable!("poly tool required"),
     }
 }
 
@@ -218,11 +328,197 @@ impl DrawingState {
     }
 }
 
+/// A shape being moved or resized with the select tool.
+#[derive(Clone, Debug, PartialEq)]
+struct ShapeDrag {
+    index: usize,
+    handle: Handle,
+    start: select::Point,
+    original: Geometry,
+    command: RipCommand,
+    current: RipCommand,
+}
+
 /// A Bézier curve whose four points can still be moved.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct BezierEdit {
     points: [(u16, u16); 4],
     moving: Option<usize>,
+}
+
+/// Text being typed on the canvas.
+#[derive(Clone, Debug, PartialEq)]
+struct TextEdit {
+    at: (u16, u16),
+    text: String,
+    /// The `TextXY` command being changed; new text otherwise.
+    index: Option<usize>,
+}
+
+impl TextEdit {
+    fn command(&self) -> RipCommand {
+        RipCommand::TextXY {
+            x: self.at.0,
+            y: self.at.1,
+            text: self.text.clone(),
+        }
+    }
+}
+
+fn is_mouse_region(command: &RipCommand) -> bool {
+    matches!(command, RipCommand::Mouse { .. })
+}
+
+/// Characters RIP text stores unchanged; others would not survive saving.
+fn is_rip_text_char(c: char) -> bool {
+    matches!(c, ' '..='~')
+}
+
+/// The size in pixels of `text` in the RIP font state `font` (`None`: the engine default).
+fn text_extent(font: Option<(u16, u16, u16)>, text: &str) -> (i32, i32) {
+    use icy_engine::bgi::{Bgi, Direction, FontType};
+    let mut bgi = Bgi::new(std::path::PathBuf::new(), icy_engine::Size::new(i32::from(WIDTH), i32::from(HEIGHT)));
+    if let Some((font, direction, size)) = font {
+        bgi.set_text_style(FontType::from(font as u8), Direction::from(direction as u8), i32::from(size));
+    }
+    let size = bgi.text_size(text);
+    (size.width, size.height)
+}
+
+/// Font, direction and size of RIP text.
+type FontState = (u16, u16, u16);
+/// The font a scene starts with, and the one `ResetWindows` restores.
+const START_FONT: FontState = (0, 0, 4);
+const RESET_FONT: FontState = (2, 0, 4);
+const DEFAULT_COLOR: u16 = 7;
+
+fn font_of(command: &RipCommand) -> Option<FontState> {
+    match command {
+        RipCommand::FontStyle { font, direction, size, .. } => Some((*font, *direction, *size)),
+        _ => None,
+    }
+}
+
+fn color_of(command: &RipCommand) -> Option<u16> {
+    match command {
+        RipCommand::Color { c } => Some(*c),
+        _ => None,
+    }
+}
+
+fn font_command((font, direction, size): FontState) -> RipCommand {
+    RipCommand::FontStyle { font, direction, size, res: 0 }
+}
+
+/// Commands that only change the drawing state and draw nothing.
+fn is_state_command(command: &RipCommand) -> bool {
+    matches!(
+        command,
+        RipCommand::Color { .. }
+            | RipCommand::SetPalette { .. }
+            | RipCommand::OnePalette { .. }
+            | RipCommand::WriteMode { .. }
+            | RipCommand::FontStyle { .. }
+            | RipCommand::LineStyle { .. }
+            | RipCommand::FillStyle { .. }
+            | RipCommand::FillPattern { .. }
+            | RipCommand::ButtonStyle { .. }
+    )
+}
+
+fn draws_text(command: &RipCommand) -> bool {
+    matches!(
+        command,
+        RipCommand::TextXY { .. } | RipCommand::Text { .. } | RipCommand::RegionText { .. } | RipCommand::Button { .. }
+    )
+}
+
+/// The value of one drawing state in effect for the command at `index`.
+fn state_before<V: Copy>(commands: &[RipCommand], index: usize, read: impl Fn(&RipCommand) -> Option<V>, start: V, reset: V) -> V {
+    for command in commands[..index].iter().rev() {
+        if matches!(command, RipCommand::ResetWindows) {
+            return reset;
+        }
+        if let Some(value) = read(command) {
+            return value;
+        }
+    }
+    start
+}
+
+fn font_before(commands: &[RipCommand], index: usize) -> FontState {
+    state_before(commands, index, font_of, START_FONT, RESET_FONT)
+}
+
+fn color_before(commands: &[RipCommand], index: usize) -> u16 {
+    state_before(commands, index, color_of, DEFAULT_COLOR, DEFAULT_COLOR)
+}
+
+/// Makes the command at `index` draw with `value` of one drawing state, while the commands after
+/// it keep drawing as before. A state command directly in front of it is changed; otherwise one is
+/// inserted, and the previous value is restored after it when later commands depend on it.
+#[allow(clippy::too_many_arguments)]
+fn set_state_at<V: Copy + PartialEq>(
+    commands: &mut Vec<RipCommand>,
+    first_editable: usize,
+    index: &mut usize,
+    value: V,
+    read: impl Fn(&RipCommand) -> Option<V>,
+    make: impl Fn(V) -> RipCommand,
+    (start, reset): (V, V),
+    uses: impl Fn(&RipCommand) -> bool,
+) {
+    let before = state_before(commands, *index, &read, start, reset);
+    if before == value {
+        return;
+    }
+    let next = commands[*index + 1..]
+        .iter()
+        .position(|command| read(command).is_some() || matches!(command, RipCommand::ResetWindows))
+        .map_or(commands.len(), |offset| *index + 1 + offset);
+    if commands[*index + 1..next].iter().any(&uses) {
+        commands.insert(*index + 1, make(before));
+    }
+    let own = (first_editable..*index)
+        .rev()
+        .take_while(|position| is_state_command(&commands[*position]))
+        .find(|position| read(&commands[*position]).is_some());
+    match own {
+        Some(position) => commands[position] = make(value),
+        None => {
+            commands.insert(*index, make(value));
+            *index += 1;
+        }
+    }
+}
+
+/// `commands` with the text at `index` replaced by `text` drawn in `font` and `color`, and the
+/// text's new index.
+fn restyle_text(commands: &[RipCommand], first_editable: usize, index: usize, text: RipCommand, font: FontState, color: u16) -> (Vec<RipCommand>, usize) {
+    let mut commands = commands.to_vec();
+    commands[index] = text;
+    let mut index = index;
+    set_state_at(
+        &mut commands,
+        first_editable,
+        &mut index,
+        font,
+        font_of,
+        font_command,
+        (START_FONT, RESET_FONT),
+        draws_text,
+    );
+    set_state_at(
+        &mut commands,
+        first_editable,
+        &mut index,
+        color,
+        color_of,
+        |c| RipCommand::Color { c },
+        (DEFAULT_COLOR, DEFAULT_COLOR),
+        |command| !is_state_command(command),
+    );
+    (commands, index)
 }
 
 fn describe(command: &RipCommand) -> Option<String> {
@@ -236,9 +532,18 @@ fn describe(command: &RipCommand) -> Option<String> {
                 format!("{}, {} · {} × {}", x0.min(x1), y0.min(y1), x0.abs_diff(*x1) + 1, y0.abs_diff(*y1) + 1)
             }
         }
+        RipCommand::Mouse { x0, y0, x1, y1, .. } => format!("{}, {} · {} × {}", x0.min(x1), y0.min(y1), x0.abs_diff(*x1) + 1, y0.abs_diff(*y1) + 1),
         RipCommand::Circle { x_center, y_center, radius } => format!("{x_center}, {y_center} · r {radius}"),
-        RipCommand::Oval { x, y, x_rad, y_rad, .. } | RipCommand::FilledOval { x, y, x_rad, y_rad } => {
+        RipCommand::Oval { x, y, x_rad, y_rad, .. }
+        | RipCommand::OvalArc { x, y, x_rad, y_rad, .. }
+        | RipCommand::OvalPieSlice { x, y, x_rad, y_rad, .. }
+        | RipCommand::FilledOval { x, y, x_rad, y_rad } => {
             format!("{x}, {y} · {x_rad} × {y_rad}")
+        }
+        RipCommand::Arc { x, y, radius, .. } | RipCommand::PieSlice { x, y, radius, .. } => format!("{x}, {y} · r {radius}"),
+        RipCommand::Polygon { points } | RipCommand::FilledPolygon { points } | RipCommand::PolyLine { points } => {
+            let count = points.len() / 2;
+            fl!("rip-editor-vertices", count = count)
         }
         RipCommand::Bezier {
             x1,
@@ -255,29 +560,247 @@ fn describe(command: &RipCommand) -> Option<String> {
     })
 }
 
-/// A readable list entry; buttons show their label.
-fn list_label(command: &RipCommand) -> String {
+/// The name of a drawing command, as its tool is called.
+fn shape_name(command: &RipCommand) -> Option<String> {
+    shape_tool(command).map(Tool::label)
+}
+
+/// The tool that draws `command`.
+fn shape_tool(command: &RipCommand) -> Option<Tool> {
+    Some(match command {
+        RipCommand::Pixel { .. } => Tool::Pixel,
+        RipCommand::Line { .. } => Tool::Line,
+        RipCommand::Rectangle { .. } => Tool::Rectangle,
+        RipCommand::Bar { .. } => Tool::Bar,
+        RipCommand::Circle { .. } => Tool::Circle,
+        RipCommand::Oval { .. } => Tool::Oval,
+        RipCommand::FilledOval { .. } => Tool::FilledOval,
+        RipCommand::Polygon { .. } => Tool::Polygon,
+        RipCommand::FilledPolygon { .. } => Tool::FilledPolygon,
+        RipCommand::PolyLine { .. } => Tool::PolyLine,
+        RipCommand::Arc { .. } => Tool::Arc,
+        RipCommand::OvalArc { .. } => Tool::OvalArc,
+        RipCommand::PieSlice { .. } => Tool::PieSlice,
+        RipCommand::OvalPieSlice { .. } => Tool::OvalPieSlice,
+        RipCommand::TextXY { .. } => Tool::Text,
+        RipCommand::Bezier { .. } => Tool::Bezier,
+        RipCommand::Button { .. } => Tool::Button,
+        RipCommand::Mouse { .. } => Tool::Mouse,
+        _ => return None,
+    })
+}
+
+/// The short name of any command in the command list.
+fn command_name(command: &RipCommand) -> String {
+    if let Some(name) = shape_name(command) {
+        return name;
+    }
     match command {
-        RipCommand::Button { text, .. } => {
-            let label = text.split("<>").nth(1).unwrap_or(text);
-            let details = describe(command).unwrap_or_default();
-            format!("{} \"{label}\" · {details}", fl!("rip-editor-button"))
-        }
+        RipCommand::Color { .. } => fl!("rip-command-color"),
+        RipCommand::LineStyle { .. } => fl!("rip-command-line-style"),
+        RipCommand::FillStyle { .. } | RipCommand::FillPattern { .. } => fl!("rip-command-fill-style"),
+        RipCommand::FontStyle { .. } => fl!("rip-command-font-style"),
         RipCommand::ButtonStyle { .. } => fl!("rip-button-style-entry"),
-        _ => format!("{command:?}"),
+        RipCommand::SetPalette { .. } => fl!("rip-command-palette"),
+        RipCommand::OnePalette { .. } => fl!("rip-command-palette-slot"),
+        RipCommand::MouseFields => fl!("rip-command-mouse-fields"),
+        // Other commands are named after their variant, without the parameters.
+        other => {
+            let debug = format!("{other:?}");
+            debug.split([' ', '{', '(']).next().unwrap_or_default().to_owned()
+        }
+    }
+}
+
+/// A compact summary next to the name; the property panel shows every parameter.
+fn command_summary(command: &RipCommand) -> String {
+    match command {
+        RipCommand::Button { text, .. } => format!("\"{}\"", text.split("<>").nth(1).unwrap_or(text)),
+        RipCommand::TextXY { text, .. } => format!("\"{text}\""),
+        RipCommand::Mouse { text, .. } => format!("\"{text}\" · {}", describe(command).unwrap_or_default()),
+        RipCommand::Color { c } => c.to_string(),
+        RipCommand::LineStyle { style, thick, .. } => format!("{} · {thick} px", line_style_name(*style)),
+        RipCommand::FillStyle { pattern, .. } => fill_style_name(*pattern),
+        RipCommand::FontStyle { font, size, .. } => format!("{} · {size}", button::font_names()[(*font).min(10) as usize]),
+        RipCommand::ButtonStyle { wid, hgt, .. } => format!("{wid} × {hgt}"),
+        RipCommand::OnePalette { color, value } => format!("{color} → EGA {value}"),
+        _ => describe(command).unwrap_or_default(),
+    }
+}
+
+fn command_icon(command: &RipCommand) -> Option<&'static str> {
+    if let Some(tool) = shape_tool(command) {
+        return Some(tool.icon());
+    }
+    Some(match command {
+        RipCommand::Color { .. } => "paint_brush",
+        RipCommand::LineStyle { .. } => "line",
+        RipCommand::FillStyle { .. } | RipCommand::FillPattern { .. } => "fill",
+        RipCommand::FontStyle { .. } => "font",
+        RipCommand::ButtonStyle { .. } => "rip_button",
+        RipCommand::SetPalette { .. } | RipCommand::OnePalette { .. } => "dropper",
+        RipCommand::MouseFields => "rip_mouse",
+        _ => return None,
+    })
+}
+
+/// The palette color a state command sets, shown as a swatch in the list.
+fn command_swatch(command: &RipCommand) -> Option<u16> {
+    match command {
+        RipCommand::Color { c } => Some(*c),
+        RipCommand::FillStyle { color, .. } => Some(*color),
+        _ => None,
+    }
+}
+
+const COMMAND_ROW_HEIGHT: f32 = 24.0;
+const PROPERTY_LABEL_WIDTH: f32 = 84.0;
+
+/// One line of the command list: number, icon, name and a short summary, never wrapped.
+struct CommandRow<'a> {
+    index: usize,
+    command: &'a RipCommand,
+    selected: bool,
+    /// Part of the selected button (its style or font).
+    related: bool,
+    preserved: bool,
+}
+
+impl CommandRow<'_> {
+    fn show(self, ui: &mut egui::Ui, icons: &mut Icons, palette: &icy_engine::Palette) -> egui::Response {
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), COMMAND_ROW_HEIGHT), egui::Sense::click());
+        let name = command_name(self.command);
+        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), self.selected, &name));
+        if !ui.is_rect_visible(rect) {
+            return response;
+        }
+        let visuals = ui.visuals().clone();
+        let painter = ui.painter_at(rect);
+        let background = if self.selected {
+            Some(visuals.selection.bg_fill)
+        } else if self.related {
+            Some(visuals.selection.bg_fill.gamma_multiply(0.4))
+        } else if response.hovered() {
+            Some(visuals.widgets.hovered.weak_bg_fill)
+        } else {
+            None
+        };
+        if let Some(fill) = background {
+            painter.rect_filled(rect.shrink2(egui::vec2(2.0, 1.0)), 4, fill);
+        }
+        let text = if self.selected {
+            visuals.selection.stroke.color
+        } else if self.preserved {
+            visuals.weak_text_color()
+        } else {
+            visuals.text_color()
+        };
+        let weak = if self.selected { text.gamma_multiply(0.7) } else { visuals.weak_text_color() };
+        let center = rect.center().y;
+        painter.text(
+            egui::pos2(rect.left() + 34.0, center),
+            egui::Align2::RIGHT_CENTER,
+            (self.index + 1).to_string(),
+            egui::FontId::monospace(11.0),
+            weak,
+        );
+        let mut x = rect.left() + 42.0;
+        if let Some(icon) = command_icon(self.command) {
+            icons
+                .image(ui, icon, 14.0)
+                .tint(text)
+                .paint_at(ui, egui::Rect::from_center_size(egui::pos2(x + 7.0, center), egui::Vec2::splat(14.0)));
+        }
+        x += 22.0;
+        if let Some(color) = command_swatch(self.command) {
+            let swatch = egui::Rect::from_min_size(egui::pos2(x, center - 6.0), egui::Vec2::splat(12.0));
+            painter.rect_filled(swatch, 2, button::color32(palette, color));
+            painter.rect_stroke(swatch, 2, Stroke::new(1.0, weak), egui::StrokeKind::Inside);
+            x += 18.0;
+        }
+        let font = egui::TextStyle::Body.resolve(ui.style());
+        let mut job = egui::text::LayoutJob::default();
+        job.append(
+            &name,
+            0.0,
+            egui::TextFormat {
+                font_id: font.clone(),
+                color: text,
+                ..Default::default()
+            },
+        );
+        let summary = command_summary(self.command);
+        if !summary.is_empty() {
+            job.append(
+                &summary,
+                8.0,
+                egui::TextFormat {
+                    font_id: font,
+                    color: weak,
+                    ..Default::default()
+                },
+            );
+        }
+        job.wrap = egui::text::TextWrapping::truncate_at_width((rect.right() - 6.0 - x).max(0.0));
+        let galley = painter.layout_job(job);
+        painter.galley(egui::pos2(x, center - galley.size().y / 2.0), galley, text);
+        response
     }
 }
 
 fn command_field(ui: &mut egui::Ui, name: &str, value: &mut u16, maximum: u16) {
     ui.horizontal(|ui| {
-        ui.label(name);
-        ui.add(egui::DragValue::new(value).range(0..=maximum));
+        ui.add_sized([PROPERTY_LABEL_WIDTH, 20.0], egui::Label::new(egui::RichText::new(name).weak()).truncate());
+        ui.add(egui::DragValue::new(value).range(0..=maximum)).on_hover_text(name);
+    });
+}
+
+/// Font, size, direction and color of text in the property panel.
+fn text_style_properties(ui: &mut egui::Ui, palette: &icy_engine::Palette, (font, direction, size): &mut FontState, color: &mut u16) {
+    let label = |ui: &mut egui::Ui, name: String| {
+        ui.add_sized([PROPERTY_LABEL_WIDTH, 20.0], egui::Label::new(egui::RichText::new(name).weak()).truncate());
+    };
+    ui.horizontal(|ui| {
+        label(ui, fl!("rip-font"));
+        let fonts = button::font_names();
+        egui::ComboBox::from_id_salt("rip-text-property-font")
+            .selected_text(fonts[(*font).min(10) as usize].clone())
+            .show_ui(ui, |ui| {
+                for (index, name) in fonts.iter().enumerate() {
+                    ui.selectable_value(font, index as u16, name);
+                }
+            });
+    });
+    ui.horizontal(|ui| {
+        label(ui, fl!("rip-font-size"));
+        ui.add(egui::DragValue::new(size).range(1..=10));
+    });
+    ui.horizontal(|ui| {
+        label(ui, fl!("rip-text-direction"));
+        let directions = [
+            (0, fl!("rip-text-horizontal"), fl!("rip-text-horizontal")),
+            (1, fl!("rip-text-vertical"), fl!("rip-text-vertical")),
+        ];
+        widgets::segmented(ui, direction, &directions);
+    });
+    ui.horizontal(|ui| {
+        label(ui, fl!("rip-editor-color"));
+        button::color_picker_sized(ui, "text-property", palette, color, egui::vec2(30.0, 22.0));
     });
 }
 
 fn command_properties(ui: &mut egui::Ui, command: &mut RipCommand) -> bool {
+    let polyline = matches!(command, RipCommand::PolyLine { .. });
     match command {
         RipCommand::Color { c } => command_field(ui, "c", c, 15),
+        RipCommand::OnePalette { color, value } => {
+            command_field(ui, "color", color, 15);
+            ui.horizontal(|ui| {
+                command_field(ui, "EGA", value, 63);
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(24.0, 18.0), egui::Sense::hover());
+                ui.painter().rect_filled(rect, 3, palette::ega_color(*value));
+            });
+        }
         RipCommand::FillStyle { pattern, color } => {
             egui::ComboBox::from_id_salt("rip-fill-pattern")
                 .selected_text(format!("{pattern:?}"))
@@ -311,6 +834,22 @@ fn command_properties(ui: &mut egui::Ui, command: &mut RipCommand) -> bool {
             end_ang,
             x_rad,
             y_rad,
+        }
+        | RipCommand::OvalArc {
+            x,
+            y,
+            st_ang,
+            end_ang,
+            x_rad,
+            y_rad,
+        }
+        | RipCommand::OvalPieSlice {
+            x,
+            y,
+            st_ang,
+            end_ang,
+            x_rad,
+            y_rad,
         } => {
             command_field(ui, "x", x, 1295);
             command_field(ui, "y", y, 1295);
@@ -324,6 +863,52 @@ fn command_properties(ui: &mut egui::Ui, command: &mut RipCommand) -> bool {
             command_field(ui, "y", y, 1295);
             command_field(ui, "x_rad", x_rad, 1295);
             command_field(ui, "y_rad", y_rad, 1295);
+        }
+        RipCommand::Arc { x, y, st_ang, end_ang, radius } | RipCommand::PieSlice { x, y, st_ang, end_ang, radius } => {
+            command_field(ui, "x", x, 1295);
+            command_field(ui, "y", y, 1295);
+            command_field(ui, "start angle", st_ang, 360);
+            command_field(ui, "end angle", end_ang, 360);
+            command_field(ui, "radius", radius, 1295);
+        }
+        RipCommand::Polygon { points } | RipCommand::FilledPolygon { points } | RipCommand::PolyLine { points } => {
+            for (index, pair) in points.chunks_exact_mut(2).enumerate() {
+                ui.label(format!("{} {}", fl!("rip-editor-vertex"), index + 1));
+                command_field(ui, "x", &mut pair[0], 1295);
+                command_field(ui, "y", &mut pair[1], 1295);
+            }
+            if points.len() >= 2 && points.len() < 2590 && ui.button(fl!("rip-editor-add-vertex")).clicked() {
+                let last = points[points.len() - 2..].to_vec();
+                points.extend(last);
+            }
+            let minimum = if polyline { 4 } else { 6 };
+            if points.len() > minimum && ui.button(fl!("rip-editor-remove-vertex")).clicked() {
+                points.truncate(points.len() - 2);
+            }
+        }
+        RipCommand::Mouse {
+            x0,
+            y0,
+            x1,
+            y1,
+            clk,
+            clr,
+            text,
+            ..
+        } => {
+            command_field(ui, "x0", x0, 1295);
+            command_field(ui, "y0", y0, 1295);
+            command_field(ui, "x1", x1, 1295);
+            command_field(ui, "y1", y1, 1295);
+            let mut invert = *clk != 0;
+            if ui.checkbox(&mut invert, fl!("rip-mouse-invert")).changed() {
+                *clk = u16::from(invert);
+            }
+            let mut clear = *clr != 0;
+            if ui.checkbox(&mut clear, fl!("rip-mouse-clear")).changed() {
+                *clr = u16::from(clear);
+            }
+            ui.add(egui::TextEdit::singleline(text).hint_text(fl!("rip-button-host-command")));
         }
         RipCommand::TextXY { x, y, text } => {
             command_field(ui, "x", x, 1295);
@@ -440,9 +1025,7 @@ pub struct RipEditor {
     draw_color: u16,
     border_color: u16,
     fill_color: u16,
-    active_color: ColorRole,
     icons: Icons,
-    text: String,
     line_style: LineStyle,
     line_thickness: u16,
     fill_pattern: FillStyle,
@@ -450,9 +1033,25 @@ pub struct RipEditor {
     text_size: u16,
     text_direction: u16,
     bezier_segments: u16,
+    start_angle: u16,
+    end_angle: u16,
     button: ButtonOptions,
     button_dialog: Option<ButtonDialog>,
+    palette_dialog: Option<PaletteDialog>,
     bezier: Option<BezierEdit>,
+    poly: Vec<(u16, u16)>,
+    text_edit: Option<TextEdit>,
+    /// Host command, invert and clear flags of new mouse regions.
+    mouse_host: String,
+    mouse_invert: bool,
+    mouse_clear: bool,
+    /// The host command of the selected mouse region while it is typed in the toolbar.
+    mouse_draft: Option<(usize, String)>,
+    /// Font and color of the text edited in the property panel, by command index.
+    editing_style: Option<(usize, FontState, u16)>,
+    /// The restyled scene the preview currently shows for text being edited.
+    shown_editable: Option<Vec<RipCommand>>,
+    shape_drag: Option<ShapeDrag>,
     drag: Option<((u16, u16), (u16, u16))>,
     hover: Option<(u16, u16)>,
     palette: icy_engine::Palette,
@@ -460,16 +1059,15 @@ pub struct RipEditor {
     preview_dirty: bool,
     /// The unfinished shape the preview currently shows.
     shown_pending: Vec<RipCommand>,
+    /// The edited shape the preview currently shows instead of the document's.
+    shown_replacement: Option<(usize, RipCommand)>,
+    /// The selection the command list last showed and the rows it had in view, so a selection
+    /// made on the canvas scrolls into view.
+    listed_selection: Option<usize>,
+    visible_rows: std::ops::Range<usize>,
     error: Option<String>,
     #[cfg(test)]
     canvas_rect: Option<egui::Rect>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ColorRole {
-    Draw,
-    Border,
-    Fill,
 }
 
 impl RipEditor {
@@ -491,9 +1089,7 @@ impl RipEditor {
             draw_color: 15,
             border_color: 15,
             fill_color: 15,
-            active_color: ColorRole::Draw,
             icons: Icons::default(),
-            text: String::new(),
             line_style: LineStyle::Solid,
             line_thickness: 1,
             fill_pattern: FillStyle::Solid,
@@ -501,15 +1097,30 @@ impl RipEditor {
             text_size: 1,
             text_direction: 0,
             bezier_segments: 32,
+            start_angle: 0,
+            end_angle: 90,
             button: ButtonOptions::default(),
             button_dialog: None,
+            palette_dialog: None,
             bezier: None,
+            poly: Vec::new(),
+            text_edit: None,
+            mouse_host: String::new(),
+            mouse_invert: true,
+            mouse_clear: false,
+            mouse_draft: None,
+            editing_style: None,
+            shown_editable: None,
+            shape_drag: None,
             drag: None,
             hover: None,
             palette: icy_engine::Palette::dos_default(),
             texture: None,
             preview_dirty: true,
             shown_pending: Vec::new(),
+            shown_replacement: None,
+            listed_selection: None,
+            visible_rows: 0..0,
             error: None,
             #[cfg(test)]
             canvas_rect: None,
@@ -521,12 +1132,12 @@ impl RipEditor {
     }
 
     pub fn save(&mut self, path: &Path, overwrite: bool) -> Result<(), String> {
-        self.finish_bezier();
+        self.finish_pending();
         self.document.save_as(path, overwrite).map_err(|error| error.to_string())
     }
 
     pub fn modified(&self) -> bool {
-        self.document.is_dirty() || self.bezier.is_some()
+        self.document.is_dirty() || self.bezier.is_some() || !self.poly.is_empty() || self.text_edit.is_some()
     }
 
     pub fn recovery_snapshot(&self) -> Result<icy_draw::recovery::Snapshot, String> {
@@ -538,7 +1149,7 @@ impl RipEditor {
     }
 
     pub fn can_undo(&self) -> bool {
-        self.document.can_undo() || self.bezier.is_some()
+        self.document.can_undo() || self.bezier.is_some() || !self.poly.is_empty() || self.text_edit.is_some()
     }
 
     pub fn can_redo(&self) -> bool {
@@ -546,8 +1157,9 @@ impl RipEditor {
     }
 
     pub fn undo(&mut self, redo: bool) {
-        // Undo first drops an unfinished curve.
-        if !redo && self.bezier.take().is_some() {
+        // Undo first drops an unfinished curve, path or text.
+        if !redo && (self.bezier.take().is_some() || !self.poly.is_empty() || self.text_edit.take().is_some()) {
+            self.poly.clear();
             self.preview_dirty = true;
             return;
         }
@@ -562,10 +1174,126 @@ impl RipEditor {
     }
 
     fn select_tool(&mut self, tool: Tool) {
-        self.finish_bezier();
+        self.finish_pending();
         self.tool = tool;
         self.drag = None;
+        self.shape_drag = None;
         self.preview_dirty = true;
+    }
+
+    /// Size of buttons placed without a rectangle, from the style in effect before `index`.
+    fn button_size_at(&self, index: usize) -> (u16, u16) {
+        self.document.commands()[..index]
+            .iter()
+            .rev()
+            .find_map(|command| match command {
+                RipCommand::ButtonStyle { wid, hgt, .. } => Some((*wid, *hgt)),
+                _ => None,
+            })
+            .unwrap_or((0, 0))
+    }
+
+    /// The command and geometry of an editable shape, including an edit in progress.
+    fn shape(&self, index: usize) -> Option<(RipCommand, Geometry)> {
+        if index < self.document.preserved_commands() {
+            return None;
+        }
+        let command = match &self.shape_drag {
+            Some(drag) if drag.index == index => drag.current.clone(),
+            _ => self.document.commands().get(index)?.clone(),
+        };
+        // Mouse regions are only shown and picked with the mouse region tool, and only them.
+        if is_mouse_region(&command) != (self.tool == Tool::Mouse) {
+            return None;
+        }
+        let geometry = select::geometry(&command, self.button_size_at(index))?;
+        Some((command, geometry))
+    }
+
+    fn mouse_commands(&self, from: (u16, u16), to: (u16, u16)) -> Vec<RipCommand> {
+        vec![RipCommand::Mouse {
+            num: 0,
+            x0: from.0.min(to.0),
+            y0: from.1.min(to.1),
+            x1: from.0.max(to.0),
+            y1: from.1.max(to.1),
+            clk: u16::from(self.mouse_invert),
+            clr: u16::from(self.mouse_clear),
+            res: 0,
+            text: self.mouse_host.clone(),
+        }]
+    }
+
+    /// Adds a mouse region from `from` to `to` and selects it.
+    fn add_mouse_region(&mut self, from: (u16, u16), to: (u16, u16)) {
+        if from.0.abs_diff(to.0) < 2 || from.1.abs_diff(to.1) < 2 {
+            return;
+        }
+        let commands = self.mouse_commands(from, to);
+        self.add_commands(commands);
+    }
+
+    /// The selected shape; selecting a button's style or font selects the button.
+    fn selected_shape(&self) -> Option<usize> {
+        let index = self.selected?;
+        if self.shape(index).is_some() {
+            return Some(index);
+        }
+        ButtonTarget::owning(self.document.commands(), index).map(|target| target.button)
+    }
+
+    /// The topmost editable shape at `point`.
+    fn shape_at(&self, point: (f32, f32), tolerance: f32) -> Option<usize> {
+        (self.document.preserved_commands()..self.document.commands().len()).rev().find(|index| {
+            self.shape(*index)
+                .is_some_and(|(command, geometry)| select::hit(&command, &geometry, point, tolerance))
+        })
+    }
+
+    fn select_shape(&mut self, index: Option<usize>) {
+        if self.selected != index {
+            self.selected = index;
+            self.editing = None;
+            if self.preview_to_selection {
+                self.preview_dirty = true;
+            }
+        }
+    }
+
+    fn replace_shape(&mut self, index: usize, command: RipCommand) {
+        match self.document.replace(index, command) {
+            Ok(()) => {
+                self.editing = None;
+                self.preview_dirty = true;
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    fn nudge_selected(&mut self, dx: i32, dy: i32) {
+        let Some(index) = self.selected_shape() else {
+            return;
+        };
+        if let Some((command, geometry)) = self.shape(index) {
+            let moved = select::translate(&geometry, dx, dy);
+            let command = select::apply(&command, &moved, self.button_size_at(index));
+            self.replace_shape(index, command);
+        }
+    }
+
+    fn delete_selected_shape(&mut self) {
+        let Some(index) = self.selected_shape() else {
+            return;
+        };
+        match self.document.delete(index) {
+            Ok(_) => {
+                self.selected = None;
+                self.editing = None;
+                self.preview_dirty = true;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
     }
 
     /// Color and style commands that make the scene's state match the tool settings.
@@ -574,7 +1302,16 @@ impl RipEditor {
         let mut commands = Vec::new();
         let color = match tool {
             Tool::Bar | Tool::Button => None,
-            Tool::Rectangle | Tool::Circle | Tool::Oval | Tool::FilledOval => Some(self.border_color),
+            Tool::Rectangle
+            | Tool::Circle
+            | Tool::Oval
+            | Tool::FilledOval
+            | Tool::Polygon
+            | Tool::FilledPolygon
+            | Tool::Arc
+            | Tool::OvalArc
+            | Tool::PieSlice
+            | Tool::OvalPieSlice => Some(self.border_color),
             _ => Some(self.draw_color),
         };
         if let Some(color) = color.filter(|color| state.color != Some(*color)) {
@@ -612,8 +1349,9 @@ impl RipEditor {
 
     /// The commands a shape from `from` to `to` adds, or why it cannot be added.
     fn shape_commands(&self, from: (u16, u16), to: (u16, u16)) -> Result<Vec<RipCommand>, String> {
-        let shape = match self.tool {
-            Tool::Text if self.text.is_empty() => return Err(fl!("rip-editor-label-required")),
+        let mut shape = match self.tool {
+            // Text is typed on the canvas, see `begin_text`.
+            Tool::Text => return Err(String::new()),
             Tool::Button => {
                 if let Some(problem) = self.button.problem() {
                     return Err(problem);
@@ -625,8 +1363,18 @@ impl RipEditor {
                 self.button.button(from, dragged.then_some(to))
             }
             Tool::Bezier => bezier_command(straight_bezier(from, to), self.bezier_segments),
-            tool => tool.command(from, to, &self.text),
+            tool => tool.command(from, to, "").ok_or_else(String::new)?,
         };
+        match &mut shape {
+            RipCommand::Arc { st_ang, end_ang, .. }
+            | RipCommand::OvalArc { st_ang, end_ang, .. }
+            | RipCommand::PieSlice { st_ang, end_ang, .. }
+            | RipCommand::OvalPieSlice { st_ang, end_ang, .. } => {
+                *st_ang = self.start_angle;
+                *end_ang = self.end_angle;
+            }
+            _ => {}
+        }
         let mut commands = self.state_commands(self.tool);
         commands.push(shape);
         Ok(commands)
@@ -638,10 +1386,199 @@ impl RipEditor {
         commands
     }
 
+    fn poly_commands(&self, points: &[(u16, u16)]) -> Vec<RipCommand> {
+        let mut commands = self.state_commands(self.tool);
+        commands.push(poly_command(self.tool, points));
+        commands
+    }
+
+    /// Adds whatever is still being drawn: a Bézier curve, a path or typed text.
+    fn finish_pending(&mut self) {
+        self.finish_bezier();
+        self.finish_poly();
+        self.finish_text();
+    }
+
+    fn text_commands(&self, edit: &TextEdit) -> Vec<RipCommand> {
+        let mut commands = self.state_commands(Tool::Text);
+        commands.push(edit.command());
+        commands
+    }
+
+    /// The font state `text_edit` is drawn with.
+    fn text_font_state(&self, _edit: &TextEdit) -> Option<(u16, u16, u16)> {
+        Some((self.text_font, self.text_direction, self.text_size))
+    }
+
+    /// The editable scene with the edited text in the tool's font and draw color, and its index.
+    fn restyled_text(&self, index: usize, text: RipCommand) -> (Vec<RipCommand>, usize) {
+        let preserved = self.document.preserved_commands();
+        let (commands, index) = restyle_text(
+            self.document.commands(),
+            preserved,
+            index,
+            text,
+            (self.text_font, self.text_direction, self.text_size),
+            self.draw_color,
+        );
+        (commands[preserved..].to_vec(), index)
+    }
+
+    fn apply_editable(&mut self, editable: Vec<RipCommand>, selected: usize) {
+        match self.document.replace_editable(editable) {
+            Ok(()) => {
+                self.selected = Some(selected);
+                self.editing = None;
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+        self.preview_dirty = true;
+    }
+
+    /// The topmost editable text at `point`, measured with the font it is drawn in.
+    fn text_at(&self, point: (u16, u16)) -> Option<usize> {
+        let commands = self.document.commands();
+        let (px, py) = (i32::from(point.0), i32::from(point.1));
+        (self.document.preserved_commands()..commands.len()).rev().find(|index| {
+            let RipCommand::TextXY { x, y, text } = &commands[*index] else {
+                return false;
+            };
+            let (width, height) = text_extent(Some(font_before(commands, *index)), text);
+            let (x, y) = (i32::from(*x), i32::from(*y));
+            px >= x - 2 && px <= x + width.max(8) + 2 && py >= y - 2 && py <= y + height.max(8) + 2
+        })
+    }
+
+    /// Starts typing at `point`, or edits the text there.
+    fn begin_text(&mut self, point: (u16, u16)) {
+        self.finish_text();
+        let edit = match self.text_at(point) {
+            Some(index) => match &self.document.commands()[index] {
+                RipCommand::TextXY { x, y, text } => TextEdit {
+                    at: (*x, *y),
+                    text: text.clone(),
+                    index: Some(index),
+                },
+                _ => unreachable!("text_at returns text commands"),
+            },
+            None => TextEdit {
+                at: point,
+                text: String::new(),
+                index: None,
+            },
+        };
+        // Edited text shows its font and color in the tool settings, where they can be changed.
+        if let Some(index) = edit.index {
+            let commands = self.document.commands();
+            (self.text_font, self.text_direction, self.text_size) = font_before(commands, index);
+            self.draw_color = color_before(commands, index);
+        }
+        self.selected = edit.index;
+        self.editing = None;
+        self.text_edit = Some(edit);
+        self.preview_dirty = true;
+    }
+
+    /// Adds the typed text, or applies the change to the edited text; empty edited text is removed.
+    fn finish_text(&mut self) {
+        let Some(edit) = self.text_edit.take() else {
+            return;
+        };
+        // The edited command may have moved if the scene changed meanwhile.
+        if edit
+            .index
+            .is_some_and(|index| !matches!(self.document.commands().get(index), Some(RipCommand::TextXY { .. })))
+        {
+            self.preview_dirty = true;
+            return;
+        }
+        match edit.index {
+            Some(index) if edit.text.is_empty() => match self.document.delete(index) {
+                Ok(_) => {
+                    self.selected = None;
+                    self.editing = None;
+                }
+                Err(error) => self.error = Some(error.to_string()),
+            },
+            Some(index) => {
+                let (editable, index) = self.restyled_text(index, edit.command());
+                self.apply_editable(editable, index);
+            }
+            None if !edit.text.is_empty() => {
+                let commands = self.text_commands(&edit);
+                self.add_commands(commands);
+            }
+            None => {}
+        }
+        self.preview_dirty = true;
+    }
+
+    /// Applies typing to the text being edited.
+    fn type_text(&mut self, context: &egui::Context) {
+        if self.text_edit.is_none() || context.memory(|memory| memory.focused().is_some()) {
+            return;
+        }
+        let (typed, backspace, enter) = context.input_mut(|input| {
+            let typed: String = input
+                .events
+                .iter()
+                .filter_map(|event| match event {
+                    egui::Event::Text(text) | egui::Event::Paste(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect();
+            let backspace = input.count_and_consume_key(egui::Modifiers::NONE, egui::Key::Backspace);
+            let enter = input.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
+            (typed, backspace, enter)
+        });
+        let Some(edit) = &mut self.text_edit else {
+            return;
+        };
+        let before = edit.text.clone();
+        for _ in 0..backspace {
+            edit.text.pop();
+        }
+        edit.text.extend(typed.chars().filter(|c| is_rip_text_char(*c)));
+        if edit.text != before {
+            self.preview_dirty = true;
+        }
+        if enter {
+            self.finish_text();
+        }
+    }
+
+    fn finish_poly(&mut self) {
+        let minimum = if self.tool == Tool::PolyLine { 2 } else { 3 };
+        if self.poly.len() >= minimum {
+            let commands = self.poly_commands(&self.poly);
+            self.add_commands(commands);
+        }
+        self.poly.clear();
+        self.preview_dirty = true;
+    }
+
     /// The unfinished shape: a drag in progress or a Bézier curve being adjusted.
     fn pending_commands(&self) -> Vec<RipCommand> {
+        // The palette being edited recolors the whole scene, as RIP does.
+        if let Some(dialog) = self.palette_dialog.as_ref().filter(|dialog| dialog.target.is_none()) {
+            return dialog.command().into_iter().collect();
+        }
         if let Some(edit) = &self.bezier {
             return self.bezier_commands(edit);
+        }
+        if let Some(edit) = self.text_edit.as_ref().filter(|edit| edit.index.is_none() && !edit.text.is_empty()) {
+            return self.text_commands(edit);
+        }
+        if self.tool.is_poly() && !self.poly.is_empty() {
+            let mut points = self.poly.clone();
+            if let Some(hover) = self.hover.filter(|hover| Some(*hover) != points.last().copied()) {
+                points.push(hover);
+            }
+            let minimum = if self.tool == Tool::PolyLine { 2 } else { 3 };
+            if points.len() >= minimum {
+                return self.poly_commands(&points);
+            }
         }
         match self.drag {
             Some((from, to)) if self.tool.is_dragged() => self.shape_commands(from, to).unwrap_or_default(),
@@ -655,11 +1592,37 @@ impl RipEditor {
             self.shown_pending = pending;
             self.preview_dirty = true;
         }
+        let palette = self.palette_dialog.as_ref().and_then(|dialog| dialog.target.zip(dialog.command()));
+        let replacement = self
+            .shape_drag
+            .as_ref()
+            .filter(|drag| !self.preview_to_selection && drag.current != drag.command)
+            .map(|drag| (drag.index, drag.current.clone()))
+            .or(palette);
+        if replacement != self.shown_replacement {
+            self.shown_replacement = replacement;
+            self.preview_dirty = true;
+        }
+        let editable = self
+            .text_edit
+            .as_ref()
+            .filter(|_| !self.preview_to_selection)
+            .and_then(|edit| Some((edit.index?, edit.command())))
+            .filter(|(index, _)| matches!(self.document.commands().get(*index), Some(RipCommand::TextXY { .. })))
+            .map(|(index, text)| self.restyled_text(index, text).0);
+        if editable != self.shown_editable {
+            self.shown_editable = editable;
+            self.preview_dirty = true;
+        }
         if !self.preview_dirty {
             return;
         }
         let preview = if self.preview_to_selection {
             self.document.preview_through(self.selected)
+        } else if let Some(editable) = &self.shown_editable {
+            self.document.preview_editable(editable)
+        } else if let Some((index, command)) = &self.shown_replacement {
+            self.document.preview_replacing(*index, command)
         } else {
             self.document.preview_with(&self.shown_pending)
         };
@@ -692,7 +1655,15 @@ impl RipEditor {
 
     fn add_shape(&mut self, from: (u16, u16), to: (u16, u16)) {
         match self.shape_commands(from, to) {
-            Ok(commands) => self.add_commands(commands),
+            Ok(commands) => {
+                let placed = self.document.commands().len();
+                self.add_commands(commands);
+                // A placed button is selected for moving and resizing.
+                if self.tool == Tool::Button && self.document.commands().len() > placed {
+                    self.tool = Tool::Select;
+                }
+            }
+            Err(error) if error.is_empty() => {}
             Err(error) => self.error = Some(error),
         }
     }
@@ -706,8 +1677,44 @@ impl RipEditor {
     }
 
     fn cancel(&mut self) {
-        if self.bezier.take().is_some() || self.drag.take().is_some() {
+        if self.bezier.take().is_some()
+            || !self.poly.is_empty()
+            || self.text_edit.take().is_some()
+            || self.drag.take().is_some()
+            || self.shape_drag.take().is_some()
+        {
+            self.poly.clear();
             self.preview_dirty = true;
+        } else if self.tool == Tool::Button {
+            self.select_tool(Tool::Select);
+        } else {
+            self.select_shape(None);
+        }
+    }
+
+    /// Edits the palette in effect at the end of the scene, or the `|Q` command at `target`.
+    fn open_palette_dialog(&mut self, target: Option<usize>) {
+        self.finish_bezier();
+        let values = match target.and_then(|index| self.document.commands().get(index)) {
+            Some(RipCommand::SetPalette { colors }) => {
+                let mut values = palette::palette_at_end(&self.document.commands()[..target.unwrap_or_default()]);
+                for (slot, color) in values.iter_mut().zip(colors) {
+                    *slot = (*color).min(63);
+                }
+                values
+            }
+            _ => palette::palette_at_end(self.document.commands()),
+        };
+        self.palette_dialog = Some(PaletteDialog::new(values, target));
+    }
+
+    fn apply_palette(&mut self, dialog: PaletteDialog) {
+        let Some(command) = dialog.command() else {
+            return;
+        };
+        match dialog.target {
+            Some(index) => self.replace_shape(index, command),
+            None => self.add_commands(vec![command]),
         }
     }
 
@@ -757,6 +1764,74 @@ impl RipEditor {
         }
     }
 
+    /// Host command and flags of the selected mouse region, or of new ones.
+    fn mouse_toolbar(&mut self, ui: &mut egui::Ui) {
+        let selected = self.selected_shape().and_then(|index| match &self.document.commands()[index] {
+            RipCommand::Mouse { .. } => Some(index),
+            _ => None,
+        });
+        let Some(index) = selected else {
+            self.mouse_draft = None;
+            ui.add(
+                icy_engine_gui::egui::appearance::text_edit(&mut self.mouse_host)
+                    .hint_text(fl!("rip-button-host-command"))
+                    .desired_width(160.0),
+            )
+            .on_hover_text(fl!("rip-mouse-host-tooltip"));
+            ui.checkbox(&mut self.mouse_invert, fl!("rip-mouse-invert"));
+            ui.checkbox(&mut self.mouse_clear, fl!("rip-mouse-clear"));
+            ui.weak(fl!("rip-mouse-hint"));
+            return;
+        };
+        let RipCommand::Mouse { text, clk, clr, .. } = self.document.commands()[index].clone() else {
+            return;
+        };
+        if self.mouse_draft.as_ref().map(|draft| draft.0) != Some(index) {
+            self.mouse_draft = Some((index, text.clone()));
+        }
+        let mut changed = None;
+        if let Some((_, draft)) = &mut self.mouse_draft {
+            let response = ui
+                .add(
+                    icy_engine_gui::egui::appearance::text_edit(draft)
+                        .hint_text(fl!("rip-button-host-command"))
+                        .desired_width(160.0),
+                )
+                .on_hover_text(fl!("rip-mouse-host-tooltip"));
+            // The command changes once, when typing ends, so it is one undo step.
+            if response.lost_focus() && *draft != text {
+                changed = Some((draft.clone(), clk, clr));
+            }
+        }
+        let (mut invert, mut clear) = (clk != 0, clr != 0);
+        let toggled = ui.checkbox(&mut invert, fl!("rip-mouse-invert")).changed();
+        if ui.checkbox(&mut clear, fl!("rip-mouse-clear")).changed() || toggled {
+            let text = self.mouse_draft.as_ref().map_or(text.clone(), |draft| draft.1.clone());
+            changed = Some((text, u16::from(invert), u16::from(clear)));
+        }
+        if let Some((text, clk, clr)) = changed {
+            if let RipCommand::Mouse { x0, y0, x1, y1, num, res, .. } = self.document.commands()[index].clone() {
+                self.replace_shape(
+                    index,
+                    RipCommand::Mouse {
+                        num,
+                        x0,
+                        y0,
+                        x1,
+                        y1,
+                        clk,
+                        clr,
+                        res,
+                        text,
+                    },
+                );
+            }
+        }
+        if self.icons.button(ui, "delete", &fl!("rip-editor-delete"), false).clicked() {
+            self.delete_selected_shape();
+        }
+    }
+
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
@@ -787,13 +1862,18 @@ impl RipEditor {
                         }
                     });
             }
+            if self.tool.has_angles() {
+                ui.label(fl!("rip-editor-start-angle"));
+                ui.add(egui::DragValue::new(&mut self.start_angle).range(0..=360).suffix("°"));
+                ui.label(fl!("rip-editor-end-angle"));
+                ui.add(egui::DragValue::new(&mut self.end_angle).range(0..=360).suffix("°"));
+            }
             match self.tool {
+                Tool::Polygon | Tool::FilledPolygon | Tool::PolyLine => {
+                    ui.weak(fl!("rip-poly-hint"));
+                }
+                Tool::Mouse => self.mouse_toolbar(ui),
                 Tool::Text => {
-                    ui.add(
-                        icy_engine_gui::egui::appearance::text_edit(&mut self.text)
-                            .hint_text(fl!("rip-editor-label"))
-                            .desired_width(180.0),
-                    );
                     let fonts = button::font_names();
                     egui::ComboBox::from_id_salt("rip-text-font")
                         .selected_text(fonts[self.text_font.min(10) as usize].clone())
@@ -808,6 +1888,11 @@ impl RipEditor {
                         (1, fl!("rip-text-vertical"), fl!("rip-text-vertical")),
                     ];
                     widgets::segmented(ui, &mut self.text_direction, &directions);
+                    ui.weak(if self.text_edit.is_some() {
+                        fl!("rip-text-typing-hint")
+                    } else {
+                        fl!("rip-text-hint")
+                    });
                 }
                 Tool::Bezier => {
                     ui.weak(fl!("rip-bezier-segments"));
@@ -816,7 +1901,30 @@ impl RipEditor {
                         ui.weak(fl!("rip-bezier-adjust-hint"));
                     }
                 }
+                Tool::Select => match self.selected_shape() {
+                    Some(index) => {
+                        let command = &self.document.commands()[index];
+                        let is_button = matches!(command, RipCommand::Button { .. });
+                        let name = match command {
+                            RipCommand::Button { text, .. } => format!("{} \"{}\"", Tool::Button.label(), text.split("<>").nth(1).unwrap_or(text)),
+                            _ => shape_name(command).unwrap_or_default(),
+                        };
+                        ui.label(icy_engine_gui::egui::appearance::bold(ui, name));
+                        if is_button && ui.button(fl!("rip-button-edit")).clicked() {
+                            if let Some(target) = ButtonTarget::find(self.document.commands(), index) {
+                                self.open_button_dialog(Some(target));
+                            }
+                        }
+                        if self.icons.button(ui, "delete", &fl!("rip-editor-delete"), false).clicked() {
+                            self.delete_selected_shape();
+                        }
+                    }
+                    None => {
+                        ui.weak(fl!("rip-select-hint"));
+                    }
+                },
                 Tool::Button => {
+                    ui.weak(fl!("rip-button-place-hint", width = self.button.width, height = self.button.height));
                     let kinds = ButtonKind::ALL.map(|kind| (kind, kind.label(), kind.tooltip()));
                     widgets::segmented(ui, &mut self.button.kind, &kinds);
                     ui.add(
@@ -842,11 +1950,15 @@ impl RipEditor {
                 }
                 _ => {}
             }
-            let parameters = self
-                .shown_pending
-                .last()
-                .and_then(describe)
-                .or_else(|| self.hover.map(|(x, y)| format!("{x}, {y}")));
+            let edited = match self.tool {
+                Tool::Select => self.selected_shape().and_then(|index| self.shape(index)).map(|(command, _)| command),
+                Tool::Mouse => match self.drag {
+                    Some((from, to)) => self.mouse_commands(from, to).pop(),
+                    None => self.selected_shape().and_then(|index| self.shape(index)).map(|(command, _)| command),
+                },
+                _ => self.shown_pending.last().cloned(),
+            };
+            let parameters = edited.as_ref().and_then(describe).or_else(|| self.hover.map(|(x, y)| format!("{x}, {y}")));
             if let Some(parameters) = parameters {
                 widgets::divider(ui);
                 ui.label(egui::RichText::new(parameters).monospace().color(ui.visuals().weak_text_color()));
@@ -854,96 +1966,145 @@ impl RipEditor {
         });
     }
 
+    fn move_selected_command(&mut self, delta: isize) {
+        self.finish_text();
+        let Some(index) = self.selected else {
+            return;
+        };
+        let target = index.saturating_add_signed(delta);
+        match self.document.move_command(index, target) {
+            Ok(()) => {
+                self.selected = Some(target);
+                self.listed_selection = self.selected;
+                self.editing = None;
+                self.preview_dirty = true;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    fn delete_selected_command(&mut self) {
+        self.finish_text();
+        let Some(index) = self.selected else {
+            return;
+        };
+        match self.document.delete(index) {
+            Ok(_) => {
+                self.selected = None;
+                self.editing = None;
+                self.preview_dirty = true;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
     fn command_list(&mut self, context: &egui::Context, blocked: bool) {
         egui::SidePanel::right("rip-commands")
-            .default_width(260.0)
-            .min_width(180.0)
+            .default_width(280.0)
+            .min_width(220.0)
             .show(context, |ui| {
                 if blocked {
                     ui.disable();
                 }
-                ui.heading(fl!("rip-editor-commands"));
-                if ui.checkbox(&mut self.preview_to_selection, fl!("rip-editor-preview-through")).changed() {
-                    self.preview_dirty = true;
-                }
-                if self.document.preserved_commands() > 0 {
-                    ui.weak(fl!("rip-editor-preserved"));
-                }
+                let count = self.document.commands().len();
+                let preserved = self.document.preserved_commands();
+                ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    let selected = self.selected;
-                    let editable = selected.is_some_and(|index| index >= self.document.preserved_commands());
-                    if ui
-                        .add_enabled(
-                            editable && selected.is_some_and(|index| index > self.document.preserved_commands()),
-                            egui::Button::new("↑"),
-                        )
-                        .on_hover_text(fl!("rip-editor-up"))
-                        .clicked()
-                    {
-                        let index = selected.unwrap();
-                        match self.document.move_command(index, index - 1) {
-                            Ok(()) => {
-                                self.selected = Some(index - 1);
-                                self.editing = None;
-                                self.preview_dirty = true;
+                    ui.label(icy_engine_gui::egui::appearance::bold(ui, fl!("rip-editor-commands")));
+                    ui.weak(count.to_string());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        let editable = self.selected.is_some_and(|index| index >= preserved && index < count);
+                        let mut action = None;
+                        ui.add_enabled_ui(editable, |ui| {
+                            if self.icons.button_sized(ui, "delete", &fl!("rip-editor-delete"), false, 26.0).clicked() {
+                                action = Some(0);
                             }
-                            Err(error) => self.error = Some(error.to_string()),
-                        }
-                    }
-                    if ui
-                        .add_enabled(
-                            editable && selected.is_some_and(|index| index + 1 < self.document.commands().len()),
-                            egui::Button::new("↓"),
-                        )
-                        .on_hover_text(fl!("rip-editor-down"))
-                        .clicked()
-                    {
-                        let index = selected.unwrap();
-                        match self.document.move_command(index, index + 1) {
-                            Ok(()) => {
-                                self.selected = Some(index + 1);
-                                self.editing = None;
-                                self.preview_dirty = true;
+                        });
+                        ui.add_enabled_ui(editable && self.selected.is_some_and(|index| index + 1 < count), |ui| {
+                            if self.icons.button_sized(ui, "move_down", &fl!("rip-editor-down"), false, 26.0).clicked() {
+                                action = Some(1);
                             }
-                            Err(error) => self.error = Some(error.to_string()),
-                        }
-                    }
-                    if ui
-                        .add_enabled(editable, egui::Button::new("×"))
-                        .on_hover_text(fl!("rip-editor-delete"))
-                        .clicked()
-                    {
-                        match self.document.delete(selected.unwrap()) {
-                            Ok(_) => {
-                                self.selected = None;
-                                self.editing = None;
-                                self.preview_dirty = true;
+                        });
+                        ui.add_enabled_ui(editable && self.selected.is_some_and(|index| index > preserved), |ui| {
+                            if self.icons.button_sized(ui, "move_up", &fl!("rip-editor-up"), false, 26.0).clicked() {
+                                action = Some(-1);
                             }
-                            Err(error) => self.error = Some(error.to_string()),
+                        });
+                        widgets::divider(ui);
+                        let through = self.preview_to_selection;
+                        if self
+                            .icons
+                            .button_sized(ui, "visibility", &fl!("rip-editor-preview-through"), through, 26.0)
+                            .clicked()
+                        {
+                            self.preview_to_selection = !through;
+                            self.preview_dirty = true;
                         }
-                    }
+                        match action {
+                            Some(0) => self.delete_selected_command(),
+                            Some(delta) => self.move_selected_command(delta),
+                            None => {}
+                        }
+                    });
                 });
+                if preserved > 0 {
+                    ui.add(egui::Label::new(egui::RichText::new(fl!("rip-editor-preserved")).small().weak()).wrap());
+                }
                 ui.separator();
+
                 let previous = self.selected;
                 let selected_button = self.selected.and_then(|index| ButtonTarget::owning(self.document.commands(), index));
-                egui::ScrollArea::vertical()
-                    .max_height((ui.available_height() - 240.0).max(120.0))
-                    .show(ui, |ui| {
-                        for (index, command) in self.document.commands().iter().enumerate() {
-                            let name = format!("{}. {}", index + 1, list_label(command));
-                            let label: String = name.chars().take(72).collect();
+                let count = self.document.commands().len();
+                let list_height = (ui.available_height() - 250.0).max(120.0);
+                let mut scroll = egui::ScrollArea::vertical()
+                    .id_salt("rip-command-list")
+                    .auto_shrink([false, false])
+                    .max_height(list_height);
+                // A shape picked on the canvas is scrolled into view in the list.
+                if self.selected != self.listed_selection {
+                    if let Some(index) = self.selected.filter(|index| !self.visible_rows.contains(index)) {
+                        scroll = scroll.vertical_scroll_offset((index as f32 * COMMAND_ROW_HEIGHT - list_height / 2.0).max(0.0));
+                    }
+                }
+                ui.scope(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    scroll.show_rows(ui, COMMAND_ROW_HEIGHT, count, |ui, rows| {
+                        self.visible_rows = rows.clone();
+                        for index in rows {
+                            let Some(command) = self.document.commands().get(index) else {
+                                break;
+                            };
                             // A button's style and font commands are highlighted with it.
-                            let part_of_button =
+                            let related =
                                 selected_button.is_some_and(|target| target.button == index || target.style == Some(index) || target.font == Some(index));
-                            let response = ui.selectable_label(self.selected == Some(index) || part_of_button, label).on_hover_text(name);
+                            let row = CommandRow {
+                                index,
+                                command,
+                                selected: self.selected == Some(index),
+                                related,
+                                preserved: index < preserved,
+                            };
+                            let mouse = is_mouse_region(command);
+                            let shape = select::geometry(command, (0, 0)).is_some();
+                            let response = row.show(ui, &mut self.icons, &self.palette);
                             if response.clicked() {
+                                self.finish_text();
+                                // Mouse regions are edited with their own tool, shapes with the select tool.
+                                if mouse && self.tool != Tool::Mouse {
+                                    self.select_tool(Tool::Mouse);
+                                } else if !mouse && self.tool == Tool::Mouse && shape {
+                                    self.select_tool(Tool::Select);
+                                }
                                 self.selected = Some(index);
                             }
-                            if index < self.document.preserved_commands() {
+                            if index < preserved {
                                 response.on_hover_text(fl!("rip-editor-preserved"));
                             }
                         }
                     });
+                });
+                self.listed_selection = self.selected;
                 if self.selected != previous {
                     self.editing = None;
                     if self.preview_to_selection {
@@ -954,34 +2115,99 @@ impl RipEditor {
                     self.editing = self
                         .selected
                         .and_then(|index| self.document.commands().get(index).cloned().map(|cmd| (index, cmd)));
+                    self.editing_style = None;
+                }
+                // Text also edits the font and color it is drawn with.
+                let text_index = self
+                    .editing
+                    .as_ref()
+                    .filter(|(index, draft)| *index >= preserved && matches!(draft, RipCommand::TextXY { .. }))
+                    .map(|(index, _)| *index);
+                match text_index {
+                    Some(index) if self.editing_style.map(|style| style.0) != Some(index) => {
+                        let commands = self.document.commands();
+                        self.editing_style = Some((index, font_before(commands, index), color_before(commands, index)));
+                    }
+                    None => self.editing_style = None,
+                    _ => {}
                 }
                 let button_target = self.selected.and_then(|index| ButtonTarget::owning(self.document.commands(), index));
                 let mut open_button = None;
+                let mut open_palette = None;
+                let mut apply = None;
                 if let Some((index, draft)) = self.editing.as_mut() {
                     ui.separator();
-                    egui::ScrollArea::vertical().id_salt("rip-properties").show(ui, |ui| {
-                        ui.label(fl!("rip-editor-properties"));
-                        if *index < self.document.preserved_commands() {
-                            ui.weak(fl!("rip-editor-preserved"));
-                        } else if let Some(target) = button_target {
-                            if ui.button(fl!("rip-button-edit")).clicked() {
-                                open_button = Some(target);
-                            }
-                            ui.weak(fl!("rip-button-edit-hint"));
-                        } else if command_properties(ui, draft) {
-                            if ui.button(fl!("rip-editor-apply")).clicked() {
-                                match self.document.replace(*index, draft.clone()) {
-                                    Ok(()) => self.preview_dirty = true,
-                                    Err(error) => self.error = Some(error.to_string()),
-                                }
-                            }
-                        } else {
-                            ui.weak(fl!("rip-editor-unsupported-properties"));
+                    ui.horizontal(|ui| {
+                        if let Some(icon) = command_icon(draft) {
+                            ui.add(self.icons.image(ui, icon, 16.0));
                         }
+                        ui.label(icy_engine_gui::egui::appearance::bold(ui, command_name(draft)));
+                        ui.weak(format!("#{}", *index + 1));
                     });
+                    ui.add_space(4.0);
+                    let original = self.document.commands().get(*index);
+                    if *index < preserved {
+                        ui.weak(fl!("rip-editor-preserved"));
+                    } else if let Some(target) = button_target {
+                        ui.weak(fl!("rip-button-edit-hint"));
+                        if ui
+                            .add(egui::Button::new(fl!("rip-button-edit")).min_size(egui::vec2(ui.available_width(), 28.0)))
+                            .clicked()
+                        {
+                            open_button = Some(target);
+                        }
+                    } else if matches!(draft, RipCommand::SetPalette { .. }) {
+                        if ui
+                            .add(egui::Button::new(fl!("rip-palette-edit")).min_size(egui::vec2(ui.available_width(), 28.0)))
+                            .clicked()
+                        {
+                            open_palette = Some(*index);
+                        }
+                    } else {
+                        let mut supported = true;
+                        egui::ScrollArea::vertical()
+                            .id_salt("rip-properties")
+                            .max_height((ui.available_height() - 40.0).max(60.0))
+                            .show(ui, |ui| {
+                                supported = command_properties(ui, draft);
+                                if !supported {
+                                    ui.weak(fl!("rip-editor-unsupported-properties"));
+                                }
+                                if let Some((_, font, color)) = self.editing_style.as_mut() {
+                                    ui.add_space(4.0);
+                                    text_style_properties(ui, &self.palette, font, color);
+                                }
+                            });
+                        if supported {
+                            ui.add_space(4.0);
+                            let commands = self.document.commands();
+                            let restyled = self
+                                .editing_style
+                                .is_some_and(|(index, font, color)| (font, color) != (font_before(commands, index), color_before(commands, index)));
+                            let changed = original != Some(&*draft) || restyled;
+                            let button = egui::Button::new(fl!("rip-editor-apply")).min_size(egui::vec2(ui.available_width(), 28.0));
+                            if ui.add_enabled(changed, button).clicked() {
+                                apply = Some((*index, draft.clone()));
+                            }
+                        }
+                    }
+                }
+                if let Some((index, command)) = apply {
+                    if let Some((_, font, color)) = self.editing_style.filter(|style| style.0 == index) {
+                        let (commands, index) = restyle_text(self.document.commands(), preserved, index, command, font, color);
+                        self.apply_editable(commands[preserved..].to_vec(), index);
+                    } else {
+                        match self.document.replace(index, command) {
+                            Ok(()) => self.preview_dirty = true,
+                            Err(error) => self.error = Some(error.to_string()),
+                        }
+                    }
                 }
                 if let Some(target) = open_button {
                     self.open_button_dialog(Some(target));
+                }
+                if let Some(index) = open_palette {
+                    self.open_palette_dialog(Some(index));
                 }
             });
     }
@@ -994,48 +2220,25 @@ impl RipEditor {
             .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::symmetric(6, 6)))
             .show(context, |ui| {
                 ui.add_enabled_ui(!blocked, |ui| {
-                    ui.vertical(|ui| {
-                        for (role, label, color) in [
-                            (ColorRole::Draw, fl!("rip-editor-color"), self.draw_color),
-                            (ColorRole::Border, fl!("rip-editor-border-color"), self.border_color),
-                            (ColorRole::Fill, fl!("rip-editor-fill-color"), self.fill_color),
-                        ] {
-                            ui.horizontal(|ui| {
-                                if ui.selectable_label(self.active_color == role, label).clicked()
-                                    || ui
-                                        .add_sized([18.0, 18.0], egui::Button::new("").fill(button::color32(&self.palette, color)))
-                                        .clicked()
-                                {
-                                    self.active_color = role;
-                                }
+                    for (id, label, color) in [
+                        ("draw", fl!("rip-editor-color"), &mut self.draw_color),
+                        ("border", fl!("rip-editor-border-color"), &mut self.border_color),
+                        ("fill", fl!("rip-editor-fill-color"), &mut self.fill_color),
+                    ] {
+                        ui.horizontal(|ui| {
+                            ui.label(label);
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                button::color_picker_sized(ui, id, &self.palette, color, egui::vec2(30.0, 26.0));
                             });
-                        }
-                    });
-                    egui::Grid::new("rip-colors").spacing(egui::vec2(3.0, 3.0)).show(ui, |ui| {
-                        for color in 0..16u16 {
-                            let selected = match self.active_color {
-                                ColorRole::Draw => self.draw_color,
-                                ColorRole::Border => self.border_color,
-                                ColorRole::Fill => self.fill_color,
-                            } == color;
-                            let response = ui.add_sized(
-                                [24.0, 24.0],
-                                egui::Button::new("")
-                                    .fill(button::color32(&self.palette, color))
-                                    .stroke(Stroke::new(if selected { 2.0 } else { 0.0 }, ui.visuals().strong_text_color())),
-                            );
-                            if response.clicked() {
-                                *match self.active_color {
-                                    ColorRole::Draw => &mut self.draw_color,
-                                    ColorRole::Border => &mut self.border_color,
-                                    ColorRole::Fill => &mut self.fill_color,
-                                } = color;
-                            }
-                            if color % 4 == 3 {
-                                ui.end_row();
-                            }
-                        }
-                    });
+                        });
+                    }
+                    if ui
+                        .add(egui::Button::new(fl!("rip-palette-edit")).min_size(egui::vec2(ui.available_width(), 26.0)))
+                        .on_hover_text(fl!("rip-palette-edit-tooltip"))
+                        .clicked()
+                    {
+                        self.open_palette_dialog(None);
+                    }
                     ui.separator();
                     egui::Grid::new("rip-tools-grid").num_columns(3).show(ui, |ui| {
                         for (index, tool) in Tool::ALL.into_iter().enumerate() {
@@ -1047,12 +2250,23 @@ impl RipEditor {
                             }
                         }
                     });
+                    ui.add_space(6.0);
+                    let create = egui::Button::new(fl!("rip-button-create"))
+                        .selected(self.tool == Tool::Button)
+                        .min_size(egui::vec2(ui.available_width(), 30.0));
+                    if ui.add(create).on_hover_text(fl!("rip-button-create-tooltip")).clicked() {
+                        self.finish_pending();
+                        self.open_button_dialog(None);
+                        if let Some(dialog) = &mut self.button_dialog {
+                            dialog.create = true;
+                        }
+                    }
                 });
             });
     }
 
     pub fn show(&mut self, context: &egui::Context, blocked: bool) {
-        let blocked = blocked || self.button_dialog.is_some();
+        let blocked = blocked || self.button_dialog.is_some() || self.palette_dialog.is_some();
         let panel_fill = context.style().visuals.panel_fill;
         egui::TopBottomPanel::top("rip-toolbar")
             .exact_height(TOOLBAR_HEIGHT)
@@ -1069,8 +2283,33 @@ impl RipEditor {
             if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
                 self.cancel();
             }
-            if self.bezier.is_some() && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Enter)) {
-                self.finish_bezier();
+            self.type_text(context);
+            // Text fields in the toolbar and command list keep their keys.
+            if matches!(self.tool, Tool::Select | Tool::Mouse) && context.memory(|memory| memory.focused().is_none()) {
+                if context.input_mut(|input| {
+                    input.consume_key(egui::Modifiers::NONE, egui::Key::Delete) || input.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)
+                }) {
+                    self.delete_selected_shape();
+                }
+                for (key, dx, dy) in [
+                    (egui::Key::ArrowLeft, -1, 0),
+                    (egui::Key::ArrowRight, 1, 0),
+                    (egui::Key::ArrowUp, 0, -1),
+                    (egui::Key::ArrowDown, 0, 1),
+                ] {
+                    // Shift first: the plain pattern also matches Shift+arrow.
+                    for (modifiers, step) in [(egui::Modifiers::SHIFT, 10), (egui::Modifiers::NONE, 1)] {
+                        if self.selected_shape().is_some() && context.input_mut(|input| input.consume_key(modifiers, key)) {
+                            self.nudge_selected(dx * step, dy * step);
+                        }
+                    }
+                }
+            }
+            if (self.bezier.is_some() || !self.poly.is_empty())
+                && context.memory(|memory| memory.focused().is_none())
+                && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Enter))
+            {
+                self.finish_pending();
             }
         }
         egui::CentralPanel::default().show(context, |ui| {
@@ -1084,9 +2323,27 @@ impl RipEditor {
                 DialogResult::Open => {}
                 DialogResult::Cancel => self.button_dialog = None,
                 DialogResult::Apply(options) => {
-                    let target = dialog.target;
+                    let (target, create) = (dialog.target, dialog.create);
                     self.button_dialog = None;
                     self.apply_button(target, options);
+                    if create {
+                        self.select_tool(Tool::Button);
+                    }
+                }
+            }
+        }
+        if let Some(dialog) = &mut self.palette_dialog {
+            match dialog.show(context) {
+                PaletteResult::Open => {}
+                PaletteResult::Cancel => {
+                    self.palette_dialog = None;
+                    self.preview_dirty = true;
+                }
+                PaletteResult::Apply => {
+                    if let Some(dialog) = self.palette_dialog.take() {
+                        self.apply_palette(dialog);
+                    }
+                    self.preview_dirty = true;
                 }
             }
         }
@@ -1118,6 +2375,77 @@ impl RipEditor {
                 // The texture is uploaded at the end of the frame, so the changed shape shows now.
                 self.refresh_preview(ui.ctx());
             }
+            if self.tool == Tool::Mouse {
+                self.paint_mouse_regions(ui, &on_screen, scale);
+            }
+            if matches!(self.tool, Tool::Select | Tool::Mouse) {
+                if let Some((command, geometry)) = self.selected_shape().and_then(|index| self.shape(index)) {
+                    let to_screen = |point: select::Point| on_screen((point.0.clamp(0, 1295) as u16, point.1.clamp(0, 1295) as u16));
+                    let accent = ui.visuals().selection.stroke.color;
+                    let points_only = matches!(
+                        command,
+                        RipCommand::Line { .. }
+                            | RipCommand::Bezier { .. }
+                            | RipCommand::Polygon { .. }
+                            | RipCommand::FilledPolygon { .. }
+                            | RipCommand::PolyLine { .. }
+                    );
+                    // Lines and curves are shown by their points; other shapes get a frame.
+                    if !points_only {
+                        let (x0, y0, x1, y1) = select::bounds(&geometry);
+                        let frame = egui::Rect::from_two_pos(to_screen((x0, y0)), to_screen((x1, y1))).expand(scale * 0.5 + 2.0);
+                        ui.painter().rect_stroke(frame, 0.0, Stroke::new(1.0, accent), egui::StrokeKind::Middle);
+                    }
+                    if let (RipCommand::Bezier { .. }, Geometry::Points(points)) = (&command, &geometry) {
+                        let guide = Stroke::new(1.0, Color32::from_white_alpha(90));
+                        ui.painter().line_segment([to_screen(points[0]), to_screen(points[1])], guide);
+                        ui.painter().line_segment([to_screen(points[3]), to_screen(points[2])], guide);
+                    }
+                    let handles = select::handles(&command, &geometry);
+                    let count = handles.len();
+                    for (index, (_, point)) in handles.into_iter().enumerate() {
+                        let handle = egui::Rect::from_center_size(to_screen(point), egui::Vec2::splat(8.0));
+                        let color = if !points_only {
+                            accent
+                        } else if index == 0 || index + 1 == count {
+                            Color32::from_rgb(0xD0, 0x30, 0x30)
+                        } else {
+                            Color32::from_rgb(0x30, 0xC0, 0x30)
+                        };
+                        ui.painter().rect_filled(handle, 1.0, if points_only { Color32::BLACK } else { Color32::WHITE });
+                        ui.painter()
+                            .rect_stroke(handle, 1.0, Stroke::new(if points_only { 2.0 } else { 1.5 }, color), egui::StrokeKind::Middle);
+                    }
+                }
+            }
+            if let Some(edit) = &self.text_edit {
+                let font = self.text_font_state(edit);
+                let (width, height) = text_extent(font, &edit.text);
+                let (char_width, char_height) = text_extent(font, "W");
+                let vertical = font.is_some_and(|(_, direction, _)| direction == 1);
+                let (x, y) = (f32::from(edit.at.0), f32::from(edit.at.1));
+                let point = |px: f32, py: f32| origin + egui::vec2(px * scale, py * scale);
+                let (box_width, box_height) = if vertical {
+                    (char_width.max(width) as f32, height.max(char_height) as f32)
+                } else {
+                    (width.max(char_width) as f32, char_height.max(height) as f32)
+                };
+                let accent = ui.visuals().selection.stroke.color;
+                let frame = egui::Rect::from_min_max(point(x, y), point(x + box_width, y + box_height)).expand(2.0);
+                ui.painter()
+                    .rect_stroke(frame, 1.0, Stroke::new(1.0, accent.gamma_multiply(0.6)), egui::StrokeKind::Outside);
+                // A blinking caret after the last character (above it for vertical text).
+                let time = ui.input(|input| input.time);
+                if (time * 2.0) as i64 % 2 == 0 {
+                    let caret = if vertical {
+                        egui::Rect::from_min_max(point(x, y), point(x + box_width, y)).expand2(egui::vec2(0.0, 1.0))
+                    } else {
+                        egui::Rect::from_min_max(point(x + width as f32, y), point(x + width as f32, y + box_height)).expand2(egui::vec2(1.0, 0.0))
+                    };
+                    ui.painter().rect_filled(caret, 0.0, accent);
+                }
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+            }
             if let Some(edit) = &self.bezier {
                 let points = edit.points.map(on_screen);
                 let guide = Stroke::new(1.0, Color32::from_white_alpha(90));
@@ -1136,9 +2464,165 @@ impl RipEditor {
         });
     }
 
+    /// Outlines every mouse region with its host command, and the one being dragged out.
+    fn paint_mouse_regions(&self, ui: &egui::Ui, on_screen: &dyn Fn((u16, u16)) -> egui::Pos2, scale: f32) {
+        let color = Color32::from_rgb(0x40, 0xC8, 0xFF);
+        let painter = ui.painter();
+        let area = |(x0, y0, x1, y1): (u16, u16, u16, u16)| {
+            egui::Rect::from_two_pos(on_screen((x0.min(x1), y0.min(y1))), on_screen((x0.max(x1), y0.max(y1)))).expand(scale * 0.5)
+        };
+        let selected = self.selected_shape();
+        for index in self.document.preserved_commands()..self.document.commands().len() {
+            let Some((RipCommand::Mouse { x0, y0, x1, y1, text, .. }, _)) = self.shape(index) else {
+                continue;
+            };
+            let rect = area((x0, y0, x1, y1));
+            let chosen = selected == Some(index);
+            painter.rect_filled(rect, 0.0, color.gamma_multiply(if chosen { 0.22 } else { 0.12 }));
+            painter.rect_stroke(rect, 0.0, Stroke::new(if chosen { 2.0 } else { 1.0 }, color), egui::StrokeKind::Inside);
+            let label = if text.is_empty() { fl!("rip-mouse-no-command") } else { text };
+            let galley = painter.layout(label, egui::FontId::proportional(11.0), Color32::WHITE, (rect.width() - 6.0).max(0.0));
+            let tag = egui::Rect::from_min_size(rect.min, galley.size() + egui::vec2(6.0, 2.0)).intersect(rect);
+            painter.rect_filled(tag, 0.0, color.gamma_multiply(0.85));
+            painter.with_clip_rect(tag).galley(tag.min + egui::vec2(3.0, 1.0), galley, Color32::WHITE);
+        }
+        if let Some((from, to)) = self.drag {
+            let rect = area((from.0, from.1, to.0, to.1));
+            painter.rect_filled(rect, 0.0, color.gamma_multiply(0.18));
+            painter.rect_stroke(rect, 0.0, Stroke::new(1.5, color), egui::StrokeKind::Inside);
+        }
+    }
+
+    fn select_input(&mut self, ui: &egui::Ui, response: &egui::Response, at: &dyn Fn(egui::Pos2) -> (u16, u16), on_screen: &dyn Fn((u16, u16)) -> egui::Pos2) {
+        let pointer = response.interact_pointer_pos();
+        let origin = ui.input(|input| input.pointer.press_origin());
+        let scale = (on_screen((1, 0)).x - on_screen((0, 0)).x).max(0.1);
+        let tolerance = HANDLE_RADIUS / scale;
+        let scene = |pos: egui::Pos2| {
+            let (x, y) = at(pos);
+            (x as f32 + 0.5, y as f32 + 0.5)
+        };
+        let handle_at = |editor: &Self, pos: egui::Pos2| {
+            let index = editor.selected_shape()?;
+            let (command, geometry) = editor.shape(index)?;
+            select::handles(&command, &geometry)
+                .into_iter()
+                .map(|(handle, point)| (handle, on_screen((point.0.max(0) as u16, point.1.max(0) as u16)).distance(pos)))
+                .filter(|(_, distance)| *distance <= HANDLE_RADIUS)
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|(handle, _)| (index, handle))
+        };
+        if let Some(hover) = response.hover_pos() {
+            let cursor = match handle_at(self, hover) {
+                Some((_, handle)) => Some(handle.cursor()),
+                None if self.shape_drag.is_some() => Some(egui::CursorIcon::Grabbing),
+                None => self.shape_at(scene(hover), tolerance).map(|_| egui::CursorIcon::Grab),
+            };
+            if let Some(cursor) = cursor {
+                ui.ctx().set_cursor_icon(cursor);
+            }
+        }
+        if response.drag_started_by(egui::PointerButton::Primary) {
+            if let Some(start) = origin.or(pointer) {
+                let target = handle_at(self, start).or_else(|| self.shape_at(scene(start), tolerance).map(|index| (index, Handle::Move)));
+                self.shape_drag = None;
+                self.select_shape(target.map(|(index, _)| index));
+                if target.is_none() && self.tool == Tool::Mouse {
+                    let start = at(start);
+                    self.drag = Some((start, start));
+                }
+                if let Some((index, handle)) = target {
+                    if let Some((command, geometry)) = self.shape(index) {
+                        let (x, y) = at(start);
+                        self.shape_drag = Some(ShapeDrag {
+                            index,
+                            handle,
+                            start: (i32::from(x), i32::from(y)),
+                            original: geometry,
+                            current: command.clone(),
+                            command,
+                        });
+                    }
+                }
+            }
+        }
+        if let (Some(pointer), Some(index)) = (pointer, self.shape_drag.as_ref().map(|drag| drag.index)) {
+            let size = self.button_size_at(index);
+            if let Some(drag) = &mut self.shape_drag {
+                let (x, y) = at(pointer);
+                let geometry = select::drag(&drag.original, drag.handle, drag.start, (i32::from(x), i32::from(y)));
+                drag.current = select::apply(&drag.command, &geometry, size);
+            }
+            if response.drag_stopped() {
+                if let Some(drag) = self.shape_drag.take() {
+                    if drag.current != drag.command {
+                        self.replace_shape(drag.index, drag.current);
+                    }
+                }
+            }
+        }
+        if let (Some((from, _)), Some(pointer)) = (self.drag, pointer) {
+            let to = at(pointer);
+            self.drag = Some((from, to));
+            if response.drag_stopped() {
+                self.drag = None;
+                self.add_mouse_region(from, to);
+            }
+        }
+        if response.clicked() {
+            let index = pointer.and_then(|pointer| self.shape_at(scene(pointer), tolerance));
+            self.select_shape(index);
+        }
+        if response.double_clicked() {
+            let text = self.selected_shape().and_then(|index| match &self.document.commands()[index] {
+                RipCommand::TextXY { x, y, .. } => Some((*x, *y)),
+                _ => None,
+            });
+            if let Some(anchor) = text {
+                // Double-clicking text types into it with the text tool.
+                self.select_tool(Tool::Text);
+                self.begin_text(anchor);
+            } else if let Some(target) = self.selected_shape().and_then(|index| ButtonTarget::find(self.document.commands(), index)) {
+                self.open_button_dialog(Some(target));
+            }
+        }
+    }
+
     fn canvas_input(&mut self, ui: &egui::Ui, response: &egui::Response, at: &dyn Fn(egui::Pos2) -> (u16, u16), on_screen: &dyn Fn((u16, u16)) -> egui::Pos2) {
         let pointer = response.interact_pointer_pos();
         let origin = ui.input(|input| input.pointer.press_origin());
+        if matches!(self.tool, Tool::Select | Tool::Mouse) {
+            self.select_input(ui, response, at, on_screen);
+            return;
+        }
+        if self.tool == Tool::Text {
+            if response.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+            }
+            if response.clicked() {
+                if let Some(point) = pointer.map(at) {
+                    self.begin_text(point);
+                }
+            } else if response.secondary_clicked() {
+                self.finish_text();
+            }
+            return;
+        }
+        if self.tool.is_poly() {
+            if response.secondary_clicked() {
+                self.finish_poly();
+            } else if response.clicked() || response.double_clicked() {
+                if let Some(point) = pointer.map(at) {
+                    if self.poly.last().copied() != Some(point) {
+                        self.poly.push(point);
+                        if self.poly.len() == 1295 {
+                            self.finish_poly();
+                        }
+                    }
+                }
+            }
+            return;
+        }
         if self.tool == Tool::Bezier {
             if response.secondary_clicked() {
                 self.finish_bezier();
@@ -1230,10 +2714,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn sidebar_palette_opens_only_for_the_chosen_color() {
+        let context = egui::Context::default();
+        let mut editor = RipEditor::new();
+        let draw = egui::Id::new(("rip-color", "draw"));
+        let border = egui::Id::new(("rip-color", "border"));
+        let fill = egui::Id::new(("rip-color", "fill"));
+        let frame = |editor: &mut RipEditor| {
+            context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
+                    ..Default::default()
+                },
+                |context| editor.sidebar(context, false),
+            )
+        };
+        frame(&mut editor);
+        assert!(!egui::Popup::is_id_open(&context, draw));
+        assert!(!egui::Popup::is_id_open(&context, border));
+        assert!(!egui::Popup::is_id_open(&context, fill));
+
+        egui::Popup::open_id(&context, border);
+        frame(&mut editor);
+        assert!(egui::Popup::is_id_open(&context, border));
+        assert!(context.memory(|memory| memory.area_rect(border)).is_some());
+        assert!(!egui::Popup::is_id_open(&context, draw));
+        assert!(!egui::Popup::is_id_open(&context, fill));
+    }
+
+    #[test]
     fn drawing_tools_create_pixel_coordinate_commands() {
-        assert_eq!(Tool::Pixel.command((12, 34), (12, 34), ""), RipCommand::Pixel { x: 12, y: 34 });
+        assert_eq!(Tool::Pixel.command((12, 34), (12, 34), "").unwrap(), RipCommand::Pixel { x: 12, y: 34 });
         assert_eq!(
-            Tool::Line.command((12, 34), (56, 78), ""),
+            Tool::Line.command((12, 34), (56, 78), "").unwrap(),
             RipCommand::Line {
                 x0: 12,
                 y0: 34,
@@ -1242,7 +2755,7 @@ mod tests {
             }
         );
         assert_eq!(
-            Tool::Rectangle.command((12, 34), (56, 78), ""),
+            Tool::Rectangle.command((12, 34), (56, 78), "").unwrap(),
             RipCommand::Rectangle {
                 x0: 12,
                 y0: 34,
@@ -1251,7 +2764,7 @@ mod tests {
             }
         );
         assert_eq!(
-            Tool::Bar.command((12, 34), (56, 78), ""),
+            Tool::Bar.command((12, 34), (56, 78), "").unwrap(),
             RipCommand::Bar {
                 x0: 12,
                 y0: 34,
@@ -1260,7 +2773,7 @@ mod tests {
             }
         );
         assert_eq!(
-            Tool::Circle.command((12, 34), (15, 38), ""),
+            Tool::Circle.command((12, 34), (15, 38), "").unwrap(),
             RipCommand::Circle {
                 x_center: 12,
                 y_center: 34,
@@ -1268,7 +2781,7 @@ mod tests {
             }
         );
         assert_eq!(
-            Tool::FilledOval.command((12, 34), (56, 78), ""),
+            Tool::FilledOval.command((12, 34), (56, 78), "").unwrap(),
             RipCommand::FilledOval {
                 x: 12,
                 y: 34,
@@ -1277,7 +2790,7 @@ mod tests {
             }
         );
         assert_eq!(
-            Tool::Oval.command((12, 34), (56, 78), ""),
+            Tool::Oval.command((12, 34), (56, 78), "").unwrap(),
             RipCommand::Oval {
                 x: 12,
                 y: 34,
@@ -1286,6 +2799,491 @@ mod tests {
                 x_rad: 44,
                 y_rad: 44,
             }
+        );
+    }
+
+    #[test]
+    fn command_list_entries_are_short_and_localized() {
+        let line = RipCommand::LineStyle {
+            style: LineStyle::Solid,
+            user_pat: 0,
+            thick: 1,
+        };
+        assert_eq!(command_name(&line), fl!("rip-command-line-style"));
+        assert_eq!(command_summary(&line), format!("{} · 1 px", fl!("rip-line-solid")));
+        assert_eq!(command_swatch(&RipCommand::Color { c: 4 }), Some(4));
+        let bezier = bezier_command([(1, 2), (3, 4), (5, 6), (7, 8)], 32);
+        assert_eq!(command_name(&bezier), fl!("rip-editor-bezier"));
+        assert!(!command_summary(&bezier).contains('{'));
+        assert_eq!(command_name(&RipCommand::EraseWindow), "EraseWindow");
+        for command in [line, bezier, RipCommand::Color { c: 4 }, RipCommand::MouseFields] {
+            assert!(!command_name(&command).contains('{'));
+            assert!(command_icon(&command).is_some());
+        }
+    }
+
+    #[test]
+    fn a_shape_selected_on_the_canvas_scrolls_into_the_command_list() {
+        let context = egui::Context::default();
+        let mut editor = RipEditor::new();
+        editor.select_tool(Tool::Line);
+        for step in 0..120 {
+            editor.add_shape((step, 10), (step + 20, 40));
+        }
+        editor.select_shape(None);
+        run(&context, &mut editor, vec![]);
+        assert!(!editor.visible_rows.contains(&(editor.document.commands().len() - 1)) || editor.visible_rows.start == 0);
+        let last = editor.document.commands().len() - 1;
+        editor.select_shape(Some(last));
+        run(&context, &mut editor, vec![]);
+        run(&context, &mut editor, vec![]);
+        assert!(editor.visible_rows.contains(&last), "{:?}", editor.visible_rows);
+    }
+
+    #[test]
+    fn text_is_typed_on_the_canvas_and_edited_again() {
+        let context = egui::Context::default();
+        let mut editor = RipEditor::new();
+        editor.select_tool(Tool::Text);
+        editor.text_size = 2;
+        run(&context, &mut editor, vec![]);
+        let rect = editor.canvas_rect.unwrap();
+        let scale = rect.width() / WIDTH as f32;
+        let at = |(x, y): (u16, u16)| rect.min + egui::vec2((x as f32 + 0.5) * scale, (y as f32 + 0.5) * scale);
+        let click = |editor: &mut RipEditor, point| {
+            let pos = at(point);
+            run(
+                &context,
+                editor,
+                vec![egui::Event::PointerMoved(pos), button_event(pos, egui::PointerButton::Primary, true)],
+            );
+            run(&context, editor, vec![button_event(pos, egui::PointerButton::Primary, false)]);
+        };
+        let text = |value: &str| egui::Event::Text(value.into());
+
+        click(&mut editor, (100, 60));
+        assert_eq!(editor.text_edit.as_ref().map(|edit| edit.at), Some((100, 60)));
+        run(&context, &mut editor, vec![text("Hallö!"), text("x")]);
+        run(&context, &mut editor, vec![key(egui::Key::Backspace, egui::Modifiers::NONE)]);
+        assert_eq!(editor.text_edit.as_ref().unwrap().text, "Hall!", "unrepresentable characters are skipped");
+        assert!(editor.document.commands().is_empty(), "the text is only previewed while typing");
+        assert!(matches!(editor.shown_pending.last(), Some(RipCommand::TextXY { text, .. }) if text == "Hall!"));
+        assert!(editor.modified() && editor.can_undo());
+        run(&context, &mut editor, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
+        assert!(editor.text_edit.is_none());
+        assert!(matches!(
+            editor.document.commands(),
+            [RipCommand::Color { c: 15 }, RipCommand::FontStyle { size: 2, .. }, RipCommand::TextXY { x: 100, y: 60, text }] if text == "Hall!"
+        ));
+        assert!(editor.document.preview().unwrap().pixel_index(100, 60).is_some());
+
+        // Clicking the text edits it in place; the preview replaces the original.
+        click(&mut editor, (110, 65));
+        assert_eq!(editor.text_edit.as_ref().and_then(|edit| edit.index), Some(2));
+        run(&context, &mut editor, vec![text("o")]);
+        assert!(editor
+            .shown_editable
+            .as_ref()
+            .is_some_and(|editable| matches!(&editable[2], RipCommand::TextXY { text, .. } if text == "Hall!o")));
+        // A click elsewhere finishes it and starts new text there.
+        click(&mut editor, (300, 200));
+        assert!(matches!(&editor.document.commands()[2], RipCommand::TextXY { text, .. } if text == "Hall!o"));
+        assert_eq!(editor.document.commands().len(), 3);
+        run(&context, &mut editor, vec![text("gone"), key(egui::Key::Escape, egui::Modifiers::NONE)]);
+        assert!(editor.text_edit.is_none());
+        assert_eq!(editor.document.commands().len(), 3, "Escape discards new text");
+
+        // Clearing edited text removes it; undo brings it back.
+        click(&mut editor, (104, 62));
+        let backspaces = (0..6).map(|_| key(egui::Key::Backspace, egui::Modifiers::NONE)).collect();
+        run(&context, &mut editor, backspaces);
+        run(&context, &mut editor, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
+        assert!(!editor.document.commands().iter().any(|command| matches!(command, RipCommand::TextXY { .. })));
+        editor.undo(false);
+        assert!(matches!(&editor.document.commands()[2], RipCommand::TextXY { text, .. } if text == "Hall!o"));
+
+        // Double-clicking text with the select tool types into it.
+        editor.select_tool(Tool::Select);
+        // Earlier clicks must not make this a triple click (each frame is 1/60 s).
+        for _ in 0..40 {
+            run(&context, &mut editor, vec![]);
+        }
+        let pos = at((104, 62));
+        run(
+            &context,
+            &mut editor,
+            vec![egui::Event::PointerMoved(pos), button_event(pos, egui::PointerButton::Primary, true)],
+        );
+        run(&context, &mut editor, vec![button_event(pos, egui::PointerButton::Primary, false)]);
+        run(&context, &mut editor, vec![button_event(pos, egui::PointerButton::Primary, true)]);
+        run(&context, &mut editor, vec![button_event(pos, egui::PointerButton::Primary, false)]);
+        assert_eq!(editor.tool, Tool::Text);
+        assert_eq!(editor.text_edit.as_ref().and_then(|edit| edit.index), Some(2));
+    }
+
+    fn text(x: u16, value: &str) -> RipCommand {
+        RipCommand::TextXY { x, y: 20, text: value.into() }
+    }
+
+    #[test]
+    fn restyling_text_changes_its_own_font_and_keeps_later_text_unchanged() {
+        let font = |size| font_command((1, 0, size));
+        // The font command in front of the text is its own; the text after it keeps size 2.
+        let commands = vec![
+            font(2),
+            RipCommand::Color { c: 4 },
+            text(10, "A"),
+            RipCommand::Line { x0: 0, y0: 0, x1: 9, y1: 9 },
+            text(200, "B"),
+        ];
+        let (restyled, index) = restyle_text(&commands, 0, 2, text(10, "A"), (1, 0, 5), 4);
+        assert_eq!(index, 2);
+        assert_eq!(
+            restyled,
+            vec![
+                font(5),
+                RipCommand::Color { c: 4 },
+                text(10, "A"),
+                font(2),
+                RipCommand::Line { x0: 0, y0: 0, x1: 9, y1: 9 },
+                text(200, "B")
+            ]
+        );
+
+        // Without its own commands, the new font and color are inserted and the old ones restored.
+        let commands = vec![
+            font(2),
+            RipCommand::Color { c: 4 },
+            text(10, "A"),
+            RipCommand::Line { x0: 0, y0: 0, x1: 9, y1: 9 },
+            text(200, "B"),
+        ];
+        let (restyled, index) = restyle_text(&commands, 0, 4, text(200, "B"), (3, 0, 1), 12);
+        assert_eq!(index, 6);
+        assert_eq!(
+            restyled,
+            vec![
+                font(2),
+                RipCommand::Color { c: 4 },
+                text(10, "A"),
+                RipCommand::Line { x0: 0, y0: 0, x1: 9, y1: 9 },
+                font_command((3, 0, 1)),
+                RipCommand::Color { c: 12 },
+                text(200, "B"),
+            ],
+            "nothing follows, so nothing is restored"
+        );
+
+        // Text without any font command uses the scene's start font, which is restored after it.
+        let commands = vec![text(10, "A"), text(200, "B")];
+        let (restyled, index) = restyle_text(&commands, 0, 0, text(10, "A"), (0, 0, 1), DEFAULT_COLOR);
+        assert_eq!(index, 1);
+        assert_eq!(restyled, vec![font_command((0, 0, 1)), text(10, "A"), font_command(START_FONT), text(200, "B")]);
+        let later = |commands: &[RipCommand]| {
+            let mut document = RipDocument::new();
+            document.try_append_many(commands.to_vec()).unwrap();
+            let preview = document.preview().unwrap();
+            (150..400)
+                .flat_map(|x| (0..80).map(move |y| (x, y)))
+                .map(|(x, y)| preview.pixel_index(x, y))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(later(&commands), later(&restyled), "the later text is drawn as before");
+    }
+
+    #[test]
+    fn clicking_text_picks_up_its_style_and_the_tool_settings_change_it() {
+        let mut editor = RipEditor::new();
+        editor.select_tool(Tool::Text);
+        editor.text_font = 1;
+        editor.text_size = 2;
+        editor.draw_color = 4;
+        for (x, value) in [(10, "First"), (10, "Second")] {
+            editor.text_edit = Some(TextEdit {
+                at: (x, if value == "First" { 20 } else { 120 }),
+                text: value.into(),
+                index: None,
+            });
+            editor.finish_text();
+        }
+        let first = editor
+            .document
+            .commands()
+            .iter()
+            .position(|command| matches!(command, RipCommand::TextXY { text, .. } if text == "First"))
+            .unwrap();
+        (editor.text_font, editor.text_size, editor.draw_color) = (0, 1, 15);
+        editor.begin_text((12, 24));
+        assert_eq!(editor.text_edit.as_ref().and_then(|edit| edit.index), Some(first));
+        assert_eq!(
+            (editor.text_font, editor.text_direction, editor.text_size, editor.draw_color),
+            (1, 0, 2, 4),
+            "the text's style is loaded"
+        );
+
+        editor.text_size = 3;
+        editor.draw_color = 14;
+        let context = egui::Context::default();
+        editor.refresh_preview(&context);
+        assert!(editor.shown_editable.is_some(), "the preview shows the new style before it is applied");
+        editor.finish_text();
+        let commands = editor.document.commands();
+        let first = commands
+            .iter()
+            .position(|command| matches!(command, RipCommand::TextXY { text, .. } if text == "First"))
+            .unwrap();
+        assert_eq!(font_before(commands, first), (1, 0, 3));
+        assert_eq!(color_before(commands, first), 14);
+        let second = commands
+            .iter()
+            .position(|command| matches!(command, RipCommand::TextXY { text, .. } if text == "Second"))
+            .unwrap();
+        assert_eq!(
+            (font_before(commands, second), color_before(commands, second)),
+            ((1, 0, 2), 4),
+            "later text keeps its style"
+        );
+        assert_eq!(editor.selected, Some(first));
+        editor.undo(false);
+        let commands = editor.document.commands();
+        let first = commands
+            .iter()
+            .position(|command| matches!(command, RipCommand::TextXY { text, .. } if text == "First"))
+            .unwrap();
+        assert_eq!(font_before(commands, first), (1, 0, 2), "restyling is one undo step");
+
+        // The property panel shows the font and color of selected text.
+        editor.select_tool(Tool::Select);
+        editor.select_shape(Some(first));
+        run(&context, &mut editor, vec![]);
+        assert_eq!(editor.editing_style, Some((first, (1, 0, 2), 4)));
+    }
+
+    #[test]
+    fn mouse_regions_are_drawn_and_picked_only_with_their_tool() {
+        let context = egui::Context::default();
+        let mut editor = RipEditor::new();
+        editor.select_tool(Tool::Bar);
+        editor.add_shape((20, 20), (200, 120));
+        editor.select_tool(Tool::Mouse);
+        editor.mouse_host = "M^m".into();
+        run(&context, &mut editor, vec![]);
+        drag(&context, &mut editor, (40, 40), (140, 90), |editor| {
+            assert_eq!(editor.drag, Some(((40, 40), (140, 90))), "the region is dragged out");
+        });
+        let region = editor.document.commands().len() - 1;
+        assert_eq!(
+            editor.document.commands()[region],
+            RipCommand::Mouse {
+                num: 0,
+                x0: 40,
+                y0: 40,
+                x1: 140,
+                y1: 90,
+                clk: 1,
+                clr: 0,
+                res: 0,
+                text: "M^m".into()
+            }
+        );
+        assert_eq!(editor.selected_shape(), Some(region), "a new region is selected");
+        let loaded = RipDocument::from_bytes(&editor.document.to_bytes().unwrap()).unwrap();
+        assert_eq!(loaded.commands(), editor.document.commands());
+
+        // Only regions are picked with the mouse region tool; the bar below is not.
+        let bar = region - 1;
+        assert_eq!(editor.shape_at((60.5, 60.5), 1.0), Some(region));
+        assert_eq!(editor.shape_at((180.5, 110.5), 1.0), None);
+        // Resizing works like any rectangle.
+        drag(&context, &mut editor, (140, 90), (160, 100), |_| {});
+        assert!(matches!(editor.document.commands()[region], RipCommand::Mouse { x1: 160, y1: 100, .. }));
+        // Dragging inside a region moves it instead of adding one.
+        let count = editor.document.commands().len();
+        drag(&context, &mut editor, (60, 60), (70, 65), |_| {});
+        assert_eq!(editor.document.commands().len(), count);
+        assert!(matches!(editor.document.commands()[region], RipCommand::Mouse { x0: 50, y0: 45, .. }));
+        // A plain click does not add a region.
+        let pos = editor.canvas_rect.unwrap().min + egui::vec2(400.0, 300.0);
+        run(
+            &context,
+            &mut editor,
+            vec![egui::Event::PointerMoved(pos), button_event(pos, egui::PointerButton::Primary, true)],
+        );
+        run(&context, &mut editor, vec![button_event(pos, egui::PointerButton::Primary, false)]);
+        assert_eq!(editor.document.commands().len(), count);
+
+        // With the select tool, regions are hidden and the bar is picked instead.
+        editor.select_tool(Tool::Select);
+        assert_eq!(editor.shape_at((60.5, 60.5), 1.0), Some(bar));
+        assert!(editor.shape(region).is_none());
+        assert_eq!(command_name(&editor.document.commands()[region]), fl!("rip-editor-mouse"));
+        assert_eq!(command_icon(&editor.document.commands()[region]), Some("rip_mouse"));
+    }
+
+    #[test]
+    fn the_text_frame_covers_the_rendered_text() {
+        for font in [(0, 0, 1), (0, 0, 3), (1, 0, 2), (3, 0, 4), (0, 1, 2), (2, 1, 3)] {
+            let mut editor = RipEditor::new();
+            (editor.text_font, editor.text_direction, editor.text_size) = font;
+            editor.draw_color = 14;
+            editor.text_edit = Some(TextEdit {
+                at: (100, 100),
+                text: "Hello".into(),
+                index: None,
+            });
+            editor.finish_text();
+            let preview = editor.document.preview().unwrap();
+            let pixels: Vec<(i32, i32)> = (0..HEIGHT as usize)
+                .flat_map(|y| (0..WIDTH as usize).map(move |x| (x, y)))
+                .filter(|(x, y)| preview.pixel_index(*x, *y) == Some(14))
+                .map(|(x, y)| (x as i32, y as i32))
+                .collect();
+            let (width, height) = text_extent(Some(font), "Hello");
+            let bounds = (
+                pixels.iter().map(|p| p.0).min().unwrap(),
+                pixels.iter().map(|p| p.1).min().unwrap(),
+                pixels.iter().map(|p| p.0).max().unwrap(),
+                pixels.iter().map(|p| p.1).max().unwrap(),
+            );
+            let slack = 3 * i32::from(font.2);
+            assert!(
+                bounds.0 >= 100 - slack && bounds.1 >= 100 - slack && bounds.2 <= 100 + width + slack && bounds.3 <= 100 + height + slack,
+                "{font:?}: drawn {bounds:?}, frame {width} × {height}"
+            );
+        }
+    }
+
+    #[test]
+    fn new_shapes_round_trip_and_render_with_tool_colors() {
+        for tool in [
+            Tool::Arc,
+            Tool::OvalArc,
+            Tool::PieSlice,
+            Tool::OvalPieSlice,
+            Tool::Polygon,
+            Tool::FilledPolygon,
+            Tool::PolyLine,
+        ] {
+            let mut editor = RipEditor::new();
+            editor.select_tool(tool);
+            editor.draw_color = 3;
+            editor.border_color = 4;
+            editor.fill_color = 5;
+            editor.start_angle = 10;
+            editor.end_angle = 120;
+            if tool.is_poly() {
+                editor.poly = vec![(100, 100), (180, 100), (160, 180)];
+                editor.finish_poly();
+            } else {
+                editor.add_shape((100, 100), (160, 140));
+                assert!(matches!(
+                    editor.document.commands().last(),
+                    Some(
+                        RipCommand::Arc { st_ang: 10, end_ang: 120, .. }
+                            | RipCommand::OvalArc { st_ang: 10, end_ang: 120, .. }
+                            | RipCommand::PieSlice { st_ang: 10, end_ang: 120, .. }
+                            | RipCommand::OvalPieSlice { st_ang: 10, end_ang: 120, .. }
+                    )
+                ));
+            }
+            assert!(editor.error.is_none(), "{tool:?}: {:?}", editor.error);
+            let commands = editor.document.commands();
+            assert!(matches!(
+                commands.last(),
+                Some(
+                    RipCommand::Arc { .. }
+                        | RipCommand::OvalArc { .. }
+                        | RipCommand::PieSlice { .. }
+                        | RipCommand::OvalPieSlice { .. }
+                        | RipCommand::Polygon { .. }
+                        | RipCommand::FilledPolygon { .. }
+                        | RipCommand::PolyLine { .. }
+                )
+            ));
+            assert!(commands
+                .iter()
+                .any(|command| matches!(command, RipCommand::Color { c } if *c == if tool == Tool::PolyLine { 3 } else { 4 })));
+            assert_eq!(
+                commands.iter().any(|command| matches!(command, RipCommand::FillStyle { color: 5, .. })),
+                tool.uses_fill()
+            );
+            let preview = editor.document.preview().unwrap();
+            if tool == Tool::FilledPolygon {
+                assert_eq!(preview.pixel_index(145, 130), Some(5));
+            }
+            if matches!(tool, Tool::PieSlice | Tool::OvalPieSlice) {
+                assert_eq!(preview.pixel_index(120, 90), Some(5), "{tool:?}");
+            }
+            let context = egui::Context::default();
+            let _ = context.run(egui::RawInput::default(), |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    let mut draft = commands.last().unwrap().clone();
+                    assert!(command_properties(ui, &mut draft), "{tool:?}");
+                });
+            });
+            let loaded = RipDocument::from_bytes(&editor.document.to_bytes().unwrap()).unwrap();
+            assert_eq!(loaded.commands(), commands, "{tool:?}");
+            editor.undo(false);
+            assert!(editor.document.commands().is_empty(), "{tool:?}");
+        }
+    }
+
+    #[test]
+    fn polygon_gesture_previews_finishes_and_cancels() {
+        let context = egui::Context::default();
+        let mut editor = RipEditor::new();
+        editor.select_tool(Tool::FilledPolygon);
+        run(&context, &mut editor, vec![]);
+        let rect = editor.canvas_rect.unwrap();
+        let scale = rect.width() / WIDTH as f32;
+        let at = |(x, y): (u16, u16)| rect.min + egui::vec2((x as f32 + 0.5) * scale, (y as f32 + 0.5) * scale);
+        let click = |editor: &mut RipEditor, point| {
+            let pos = at(point);
+            run(
+                &context,
+                editor,
+                vec![egui::Event::PointerMoved(pos), button_event(pos, egui::PointerButton::Primary, true)],
+            );
+            run(&context, editor, vec![button_event(pos, egui::PointerButton::Primary, false)]);
+        };
+        click(&mut editor, (30, 30));
+        click(&mut editor, (120, 30));
+        click(&mut editor, (100, 100));
+        run(&context, &mut editor, vec![egui::Event::PointerMoved(at((40, 110)))]);
+        assert!(editor.modified());
+        assert!(
+            matches!(editor.shown_pending.last(), Some(RipCommand::FilledPolygon { points }) if points.len() == 8),
+            "poly: {:?}, pending: {:?}",
+            editor.poly,
+            editor.shown_pending
+        );
+        run(&context, &mut editor, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
+        assert!(matches!(editor.document.commands().last(), Some(RipCommand::FilledPolygon { points }) if points.len() == 6));
+        click(&mut editor, (40, 40));
+        run(&context, &mut editor, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
+        assert!(editor.poly.is_empty());
+        assert_eq!(
+            editor
+                .document
+                .commands()
+                .iter()
+                .filter(|command| matches!(command, RipCommand::FilledPolygon { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn polygon_vertex_limit_fits_the_two_digit_rip_count() {
+        let mut editor = RipEditor::new();
+        editor.select_tool(Tool::PolyLine);
+        editor.poly = (0..1295).map(|x| (x, 20)).collect();
+        editor.finish_poly();
+        assert!(editor.error.is_none());
+        assert!(matches!(editor.document.commands().last(), Some(RipCommand::PolyLine { points }) if points.len() == 2590));
+        assert_eq!(
+            RipDocument::from_bytes(&editor.document.to_bytes().unwrap()).unwrap().commands(),
+            editor.document.commands()
         );
     }
 
@@ -1402,8 +3400,12 @@ mod tests {
         assert_eq!(editor.document.preview().unwrap().pixel_index(40, 40), Some(3));
 
         editor.tool = Tool::Text;
-        editor.text = "Hello".into();
-        editor.add_shape((80, 80), (80, 80));
+        editor.text_edit = Some(TextEdit {
+            at: (80, 80),
+            text: "Hello".into(),
+            index: None,
+        });
+        editor.finish_text();
         assert!(matches!(editor.document.commands().last(), Some(RipCommand::TextXY { text, .. }) if text == "Hello"));
 
         editor.select_tool(Tool::Bezier);
@@ -1601,7 +3603,10 @@ mod tests {
 
     #[test]
     fn the_bezier_tool_never_panics_on_a_plain_command() {
-        assert!(matches!(Tool::Bezier.command((0, 0), (30, 30), ""), RipCommand::Bezier { x2: 10, y2: 10, .. }));
+        assert!(matches!(
+            Tool::Bezier.command((0, 0), (30, 30), "").unwrap(),
+            RipCommand::Bezier { x2: 10, y2: 10, .. }
+        ));
     }
 
     #[test]
@@ -1700,8 +3705,222 @@ mod tests {
         assert_eq!(editor.document.commands(), commands.as_slice(), "the edit is one undo step");
 
         // A second button with the same style reuses it.
+        editor.select_tool(Tool::Button);
         editor.button.label = "Next".into();
         editor.add_shape((200, 100), (260, 130));
+        assert_eq!(editor.tool, Tool::Select, "a placed button is selected for editing");
+        assert_eq!(editor.selected_shape(), Some(3));
         assert!(matches!(editor.document.commands()[3..], [RipCommand::Button { .. }]));
+    }
+
+    fn key(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        }
+    }
+
+    #[test]
+    fn selected_shapes_are_resized_with_handles_and_moved() {
+        let context = egui::Context::default();
+        let mut editor = RipEditor::new();
+        editor.select_tool(Tool::Rectangle);
+        editor.add_shape((100, 100), (200, 150));
+        editor.select_tool(Tool::Line);
+        editor.add_shape((10, 10), (60, 60));
+        editor.select_tool(Tool::Select);
+        editor.select_shape(None);
+        run(&context, &mut editor, vec![]);
+
+        // Dragging a corner handle of the selected rectangle resizes it; the preview shows it live.
+        let rect = editor
+            .document
+            .commands()
+            .iter()
+            .position(|command| matches!(command, RipCommand::Rectangle { .. }))
+            .unwrap();
+        editor.select_shape(Some(rect));
+        let undo_steps = |editor: &RipEditor| editor.document.can_undo();
+        drag(&context, &mut editor, (200, 150), (260, 190), |editor| {
+            assert_eq!(
+                editor.shown_replacement,
+                Some((
+                    rect,
+                    RipCommand::Rectangle {
+                        x0: 100,
+                        y0: 100,
+                        x1: 260,
+                        y1: 190
+                    }
+                ))
+            );
+            assert!(
+                matches!(editor.document.commands()[rect], RipCommand::Rectangle { x1: 200, .. }),
+                "the document changes on release"
+            );
+        });
+        assert_eq!(
+            editor.document.commands()[rect],
+            RipCommand::Rectangle {
+                x0: 100,
+                y0: 100,
+                x1: 260,
+                y1: 190
+            }
+        );
+        assert!(undo_steps(&editor));
+
+        // Dragging the outline moves it; dragging the line selects and moves the line instead.
+        drag(&context, &mut editor, (100, 130), (110, 140), |_| {});
+        assert_eq!(
+            editor.document.commands()[rect],
+            RipCommand::Rectangle {
+                x0: 110,
+                y0: 110,
+                x1: 270,
+                y1: 200
+            }
+        );
+        drag(&context, &mut editor, (35, 35), (45, 30), |_| {});
+        assert!(matches!(
+            editor.document.commands().last(),
+            Some(RipCommand::Line { x0: 20, y0: 5, x1: 70, y1: 55 })
+        ));
+        assert_eq!(editor.selected_shape(), Some(editor.document.commands().len() - 1));
+
+        // Keys nudge and delete the selection, Escape deselects.
+        run(&context, &mut editor, vec![key(egui::Key::ArrowRight, egui::Modifiers::SHIFT)]);
+        assert!(matches!(editor.document.commands().last(), Some(RipCommand::Line { x0: 30, x1: 80, .. })));
+        editor.undo(false);
+        assert!(
+            matches!(editor.document.commands().last(), Some(RipCommand::Line { x0: 20, .. })),
+            "each change is one undo step"
+        );
+        editor.select_shape(Some(editor.document.commands().len() - 1));
+        let count = editor.document.commands().len();
+        run(&context, &mut editor, vec![key(egui::Key::Delete, egui::Modifiers::NONE)]);
+        assert_eq!(editor.document.commands().len(), count - 1);
+        assert!(editor.selected.is_none());
+
+        // Clicking empty space deselects, clicking a shape selects the topmost one.
+        let rect_area = editor.canvas_rect.unwrap();
+        let scale = rect_area.width() / WIDTH as f32;
+        let at = |point: (u16, u16)| rect_area.min + egui::vec2((point.0 as f32 + 0.5) * scale, (point.1 as f32 + 0.5) * scale);
+        for (point, expected) in [((110, 150), Some(rect)), ((400, 300), None)] {
+            run(
+                &context,
+                &mut editor,
+                vec![
+                    egui::Event::PointerMoved(at(point)),
+                    button_event(at(point), egui::PointerButton::Primary, true),
+                ],
+            );
+            run(&context, &mut editor, vec![button_event(at(point), egui::PointerButton::Primary, false)]);
+            assert_eq!(editor.selected_shape(), expected);
+        }
+    }
+
+    #[test]
+    fn create_button_opens_the_dialog_then_places_and_selects_the_button() {
+        let context = egui::Context::default();
+        let mut editor = RipEditor::new();
+        editor.select_tool(Tool::Select);
+        run(&context, &mut editor, vec![]);
+        editor.open_button_dialog(None);
+        editor.button_dialog.as_mut().unwrap().create = true;
+        editor.button_dialog.as_mut().unwrap().options.label = "Go".into();
+        // Confirming the dialog with Enter would place it; here the dialog result is applied directly.
+        let options = editor.button_dialog.take().unwrap().options;
+        editor.apply_button(None, options);
+        editor.select_tool(Tool::Button);
+        run(&context, &mut editor, vec![]);
+        let rect = editor.canvas_rect.unwrap();
+        let scale = rect.width() / WIDTH as f32;
+        let point = rect.min + egui::vec2(50.5 * scale, 60.5 * scale);
+        run(
+            &context,
+            &mut editor,
+            vec![egui::Event::PointerMoved(point), button_event(point, egui::PointerButton::Primary, true)],
+        );
+        run(&context, &mut editor, vec![button_event(point, egui::PointerButton::Primary, false)]);
+        assert!(matches!(editor.document.commands().last(), Some(RipCommand::Button { x0: 50, y0: 60, x1: 0, y1: 0, text, .. }) if text == "<>Go<>"));
+        assert_eq!(editor.tool, Tool::Select);
+        let button = editor.document.commands().len() - 1;
+        assert_eq!(editor.selected_shape(), Some(button));
+        // Its frame handles resize it to an explicit rectangle.
+        drag(&context, &mut editor, (129, 89), (150, 100), |_| {});
+        assert!(matches!(
+            editor.document.commands()[button],
+            RipCommand::Button {
+                x0: 50,
+                y0: 60,
+                x1: 150,
+                y1: 100,
+                ..
+            }
+        ));
+
+        // Escape while placing returns to selection without adding anything.
+        editor.select_tool(Tool::Button);
+        run(&context, &mut editor, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
+        assert_eq!(editor.tool, Tool::Select);
+    }
+
+    #[test]
+    fn the_palette_dialog_previews_live_and_writes_one_command() {
+        let mut editor = RipEditor::new();
+        editor.select_tool(Tool::Bar);
+        editor.fill_color = 4;
+        editor.add_shape((10, 10), (50, 50));
+        let rgb = |editor: &RipEditor, preview: &icy_draw::rip_document::RipPreview| {
+            let _ = editor;
+            preview.pixel_rgba(20, 20).unwrap()
+        };
+        let before = rgb(&editor, &editor.document.preview().unwrap());
+        assert_eq!(before, [0xAA, 0, 0, 255]);
+
+        // Remapping slot 4 recolors the bar in the preview before anything is written.
+        editor.open_palette_dialog(None);
+        editor.palette_dialog.as_mut().unwrap().values[4] = 9;
+        let pending = editor.pending_commands();
+        assert_eq!(pending, vec![RipCommand::OnePalette { color: 4, value: 9 }]);
+        let preview = editor.document.preview_with(&pending).unwrap();
+        assert_eq!(rgb(&editor, &preview), [0, 0, 0xFF, 255], "EGA 9 is bright blue");
+        let count = editor.document.commands().len();
+        let dialog = editor.palette_dialog.take().unwrap();
+        editor.apply_palette(dialog);
+        assert_eq!(editor.document.commands().len(), count + 1);
+        assert_eq!(rgb(&editor, &editor.document.preview().unwrap()), [0, 0, 0xFF, 255]);
+
+        // Several slots become one |Q; the dialog starts from the palette in effect.
+        editor.open_palette_dialog(None);
+        let dialog = editor.palette_dialog.as_mut().unwrap();
+        assert_eq!(dialog.values[4], 9);
+        dialog.values[1] = 36;
+        dialog.values[2] = 18;
+        let dialog = editor.palette_dialog.take().unwrap();
+        editor.apply_palette(dialog);
+        let set = editor.document.commands().len() - 1;
+        assert!(matches!(&editor.document.commands()[set], RipCommand::SetPalette { colors } if colors[1] == 36 && colors[4] == 9));
+
+        // A |Q command is edited in place, as one undo step.
+        editor.open_palette_dialog(Some(set));
+        editor.palette_dialog.as_mut().unwrap().values[1] = 1;
+        let dialog = editor.palette_dialog.take().unwrap();
+        editor.apply_palette(dialog);
+        assert_eq!(editor.document.commands().len(), set + 1);
+        assert!(matches!(&editor.document.commands()[set], RipCommand::SetPalette { colors } if colors[1] == 1));
+        editor.undo(false);
+        assert!(matches!(&editor.document.commands()[set], RipCommand::SetPalette { colors } if colors[1] == 36));
+
+        // An unchanged palette writes nothing.
+        editor.open_palette_dialog(None);
+        let dialog = editor.palette_dialog.take().unwrap();
+        let count = editor.document.commands().len();
+        editor.apply_palette(dialog);
+        assert_eq!(editor.document.commands().len(), count);
     }
 }

@@ -59,32 +59,70 @@ The egui frontend currently includes:
   text drawing with the existing watched font library.
 - RIPscrip drawing: create a RIP drawing from New, or open a command-only `.rip`
   file. Draw pixels, lines, rectangles, filled rectangles, circles, outlined and
-  filled ellipses, text, Bézier curves and buttons in the 640×350 preview using the
-  left-hand icon tools. Select draw, border or fill before choosing one of the 16
-  palette colors. The toolbar above the drawing holds the options of the tool (line
+  filled ellipses, polygons, filled polygons, polylines, circular and oval arcs,
+  circular and oval pie slices, text, Bézier curves and buttons in the 640×350 preview using the
+  left-hand icon tools. Click a draw, border or fill swatch to pick its color from
+  the popup palette. The toolbar above the drawing holds the options of the tool (line
   style and thickness, fill pattern, font, size and direction, Bézier segments,
   button type and label) and shows the parameters of the shape being drawn, which
   the preview renders with the RIP engine while dragging. Only state commands whose
   value changes (color, line, fill, font, button style) are written before a shape.
+  With the text tool, click the drawing and type: the text is previewed in the
+  chosen font, size and direction with a frame and caret, Backspace deletes, and
+  Enter or a click elsewhere adds it (Escape discards it). Clicking existing text
+  with the text tool, or double-clicking it with the select tool, types into it
+  again and loads its font, size, direction and color into the tool settings, where
+  changing them restyles it (previewed live); clearing it removes it. Selected text
+  also shows font, size, direction and color in the property panel. The editor
+  changes the font or color command directly in front of the text, or inserts one,
+  and restores the previous value after it, so later commands look unchanged.
+  Only printable ASCII characters are accepted, so
+  the text looks the same in every RIP terminal.
+  Mouse regions (`|1M`) are only shown and selectable while the mouse region tool
+  is active, similar to tag mode in ANSI documents: each region is outlined with its
+  host command, a drag on free space adds one with the host command and the
+  "invert when clicked" and "clear text window" options from the toolbar, and a
+  selected region is moved, resized, nudged or deleted like a rectangle while the
+  toolbar edits its host command and options. Selecting a region in the command
+  list switches to the tool.
   Bézier curves are dragged from start to end; then their two end points and two
   control points can be moved until a right-click or Enter adds the curve (Escape
-  discards it). Buttons are objects of a button style and the button itself: choose
-  a plain, icon or clipboard button in the toolbar and set label, host command, hot
-  key, group, colors, font, label position, bevel, effects and behavior in
-  **Button Style…**, which previews the button. Dragging sets the button's bounds, a
-  click places it at the style's size. Selecting a button or its style in the command
-  list edits both together with **Edit Button…**. Select
-  a command on the right to preview the scene through that command (inclusive),
-  reorder or remove it, or edit the parameters of drawn shapes, colors and fill
-  styles in the property panel. Applying parameter edits creates one undo step.
+  discards it). For polygons and polylines,
+  click each vertex, then right-click or press Enter to finish
+  (Escape discards the unfinished path); filled polygons need at least three
+  vertices, polylines at least two. Arcs and pie slices are dragged from the
+  center to their radius, with start and end angles in the toolbar. The select
+  tool picks the topmost shape under the pointer (or the one
+  selected in the command list) and shows handles: a frame with eight handles for
+  rectangles, bars and buttons, the vertices of polygons and polylines, the
+  end and control points of lines and Bézier curves, a radius handle for circles
+  and arcs, and four handles for ellipses and oval arcs. Dragging a handle
+  resizes the shape and dragging the shape moves it, previewed with the RIP engine and
+  applied as one undo step; arrow keys (with Shift: 10 pixels) nudge it and Delete
+  removes it. Buttons are objects of a button style and the button itself:
+  **Button…** asks for the plain, icon or clipboard type, label, host command,
+  hot key, group, colors, font, label position, bevel, effects and behavior with a
+  preview, then a click places the button at the style's size or a drag sets its
+  bounds, and the new button is selected for moving and resizing. Double-click a
+  button, or use **Edit Button…**, to change it; selecting a button or its style in
+  the command list edits both together. **Edit RIP palette…** maps the 16 color slots
+  to any of the 64 EGA colors with a live preview of the recolored drawing; applying it
+  adds one `|a` (one slot) or `|Q` (several slots) command, and a selected `|Q` can be
+  edited in place. The command list on the right shows one line per command —
+  number, icon, name and a short summary, truncated instead of wrapped; a shape
+  selected on the canvas scrolls into view. Select a command to see all of its
+  parameters in the panel below the list, reorder or remove it with the buttons
+  above the list, or use the eye button to preview the scene through that command
+  (inclusive). Edit the parameters of drawn shapes, colors and fill
+  styles in the property panel; applying parameter edits creates one undo step.
   Save preserves the ordered RIP
   commands, with undo/redo and crash recovery. In RIP files containing terminal
   text or control sequences, the original stream is preserved verbatim and its
   commands are read-only; new drawing commands can be appended. External icon references
   are retained in the command list but cannot be previewed safely.
-  The Bézier and button icons are adapted from Google's
+  The Bézier, button and mouse region icons are adapted from Google's
   [Material Design Icons](https://github.com/google/material-design-icons)
-  (`polyline` and `smart_button`), licensed under
+  (`polyline`, `smart_button` and `ads_click`), licensed under
   [Apache-2.0](../../LICENSE-APACHE).
 - Lua animation editing, frame preview/playback, GIF and Asciicast export.
 - Existing Lua plugins, direct Lua scripts, MCP automation, and the headless
