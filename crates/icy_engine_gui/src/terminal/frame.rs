@@ -585,6 +585,11 @@ impl<'a> CRTShaderProgram<'a> {
                 // icy_draw handles selection via shader/editor_markers
                 (None, None, None)
             };
+            let mut last_selection = state.last_text_selection.lock();
+            if *last_selection != selection {
+                *last_selection = selection;
+                tiles_rendered = true;
+            }
         }
 
         let render_snapshot = self.term.screen.lock().render_snapshot();

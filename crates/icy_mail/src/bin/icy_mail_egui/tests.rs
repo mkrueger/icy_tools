@@ -726,6 +726,30 @@ fn editor_panels_find_pick_colors_and_characters_with_the_mouse() {
     assert_eq!(mail.composer.as_ref().unwrap().draft.body, "one two one\x1b[0;1;30m\u{2588}x\x1b[0m");
 }
 
+#[test]
+fn color_picker_buttons_fit_side_by_side() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    frame(&context, &mut mail, size, vec![key(egui::Key::R, egui::Modifiers::COMMAND)]);
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
+    click_label(&context, &mut mail, size, "Aa");
+    let output = settle(&context, &mut mail, size);
+    let popup = context.memory(|memory| memory.area_rect(egui::Id::new("editor-colors"))).expect("color picker is open");
+    let buttons: Vec<_> = ["editor-default", "editor-cancel", "editor-apply"]
+        .into_iter()
+        .map(|id| label(&output, &icy_mail::LANGUAGE_LOADER.get(id)))
+        .collect();
+    for (index, button) in buttons.iter().enumerate() {
+        assert!(popup.contains_rect(*button), "{button:?} outside {popup:?}");
+        for other in &buttons[index + 1..] {
+            assert!(!button.intersects(*other), "{button:?} overlaps {other:?}");
+        }
+    }
+}
+
 fn wait(mail: &mut app::MailApp, context: &egui::Context) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
@@ -1855,4 +1879,64 @@ fn zz_temp_editor_rows() {
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::Home, egui::Modifiers::COMMAND)], "warmup");
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "editor-rows");
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_reader_deselecting_clears_the_rendered_highlight() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let mut gpu = runtime.block_on(Gpu::new());
+    let (_dir, mut mail) = loaded(&gpu.context);
+    let body = format!("HELLO WORLD\n{}THE END", "more text\n".repeat(80));
+    mail.screen = icy_engine_gui::egui::screen::ScreenView::new(icy_mail::reader::render_body(body.as_bytes()).unwrap());
+    mail.set_focus(Pane::Messages, &gpu.context);
+    let size = [1100, 760];
+    for _ in 0..3 {
+        gpu.capture(&mut mail, size, 1.0, vec![], "warmup");
+    }
+    let rect = mail.content_rect;
+    // Only the message body, so hover effects elsewhere do not count as changes.
+    let body_pixels = move |pixels: &[u8]| -> Vec<u8> {
+        let width = size[0] as usize;
+        (rect.top() as usize..(rect.bottom() as usize).min(size[1] as usize))
+            .flat_map(|y| pixels[(y * width + rect.left() as usize) * 4..(y * width + (rect.right() as usize).min(width)) * 4].to_vec())
+            .collect()
+    };
+    let (start, end) = {
+        let info = mail.screen.terminal.render_info.read();
+        let start = egui::pos2(
+            info.bounds_x + info.viewport_x + info.font_width * info.display_scale * 0.5,
+            info.bounds_y + info.viewport_y + info.font_height * info.display_scale * 0.5,
+        );
+        (start, start + egui::vec2(info.font_width * info.display_scale * 4.0, info.font_height * info.display_scale * 2.0))
+    };
+    let (baseline, _) = gpu.capture(&mut mail, size, 1.0, vec![egui::Event::PointerMoved(start)], "hover");
+    let baseline = body_pixels(&baseline);
+    let select = |gpu: &mut Gpu, mail: &mut app::MailApp| {
+        gpu.capture(mail, size, 1.0, pointer(start, true), "press");
+        for step in 1..=4 {
+            gpu.capture(mail, size, 1.0, vec![egui::Event::PointerMoved(start + (end - start) * (step as f32 / 4.0))], "drag");
+        }
+        gpu.capture(mail, size, 1.0, pointer(end, false), "release").0
+    };
+    let selected = select(&mut gpu, &mut mail);
+    assert_ne!(body_pixels(&selected), baseline, "the drag must be highlighted");
+    {
+        let selection = mail.screen.terminal.screen.lock().selection().expect("drag selects");
+        assert_eq!((selection.anchor, selection.lead), ((0, 0).into(), (4, 2).into()));
+    }
+    assert_eq!(mail.focus, Pane::Content, "dragging in the body must focus it");
+
+    // Every tile is served from the cache again once the selection is gone,
+    // which used to leave the old highlight on the GPU.
+    let (escaped, _) = gpu.capture(&mut mail, size, 1.0, vec![key(egui::Key::Escape, egui::Modifiers::NONE)], "escape");
+    assert!(mail.screen.terminal.screen.lock().selection().is_none(), "Escape must deselect");
+    assert!(body_pixels(&escaped) == baseline, "Escape must remove the highlight from the screen");
+
+    select(&mut gpu, &mut mail);
+    std::thread::sleep(std::time::Duration::from_millis(600));
+    gpu.capture(&mut mail, size, 1.0, pointer(start, true), "click-press");
+    let (clicked, _) = gpu.capture(&mut mail, size, 1.0, pointer(start, false), "click-release");
+    assert!(mail.screen.terminal.screen.lock().selection().is_none(), "a click must deselect");
+    assert!(body_pixels(&clicked) == baseline, "a click must remove the highlight from the screen");
 }

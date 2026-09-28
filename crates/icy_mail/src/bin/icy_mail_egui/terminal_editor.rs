@@ -846,7 +846,21 @@ impl TerminalEditor {
             .constrain(true)
             .show(context, |ui| {
                 egui::Frame::popup(ui.style()).inner_margin(12).show(ui, |ui| {
-                    ui.set_width(8.0 * 30.0);
+                    let labels = [
+                        fl!(LANGUAGE_LOADER, "editor-default"),
+                        fl!(LANGUAGE_LOADER, "editor-cancel"),
+                        fl!(LANGUAGE_LOADER, "editor-apply"),
+                    ];
+                    // Translated button labels can be wider than the swatch rows.
+                    let font = egui::TextStyle::Button.resolve(ui.style());
+                    let buttons: f32 = labels
+                        .iter()
+                        .map(|label| {
+                            ui.painter().layout_no_wrap(label.clone(), font.clone(), Color32::PLACEHOLDER).size().x + 2.0 * ui.spacing().button_padding.x
+                        })
+                        .sum();
+                    let [default_label, cancel_label, apply_label] = labels;
+                    ui.set_width((8.0 * 30.0f32).max(buttons + 3.0 * ui.spacing().item_spacing.x));
                     ui.label(egui::RichText::new(title).strong());
                     ui.add_space(6.0);
                     ui.label(
@@ -908,7 +922,7 @@ impl TerminalEditor {
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
                         if ui
-                            .button(fl!(LANGUAGE_LOADER, "editor-default"))
+                            .button(default_label)
                             .on_hover_text(fl!(LANGUAGE_LOADER, "editor-default-color-tooltip"))
                             .clicked()
                         {
@@ -916,13 +930,13 @@ impl TerminalEditor {
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
-                                .add(egui::Button::new(fl!(LANGUAGE_LOADER, "editor-apply")).fill(ui.visuals().selection.bg_fill))
+                                .add(egui::Button::new(apply_label).fill(ui.visuals().selection.bg_fill))
                                 .on_hover_text("Enter")
                                 .clicked()
                             {
                                 apply = true;
                             }
-                            if ui.button(fl!(LANGUAGE_LOADER, "editor-cancel")).on_hover_text("Esc").clicked() {
+                            if ui.button(cancel_label).on_hover_text("Esc").clicked() {
                                 close = true;
                             }
                         });

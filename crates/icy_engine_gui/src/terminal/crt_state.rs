@@ -124,6 +124,11 @@ pub struct CRTShaderState {
     /// Caret of the most recently presented frame (see `CaretFrame`).
     pub last_caret: parking_lot::Mutex<Option<CaretFrame>>,
 
+    /// Text selection baked into the most recently presented tiles. Tiles under a selection are
+    /// never cached, so a changed selection must refresh the GPU textures even when every tile
+    /// of the new frame comes from the cache.
+    pub last_text_selection: parking_lot::Mutex<Option<icy_engine::Selection>>,
+
     pub instance_id: u64,
     pub render_generation: AtomicU64,
 
@@ -157,6 +162,7 @@ impl CRTShaderState {
             cached_mouse_state: parking_lot::Mutex::new(None),
             cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),
             last_caret: parking_lot::Mutex::new(None),
+            last_text_selection: parking_lot::Mutex::new(None),
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             render_generation: AtomicU64::new(0),
             unicode_glyph_cache: Arc::new(parking_lot::Mutex::new(None)),
@@ -295,6 +301,7 @@ impl Default for CRTShaderState {
             cached_mouse_state: parking_lot::Mutex::new(None),
             cached_screen_info: parking_lot::Mutex::new(CachedScreenInfo::default()),
             last_caret: parking_lot::Mutex::new(None),
+            last_text_selection: parking_lot::Mutex::new(None),
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             render_generation: AtomicU64::new(0),
             unicode_glyph_cache: Arc::new(parking_lot::Mutex::new(None)),
