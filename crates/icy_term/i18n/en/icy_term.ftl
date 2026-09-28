@@ -777,6 +777,10 @@ egui-transfer-summary = { $count ->
 
 egui-transfer-next-file = Waiting for the next file…
 
+egui-transfer-show-warning = Show warning { $index } of { $count } in the log
+
+egui-transfer-show-error = Show error { $index } of { $count } in the log
+
 egui-protocol-recommended = RECOMMENDED
 
 egui-protocol-batch = BATCH

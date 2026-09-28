@@ -10,17 +10,41 @@ use super::appearance::{Dialog, DialogButton};
 /// The dialog keeps these measurements no matter what the transfer reports, so it never jumps around.
 const DIALOG_WIDTH: f32 = 560.0;
 const BODY_HEIGHT: f32 = 344.0;
-const HEADER_HEIGHT: f32 = 40.0;
-const NOTE_HEIGHT: f32 = 36.0;
+const HEADER_HEIGHT: f32 = 44.0;
+const ICON_SIZE: f32 = 40.0;
+/// Two lines: a failure reason and the download folder.
+const NOTE_HEIGHT: f32 = 44.0;
 const WARNING_HEIGHT: f32 = 20.0;
 const PROTOCOL_ROW_HEIGHT: f32 = 48.0;
 const SUCCESS: egui::Color32 = egui::Color32::from_rgb(78, 173, 118);
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DetailTab {
     #[default]
     Files,
     Log,
+}
+
+/// The log entries the warning and error counters jump to.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LogKind {
+    Warning,
+    Error,
+}
+
+impl LogKind {
+    fn matches(self, message: &OutputLogMessage) -> bool {
+        matches!(
+            (self, message),
+            (Self::Warning, OutputLogMessage::Warning(_)) | (Self::Error, OutputLogMessage::Error(_))
+        )
+    }
+}
+
+/// Counted from the log instead of the protocol counters, which also count retries that are only
+/// logged as warnings or not at all, so every counted entry can be found in the log.
+fn log_count(info: &TransferInformation, kind: LogKind) -> usize {
+    info.output_log.iter().filter(|message| kind.matches(message)).count()
 }
 
 /// How a transfer ended, which decides the colors and wording of the finished dialog.
@@ -55,6 +79,9 @@ pub struct Transfers {
     /// Frozen at the end, so the elapsed time stops counting once the transfer is over.
     duration: Option<Duration>,
     scroll_to_selection: bool,
+    /// The log entry a warning or error counter was clicked for, as the nth entry of its kind.
+    log_focus: Option<(LogKind, usize)>,
+    scroll_to_log_focus: bool,
     commands: Vec<TerminalCommand>,
 }
 
@@ -69,12 +96,32 @@ impl Transfers {
         self.remote_request = false;
         self.pending_file_request = false;
         self.detail_tab = DetailTab::default();
+        self.log_focus = None;
         self.started = None;
         self.duration = None;
         self.scroll_to_selection = true;
         if self.protocol_id.is_empty() {
             self.protocol_id = "@zmodem".into();
         }
+    }
+
+    /// Opens the log at the next warning or error, wrapping around after the last one.
+    pub fn show_next_log_entry(&mut self, kind: LogKind) {
+        let Some(state) = &self.state else {
+            return;
+        };
+        let info = if self.download { &state.recieve_state } else { &state.send_state };
+        let count = log_count(info, kind);
+        if count == 0 {
+            return;
+        }
+        let next = match self.log_focus {
+            Some((focused, index)) if focused == kind && self.detail_tab == DetailTab::Log => (index + 1) % count,
+            _ => 0,
+        };
+        self.log_focus = Some((kind, next));
+        self.detail_tab = DetailTab::Log;
+        self.scroll_to_log_focus = true;
     }
 
     fn finish(&mut self, outcome: Outcome, result: String) {
@@ -117,13 +164,14 @@ impl Transfers {
                 self.outcome = None;
                 self.duration = None;
                 self.started = Some(Instant::now());
+                self.log_focus = None;
             }
             TerminalEvent::TransferProgress(state) => self.state = Some(state.clone()),
             TerminalEvent::TransferCompleted(state) => {
                 self.state = Some(state.clone());
                 if state.request_cancel {
                     self.finish(Outcome::Cancelled, tr!("egui-transfer-cancelled"));
-                } else if state.send_state.errors > 0 || state.recieve_state.errors > 0 {
+                } else if log_count(&state.send_state, LogKind::Error) > 0 || log_count(&state.recieve_state, LogKind::Error) > 0 {
                     self.finish(Outcome::Warnings, tr!("egui-transfer-errors"));
                 } else {
                     self.finish(Outcome::Success, tr!("egui-transfer-finished"));
@@ -316,34 +364,38 @@ impl Transfers {
         let automatic = self.remote_request.then(|| tr!("egui-transfer-automatic"));
         fixed(ui, HEADER_HEIGHT, egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 12.0;
-            let (icon, _) = ui.allocate_exact_size(egui::Vec2::splat(HEADER_HEIGHT), egui::Sense::hover());
+            let (icon, _) = ui.allocate_exact_size(egui::Vec2::splat(ICON_SIZE), egui::Sense::hover());
             ui.painter().rect_filled(icon, 10.0, tone.gamma_multiply(0.16));
             paint_direction(ui.painter(), icon.center(), self.download, tone);
 
             // The badges are measured first, so a long subtitle truncates instead of pushing them out.
-            let badges =
-                status.as_deref().map_or(0.0, |label| badge_width(ui, label) + 12.0) + automatic.as_deref().map_or(0.0, |label| chip_width(ui, label) + 8.0);
+            let badges = status.as_deref().map_or(0.0, |label| badge_width(ui, label) + 12.0);
             let text_width = (ui.available_width() - badges).max(60.0);
             ui.allocate_ui_with_layout(egui::vec2(text_width, HEADER_HEIGHT), egui::Layout::top_down(egui::Align::Min), |ui| {
                 ui.set_width(text_width);
                 ui.spacing_mut().item_spacing.y = 1.0;
                 ui.add_space(1.0);
                 ui.add(egui::Label::new(super::appearance::bold(ui, &title).size(17.0)).truncate());
-                ui.add(egui::Label::new(egui::RichText::new(&subtitle).size(12.0).weak()).truncate())
-                    .on_hover_text(&subtitle);
+                // The automatic tag sits beside the short protocol name, so the title keeps its room on narrow screens.
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    ui.spacing_mut().interact_size.y = 16.0;
+                    let chip = automatic.as_deref().map_or(0.0, |label| chip_width(ui, label) + 6.0);
+                    let subtitle_width = (ui.available_width() - chip).max(30.0);
+                    ui.allocate_ui_with_layout(egui::vec2(subtitle_width, 16.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.add(egui::Label::new(egui::RichText::new(&subtitle).size(12.0).weak()).truncate())
+                            .on_hover_text(&subtitle);
+                    });
+                    if let Some(automatic) = &automatic {
+                        super::appearance::chip(ui, automatic, accent(ui));
+                    }
+                });
             });
-            if badges == 0.0 {
-                return;
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                if let Some(status) = &status {
+            if let Some(status) = &status {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     super::appearance::status_badge(ui, status, tone);
-                }
-                if let Some(automatic) = &automatic {
-                    super::appearance::chip(ui, automatic, accent(ui));
-                }
-            });
+                });
+            }
         });
     }
 
@@ -463,8 +515,9 @@ impl Transfers {
         }
         ui.add_space(10.0);
 
-        let warnings = info.warnings();
-        let errors = info.errors();
+        let warnings = log_count(info, LogKind::Warning);
+        let errors = log_count(info, LogKind::Error);
+        let mut show = None;
         ui.horizontal(|ui| {
             super::appearance::tab(ui, &mut self.detail_tab, DetailTab::Files, &format!("{} ({files})", tr!("egui-transfer-files")));
             super::appearance::tab(
@@ -474,21 +527,40 @@ impl Transfers {
                 &format!("{} ({})", tr!("egui-transfer-log"), info.output_log.len()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if errors > 0 {
-                    super::appearance::chip(ui, &format!("{} {errors}", tr!("transfer-log-errors")), ui.visuals().error_fg_color);
-                }
-                if warnings > 0 {
-                    super::appearance::chip(ui, &format!("{} {warnings}", tr!("transfer-log-warnings")), ui.visuals().warn_fg_color);
+                for (kind, count, label, color) in [
+                    (LogKind::Error, errors, tr!("transfer-log-errors"), ui.visuals().error_fg_color),
+                    (LogKind::Warning, warnings, tr!("transfer-log-warnings"), ui.visuals().warn_fg_color),
+                ] {
+                    if count == 0 {
+                        continue;
+                    }
+                    let next = match self.log_focus {
+                        Some((focused, index)) if focused == kind && self.detail_tab == DetailTab::Log => (index + 1) % count,
+                        _ => 0,
+                    };
+                    let index = next + 1;
+                    let hint = match kind {
+                        LogKind::Warning => tr!("egui-transfer-show-warning", index = index, count = count),
+                        LogKind::Error => tr!("egui-transfer-show-error", index = index, count = count),
+                    };
+                    if counter_button(ui, &format!("{label} {count}"), color).on_hover_text(hint).clicked() {
+                        show = Some(kind);
+                    }
                 }
             });
         });
+        if let Some(kind) = show {
+            self.show_next_log_entry(kind);
+        }
         ui.add_space(4.0);
 
         let height = (ui.available_height() - NOTE_HEIGHT - ui.spacing().item_spacing.y).max(60.0);
         let tab = self.detail_tab;
+        let focus = self.log_focus;
+        let scroll = std::mem::take(&mut self.scroll_to_log_focus);
         inset(ui, height, |ui| match tab {
             DetailTab::Files => file_list(ui, info),
-            DetailTab::Log => log_list(ui, info),
+            DetailTab::Log => log_list(ui, info, focus, scroll),
         });
     }
 
@@ -503,8 +575,8 @@ impl Transfers {
                 .max_height(NOTE_HEIGHT)
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
-                    // A successful transfer is already told by the badge, other endings explain themselves.
-                    if show_result && self.outcome != Some(Outcome::Success) {
+                    // The badge already tells how the transfer ended, only a failure has a reason to add.
+                    if show_result && self.outcome == Some(Outcome::Failed) {
                         if let Some(result) = &self.result {
                             ui.add(egui::Label::new(egui::RichText::new(result).color(tone)).truncate())
                                 .on_hover_text(result);
@@ -930,26 +1002,78 @@ fn file_list(ui: &mut egui::Ui, info: &TransferInformation) {
         });
 }
 
-fn log_list(ui: &mut egui::Ui, info: &TransferInformation) {
+fn log_list(ui: &mut egui::Ui, info: &TransferInformation, focus: Option<(LogKind, usize)>, scroll: bool) {
     if info.output_log.is_empty() {
         empty_hint(ui, &tr!("egui-transfer-no-log"));
         return;
     }
+    let focused = focus.and_then(|(kind, nth)| {
+        info.output_log
+            .iter()
+            .enumerate()
+            .filter(|(_, message)| kind.matches(message))
+            .nth(nth)
+            .map(|(index, _)| index)
+    });
     egui::ScrollArea::vertical()
         .id_salt("transfer-log")
-        .stick_to_bottom(true)
+        // Following new lines would pull the view away from an entry the user jumped to.
+        .stick_to_bottom(focused.is_none())
         .auto_shrink([false, false])
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
-            for message in &info.output_log {
-                let (text, color) = match message {
-                    OutputLogMessage::Info(text) => (text, ui.visuals().weak_text_color()),
-                    OutputLogMessage::Warning(text) => (text, ui.visuals().warn_fg_color),
-                    OutputLogMessage::Error(text) => (text, ui.visuals().error_fg_color),
+            let width = content_width(ui);
+            for (index, message) in info.output_log.iter().enumerate() {
+                let (text, color, marker) = match message {
+                    OutputLogMessage::Info(text) => (text, ui.visuals().weak_text_color(), None),
+                    OutputLogMessage::Warning(text) => (text, ui.visuals().warn_fg_color, Some(ui.visuals().warn_fg_color)),
+                    OutputLogMessage::Error(text) => (text, ui.visuals().error_fg_color, Some(ui.visuals().error_fg_color)),
                 };
-                ui.add(egui::Label::new(egui::RichText::new(text).monospace().size(11.0).color(color)).wrap());
+                let highlighted = focused == Some(index);
+                let response = egui::Frame::new()
+                    .fill(match marker {
+                        Some(marker) if highlighted => marker.gamma_multiply(0.22),
+                        Some(marker) => marker.gamma_multiply(0.07),
+                        None => egui::Color32::TRANSPARENT,
+                    })
+                    .stroke(if highlighted {
+                        egui::Stroke::new(1.0, color.gamma_multiply(0.8))
+                    } else {
+                        egui::Stroke::NONE
+                    })
+                    .corner_radius(4)
+                    .inner_margin(egui::Margin::symmetric(6, 2))
+                    .show(ui, |ui| {
+                        ui.set_width(width - 14.0);
+                        ui.add(egui::Label::new(egui::RichText::new(text).monospace().size(11.0).color(color)).wrap());
+                    })
+                    .response;
+                if highlighted && scroll {
+                    response.scroll_to_me(Some(egui::Align::Center));
+                }
             }
         });
+}
+
+/// A counter chip that can be clicked, e.g. to jump to the next warning in the log.
+fn counter_button(ui: &mut egui::Ui, label: &str, color: egui::Color32) -> egui::Response {
+    let font = egui::FontId::proportional(11.0);
+    let width = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.to_owned(), font.clone(), color).size().x);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width + 14.0, 20.0), egui::Sense::click());
+    let fill = if response.is_pointer_button_down_on() {
+        color.gamma_multiply(0.42)
+    } else if response.hovered() {
+        color.gamma_multiply(0.32)
+    } else {
+        color.gamma_multiply(0.2)
+    };
+    ui.painter().rect_filled(rect, 5.0, fill);
+    if response.hovered() {
+        ui.painter()
+            .rect_stroke(rect, 5.0, egui::Stroke::new(1.0, color.gamma_multiply(0.7)), egui::StrokeKind::Inside);
+    }
+    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, label, font, color);
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn empty_hint(ui: &mut egui::Ui, text: &str) {
@@ -1045,6 +1169,13 @@ mod tests {
         std::thread::sleep(Duration::from_millis(5));
         assert_eq!(transfers.duration, Some(duration), "the elapsed time keeps counting after the end");
 
+        // Zmodem counts a recovered header error but logs it as a warning, which is still a success.
+        started(&mut transfers);
+        state.recieve_state.errors += 1;
+        state.recieve_state.log_warning("Header read error #1");
+        transfers.event(&TerminalEvent::TransferCompleted(state.clone()), &options);
+        assert_eq!(transfers.outcome, Some(Outcome::Success));
+
         started(&mut transfers);
         state.recieve_state.log_error("crc mismatch");
         transfers.event(&TerminalEvent::TransferCompleted(state.clone()), &options);
@@ -1059,6 +1190,42 @@ mod tests {
         transfers.event(&TerminalEvent::Disconnected(None), &options);
         assert_eq!(transfers.outcome, Some(Outcome::Failed));
         assert!(!transfers.active);
+    }
+
+    #[test]
+    fn counters_cycle_through_the_matching_log_entries() {
+        let options = Options::default();
+        let mut transfers = Transfers::default();
+        transfers.choose(true);
+        let mut state = TransferState::new("Zmodem".into());
+        state.recieve_state.errors = 3;
+        state.recieve_state.log_info("start");
+        state.recieve_state.log_warning("first");
+        state.recieve_state.log_info("block");
+        state.recieve_state.log_warning("second");
+        state.recieve_state.log_error("fatal");
+        transfers.event(&TerminalEvent::TransferStarted(state.clone(), true), &options);
+        assert_eq!(
+            log_count(&state.recieve_state, LogKind::Error),
+            1,
+            "the protocol counter is not what the log shows"
+        );
+        assert_eq!(transfers.detail_tab, DetailTab::Files);
+
+        transfers.show_next_log_entry(LogKind::Warning);
+        assert_eq!(transfers.detail_tab, DetailTab::Log);
+        assert_eq!(transfers.log_focus, Some((LogKind::Warning, 0)));
+        transfers.show_next_log_entry(LogKind::Warning);
+        assert_eq!(transfers.log_focus, Some((LogKind::Warning, 1)));
+        transfers.show_next_log_entry(LogKind::Warning);
+        assert_eq!(transfers.log_focus, Some((LogKind::Warning, 0)), "the counter wraps around");
+        transfers.show_next_log_entry(LogKind::Error);
+        assert_eq!(transfers.log_focus, Some((LogKind::Error, 0)));
+
+        // Coming back from the file list starts at the first entry again.
+        transfers.detail_tab = DetailTab::Files;
+        transfers.show_next_log_entry(LogKind::Error);
+        assert_eq!((transfers.detail_tab, transfers.log_focus), (DetailTab::Log, Some((LogKind::Error, 0))));
     }
 
     #[test]

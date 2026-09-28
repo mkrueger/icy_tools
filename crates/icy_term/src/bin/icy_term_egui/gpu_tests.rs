@@ -675,7 +675,10 @@ async fn gpu_overlays_and_shortcut_actions() {
     );
 
     // Shortcuts open the shared dialogs and list the same keys as the command table.
-    for (action, expected) in [(hotkeys::Action::Help, tr!("help-title")), (hotkeys::Action::About, icy_engine_gui::egui::appearance::labels::close())] {
+    for (action, expected) in [
+        (hotkeys::Action::Help, tr!("help-title")),
+        (hotkeys::Action::About, icy_engine_gui::egui::appearance::labels::close()),
+    ] {
         app.shortcut(action, &harness.context.clone());
         harness.capture(&mut app, [360, 640], 1.0, vec![], "overlay-dialog-warmup");
         harness.capture(&mut app, [360, 640], 1.0, vec![], &format!("overlay-{action:?}"));
@@ -958,6 +961,58 @@ async fn gpu_transfer_dialog_states() {
     state.recieve_state.finish_file(PathBuf::from("/tmp/LORD-4.08-registered-edition.zip"));
     app.transfers.event(&icy_term::TerminalEvent::TransferCompleted(state), &options);
     capture_all(&mut harness, &mut app, "finished", &tr!("egui-close"));
+
+    // Like a real Zmodem download: announced by the remote, a recovered header error and a download folder.
+    app.transfers
+        .event(&icy_term::TerminalEvent::AutoTransferTriggered("@zmodem".into(), true, None), &options);
+    let mut state = TransferState::new("Zmodem".to_string());
+    state.recieve_state.log_info("ZRQINIT received");
+    for block in 0..14 {
+        state.recieve_state.log_info(format!("Receiving block {block}"));
+    }
+    state.recieve_state.errors += 1;
+    state.recieve_state.log_warning("Header read error #1: Timeout");
+    state.recieve_state.log_info("ZEOF received");
+    state.recieve_state.file_name = "BEERS24.qwk".into();
+    state.recieve_state.total_bytes_transfered = 1_842_000;
+    state.recieve_state.finish_file(PathBuf::from("/tmp/BEERS24.qwk"));
+    state.is_finished = true;
+    app.transfers.event(&icy_term::TerminalEvent::TransferStarted(state.clone(), true), &options);
+    app.transfers.event(&icy_term::TerminalEvent::TransferCompleted(state), &options);
+    capture_all(&mut harness, &mut app, "automatic", &tr!("egui-open-download-folder"));
+    let warnings = format!("{} 1", tr!("transfer-log-warnings"));
+    assert!(harness.controls.contains_key(&warnings), "the warning counter is missing");
+    assert!(
+        !harness.controls.contains_key(&format!("{} 1", tr!("transfer-log-errors"))),
+        "a recovered error is counted as an error"
+    );
+    let counter = harness.controls[&warnings];
+    harness.capture(
+        &mut app,
+        [1600, 1200],
+        2.0,
+        vec![
+            egui::Event::PointerMoved(counter),
+            egui::Event::PointerButton {
+                pos: counter,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::PointerButton {
+                pos: counter,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ],
+        "transfer-counter-click",
+    );
+    capture_all(&mut harness, &mut app, "log-focus", &tr!("egui-close"));
+    assert!(
+        harness.controls.contains_key("Header read error #1: Timeout"),
+        "the warning was not scrolled into view"
+    );
 
     app.transfers.choose(false);
     app.transfers
