@@ -5,6 +5,7 @@ egui-command-invalid = Der externe Befehl ist leer oder enthält ungültige Anf�
 egui-menu = Menü
 egui-sort = Sortierung
 egui-rating = Bewertung
+egui-download = Herunterladen…
 egui-rating-none = Keine Bewertung
 egui-rating-all = Alle Dateien
 egui-rating-filter = Nur Dateien mit mindestens dieser Bewertung zeigen

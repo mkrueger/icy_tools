@@ -79,6 +79,14 @@ impl SixteenColorsCache {
         Self::default()
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_in_memory() -> Self {
+        Self {
+            cache_dir: None,
+            ..Self::default()
+        }
+    }
+
     /// Get the disk cache path for a URL
     fn disk_cache_path(&self, url: &str) -> Option<PathBuf> {
         self.cache_dir.as_ref().map(|dir| dir.join(url_to_cache_filename(url)))

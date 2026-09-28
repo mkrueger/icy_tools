@@ -28,7 +28,7 @@ An isolated default build does not depend on icy_ui. Building the entire workspa
 - Compact 24-pixel file rows with filter highlighting, clickable name/size headers, direct sort controls and SAUCE mode with separate name, title, author and group columns. SAUCE mode expands the list; narrow windows can scroll the columns horizontally.
 - The original colour coding: file names by type, SAUCE title in yellow, author in green and group in blue, with a placeholder for empty fields.
 - A colour-coded status bar summary of title, author, group, date, content size, buffer size and capabilities; clicking it opens the SAUCE dialog.
-- Local directories, nested archives and the existing Sixteen Colors provider.
+- Local directories, nested archives and the existing Sixteen Colors provider. Right-click a 16colo.rs file in the list or tile view to download its original bytes to a chosen local path.
 - Background loading, cancellation, filtering, sorting and navigation history.
 - Text-art, image and Sixel previews; tiled uploads support images taller than a GPU texture.
 - Art fills the window width and scrolls vertically instead of being shrunk to fit the height, as in the original viewer.

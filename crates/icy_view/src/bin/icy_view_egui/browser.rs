@@ -14,6 +14,7 @@ pub struct Location {
 enum Event {
     Listed(u64, Result<Vec<Box<dyn Item>>, ItemError>),
     Loaded(u64, String, Result<Vec<u8>, ItemError>),
+    Downloaded(Result<(), String>),
 }
 
 pub struct Browser {
@@ -228,6 +229,22 @@ impl Browser {
         });
     }
 
+    pub fn download(&self, item: Box<dyn Item>, destination: PathBuf, context: &egui::Context) {
+        let sender = self.sender.clone();
+        let context = context.clone();
+        self.runtime.spawn(async move {
+            let result = async {
+                let data = item.read_data().await.map_err(|error| error.to_string())?;
+                tokio::fs::write(&destination, data)
+                    .await
+                    .map_err(|error| format!("{}: {error}", destination.display()))
+            }
+            .await;
+            let _ = sender.send(Event::Downloaded(result));
+            context.request_repaint();
+        });
+    }
+
     pub fn poll(&mut self, context: &egui::Context) -> Option<(String, Vec<u8>)> {
         let mut loaded = None;
         while let Ok(event) = self.receiver.try_recv() {
@@ -252,6 +269,7 @@ impl Browser {
                         Err(error) => self.error = Some(error.to_string()),
                     }
                 }
+                Event::Downloaded(Err(error)) => self.error = Some(error),
                 _ => {}
             }
         }
@@ -269,6 +287,41 @@ impl Drop for Browser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn download_saves_original_bytes_and_reports_write_errors() {
+        let fixture = crate::tests::Fixture::new();
+        let source = fixture.0.join("source.tdf");
+        let data = b"\0TheDraw font\x1a\0";
+        std::fs::write(&source, data).unwrap();
+        let context = egui::Context::default();
+        let mut browser = Browser::new(fixture.0.clone(), Default::default()).unwrap();
+        let item = get_items_at_path(&fixture.0.to_string_lossy())
+            .unwrap()
+            .into_iter()
+            .find(|item| item.get_label() == "source.tdf")
+            .unwrap();
+        let destination = fixture.0.join("copy.tdf");
+        browser.download(item.clone(), destination.clone(), &context);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Ok(Event::Downloaded(result)) = browser.receiver.try_recv() {
+                result.unwrap();
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "download timed out");
+            std::thread::yield_now();
+        }
+        assert_eq!(std::fs::read(destination).unwrap(), data);
+
+        browser.download(item, fixture.0.join("missing/copy.tdf"), &context);
+        while browser.error.is_none() {
+            browser.poll(&context);
+            assert!(std::time::Instant::now() < deadline, "download error timed out");
+            std::thread::yield_now();
+        }
+        assert!(browser.error.as_deref().unwrap().contains("missing/copy.tdf"));
+    }
 
     #[test]
     fn delayed_directory_results_populate_cached_tiles() {

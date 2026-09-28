@@ -187,6 +187,7 @@ pub enum Change {
     Rate(u8),
     Viewed(bool),
     Pin,
+    Download,
 }
 
 /// Place a container item leads to, matching what entering it navigates to.
@@ -225,6 +226,9 @@ pub fn context_menu(ui: &mut eframe::egui::Ui, library: &Library, location: &Nav
     if ui.button(text(if viewed { "egui-mark-unviewed" } else { "egui-mark-viewed" })).clicked() {
         change = Some(Change::Viewed(!viewed));
     }
+    if location.provider_type == ProviderType::Web && ui.button(text("egui-download")).clicked() {
+        change = Some(Change::Download);
+    }
     change
 }
 
@@ -246,6 +250,30 @@ pub fn paint_viewed(painter: &eframe::egui::Painter, center: eframe::egui::Pos2,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn download_is_only_offered_for_web_files() {
+        let item = icy_view::items::SixteenColorsFile::new("font.tdf".into(), "pack".into(), "font.tdf".into(), String::new());
+        let context = eframe::egui::Context::default();
+        for (location, expected) in [(NavPoint::web("pack"), true), (NavPoint::file("/pack"), false)] {
+            let output = context.run(
+                eframe::egui::RawInput {
+                    screen_rect: Some(eframe::egui::Rect::from_min_size(eframe::egui::Pos2::ZERO, eframe::egui::vec2(400.0, 300.0))),
+                    ..Default::default()
+                },
+                |context| {
+                    eframe::egui::CentralPanel::default().show(context, |ui| {
+                        context_menu(ui, &Library::default(), &location, &item);
+                    });
+                },
+            );
+            let has_download = output
+                .shapes
+                .iter()
+                .any(|shape| matches!(&shape.shape, eframe::egui::Shape::Text(text) if text.galley.text() == crate::text("egui-download")));
+            assert_eq!(has_download, expected);
+        }
+    }
 
     #[test]
     fn library_round_trips_ratings_history_and_places() {

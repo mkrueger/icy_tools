@@ -7,6 +7,7 @@ egui-command-invalid = The external command is empty or contains invalid quotes.
 egui-menu = Menu
 egui-sort = Sort
 egui-rating = Rating
+egui-download = Download…
 egui-rating-none = No rating
 egui-rating-all = All files
 egui-rating-filter = Show only files with at least this rating

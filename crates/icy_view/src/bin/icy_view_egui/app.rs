@@ -17,7 +17,7 @@ use icy_engine_gui::{
     ScalingMode,
 };
 use icy_view::{
-    items::{NavPoint, ProviderType},
+    items::{Item, NavPoint, ProviderType},
     Options, ScrollSpeed, ViewMode,
 };
 use std::{path::PathBuf, time::Duration};
@@ -692,7 +692,7 @@ impl Viewer {
             self.hovered = response.hovered;
         }
         if let Some((index, change)) = response.change {
-            self.apply(index, change);
+            self.apply(index, change, &context);
         }
         if let Some(order) = response.sort {
             self.sort(order);
@@ -872,8 +872,8 @@ impl Viewer {
         }
     }
 
-    /// Applies a rating, viewed or pin change coming from a context menu, the OSD or a key.
-    fn apply(&mut self, index: usize, change: Change) {
+    /// Applies an item action coming from a context menu, the OSD or a key.
+    fn apply(&mut self, index: usize, change: Change, context: &egui::Context) {
         let Some(item) = self.browser.items.get(index) else {
             return;
         };
@@ -885,6 +885,15 @@ impl Viewer {
             }
             Change::Viewed(viewed) => self.library.set_viewed(library::key(point, &**item), viewed),
             Change::Pin => self.library.toggle_favorite(library::place(point, &**item)),
+            Change::Download => self.download(item.clone(), context),
+        }
+    }
+
+    fn download(&mut self, item: Box<dyn Item>, context: &egui::Context) {
+        let name = item.get_label();
+        let name = std::path::Path::new(&name).file_name().unwrap_or_default().to_string_lossy();
+        if let Some(destination) = rfd::FileDialog::new().set_file_name(name.as_ref()).save_file() {
+            self.browser.download(item, destination, context);
         }
     }
 
@@ -925,7 +934,7 @@ impl Viewer {
                 self.hovered = response.hovered;
             }
             if let Some((index, change)) = response.change {
-                self.apply(index, change);
+                self.apply(index, change, &context);
             }
         } else if let Some((index, change)) = response.change {
             let folder = self.folder.as_ref().unwrap();
@@ -935,6 +944,7 @@ impl Viewer {
                     Change::Rate(rating) => self.library.set_rating(library::key(point, &**item), rating),
                     Change::Viewed(viewed) => self.library.set_viewed(library::key(point, &**item), viewed),
                     Change::Pin => self.library.toggle_favorite(library::place(point, &**item)),
+                    Change::Download => self.download(item.clone(), &context),
                 }
             }
         }
@@ -1160,7 +1170,7 @@ impl Viewer {
                     .or(self.browser.selected)
                     .filter(|index| self.browser.items.get(*index).is_some_and(|item| !item.is_container()));
                 if let Some(index) = target {
-                    self.apply(index, Change::Rate(rating));
+                    self.apply(index, Change::Rate(rating), context);
                 }
             }
         }
@@ -1372,7 +1382,7 @@ impl Viewer {
             match self.osd.show(ui, area, &info, &mut self.icons) {
                 Some(osd::Action::Rate(rating)) => {
                     if let Some(index) = index {
-                        self.apply(index, Change::Rate(rating));
+                        self.apply(index, Change::Rate(rating), ui.ctx());
                     }
                 }
                 Some(osd::Action::OpenSauce) => self.dialogs.open(Mode::Sauce, &self.options, &self.preview),
