@@ -919,6 +919,56 @@ async fn gpu_navigation_and_session_dialogs() {
 
 #[tokio::test]
 #[ignore = "requires a working wgpu adapter"]
+async fn gpu_transfer_dialog_states() {
+    use icy_net::protocol::TransferState;
+    let mut harness = Harness::new().await;
+    let mut app = TerminalApp::new(TextScreen::default(), "Transfers".into());
+    app.connected = true;
+    let options = app.dialing_directory.options.clone();
+    let sizes = [([1000, 800], 1.0, "desktop"), ([360, 640], 1.0, "narrow"), ([1600, 1200], 2.0, "hidpi")];
+    let capture_all = |harness: &mut Harness, app: &mut TerminalApp, name: &str, expected: &str| {
+        for (size, scale, prefix) in sizes {
+            harness.capture(app, size, scale, vec![], "transfer-warmup");
+            harness.capture(app, size, scale, vec![], &format!("{prefix}-transfer-{name}"));
+            assert!(harness.controls.contains_key(expected), "{prefix} {name}: missing {expected}");
+        }
+    };
+
+    app.transfers.choose(false);
+    capture_all(&mut harness, &mut app, "upload", &tr!("egui-choose-files"));
+    app.transfers.choose(true);
+    capture_all(&mut harness, &mut app, "download", &tr!("egui-choose-files"));
+
+    let mut state = TransferState::new("Zmodem".to_string());
+    state.recieve_state.file_name = "DOORS.TXT".into();
+    state.recieve_state.total_bytes_transfered = 18_400;
+    state.recieve_state.finish_file(PathBuf::from("/tmp/DOORS.TXT"));
+    state.recieve_state.file_name = "LORD-4.08-registered-edition.zip".into();
+    state.recieve_state.file_size = 1_842_000;
+    state.recieve_state.cur_bytes_transfered = 712_000;
+    state.recieve_state.total_bytes_transfered += 712_000;
+    state.recieve_state.log_info("ZRQINIT received");
+    state.recieve_state.log_info("Receiving LORD-4.08-registered-edition.zip");
+    state.recieve_state.log_warning("Retrying block 42");
+    app.transfers.event(&icy_term::TerminalEvent::TransferStarted(state.clone(), true), &options);
+    capture_all(&mut harness, &mut app, "running", &tr!("egui-cancel-transfer"));
+
+    state.is_finished = true;
+    state.recieve_state.total_bytes_transfered += state.recieve_state.file_size - state.recieve_state.cur_bytes_transfered;
+    state.recieve_state.finish_file(PathBuf::from("/tmp/LORD-4.08-registered-edition.zip"));
+    app.transfers.event(&icy_term::TerminalEvent::TransferCompleted(state), &options);
+    capture_all(&mut harness, &mut app, "finished", &tr!("egui-close"));
+
+    app.transfers.choose(false);
+    app.transfers
+        .event(&icy_term::TerminalEvent::ExternalTransferStarted("sexyz".into(), false), &options);
+    capture_all(&mut harness, &mut app, "external", &tr!("egui-cancel-transfer"));
+    app.transfers.event(&icy_term::TerminalEvent::Disconnected(None), &options);
+    capture_all(&mut harness, &mut app, "failed", &tr!("egui-close"));
+}
+
+#[tokio::test]
+#[ignore = "requires a working wgpu adapter"]
 async fn gpu_dialing_directory_layout() {
     let mut harness = Harness::new().await;
     let fixture = phonebook::tests::Fixture::new();

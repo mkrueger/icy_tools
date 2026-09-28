@@ -201,14 +201,14 @@ terminal-find-results = { $cur } of { $total }
 protocol-select-download = Select download protocol
 protocol-select-upload = Select upload protocol
 file-dialog-save-download-as = Save Download As
-protocol-zmodem-description = The standard protocol
-protocol-zmodem8k-description = 8k Zmodem
-protocol-xmodem-description = Outdated protocol
-protocol-xmodem1k-description = Rarely used anymore
-protocol-xmodem1kG-description = Does that even exist?
-protocol-ymodem-description = Ok but Zmodem is better
-protocol-ymodemg-description = A fast Ymodem variant
-protocol-text-description = Upload a text file
+protocol-zmodem-description = Fast and reliable, resumes interrupted transfers
+protocol-zmodem8k-description = Zmodem with 8 KB blocks for fast, clean lines
+protocol-xmodem-description = Single file in 128 byte blocks with checksum or CRC
+protocol-xmodem1k-description = Single file in 1 KB blocks
+protocol-xmodem1kG-description = Streaming Xmodem 1K for error-free connections
+protocol-ymodem-description = Several files at once, including name and size
+protocol-ymodemg-description = Streaming Ymodem for error-free connections
+protocol-text-description = Sends a text file as if it was typed
 protocol-cet-description = Prestel CET Telesoftware download
 
 transfer-upload = { terminal-upload }
@@ -759,6 +759,35 @@ egui-external-warning = Starts a locally configured external program
 egui-cancel-transfer = Cancel transfer
 
 egui-choose-files = Choose files...
+
+egui-transfer-upload-hint = Choose a protocol, then select the files to send.
+
+egui-transfer-download-hint = Choose a protocol, then select where to save the files.
+
+egui-transfer-status-cancelled = Cancelled
+
+egui-transfer-status-failed = Failed
+
+egui-transfer-status-warnings = Completed with errors
+
+egui-transfer-summary = { $count ->
+    [one] 1 file transferred
+   *[other] { $count } files transferred
+}
+
+egui-transfer-next-file = Waiting for the next file…
+
+egui-protocol-recommended = RECOMMENDED
+
+egui-protocol-batch = BATCH
+
+egui-protocol-batch-hint = Transfers several files at once
+
+egui-protocol-auto = AUTO
+
+egui-protocol-auto-hint = Starts on its own when the remote system begins a transfer
+
+egui-protocol-external = EXTERNAL
 
 egui-script-finished = Script finished
 

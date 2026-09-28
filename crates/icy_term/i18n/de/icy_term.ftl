@@ -178,14 +178,15 @@ terminal-menu = Menü
 protocol-select-download = Download-Protokoll wählen
 protocol-select-upload = Upload-Protokoll wählen
 file-dialog-save-download-as = Download speichern unter
-protocol-zmodem-description = Der Standard
-protocol-zmodem8k-description = 8k Zmodem
-protocol-xmodem-description = Veraltetes Protokoll
-protocol-xmodem1k-description = XModem Variante
-protocol-xmodem1kG-description = Schnelle XModem Variante
-protocol-ymodem-description = Solide, aber ZModem ist besser
-protocol-ymodemg-description = Schnelle YModem Variante
-protocol-text-description = Text file hochladen
+protocol-zmodem-description = Schnell und zuverlässig, setzt abgebrochene Übertragungen fort
+protocol-zmodem8k-description = Zmodem mit 8-KB-Blöcken für schnelle, saubere Leitungen
+protocol-xmodem-description = Einzelne Datei in 128-Byte-Blöcken mit Prüfsumme oder CRC
+protocol-xmodem1k-description = Einzelne Datei in 1-KB-Blöcken
+protocol-xmodem1kG-description = Streaming-Xmodem 1K für fehlerfreie Verbindungen
+protocol-ymodem-description = Mehrere Dateien auf einmal, samt Name und Größe
+protocol-ymodemg-description = Streaming-Ymodem für fehlerfreie Verbindungen
+protocol-text-description = Sendet eine Textdatei, als würde sie getippt
+protocol-cet-description = Prestel-CET-Telesoftware-Download
 
 transfer-upload = { terminal-upload }
 transfer-download = { terminal-download }
@@ -735,6 +736,35 @@ egui-external-warning = Startet ein lokal konfiguriertes externes Programm
 egui-cancel-transfer = Übertragung abbrechen
 
 egui-choose-files = Dateien auswählen...
+
+egui-transfer-upload-hint = Wähle ein Protokoll und danach die zu sendenden Dateien.
+
+egui-transfer-download-hint = Wähle ein Protokoll und danach den Speicherort.
+
+egui-transfer-status-cancelled = Abgebrochen
+
+egui-transfer-status-failed = Fehlgeschlagen
+
+egui-transfer-status-warnings = Mit Fehlern beendet
+
+egui-transfer-summary = { $count ->
+    [one] 1 Datei übertragen
+   *[other] { $count } Dateien übertragen
+}
+
+egui-transfer-next-file = Warte auf die nächste Datei…
+
+egui-protocol-recommended = EMPFOHLEN
+
+egui-protocol-batch = BATCH
+
+egui-protocol-batch-hint = Überträgt mehrere Dateien auf einmal
+
+egui-protocol-auto = AUTO
+
+egui-protocol-auto-hint = Startet von selbst, wenn die Gegenstelle eine Übertragung beginnt
+
+egui-protocol-external = EXTERN
 
 egui-script-finished = Skript beendet
 
