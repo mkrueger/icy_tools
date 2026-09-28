@@ -1174,6 +1174,9 @@ impl TerminalApp {
                 dialing_directory::DialRequest::Quick(entry, options) | dialing_directory::DialRequest::Entry(entry, options) => {
                     match session::entry_connection_config(&entry, &options) {
                         Ok(config) => {
+                            if self.connected || self.connecting {
+                                self.disconnect();
+                            }
                             self.address = phonebook::display_address(&entry);
                             self.utf8 = entry.terminal_type == icy_net::telnet::TerminalEmulation::Utf8Ansi;
                             self.active_profile = Some(entry.clone());

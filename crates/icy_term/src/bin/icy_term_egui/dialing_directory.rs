@@ -183,7 +183,7 @@ impl DialingDirectory {
         }
     }
 
-    pub fn show(&mut self, context: &egui::Context, connected: bool) -> Option<DialRequest> {
+    pub fn show(&mut self, context: &egui::Context, _connected: bool) -> Option<DialRequest> {
         if !self.open {
             return None;
         }
@@ -248,9 +248,9 @@ impl DialingDirectory {
                         }
                         if narrow {
                             let next = if self.details {
-                                self.entry_ui(ui, connected)
+                                self.entry_ui(ui)
                             } else {
-                                self.list_ui(ui, connected, ui.available_height())
+                                self.list_ui(ui, ui.available_height())
                             };
                             if next.is_some() {
                                 request = next;
@@ -261,13 +261,13 @@ impl DialingDirectory {
                             ui.horizontal_top(|ui| {
                                 ui.allocate_ui_with_layout(egui::vec2(list_width, body_height), egui::Layout::top_down(egui::Align::Min), |ui| {
                                     ui.set_min_width(list_width);
-                                    if let Some(entry) = self.list_ui(ui, connected, body_height) {
+                                    if let Some(entry) = self.list_ui(ui, body_height) {
                                         request = Some(entry);
                                     }
                                 });
                                 ui.separator();
                                 ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), body_height), egui::Layout::top_down(egui::Align::Min), |ui| {
-                                    if let Some(entry) = self.entry_ui(ui, connected) {
+                                    if let Some(entry) = self.entry_ui(ui) {
                                         request = Some(entry);
                                     }
                                 });
@@ -306,7 +306,7 @@ impl DialingDirectory {
         request
     }
 
-    fn list_ui(&mut self, ui: &mut egui::Ui, connected: bool, height: f32) -> Option<DialRequest> {
+    fn list_ui(&mut self, ui: &mut egui::Ui, height: f32) -> Option<DialRequest> {
         #[cfg(test)]
         self.control_heights.clear();
         let top = ui.cursor().top();
@@ -491,7 +491,7 @@ impl DialingDirectory {
                 scroll_selection = down || up;
                 if self.quick_selected && search_enter {
                     self.details = true;
-                } else if !connected && search_enter && !ui.ctx().will_discard() {
+                } else if search_enter && !ui.ctx().will_discard() {
                     let entry = book.selection().unwrap();
                     match session::entry_connection_config(entry, &self.options) {
                         Ok(_) => request = Some(DialRequest::Entry(entry.clone(), self.options.clone())),
@@ -582,7 +582,7 @@ impl DialingDirectory {
                                         self.details = true;
                                         self.show_password = false;
                                     }
-                                    if response.double_clicked() && !row.favorite_clicked && !connected && !ui.ctx().will_discard() {
+                                    if response.double_clicked() && !row.favorite_clicked && !ui.ctx().will_discard() {
                                         let entry = &book.book.addresses[index];
                                         match session::entry_connection_config(entry, &self.options) {
                                             Ok(_) => request = Some(DialRequest::Entry(entry.clone(), self.options.clone())),
@@ -600,9 +600,9 @@ impl DialingDirectory {
         request
     }
 
-    fn entry_ui(&mut self, ui: &mut egui::Ui, connected: bool) -> Option<DialRequest> {
+    fn entry_ui(&mut self, ui: &mut egui::Ui) -> Option<DialRequest> {
         if self.quick_selected && self.phonebook.as_ref().is_none_or(|book| book.draft.is_none()) {
-            return self.quick_connect_ui(ui, connected);
+            return self.quick_connect_ui(ui);
         }
         let Some(book) = &mut self.phonebook else {
             return None;
@@ -668,7 +668,7 @@ impl DialingDirectory {
                     .tint(egui::Color32::WHITE);
                 if ui
                     .add_enabled(
-                        !connected && eligible.is_ok(),
+                        eligible.is_ok(),
                         egui::Button::image_and_text(
                             image,
                             egui::RichText::new(&*tr!("dialing_directory-connect-button")).color(egui::Color32::WHITE),
@@ -773,13 +773,13 @@ impl DialingDirectory {
         request
     }
 
-    fn quick_connect_ui(&mut self, ui: &mut egui::Ui, connected: bool) -> Option<DialRequest> {
+    fn quick_connect_ui(&mut self, ui: &mut egui::Ui) -> Option<DialRequest> {
         let mut request = None;
         if ui.available_height() >= 240.0 {
             ui.heading(tr!("dialing_directory-connect-to"));
             ui.separator();
         }
-        ui.add_enabled_ui(!connected, |ui| {
+        ui.scope(|ui| {
             let enter = pane_content(ui, |ui| {
                 self.editor.show_quick(
                     ui,
@@ -1252,6 +1252,15 @@ mod tests {
     use crate::phonebook::tests::{add, Fixture};
 
     fn frame(dialog: &mut DialingDirectory, context: &egui::Context, events: Vec<egui::Event>) -> (egui::FullOutput, Option<DialRequest>) {
+        frame_with_connection_state(dialog, context, events, false)
+    }
+
+    fn frame_with_connection_state(
+        dialog: &mut DialingDirectory,
+        context: &egui::Context,
+        events: Vec<egui::Event>,
+        connected: bool,
+    ) -> (egui::FullOutput, Option<DialRequest>) {
         let mut request = None;
         let output = context.run(
             egui::RawInput {
@@ -1260,7 +1269,7 @@ mod tests {
                 ..Default::default()
             },
             |context| {
-                request = dialog.show(context, false);
+                request = dialog.show(context, connected);
             },
         );
         (output, request)
@@ -1363,6 +1372,57 @@ mod tests {
         dialog.confirmation = Some(Confirmation::Delete);
         click(&mut dialog, &context, &tr!("egui-delete"));
         assert!(dialog.phonebook.as_ref().unwrap().book.addresses.is_empty());
+    }
+
+    #[test]
+    fn dial_is_available_while_connected() {
+        let fixture = Fixture::new();
+        let mut book = fixture.load();
+        add(&mut book, "Test BBS");
+        let mut dialog = DialingDirectory {
+            phonebook: Some(book),
+            open: true,
+            ..Default::default()
+        };
+        let context = egui::Context::default();
+        frame_with_connection_state(&mut dialog, &context, vec![], true);
+        let (output, _) = frame_with_connection_state(&mut dialog, &context, vec![], true);
+        let label = tr!("dialing_directory-connect-button");
+        let position = output
+            .shapes
+            .iter()
+            .rev()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == label => Some(text.pos + text.galley.size() / 2.0),
+                _ => None,
+            })
+            .expect("connect button");
+        frame_with_connection_state(
+            &mut dialog,
+            &context,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+            true,
+        );
+        let (_, request) = frame_with_connection_state(
+            &mut dialog,
+            &context,
+            vec![egui::Event::PointerButton {
+                pos: position,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            true,
+        );
+        assert!(matches!(request, Some(DialRequest::Entry(entry, _)) if entry.system_name == "Test BBS"));
     }
 
     #[test]
