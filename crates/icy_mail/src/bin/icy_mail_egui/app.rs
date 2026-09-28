@@ -506,8 +506,8 @@ impl MailApp {
             Folder::Conference(number) => Some(number),
             _ => None,
         });
-        if let Some(row) = self.reader.messages.iter().find(|row| !self.reader.is_read(row.index)) {
-            self.reader.selected_message = Some(row.index);
+        if let Some(index) = self.reader.next_unread(None) {
+            self.reader.select_message(index);
         }
     }
 
@@ -589,7 +589,7 @@ impl MailApp {
         if self.folder == Folder::Drafts {
             return;
         }
-        let indices: Vec<_> = self.reader.messages.iter().map(|row| row.index).collect();
+        let indices: Vec<_> = self.reader.all_messages().iter().map(|row| row.index).collect();
         let count = indices.iter().filter(|index| !self.reader.is_read(**index)).count();
         self.set_read(context, &indices, true);
         if count > 0 {
@@ -603,12 +603,8 @@ impl MailApp {
             return;
         }
         if self.folder != Folder::Drafts {
-            let start = self.reader.selected_position().map_or(0, |position| position + 1);
-            if let Some(row) = self.reader.messages[start.min(self.reader.messages.len())..]
-                .iter()
-                .find(|row| !self.reader.is_read(row.index))
-            {
-                self.reader.selected_message = Some(row.index);
+            if let Some(index) = self.reader.next_unread(self.reader.selected_message) {
+                self.reader.select_message(index);
                 self.reveal_message = true;
                 return;
             }
@@ -1204,6 +1200,14 @@ impl MailApp {
                 } else {
                     self.navigate_list(self.focus, direction);
                 }
+            }
+        }
+        if self.focus == Pane::Messages && self.folder != Folder::Drafts && self.reader.view_mode == ViewMode::Threads {
+            if key(context, Key::ArrowLeft, false, false) && self.reader.collapse_or_parent() {
+                self.reveal_message = true;
+            }
+            if key(context, Key::ArrowRight, false, false) && self.reader.expand_or_child() {
+                self.reveal_message = true;
             }
         }
         if key(context, Key::Space, false, false) && self.folder != Folder::Drafts {

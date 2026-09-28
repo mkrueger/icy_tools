@@ -203,6 +203,7 @@ shortcuts-title = Keyboard Shortcuts
 shortcuts-subtitle = Quick reference for Icy Mail
 shortcuts-section-reading = Reading
 shortcuts-reading-previous-next-entry = Previous or next entry
+shortcuts-reading-collapse-expand-thread = Collapse or expand thread
 shortcuts-reading-next-pane = Next pane
 shortcuts-reading-open-selected-folder-message = Open the selected folder or message
 shortcuts-reading-page-down-next-unread = Page down, then next unread message

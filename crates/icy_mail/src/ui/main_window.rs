@@ -350,14 +350,7 @@ impl MainWindow {
                         SortDirection::Descending => ordering.reverse(),
                     }
                 });
-                self.message_rows = infos
-                    .iter()
-                    .map(|info| Row {
-                        index: info.index,
-                        depth: 0,
-                        has_children: false,
-                    })
-                    .collect();
+                self.message_rows = infos.iter().map(|info| Row::flat(info.index)).collect();
             }
         }
     }

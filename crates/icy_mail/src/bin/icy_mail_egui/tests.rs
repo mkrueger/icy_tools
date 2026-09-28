@@ -750,6 +750,46 @@ fn color_picker_buttons_fit_side_by_side() {
     }
 }
 
+#[test]
+fn thread_twisty_and_arrow_keys_collapse_and_expand_threads() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    mail.set_mode(ViewMode::Threads);
+    mail.reader.select_message(0);
+    let output = settle(&context, &mut mail, size);
+    assert_eq!(count(&output, "Re: Amiga demos"), 1);
+    let ones = count(&output, "1");
+    let subject = label(&output, "Amiga demos");
+    let twisty = egui::pos2(subject.left() - 7.0, subject.center().y);
+    for pressed in [true, false] {
+        frame(&context, &mut mail, size, pointer(twisty, pressed));
+    }
+    assert!(mail.reader.is_collapsed(2), "clicking the triangle collapses the thread");
+    assert_eq!(mail.reader.selected_message, Some(0), "the triangle does not change the selection");
+    let output = settle(&context, &mut mail, size);
+    assert_eq!(count(&output, "Re: Amiga demos"), 0);
+    assert_eq!(count(&output, "1"), ones + 1, "a collapsed thread shows its reply count");
+    assert_eq!(mail.reader.all_messages().len(), 4);
+
+    for pressed in [true, false] {
+        frame(&context, &mut mail, size, pointer(twisty, pressed));
+    }
+    assert!(!mail.reader.is_collapsed(2));
+
+    mail.set_focus(Pane::Messages, &context);
+    mail.reader.select_message(1);
+    frame(&context, &mut mail, size, vec![key(egui::Key::ArrowLeft, egui::Modifiers::NONE)]);
+    assert_eq!(mail.reader.selected_message, Some(0), "Left moves to the parent");
+    frame(&context, &mut mail, size, vec![key(egui::Key::ArrowLeft, egui::Modifiers::NONE)]);
+    assert!(mail.reader.is_collapsed(0), "Left collapses the thread");
+    frame(&context, &mut mail, size, vec![key(egui::Key::ArrowRight, egui::Modifiers::NONE)]);
+    assert!(!mail.reader.is_collapsed(0), "Right expands the thread");
+    frame(&context, &mut mail, size, vec![key(egui::Key::ArrowRight, egui::Modifiers::NONE)]);
+    assert_eq!(mail.reader.selected_message, Some(1), "Right moves to the first reply");
+}
+
 fn wait(mail: &mut app::MailApp, context: &egui::Context) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {

@@ -368,7 +368,7 @@ impl MailApp {
                     fl!(LANGUAGE_LOADER, "status-drafts", count = self.draft_count())
                 } else {
                     let unread = self.reader.unread_count();
-                    fl!(LANGUAGE_LOADER, "status-messages", count = self.reader.messages.len(), unread = unread)
+                    fl!(LANGUAGE_LOADER, "status-messages", count = self.reader.all_messages().len(), unread = unread)
                 };
                 ui.label(text);
             } else if self.loading.is_none() {

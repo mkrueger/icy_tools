@@ -160,6 +160,7 @@ impl MailApp {
                 fl!(LANGUAGE_LOADER, "shortcuts-section-reading"),
                 vec![
                     ("\u{2191}+\u{2193}".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-previous-next-entry")),
+                    ("\u{2190}+\u{2192}".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-collapse-expand-thread")),
                     ("Tab".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-next-pane")),
                     ("Enter".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-open-selected-folder-message")),
                     ("Space".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-page-down-next-unread")),

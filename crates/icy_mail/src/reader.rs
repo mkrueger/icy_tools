@@ -113,10 +113,17 @@ pub struct Reader {
     pub message_sort: (MessageColumn, SortDirection),
     pub conference_sort: (ConferenceColumn, SortDirection),
     pub conferences: Vec<ConferenceRow>,
+    /// Visible rows: `all_messages` without the replies of collapsed threads.
     pub messages: Vec<Row>,
-    /// Position in `messages` per package index, `u32::MAX` when filtered out.
+    /// Every message matching the current folder and filters, in list or thread order.
+    all_messages: Vec<Row>,
+    /// Package indices of threads whose replies are hidden.
+    collapsed: HashSet<usize>,
+    /// Position in `messages` per package index, `u32::MAX` when filtered out or collapsed.
     positions: Vec<u32>,
-    /// Unread messages in `messages`.
+    /// Position in `all_messages` per package index, `u32::MAX` when filtered out.
+    all_positions: Vec<u32>,
+    /// Unread messages in `all_messages`.
     unread: usize,
     /// Package index per `(conference, message number)`.
     numbers: HashMap<(u16, u32), usize>,
@@ -141,7 +148,10 @@ impl Default for Reader {
             conference_sort: (ConferenceColumn::Area, SortDirection::Ascending),
             conferences: Vec::new(),
             messages: Vec::new(),
+            all_messages: Vec::new(),
+            collapsed: HashSet::new(),
             positions: Vec::new(),
+            all_positions: Vec::new(),
             unread: 0,
             numbers: HashMap::new(),
             search: Vec::new(),
@@ -162,6 +172,7 @@ impl Reader {
         self.numbers.clear();
         self.search.clear();
         self.body_matches = None;
+        self.collapsed.clear();
         self.rebuild_conferences();
         self.rebuild_messages();
     }
@@ -201,6 +212,7 @@ impl Reader {
     pub fn rebuild_messages(&mut self) {
         let Some(package) = &self.package else {
             self.messages.clear();
+            self.all_messages.clear();
             self.selected_message = None;
             return;
         };
@@ -234,7 +246,7 @@ impl Reader {
                     && (needle.is_empty() || self.search[info.index].contains(&needle) || body_matches.is_some_and(|matches| matches.contains(&info.index)))
             })
             .collect();
-        self.messages = match self.view_mode {
+        self.all_messages = match self.view_mode {
             ViewMode::Threads => threading::build_threads(&infos),
             ViewMode::List => {
                 let (column, direction) = self.message_sort;
@@ -262,26 +274,59 @@ impl Reader {
                         infos.sort_unstable_by(|left, right| direction.apply(left.lines.cmp(&right.lines)).then(left.index.cmp(&right.index)));
                     }
                 }
-                infos
-                    .iter()
-                    .map(|info| Row {
-                        index: info.index,
-                        depth: 0,
-                        has_children: false,
-                    })
-                    .collect()
+                infos.iter().map(|info| Row::flat(info.index)).collect()
             }
         };
-        self.positions.clear();
-        self.positions.resize(package.infos.len(), u32::MAX);
+        self.all_positions.clear();
+        self.all_positions.resize(package.infos.len(), u32::MAX);
         self.unread = 0;
-        for (position, row) in self.messages.iter().enumerate() {
-            self.positions[row.index] = position as u32;
+        for (position, row) in self.all_messages.iter().enumerate() {
+            self.all_positions[row.index] = position as u32;
             self.unread += usize::from(!self.read[row.index]);
         }
-        if self.selected_position().is_none() {
-            self.selected_message = self.messages.first().map(|row| row.index);
+        match self.selected_message {
+            // A selected reply stays selected, even when its thread was collapsed meanwhile.
+            Some(index) if self.contains(index) => {
+                self.expand_to(index);
+            }
+            _ => self.selected_message = self.all_messages.first().map(|row| row.index),
         }
+        self.apply_collapsed();
+    }
+
+    /// Rebuilds the visible rows from `all_messages`, skipping the replies of collapsed threads.
+    fn apply_collapsed(&mut self) {
+        let len = self.all_positions.len();
+        self.positions.clear();
+        self.positions.resize(len, u32::MAX);
+        self.messages.clear();
+        let mut position = 0;
+        while let Some(row) = self.all_messages.get(position).copied() {
+            self.positions[row.index] = self.messages.len() as u32;
+            self.messages.push(row);
+            position += 1;
+            if row.descendants > 0 && self.collapsed.contains(&row.index) {
+                position += row.descendants as usize;
+            }
+        }
+    }
+
+    /// Clears the collapsed flag of every thread level above `index`. Returns whether any changed.
+    fn expand_to(&mut self, index: usize) -> bool {
+        let Some(mut position) = self.all_position(index) else {
+            return false;
+        };
+        let mut depth = self.all_messages[position].depth;
+        let mut changed = false;
+        while depth > 0 && position > 0 {
+            position -= 1;
+            let row = self.all_messages[position];
+            if row.depth < depth {
+                changed |= self.collapsed.remove(&row.index);
+                depth = row.depth;
+            }
+        }
+        changed
     }
 
     pub fn select_conference(&mut self, conference: Option<u16>) {
@@ -292,6 +337,9 @@ impl Reader {
 
     pub fn select_message(&mut self, index: usize) {
         if self.contains(index) {
+            if self.expand_to(index) {
+                self.apply_collapsed();
+            }
             self.selected_message = Some(index);
         }
     }
@@ -301,9 +349,14 @@ impl Reader {
         self.rebuild_messages();
     }
 
-    /// Whether the message with this package index is in the current list.
+    /// Whether the message with this package index is in the current list, possibly inside a collapsed thread.
     pub fn contains(&self, index: usize) -> bool {
-        self.position(index).is_some()
+        self.all_position(index).is_some()
+    }
+
+    /// Every message in the current list, including the replies of collapsed threads.
+    pub fn all_messages(&self) -> &[Row] {
+        &self.all_messages
     }
 
     fn position(&self, index: usize) -> Option<usize> {
@@ -311,6 +364,104 @@ impl Reader {
             .get(index)
             .filter(|position| **position != u32::MAX)
             .map(|position| *position as usize)
+    }
+
+    fn all_position(&self, index: usize) -> Option<usize> {
+        self.all_positions
+            .get(index)
+            .filter(|position| **position != u32::MAX)
+            .map(|position| *position as usize)
+    }
+
+    /// Whether the replies of this thread are hidden.
+    pub fn is_collapsed(&self, index: usize) -> bool {
+        self.collapsed.contains(&index)
+    }
+
+    /// Hides or shows the replies below a message. Returns whether anything changed.
+    ///
+    /// Collapsing a thread that contains the selection moves the selection to the collapsed message.
+    pub fn set_collapsed(&mut self, index: usize, collapsed: bool) -> bool {
+        let Some(position) = self.all_position(index) else {
+            return false;
+        };
+        let row = self.all_messages[position];
+        if row.descendants == 0 || self.collapsed.contains(&index) == collapsed {
+            return false;
+        }
+        if collapsed {
+            self.collapsed.insert(index);
+            let replies = position + 1..=position + row.descendants as usize;
+            if self
+                .selected_message
+                .and_then(|selected| self.all_position(selected))
+                .is_some_and(|selected| replies.contains(&selected))
+            {
+                self.selected_message = Some(index);
+            }
+        } else {
+            self.collapsed.remove(&index);
+        }
+        self.apply_collapsed();
+        true
+    }
+
+    pub fn toggle_collapsed(&mut self, index: usize) -> bool {
+        self.set_collapsed(index, !self.is_collapsed(index))
+    }
+
+    /// Unread replies below a message, at any depth.
+    pub fn unread_replies(&self, index: usize) -> usize {
+        self.all_position(index).map_or(0, |position| {
+            let row = self.all_messages[position];
+            self.all_messages[position + 1..=position + row.descendants as usize]
+                .iter()
+                .filter(|reply| !self.is_read(reply.index))
+                .count()
+        })
+    }
+
+    /// Left arrow in a tree: collapses the selected thread, or moves to its parent.
+    pub fn collapse_or_parent(&mut self) -> bool {
+        let Some(position) = self.selected_position() else {
+            return false;
+        };
+        let row = self.messages[position];
+        if row.descendants > 0 && !self.is_collapsed(row.index) {
+            return self.set_collapsed(row.index, true);
+        }
+        match self.messages[..position].iter().rev().find(|parent| parent.depth < row.depth) {
+            Some(parent) => {
+                self.selected_message = Some(parent.index);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Right arrow in a tree: expands the selected thread, or moves to its first reply.
+    pub fn expand_or_child(&mut self) -> bool {
+        let Some(position) = self.selected_position() else {
+            return false;
+        };
+        let row = self.messages[position];
+        if row.descendants == 0 {
+            return false;
+        }
+        if self.is_collapsed(row.index) {
+            return self.set_collapsed(row.index, false);
+        }
+        self.selected_message = self.messages.get(position + 1).map(|child| child.index);
+        true
+    }
+
+    /// First unread message after `after` (or from the start), looking into collapsed threads too.
+    pub fn next_unread(&self, after: Option<usize>) -> Option<usize> {
+        let start = after.and_then(|index| self.all_position(index)).map_or(0, |position| position + 1);
+        self.all_messages[start.min(self.all_messages.len())..]
+            .iter()
+            .find(|row| !self.is_read(row.index))
+            .map(|row| row.index)
     }
 
     pub fn is_read(&self, index: usize) -> bool {
@@ -346,7 +497,7 @@ impl Reader {
                 *flag = true;
             }
         }
-        self.unread = self.messages.iter().filter(|row| !self.read[row.index]).count();
+        self.unread = self.all_messages.iter().filter(|row| !self.read[row.index]).count();
     }
 
     /// Unread messages in the current list.
@@ -608,6 +759,52 @@ mod tests {
         reader.sort_messages(MessageColumn::From);
         assert_eq!(before, reader.messages.iter().map(|row| (row.index, row.depth)).collect::<Vec<_>>());
         assert_eq!(reader.messages.len(), 4);
+    }
+
+    #[test]
+    fn collapsed_threads_hide_replies_but_keep_them_reachable() {
+        let (_dir, mut reader) = loaded();
+        reader.view_mode = ViewMode::Threads;
+        reader.rebuild_messages();
+        let visible = |reader: &Reader| reader.messages.iter().map(|row| row.index).collect::<Vec<_>>();
+        assert_eq!(visible(&reader), [2, 3, 0, 1]);
+
+        reader.select_message(3);
+        assert!(reader.set_collapsed(2, true));
+        assert_eq!(visible(&reader), [2, 0, 1]);
+        assert_eq!(reader.selected_message, Some(2), "a hidden selection moves to its thread");
+        assert!(reader.contains(3));
+        assert_eq!(reader.all_messages().len(), 4);
+        assert_eq!(reader.unread_count(), 4, "hidden replies still count");
+        assert_eq!(reader.unread_replies(2), 1);
+        assert!(!reader.set_collapsed(3, true), "leaves cannot collapse");
+
+        assert_eq!(reader.next_unread(Some(2)), Some(3), "unread replies are found inside collapsed threads");
+        reader.select_message(3);
+        assert!(!reader.is_collapsed(2), "selecting a hidden reply expands its thread");
+        assert_eq!(visible(&reader), [2, 3, 0, 1]);
+
+        // Left: to parent, then collapse; Right: expand, then to the first reply.
+        assert!(reader.collapse_or_parent());
+        assert_eq!(reader.selected_message, Some(2));
+        assert!(reader.collapse_or_parent());
+        assert!(reader.is_collapsed(2));
+        assert!(!reader.collapse_or_parent(), "a collapsed root has nowhere to go");
+        assert!(reader.expand_or_child());
+        assert!(!reader.is_collapsed(2));
+        assert!(reader.expand_or_child());
+        assert_eq!(reader.selected_message, Some(3));
+        assert!(!reader.expand_or_child());
+
+        reader.set_collapsed(0, true);
+        reader.select_message(1);
+        reader.set_collapsed(0, true);
+        reader.filter = "coffee".into();
+        reader.rebuild_messages();
+        assert_eq!(visible(&reader), [0], "collapsed state survives filtering");
+        reader.view_mode = ViewMode::List;
+        reader.rebuild_messages();
+        assert_eq!(visible(&reader), [0, 1], "the flat list ignores collapsed threads");
     }
 
     #[test]

@@ -5,6 +5,7 @@ use icy_mail::{
     LANGUAGE_LOADER,
     drafts::DraftKind,
     reader::{MessageColumn, Pane, ViewMode},
+    threading::Row,
 };
 
 use super::{
@@ -13,6 +14,62 @@ use super::{
 };
 
 const FLAGS_WIDTH: f32 = 52.0;
+/// Width of one thread level in the subject column.
+const TREE_STEP: f32 = 14.0;
+/// Deeper replies share the last level, so long chains do not push the subject out of view.
+const TREE_MAX_DEPTH: u16 = 12;
+
+fn tree_indent(depth: u16) -> f32 {
+    f32::from(depth.min(TREE_MAX_DEPTH) + 1) * TREE_STEP
+}
+
+/// Draws the connector lines of a thread row and its disclosure triangle.
+/// Returns the triangle's rectangle when the row has replies.
+fn paint_tree(ui: &egui::Ui, cell: egui::Rect, row: &Row, collapsed: bool, color: egui::Color32) -> Option<egui::Rect> {
+    let painter = ui.painter().with_clip_rect(ui.clip_rect().intersect(cell));
+    let depth = row.depth.min(TREE_MAX_DEPTH);
+    let left = cell.left() + 6.0;
+    let center = |level: u16| painter.round_to_pixel_center(left + f32::from(level) * TREE_STEP + TREE_STEP / 2.0);
+    let (top, bottom) = (cell.top(), cell.bottom());
+    let middle = painter.round_to_pixel_center(cell.center().y);
+    let stroke = egui::Stroke::new(1.0, color.gamma_multiply(0.6));
+
+    for level in 0..depth.saturating_sub(1) {
+        if level < u32::BITS as u16 && row.guides & (1 << level) != 0 {
+            painter.vline(center(level), top..=bottom, stroke);
+        }
+    }
+    let twisty = egui::Rect::from_center_size(egui::pos2(center(depth), middle), egui::Vec2::splat(9.0));
+    if depth > 0 {
+        let x = center(depth - 1);
+        painter.vline(x, top..=if row.last { middle } else { bottom }, stroke);
+        let end = if row.has_children {
+            twisty.left() - 2.0
+        } else {
+            left + tree_indent(depth) - 3.0
+        };
+        painter.hline(x..=end, middle, stroke);
+    }
+    if !row.has_children {
+        return None;
+    }
+    let points = if collapsed {
+        vec![
+            twisty.left_top() + egui::vec2(1.5, 0.0),
+            twisty.right_center(),
+            twisty.left_bottom() + egui::vec2(1.5, 0.0),
+        ]
+    } else {
+        painter.vline(center(depth), twisty.bottom() + 1.0..=bottom, stroke);
+        vec![
+            twisty.left_top() + egui::vec2(0.0, 1.5),
+            twisty.right_top() + egui::vec2(0.0, 1.5),
+            twisty.center_bottom(),
+        ]
+    };
+    painter.add(egui::Shape::convex_polygon(points, color, egui::Stroke::NONE));
+    Some(twisty)
+}
 
 impl MailApp {
     /// Folder heading and its messages or drafts. Returns whether the user picked an entry.
@@ -46,7 +103,7 @@ impl MailApp {
                         fl!(
                             LANGUAGE_LOADER,
                             "list-message-count-unread",
-                            count = (self.reader.messages.len() as i64),
+                            count = (self.reader.all_messages().len() as i64),
                             unread = (unread as i64)
                         )
                     };
@@ -100,6 +157,7 @@ impl MailApp {
             .unwrap_or_default();
         let mut select = None;
         let mut action = None;
+        let mut toggle = None;
         egui::ScrollArea::horizontal()
             .id_salt("message-columns")
             .auto_shrink([false, false])
@@ -144,23 +202,39 @@ impl MailApp {
                         let unread = !self.reader.is_read(row.index);
                         let lines = info.lines.to_string();
                         let selected = self.reader.selected_message == Some(row.index);
+                        let collapsed = threaded && row.descendants > 0 && self.reader.is_collapsed(row.index);
+                        let hidden_unread = if collapsed { self.reader.unread_replies(row.index) } else { 0 };
+                        let replies = row.descendants.to_string();
+                        let strong = unread || hidden_unread > 0;
                         let (response, cells, colors) = widgets::row(
                             ui,
                             &widths,
                             &[
                                 Cell::new(""),
-                                Cell::header(&info.from).strong(unread).highlight(&needle),
+                                Cell::header(&info.from).strong(strong).highlight(&needle),
                                 Cell::header(&info.subject)
-                                    .prefix(if threaded && row.depth > 0 { "> " } else { "" })
-                                    .strong(unread)
+                                    .strong(strong)
                                     .highlight(&needle)
-                                    .indent(if threaded { f32::from(row.depth.min(12)) * 16.0 } else { 0.0 }),
+                                    .indent(if threaded { tree_indent(row.depth) } else { 0.0 })
+                                    .badge(collapsed.then_some((replies.as_str(), hidden_unread > 0))),
                                 Cell::new(&info.date_str).weak(),
                                 Cell::new(&lines).weak().right(),
                             ],
                             selected,
                             focused,
                         );
+                        let mut twisty_clicked = false;
+                        if threaded {
+                            if let Some(twisty) = paint_tree(ui, cells[2], &row, collapsed, colors.weak) {
+                                let hit = ui
+                                    .interact(twisty.expand(4.0), ui.id().with(("thread-twisty", row.index)), egui::Sense::click())
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                if hit.clicked() {
+                                    toggle = Some(row.index);
+                                    twisty_clicked = true;
+                                }
+                            }
+                        }
                         let flags = cells[0];
                         if unread {
                             let dot = egui::Rect::from_center_size(egui::pos2(flags.left() + 12.0, flags.center().y), egui::Vec2::splat(8.0));
@@ -176,7 +250,7 @@ impl MailApp {
                             let rect = egui::Rect::from_min_size(egui::pos2(left, flags.center().y - 7.0), egui::Vec2::splat(14.0));
                             self.icons.paint(ui, Icon::Lock, rect, colors.weak);
                         }
-                        if response.clicked() || response.secondary_clicked() {
+                        if !twisty_clicked && (response.clicked() || response.secondary_clicked()) {
                             select = Some((row.index, response.double_clicked()));
                         }
                         let index = row.index;
@@ -223,6 +297,10 @@ impl MailApp {
                     });
                 }
             });
+        if let Some(index) = toggle {
+            self.reader.toggle_collapsed(index);
+            self.set_focus(Pane::Messages, &context);
+        }
         let picked = select.is_some();
         if let Some((index, open)) = select {
             self.reader.select_message(index);

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::qwk::MessageInfo;
 
-/// A message as it appears in the list, carrying its indentation inside a thread.
-#[derive(Clone, Copy)]
+/// A message as it appears in the list, carrying its place inside a thread.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Row {
     /// Index into `QwkPackage::infos` / `descriptors`.
     pub index: usize,
@@ -11,6 +11,27 @@ pub struct Row {
     pub depth: u16,
     /// Whether this row starts a thread that has replies.
     pub has_children: bool,
+    /// Whether no sibling follows this row, so its tree connector ends here.
+    pub last: bool,
+    /// Bit `n` is set when the ancestor at depth `n + 1` has a following sibling,
+    /// so that ancestor's tree line continues through this row.
+    pub guides: u32,
+    /// Replies below this row at any depth; they follow it directly in thread order.
+    pub descendants: u32,
+}
+
+impl Row {
+    /// An entry of the flat, unthreaded list.
+    pub fn flat(index: usize) -> Self {
+        Self {
+            index,
+            depth: 0,
+            has_children: false,
+            last: true,
+            guides: 0,
+            descendants: 0,
+        }
+    }
 }
 
 /// Groups messages into reply threads.
@@ -60,9 +81,11 @@ pub fn build_threads(infos: &[&MessageInfo]) -> Vec<Row> {
         stack.extend(children[pos].iter().copied());
     }
     let mut newest: Vec<i64> = infos.iter().map(|info| info.date.and_utc().timestamp()).collect();
+    let mut descendants = vec![0u32; infos.len()];
     for &pos in order.iter().rev() {
         for &child in &children[pos] {
             newest[pos] = newest[pos].max(newest[child]);
+            descendants[pos] = descendants[pos].saturating_add(descendants[child].saturating_add(1));
         }
     }
 
@@ -74,14 +97,29 @@ pub fn build_threads(infos: &[&MessageInfo]) -> Vec<Row> {
 
     // Iterative, so very long reply chains cannot overflow the stack.
     let mut rows = Vec::with_capacity(infos.len());
-    let mut stack: Vec<(usize, u16)> = roots.iter().rev().map(|root| (*root, 0)).collect();
-    while let Some((pos, depth)) = stack.pop() {
+    let mut stack: Vec<(usize, u16, u32, bool)> = roots.iter().rev().map(|root| (*root, 0, 0, true)).collect();
+    while let Some((pos, depth, guides, last)) = stack.pop() {
         rows.push(Row {
             index: infos[pos].index,
             depth,
             has_children: !children[pos].is_empty(),
+            last,
+            guides,
+            descendants: descendants[pos],
         });
-        stack.extend(children[pos].iter().rev().map(|child| (*child, depth.saturating_add(1))));
+        // This row's own connector keeps running past its replies while a sibling follows it.
+        let child_guides = match depth.checked_sub(1) {
+            Some(bit) if !last && bit < u32::BITS as u16 => guides | 1 << bit,
+            _ => guides,
+        };
+        let count = children[pos].len();
+        stack.extend(
+            children[pos]
+                .iter()
+                .enumerate()
+                .rev()
+                .map(|(nth, child)| (*child, depth.saturating_add(1), child_guides, nth + 1 == count)),
+        );
     }
     rows
 }
@@ -202,5 +240,32 @@ mod tests {
         let infos = vec![info(0, 10, 0, "Old", 0), info(1, 11, 0, "New", 5)];
         let rows = rows_of(&infos);
         assert_eq!(rows[0].index, 1);
+    }
+
+    #[test]
+    fn rows_carry_tree_connectors_and_subtree_sizes() {
+        // 10
+        // ├─ 11
+        // │  └─ 13
+        // └─ 12
+        //    └─ 14
+        let infos = vec![
+            info(0, 10, 0, "Topic", 0),
+            info(1, 11, 10, "Re: Topic", 1),
+            info(2, 12, 10, "Re: Topic", 2),
+            info(3, 13, 11, "Re: Topic", 3),
+            info(4, 14, 12, "Re: Topic", 4),
+        ];
+        let rows = rows_of(&infos);
+        assert_eq!(
+            rows.iter().map(|r| (r.index, r.depth, r.last, r.guides, r.descendants)).collect::<Vec<_>>(),
+            vec![
+                (0, 0, true, 0, 4),
+                (1, 1, false, 0, 1),
+                (3, 2, true, 0b1, 0),
+                (2, 1, true, 0, 1),
+                (4, 2, true, 0, 0)
+            ]
+        );
     }
 }

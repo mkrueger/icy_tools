@@ -322,6 +322,8 @@ pub struct Cell<'a> {
     pub right: bool,
     /// Search text to highlight.
     pub highlight: &'a str,
+    /// Count pill at the right edge; filled with the accent colour when `true`.
+    pub badge: Option<(&'a str, bool)>,
 }
 
 impl<'a> Cell<'a> {
@@ -334,6 +336,7 @@ impl<'a> Cell<'a> {
             indent: 0.0,
             right: false,
             highlight: "",
+            badge: None,
         }
     }
 
@@ -342,11 +345,6 @@ impl<'a> Cell<'a> {
             text: CellText::Header(text),
             ..Self::new("")
         }
-    }
-
-    pub fn prefix(mut self, prefix: &'a str) -> Self {
-        self.prefix = prefix;
-        self
     }
 
     pub fn strong(mut self, strong: bool) -> Self {
@@ -371,6 +369,11 @@ impl<'a> Cell<'a> {
 
     pub fn highlight(mut self, needle: &'a str) -> Self {
         self.highlight = needle;
+        self
+    }
+
+    pub fn badge(mut self, badge: Option<(&'a str, bool)>) -> Self {
+        self.badge = badge;
         self
     }
 }
@@ -421,6 +424,26 @@ pub fn row(ui: &mut egui::Ui, widths: &[f32], cells: &[Cell], selected: bool, fo
         let mut area = cell.shrink2(egui::vec2(6.0, 0.0));
         area.min.x = (area.min.x + value.indent).min(area.max.x);
         let color = if value.weak { weak } else { text };
+        if let Some((badge, filled)) = value.badge {
+            let (fill, badge_color) = match (filled, selected && focused) {
+                (true, true) => (text, visuals.selection.bg_fill),
+                (true, false) => (accent(ui), Color32::WHITE),
+                (false, _) => (Color32::TRANSPARENT, weak),
+            };
+            let galley = ui.painter().layout_no_wrap(badge.to_owned(), FontId::proportional(11.0), badge_color);
+            let size = egui::vec2((galley.size().x + 10.0).max(20.0), 16.0);
+            let pill = Rect::from_min_size(egui::pos2(area.right() - size.x, area.center().y - size.y / 2.0), size);
+            if pill.left() > area.left() {
+                if filled {
+                    ui.painter().rect_filled(pill, 8.0, fill);
+                } else {
+                    ui.painter()
+                        .rect_stroke(pill, 8.0, Stroke::new(1.0, weak.gamma_multiply(0.6)), egui::StrokeKind::Inside);
+                }
+                ui.painter().galley(pill.center() - galley.size() / 2.0, galley, badge_color);
+                area.max.x = (pill.left() - 6.0).max(area.min.x);
+            }
+        }
         let align = if value.right { egui::Align::Max } else { egui::Align::Min };
         let font = FontId::new(13.0, family);
         match value.text {
