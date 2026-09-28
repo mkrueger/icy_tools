@@ -149,15 +149,23 @@ impl DrawApp {
                         ui.add_space(TILE_SPACING - ui.spacing().item_spacing.y);
                     }
                     ui.add_space(14.0);
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         let open_button = appearance::primary_button(fl!("menu-open"))
                             .shortcut_text(egui::RichText::new(context.format_shortcut(&menus::OPEN)).color(Color32::from_white_alpha(190)))
                             .min_size(egui::vec2(150.0, 32.0));
                         if ui.add_enabled(!self.picker, open_button).clicked() {
                             self.choose(&context, FileAction::Open);
                         }
+                        let connect_button = egui::Button::new(fl!("menu-connect-to-server")).min_size(egui::vec2(150.0, 32.0));
+                        if ui
+                            .add_enabled(!self.picker && !self.collab.in_session(), connect_button)
+                            .on_hover_text(fl!("start-connect-tooltip"))
+                            .clicked()
+                        {
+                            self.open_connect_dialog();
+                        }
                         ui.add_space(8.0);
-                        ui.label(egui::RichText::new(fl!("start-drop-hint")).weak().size(12.0));
+                        ui.add(egui::Label::new(egui::RichText::new(fl!("start-drop-hint")).weak().size(12.0)).extend());
                     });
                     if recent.is_empty() {
                         return;

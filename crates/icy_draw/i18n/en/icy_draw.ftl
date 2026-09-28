@@ -1382,3 +1382,4 @@ shade-add-color=Add a palette color
 shade-remove-color=Color { $color } – click to remove
 shade-ramp-empty=Empty ramp
 shade-invalid-character="{ $character }" is not a usable CP437 character
+start-connect-tooltip=Join a Moebius-compatible collaboration server and draw together

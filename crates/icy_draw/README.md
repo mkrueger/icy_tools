@@ -225,7 +225,7 @@ IcyDraw supports **real-time collaboration** via a Moebius-compatible WebSocket 
 ### Join a session
 
 1. Start IcyDraw
-2. Open **File → Connect to server…**
+2. Click **Connect to Server…** on the start page, or use **File → Connect to server…**
 3. Enter the server address
 
 Accepted formats (port defaults to **8000** if omitted):

@@ -2189,3 +2189,15 @@ fn gpu_shade_ramp_controls_render() {
         assert!(pixels.chunks(4).any(|pixel| pixel[0] > 150 && pixel[1] < 90), "the invalid ramp is reported in red");
     });
 }
+
+#[test]
+fn start_page_connects_to_a_server() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::vec2(1280.0, 820.0);
+    let mut app = DrawApp::new();
+    app.show_start = true;
+    frame(&context, &mut app, size, vec![]);
+    click_text(&context, &mut app, size, "Connect to Server…");
+    assert!(matches!(app.dialog, Some(Dialog::Connect)));
+}

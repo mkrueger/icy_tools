@@ -1366,3 +1366,4 @@ shade-add-color=Eine Palettenfarbe hinzufügen
 shade-remove-color=Farbe { $color } – zum Entfernen klicken
 shade-ramp-empty=Leerer Verlauf
 shade-invalid-character=„{ $character }“ ist kein verwendbares CP437-Zeichen
+start-connect-tooltip=Einem Moebius-kompatiblen Kollaborationsserver beitreten und gemeinsam zeichnen
