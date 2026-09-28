@@ -14,6 +14,9 @@ pub use command_type::IgsCommandType;
 mod command;
 pub use command::*;
 
+mod stream;
+pub use stream::*;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum State {
     Default,

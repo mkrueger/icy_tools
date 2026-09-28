@@ -127,6 +127,7 @@ impl DrawApp {
                 self.replace(Document::new(Size::new(80, 25)));
                 self.rip = Some(editor);
             }
+            RecoveryKind::Igs => return Err(fl!("igs-recovery-unsupported")),
         }
         Ok(())
     }
@@ -332,6 +333,7 @@ fn offer_row(ui: &mut egui::Ui, offer: &mut Offer, index: usize, free: bool, res
                             RecoveryKind::BitFont => fl!("recovery-kind-bitfont"),
                             RecoveryKind::Animation => fl!("recovery-kind-animation"),
                             RecoveryKind::Rip => fl!("rip-editor-title"),
+                            RecoveryKind::Igs => fl!("igs-editor-title"),
                         };
                         let time = chrono::DateTime::from_timestamp(header.saved_at as i64, 0)
                             .map(|time| time.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())

@@ -4,6 +4,7 @@ pub mod document;
 pub mod files;
 pub mod fill;
 pub mod host;
+pub mod igs_document;
 pub mod mcp;
 #[path = "ui/editor/ansi/tools/paint.rs"]
 pub mod paint;

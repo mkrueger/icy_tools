@@ -8,6 +8,8 @@ mod vt52;
 
 mod loop_run_tests;
 
+mod stream;
+
 // mod loop_tests;
 
 pub struct TestSink {

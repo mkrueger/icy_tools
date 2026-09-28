@@ -3476,6 +3476,7 @@ dependencies = [
  "crc32fast",
  "directories",
  "eframe",
+ "fastrand",
  "flexi_logger",
  "fontdue",
  "futures-util",
