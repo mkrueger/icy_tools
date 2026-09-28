@@ -145,6 +145,28 @@ async fn test_handle_connect() {
     assert!(user_id > 0);
 }
 
+#[tokio::test]
+async fn test_palette_is_sent_as_moebius_6bit_values() {
+    let config = ServerConfig::default();
+    let palette = config.palette;
+    let state = ServerState::new(config);
+    let doc = state.get_compressed_document().await;
+    let serde_json::Value::Array(colors) = &doc.palette else {
+        panic!("palette must be a JSON array: {:?}", doc.palette);
+    };
+    assert_eq!(colors.len(), 16);
+    // Moebius's default EGA palette: black, blue 42, brown (42, 21, 0), bright white 63.
+    assert_eq!(colors[1], serde_json::json!({"r": 0, "g": 0, "b": 42}));
+    assert_eq!(colors[6], serde_json::json!({"r": 42, "g": 21, "b": 0}));
+    assert_eq!(colors[15], serde_json::json!({"r": 63, "g": 63, "b": 63}));
+    assert!(colors
+        .iter()
+        .flat_map(|color| ["r", "g", "b"].map(|key| color[key].as_u64().unwrap()))
+        .all(|value| value <= 63));
+    // Our own client expands them back to the original 8-bit palette.
+    assert_eq!(icy_engine_edit::collaboration::parse_moebius_palette(&doc.palette), palette);
+}
+
 #[test]
 fn test_server_builder() {
     let handle = ServerBuilder::new()

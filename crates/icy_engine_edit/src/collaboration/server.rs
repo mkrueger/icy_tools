@@ -270,7 +270,8 @@ impl ServerState {
     }
 
     /// Convert the palette to JSON format for Moebius protocol.
-    /// Returns an array of 16 {r, g, b} objects.
+    /// Returns an array of 16 {r, g, b} objects with 6-bit (0-63) components: Moebius stores
+    /// EGA palettes that way and expands them with `<< 2`, so 8-bit values would all saturate.
     fn get_palette_json(&self) -> serde_json::Value {
         let palette_array: Vec<serde_json::Value> = self
             .config
@@ -278,9 +279,9 @@ impl ServerState {
             .iter()
             .map(|[r, g, b]| {
                 serde_json::json!({
-                    "r": *r,
-                    "g": *g,
-                    "b": *b
+                    "r": *r >> 2,
+                    "g": *g >> 2,
+                    "b": *b >> 2
                 })
             })
             .collect();
