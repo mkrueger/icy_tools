@@ -133,6 +133,10 @@ fn tdf_type_label(kind: icy_engine_edit::charset::TdfFontType) -> String {
     }
 }
 
+fn tdf_font_entry(index: usize, font: &retrofont::tdf::TdfFont) -> String {
+    format!("{}. {} ({})", index + 1, font.name, tdf_type_label(font.font_type))
+}
+
 fn filter_match_ranges(name: &str, filter: &str) -> Vec<std::ops::Range<usize>> {
     let filter = filter.trim().to_lowercase();
     if filter.is_empty() {
@@ -743,7 +747,7 @@ impl DrawApp {
         let Some(font) = &self.charfont else {
             return;
         };
-        let fonts: Vec<_> = font.state.fonts().iter().map(|font| font.name.clone()).collect();
+        let fonts: Vec<_> = font.state.fonts().iter().enumerate().map(|(index, font)| tdf_font_entry(index, font)).collect();
         let mut selected = font.state.selected_font_index();
         let mut character = font.state.selected_char().unwrap_or('A');
         let mut name = font.state.selected_font().map(|font| font.name.clone()).unwrap_or_default();
@@ -754,10 +758,10 @@ impl DrawApp {
             }
             ui.horizontal_wrapped(|ui| {
                 egui::ComboBox::from_id_salt("tdf-font")
-                    .selected_text(fl!("tdf-font-number", index = (selected + 1)))
+                    .selected_text(fonts.get(selected).map(String::as_str).unwrap_or_default())
                     .show_ui(ui, |ui| {
-                        for (index, name) in fonts.iter().enumerate() {
-                            if ui.selectable_value(&mut selected, index, name).changed() {
+                        for (index, label) in fonts.iter().enumerate() {
+                            if ui.selectable_value(&mut selected, index, label).changed() {
                                 self.change_charfont(|state| state.select_font(index));
                             }
                         }
@@ -817,7 +821,7 @@ impl DrawApp {
         let Some(font) = &self.charfont else {
             return;
         };
-        let fonts: Vec<_> = font.state.fonts().iter().map(|font| font.name.clone()).collect();
+        let fonts: Vec<_> = font.state.fonts().iter().enumerate().map(|(index, font)| tdf_font_entry(index, font)).collect();
         let mut selected = font.state.selected_font_index();
         let character = font.state.selected_char().unwrap_or('A');
         let mut name = font.state.selected_font().map(|font| font.name.clone()).unwrap_or_default();
@@ -848,10 +852,10 @@ impl DrawApp {
         });
         egui::ComboBox::from_id_salt("tdf-font")
             .width(ui.available_width())
-            .selected_text(format!("{}. {}", selected + 1, fonts.get(selected).map(String::as_str).unwrap_or("")))
+            .selected_text(fonts.get(selected).map(String::as_str).unwrap_or_default())
             .show_ui(ui, |ui| {
-                for (index, name) in fonts.iter().enumerate() {
-                    if ui.selectable_value(&mut selected, index, format!("{}. {name}", index + 1)).changed() {
+                for (index, label) in fonts.iter().enumerate() {
+                    if ui.selectable_value(&mut selected, index, label).changed() {
                         self.change_charfont(|state| state.select_font(index));
                     }
                 }
@@ -2979,6 +2983,9 @@ impl DrawApp {
                     }
                     self.chat_panel(ui);
                 });
+        }
+        if let Some(font) = &self.charfont {
+            font.sync_display_color(&self.document);
         }
         egui::CentralPanel::default().frame(egui::Frame::new().fill(well)).show(context, |ui| {
             let blocked = blocked || self.dialog.is_some() || self.picker || self.layer_properties_open();

@@ -1782,6 +1782,40 @@ fn text_position(output: &egui::FullOutput, label: &str) -> Option<egui::Pos2> {
     })
 }
 
+#[test]
+fn tdf_font_selector_shows_each_font_type_in_both_layouts() {
+    use_english();
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    let mut font = icy_draw::charfont::CharFontDocument::new(icy_engine_edit::charset::TdfFontType::Color);
+    font.state.add_font(icy_engine_edit::charset::TdfFontType::Block, "Blocks".into(), 1);
+    font.state.add_font(icy_engine_edit::charset::TdfFontType::Outline, "Outlines".into(), 1);
+    app.replace(font.document());
+    app.charfont = Some(font);
+
+    for size in [egui::vec2(1280.0, 820.0), egui::vec2(740.0, 820.0)] {
+        let selected = "3. Outlines (Outline)";
+        let output = frame(&context, &mut app, size, vec![]);
+        let position = text_position(&output, selected).expect("selected font title includes its type");
+        frame(&context, &mut app, size, vec![egui::Event::PointerMoved(position)]);
+        for pressed in [true, false] {
+            frame(&context, &mut app, size, pointer(position, pressed));
+        }
+        let output = frame(&context, &mut app, size, vec![]);
+        for label in ["1. New Font (Color)", "2. Blocks (Block)", selected] {
+            assert!(text_position(&output, label).is_some(), "missing font list entry: {label}");
+        }
+        let position = text_position(&output, "1. New Font (Color)").unwrap();
+        frame(&context, &mut app, size, vec![egui::Event::PointerMoved(position)]);
+        for pressed in [true, false] {
+            frame(&context, &mut app, size, pointer(position, pressed));
+        }
+        assert_eq!(app.charfont.as_ref().unwrap().state.selected_font_index(), 0);
+        assert!(text_position(&frame(&context, &mut app, size, vec![]), "1. New Font (Color)").is_some());
+        app.change_charfont(|state| state.select_font(2));
+    }
+}
+
 fn click_text(context: &egui::Context, app: &mut DrawApp, size: egui::Vec2, label: &str) {
     let output = frame(context, app, size, vec![]);
     let position = text_position(&output, label).unwrap_or_else(|| panic!("no {label:?} on screen"));

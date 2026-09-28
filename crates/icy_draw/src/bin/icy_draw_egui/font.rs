@@ -440,7 +440,9 @@ impl FontEditor {
     }
 
     fn handle_events(&mut self, context: &egui::Context) {
-        if context.wants_keyboard_input() {
+        // Keys belong to another widget (e.g. a size field) unless the editor areas hold focus.
+        let focus = context.memory(|memory| memory.focused());
+        if focus.is_some_and(|id| id != editor_focus_id()) {
             return;
         }
         for event in context.input(|input| input.events.clone()) {
@@ -452,8 +454,9 @@ impl FontEditor {
                     if modifiers.command && !matches!(key, egui::Key::Z | egui::Key::Y | egui::Key::A) && !key_is_arrow(key) {
                         continue;
                     }
-                    if key == egui::Key::Tab {
-                        context.input_mut(|input| input.consume_key(modifiers, key));
+                    // Tab cycles the editor areas only while they hold focus; otherwise it moves egui focus.
+                    if key == egui::Key::Tab && focus.is_none() {
+                        continue;
                     }
                     self.key(key, modifiers);
                 }
@@ -781,6 +784,12 @@ impl FontEditor {
         let charset_size = egui::vec2(RULER, RULER) + cell * 16.0;
         let total = egui::vec2(grid_size.x + gap + charset_size.x, title_height + grid_size.y.max(charset_size.y));
         let origin = ui.max_rect().min + ((available - total) / 2.0).max(egui::Vec2::splat(8.0));
+        // Registered beneath the grids; without click or drag sense it never takes their hover or clicks.
+        let focus = ui.interact(
+            egui::Rect::from_min_size(origin, total),
+            editor_focus_id(),
+            egui::Sense::focusable_noninteractive(),
+        );
         let code = self.state.selected_char() as u32;
         let title_font = egui::FontId::proportional(16.0);
         let title_color = ui.visuals().strong_text_color();
@@ -811,6 +820,7 @@ impl FontEditor {
             egui::Rect::from_min_size(charset_origin + egui::vec2(0.0, title_height), charset_size),
             cell,
         );
+        hold_keyboard_focus(ui, &focus);
     }
 
     /// Columns shown per glyph: the 9th column of 9-dot fonts is shown but not editable.
@@ -1106,6 +1116,33 @@ const NINE_DOT_COLUMN: Color32 = Color32::from_rgb(38, 38, 56);
 const NINE_DOT_SEPARATOR: Color32 = Color32::from_rgb(89, 89, 140);
 const HOVER: Color32 = Color32::from_rgb(93, 160, 232);
 const TOOLS: [Tool; 6] = [Tool::Click, Tool::Select, Tool::Line, Tool::RectangleOutline, Tool::RectangleFilled, Tool::Fill];
+/// Keys the glyph and character areas handle themselves instead of letting egui move focus.
+const EDITOR_KEYS: egui::EventFilter = egui::EventFilter {
+    tab: true,
+    horizontal_arrows: true,
+    vertical_arrows: true,
+    escape: true,
+};
+
+/// One focus target for both editor areas: egui applies a lock filter only to a widget that kept
+/// focus since the previous frame, so switching between two widgets would leak repeated Tabs.
+fn editor_focus_id() -> egui::Id {
+    egui::Id::new("font-editor-focus")
+}
+
+/// Keeps keyboard focus on the editor areas while no other widget uses it, like the ANSI canvas.
+fn hold_keyboard_focus(ui: &egui::Ui, focus: &egui::Response) {
+    if !ui.is_enabled() {
+        focus.surrender_focus();
+        return;
+    }
+    let pressed = focus.contains_pointer() && ui.input(|input| input.pointer.any_pressed());
+    if !focus.has_focus() && (pressed || ui.memory(|memory| memory.focused().is_none())) {
+        focus.request_focus();
+        ui.ctx().request_repaint();
+    }
+    ui.memory_mut(|memory| memory.set_focus_lock_filter(focus.id, EDITOR_KEYS));
+}
 
 /// Textures that only change with the glyphs or colors, so they are not rebuilt every frame.
 #[derive(Default)]
@@ -1334,35 +1371,62 @@ mod tests {
     }
 
     #[test]
-    fn tab_is_consumed_while_cycling_editor_areas() {
+    fn tab_cycles_editor_areas_without_moving_widget_focus() {
         use egui::{Event, Key, Modifiers, RawInput};
 
         let context = egui::Context::default();
         let mut editor = FontEditor::new(BitFont::from_ansi_font_page(0, 16).unwrap().clone());
         editor.state.set_focused_panel(BitFontFocusedPanel::EditGrid);
-        for (modifiers, expected) in [
-            (Modifiers::NONE, BitFontFocusedPanel::CharSet),
-            (Modifiers::SHIFT, BitFontFocusedPanel::EditGrid),
-        ] {
-            let output = context.run(
+        let layout = Layout {
+            toolbar_height: 40.0,
+            status_height: 24.0,
+            rail_width: 48.0,
+        };
+        let key = |key, modifiers| Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        };
+        let run = |editor: &mut FontEditor, events: Vec<Event>| {
+            let _ = context.run(
                 RawInput {
-                    events: vec![Event::Key {
-                        key: Key::Tab,
-                        physical_key: None,
-                        pressed: true,
-                        repeat: false,
-                        modifiers,
-                    }],
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events,
                     ..Default::default()
                 },
                 |context| {
-                    editor.handle_events(context);
-                    assert!(!context.input(|input| input.key_pressed(Key::Tab)));
+                    editor.show(context, false, layout);
                 },
             );
-            assert!(output.platform_output.events.is_empty());
+        };
+        run(&mut editor, vec![]);
+        run(&mut editor, vec![]);
+        let focused = || context.memory(|memory| memory.focused());
+        assert_eq!(focused(), Some(editor_focus_id()), "the editor areas should own keyboard focus");
+
+        // Repeated Tabs in consecutive frames must never leak into egui's widget traversal.
+        for (modifiers, expected) in [
+            (Modifiers::NONE, BitFontFocusedPanel::CharSet),
+            (Modifiers::NONE, BitFontFocusedPanel::EditGrid),
+            (Modifiers::SHIFT, BitFontFocusedPanel::CharSet),
+            (Modifiers::SHIFT, BitFontFocusedPanel::EditGrid),
+        ] {
+            run(&mut editor, vec![key(Key::Tab, modifiers)]);
             assert_eq!(editor.state.focused_panel(), expected);
+            assert_eq!(focused(), Some(editor_focus_id()), "{modifiers:?}+Tab moved focus to another widget");
         }
+        for editor_key in [Key::ArrowRight, Key::ArrowDown, Key::Escape] {
+            run(&mut editor, vec![key(editor_key, Modifiers::NONE)]);
+            assert_eq!(focused(), Some(editor_focus_id()), "{editor_key:?} moved focus away from the editor");
+        }
+
+        // A blocking dialog must get Tab back for its own widgets.
+        let _ = context.run(Default::default(), |context| {
+            editor.show(context, true, layout);
+        });
+        assert_eq!(focused(), None);
     }
 
     #[test]

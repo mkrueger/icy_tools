@@ -118,6 +118,33 @@ impl CharFontDocument {
         document
     }
 
+    pub fn sync_display_color(&self, document: &Document) {
+        if self.state.selected_font().is_none_or(|font| font.font_type == TdfFontType::Color) {
+            return;
+        }
+        document.with_state(|state| {
+            let caret = state.get_caret().attribute;
+            let buffer = state.get_buffer_mut();
+            let mut changed = false;
+            for layer in &mut buffer.layers {
+                for row in 0..layer.height() {
+                    for column in 0..layer.width() {
+                        let position = Position::new(column, row);
+                        let mut cell = layer.char_at(position);
+                        if cell.attribute != caret {
+                            cell.attribute = caret;
+                            layer.set_char(position, cell);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if changed {
+                buffer.mark_dirty();
+            }
+        });
+    }
+
     pub fn save(&mut self, document: &mut Document, path: &Path) -> DrawResult<()> {
         self.save_with_overwrite(document, path, false)
     }
@@ -275,5 +302,42 @@ mod tests {
             reopened.with_state(|state| (0..4).map(|column| state.get_buffer().char_at(Position::new(column, 0)).ch).collect::<String>()),
             "AQ@&"
         );
+    }
+
+    #[test]
+    fn outline_and_block_editors_use_caret_colors_across_the_entire_canvas() {
+        for kind in [TdfFontType::Outline, TdfFontType::Block] {
+            let font = CharFontDocument::new(kind);
+            let mut document = font.document();
+            document.type_text("A").unwrap();
+            document.set_caret_foreground(12).unwrap();
+            document.set_caret_background(13).unwrap();
+            let modified = document.modified();
+            font.sync_display_color(&document);
+            for position in [Position::default(), Position::new(1, 0), Position::new(29, 11)] {
+                let cell = document.with_state(|state| state.get_buffer().char_at(position));
+                assert_eq!((cell.attribute.foreground(), cell.attribute.background()), (12, 13), "{kind:?} at {position:?}");
+                assert!(cell.is_visible(), "{kind:?} cell at {position:?} must render its background");
+            }
+            assert_eq!(document.with_state(|state| state.get_buffer().char_at(Position::new(29, 11)).ch), ' ');
+            assert_eq!(outline_preview(&document, 0).char_at(Position::new(29, 11)).attribute.background(), 13);
+            assert_eq!(document.modified(), modified, "display colors must not change glyph edit status");
+        }
+
+        let font = CharFontDocument::new(TdfFontType::Color);
+        let mut document = font.document();
+        document.with_state(|state| {
+            state.set_caret_foreground(3);
+            state.set_caret_background(4);
+        });
+        document.type_text("A").unwrap();
+        document.with_state(|state| {
+            state.set_caret_foreground(12);
+            state.set_caret_background(13);
+        });
+        font.sync_display_color(&document);
+        let attribute = document.with_state(|state| state.get_buffer().char_at(Position::default()).attribute);
+        assert_eq!(attribute.foreground(), 3);
+        assert_eq!(attribute.background(), 4);
     }
 }

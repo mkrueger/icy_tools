@@ -139,7 +139,12 @@ impl FontTool {
 
                 let lib = self.font_tool.font_library.read();
                 if let Some(font) = lib.get_font(font_idx as usize) {
-                    match font.render_glyph(&mut renderer, ch, &render_options) {
+                    let background = if matches!(font, retrofont::Font::Tdf(tdf) if matches!(tdf.font_type(), retrofont::tdf::TdfFontType::Block | retrofont::tdf::TdfFontType::Outline)) {
+                        font.glyph_size(ch).map_or(Ok(()), |(width, height)| renderer.fill_background(width, height))
+                    } else {
+                        Ok(())
+                    };
+                    match background.and_then(|()| font.render_glyph(&mut renderer, ch, &render_options).map_err(|e| icy_engine::EngineError::Generic(e.to_string()))) {
                         Ok(()) => Ok(Position::new(renderer.max_x(), start_y)),
                         Err(e) => Err(icy_engine::EngineError::Generic(format!("Font render error: {e}"))),
                     }

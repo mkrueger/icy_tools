@@ -722,6 +722,11 @@ impl Document {
                     state.set_caret_position(Position::new(0, start.y + font.max_height() as i32));
                 } else if font.has_char(character) {
                     let mut renderer = icy_engine_edit::TdfEditStateRenderer::new(state, start.x, start.y)?;
+                    if matches!(font, retrofont::Font::Tdf(tdf) if matches!(tdf.font_type(), retrofont::tdf::TdfFontType::Block | retrofont::tdf::TdfFontType::Outline)) {
+                        if let Some((width, height)) = font.glyph_size(character) {
+                            renderer.fill_background(width, height)?;
+                        }
+                    }
                     font.render_glyph(
                         &mut renderer,
                         character,
@@ -1274,6 +1279,38 @@ mod tests {
         doc.with_state(|state| state.get_cur_layer_mut().unwrap().properties.is_locked = true);
         doc.type_art_text("A", &fonts[0], 0).unwrap();
         assert!(!doc.modified());
+    }
+
+    #[test]
+    fn block_and_outline_text_art_use_caret_colors() {
+        for font_type in [icy_engine_edit::charset::TdfFontType::Block, icy_engine_edit::charset::TdfFontType::Outline] {
+            let mut tdf = retrofont::tdf::TdfFont::new("test", font_type, 0);
+            let mut glyph = retrofont::Glyph::new(4, 2);
+            glyph.parts = vec![
+                retrofont::GlyphPart::Char('A'),
+                retrofont::GlyphPart::Skip,
+                retrofont::GlyphPart::NewLine,
+                retrofont::GlyphPart::Char('B'),
+            ];
+            tdf.add_glyph('A', glyph);
+            let font = retrofont::Font::Tdf(Box::new(tdf));
+            let mut doc = Document::new(Size::new(30, 12));
+            doc.with_state(|state| state.set_caret_attribute(icy_engine::TextAttribute::from_color(4, 1)));
+            doc.type_art_text("A", &font, 0).unwrap();
+            for y in 0..2 {
+                for x in 0..4 {
+                    let attribute = doc.with_state(|state| state.get_buffer().char_at((x, y).into()).attribute);
+                    assert_eq!(
+                        (attribute.foreground(), attribute.background()),
+                        (4, 1),
+                        "{font_type:?} cell ({x}, {y}) ignores the caret colors"
+                    );
+                }
+            }
+            assert_eq!(doc.with_state(|state| state.get_buffer().char_at((1, 0).into()).ch), ' ');
+            assert_eq!(doc.with_state(|state| state.get_buffer().char_at((3, 1).into()).ch), ' ');
+            assert_eq!(doc.with_state(|state| state.get_buffer().char_at((4, 0).into()).attribute.background()), 0);
+        }
     }
 
     #[test]
