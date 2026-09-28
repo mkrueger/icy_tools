@@ -590,7 +590,22 @@ pub fn render_body(data: &[u8]) -> Res<TextScreen> {
 /// Renders a bulletin, news or new files screen. These stop at the DOS end-of-file mark and may use
 /// PCBoard `@X` colours, which MultiMail's viewer translates as well.
 pub fn render_file(data: &[u8]) -> Res<TextScreen> {
+    render_file_page(data, 0)
+}
+
+/// Render only one page of a packet file to keep very large new-files lists manageable.
+pub const FILE_PAGE_LINES: usize = 2048;
+
+pub fn render_file_page(data: &[u8], page: usize) -> Res<TextScreen> {
     let data = data.split(|byte| *byte == 0x1A).next().unwrap_or_default();
+    let offset = page.saturating_mul(FILE_PAGE_LINES);
+    let page_data: Vec<u8> = data
+        .split_inclusive(|byte| *byte == b'\n')
+        .skip(offset)
+        .take(FILE_PAGE_LINES)
+        .flat_map(|line| line.iter().copied())
+        .collect();
+    let data = page_data.as_slice();
     let pcboard = data
         .windows(4)
         .any(|code| code[0] == b'@' && code[1].eq_ignore_ascii_case(&b'x') && code[2].is_ascii_hexdigit() && code[3].is_ascii_hexdigit());
@@ -873,5 +888,17 @@ mod tests {
         let plain = render_file(b"mail me@home.net or you@there.org").unwrap();
         let line: String = (0..33).map(|x| plain.char_at(Position::new(x, 0)).ch).collect();
         assert_eq!(line, "mail me@home.net or you@there.org", "without @X codes, @ stays literal");
+    }
+
+    #[test]
+    fn packet_file_pages_render_only_the_selected_lines() {
+        let mut data = b"first\n".to_vec();
+        data.extend(b"filler\n".repeat(FILE_PAGE_LINES - 1));
+        data.extend_from_slice(b"second\n");
+        let first = render_file_page(&data, 0).unwrap();
+        let second = render_file_page(&data, 1).unwrap();
+        assert_eq!(first.char_at(Position::new(0, 0)).ch, 'f');
+        assert_eq!(second.char_at(Position::new(0, 0)).ch, 's');
+        assert_eq!(second.height(), 25);
     }
 }

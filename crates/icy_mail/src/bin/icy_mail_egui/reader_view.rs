@@ -513,9 +513,32 @@ impl MailApp {
         if let Some(direction) = navigate {
             let files = self.file_count();
             self.selected_file = self.selected_file.map(|position| icy_mail::reader::step(position, direction, files));
+            self.selected_file_page = 0;
             self.reveal_message = true;
         }
-        if self.body_loading || self.rendered_file != self.selected_file {
+        if navigate.is_none() && file.pages() > 1 {
+            let page = (self.selected_file_page + 1) as i64;
+            let total = file.pages() as i64;
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(self.selected_file_page > 0, egui::Button::new(fl!(LANGUAGE_LOADER, "reader-previous-page")))
+                    .clicked()
+                {
+                    self.selected_file_page -= 1;
+                }
+                ui.label(fl!(LANGUAGE_LOADER, "reader-file-page", page = page, total = total));
+                if ui
+                    .add_enabled(
+                        self.selected_file_page + 1 < file.pages(),
+                        egui::Button::new(fl!(LANGUAGE_LOADER, "reader-next-page")),
+                    )
+                    .clicked()
+                {
+                    self.selected_file_page += 1;
+                }
+            });
+        }
+        if self.body_loading || self.rendered_file != self.selected_file || self.rendered_file_page != self.selected_file_page {
             ui.centered_and_justified(|ui| {
                 ui.spinner();
             });

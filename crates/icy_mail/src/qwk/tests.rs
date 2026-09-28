@@ -90,6 +90,10 @@ fn packet_files() -> &'static [(&'static str, &'static [u8])] {
 
 /// Writes a synthetic QWK packet and returns its path.
 fn write_packet(dir: &std::path::Path) -> std::path::PathBuf {
+    write_packet_with_newfiles(dir, None)
+}
+
+fn write_packet_with_newfiles(dir: &std::path::Path, newfiles: Option<&[u8]>) -> std::path::PathBuf {
     let mut messages = vec![b' '; 128]; // packet header block
 
     message(&mut messages, 10, "01/02/2010:00", "alice", "Coffee machine", 0, 1, 3);
@@ -108,11 +112,26 @@ fn write_packet(dir: &std::path::Path) -> std::path::PathBuf {
     zip.write_all(&messages).unwrap();
     for (name, data) in packet_files() {
         zip.start_file(*name, options).unwrap();
-        zip.write_all(data).unwrap();
+        zip.write_all(if *name == "NEWFILES.DAT" { newfiles.unwrap_or(data) } else { data }).unwrap();
     }
     zip.finish().unwrap();
 
     path
+}
+
+#[test]
+fn large_newfiles_list_is_discoverable_and_paged() {
+    let dir = TempDir::new();
+    let data = b"0123456789abcdef0123456789abcdef\n".repeat(252_000);
+    let path = write_packet_with_newfiles(dir.path(), Some(&data));
+    let package = QwkPackage::load_from_file(&path).unwrap();
+    let file = package
+        .files
+        .iter()
+        .find(|file| file.name == "NEWFILES.DAT")
+        .expect("newfiles file in the packet");
+    assert_eq!(file.data.len(), data.len());
+    assert_eq!(file.pages(), 124);
 }
 
 #[must_use]

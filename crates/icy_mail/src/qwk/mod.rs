@@ -105,17 +105,39 @@ pub struct PacketFile {
     pub name: String,
     pub kind: PacketFileKind,
     pub data: Vec<u8>,
+    line_count: usize,
+    page_count: usize,
 }
 
 impl PacketFile {
     pub fn lines(&self) -> usize {
-        let text = self.data.split(|byte| *byte == 0x1A).next().unwrap_or_default();
-        text.split(|byte| *byte == b'\n').filter(|line| !line.trim_ascii().is_empty()).count()
+        self.line_count
+    }
+
+    pub fn pages(&self) -> usize {
+        self.page_count
+    }
+
+    fn new(name: String, kind: PacketFileKind, data: Vec<u8>) -> Self {
+        let text = data.split(|byte| *byte == 0x1A).next().unwrap_or_default();
+        let line_count = text.split(|byte| *byte == b'\n').filter(|line| !line.trim_ascii().is_empty()).count();
+        let page_count = text
+            .split_inclusive(|byte| *byte == b'\n')
+            .count()
+            .max(1)
+            .div_ceil(crate::reader::FILE_PAGE_LINES);
+        Self {
+            name,
+            kind,
+            data,
+            line_count,
+            page_count,
+        }
     }
 }
 
 /// Larger files are not bulletins; skipping them keeps odd packets from exhausting memory.
-const MAX_PACKET_FILE_SIZE: u64 = 4 * 1024 * 1024;
+const MAX_PACKET_FILE_SIZE: u64 = 16 * 1024 * 1024;
 
 /// Picks the screens named in CONTROL.DAT and the `BLT*`, `NEWFILES*` and `NFILE*` files, like MultiMail.
 /// `files` holds every other file of the packet.
@@ -138,7 +160,7 @@ pub fn packet_files(control: &ControlDat, mut files: Vec<(String, Vec<u8>)>) -> 
             .or_else(|| files.iter().position(|(name, _)| name.to_uppercase().starts_with(&wanted)));
         if let Some(position) = position {
             let (name, data) = files.remove(position);
-            picked.push(PacketFile { name, kind, data });
+            picked.push(PacketFile::new(name, kind, data));
         }
     }
     for (name, data) in files {
@@ -150,7 +172,7 @@ pub fn packet_files(control: &ControlDat, mut files: Vec<(String, Vec<u8>)>) -> 
         } else {
             continue;
         };
-        picked.push(PacketFile { name, kind, data });
+        picked.push(PacketFile::new(name, kind, data));
     }
     // Stable, so files of one kind keep their natural name order.
     picked.sort_by_key(|file| file.kind);

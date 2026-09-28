@@ -32,6 +32,10 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
 - Three-pane layout: mailboxes and conferences, message list, and reader.
   Windows narrower than 600 px switch to a single pane with
   Folders/Messages/Message tabs; short windows collapse the message header.
+- **Bulletins** appears when the packet contains welcome/news screens, bulletins,
+  goodbye screens or a new-files list. Files up to 16 MiB are supported; large
+  lists are shown in pages of 2,048 lines with Previous/Next page controls.
+  A packet without those files does not show the folder.
 - **All Messages**, **Personal** (messages addressed to you) and each
   conference show unread counts. Showing a message marks it read; read marks
   are remembered per packet across restarts.

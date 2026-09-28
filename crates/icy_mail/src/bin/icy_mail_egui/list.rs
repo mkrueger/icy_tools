@@ -510,6 +510,9 @@ impl MailApp {
             });
         let picked = select.is_some();
         if let Some((position, open)) = select {
+            if self.selected_file != Some(position) {
+                self.selected_file_page = 0;
+            }
             self.selected_file = Some(position);
             self.set_focus(if open { Pane::Content } else { Pane::Messages }, &context);
         }

@@ -106,6 +106,7 @@ pub struct MailApp {
     pub selected_draft: Option<u64>,
     /// Index into the packet's `files` while the bulletins folder is open.
     pub selected_file: Option<usize>,
+    pub selected_file_page: usize,
     pub composer: Option<Composer>,
     pub modal: Option<Modal>,
     pub notice: Option<Notice>,
@@ -118,6 +119,7 @@ pub struct MailApp {
     pub rendered_draft: Option<(u64, String)>,
     /// The packet file shown in `screen`.
     pub rendered_file: Option<usize>,
+    pub rendered_file_page: usize,
     pub selection_anchor: Option<Selection>,
     pub last_reader_click: Option<(egui::Pos2, f64, u8)>,
     pub body_highlights: super::reader_view::BodyHighlights,
@@ -196,6 +198,7 @@ impl MailApp {
             folder: Folder::All,
             selected_draft: None,
             selected_file: None,
+            selected_file_page: 0,
             composer: None,
             modal: None,
             notice: None,
@@ -205,6 +208,7 @@ impl MailApp {
             rendered: None,
             rendered_draft: None,
             rendered_file: None,
+            rendered_file_page: 0,
             selection_anchor: None,
             last_reader_click: None,
             body_highlights: super::reader_view::BodyHighlights::default(),
@@ -411,8 +415,10 @@ impl MailApp {
         self.path = Some(path.clone());
         self.rendered = None;
         self.rendered_file = None;
+        self.rendered_file_page = 0;
         if !reload {
             self.selected_file = None;
+            self.selected_file_page = 0;
         }
         self.refresh_counts();
         if reload {
@@ -447,17 +453,18 @@ impl MailApp {
             let (Some(package), Some(index)) = (&self.reader.package, self.selected_file) else {
                 return;
             };
-            if self.rendered_file == Some(index) && self.rendered_draft.is_none() {
+            if self.rendered_file == Some(index) && self.rendered_file_page == self.selected_file_page && self.rendered_draft.is_none() {
                 return;
             }
             self.rendered = None;
             self.rendered_draft = None;
             self.rendered_file = Some(index);
+            self.rendered_file_page = self.selected_file_page;
             self.selection_anchor = None;
             self.last_reader_click = None;
             self.reveal_message = true;
             self.body_loading = true;
-            self.loader.body(package.clone(), BodySource::File(index), context);
+            self.loader.body(package.clone(), BodySource::File(index, self.selected_file_page), context);
             return;
         }
         if self.rendered == self.reader.selected_message && self.rendered_draft.is_none() && self.rendered_file.is_none() {
@@ -541,6 +548,12 @@ impl MailApp {
         }
         if folder == Folder::Bulletins && self.selected_file.is_none_or(|index| index >= files) {
             self.selected_file = Some(0);
+            self.selected_file_page = 0;
+        }
+        if folder == Folder::Bulletins {
+            if let Some(file) = self.selected_file() {
+                self.selected_file_page = self.selected_file_page.min(file.pages().saturating_sub(1));
+            }
         }
         self.folder = folder;
         self.reveal_message = true;
@@ -1187,6 +1200,7 @@ impl MailApp {
                 let files = self.file_count();
                 if files > 0 {
                     self.selected_file = Some(icy_mail::reader::step(self.selected_file.unwrap_or(0), direction, files));
+                    self.selected_file_page = 0;
                     self.reveal_message = true;
                 }
             }

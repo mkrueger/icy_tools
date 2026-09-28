@@ -13,7 +13,7 @@ use icy_engine::TextScreen;
 use icy_mail::{
     drafts::DraftStore,
     qwk::QwkPackage,
-    reader::{render_body, render_file},
+    reader::{render_body, render_file_page},
     LANGUAGE_LOADER,
 };
 use rayon::prelude::*;
@@ -32,7 +32,7 @@ type Jobs<T> = mpsc::Sender<(T, egui::Context)>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BodySource {
     Message(usize),
-    File(usize),
+    File(usize, usize),
 }
 
 enum SearchJob {
@@ -107,11 +107,11 @@ impl Default for Loader {
         let bodies = latest_worker(sender.clone(), |(generation, package, source): (u64, Arc<QwkPackage>, BodySource)| {
             let result = match source {
                 BodySource::Message(index) => package.get_message(index).and_then(|message| render_body(&message.text)),
-                BodySource::File(index) => package
+                BodySource::File(index, page) => package
                     .files
                     .get(index)
                     .ok_or_else(|| format!("Packet file {index} does not exist").into())
-                    .and_then(|file| render_file(&file.data)),
+                    .and_then(|file| render_file_page(&file.data, page)),
             }
             .map_err(|error| error.to_string());
             Some(Event::Body(generation, result))
