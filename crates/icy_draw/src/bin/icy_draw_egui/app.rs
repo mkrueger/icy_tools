@@ -81,6 +81,7 @@ enum FileAction {
     SaveTdf,
     SaveAnimation,
     SaveRip,
+    SaveIgs,
     ExportAnimation(super::animation::ExportFormat),
     InsertImage,
     ReferenceImage,
@@ -165,15 +166,17 @@ fn filter_match_ranges(name: &str, filter: &str) -> Vec<std::ops::Range<usize>> 
 pub enum NewKind {
     Ansi,
     Rip,
+    Igs,
     Animation,
     BitmapFont,
     TheDraw(icy_engine_edit::charset::TdfFontType),
 }
 
 impl NewKind {
-    pub const ALL: [NewKind; 7] = [
+    pub const ALL: [NewKind; 8] = [
         NewKind::Ansi,
         NewKind::Rip,
+        NewKind::Igs,
         NewKind::Animation,
         NewKind::BitmapFont,
         NewKind::TheDraw(icy_engine_edit::charset::TdfFontType::Color),
@@ -186,6 +189,7 @@ impl NewKind {
         match self {
             NewKind::Ansi => fl!("new-file-editor-ansi"),
             NewKind::Rip => fl!("rip-editor-title"),
+            NewKind::Igs => fl!("igs-editor-title"),
             NewKind::Animation => fl!("new-file-editor-animation"),
             NewKind::BitmapFont => fl!("new-file-template-bit_font-title"),
             NewKind::TheDraw(TdfFontType::Color) => fl!("new-file-template-color_font-title"),
@@ -199,6 +203,7 @@ impl NewKind {
         match self {
             NewKind::Ansi => fl!("new-kind-ansi-description"),
             NewKind::Rip => fl!("rip-editor-description"),
+            NewKind::Igs => fl!("igs-editor-description"),
             NewKind::Animation => fl!("new-kind-animation-description"),
             NewKind::BitmapFont => fl!("new-kind-bitfont-description"),
             NewKind::TheDraw(TdfFontType::Color) => fl!("new-kind-color_font-description"),
@@ -212,6 +217,7 @@ impl NewKind {
         match self {
             NewKind::Ansi => "pencil",
             NewKind::Rip => "rectangle_outline",
+            NewKind::Igs => "ellipse_filled",
             NewKind::Animation => "play",
             NewKind::BitmapFont => "font",
             NewKind::TheDraw(TdfFontType::Color) => "paint_brush",
@@ -256,6 +262,9 @@ pub struct DrawApp {
     new_template: file_settings::AnsiTemplate,
     animation: Option<super::animation::AnimationEditor>,
     rip: Option<super::rip::RipEditor>,
+    igs: Option<super::igs::IgsEditor>,
+    /// Resolution of IGS drawings created from the New dialog.
+    new_igs_resolution: icy_parser_core::TerminalResolution,
     clipboard: Option<(String, Vec<u8>)>,
     system_clipboard: Option<ClipboardContext>,
     font_selector: font_select::FontSelector,
@@ -343,6 +352,8 @@ impl DrawApp {
             new_template: file_settings::AnsiTemplate::default(),
             animation: None,
             rip: None,
+            igs: None,
+            new_igs_resolution: icy_draw::igs_document::DEFAULT_RESOLUTION,
             clipboard: None,
             system_clipboard,
             font_selector: Default::default(),
@@ -403,6 +414,10 @@ impl DrawApp {
                 self.replace(Document::new(Size::new(80, 25)));
                 self.rip = Some(super::rip::RipEditor::new());
             }
+            NewKind::Igs => {
+                self.replace(Document::new(Size::new(80, 25)));
+                self.igs = Some(super::igs::IgsEditor::new(self.new_igs_resolution));
+            }
             NewKind::Animation => {
                 self.replace(Document::new(Size::new(80, 25)));
                 self.animation = Some(super::animation::AnimationEditor::new());
@@ -433,6 +448,7 @@ impl DrawApp {
         self.charfont = None;
         self.animation = None;
         self.rip = None;
+        self.igs = None;
         self.font_editor = None;
         self.document = document;
         self.chrome = chrome::Chrome::default();
@@ -469,6 +485,16 @@ impl DrawApp {
                 Ok(editor) => {
                     self.replace(Document::new(Size::new(80, 25)));
                     self.rip = Some(editor);
+                }
+                Err(error) => self.dialog = Some(Dialog::Error(error)),
+            }
+            return;
+        }
+        if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("ig")) {
+            match super::igs::IgsEditor::load(&path) {
+                Ok(editor) => {
+                    self.replace(Document::new(Size::new(80, 25)));
+                    self.igs = Some(editor);
                 }
                 Err(error) => self.dialog = Some(Dialog::Error(error)),
             }
@@ -556,6 +582,10 @@ impl DrawApp {
                     .add_filter(fl!("rip-editor-title"), &["rip"])
                     .set_file_name(format!("{untitled}.rip"))
                     .save_file(),
+                FileAction::SaveIgs => dialog
+                    .add_filter(fl!("igs-editor-title"), &["ig"])
+                    .set_file_name(format!("{untitled}.ig"))
+                    .save_file(),
                 FileAction::ExportAnimation(format) => dialog
                     .add_filter(format.name(), &[format.extension()])
                     .set_file_name(format!("{untitled}.{}", format.extension()))
@@ -599,6 +629,14 @@ impl DrawApp {
             }
             return;
         }
+        if let Some(editor) = &self.igs {
+            if let Some(path) = editor.path().filter(|_| !save_as).map(Path::to_path_buf) {
+                self.save_path(context, path, false);
+            } else {
+                self.choose(context, FileAction::SaveIgs);
+            }
+            return;
+        }
         if let Some(editor) = &mut self.font_editor {
             editor.finish();
             match editor.path.clone().filter(|_| !save_as && !editor.apply_target) {
@@ -639,6 +677,8 @@ impl DrawApp {
 
     fn save_path(&mut self, context: &egui::Context, path: PathBuf, overwrite: bool) {
         let result = if let Some(editor) = &mut self.rip {
+            editor.save(&path, overwrite)
+        } else if let Some(editor) = &mut self.igs {
             editor.save(&path, overwrite)
         } else if let Some(editor) = &mut self.font_editor {
             editor.save(&path, overwrite)
@@ -856,12 +896,17 @@ impl DrawApp {
         }
         self.document.modified()
             || self.rip.as_ref().is_some_and(|editor| editor.modified())
+            || self.igs.as_ref().is_some_and(|editor| editor.modified())
             || self.charfont.as_ref().is_some_and(|font| font.modified())
             || self.animation.as_ref().is_some_and(|editor| editor.modified())
     }
 
     fn undo(&mut self, redo: bool) {
         if let Some(editor) = &mut self.rip {
+            editor.undo(redo);
+            return;
+        }
+        if let Some(editor) = &mut self.igs {
             editor.undo(redo);
             return;
         }
@@ -1513,6 +1558,21 @@ impl DrawApp {
         });
     }
 
+    /// The resolution of a new IGS drawing.
+    fn new_igs_group(&mut self, ui: &mut egui::Ui) {
+        use icy_parser_core::TerminalResolution;
+        appearance::group(ui, &fl!("igs-new-resolution"), |ui| {
+            for resolution in [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High] {
+                let name = match resolution {
+                    TerminalResolution::Low => fl!("igs-resolution-low"),
+                    TerminalResolution::Medium => fl!("igs-resolution-medium"),
+                    TerminalResolution::High => fl!("igs-resolution-high"),
+                };
+                ui.radio_value(&mut self.new_igs_resolution, resolution, name);
+            }
+        });
+    }
+
     /// Leaves the bitmap font editor; a font of its own returns to the start screen.
     fn close_font_editor(&mut self) {
         let standalone = self.font_editor.take().is_some_and(|editor| !editor.apply_target);
@@ -1522,6 +1582,11 @@ impl DrawApp {
 
     /// File name of the active document, or the localized "Untitled".
     fn document_name(&self) -> String {
+        if let Some(path) = self.igs.as_ref().map(|editor| editor.path()) {
+            return path
+                .and_then(|path| path.file_name())
+                .map_or_else(|| fl!("unsaved-title"), |name| name.to_string_lossy().into_owned());
+        }
         if let Some(editor) = &self.rip {
             return editor
                 .path()
@@ -2826,12 +2891,16 @@ impl DrawApp {
                                     kinds(self, &mut columns[0]);
                                     if self.new_kind.has_size() {
                                         self.new_size_group(&mut columns[1], false, current);
+                                    } else if self.new_kind == NewKind::Igs {
+                                        self.new_igs_group(&mut columns[1]);
                                     }
                                 });
                             } else {
                                 kinds(self, ui);
                                 if self.new_kind.has_size() {
                                     self.new_size_group(ui, false, current);
+                                } else if self.new_kind == NewKind::Igs {
+                                    self.new_igs_group(ui);
                                 }
                             }
                         });
@@ -2979,6 +3048,16 @@ impl DrawApp {
                             self.save_path(context, path, false);
                         }
                     }
+                    FileAction::SaveIgs => {
+                        if path.extension().is_none() {
+                            path.set_extension("ig");
+                        }
+                        if path.exists() {
+                            self.dialog = Some(Dialog::Overwrite(path));
+                        } else {
+                            self.save_path(context, path, false);
+                        }
+                    }
                     FileAction::ExportAnimation(format) => {
                         if path.extension().is_none() {
                             path.set_extension(format.extension());
@@ -3082,6 +3161,23 @@ impl DrawApp {
             return;
         }
         if let Some(editor) = &mut self.rip {
+            editor.show(context, blocked);
+            self.canvas_focus = false;
+            if !blocked {
+                if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Z)) {
+                    editor.undo(false);
+                }
+                if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT), Key::Z))
+                    || context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Y))
+                {
+                    editor.undo(true);
+                }
+                self.keys(context);
+            }
+            self.dialogs(context);
+            return;
+        }
+        if let Some(editor) = &mut self.igs {
             editor.show(context, blocked);
             self.canvas_focus = false;
             if !blocked {

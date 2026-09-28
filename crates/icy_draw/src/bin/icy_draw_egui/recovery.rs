@@ -98,6 +98,9 @@ impl DrawApp {
         if let Some(editor) = &self.rip {
             return editor.recovery_snapshot();
         }
+        if let Some(editor) = &self.igs {
+            return editor.recovery_snapshot();
+        }
         if let Some(font) = &self.charfont {
             return font.recovery_snapshot(&self.document);
         }
@@ -127,7 +130,11 @@ impl DrawApp {
                 self.replace(Document::new(Size::new(80, 25)));
                 self.rip = Some(editor);
             }
-            RecoveryKind::Igs => return Err(fl!("igs-recovery-unsupported")),
+            RecoveryKind::Igs => {
+                let editor = super::super::igs::IgsEditor::from_recovery(snapshot)?;
+                self.replace(Document::new(Size::new(80, 25)));
+                self.igs = Some(editor);
+            }
         }
         Ok(())
     }

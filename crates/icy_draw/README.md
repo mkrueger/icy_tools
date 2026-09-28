@@ -127,6 +127,33 @@ The egui frontend currently includes:
   [Material Design Icons](https://github.com/google/material-design-icons)
   (`polyline`, `smart_button` and `ads_click`), licensed under
   [Apache-2.0](../../LICENSE-APACHE).
+- IGS drawing (Atari ST Instant Graphics and Sound) in its own editor: create an
+  IGS drawing from New in low (320×200, 16 pens), medium (640×200, 4 pens) or high
+  (640×400, 2 pens) resolution, or open any `.ig` file. The canvas renders with the
+  IGS engine; medium resolution pixels are shown twice as tall as wide, like on an
+  Atari ST monitor. The left-hand tools draw markers, lines, polylines, boxes,
+  rounded boxes, filled rectangles, circles, ellipses, arcs, elliptical arcs, pie
+  slices, elliptical pie slices, filled polygons, flood fills and text. The pens for
+  lines, fills, text and markers are picked from the colors they render with, and the
+  drawing mode applies to every tool; the toolbar holds line style and thickness,
+  fill pattern and border, marker type and size, arc angles, and text size, effects
+  and rotation. Only attribute commands (`C`, `T`, `A`, `M`, `E`) whose value changes
+  are written before a shape. Text is typed on the canvas like in the RIP editor;
+  `@` ends IGS text and cannot be typed. **Edit IGS palette…** sets the colors of
+  the pens in the eight Atari ST levels per channel with a live preview and adds one
+  `S` command per changed pen. The select tool moves, resizes, nudges and deletes
+  shapes with fixed coordinates; circles and pie slices keep the aspect correction
+  IGS draws them with. The command list shows every command, VT52 text between
+  commands and unparsed bytes; its buttons reorder, delete and preview through the
+  selected entry. The property panel edits the parameters of drawing and attribute
+  commands, applied without a confirmation. Every entry can also be edited as IGS
+  source, where bytes outside printable ASCII are written as `\xNN` (`\r`, `\n`,
+  `\e` and `\\` are accepted too); loops, sound and other commands are edited
+  this way. Random (`r`, `R`) and loop (`x`, `y`) parameters are shown but only
+  changed in the source. Opening and saving keeps the file byte for byte; only
+  edited or new commands are rewritten, one `G#` command per line. Previews use a
+  fixed seed for random parameters so they do not flicker, and run loops. Undo/redo,
+  autosave and crash recovery work like in the other editors.
 - Lua animation editing, frame preview/playback, GIF and Asciicast export.
 - Existing Lua plugins, direct Lua scripts, MCP automation, and the headless
   collaboration server.
@@ -135,7 +162,7 @@ The egui frontend currently includes:
 - Atomic native document/font/script saves with external-change checks and
   explicit overwrite confirmation. Save uses `.icy`, `.tdf`, or `.psf` as
   appropriate; ANSI and image formats use Export.
-- Autosave and crash recovery for drawings, RIP graphics, TheDraw fonts, bitmap
+- Autosave and crash recovery for drawings, RIP and IGS graphics, TheDraw fonts, bitmap
   fonts and animations. While a document has unsaved changes, a snapshot is written in the
   background at most every 2 seconds (less often for very large documents) to the
   `recovery` folder of the local data directory, and removed once the document is

@@ -7,6 +7,7 @@ icy_draw is a modern ANSI/ASCII art editor with support for multiple editor mode
 - **BitFont Editor** - Edit bitmap fonts (PSF, YAFF, FXX formats)
 - **CharFont Editor** - Edit TDF character fonts
 - **RIP Editor** - Draw RIPscrip graphics and reorder RIP commands
+- **IGS Editor** - Draw Atari ST IGS graphics and edit IGS commands
 
 ## MCP Tools Overview
 
@@ -16,7 +17,7 @@ icy_draw is a modern ANSI/ASCII art editor with support for multiple editor mode
 | -------------------- | ------------------------------------------------------------------------------------ |
 | `get_help(editor?)`  | Get documentation. Without parameter: this overview. With `animation` or `bitfont`: editor-specific docs |
 | `get_status()`       | Get current editor state, open file, dimensions, errors                              |
-| `new_document(type)` | Create new document. Types: `ansi`, `animation`, `bitfont`, `charfont`, `rip`        |
+| `new_document(type)` | Create new document. Types: `ansi`, `animation`, `bitfont`, `charfont`, `rip`, `igs` |
 | `load_document(path)` | Open a file                                                                         |
 | `save()`             | Save current document                                                                |
 | `undo()`             | Undo last action                                                                     |
@@ -42,7 +43,7 @@ icy_draw is a modern ANSI/ASCII art editor with support for multiple editor mode
 
 ```json
 {
-  "editor": "ansi" | "animation" | "bitfont" | "charfont" | "rip",
+  "editor": "ansi" | "animation" | "bitfont" | "charfont" | "rip" | "igs",
   "file": "/path/to/file.ext" | null,
   "dirty": true | false,
   ...editor-specific fields

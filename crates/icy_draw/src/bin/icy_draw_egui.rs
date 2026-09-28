@@ -13,6 +13,8 @@ mod app;
 mod export;
 #[path = "icy_draw_egui/font.rs"]
 mod font;
+#[path = "icy_draw_egui/igs.rs"]
+mod igs;
 #[path = "icy_draw_egui/input.rs"]
 mod input;
 #[path = "icy_draw_egui/palette.rs"]

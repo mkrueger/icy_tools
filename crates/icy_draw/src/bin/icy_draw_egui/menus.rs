@@ -275,7 +275,7 @@ impl DrawApp {
                 if !self.show_start {
                     ui.menu_button(menu_title(fl!("menu-edit")), |ui| self.edit_menu(ui, context));
                 }
-                if self.animation.is_none() && self.font_editor.is_none() && self.rip.is_none() && !self.show_start {
+                if self.animation.is_none() && self.font_editor.is_none() && self.rip.is_none() && self.igs.is_none() && !self.show_start {
                     ui.menu_button(menu_title(fl!("menu-selection")), |ui| self.selection_menu(ui));
                     ui.menu_button(menu_title(fl!("menu-colors")), |ui| self.colors_menu(ui));
                     ui.menu_button(menu_title(fl!("menu-document")), |ui| self.document_menu(ui));
@@ -340,7 +340,7 @@ impl DrawApp {
             if item(ui, &fl!("menu-export"), Some(&EXPORT), true) {
                 editor.open_export_dialog();
             }
-        } else if self.font_editor.is_none() && self.rip.is_none() && item(ui, &fl!("menu-export"), Some(&EXPORT), true) {
+        } else if self.font_editor.is_none() && self.rip.is_none() && self.igs.is_none() && item(ui, &fl!("menu-export"), Some(&EXPORT), true) {
             self.dialog = Some(Dialog::Export);
         }
         ui.separator();
@@ -370,6 +370,15 @@ impl DrawApp {
             return;
         }
         if let Some(editor) = &mut self.rip {
+            if item(ui, &fl!("menu-undo"), Some(&UNDO), editor.can_undo()) {
+                editor.undo(false);
+            }
+            if item(ui, &fl!("menu-redo"), Some(&REDO), editor.can_redo()) {
+                editor.undo(true);
+            }
+            return;
+        }
+        if let Some(editor) = &mut self.igs {
             if item(ui, &fl!("menu-undo"), Some(&UNDO), editor.can_undo()) {
                 editor.undo(false);
             }
@@ -851,7 +860,7 @@ impl DrawApp {
     pub(super) fn command_key(&mut self, context: &egui::Context, key: Key, modifiers: Modifiers) -> bool {
         let shift = modifiers.shift;
         // Canvas commands only apply to the ANSI editor.
-        let animation = self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some();
+        let animation = self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() || self.igs.is_some();
         match key {
             Key::N if shift => self.new_window(),
             Key::Q if !shift => context.send_viewport_cmd(egui::ViewportCommand::Close),
@@ -892,7 +901,7 @@ impl DrawApp {
         }
         #[cfg(target_os = "macos")]
         let _ = context;
-        if self.animation.is_some() || self.rip.is_some() || self.document.paste_active() {
+        if self.animation.is_some() || self.rip.is_some() || self.igs.is_some() || self.document.paste_active() {
             return false;
         }
         if let Some(operation) = AreaOp::ALL.into_iter().find(|operation| {

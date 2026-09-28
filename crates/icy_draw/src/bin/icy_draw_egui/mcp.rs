@@ -61,7 +61,7 @@ impl DrawApp {
     pub(super) fn mcp_command(&mut self, command: McpCommand) {
         let unavailable = if self.picker {
             Some("A native file dialog is open")
-        } else if self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() {
+        } else if self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() || self.igs.is_some() {
             Some("Not in ANSI editor mode")
         } else if self.dialog.is_some() || self.layer_properties_open() || self.document.paste_active() {
             Some("Close the editor dialog before using ANSI automation")
@@ -118,6 +118,11 @@ impl DrawApp {
                     status.ansi = None;
                     status.file = editor.path().map(|path| path.display().to_string());
                 }
+                if let Some(editor) = &self.igs {
+                    status.editor = "igs".into();
+                    status.ansi = None;
+                    status.file = editor.path().map(|path| path.display().to_string());
+                }
                 respond(&response, status);
             }
             McpCommand::NewDocument { doc_type, response } => {
@@ -154,6 +159,10 @@ impl DrawApp {
                             self.create(super::NewKind::Rip, Size::new(80, 25));
                             Ok(())
                         }
+                        "igs" => {
+                            self.create(super::NewKind::Igs, Size::new(80, 25));
+                            Ok(())
+                        }
                         _ => Err("Unknown editor type".into()),
                     }
                 };
@@ -186,6 +195,12 @@ impl DrawApp {
                 } else if let Some(editor) = &mut self.animation {
                     editor.path.clone().ok_or("No file path set".into()).and_then(|path| editor.save(&path, false))
                 } else if let Some(editor) = &mut self.rip {
+                    editor
+                        .path()
+                        .map(Path::to_path_buf)
+                        .ok_or("No file path set".into())
+                        .and_then(|path| editor.save(&path, false))
+                } else if let Some(editor) = &mut self.igs {
                     editor
                         .path()
                         .map(Path::to_path_buf)

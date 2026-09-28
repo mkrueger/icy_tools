@@ -1958,6 +1958,34 @@ fn rip_new_open_and_save_use_a_separate_graphical_editor() {
 }
 
 #[test]
+fn igs_new_open_and_save_use_their_own_editor() {
+    use_english();
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.new_igs_resolution = icy_parser_core::TerminalResolution::Low;
+    app.create(NewKind::Igs, Size::new(80, 25));
+    assert!(app.igs.is_some() && app.rip.is_none());
+    let output = frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+    assert!(text_position(&output, "Commands").is_some());
+    assert!(text_position(&output, "Line").is_some());
+    assert!(text_position(&output, "Low · 320 × 200 · 16 colors").is_some());
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("drawing.ig");
+    let bytes = b"G#R>0,2:s>4:\r\nG#C>1,3:L>10,10,100,80:\r\nG#&>0,10,2,0,L,4,x,0,x,50:\r\n";
+    std::fs::write(&path, bytes).unwrap();
+    app.open(path.clone());
+    assert!(app.igs.is_some() && app.rip.is_none());
+    assert_eq!(app.document_name(), "drawing.ig");
+    assert!(!app.modified());
+    frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+    let save_as = directory.path().join("copy.ig");
+    app.save_path(&context, save_as.clone(), false);
+    assert_eq!(std::fs::read(&save_as).unwrap(), bytes);
+    assert!(!app.modified());
+}
+
+#[test]
 fn tdf_font_selector_shows_each_font_type_in_both_layouts() {
     use_english();
     let context = egui::Context::default();
