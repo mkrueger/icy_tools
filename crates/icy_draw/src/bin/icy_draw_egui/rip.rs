@@ -1598,7 +1598,18 @@ impl RipEditor {
             .as_ref()
             .filter(|drag| !self.preview_to_selection && drag.current != drag.command)
             .map(|drag| (drag.index, drag.current.clone()))
-            .or(palette);
+            .or(palette)
+            .or_else(|| {
+                // Property edits show while a number is dragged or a text is typed.
+                self.editing
+                    .as_ref()
+                    .filter(|(index, draft)| {
+                        !self.preview_to_selection
+                            && *index >= self.document.preserved_commands()
+                            && self.document.commands().get(*index).is_some_and(|command| command != draft)
+                    })
+                    .cloned()
+            });
         if replacement != self.shown_replacement {
             self.shown_replacement = replacement;
             self.preview_dirty = true;
@@ -2106,6 +2117,12 @@ impl RipEditor {
                 });
                 self.listed_selection = self.selected;
                 if self.selected != previous {
+                    // An edit still in a focused field is kept when another command is chosen;
+                    // restyling a text can add or remove commands before the new selection.
+                    let (chosen, edited, before) = (self.selected, self.editing.as_ref().map(|(index, _)| *index), self.document.commands().len());
+                    self.commit_properties();
+                    let shift = self.document.commands().len() as isize - before as isize;
+                    self.selected = chosen.map(|index| if edited.is_some_and(|edited| index > edited) { (index as isize + shift).max(0) as usize } else { index });
                     self.editing = None;
                     if self.preview_to_selection {
                         self.preview_dirty = true;
@@ -2165,9 +2182,9 @@ impl RipEditor {
                         }
                     } else {
                         let mut supported = true;
-                        egui::ScrollArea::vertical()
+                        let area = egui::ScrollArea::vertical()
                             .id_salt("rip-properties")
-                            .max_height((ui.available_height() - 40.0).max(60.0))
+                            .max_height((ui.available_height() - 8.0).max(60.0))
                             .show(ui, |ui| {
                                 supported = command_properties(ui, draft);
                                 if !supported {
@@ -2179,14 +2196,20 @@ impl RipEditor {
                                 }
                             });
                         if supported {
-                            ui.add_space(4.0);
                             let commands = self.document.commands();
                             let restyled = self
                                 .editing_style
                                 .is_some_and(|(index, font, color)| (font, color) != (font_before(commands, index), color_before(commands, index)));
                             let changed = original != Some(&*draft) || restyled;
-                            let button = egui::Button::new(fl!("rip-editor-apply")).min_size(egui::vec2(ui.available_width(), 28.0));
-                            if ui.add_enabled(changed, button).clicked() {
+                            // Changes apply without a confirmation, once a drag ends or a field
+                            // of the panel is left (Enter, Tab or a click elsewhere).
+                            let context = ui.ctx().clone();
+                            let dragging = context.input(|input| input.pointer.any_down());
+                            let typing = context
+                                .memory(|memory| memory.focused())
+                                .and_then(|id| context.read_response(id))
+                                .is_some_and(|response| area.inner_rect.intersects(response.rect));
+                            if changed && !dragging && !typing {
                                 apply = Some((*index, draft.clone()));
                             }
                         }
@@ -2210,6 +2233,29 @@ impl RipEditor {
                     self.open_palette_dialog(Some(index));
                 }
             });
+    }
+
+    /// Applies a changed property draft of the command list, e.g. before another one is chosen.
+    fn commit_properties(&mut self) {
+        let preserved = self.document.preserved_commands();
+        let Some((index, draft)) = self.editing.clone().filter(|(index, _)| *index >= preserved) else {
+            return;
+        };
+        let commands = self.document.commands();
+        let style = self.editing_style.filter(|style| style.0 == index);
+        let restyled = style.is_some_and(|(_, font, color)| (font, color) != (font_before(commands, index), color_before(commands, index)));
+        if commands.get(index) == Some(&draft) && !restyled {
+            return;
+        }
+        if let Some((_, font, color)) = style {
+            let (commands, index) = restyle_text(self.document.commands(), preserved, index, draft, font, color);
+            self.apply_editable(commands[preserved..].to_vec(), index);
+        } else {
+            match self.document.replace(index, draft) {
+                Ok(()) => self.preview_dirty = true,
+                Err(error) => self.error = Some(error.to_string()),
+            }
+        }
     }
 
     fn sidebar(&mut self, context: &egui::Context, blocked: bool) {
@@ -3922,5 +3968,40 @@ mod tests {
         let count = editor.document.commands().len();
         editor.apply_palette(dialog);
         assert_eq!(editor.document.commands().len(), count);
+    }
+
+    #[test]
+    fn property_edits_apply_without_a_confirm_button() {
+        let context = egui::Context::default();
+        let mut editor = RipEditor::new();
+        editor.select_tool(Tool::Rectangle);
+        editor.add_shape((10, 10), (60, 40));
+        let rect = editor.document.commands().len() - 1;
+        editor.select_tool(Tool::Select);
+        editor.select_shape(Some(rect));
+        run(&context, &mut editor, vec![]);
+        assert!(matches!(editor.editing, Some((index, _)) if index == rect));
+
+        // While a value is dragged the preview shows it, the document changes on release.
+        if let Some((_, RipCommand::Rectangle { x1, .. })) = &mut editor.editing {
+            *x1 = 120;
+        }
+        let panel = egui::pos2(1200.0, 500.0);
+        run(&context, &mut editor, vec![egui::Event::PointerMoved(panel), button_event(panel, egui::PointerButton::Primary, true)]);
+        assert!(matches!(editor.document.commands()[rect], RipCommand::Rectangle { x1: 60, .. }));
+        assert!(matches!(&editor.shown_replacement, Some((index, RipCommand::Rectangle { x1: 120, .. })) if *index == rect));
+        run(&context, &mut editor, vec![button_event(panel, egui::PointerButton::Primary, false)]);
+        assert!(matches!(editor.document.commands()[rect], RipCommand::Rectangle { x1: 120, .. }));
+        editor.undo(false);
+        assert!(matches!(editor.document.commands()[rect], RipCommand::Rectangle { x1: 60, .. }), "one change is one undo step");
+
+        // A pending edit is kept when another command is chosen.
+        editor.select_shape(Some(rect));
+        run(&context, &mut editor, vec![]);
+        if let Some((_, RipCommand::Rectangle { y1, .. })) = &mut editor.editing {
+            *y1 = 90;
+        }
+        editor.commit_properties();
+        assert!(matches!(editor.document.commands()[rect], RipCommand::Rectangle { y1: 90, .. }));
     }
 }

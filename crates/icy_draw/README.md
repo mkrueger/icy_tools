@@ -114,7 +114,10 @@ The egui frontend currently includes:
   parameters in the panel below the list, reorder or remove it with the buttons
   above the list, or use the eye button to preview the scene through that command
   (inclusive). Edit the parameters of drawn shapes, colors and fill
-  styles in the property panel; applying parameter edits creates one undo step.
+  styles in the property panel. Parameter edits apply without a confirmation: a
+  dragged number when it is released, a typed value or text on Enter or when the
+  field is left, choices immediately; the drawing previews the change meanwhile, and
+  each change is one undo step.
   Save preserves the ordered RIP
   commands, with undo/redo and crash recovery. In RIP files containing terminal
   text or control sequences, the original stream is preserved verbatim and its

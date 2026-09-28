@@ -1379,7 +1379,6 @@ rip-editor-description = RIPscrip-Vektorgrafik bearbeiten
 rip-editor-commands = Befehle
 rip-editor-preview-through = Bis zum gewählten Befehl anzeigen
 rip-editor-properties = Befehlsparameter
-rip-editor-apply = Änderungen übernehmen
 rip-editor-unsupported-properties = Parameter dieses Befehls sind noch nicht bearbeitbar.
 rip-command-color = Farbe
 rip-command-line-style = Linienstil

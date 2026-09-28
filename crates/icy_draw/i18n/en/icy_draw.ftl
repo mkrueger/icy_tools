@@ -1395,7 +1395,6 @@ rip-editor-description = Edit RIPscrip vector graphics
 rip-editor-commands = Commands
 rip-editor-preview-through = Preview through selected command
 rip-editor-properties = Command parameters
-rip-editor-apply = Apply changes
 rip-editor-unsupported-properties = Parameters for this command are not editable yet.
 rip-command-color = Color
 rip-command-line-style = Line style
