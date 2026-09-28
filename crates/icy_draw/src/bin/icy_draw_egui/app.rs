@@ -73,6 +73,7 @@ enum FileAction {
     SaveFont,
     SaveTdf,
     SaveAnimation,
+    SaveRip,
     ExportAnimation(super::animation::ExportFormat),
     InsertImage,
     ReferenceImage,
@@ -156,14 +157,16 @@ fn filter_match_ranges(name: &str, filter: &str) -> Vec<std::ops::Range<usize>> 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum NewKind {
     Ansi,
+    Rip,
     Animation,
     BitmapFont,
     TheDraw(icy_engine_edit::charset::TdfFontType),
 }
 
 impl NewKind {
-    pub const ALL: [NewKind; 6] = [
+    pub const ALL: [NewKind; 7] = [
         NewKind::Ansi,
+        NewKind::Rip,
         NewKind::Animation,
         NewKind::BitmapFont,
         NewKind::TheDraw(icy_engine_edit::charset::TdfFontType::Color),
@@ -175,6 +178,7 @@ impl NewKind {
         use icy_engine_edit::charset::TdfFontType;
         match self {
             NewKind::Ansi => fl!("new-file-editor-ansi"),
+            NewKind::Rip => fl!("rip-editor-title"),
             NewKind::Animation => fl!("new-file-editor-animation"),
             NewKind::BitmapFont => fl!("new-file-template-bit_font-title"),
             NewKind::TheDraw(TdfFontType::Color) => fl!("new-file-template-color_font-title"),
@@ -187,6 +191,7 @@ impl NewKind {
         use icy_engine_edit::charset::TdfFontType;
         match self {
             NewKind::Ansi => fl!("new-kind-ansi-description"),
+            NewKind::Rip => fl!("rip-editor-description"),
             NewKind::Animation => fl!("new-kind-animation-description"),
             NewKind::BitmapFont => fl!("new-kind-bitfont-description"),
             NewKind::TheDraw(TdfFontType::Color) => fl!("new-kind-color_font-description"),
@@ -199,6 +204,7 @@ impl NewKind {
         use icy_engine_edit::charset::TdfFontType;
         match self {
             NewKind::Ansi => "pencil",
+            NewKind::Rip => "rectangle_outline",
             NewKind::Animation => "play",
             NewKind::BitmapFont => "font",
             NewKind::TheDraw(TdfFontType::Color) => "paint_brush",
@@ -242,6 +248,7 @@ pub struct DrawApp {
     new_kind: NewKind,
     new_template: file_settings::AnsiTemplate,
     animation: Option<super::animation::AnimationEditor>,
+    rip: Option<super::rip::RipEditor>,
     clipboard: Option<(String, Vec<u8>)>,
     system_clipboard: Option<ClipboardContext>,
     font_selector: font_select::FontSelector,
@@ -326,6 +333,7 @@ impl DrawApp {
             new_kind: NewKind::Ansi,
             new_template: file_settings::AnsiTemplate::default(),
             animation: None,
+            rip: None,
             clipboard: None,
             system_clipboard,
             font_selector: Default::default(),
@@ -380,6 +388,10 @@ impl DrawApp {
                 document.with_state(|state| template.apply(state.get_buffer_mut()));
                 self.replace(document);
             }
+            NewKind::Rip => {
+                self.replace(Document::new(Size::new(80, 25)));
+                self.rip = Some(super::rip::RipEditor::new());
+            }
             NewKind::Animation => {
                 self.replace(Document::new(Size::new(80, 25)));
                 self.animation = Some(super::animation::AnimationEditor::new());
@@ -409,6 +421,7 @@ impl DrawApp {
         self.show_start = false;
         self.charfont = None;
         self.animation = None;
+        self.rip = None;
         self.font_editor = None;
         self.document = document;
         self.chrome = chrome::Chrome::default();
@@ -440,6 +453,16 @@ impl DrawApp {
     }
 
     fn load_document(&mut self, path: PathBuf) {
+        if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("rip")) {
+            match super::rip::RipEditor::load(&path) {
+                Ok(editor) => {
+                    self.replace(Document::new(Size::new(80, 25)));
+                    self.rip = Some(editor);
+                }
+                Err(error) => self.dialog = Some(Dialog::Error(error)),
+            }
+            return;
+        }
         if path.extension().is_some_and(|extension| {
             ["psf", "psfu", "fnt", "fon", "f08", "f14", "f16", "yaff"]
                 .iter()
@@ -518,6 +541,10 @@ impl DrawApp {
                     .add_filter(fl!("file-dialog-filter-animation-files"), &["icyanim"])
                     .set_file_name(format!("{untitled}.icyanim"))
                     .save_file(),
+                FileAction::SaveRip => dialog
+                    .add_filter(fl!("rip-editor-title"), &["rip"])
+                    .set_file_name(format!("{untitled}.rip"))
+                    .save_file(),
                 FileAction::ExportAnimation(format) => dialog
                     .add_filter(format.name(), &[format.extension()])
                     .set_file_name(format!("{untitled}.{}", format.extension()))
@@ -546,6 +573,14 @@ impl DrawApp {
     }
 
     fn save(&mut self, context: &egui::Context, save_as: bool) {
+        if let Some(editor) = &self.rip {
+            if let Some(path) = editor.path().filter(|_| !save_as).map(Path::to_path_buf) {
+                self.save_path(context, path, false);
+            } else {
+                self.choose(context, FileAction::SaveRip);
+            }
+            return;
+        }
         if let Some(editor) = &mut self.font_editor {
             editor.finish();
             match editor.path.clone().filter(|_| !save_as && !editor.apply_target) {
@@ -585,7 +620,9 @@ impl DrawApp {
     }
 
     fn save_path(&mut self, context: &egui::Context, path: PathBuf, overwrite: bool) {
-        let result = if let Some(editor) = &mut self.font_editor {
+        let result = if let Some(editor) = &mut self.rip {
+            editor.save(&path, overwrite)
+        } else if let Some(editor) = &mut self.font_editor {
             editor.save(&path, overwrite)
         } else if let Some(editor) = &mut self.animation {
             editor.save(&path, overwrite)
@@ -699,11 +736,16 @@ impl DrawApp {
             return editor.modified();
         }
         self.document.modified()
+            || self.rip.as_ref().is_some_and(|editor| editor.modified())
             || self.charfont.as_ref().is_some_and(|font| font.modified())
             || self.animation.as_ref().is_some_and(|editor| editor.modified())
     }
 
     fn undo(&mut self, redo: bool) {
+        if let Some(editor) = &mut self.rip {
+            editor.undo(redo);
+            return;
+        }
         if let Some(editor) = &mut self.font_editor {
             editor.undo(redo);
             return;
@@ -1359,6 +1401,12 @@ impl DrawApp {
 
     /// File name of the active document, or the localized "Untitled".
     fn document_name(&self) -> String {
+        if let Some(editor) = &self.rip {
+            return editor
+                .path()
+                .and_then(|path| path.file_name())
+                .map_or_else(|| fl!("unsaved-title"), |name| name.to_string_lossy().into_owned());
+        }
         if let Some(editor) = self.font_editor.as_ref().filter(|editor| !editor.apply_target) {
             return editor
                 .path
@@ -2802,6 +2850,16 @@ impl DrawApp {
                             self.save_path(context, path, false);
                         }
                     }
+                    FileAction::SaveRip => {
+                        if path.extension().is_none() {
+                            path.set_extension("rip");
+                        }
+                        if path.exists() {
+                            self.dialog = Some(Dialog::Overwrite(path));
+                        } else {
+                            self.save_path(context, path, false);
+                        }
+                    }
                     FileAction::ExportAnimation(format) => {
                         if path.extension().is_none() {
                             path.set_extension(format.extension());
@@ -2899,6 +2957,23 @@ impl DrawApp {
                 None => {}
             }
             if !blocked {
+                self.keys(context);
+            }
+            self.dialogs(context);
+            return;
+        }
+        if let Some(editor) = &mut self.rip {
+            editor.show(context, blocked);
+            self.canvas_focus = false;
+            if !blocked {
+                if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Z)) {
+                    editor.undo(false);
+                }
+                if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT), Key::Z))
+                    || context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Y))
+                {
+                    editor.undo(true);
+                }
                 self.keys(context);
             }
             self.dialogs(context);

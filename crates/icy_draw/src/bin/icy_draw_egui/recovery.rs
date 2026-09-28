@@ -95,6 +95,9 @@ impl DrawApp {
         if let Some(editor) = &self.animation {
             return Ok(editor.recovery_snapshot());
         }
+        if let Some(editor) = &self.rip {
+            return editor.recovery_snapshot();
+        }
         if let Some(font) = &self.charfont {
             return font.recovery_snapshot(&self.document);
         }
@@ -118,6 +121,11 @@ impl DrawApp {
                 let editor = super::super::animation::AnimationEditor::from_recovery(snapshot)?;
                 self.replace(Document::new(Size::new(80, 25)));
                 self.animation = Some(editor);
+            }
+            RecoveryKind::Rip => {
+                let editor = super::super::rip::RipEditor::from_recovery(snapshot)?;
+                self.replace(Document::new(Size::new(80, 25)));
+                self.rip = Some(editor);
             }
         }
         Ok(())
@@ -323,6 +331,7 @@ fn offer_row(ui: &mut egui::Ui, offer: &mut Offer, index: usize, free: bool, res
                             RecoveryKind::CharFont => fl!("recovery-kind-charfont"),
                             RecoveryKind::BitFont => fl!("recovery-kind-bitfont"),
                             RecoveryKind::Animation => fl!("recovery-kind-animation"),
+                            RecoveryKind::Rip => fl!("rip-editor-title"),
                         };
                         let time = chrono::DateTime::from_timestamp(header.saved_at as i64, 0)
                             .map(|time| time.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())

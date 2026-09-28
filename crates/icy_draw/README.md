@@ -57,6 +57,35 @@ The egui frontend currently includes:
   the insertion can be undone in one step. Raster images still use Sixel layers.
 - Bitmap font editing and PSF saving; TDF collection/glyph editing; TDF/FIGlet
   text drawing with the existing watched font library.
+- RIPscrip drawing: create a RIP drawing from New, or open a command-only `.rip`
+  file. Draw pixels, lines, rectangles, filled rectangles, circles, outlined and
+  filled ellipses, text, Bézier curves and buttons in the 640×350 preview using the
+  left-hand icon tools. Select draw, border or fill before choosing one of the 16
+  palette colors. The toolbar above the drawing holds the options of the tool (line
+  style and thickness, fill pattern, font, size and direction, Bézier segments,
+  button type and label) and shows the parameters of the shape being drawn, which
+  the preview renders with the RIP engine while dragging. Only state commands whose
+  value changes (color, line, fill, font, button style) are written before a shape.
+  Bézier curves are dragged from start to end; then their two end points and two
+  control points can be moved until a right-click or Enter adds the curve (Escape
+  discards it). Buttons are objects of a button style and the button itself: choose
+  a plain, icon or clipboard button in the toolbar and set label, host command, hot
+  key, group, colors, font, label position, bevel, effects and behavior in
+  **Button Style…**, which previews the button. Dragging sets the button's bounds, a
+  click places it at the style's size. Selecting a button or its style in the command
+  list edits both together with **Edit Button…**. Select
+  a command on the right to preview the scene through that command (inclusive),
+  reorder or remove it, or edit the parameters of drawn shapes, colors and fill
+  styles in the property panel. Applying parameter edits creates one undo step.
+  Save preserves the ordered RIP
+  commands, with undo/redo and crash recovery. In RIP files containing terminal
+  text or control sequences, the original stream is preserved verbatim and its
+  commands are read-only; new drawing commands can be appended. External icon references
+  are retained in the command list but cannot be previewed safely.
+  The Bézier and button icons are adapted from Google's
+  [Material Design Icons](https://github.com/google/material-design-icons)
+  (`polyline` and `smart_button`), licensed under
+  [Apache-2.0](../../LICENSE-APACHE).
 - Lua animation editing, frame preview/playback, GIF and Asciicast export.
 - Existing Lua plugins, direct Lua scripts, MCP automation, and the headless
   collaboration server.
@@ -65,8 +94,8 @@ The egui frontend currently includes:
 - Atomic native document/font/script saves with external-change checks and
   explicit overwrite confirmation. Save uses `.icy`, `.tdf`, or `.psf` as
   appropriate; ANSI and image formats use Export.
-- Autosave and crash recovery for drawings, TheDraw fonts, bitmap fonts and
-  animations. While a document has unsaved changes, a snapshot is written in the
+- Autosave and crash recovery for drawings, RIP graphics, TheDraw fonts, bitmap
+  fonts and animations. While a document has unsaved changes, a snapshot is written in the
   background at most every 2 seconds (less often for very large documents) to the
   `recovery` folder of the local data directory, and removed once the document is
   saved, all changes are undone, or you discard them when closing. Snapshots

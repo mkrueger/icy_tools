@@ -17,6 +17,8 @@ mod font;
 mod input;
 #[path = "icy_draw_egui/palette.rs"]
 mod palette;
+#[path = "icy_draw_egui/rip.rs"]
+mod rip;
 #[path = "icy_draw_egui/widgets.rs"]
 mod widgets;
 

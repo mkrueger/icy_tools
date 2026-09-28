@@ -44,6 +44,8 @@ pub enum RecoveryKind {
     BitFont,
     /// A Lua animation; the payload is the UTF-8 script.
     Animation,
+    /// A RIPscrip command drawing.
+    Rip,
 }
 
 /// Size and checksum of the file on disk the document was loaded from or last saved to.

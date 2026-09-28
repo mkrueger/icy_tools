@@ -3486,6 +3486,7 @@ dependencies = [
  "icy_engine_edit",
  "icy_engine_gui",
  "icy_engine_scripting",
+ "icy_parser_core",
  "icy_sauce",
  "icy_ui",
  "image",

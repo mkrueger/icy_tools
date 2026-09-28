@@ -53,6 +53,7 @@ clap-i18n-richformatter = { workspace = true }
 
 # Core icy_* crates
 icy_engine = { workspace = true }
+icy_parser_core = { workspace = true }
 icy_engine_edit = { path = "../icy_engine_edit", default-features = false }
 icy_engine_gui = { path = "../icy_engine_gui", default-features = false, features = ["opus-audio"] }
 icy_engine_scripting = { workspace = true }

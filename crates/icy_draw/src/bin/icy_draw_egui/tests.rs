@@ -1806,6 +1806,33 @@ fn text_position(output: &egui::FullOutput, label: &str) -> Option<egui::Pos2> {
 }
 
 #[test]
+fn rip_new_open_and_save_use_a_separate_graphical_editor() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.create(NewKind::Rip, Size::new(80, 25));
+    assert!(app.rip.is_some());
+    let output = frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+    assert!(text_position(&output, "Commands").is_some());
+    assert!(text_position(&output, "Line").is_some());
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("drawing.rip");
+    std::fs::write(&path, b"!|c04|L0A0A1E1E\r\n").unwrap();
+    app.open(path.clone());
+    assert!(app.rip.is_some());
+    assert_eq!(app.document_name(), "drawing.rip");
+    assert!(!app.modified());
+    let save_as = directory.path().join("copy.rip");
+    app.save_path(&context, save_as.clone(), false);
+    assert!(app.rip.is_some());
+    assert_eq!(
+        icy_draw::rip_document::RipDocument::open(&save_as).unwrap().commands(),
+        icy_draw::rip_document::RipDocument::open(&path).unwrap().commands()
+    );
+    assert!(!app.modified());
+}
+
+#[test]
 fn tdf_font_selector_shows_each_font_type_in_both_layouts() {
     use_english();
     let context = egui::Context::default();
