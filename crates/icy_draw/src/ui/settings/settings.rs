@@ -47,6 +47,10 @@ struct PersistedSettings {
     /// Export dialog settings (persisted)
     #[serde(default)]
     pub export_settings: ExportSettings,
+
+    /// Character and color ramps of the shading brush
+    #[serde(default)]
+    pub shade_ramps: crate::brush::ShadeRamps,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +102,7 @@ impl Default for PersistedSettings {
             selected_taglist: String::new(),
             last_export_directory: None,
             export_settings: ExportSettings::default(),
+            shade_ramps: Default::default(),
         }
     }
 }
@@ -138,6 +143,9 @@ pub struct Settings {
 
     /// Export dialog settings (persisted)
     pub export_settings: ExportSettings,
+
+    /// Character and color ramps of the shading brush (persisted)
+    pub shade_ramps: crate::brush::ShadeRamps,
 }
 
 impl Settings {
@@ -158,6 +166,7 @@ impl Settings {
             selected_taglist: persistent.selected_taglist,
             last_export_directory: persistent.last_export_directory,
             export_settings: persistent.export_settings,
+            shade_ramps: persistent.shade_ramps,
         }
     }
 
@@ -172,6 +181,7 @@ impl Settings {
             selected_taglist: self.selected_taglist.clone(),
             last_export_directory: self.last_export_directory.clone(),
             export_settings: self.export_settings.clone(),
+            shade_ramps: self.shade_ramps.clone(),
         };
         Self::store_options_file(&settings);
     }

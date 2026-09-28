@@ -25,6 +25,8 @@ mod chrome;
 mod collab;
 #[path = "settings_dialog.rs"]
 mod settings_dialog;
+#[path = "shade.rs"]
+mod shade;
 #[path = "file_settings.rs"]
 mod file_settings;
 #[path = "font_select.rs"]
@@ -63,6 +65,7 @@ enum Dialog {
     About,
     Connect,
     Recovery,
+    ShadeRamps(Box<shade::RampDraft>),
 }
 enum FileAction {
     Open,
@@ -1014,7 +1017,9 @@ impl DrawApp {
                     self.document.brush.primary = primary;
                 }
                 widgets::divider(ui);
-                if let Some(font) = &font {
+                if self.document.brush.primary == BrushPrimaryMode::Shading && tool != Tool::Fill {
+                    self.shade_options(ui, font.as_ref());
+                } else if let Some(font) = &font {
                     if widgets::glyph(ui, font, self.document.brush.paint_char, false, widgets::CONTROL_HEIGHT)
                         .on_hover_text(fl!("brush-char-tooltip"))
                         .clicked()
@@ -2149,6 +2154,15 @@ impl DrawApp {
             Dialog::ReferenceImage => keep = !self.reference_image_dialog(context),
             Dialog::Connect => keep = !self.connect_dialog(context),
             Dialog::Recovery => keep = self.recovery_dialog(context),
+            Dialog::ShadeRamps(draft) => {
+                let mut draft = draft.clone();
+                keep = self.shade_ramps_dialog(context, &mut draft);
+                if keep {
+                    self.dialog = Some(Dialog::ShadeRamps(draft));
+                } else {
+                    self.canvas_focus = true;
+                }
+            }
             Dialog::Monitor => {
                 #[derive(Clone, Copy)]
                 enum Action {

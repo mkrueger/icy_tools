@@ -483,7 +483,7 @@ struct GlyphAtlas {
 }
 
 /// Paints `code` of `font` into `target` using a cached 16×16 glyph atlas texture.
-fn paint_glyph(ui: &egui::Ui, font: &icy_engine::BitFont, code: char, target: egui::Rect, color: Color32) {
+pub fn paint_glyph(ui: &egui::Ui, font: &icy_engine::BitFont, code: char, target: egui::Rect, color: Color32) {
     let dimensions = font.size();
     // Keyed per font so previews in the default font and buffer glyphs do not evict each other.
     let key = egui::Id::new(("glyph-atlas", font.name().to_string(), dimensions.width, dimensions.height));

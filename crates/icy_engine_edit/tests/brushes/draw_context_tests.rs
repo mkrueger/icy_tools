@@ -222,3 +222,82 @@ fn test_shade_down_on_empty_space() {
     // Should still be empty space
     assert_eq!(target.get_at(10, 5).ch, ' ', "Empty space should remain empty");
 }
+
+#[test]
+fn test_custom_shade_ramp() {
+    let mut target = TestTarget::new(80, 25);
+    let pos = Position::new(3, 3);
+    let up = DrawContext::default().with_brush_mode(BrushMode::Shade).with_shade_ramps(vec!['.', 'o', 'O'], vec![]);
+    let down = DrawContext::default().with_brush_mode(BrushMode::ShadeDown).with_shade_ramps(vec!['.', 'o', 'O'], vec![]);
+    for expected in ['.', 'o', 'O', 'O'] {
+        up.plot_point(&mut target, pos, PointRole::Fill);
+        assert_eq!(target.get_at(3, 3).ch, expected);
+    }
+    for expected in ['o', '.', ' '] {
+        down.plot_point(&mut target, pos, PointRole::Fill);
+        assert_eq!(target.get_at(3, 3).ch, expected);
+    }
+    // Characters outside the ramp are converted when shading up and kept when shading down.
+    target.set_char(pos, AttributedChar::new('X', TextAttribute::default()));
+    down.plot_point(&mut target, pos, PointRole::Fill);
+    assert_eq!(target.get_at(3, 3).ch, 'X');
+    up.plot_point(&mut target, pos, PointRole::Fill);
+    assert_eq!(target.get_at(3, 3).ch, '.');
+}
+
+#[test]
+fn test_color_ramp_steps_independently_of_characters() {
+    use icy_engine::AttributeColor::Palette;
+    let mut target = TestTarget::new(80, 25);
+    let pos = Position::new(1, 1);
+    let colors = vec![Palette(1), Palette(9), Palette(11)];
+    let up = DrawContext::default()
+        .with_brush_mode(BrushMode::Shade)
+        .with_foreground(4)
+        .with_shade_ramps(vec!['\u{00B0}', '\u{00B1}'], colors.clone());
+    let steps = [('\u{00B0}', 1), ('\u{00B1}', 9), ('\u{00B1}', 11), ('\u{00B1}', 11)];
+    for (ch, color) in steps {
+        up.plot_point(&mut target, pos, PointRole::Fill);
+        assert_eq!(target.get_at(1, 1).ch, ch);
+        assert_eq!(target.get_at(1, 1).attribute.foreground(), color, "the color ramp replaces the brush color");
+    }
+    let down = DrawContext::default()
+        .with_brush_mode(BrushMode::ShadeDown)
+        .with_shade_ramps(vec!['\u{00B0}', '\u{00B1}'], colors);
+    for (ch, color) in [('\u{00B0}', 9), (' ', 1), (' ', 1)] {
+        down.plot_point(&mut target, pos, PointRole::Fill);
+        assert_eq!((target.get_at(1, 1).ch, target.get_at(1, 1).attribute.foreground()), (ch, color));
+    }
+}
+
+#[test]
+fn test_color_ramp_can_keep_characters() {
+    use icy_engine::AttributeColor::Palette;
+    let mut target = TestTarget::new(80, 25);
+    let pos = Position::new(2, 2);
+    let mut attribute = TextAttribute::default();
+    attribute.set_foreground(5);
+    attribute.set_background(6);
+    attribute.set_font_page(1);
+    target.set_char(pos, AttributedChar::new('A', attribute));
+    let recolor = |mode| {
+        DrawContext::default()
+            .with_brush_mode(mode)
+            .with_color_mode(icy_engine_edit::brushes::ColorMode::Foreground)
+            .with_background(2)
+            .with_shade_ramps(Vec::new(), vec![Palette(8), Palette(7), Palette(15)])
+    };
+    recolor(BrushMode::ShadeDown).plot_point(&mut target, pos, PointRole::Fill);
+    assert_eq!(target.get_at(2, 2).attribute.foreground(), 5, "darkening keeps colors outside the ramp");
+    for color in [8, 7, 15, 15] {
+        recolor(BrushMode::Shade).plot_point(&mut target, pos, PointRole::Fill);
+        let cell = target.get_at(2, 2);
+        assert_eq!((cell.ch, cell.attribute.foreground()), ('A', color));
+        assert_eq!(cell.attribute.background(), 6, "background is only set when requested");
+        assert_eq!(cell.attribute.font_page(), 1, "the character keeps its font");
+    }
+    // Without any ramp, shading changes nothing.
+    let none = DrawContext::default().with_brush_mode(BrushMode::Shade).with_shade_ramps(Vec::new(), Vec::new());
+    none.plot_point(&mut target, pos, PointRole::Fill);
+    assert_eq!(target.get_at(2, 2).attribute.foreground(), 15);
+}

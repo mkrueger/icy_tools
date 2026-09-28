@@ -7,7 +7,7 @@ use icy_engine_edit::brushes::{BrushMode as EngineBrushMode, ColorMode as Engine
 use icy_engine_edit::{AtomicUndoGuard, AttributedChar, EditState};
 use parking_lot::RwLock;
 
-use crate::brush::BrushPrimaryMode;
+use crate::brush::{default_char_ramp, BrushPrimaryMode, CharRamp, ColorRamp};
 
 /// Default FG color index when filter is disabled (light gray)
 pub const DEFAULT_FG: u32 = 7;
@@ -30,6 +30,10 @@ pub struct BrushSettings {
     /// Fill-tool: only fill cells whose character/colors exactly match the
     /// hovered cell. Ignored by Pencil/Shape.
     pub exact: bool,
+    /// Characters the shading brush steps through; empty keeps the characters.
+    pub shade_chars: CharRamp,
+    /// Foreground colors the shading brush steps through; empty uses the caret color.
+    pub shade_colors: ColorRamp,
 }
 
 impl Default for BrushSettings {
@@ -41,6 +45,8 @@ impl Default for BrushSettings {
             colorize_fg: true,
             colorize_bg: true,
             exact: false,
+            shade_chars: default_char_ramp(),
+            shade_colors: ColorRamp::default(),
         }
     }
 }
@@ -204,8 +210,20 @@ pub fn apply_stamp_at_doc_pos(state: &mut EditState, settings: BrushSettings, do
             let effective_fg = if settings.colorize_fg { fg } else { existing_attr.foreground() };
             let effective_bg = if settings.colorize_bg { bg } else { existing_attr.background() };
 
-            // ColorMode for engine: Both means it will apply both colors from template
-            let color_mode = EngineColorMode::Both;
+            // ColorMode for engine: Both means it will apply both colors from template.
+            // Shading that keeps the characters only sets the colors whose filter is on.
+            let color_mode = match (settings.primary, settings.colorize_fg, settings.colorize_bg) {
+                (BrushPrimaryMode::Shading, true, false) => EngineColorMode::Foreground,
+                (BrushPrimaryMode::Shading, false, true) => EngineColorMode::Background,
+                (BrushPrimaryMode::Shading, false, false) => EngineColorMode::None,
+                _ => EngineColorMode::Both,
+            };
+            // The color ramp replaces the caret foreground, so it follows the FG filter.
+            let shade_colors: Vec<icy_engine::AttributeColor> = if settings.colorize_fg {
+                settings.shade_colors.as_slice().iter().map(|&index| icy_engine::AttributeColor::Palette(index)).collect()
+            } else {
+                Vec::new()
+            };
 
             struct LayerTarget<'a> {
                 state: &'a mut EditState,
@@ -238,7 +256,8 @@ pub fn apply_stamp_at_doc_pos(state: &mut EditState, settings: BrushSettings, do
                 .with_foreground(effective_fg)
                 .with_background(effective_bg)
                 .with_template_attribute(template)
-                .with_half_block_is_top(half_block_is_top);
+                .with_half_block_is_top(half_block_is_top)
+                .with_shade_ramps(settings.shade_chars.as_slice(), shade_colors);
 
             let mut target = LayerTarget {
                 state,

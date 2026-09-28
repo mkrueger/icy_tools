@@ -2729,6 +2729,7 @@ mod caret_focus_tests {
             selected_taglist: String::new(),
             last_export_directory: None,
             export_settings: Default::default(),
+            shade_ramps: Default::default(),
         }
     }
 

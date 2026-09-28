@@ -2089,3 +2089,103 @@ fn autosave_restores_fonts_and_animations() {
     restore(&|app| assert_eq!(app.animation.as_ref().expect("animation editor").source, "-- unsaved\n"));
     assert!(recovery_files(directory.path()).is_empty());
 }
+
+#[test]
+fn shading_steps_through_custom_character_and_color_ramps() {
+    use icy_draw::brush::{char_ramp_from_text, Ramp};
+    use icy_engine::MouseButton;
+    let mut app = DrawApp::new();
+    app.document.tool = Tool::Pencil;
+    app.document.brush.primary = BrushPrimaryMode::Shading;
+    app.document.brush.shade_chars = char_ramp_from_text(".oO").unwrap();
+    app.document.brush.shade_colors = Ramp::new(&[1, 9, 11]);
+    let cell = |app: &DrawApp| {
+        app.document.with_state(|state| {
+            let cell = state.get_buffer().char_at((2, 1).into());
+            (cell.ch, cell.attribute.foreground())
+        })
+    };
+    let stroke = |app: &mut DrawApp, button| {
+        app.document.begin(Position::new(2, 1), button);
+        app.document.finish();
+    };
+    for expected in [('.', 1), ('o', 9), ('O', 11), ('O', 11)] {
+        stroke(&mut app, MouseButton::Left);
+        assert_eq!(cell(&app), expected);
+    }
+    stroke(&mut app, MouseButton::Right);
+    assert_eq!(cell(&app), ('o', 9), "right-click lightens both ramps");
+
+    // Without the foreground filter the color ramp is not used.
+    app.document.brush.colorize_fg = false;
+    stroke(&mut app, MouseButton::Left);
+    assert_eq!(cell(&app), ('O', 9));
+
+    // Keeping the characters only recolors.
+    app.document.brush.colorize_fg = true;
+    app.document.brush.shade_chars = Default::default();
+    app.document.brush.shade_colors = Ramp::new(&[8, 7, 15]);
+    for expected in [('O', 8), ('O', 7), ('O', 15)] {
+        stroke(&mut app, MouseButton::Left);
+        assert_eq!(cell(&app), expected);
+    }
+    app.document.undo().unwrap();
+    assert_eq!(cell(&app), ('O', 7), "each stroke is one undo step");
+}
+
+#[test]
+fn shade_toolbar_picks_ramps_and_the_editor_updates_the_brush() {
+    use icy_draw::brush::{char_ramp_from_text, Ramp, ShadeRamps};
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::vec2(1280.0, 820.0);
+    let mut app = DrawApp::new();
+    app.select_tool(Tool::Pencil);
+    app.document.brush.primary = BrushPrimaryMode::Shading;
+    frame(&context, &mut app, size, vec![]);
+    let output = frame(&context, &mut app, size, vec![]);
+    for label in ["Brush color"] {
+        assert!(text_position(&output, label).is_some(), "missing {label:?} in the shading toolbar");
+    }
+    click_text(&context, &mut app, size, "Brush color");
+    click_text(&context, &mut app, size, "Edit Ramps…");
+    assert!(matches!(app.dialog, Some(Dialog::ShadeRamps(_))));
+
+    // Editing the ramp the brush uses switches the brush to the edited ramp.
+    let mut ramps = ShadeRamps::default();
+    ramps.characters[0] = ".:#".into();
+    ramps.colors.insert(0, vec![3, 11]);
+    app.apply_shade_ramps(ramps.clone());
+    assert_eq!(app.document.brush.shade_chars, char_ramp_from_text(".:#").unwrap());
+    assert!(app.document.brush.shade_colors.is_empty(), "the brush color is not a ramp of the list");
+    app.document.brush.shade_colors = Ramp::new(&[3, 11]);
+    ramps.colors[0] = vec![3, 11, 15];
+    app.apply_shade_ramps(ramps.clone());
+    assert_eq!(app.document.brush.shade_colors, Ramp::new(&[3, 11, 15]));
+    assert_eq!(app.settings.shade_ramps, ramps);
+}
+
+#[test]
+#[ignore = "requires a GPU"]
+fn gpu_shade_ramp_controls_render() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        app.select_tool(Tool::Pencil);
+        app.document.brush.primary = BrushPrimaryMode::Shading;
+        app.document.brush.shade_colors = icy_draw::brush::Ramp::new(&[1, 9, 11, 15]);
+        for theme in [egui::Theme::Dark, egui::Theme::Light] {
+            gpu.context.set_theme(theme);
+            gpu.capture(&mut app, [1280, 820], 1.0, vec![], "shade-toolbar-warmup");
+            gpu.capture(&mut app, [1280, 820], 1.0, vec![], &format!("shade-toolbar-{theme:?}"));
+        }
+        gpu.context.set_theme(egui::Theme::Dark);
+        app.open_shade_ramps();
+        if let Some(Dialog::ShadeRamps(draft)) = &mut app.dialog {
+            draft.ramps.characters.push("░€".into());
+        }
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "shade-ramps-warmup");
+        let pixels = gpu.capture(&mut app, [1280, 820], 1.0, vec![], "shade-ramps");
+        assert!(pixels.chunks(4).any(|pixel| pixel[0] > 150 && pixel[1] < 90), "the invalid ramp is reported in red");
+    });
+}

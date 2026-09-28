@@ -41,6 +41,12 @@ The egui frontend currently includes:
   While the canvas has keyboard focus, arrow keys move the text caret rather
   than switching focus to other controls; Tab and Escape also stay with the
   canvas. Clicking another control or opening a dialog still transfers input.
+- Shading with user-defined ramps. The Shade brush mode offers a character ramp
+  (`░▒▓█` by default, any CP437 characters from light to dark, or keep the
+  characters) and an optional foreground color ramp. Each stroke moves a cell one
+  step along each ramp independently; right-click steps back. The color ramp is
+  used while the Foreground filter is on. **Edit Ramps…** manages the lists, which
+  are stored in `settings.toml`.
 - **Insert Image from File** accepts all formats supported by the text-document
   loader (including ANSI/ASCII, ICY, XBin, BIN, IDF, Tundra, Artworx, REXPaint,
   Avatar, PCBoard, Ctrl-A, Renegade, PETSCII and ATASCII) and the image decoders

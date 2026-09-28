@@ -128,6 +128,14 @@ pub struct DrawContext {
 
     /// For half-block mode: whether the point targets the upper half (true) or lower half (false)
     pub half_block_is_top: bool,
+
+    /// Characters the shade brushes step through, from light to dark. Empty keeps the
+    /// characters, so only `shade_colors` changes.
+    pub shade_chars: Vec<char>,
+
+    /// Foreground colors the shade brushes step through, one step per stroke independently of
+    /// the characters. Empty uses `foreground`.
+    pub shade_colors: Vec<AttributeColor>,
 }
 
 impl Default for DrawContext {
@@ -142,6 +150,8 @@ impl Default for DrawContext {
             outline_style: 0,
             mirror_mode: MirrorMode::None,
             half_block_is_top: true,
+            shade_chars: SHADE_GRADIENT.to_vec(),
+            shade_colors: Vec::new(),
         }
     }
 }
@@ -205,6 +215,13 @@ impl DrawContext {
     /// Select which half is targeted for `BrushMode::HalfBlock`.
     pub fn with_half_block_is_top(mut self, is_top: bool) -> Self {
         self.half_block_is_top = is_top;
+        self
+    }
+
+    /// Set the character and color ramps used by [`BrushMode::Shade`] and [`BrushMode::ShadeDown`].
+    pub fn with_shade_ramps(mut self, chars: impl Into<Vec<char>>, colors: impl Into<Vec<AttributeColor>>) -> Self {
+        self.shade_chars = chars.into();
+        self.shade_colors = colors.into();
         self
     }
 
@@ -292,40 +309,61 @@ impl DrawContext {
     fn draw_shade<T: DrawTarget>(&self, target: &mut T, pos: Position, up: bool) {
         let current = target.char_at(pos);
         let current_ch = current.map(|c| c.ch).unwrap_or(' ');
-
-        // Find current shade level (-1 = empty/space, 0-3 = shade gradient)
-        let shade_level = SHADE_GRADIENT.iter().position(|&c| c == current_ch).map(|i| i as i32);
-        let is_empty_or_space = current_ch == ' ' || current_ch == '\0';
-
-        // Moebius-style behavior:
-        // - Shade up: Always works, converts any char to shade gradient
-        // - Shade down (reduce): Only affects shade chars and empty space, leaves other chars untouched
-        if !up && shade_level.is_none() && !is_empty_or_space {
-            // ShadeDown on a non-shade character: do nothing (Moebius behavior)
+        let keep_chars = self.shade_chars.is_empty();
+        if keep_chars && self.shade_colors.is_empty() {
             return;
         }
 
-        let mut level = shade_level.unwrap_or(-1); // -1 represents empty/space
+        // Find current shade level (-1 = empty/space, 0.. = position in the ramp)
+        let shade_level = self.shade_chars.iter().position(|&c| c == current_ch).map(|i| i as i32);
+        let is_empty_or_space = current_ch == ' ' || current_ch == '\0';
 
-        // Adjust shade level
-        if up {
-            // Shade up: -1 (empty) -> 0 -> 1 -> 2 -> 3 (full block)
-            level = (level + 1).min(SHADE_GRADIENT.len() as i32 - 1);
-        } else {
-            // Shade down: 3 -> 2 -> 1 -> 0 -> -1 (empty/space)
-            level -= 1;
+        // Moebius-style behavior:
+        // - Shade up: Always works, converts any char to the ramp
+        // - Shade down (reduce): Only affects ramp chars and empty space, leaves other chars untouched
+        if !keep_chars && !up && shade_level.is_none() && !is_empty_or_space {
+            return;
         }
 
-        // Apply the new character
-        if level < 0 {
-            // Below shade gradient = empty space
-            let attr = self.make_attribute();
-            target.set_char(pos, AttributedChar::new(' ', attr));
+        let (ch, mut attr) = if keep_chars {
+            let Some(current) = current else {
+                return;
+            };
+            let mut attr = current.attribute;
+            if self.color_mode.affects_background() {
+                attr.set_background(self.background);
+            }
+            (current.ch, attr)
         } else {
-            let new_ch = SHADE_GRADIENT[level as usize];
-            let attr = self.make_attribute();
-            target.set_char(pos, AttributedChar::new(new_ch, attr));
+            let mut level = shade_level.unwrap_or(-1);
+            if up {
+                // -1 (empty) -> 0 -> ... -> last (darkest)
+                level = (level + 1).min(self.shade_chars.len() as i32 - 1);
+            } else {
+                // last -> ... -> 0 -> -1 (empty/space)
+                level -= 1;
+            }
+            let ch = if level < 0 { ' ' } else { self.shade_chars[level as usize] };
+            (ch, self.make_attribute())
+        };
+
+        if !self.shade_colors.is_empty() {
+            let current_color = current.map(|c| c.attribute.foreground_color());
+            let index = current_color.and_then(|color| self.shade_colors.iter().position(|&c| c == color));
+            let next = match (index, up) {
+                (Some(index), true) => Some((index + 1).min(self.shade_colors.len() - 1)),
+                (None, true) => Some(0),
+                (Some(index), false) => Some(index.saturating_sub(1)),
+                (None, false) => None,
+            };
+            match (next, current_color) {
+                (Some(index), _) => attr.set_foreground_color(self.shade_colors[index]),
+                // Lightening a color outside the ramp keeps it.
+                (None, Some(color)) => attr.set_foreground_color(color),
+                (None, None) => {}
+            }
         }
+        target.set_char(pos, AttributedChar::new(ch, attr));
     }
 
     fn colorize<T: DrawTarget>(&self, target: &mut T, pos: Position) {

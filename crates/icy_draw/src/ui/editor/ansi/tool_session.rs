@@ -57,6 +57,7 @@ impl From<BrushSessionState> for BrushSettings {
             colorize_fg: s.colorize_fg,
             colorize_bg: s.colorize_bg,
             exact: s.exact,
+            ..BrushSettings::default()
         }
     }
 }
