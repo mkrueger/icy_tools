@@ -49,6 +49,7 @@ pub struct Preview {
     pub music_autoplay: bool,
     /// Play through the output device; tests turn this off.
     pub audio: bool,
+    music_volume: f32,
     pub image: Option<egui::TextureHandle>,
     pub image_pixels: Option<image::RgbaImage>,
     image_tiles: Vec<(egui::Vec2, egui::TextureHandle)>,
@@ -104,6 +105,7 @@ impl Preview {
             music_info: None,
             music_autoplay: true,
             audio: true,
+            music_volume: icy_view::options::DEFAULT_MUSIC_VOLUME,
             image: None,
             image_pixels: None,
             image_tiles: Vec::new(),
@@ -248,15 +250,15 @@ impl Preview {
         if self.loading_music {
             let (path, data, generation) = (PathBuf::from(&self.file), self.data.clone(), self.generation);
             let (sender, context) = (self.music_sender.clone(), context.clone());
-            let (audio, paused) = (self.audio, !self.music_autoplay);
+            let (audio, paused, volume) = (self.audio, !self.music_autoplay, self.music_volume);
             std::thread::spawn(move || {
                 let result = tracker::load_module(&path, &data).map(|module| {
                     let info = tracker::ModuleInfo::new(&module, &data);
                     let buffer = tracker::render_info(&info);
                     let player = if audio {
-                        TrackerPlayer::start(module, paused)
+                        TrackerPlayer::start(module, paused, volume)
                     } else {
-                        TrackerPlayer::silent(&module, paused)
+                        TrackerPlayer::silent(&module, paused, volume)
                     };
                     (buffer, info, player)
                 });
@@ -300,6 +302,13 @@ impl Preview {
             } else {
                 music.set_paused(!music.paused());
             }
+        }
+    }
+
+    pub fn set_music_volume(&mut self, volume: f32) {
+        self.music_volume = volume.clamp(0.0, 1.0);
+        if let Some(music) = &self.music {
+            music.set_volume(self.music_volume);
         }
     }
 
@@ -364,6 +373,7 @@ impl Preview {
             match result {
                 Ok((buffer, info, player)) => {
                     self.show_buffer(buffer, true);
+                    player.set_volume(self.music_volume);
                     self.music = Some(player);
                     self.music_info = Some(info);
                     self.loading = false;

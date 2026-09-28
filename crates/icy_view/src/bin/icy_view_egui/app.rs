@@ -61,9 +61,11 @@ impl Viewer {
         let mut browser = Browser::new(path, options.sort_order)?;
         browser.refresh(context);
         let path_input = browser.location.point.path.clone();
+        let mut preview = Preview::new(context)?;
+        preview.set_music_volume(options.music_volume);
         Ok(Self {
             browser,
-            preview: Preview::new(context)?,
+            preview,
             options,
             dialogs: Dialogs::default(),
             icons: Icons::default(),
@@ -206,6 +208,7 @@ impl Viewer {
                 });
             });
         self.dialogs.show(context, &mut self.options, &mut self.preview);
+        self.preview.set_music_volume(self.options.music_volume);
         if !blocked {
             self.palette(context);
         }
@@ -1401,6 +1404,7 @@ impl Viewer {
             .inner_margin(egui::Margin::symmetric(8, 4))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
+                let wrap_controls = font || self.preview.music.is_some();
                 let body = |ui: &mut egui::Ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
                     if self
@@ -1468,7 +1472,7 @@ impl Viewer {
                     ui.label(egui::RichText::new(info).color(ui.visuals().weak_text_color()));
                 };
                 // The many font controls wrap; the playback row sizes its slider to one line.
-                if font {
+                if wrap_controls {
                     ui.horizontal_wrapped(body);
                 } else {
                     ui.horizontal(body);
@@ -1495,7 +1499,7 @@ impl Viewer {
         ui.add(egui::Button::image_and_text(image, label).min_size(egui::vec2(play_width, 0.0)))
     }
 
-    /// Transport for tracker modules: play/pause, replay and a time slider that seeks on release.
+    /// Music transport: play/pause, replay, seek and volume.
     fn music_bar(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
         let Some(music) = &self.preview.music else {
             return;
@@ -1511,7 +1515,7 @@ impl Viewer {
             self.preview.replay_music();
         }
         ui.add_space(4.0);
-        ui.spacing_mut().slider_width = (ui.available_width() - 140.0).clamp(60.0, 480.0);
+        ui.spacing_mut().slider_width = (ui.available_width() - 270.0).clamp(60.0, 480.0);
         let slider = ui
             .add(egui::Slider::new(&mut position, 0.0..=duration.max(0.1)).show_value(false))
             .on_hover_text(text("egui-music-seek"));
@@ -1525,6 +1529,20 @@ impl Viewer {
         }
         let time = format!("{} / {}", icy_view::tracker::format_time(position), icy_view::tracker::format_time(duration));
         ui.label(egui::RichText::new(time).monospace().color(ui.visuals().weak_text_color()));
+        ui.label(text("egui-music-volume"));
+        ui.spacing_mut().slider_width = 90.0;
+        let volume = self.options.music_volume;
+        let slider = ui
+            .add(egui::Slider::new(&mut self.options.music_volume, 0.0..=1.0).show_value(false))
+            .on_hover_text(format!("{}: {:.0}%", text("egui-music-volume"), volume * 100.0));
+        if slider.changed() {
+            self.preview.set_music_volume(self.options.music_volume);
+        }
+        if slider.drag_stopped() || (slider.changed() && !slider.dragged()) {
+            if let Err(error) = super::dialogs::save_music_volume(self.options.music_volume) {
+                self.dialogs.error = Some(error.to_string());
+            }
+        }
         if let Some(error) = error {
             ui.label(egui::RichText::new(text("egui-music-no-audio")).color(ui.visuals().warn_fg_color))
                 .on_hover_text(error);

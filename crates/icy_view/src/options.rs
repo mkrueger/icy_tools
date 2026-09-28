@@ -72,6 +72,11 @@ fn exe_dir() -> Option<PathBuf> {
 }
 
 const SCROLL_SPEED: [f32; 3] = [80.0, 160.0, 320.0];
+pub const DEFAULT_MUSIC_VOLUME: f32 = 0.35;
+
+fn default_music_volume() -> f32 {
+    DEFAULT_MUSIC_VOLUME
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Default)]
 pub enum ViewMode {
@@ -257,6 +262,10 @@ pub struct Options {
     /// Navigator strip beside art that is taller than the view
     #[serde(default = "enabled")]
     pub show_minimap: bool,
+
+    /// Global music playback volume, from silence to full volume.
+    #[serde(default = "default_music_volume")]
+    pub music_volume: f32,
 }
 
 fn enabled() -> bool {
@@ -277,14 +286,27 @@ impl Default for Options {
             export_path: String::new(),
             show_osd: true,
             show_minimap: true,
+            music_volume: DEFAULT_MUSIC_VOLUME,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::ExternalCommand;
+    use super::{ExternalCommand, Options, DEFAULT_MUSIC_VOLUME};
     use std::path::Path;
+
+    #[test]
+    fn music_volume_defaults_for_existing_options_and_round_trips() {
+        let mut old = toml::Value::try_from(Options::default()).unwrap();
+        old.as_table_mut().unwrap().remove("music_volume");
+        let restored: Options = old.try_into().unwrap();
+        assert_eq!(restored.music_volume, DEFAULT_MUSIC_VOLUME);
+        let mut options = restored;
+        options.music_volume = 0.18;
+        let loaded: Options = toml::from_str(&toml::to_string(&options).unwrap()).unwrap();
+        assert_eq!(loaded.music_volume, 0.18);
+    }
 
     #[test]
     fn external_command_keeps_unquoted_placeholder_path_as_single_arg() {

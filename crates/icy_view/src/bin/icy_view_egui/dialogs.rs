@@ -188,7 +188,10 @@ impl Dialogs {
         });
         let mut close = response.dismissed;
         match response.action {
-            Some(Footer::Restore) => self.draft.monitor_settings = icy_engine_gui::MonitorSettings::default(),
+            Some(Footer::Restore) => {
+                self.draft.monitor_settings = icy_engine_gui::MonitorSettings::default();
+                self.draft.music_volume = icy_view::DEFAULT_MUSIC_VOLUME;
+            }
             Some(Footer::Save) => match self.save_settings() {
                 Ok(()) => {
                     *options = self.draft.clone();
@@ -211,6 +214,11 @@ impl Dialogs {
                 appearance::group(ui, &text("egui-viewer"), |ui| {
                     appearance::check_row(ui, &text("egui-show-osd"), &mut self.draft.show_osd);
                     appearance::check_row(ui, &text("egui-show-minimap"), &mut self.draft.show_minimap);
+                });
+                appearance::group(ui, &text("egui-music-settings"), |ui| {
+                    appearance::form_row(ui, &text("egui-music-volume"), |ui| {
+                        ui.add(egui::Slider::new(&mut self.draft.music_volume, 0.0..=1.0).custom_formatter(|value, _| format!("{:.0}%", value * 100.0)));
+                    });
                 });
                 monitor::fields(ui, &mut self.draft.monitor_settings);
             }
@@ -259,13 +267,34 @@ impl Dialogs {
 }
 
 fn save_settings(path: &Path, baseline: Option<&[u8]>, draft: &Options) -> anyhow::Result<()> {
+    save_value(path, baseline, toml::Value::try_from(draft)?)
+}
+
+pub(super) fn save_music_volume(volume: f32) -> anyhow::Result<()> {
+    let path = icy_view::get_config_dir().join("options.toml");
+    save_music_volume_to(&path, volume)
+}
+
+fn save_music_volume_to(path: &Path, volume: f32) -> anyhow::Result<()> {
+    anyhow::ensure!(volume.is_finite() && (0.0..=1.0).contains(&volume), "invalid music volume: {volume}");
+    let baseline = match std::fs::read(path) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    let mut fields = toml::map::Map::new();
+    fields.insert("music_volume".into(), toml::Value::Float(volume as f64));
+    save_value(&path, baseline.as_deref(), toml::Value::Table(fields))
+}
+
+fn save_value(path: &Path, baseline: Option<&[u8]>, changes: toml::Value) -> anyhow::Result<()> {
     anyhow::ensure!(std::fs::read(path).ok().as_deref() == baseline, "{}", text("egui-settings-conflict"));
     let mut value = if let Some(bytes) = baseline {
         toml::from_str::<toml::Value>(std::str::from_utf8(bytes)?)?
     } else {
         toml::Value::Table(Default::default())
     };
-    merge(&mut value, toml::Value::try_from(draft)?);
+    merge(&mut value, changes);
     let temporary = path.with_extension(format!("toml.{}.new", fastrand::u64(..)));
     use std::io::Write;
     let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&temporary)?;
@@ -633,6 +662,30 @@ fn write_export(request: &ExportRequest, preview: &mut Preview) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn player_volume_saves_without_overwriting_other_options() {
+        let fixture = crate::tests::Fixture::new();
+        let path = fixture.0.join("options.toml");
+        let mut baseline = toml::Value::try_from(Options::default()).unwrap();
+        baseline
+            .as_table_mut()
+            .unwrap()
+            .insert("export_path".into(), toml::Value::String("keep".into()));
+        baseline
+            .as_table_mut()
+            .unwrap()
+            .insert("future".into(), toml::Value::String("also keep".into()));
+        std::fs::write(&path, toml::to_string(&baseline).unwrap()).unwrap();
+        save_music_volume_to(&path, 0.21).unwrap();
+        let saved = std::fs::read_to_string(&path).unwrap();
+        let value: toml::Value = toml::from_str(&saved).unwrap();
+        assert_eq!(value["export_path"].as_str(), Some("keep"));
+        assert_eq!(value["future"].as_str(), Some("also keep"));
+        assert_eq!(value["music_volume"].as_float(), Some(0.21f32 as f64));
+        let loaded: Options = toml::from_str(&saved).unwrap();
+        assert_eq!(loaded.music_volume, 0.21);
+    }
 
     #[test]
     fn settings_preserve_unknown_values_and_reject_external_changes() {

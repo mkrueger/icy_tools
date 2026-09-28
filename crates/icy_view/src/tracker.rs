@@ -376,6 +376,7 @@ struct Shared {
     played_frames: AtomicU64,
     sample_rate: AtomicU32,
     paused: AtomicBool,
+    volume: AtomicU32,
     finished: AtomicBool,
     error: Mutex<Option<String>>,
 }
@@ -456,9 +457,10 @@ pub struct TrackerPlayer {
 }
 
 impl TrackerPlayer {
-    pub fn start(module: PlayableModule, paused: bool) -> Self {
+    pub fn start(module: PlayableModule, paused: bool, volume: f32) -> Self {
         let (player, commands) = Self::new(&module);
         player.set_paused(paused);
+        player.set_volume(volume);
         let shared = player.shared.clone();
         let spawned = std::thread::Builder::new().name("tracker-audio".into()).spawn(move || {
             // The device sink is not Send, so it lives on this thread.
@@ -483,9 +485,10 @@ impl TrackerPlayer {
     }
 
     /// No output device (tests, audio off): knows the duration but never advances.
-    pub fn silent(module: &PlayableModule, paused: bool) -> Self {
+    pub fn silent(module: &PlayableModule, paused: bool, volume: f32) -> Self {
         let player = Self::new(module).0;
         player.set_paused(paused);
+        player.set_volume(volume);
         player
     }
 
@@ -520,6 +523,14 @@ impl TrackerPlayer {
 
     pub fn set_paused(&self, paused: bool) {
         self.shared.paused.store(paused, Ordering::Relaxed);
+    }
+
+    pub fn volume(&self) -> f32 {
+        f32::from_bits(self.shared.volume.load(Ordering::Relaxed))
+    }
+
+    pub fn set_volume(&self, volume: f32) {
+        self.shared.volume.store(volume.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
     }
 
     pub fn finished(&self) -> bool {
@@ -642,7 +653,8 @@ impl StreamSource {
                 let frame = (self.samples[self.index], self.samples[self.index + 1]);
                 self.index += 2;
                 self.shared.played_frames.fetch_add(1, Ordering::Relaxed);
-                return Some(frame);
+                let volume = f32::from_bits(self.shared.volume.load(Ordering::Relaxed));
+                return Some((frame.0 * volume, frame.1 * volume));
             }
             if current && self.last {
                 self.last = false;
@@ -724,6 +736,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn stream_volume_scales_both_channels_and_changes_during_playback() {
+        let shared = Arc::new(Shared::default());
+        shared.volume.store(0.25f32.to_bits(), Ordering::Relaxed);
+        let (sender, receiver) = mpsc::sync_channel(1);
+        sender
+            .send(Chunk {
+                generation: 0,
+                samples: vec![0.8, -0.4, 0.6, -0.2],
+                last: false,
+            })
+            .unwrap();
+        let mut stream = StreamSource::new(receiver, shared.clone(), 48_000);
+        assert_eq!(stream.next(), Some(0.2));
+        assert_eq!(stream.next(), Some(-0.1));
+        shared.volume.store(0.5f32.to_bits(), Ordering::Relaxed);
+        assert_eq!(stream.next(), Some(0.3));
+        assert_eq!(stream.next(), Some(-0.1));
+    }
+
+    #[test]
     fn detects_tracker_files_by_extension() {
         assert!(is_tracker_file(Path::new("SONG.MOD")));
         assert!(is_tracker_file(Path::new("SONG.RAD")));
@@ -793,6 +825,7 @@ mod tests {
         let data = test_module();
         let module = load_module(Path::new("test.mod"), &data).unwrap();
         let (player, commands) = TrackerPlayer::new(&module);
+        player.set_volume(1.0);
         let rate = 8_000;
         let (sender, receiver) = mpsc::sync_channel(QUEUE_CHUNKS);
         let mut source = StreamSource::new(receiver, player.shared.clone(), rate);

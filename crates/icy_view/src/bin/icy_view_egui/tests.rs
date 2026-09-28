@@ -223,6 +223,7 @@ fn preview_plays_tracker_modules_and_shows_other_mod_files_as_text() {
     let context = egui::Context::default();
     let mut preview = preview::Preview::new(&context).unwrap();
     preview.audio = false;
+    preview.set_music_volume(0.2);
     let row = |preview: &preview::Preview, y: i32| -> String {
         let screen = preview.screen.terminal.screen.lock();
         (0..40).map(|x| screen.char_at((x, y).into()).ch).collect()
@@ -231,12 +232,19 @@ fn preview_plays_tracker_modules_and_shows_other_mod_files_as_text() {
     wait_preview(&mut preview, &context);
     let music = preview.music.as_ref().expect("module plays");
     assert!(music.playing());
+    assert_eq!(music.volume(), 0.2);
     assert!((music.duration() - 15.36).abs() < 0.01);
+    preview.set_music_volume(0.6);
+    assert_eq!(preview.music.as_ref().unwrap().volume(), 0.6);
     assert!(row(&preview, 0).starts_with(" test song"), "{:?}", row(&preview, 0));
     preview.toggle_music();
     assert!(preview.music.as_ref().unwrap().paused());
     preview.replay_music();
     assert!(preview.music.as_ref().unwrap().playing());
+
+    preview.load("next.mod".into(), icy_view::tracker::test_module(), false, &context);
+    wait_preview(&mut preview, &context);
+    assert_eq!(preview.music.as_ref().unwrap().volume(), 0.6, "subsequent tracks use the chosen volume");
 
     preview.load("kernel.mod".into(), b"HELLO FROM A KERNEL MODULE".to_vec(), false, &context);
     wait_preview(&mut preview, &context);
@@ -250,6 +258,7 @@ fn preview_plays_audio_files_instead_of_showing_them_as_text() {
     let context = egui::Context::default();
     let mut preview = preview::Preview::new(&context).unwrap();
     preview.audio = false;
+    preview.set_music_volume(0.4);
     let row = |preview: &preview::Preview, y: i32| -> String {
         let screen = preview.screen.terminal.screen.lock();
         (0..40).map(|x| screen.char_at((x, y).into()).ch).collect()
@@ -264,6 +273,7 @@ fn preview_plays_audio_files_instead_of_showing_them_as_text() {
     wait_preview(&mut preview, &context);
     let music = preview.music.as_ref().expect("audio plays");
     assert!(music.playing());
+    assert_eq!(music.volume(), 0.4);
     assert!((music.duration() - 0.5).abs() < 0.05, "{}", music.duration());
     assert_eq!(preview.music_info.as_ref().unwrap().title(), "Fixture");
     assert!(row(&preview, 0).starts_with(" Fixture"), "{:?}", row(&preview, 0));
