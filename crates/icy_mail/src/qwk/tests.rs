@@ -74,6 +74,20 @@ fn control_dat() -> Vec<u8> {
     out.into_bytes()
 }
 
+/// Screens and bulletins next to the messages; `DOOR.ID` and the index are no bulletins.
+fn packet_files() -> &'static [(&'static str, &'static [u8])] {
+    &[
+        ("GOODBYE", b"Bye!\r\n"),
+        ("BLT-0.10", b"Tenth bulletin\r\n"),
+        ("HELLO", b"\x1b[1;33mWelcome\x1b[0m to TEST BBS\r\n\x1aSAUCE garbage"),
+        ("NEWFILES.DAT", b"@X0EDEMO.ZIP@X07  A demo\r\nTOOL.ZIP  A tool\r\n"),
+        ("BLT-0.2", b"Second bulletin\r\n"),
+        ("NEWS", b"News of the day\r\n"),
+        ("DOOR.ID", b"DOOR = Test\r\n"),
+        ("1.NDX", &[0; 5]),
+    ]
+}
+
 /// Writes a synthetic QWK packet and returns its path.
 fn write_packet(dir: &std::path::Path) -> std::path::PathBuf {
     let mut messages = vec![b' '; 128]; // packet header block
@@ -92,6 +106,10 @@ fn write_packet(dir: &std::path::Path) -> std::path::PathBuf {
     zip.write_all(&control_dat()).unwrap();
     zip.start_file("MESSAGES.DAT", options).unwrap();
     zip.write_all(&messages).unwrap();
+    for (name, data) in packet_files() {
+        zip.start_file(*name, options).unwrap();
+        zip.write_all(data).unwrap();
+    }
     zip.finish().unwrap();
 
     path
@@ -214,4 +232,43 @@ fn unknown_archives_are_rejected() {
     let path = dir.path().join("BROKEN.QWK");
     std::fs::write(&path, b"this is not an archive").unwrap();
     assert!(QwkPackage::load_from_file(&path).is_err());
+}
+
+#[test]
+fn screens_bulletins_and_new_files_are_listed_like_multimail() {
+    use crate::qwk::PacketFileKind::*;
+    let (_dir, package) = load();
+    let files: Vec<_> = package.files.iter().map(|file| (file.name.as_str(), file.kind)).collect();
+    assert_eq!(
+        files,
+        [
+            ("HELLO", Welcome),
+            ("NEWS", News),
+            ("BLT-0.2", Bulletin),
+            ("BLT-0.10", Bulletin),
+            ("NEWFILES.DAT", NewFiles),
+            ("GOODBYE", Goodbye)
+        ]
+    );
+    assert_eq!(package.files[0].lines(), 1, "text after the end-of-file mark does not count");
+}
+
+#[test]
+fn screen_names_match_by_prefix_when_no_file_has_the_exact_name() {
+    use crate::qwk::PacketFileKind::*;
+    let (_dir, package) = load();
+    let mut control = package.control_file.clone();
+    control.welcome_screen = "WELCOME".into();
+    control.news_screen = "".into();
+    let files = vec![
+        ("WELCOMEG".to_string(), b"ansi".to_vec()),
+        ("NFILES.TXT".to_string(), b"x".to_vec()),
+        ("README.TXT".to_string(), b"x".to_vec()),
+        ("NEWS".to_string(), b"x".to_vec()),
+    ];
+    let files: Vec<_> = crate::qwk::packet_files(&control, files)
+        .into_iter()
+        .map(|file| (file.name, file.kind))
+        .collect();
+    assert_eq!(files, [("WELCOMEG".to_string(), Welcome), ("NFILES.TXT".to_string(), NewFiles)]);
 }

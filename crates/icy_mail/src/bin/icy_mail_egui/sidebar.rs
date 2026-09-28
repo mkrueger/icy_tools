@@ -98,6 +98,16 @@ impl MailApp {
                 },
                 fl!(LANGUAGE_LOADER, "folder-outbox-tooltip"),
             ));
+            let files = self.file_count();
+            if files > 0 {
+                entries.push((
+                    Folder::Bulletins,
+                    Some(Icon::Bulletins),
+                    fl!(LANGUAGE_LOADER, "folder-bulletins"),
+                    Badge::Total(files),
+                    fl!(LANGUAGE_LOADER, "folder-bulletins-tooltip"),
+                ));
+            }
             for (folder, icon, label, badge, tooltip) in entries {
                 let image = icon.map(|icon| self.icons.image(&context, icon, 18.0));
                 let response = widgets::nav_row(ui, image, &label, badge, self.folder == folder, focused).on_hover_text(tooltip);

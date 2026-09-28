@@ -2,14 +2,15 @@ use eframe::egui;
 use i18n_embed_fl::fl;
 use icy_engine_gui::egui::appearance;
 use icy_mail::{
-    LANGUAGE_LOADER,
     drafts::DraftKind,
+    qwk::{PacketFile, PacketFileKind},
     reader::{MessageColumn, Pane, ViewMode},
     threading::Row,
+    LANGUAGE_LOADER,
 };
 
 use super::{
-    app::{Folder, MailApp, Modal, draft_title},
+    app::{draft_title, Folder, MailApp, Modal},
     widgets::{self, Cell, Icon, ROW_HEIGHT},
 };
 
@@ -75,10 +76,10 @@ impl MailApp {
     /// Folder heading and its messages or drafts. Returns whether the user picked an entry.
     pub fn list(&mut self, ui: &mut egui::Ui) -> bool {
         self.list_title(ui);
-        if self.folder == Folder::Drafts {
-            self.draft_list(ui)
-        } else {
-            self.message_list(ui)
+        match self.folder {
+            Folder::Drafts => self.draft_list(ui),
+            Folder::Bulletins => self.file_list(ui),
+            _ => self.message_list(ui),
         }
     }
 
@@ -98,6 +99,8 @@ impl MailApp {
                     ui.add(egui::Label::new(appearance::bold(ui, name).size(15.0)).truncate().selectable(false));
                     let detail = if self.folder == Folder::Drafts {
                         fl!(LANGUAGE_LOADER, "list-draft-count", count = (self.draft_count() as i64))
+                    } else if self.folder == Folder::Bulletins {
+                        fl!(LANGUAGE_LOADER, "status-files", count = (self.file_count() as i64))
                     } else {
                         let unread = self.reader.unread_count();
                         fl!(
@@ -113,7 +116,7 @@ impl MailApp {
                             if self.draft_count() > 0 && ui.add(appearance::primary_button(fl!(LANGUAGE_LOADER, "list-export-replies"))).clicked() {
                                 self.export(&context);
                             }
-                        } else {
+                        } else if self.folder.holds_messages() {
                             let unread_only = self.reader.unread_only;
                             if widgets::pill(ui, unread_only, &fl!(LANGUAGE_LOADER, "list-unread"))
                                 .on_hover_text(fl!(LANGUAGE_LOADER, "list-show-only-unread-messages"))
@@ -445,6 +448,86 @@ impl MailApp {
             None => {}
         }
         picked
+    }
+}
+
+impl MailApp {
+    /// Welcome, news and goodbye screens, bulletins and new files lists of the packet.
+    fn file_list(&mut self, ui: &mut egui::Ui) -> bool {
+        let context = ui.ctx().clone();
+        ui.spacing_mut().item_spacing.y = 0.0;
+        let Some(package) = self.reader.package.clone() else {
+            return false;
+        };
+        let width = ui.available_width().max(560.0);
+        let widths = [FLAGS_WIDTH, width - FLAGS_WIDTH - 200.0 - 56.0, 200.0, 56.0];
+        let focused = self.focus == Pane::Messages;
+        let mut select = None;
+        egui::ScrollArea::horizontal()
+            .id_salt("file-columns")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.set_width(width);
+                let column_title = fl!(LANGUAGE_LOADER, "list-column-title");
+                let column_file = fl!(LANGUAGE_LOADER, "list-column-file");
+                let column_lines = fl!(LANGUAGE_LOADER, "list-column-lines");
+                widgets::header(
+                    ui,
+                    &widths,
+                    &["", column_title.as_str(), column_file.as_str(), column_lines.as_str()],
+                    None,
+                    false,
+                );
+                let mut scroll = egui::ScrollArea::vertical().id_salt("file-rows").auto_shrink([false, false]);
+                if self.reveal_message {
+                    if let Some(position) = self.selected_file {
+                        scroll = scroll.vertical_scroll_offset(widgets::reveal(position, self.message_view.x, self.message_view.y));
+                    }
+                    self.reveal_message = false;
+                }
+                let output = scroll.show_rows(ui, ROW_HEIGHT, package.files.len(), |ui, range| {
+                    for position in range {
+                        let file = &package.files[position];
+                        let title = file_title(file);
+                        let lines = file.lines().to_string();
+                        let (response, cells, colors) = widgets::row(
+                            ui,
+                            &widths,
+                            &[Cell::new(""), Cell::new(&title), Cell::new(&file.name).weak(), Cell::new(&lines).weak().right()],
+                            self.selected_file == Some(position),
+                            focused,
+                        );
+                        let flags = cells[0];
+                        let icon = if file.kind == PacketFileKind::NewFiles { Icon::Open } else { Icon::Bulletins };
+                        let rect = egui::Rect::from_min_size(egui::pos2(flags.left() + 6.0, flags.center().y - 8.0), egui::Vec2::splat(16.0));
+                        self.icons.paint(ui, icon, rect, colors.weak);
+                        if response.clicked() || response.secondary_clicked() {
+                            select = Some((position, response.double_clicked()));
+                        }
+                    }
+                });
+                self.message_view = egui::vec2(output.state.offset.y, output.inner_rect.height());
+            });
+        let picked = select.is_some();
+        if let Some((position, open)) = select {
+            self.selected_file = Some(position);
+            self.set_focus(if open { Pane::Content } else { Pane::Messages }, &context);
+        }
+        picked
+    }
+}
+
+/// Display name of a packet file; bulletins are numbered by the extension of `BLT-<conference>.<number>`.
+pub fn file_title(file: &PacketFile) -> String {
+    match file.kind {
+        PacketFileKind::Welcome => fl!(LANGUAGE_LOADER, "file-kind-welcome"),
+        PacketFileKind::News => fl!(LANGUAGE_LOADER, "file-kind-news"),
+        PacketFileKind::Bulletin => match file.name.rsplit_once('.').and_then(|(_, number)| number.parse::<u32>().ok()) {
+            Some(number) => fl!(LANGUAGE_LOADER, "file-kind-bulletin-number", number = number),
+            None => fl!(LANGUAGE_LOADER, "file-kind-bulletin"),
+        },
+        PacketFileKind::NewFiles => fl!(LANGUAGE_LOADER, "file-kind-new-files"),
+        PacketFileKind::Goodbye => fl!(LANGUAGE_LOADER, "file-kind-goodbye"),
     }
 }
 

@@ -75,10 +75,17 @@ impl MailApp {
                         egui::pos2(rect.right() - 36.0, rect.bottom() - 3.0),
                     );
                     let (top, bottom) = text.split_top_bottom_at_fraction(0.5);
-                    let size = std::fs::metadata(path).ok().filter(|metadata| metadata.is_file()).map(|metadata| format_size(metadata.len()));
+                    let size = std::fs::metadata(path)
+                        .ok()
+                        .filter(|metadata| metadata.is_file())
+                        .map(|metadata| format_size(metadata.len()));
                     let size_font = egui::FontId::proportional(11.5);
                     let size_width = size.as_ref().map_or(0.0, |size| {
-                        ui.painter().layout_no_wrap(size.clone(), size_font.clone(), ui.visuals().weak_text_color()).size().x + 10.0
+                        ui.painter()
+                            .layout_no_wrap(size.clone(), size_font.clone(), ui.visuals().weak_text_color())
+                            .size()
+                            .x
+                            + 10.0
                     });
                     if let Some(size) = &size {
                         widgets::paint_text(ui, top, size, size_font, ui.visuals().weak_text_color(), egui::Align::Max);

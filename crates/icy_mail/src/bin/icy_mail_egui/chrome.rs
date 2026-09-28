@@ -1,8 +1,8 @@
 use eframe::egui::{self, Key, KeyboardShortcut, Modifiers};
 use i18n_embed_fl::fl;
 use icy_engine_gui::ScalingMode;
-use icy_mail::LANGUAGE_LOADER;
 use icy_mail::reader::ViewMode;
+use icy_mail::LANGUAGE_LOADER;
 
 use super::{
     app::{Folder, MailApp, Modal, NoticeKind},
@@ -177,7 +177,7 @@ impl MailApp {
                     });
                 }
                 if response.changed() {
-                    if self.folder == Folder::Drafts {
+                    if !self.folder.holds_messages() {
                         self.select_folder(Folder::All);
                     }
                     self.filter_changed();
@@ -265,7 +265,7 @@ impl MailApp {
             ui,
             &fl!(LANGUAGE_LOADER, "menu-mark-folder-read"),
             &shortcut(&context, Modifiers::SHIFT, Key::C),
-            open && self.folder != Folder::Drafts,
+            open && self.folder.holds_messages(),
         ) {
             self.mark_folder_read(&context);
         }
@@ -285,7 +285,7 @@ impl MailApp {
             ui,
             &fl!(LANGUAGE_LOADER, "menu-add-author"),
             &shortcut(&context, Modifiers::SHIFT, Key::A),
-            selected && self.folder != Folder::Drafts,
+            selected && self.folder.holds_messages(),
         ) {
             self.add_sender(&context);
         }
@@ -366,6 +366,8 @@ impl MailApp {
             } else if self.reader.package.is_some() {
                 let text = if self.folder == Folder::Drafts {
                     fl!(LANGUAGE_LOADER, "status-drafts", count = self.draft_count())
+                } else if self.folder == Folder::Bulletins {
+                    fl!(LANGUAGE_LOADER, "status-files", count = self.file_count())
                 } else {
                     let unread = self.reader.unread_count();
                     fl!(LANGUAGE_LOADER, "status-messages", count = self.reader.all_messages().len(), unread = unread)

@@ -4,7 +4,7 @@ use eframe::egui::{self, Color32, FontId, Rect, Response, Sense, Stroke};
 use icy_engine_gui::egui::appearance;
 use icy_mail::{
     reader::SortDirection,
-    text::{HeaderText, find_ignore_case},
+    text::{find_ignore_case, HeaderText},
 };
 
 pub const ROW_HEIGHT: f32 = 24.0;
@@ -31,6 +31,7 @@ pub enum Icon {
     Search,
     Close,
     Threads,
+    Bulletins,
     List,
     Info,
     Delete,
@@ -65,6 +66,7 @@ impl Icon {
             Self::Search => include_bytes!("../../../data/icons/search.svg"),
             Self::Close => include_bytes!("../../../data/icons/close.svg"),
             Self::Threads => include_bytes!("../../../data/icons/forum.svg"),
+            Self::Bulletins => include_bytes!("../../../data/icons/campaign.svg"),
             Self::List => include_bytes!("../../../data/icons/view_list.svg"),
             Self::Info => include_bytes!("../../../data/icons/info.svg"),
             Self::Delete => include_bytes!("../../../data/icons/delete.svg"),

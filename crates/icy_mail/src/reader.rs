@@ -9,9 +9,9 @@ use icy_engine::{EditableScreen, Size, TextScreen};
 use rayon::prelude::*;
 
 use crate::{
-    LANGUAGE_LOADER, Res,
     qwk::{MessageInfo, QwkPackage},
     threading::{self, Row},
+    Res, LANGUAGE_LOADER,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -584,6 +584,24 @@ pub fn step(current: usize, direction: NavigateDirection, len: usize) -> usize {
 }
 
 pub fn render_body(data: &[u8]) -> Res<TextScreen> {
+    render_with(data, &mut icy_parser_core::AnsiParser::new())
+}
+
+/// Renders a bulletin, news or new files screen. These stop at the DOS end-of-file mark and may use
+/// PCBoard `@X` colours, which MultiMail's viewer translates as well.
+pub fn render_file(data: &[u8]) -> Res<TextScreen> {
+    let data = data.split(|byte| *byte == 0x1A).next().unwrap_or_default();
+    let pcboard = data
+        .windows(4)
+        .any(|code| code[0] == b'@' && code[1].eq_ignore_ascii_case(&b'x') && code[2].is_ascii_hexdigit() && code[3].is_ascii_hexdigit());
+    if pcboard {
+        render_with(data, &mut icy_parser_core::PcBoardParser::new())
+    } else {
+        render_body(data)
+    }
+}
+
+fn render_with(data: &[u8], parser: &mut dyn icy_parser_core::CommandParser) -> Res<TextScreen> {
     let mut normalized = Vec::with_capacity(data.len() + data.len() / 8);
     let mut previous = 0;
     for byte in data {
@@ -596,7 +614,7 @@ pub fn render_body(data: &[u8]) -> Res<TextScreen> {
     let height = normalized.iter().filter(|byte| **byte == b'\n').count().max(24) + 1;
     let mut screen = TextScreen::new(Size::new(80, height as i32));
     screen.terminal_state_mut().is_terminal_buffer = false;
-    icy_engine::load_with_parser(&mut screen, &mut icy_parser_core::AnsiParser::new(), &normalized, true, -1)?;
+    icy_engine::load_with_parser(&mut screen, parser, &normalized, true, -1)?;
     screen.caret_mut().visible = false;
     Ok(screen)
 }
@@ -843,5 +861,17 @@ mod tests {
         assert_eq!(screen.char_at(Position::new(0, 2)).ch, 'L');
         assert_eq!(screen.char_at(Position::new(0, 0)).attribute.foreground(), 4);
         assert!(!screen.caret().visible);
+    }
+
+    #[test]
+    fn packet_files_translate_pcboard_colors_and_stop_at_end_of_file() {
+        let screen = render_file(b"@X0EDEMO@X07 me@home.net\r\n\x1aSAUCE").unwrap();
+        assert_eq!(screen.char_at(Position::new(0, 0)).ch, 'D');
+        assert_eq!(screen.char_at(Position::new(0, 0)).attribute.foreground(), 14);
+        assert_eq!(screen.char_at(Position::new(5, 0)).attribute.foreground(), 7);
+        assert_eq!(screen.char_at(Position::new(0, 1)).ch, ' ', "text after ^Z is not shown");
+        let plain = render_file(b"mail me@home.net or you@there.org").unwrap();
+        let line: String = (0..33).map(|x| plain.char_at(Position::new(x, 0)).ch).collect();
+        assert_eq!(line, "mail me@home.net or you@there.org", "without @X codes, @ stays literal");
     }
 }

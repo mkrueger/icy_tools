@@ -65,6 +65,10 @@ status-replies-to-send = { $count ->
    *[other] { $count } replies to send
 }
 status-show-outbox = Show the outbox
+status-files = { $count ->
+    [one] 1 file
+   *[other] { $count } files
+}
 
 # Sidebar
 sidebar-offline-mail = Offline mail
@@ -83,6 +87,8 @@ folder-personal = Personal
 folder-personal-tooltip = Messages addressed to { $user }
 folder-outbox = Outbox
 folder-outbox-tooltip = Replies and new messages waiting to be exported
+folder-bulletins = Bulletins
+folder-bulletins-tooltip = Welcome and news screens, bulletins and new files lists sent by the BBS
 
 # File dialogs
 loading-open-title = Open Mail Package
@@ -149,6 +155,7 @@ notice-no-tagline = This message has no tagline
 notice-tagline-known = This tagline is already in your list
 notice-tagline-saved = Tagline saved: ... { $tagline }
 notice-message-copied = Message copied to the clipboard
+notice-text-copied = Text copied to the clipboard
 
 # Settings
 settings-title = Settings
@@ -385,6 +392,17 @@ reader-from = from
 reader-delete = Delete
 reader-fix-before-export = Fix before exporting
 
+# Bulletin preview
+reader-copy-file-text = Copy text
+reader-next-file = Next file
+reader-previous-file = Previous file
+file-kind-welcome = Welcome screen
+file-kind-news = News
+file-kind-bulletin = Bulletin
+file-kind-bulletin-number = Bulletin { $number }
+file-kind-new-files = New files
+file-kind-goodbye = Goodbye screen
+
 # Message list
 list-draft-count = { $count ->
     [one] 1 message
@@ -399,6 +417,8 @@ list-column-subject-threads = Subject (threads)
 list-column-subject = Subject
 list-column-date = Date
 list-column-lines = Lines
+list-column-title = Title
+list-column-file = File
 list-reply = Reply
 list-forward = Forward
 list-mark-as-read = Mark as Read

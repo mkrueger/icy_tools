@@ -152,7 +152,11 @@ fn body_highlights_preserve_colors_selection_and_copied_text() {
     view = ScreenView::new(icy_mail::reader::render_body(b"\x1b[32mNew message").unwrap());
     let first = view.terminal.screen.lock().char_at((0, 0).into());
     highlights.update(&mut view, "grüße", true).unwrap();
-    assert_eq!(view.terminal.screen.lock().char_at((0, 0).into()), first, "old colors must not leak into another message");
+    assert_eq!(
+        view.terminal.screen.lock().char_at((0, 0).into()),
+        first,
+        "old colors must not leak into another message"
+    );
 }
 
 #[test]
@@ -242,7 +246,11 @@ fn message_search_ignores_stale_results_and_reports_body_errors() {
 
     Arc::make_mut(mail.reader.package.as_mut().unwrap()).descriptors.clear();
     search_messages(&context, &mut mail, "unreadable body");
-    assert!(mail.error.as_deref().is_some_and(|error| error.contains("Unable to search message")), "{:?}", mail.error);
+    assert!(
+        mail.error.as_deref().is_some_and(|error| error.contains("Unable to search message")),
+        "{:?}",
+        mail.error
+    );
 }
 
 #[test]
@@ -367,9 +375,15 @@ fn reader_drag_uses_release_position_in_both_directions_and_clamps_to_body() {
         );
 
         frame(&context, &mut mail, size, pointer(middle, true));
-        assert!(mail.screen.terminal.screen.lock().selection().is_none(), "mouse-down must immediately clear the selection");
+        assert!(
+            mail.screen.terminal.screen.lock().selection().is_none(),
+            "mouse-down must immediately clear the selection"
+        );
         frame(&context, &mut mail, size, pointer(middle, false));
-        assert!(mail.screen.terminal.screen.lock().selection().is_none(), "a plain click must clear the previous drag selection");
+        assert!(
+            mail.screen.terminal.screen.lock().selection().is_none(),
+            "a plain click must clear the previous drag selection"
+        );
         for position in [left, right, middle] {
             frame(&context, &mut mail, size, pointer(position, true));
             frame(&context, &mut mail, size, pointer(position, false));
@@ -784,7 +798,9 @@ fn color_picker_buttons_fit_side_by_side() {
     frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
     click_label(&context, &mut mail, size, "Aa");
     let output = settle(&context, &mut mail, size);
-    let popup = context.memory(|memory| memory.area_rect(egui::Id::new("editor-colors"))).expect("color picker is open");
+    let popup = context
+        .memory(|memory| memory.area_rect(egui::Id::new("editor-colors")))
+        .expect("color picker is open");
     let buttons: Vec<_> = ["editor-default", "editor-cancel", "editor-apply"]
         .into_iter()
         .map(|id| label(&output, &icy_mail::LANGUAGE_LOADER.get(id)))
@@ -835,6 +851,59 @@ fn thread_twisty_and_arrow_keys_collapse_and_expand_threads() {
     assert!(!mail.reader.is_collapsed(0), "Right expands the thread");
     frame(&context, &mut mail, size, vec![key(egui::Key::ArrowRight, egui::Modifiers::NONE)]);
     assert_eq!(mail.reader.selected_message, Some(1), "Right moves to the first reply");
+}
+
+#[test]
+fn bulletins_folder_lists_and_shows_packet_files() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    let unread = mail.reader.unread_count();
+    assert!(mail.folders().contains(&app::Folder::Bulletins));
+    click_label(&context, &mut mail, size, "Bulletins");
+    assert_eq!(mail.folder, app::Folder::Bulletins);
+    assert_eq!(mail.selected_file, Some(0));
+    frame(&context, &mut mail, size, vec![]);
+    wait(&mut mail, &context);
+    let output = settle(&context, &mut mail, size);
+    for title in [
+        "Welcome screen",
+        "News",
+        "Bulletin 2",
+        "Bulletin 10",
+        "New files",
+        "Goodbye screen",
+        "NEWFILES.DAT",
+    ] {
+        assert!(count(&output, title) > 0, "{title} missing");
+    }
+    let first_line = |mail: &app::MailApp, len: i32| -> String {
+        let screen = mail.screen.terminal.screen.lock();
+        (0..len).map(|x| screen.char_at((x, 0).into()).ch).collect()
+    };
+    assert_eq!(first_line(&mail, 7), "Welcome");
+
+    mail.set_focus(Pane::Messages, &context);
+    frame(&context, &mut mail, size, vec![key(egui::Key::End, egui::Modifiers::NONE)]);
+    assert_eq!(mail.selected_file, Some(5));
+    frame(&context, &mut mail, size, vec![key(egui::Key::ArrowUp, egui::Modifiers::NONE)]);
+    frame(&context, &mut mail, size, vec![]);
+    wait(&mut mail, &context);
+    assert_eq!(mail.rendered_file, Some(4));
+    assert_eq!(first_line(&mail, 4), "DEMO", "PCBoard colour codes are not printed");
+
+    // Message actions do not apply to bulletins.
+    frame(&context, &mut mail, size, vec![key(egui::Key::M, egui::Modifiers::NONE)]);
+    assert_eq!(mail.reader.unread_count(), unread);
+    assert!(!mail.message_selected());
+
+    mail.select_folder(app::Folder::All);
+    frame(&context, &mut mail, size, vec![]);
+    wait(&mut mail, &context);
+    assert_eq!(mail.rendered_file, None, "leaving the folder shows the message again");
+    assert_eq!(mail.rendered, mail.reader.selected_message);
 }
 
 fn wait(mail: &mut app::MailApp, context: &egui::Context) {
@@ -1270,7 +1339,11 @@ fn welcome_page_opens_and_forgets_recent_packets() {
     let row = label(&output, "TEST.QWK");
     let packet = fresh.recent.as_ref().unwrap().packets[0].clone();
     let bytes = std::fs::metadata(&packet).unwrap().len();
-    let expected = if bytes >= 1024 { format!("{:.1} KiB", bytes as f64 / 1024.0) } else { format!("{bytes} B") };
+    let expected = if bytes >= 1024 {
+        format!("{:.1} KiB", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} B")
+    };
     let size_label = label(&output, &expected);
     assert!(size_label.left() > row.right(), "packet size is shown beside the name");
     assert!((size_label.center().y - row.center().y).abs() < 1.0);
@@ -1389,7 +1462,10 @@ fn large_packet_body_search_throughput() {
             }
             _ => panic!("expected body search results"),
         }
-        eprintln!("[perf] complete search {query:?}, {count} messages: {:.2} ms", start.elapsed().as_secs_f64() * 1000.0);
+        eprintln!(
+            "[perf] complete search {query:?}, {count} messages: {:.2} ms",
+            start.elapsed().as_secs_f64() * 1000.0
+        );
     }
 }
 
@@ -1627,12 +1703,19 @@ fn gpu_message_body_search_highlights() {
             }
             count
         };
-        assert!(highlighted_pixels(&pixels, mail.content_rect) > 100, "body matches must be visibly highlighted at scale {scale}");
+        assert!(
+            highlighted_pixels(&pixels, mail.content_rect) > 100,
+            "body matches must be visibly highlighted at scale {scale}"
+        );
         mail.reader.filter.clear();
         mail.filter_changed();
         gpu.capture(&mut mail, size, scale, vec![], "body-search-clearing");
         let (pixels, _) = gpu.capture(&mut mail, size, scale, vec![], "body-search-cleared");
-        assert_eq!(highlighted_pixels(&pixels, mail.content_rect), 0, "clearing the filter restores the terminal colors");
+        assert_eq!(
+            highlighted_pixels(&pixels, mail.content_rect),
+            0,
+            "clearing the filter restores the terminal colors"
+        );
         mail.reader.filter = "line 1".into();
         mail.filter_changed();
     }
@@ -1910,7 +1993,10 @@ fn gpu_long_message_scroll_and_selection_copy() {
         gpu.capture(&mut mail, [1100, 760], 1.0, pointer(point, true), "single-press");
         assert!(mail.screen.terminal.screen.lock().selection().is_none(), "clear on mouse-down");
         gpu.capture(&mut mail, [1100, 760], 1.0, pointer(point, false), "single-release");
-        assert!(mail.screen.terminal.screen.lock().selection().is_none(), "separate clicks must not create word/line selections");
+        assert!(
+            mail.screen.terminal.screen.lock().selection().is_none(),
+            "separate clicks must not create word/line selections"
+        );
     }
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::End, egui::Modifiers::NONE)], "long-end");
     assert!(mail.screen.offset.y > 1000.0);
@@ -1961,7 +2047,13 @@ fn zz_temp_editor_rows() {
         gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
     }
     for line in 0..30 {
-        gpu.capture(&mut mail, [1100, 760], 1.0, vec![text(&format!("line {line}")), key(egui::Key::Enter, egui::Modifiers::NONE)], "warmup");
+        gpu.capture(
+            &mut mail,
+            [1100, 760],
+            1.0,
+            vec![text(&format!("line {line}")), key(egui::Key::Enter, egui::Modifiers::NONE)],
+            "warmup",
+        );
     }
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::Home, egui::Modifiers::COMMAND)], "warmup");
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
@@ -1995,14 +2087,23 @@ fn gpu_reader_deselecting_clears_the_rendered_highlight() {
             info.bounds_x + info.viewport_x + info.font_width * info.display_scale * 0.5,
             info.bounds_y + info.viewport_y + info.font_height * info.display_scale * 0.5,
         );
-        (start, start + egui::vec2(info.font_width * info.display_scale * 4.0, info.font_height * info.display_scale * 2.0))
+        (
+            start,
+            start + egui::vec2(info.font_width * info.display_scale * 4.0, info.font_height * info.display_scale * 2.0),
+        )
     };
     let (baseline, _) = gpu.capture(&mut mail, size, 1.0, vec![egui::Event::PointerMoved(start)], "hover");
     let baseline = body_pixels(&baseline);
     let select = |gpu: &mut Gpu, mail: &mut app::MailApp| {
         gpu.capture(mail, size, 1.0, pointer(start, true), "press");
         for step in 1..=4 {
-            gpu.capture(mail, size, 1.0, vec![egui::Event::PointerMoved(start + (end - start) * (step as f32 / 4.0))], "drag");
+            gpu.capture(
+                mail,
+                size,
+                1.0,
+                vec![egui::Event::PointerMoved(start + (end - start) * (step as f32 / 4.0))],
+                "drag",
+            );
         }
         gpu.capture(mail, size, 1.0, pointer(end, false), "release").0
     };

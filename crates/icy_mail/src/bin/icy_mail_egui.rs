@@ -23,10 +23,10 @@ mod loading;
 mod reader_view;
 #[path = "icy_mail_egui/settings.rs"]
 mod settings;
-#[path = "icy_mail_egui/tagline_dialog.rs"]
-mod tagline_dialog;
 #[path = "icy_mail_egui/sidebar.rs"]
 mod sidebar;
+#[path = "icy_mail_egui/tagline_dialog.rs"]
+mod tagline_dialog;
 #[path = "icy_mail_egui/terminal_editor.rs"]
 mod terminal_editor;
 #[path = "icy_mail_egui/welcome.rs"]

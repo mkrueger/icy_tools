@@ -6,15 +6,15 @@ use icy_engine_gui::{
     ScalingMode,
 };
 use icy_mail::{
-    LANGUAGE_LOADER,
     drafts::{Draft, DraftKind},
     editor,
     reader::{NavigateDirection, Pane},
+    LANGUAGE_LOADER,
 };
 
 use super::{
-    app::{Folder, MailApp, Modal, draft_title},
-    list::display_date,
+    app::{draft_title, Folder, MailApp, Modal},
+    list::{self, display_date},
     widgets::{self, Icon},
 };
 
@@ -70,6 +70,10 @@ impl MailApp {
     pub fn content(&mut self, ui: &mut egui::Ui) {
         if self.folder == Folder::Drafts {
             self.draft_preview(ui);
+            return;
+        }
+        if self.folder == Folder::Bulletins {
+            self.file_preview(ui);
             return;
         }
         let context = ui.ctx().clone();
@@ -307,7 +311,7 @@ impl MailApp {
 
     /// The message terminal with focus handling and mouse selection.
     fn terminal_body(&mut self, ui: &mut egui::Ui) -> egui::Response {
-        let query = if self.folder == Folder::Drafts { "" } else { &self.reader.filter };
+        let query = if self.folder.holds_messages() { &self.reader.filter } else { "" };
         if let Err(error) = self.body_highlights.update(&mut self.screen, query, ui.visuals().dark_mode) {
             self.error = Some(error.to_string());
         }
@@ -445,9 +449,89 @@ impl MailApp {
         self.loader.body_generation = self.loader.body_generation.wrapping_add(1);
         self.body_loading = false;
         self.rendered = None;
+        self.rendered_file = None;
         self.selection_anchor = None;
         self.last_reader_click = None;
         self.rendered_draft = Some((draft.id, text));
+    }
+
+    /// A bulletin, news or new files screen of the packet.
+    fn file_preview(&mut self, ui: &mut egui::Ui) {
+        let context = ui.ctx().clone();
+        let Some(file) = self.selected_file().cloned() else {
+            return;
+        };
+        let compact = ui.available_height() < 220.0;
+        let mut navigate = None;
+        egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: 14,
+                right: 8,
+                top: if compact { 2 } else { 8 },
+                bottom: if compact { 2 } else { 8 },
+            })
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let actions = 3.0 * 32.0 + 12.0;
+                    let width = (ui.available_width() - actions).max(40.0);
+                    ui.allocate_ui_with_layout(egui::vec2(width, 30.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.set_min_width(width);
+                        let title = appearance::bold(ui, list::file_title(&file)).size(if compact { 14.0 } else { 17.0 });
+                        ui.add(egui::Label::new(title).truncate());
+                        ui.add(egui::Label::new(egui::RichText::new(&file.name).weak().size(12.0)).truncate());
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        let position = self.selected_file.unwrap_or(0);
+                        if self
+                            .icons
+                            .button(ui, Icon::Down, &fl!(LANGUAGE_LOADER, "reader-next-file"), position + 1 < self.file_count())
+                            .clicked()
+                        {
+                            navigate = Some(NavigateDirection::Down);
+                        }
+                        if self
+                            .icons
+                            .button(ui, Icon::Up, &fl!(LANGUAGE_LOADER, "reader-previous-file"), position > 0)
+                            .clicked()
+                        {
+                            navigate = Some(NavigateDirection::Up);
+                        }
+                        ui.add_space(6.0);
+                        if self
+                            .icons
+                            .button(ui, Icon::Copy, &fl!(LANGUAGE_LOADER, "reader-copy-file-text"), !self.body_loading)
+                            .clicked()
+                        {
+                            self.copy_message(&context);
+                        }
+                    });
+                });
+            });
+        let separator = ui.visuals().widgets.noninteractive.bg_stroke;
+        ui.painter().hline(ui.max_rect().x_range(), ui.cursor().top(), separator);
+        if let Some(direction) = navigate {
+            let files = self.file_count();
+            self.selected_file = self.selected_file.map(|position| icy_mail::reader::step(position, direction, files));
+            self.reveal_message = true;
+        }
+        if self.body_loading || self.rendered_file != self.selected_file {
+            ui.centered_and_justified(|ui| {
+                ui.spinner();
+            });
+            return;
+        }
+        let response = self.terminal_body(ui);
+        response.context_menu(|ui| {
+            if ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
+                self.copy(ui.ctx());
+                ui.close();
+            }
+            if ui.button(fl!(LANGUAGE_LOADER, "reader-copy-file-text")).clicked() {
+                self.copy_message(ui.ctx());
+                ui.close();
+            }
+        });
     }
 
     fn draft_preview(&mut self, ui: &mut egui::Ui) {

@@ -4,9 +4,8 @@ use bstr::ByteSlice;
 use eframe::egui::{self, Key, Vec2};
 use i18n_embed_fl::fl;
 use icy_engine::{BufferType, Position, Selection, Size, TextScreen};
-use icy_engine_gui::{MonitorSettings, egui::screen::ScreenView};
+use icy_engine_gui::{egui::screen::ScreenView, MonitorSettings};
 use icy_mail::{
-    LANGUAGE_LOADER,
     address_book::AddressBook,
     drafts::{Compose, Draft, DraftStore},
     editor,
@@ -15,14 +14,14 @@ use icy_mail::{
     reader::{NavigateDirection, Pane, Reader, ViewMode},
     state::{ReadState, RecentPackets},
     taglines::{self, Taglines},
-    text,
+    text, LANGUAGE_LOADER,
 };
 use parking_lot::Mutex;
 
 use super::{
     address_dialog::AddressDialog,
     composer::Composer,
-    loading::{Event, Loader},
+    loading::{BodySource, Event, Loader},
     settings::SettingsDialog,
     tagline_dialog::TaglineDialog,
     widgets::{Icons, ROW_HEIGHT},
@@ -34,7 +33,16 @@ pub enum Folder {
     All,
     Personal,
     Drafts,
+    /// Welcome, news and goodbye screens, bulletins and new files lists of the packet.
+    Bulletins,
     Conference(u16),
+}
+
+impl Folder {
+    /// Whether the list shows packet messages, so message actions apply.
+    pub fn holds_messages(self) -> bool {
+        !matches!(self, Self::Drafts | Self::Bulletins)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -96,6 +104,8 @@ pub struct MailApp {
     pub storage: Option<PathBuf>,
     pub folder: Folder,
     pub selected_draft: Option<u64>,
+    /// Index into the packet's `files` while the bulletins folder is open.
+    pub selected_file: Option<usize>,
     pub composer: Option<Composer>,
     pub modal: Option<Modal>,
     pub notice: Option<Notice>,
@@ -106,6 +116,8 @@ pub struct MailApp {
     pub rendered: Option<usize>,
     /// The outbox draft (id and text) shown in `screen`.
     pub rendered_draft: Option<(u64, String)>,
+    /// The packet file shown in `screen`.
+    pub rendered_file: Option<usize>,
     pub selection_anchor: Option<Selection>,
     pub last_reader_click: Option<(egui::Pos2, f64, u8)>,
     pub body_highlights: super::reader_view::BodyHighlights,
@@ -183,6 +195,7 @@ impl MailApp {
             storage,
             folder: Folder::All,
             selected_draft: None,
+            selected_file: None,
             composer: None,
             modal: None,
             notice: None,
@@ -191,6 +204,7 @@ impl MailApp {
             icons: Icons::default(),
             rendered: None,
             rendered_draft: None,
+            rendered_file: None,
             selection_anchor: None,
             last_reader_click: None,
             body_highlights: super::reader_view::BodyHighlights::default(),
@@ -282,7 +296,7 @@ impl MailApp {
                     match result {
                         Ok(screen) => {
                             self.screen = ScreenView::new(screen);
-                            if self.folder != Folder::Drafts {
+                            if self.folder.holds_messages() {
                                 if let Some(index) = self.rendered {
                                     if !self.reader.is_read(index) {
                                         self.set_read(context, &[index], true);
@@ -396,6 +410,10 @@ impl MailApp {
         self.drafts = Some(drafts);
         self.path = Some(path.clone());
         self.rendered = None;
+        self.rendered_file = None;
+        if !reload {
+            self.selected_file = None;
+        }
         self.refresh_counts();
         if reload {
             self.reader.view_mode = previous.2;
@@ -422,17 +440,38 @@ impl MailApp {
     }
 
     fn sync_body(&mut self, context: &egui::Context) {
-        if self.loading.is_some() || self.folder == Folder::Drafts || (self.rendered == self.reader.selected_message && self.rendered_draft.is_none()) {
+        if self.loading.is_some() || self.folder == Folder::Drafts {
+            return;
+        }
+        if self.folder == Folder::Bulletins {
+            let (Some(package), Some(index)) = (&self.reader.package, self.selected_file) else {
+                return;
+            };
+            if self.rendered_file == Some(index) && self.rendered_draft.is_none() {
+                return;
+            }
+            self.rendered = None;
+            self.rendered_draft = None;
+            self.rendered_file = Some(index);
+            self.selection_anchor = None;
+            self.last_reader_click = None;
+            self.reveal_message = true;
+            self.body_loading = true;
+            self.loader.body(package.clone(), BodySource::File(index), context);
+            return;
+        }
+        if self.rendered == self.reader.selected_message && self.rendered_draft.is_none() && self.rendered_file.is_none() {
             return;
         }
         self.rendered = self.reader.selected_message;
         self.rendered_draft = None;
+        self.rendered_file = None;
         self.selection_anchor = None;
         self.last_reader_click = None;
         self.reveal_message = true;
         if let (Some(package), Some(index)) = (&self.reader.package, self.reader.selected_message) {
             self.body_loading = true;
-            self.loader.body(package.clone(), index, context);
+            self.loader.body(package.clone(), BodySource::Message(index), context);
         } else {
             self.loader.body_generation = self.loader.body_generation.wrapping_add(1);
             self.body_loading = false;
@@ -488,11 +527,21 @@ impl MailApp {
             folders.push(Folder::Personal);
         }
         folders.push(Folder::Drafts);
+        if self.file_count() > 0 {
+            folders.push(Folder::Bulletins);
+        }
         folders.extend(self.reader.conferences.iter().filter_map(|row| row.number.map(Folder::Conference)));
         folders
     }
 
-    pub fn select_folder(&mut self, folder: Folder) {
+    pub fn select_folder(&mut self, mut folder: Folder) {
+        let files = self.file_count();
+        if folder == Folder::Bulletins && files == 0 {
+            folder = Folder::All;
+        }
+        if folder == Folder::Bulletins && self.selected_file.is_none_or(|index| index >= files) {
+            self.selected_file = Some(0);
+        }
         self.folder = folder;
         self.reveal_message = true;
         self.reveal_sidebar = true;
@@ -501,6 +550,9 @@ impl MailApp {
             if !drafts.iter().any(|draft| Some(draft.id) == self.selected_draft) {
                 self.selected_draft = drafts.first().map(|draft| draft.id);
             }
+            return;
+        }
+        if folder == Folder::Bulletins {
             return;
         }
         self.reader.personal = (folder == Folder::Personal).then(|| self.user_name());
@@ -518,6 +570,7 @@ impl MailApp {
             Folder::All => fl!(LANGUAGE_LOADER, "folder-all"),
             Folder::Personal => fl!(LANGUAGE_LOADER, "folder-personal"),
             Folder::Drafts => fl!(LANGUAGE_LOADER, "folder-outbox"),
+            Folder::Bulletins => fl!(LANGUAGE_LOADER, "folder-bulletins"),
             Folder::Conference(number) => self
                 .reader
                 .conferences
@@ -531,6 +584,15 @@ impl MailApp {
         self.drafts.as_ref().map_or(0, |store| store.drafts().len())
     }
 
+    /// Bulletins, news and new files lists in the packet.
+    pub fn file_count(&self) -> usize {
+        self.reader.package.as_ref().map_or(0, |package| package.files.len())
+    }
+
+    pub fn selected_file(&self) -> Option<&icy_mail::qwk::PacketFile> {
+        self.reader.package.as_ref()?.files.get(self.selected_file?)
+    }
+
     pub fn selected_info(&self) -> Option<&icy_mail::qwk::MessageInfo> {
         let package = self.reader.package.as_ref()?;
         package.infos.get(self.reader.selected_message?)
@@ -538,7 +600,7 @@ impl MailApp {
 
     /// Whether a message action (reply, forward, mark) applies to the list selection.
     pub fn message_selected(&self) -> bool {
-        self.folder != Folder::Drafts && self.reader.selected_message.is_some() && self.composer.is_none()
+        self.folder.holds_messages() && self.reader.selected_message.is_some() && self.composer.is_none()
     }
 
     pub fn set_read(&mut self, context: &egui::Context, indices: &[usize], read: bool) {
@@ -588,7 +650,7 @@ impl MailApp {
     }
 
     pub fn mark_folder_read(&mut self, context: &egui::Context) {
-        if self.folder == Folder::Drafts {
+        if !self.folder.holds_messages() {
             return;
         }
         let indices: Vec<_> = self.reader.all_messages().iter().map(|row| row.index).collect();
@@ -604,7 +666,7 @@ impl MailApp {
         if self.reader.package.is_none() {
             return;
         }
-        if self.folder != Folder::Drafts {
+        if self.folder.holds_messages() {
             if let Some(index) = self.reader.next_unread(self.reader.selected_message) {
                 self.reader.select_message(index);
                 self.reveal_message = true;
@@ -653,7 +715,7 @@ impl MailApp {
     }
 
     fn search_bodies(&mut self, context: &egui::Context) {
-        if self.loading.is_some() || self.folder == Folder::Drafts {
+        if self.loading.is_some() || !self.folder.holds_messages() {
             return;
         }
         if let Some(package) = self.reader.package.clone() {
@@ -993,7 +1055,7 @@ impl MailApp {
 
     /// The `... tagline` of the selected message, if it has one.
     pub fn message_tagline(&mut self) -> Option<String> {
-        if self.folder == Folder::Drafts {
+        if !self.folder.holds_messages() {
             return None;
         }
         let package = self.reader.package.clone()?;
@@ -1015,7 +1077,7 @@ impl MailApp {
     /// Adds the tagline of the selected message to the tagline list, like MultiMail's tagline stealer.
     pub fn save_tagline(&mut self, context: &egui::Context) {
         let Some(tagline) = self.message_tagline() else {
-            if self.message_selected() && self.folder != Folder::Drafts {
+            if self.message_selected() && self.folder.holds_messages() {
                 self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-no-tagline"));
             }
             return;
@@ -1050,8 +1112,15 @@ impl MailApp {
         }
     }
 
+    /// Copies the whole message, or the whole bulletin in the bulletins folder.
     pub fn copy_message(&mut self, context: &egui::Context) {
-        if self.body_loading || self.reader.selected_message.is_none() || self.folder == Folder::Drafts {
+        let file = self.folder == Folder::Bulletins;
+        let shown = if file {
+            self.selected_file.is_some()
+        } else {
+            self.folder.holds_messages() && self.reader.selected_message.is_some()
+        };
+        if self.body_loading || !shown {
             return;
         }
         {
@@ -1069,7 +1138,12 @@ impl MailApp {
                 let _ = screen.clear_selection();
             }
         }
-        self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-message-copied"));
+        let notice = if file {
+            fl!(LANGUAGE_LOADER, "notice-text-copied")
+        } else {
+            fl!(LANGUAGE_LOADER, "notice-message-copied")
+        };
+        self.notify(context, NoticeKind::Info, notice);
     }
 
     fn scroll_content(&mut self, direction: NavigateDirection) {
@@ -1108,6 +1182,13 @@ impl MailApp {
                 let current = drafts.iter().position(|draft| Some(draft.id) == self.selected_draft).unwrap_or(0);
                 self.selected_draft = Some(drafts[icy_mail::reader::step(current, direction, drafts.len())].id);
                 self.reveal_message = true;
+            }
+            Pane::Messages if self.folder == Folder::Bulletins => {
+                let files = self.file_count();
+                if files > 0 {
+                    self.selected_file = Some(icy_mail::reader::step(self.selected_file.unwrap_or(0), direction, files));
+                    self.reveal_message = true;
+                }
             }
             _ => {
                 self.reader.navigate(Pane::Messages, direction);
@@ -1204,7 +1285,7 @@ impl MailApp {
                 }
             }
         }
-        if self.focus == Pane::Messages && self.folder != Folder::Drafts && self.reader.view_mode == ViewMode::Threads {
+        if self.focus == Pane::Messages && self.folder.holds_messages() && self.reader.view_mode == ViewMode::Threads {
             if key(context, Key::ArrowLeft, false, false) && self.reader.collapse_or_parent() {
                 self.reveal_message = true;
             }

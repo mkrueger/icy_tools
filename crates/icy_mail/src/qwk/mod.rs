@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
-use crate::{LANGUAGE_LOADER, Res, text::HeaderText};
+use crate::{text::HeaderText, Res, LANGUAGE_LOADER};
 
 #[cfg(test)]
 pub mod tests;
@@ -83,8 +83,94 @@ pub struct QwkPackage {
     /// Header index, parallel to `descriptors`.
     pub infos: Vec<MessageInfo>,
     pub control_file: ControlDat,
+    /// Welcome, news and goodbye screens, bulletins and new files lists, in display order.
+    pub files: Arc<Vec<PacketFile>>,
     messages_data: Arc<Vec<u8>>,                           // Keep the raw data for lazy loading
     message_cache: Arc<Mutex<HashMap<usize, QWKMessage>>>, // Thread-safe cache
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PacketFileKind {
+    Welcome,
+    News,
+    Bulletin,
+    NewFiles,
+    Goodbye,
+}
+
+/// A text screen shipped next to the messages, like MultiMail's bulletin and new files viewer shows.
+#[derive(Clone, Debug)]
+pub struct PacketFile {
+    /// File name inside the packet, as stored.
+    pub name: String,
+    pub kind: PacketFileKind,
+    pub data: Vec<u8>,
+}
+
+impl PacketFile {
+    pub fn lines(&self) -> usize {
+        let text = self.data.split(|byte| *byte == 0x1A).next().unwrap_or_default();
+        text.split(|byte| *byte == b'\n').filter(|line| !line.trim_ascii().is_empty()).count()
+    }
+}
+
+/// Larger files are not bulletins; skipping them keeps odd packets from exhausting memory.
+const MAX_PACKET_FILE_SIZE: u64 = 4 * 1024 * 1024;
+
+/// Picks the screens named in CONTROL.DAT and the `BLT*`, `NEWFILES*` and `NFILE*` files, like MultiMail.
+/// `files` holds every other file of the packet.
+pub fn packet_files(control: &ControlDat, mut files: Vec<(String, Vec<u8>)>) -> Vec<PacketFile> {
+    files.sort_by_cached_key(|(name, _)| natural_key(name));
+    let mut picked = Vec::new();
+    for (kind, wanted) in [
+        (PacketFileKind::Welcome, &control.welcome_screen),
+        (PacketFileKind::News, &control.news_screen),
+        (PacketFileKind::Goodbye, &control.logoff_screen),
+    ] {
+        let wanted = wanted.to_str_lossy().trim().to_uppercase();
+        if wanted.is_empty() {
+            continue;
+        }
+        // Exact names first; otherwise the first file starting with it, as MultiMail matches them.
+        let position = files
+            .iter()
+            .position(|(name, _)| name.to_uppercase() == wanted)
+            .or_else(|| files.iter().position(|(name, _)| name.to_uppercase().starts_with(&wanted)));
+        if let Some(position) = position {
+            let (name, data) = files.remove(position);
+            picked.push(PacketFile { name, kind, data });
+        }
+    }
+    for (name, data) in files {
+        let upper = name.to_uppercase();
+        let kind = if upper.starts_with("BLT") {
+            PacketFileKind::Bulletin
+        } else if upper.starts_with("NEWFILES") || upper.starts_with("NFILE") {
+            PacketFileKind::NewFiles
+        } else {
+            continue;
+        };
+        picked.push(PacketFile { name, kind, data });
+    }
+    // Stable, so files of one kind keep their natural name order.
+    picked.sort_by_key(|file| file.kind);
+    picked
+}
+
+/// Orders `BLT-0.2` before `BLT-0.10`.
+fn natural_key(name: &str) -> Vec<(String, u64)> {
+    let upper = name.to_uppercase();
+    let mut key = Vec::new();
+    let mut rest = upper.as_str();
+    while !rest.is_empty() {
+        let text_len = rest.find(|c: char| c.is_ascii_digit()).unwrap_or(rest.len());
+        let (text, tail) = rest.split_at(text_len);
+        let digits_len = tail.find(|c: char| !c.is_ascii_digit()).unwrap_or(tail.len());
+        let (digits, tail) = tail.split_at(digits_len);
+        key.push((text.to_string(), digits.parse().unwrap_or(0)));
+        rest = tail;
+    }
+    key
 }
 
 impl Clone for QwkPackage {
@@ -94,6 +180,7 @@ impl Clone for QwkPackage {
             descriptors: self.descriptors.clone(),
             infos: self.infos.clone(),
             control_file: self.control_file.clone(),
+            files: self.files.clone(),
             messages_data: self.messages_data.clone(),
             message_cache: self.message_cache.clone(), // Share the cache across clones
         }
@@ -112,6 +199,7 @@ impl QwkPackage {
 
         let mut messages_dat: Option<Vec<u8>> = None;
         let mut control_dat: Option<Vec<u8>> = None;
+        let mut others: Vec<(String, Vec<u8>)> = Vec::new();
         let mut bbs_id = String::new();
 
         // Extract relevant files from the archive
@@ -129,6 +217,13 @@ impl QwkPackage {
                 }
             } else if base_name == "CONTROL.DAT" {
                 control_dat = Some(archive.read(&entry)?);
+            } else if !base_name.is_empty() && !base_name.ends_with(".NDX") && entry.original_size() <= MAX_PACKET_FILE_SIZE {
+                // The screen names are only known once CONTROL.DAT is parsed, which may come later.
+                let name = entry.name().replace('\\', "/").rsplit('/').next().unwrap_or_default().to_string();
+                let data = archive.read(&entry)?;
+                if data.len() as u64 <= MAX_PACKET_FILE_SIZE {
+                    others.push((name, data));
+                }
             } else {
                 archive.skip(&entry)?;
             }
@@ -160,6 +255,7 @@ impl QwkPackage {
             bbs_name: bbs_id,
             infos: Self::build_index(&messages_data, &headers),
             descriptors: headers,
+            files: Arc::new(packet_files(&control_file, others)),
             control_file,
             messages_data,
             message_cache: Arc::new(Mutex::new(HashMap::new())),

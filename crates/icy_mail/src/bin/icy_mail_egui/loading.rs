@@ -2,16 +2,20 @@ use std::{
     collections::HashSet,
     path::PathBuf,
     sync::{
-        Arc,
         atomic::{AtomicU64, Ordering},
-        mpsc,
+        mpsc, Arc,
     },
 };
 
 use eframe::egui;
 use i18n_embed_fl::fl;
 use icy_engine::TextScreen;
-use icy_mail::{LANGUAGE_LOADER, drafts::DraftStore, qwk::QwkPackage, reader::render_body};
+use icy_mail::{
+    drafts::DraftStore,
+    qwk::QwkPackage,
+    reader::{render_body, render_file},
+    LANGUAGE_LOADER,
+};
 use rayon::prelude::*;
 
 pub enum Event {
@@ -23,6 +27,13 @@ pub enum Event {
 }
 
 type Jobs<T> = mpsc::Sender<(T, egui::Context)>;
+
+/// What the content pane shows: a message body or one of the packet's bulletin files.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BodySource {
+    Message(usize),
+    File(usize),
+}
 
 enum SearchJob {
     Scan(u64, Arc<QwkPackage>, String),
@@ -79,7 +90,7 @@ pub struct Loader {
     pub sender: mpsc::Sender<Event>,
     pub receiver: mpsc::Receiver<Event>,
     packages: Jobs<(u64, PathBuf)>,
-    bodies: Jobs<(u64, Arc<QwkPackage>, usize)>,
+    bodies: Jobs<(u64, Arc<QwkPackage>, BodySource)>,
     searches: Jobs<SearchJob>,
     search_generation: Arc<AtomicU64>,
     pub search_query: Option<String>,
@@ -93,11 +104,16 @@ impl Default for Loader {
             let result = QwkPackage::load_from_file(&path).map(Arc::new).map_err(|error| error.to_string());
             Some(Event::Package(generation, path, result))
         });
-        let bodies = latest_worker(sender.clone(), |(generation, package, index): (u64, Arc<QwkPackage>, usize)| {
-            let result = package
-                .get_message(index)
-                .and_then(|message| render_body(&message.text))
-                .map_err(|error| error.to_string());
+        let bodies = latest_worker(sender.clone(), |(generation, package, source): (u64, Arc<QwkPackage>, BodySource)| {
+            let result = match source {
+                BodySource::Message(index) => package.get_message(index).and_then(|message| render_body(&message.text)),
+                BodySource::File(index) => package
+                    .files
+                    .get(index)
+                    .ok_or_else(|| format!("Packet file {index} does not exist").into())
+                    .and_then(|file| render_file(&file.data)),
+            }
+            .map_err(|error| error.to_string());
             Some(Event::Body(generation, result))
         });
         let search_generation = Arc::new(AtomicU64::new(0));
@@ -150,9 +166,9 @@ impl Loader {
         let _ = self.packages.send(((self.package_generation, path), context.clone()));
     }
 
-    pub fn body(&mut self, package: Arc<QwkPackage>, index: usize, context: &egui::Context) {
+    pub fn body(&mut self, package: Arc<QwkPackage>, source: BodySource, context: &egui::Context) {
         self.body_generation = self.body_generation.wrapping_add(1);
-        let _ = self.bodies.send(((self.body_generation, package, index), context.clone()));
+        let _ = self.bodies.send(((self.body_generation, package, source), context.clone()));
     }
 
     pub fn search_generation(&self) -> u64 {

@@ -65,6 +65,10 @@ status-replies-to-send = { $count ->
    *[other] { $count } Antworten zum Senden
 }
 status-show-outbox = Postausgang anzeigen
+status-files = { $count ->
+    [one] 1 Datei
+   *[other] { $count } Dateien
+}
 
 # Sidebar
 sidebar-offline-mail = Offline-Nachrichten
@@ -83,6 +87,8 @@ folder-personal = Persönlich
 folder-personal-tooltip = Nachrichten an { $user }
 folder-outbox = Postausgang
 folder-outbox-tooltip = Antworten und neue Nachrichten, die auf den Export warten
+folder-bulletins = Bulletins
+folder-bulletins-tooltip = Begrüßungs- und News-Bildschirme, Bulletins und Listen neuer Dateien der BBS
 
 # File dialogs
 loading-open-title = Nachrichtenpaket öffnen
@@ -149,6 +155,7 @@ notice-no-tagline = Diese Nachricht enthält keine Tagline
 notice-tagline-known = Diese Tagline ist bereits in der Liste
 notice-tagline-saved = Tagline gespeichert: ... { $tagline }
 notice-message-copied = Nachricht in die Zwischenablage kopiert
+notice-text-copied = Text in die Zwischenablage kopiert
 
 # Settings
 settings-title = Einstellungen
@@ -385,6 +392,17 @@ reader-from = von
 reader-delete = Löschen
 reader-fix-before-export = Vor dem Export korrigieren
 
+# Bulletin preview
+reader-copy-file-text = Text kopieren
+reader-next-file = Nächste Datei
+reader-previous-file = Vorherige Datei
+file-kind-welcome = Begrüßung
+file-kind-news = Neuigkeiten
+file-kind-bulletin = Bulletin
+file-kind-bulletin-number = Bulletin { $number }
+file-kind-new-files = Neue Dateien
+file-kind-goodbye = Verabschiedung
+
 # Message list
 list-draft-count = { $count ->
     [one] 1 Nachricht
@@ -399,6 +417,8 @@ list-column-subject-threads = Betreff (Diskussionsfäden)
 list-column-subject = Betreff
 list-column-date = Datum
 list-column-lines = Zeilen
+list-column-title = Titel
+list-column-file = Datei
 list-reply = Antworten
 list-forward = Weiterleiten
 list-mark-as-read = Als gelesen markieren
