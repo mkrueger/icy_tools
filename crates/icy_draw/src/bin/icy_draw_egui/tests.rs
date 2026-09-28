@@ -181,6 +181,29 @@ fn internal_copy_paste_preserves_colors() {
 }
 
 #[test]
+fn copying_unpainted_cells_from_opaque_layer_covers_destination() {
+    for alpha in [false, true] {
+        let mut app = DrawApp::new();
+        app.document.with_state(|state| state.get_cur_layer_mut().unwrap().properties.has_alpha_channel = alpha);
+        app.document.type_text("A").unwrap();
+        app.document.with_state(|state| state.set_caret_position(Position::new(2, 0)));
+        app.document.type_text("B").unwrap();
+        app.document.with_state(|state| state.set_caret_position(Position::new(0, 2)));
+        app.document.type_text("XXX").unwrap();
+        let mut selection = Selection::new(Position::new(0, 0));
+        selection.lead = Position::new(2, 0);
+        app.document.with_state(|state| state.set_selection(selection)).unwrap();
+        app.copy(&egui::Context::default());
+        let text = app.clipboard.as_ref().unwrap().0.clone();
+        app.document.with_state(|state| state.set_caret_position(Position::new(0, 2)));
+        app.paste(&text);
+
+        let at = |app: &DrawApp| app.document.with_state(|state| state.get_buffer().char_at(Position::new(1, 2)));
+        assert_eq!(at(&app).ch, if alpha { 'X' } else { ' ' }, "alpha={alpha}");
+    }
+}
+
+#[test]
 fn failed_open_after_discard_keeps_the_unsaved_buffer() {
     let context = egui::Context::default();
     let mut app = DrawApp::new();

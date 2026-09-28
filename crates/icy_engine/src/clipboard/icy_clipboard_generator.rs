@@ -31,7 +31,17 @@ pub fn clipboard_data(buffer: &TextBuffer, layer: usize, selection_mask: &Select
         for x in selection_rect.x_range() {
             let pos = Position::new(x, y);
             let ch = if selection_mask.selected_in_selection((x, y), selection) {
-                layer.char_at(pos - layer.offset())
+                let local = pos - layer.offset();
+                let ch = layer.char_at(local);
+                if !layer.properties.has_alpha_channel
+                    && (0..layer.width()).contains(&local.x)
+                    && (0..layer.height()).contains(&local.y)
+                    && !ch.is_visible()
+                {
+                    AttributedChar::default()
+                } else {
+                    ch
+                }
             } else {
                 AttributedChar::invisible()
             };
