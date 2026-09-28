@@ -18,10 +18,18 @@ pub(super) fn use_english() {
 
 fn frame(context: &egui::Context, app: &mut DrawApp, size: egui::Vec2, events: Vec<egui::Event>) -> egui::FullOutput {
     let time = context.input(|input| input.time) + 0.05;
+    let modifiers = events
+        .iter()
+        .find_map(|event| match event {
+            egui::Event::Key { modifiers, .. } | egui::Event::PointerButton { modifiers, .. } | egui::Event::MouseWheel { modifiers, .. } => Some(*modifiers),
+            _ => None,
+        })
+        .unwrap_or_default();
     context.run(
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
             events,
+            modifiers,
             time: Some(time),
             ..Default::default()
         },
@@ -45,6 +53,30 @@ fn typing_modal_and_locked_layer_routes() {
     app.document.with_state(|state| state.get_cur_layer_mut().unwrap().properties.is_locked = true);
     frame(&context, &mut app, size, vec![egui::Event::Text("BAD".into())]);
     assert!(!app.document.modified());
+}
+
+#[test]
+fn command_wheel_zooms_the_canvas() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    frame(&context, &mut app, size, vec![]);
+    let pointer = app.canvas_rect.center();
+    let before = app.view.zoom;
+    frame(
+        &context,
+        &mut app,
+        size,
+        vec![
+            egui::Event::PointerMoved(pointer),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 100.0),
+                modifiers: egui::Modifiers::COMMAND,
+            },
+        ],
+    );
+    assert!(matches!(app.settings.monitor_settings.scaling_mode, ScalingMode::Manual(zoom) if zoom > before));
 }
 
 #[test]

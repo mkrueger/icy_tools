@@ -45,6 +45,48 @@ pub fn wait_preview(preview: &mut preview::Preview, context: &egui::Context) {
 }
 
 #[test]
+fn command_wheel_zooms_the_preview() {
+    config();
+    let fixture = Fixture::new();
+    std::fs::write(fixture.0.join("art.ans"), b"ZOOM").unwrap();
+    let context = egui::Context::default();
+    let mut viewer = app::Viewer::new(fixture.0.clone(), Default::default(), &context).unwrap();
+    wait_browser(&mut viewer.browser, &context);
+    viewer.preview.load("art.ans".into(), b"ZOOM".to_vec(), false, &context);
+    wait_preview(&mut viewer.preview, &context);
+    let size = egui::vec2(1100.0, 760.0);
+    let _ = context.run(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            ..Default::default()
+        },
+        |context| {
+            egui::CentralPanel::default().show(context, |ui| viewer.preview(ui));
+        },
+    );
+    let before = viewer.preview.screen.zoom;
+    let _ = context.run(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            events: vec![
+                egui::Event::PointerMoved(egui::pos2(size.x / 2.0, size.y / 2.0)),
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, 100.0),
+                    modifiers: egui::Modifiers::COMMAND,
+                },
+            ],
+            modifiers: egui::Modifiers::COMMAND,
+            ..Default::default()
+        },
+        |context| {
+            egui::CentralPanel::default().show(context, |ui| viewer.preview(ui));
+        },
+    );
+    assert!(matches!(viewer.options.monitor_settings.scaling_mode, ScalingMode::Manual(zoom) if zoom > before));
+}
+
+#[test]
 fn browser_preserves_selection_across_history_and_enters_archives() {
     use std::io::Write;
     let fixture = Fixture::new();

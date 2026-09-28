@@ -30,7 +30,7 @@ required-features = ["legacy-ui"]
 # Frontends
 icy_ui = { workspace = true, optional = true, features = ["wgpu", "highlighter"] }
 eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
-clipboard-rs = { version = "0.3.5", optional = true, default-features = false, features = ["wayland"] }
+clipboard-rs = { version = "0.3.5", optional = true, default-features = false }
 
 # GPU/Shader support
 bytemuck = { workspace = true, features = ["derive"] }

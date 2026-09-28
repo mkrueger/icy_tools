@@ -117,6 +117,7 @@ pub struct MailApp {
     pub closed: bool,
     /// The settings as last saved.
     pub options: Options,
+    pub options_save_after: Option<f64>,
     pub settings_dialog: Option<SettingsDialog>,
     /// New messages start with a random tagline.
     pub random_tagline: bool,
@@ -201,6 +202,7 @@ impl MailApp {
             closed: false,
             random_tagline: options.random_tagline,
             options,
+            options_save_after: None,
             settings_dialog: None,
             taglines,
             tagline_dialog: None,

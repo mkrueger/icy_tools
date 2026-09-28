@@ -719,6 +719,15 @@ impl TerminalApp {
     }
 
     fn terminal_view(&mut self, ui: &mut egui::Ui) {
+        if let Some(mode) = icy_engine_gui::egui::zoom::mouse_wheel(
+            ui,
+            !self.blocks_terminal(),
+            self.terminal.get_zoom(),
+            self.settings.use_integer_scaling,
+            ScalingMode::MIN_ZOOM..=ScalingMode::MAX_ZOOM,
+        ) {
+            self.settings.scaling_mode = mode;
+        }
         let wheel_direction = if self.dialing_directory.options.invert_mouse_wheel { -1.0 } else { 1.0 };
         let wheel = ui.input(|input| input.smooth_scroll_delta.y) * wheel_direction;
         let local_wheel = !self.blocks_terminal() && ui.rect_contains_pointer(ui.max_rect()) && {

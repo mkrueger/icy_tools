@@ -87,6 +87,14 @@ impl MailApp {
 
     /// Stores the settings when they changed, e.g. the zoom from the status bar.
     pub fn persist_options(&mut self, context: &egui::Context) {
+        if let Some(after) = self.options_save_after {
+            let remaining = after - context.input(|input| input.time);
+            if remaining > 0.0 {
+                context.request_repaint_after(std::time::Duration::from_secs_f64(remaining));
+                return;
+            }
+            self.options_save_after = None;
+        }
         let current = self.current_options(context);
         if current == self.options {
             return;

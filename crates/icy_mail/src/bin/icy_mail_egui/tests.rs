@@ -304,6 +304,30 @@ fn reader_selection_coordinates_include_partial_cell_scroll_before_rounding() {
 }
 
 #[test]
+fn command_wheel_zooms_the_message() {
+    let context = egui::Context::default();
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    let pointer = mail.content_rect.center();
+    let before = mail.screen.zoom;
+    frame(
+        &context,
+        &mut mail,
+        size,
+        vec![
+            egui::Event::PointerMoved(pointer),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 100.0),
+                modifiers: egui::Modifiers::COMMAND,
+            },
+        ],
+    );
+    assert!(matches!(mail.settings.scaling_mode, ScalingMode::Manual(zoom) if zoom > before));
+}
+
+#[test]
 fn reader_drag_uses_release_position_in_both_directions_and_clamps_to_body() {
     for reverse in [false, true] {
         let context = egui::Context::default();
@@ -853,7 +877,7 @@ fn frame(context: &egui::Context, mail: &mut app::MailApp, size: egui::Vec2, eve
     let modifiers = events
         .iter()
         .find_map(|event| match event {
-            egui::Event::Key { modifiers, .. } | egui::Event::PointerButton { modifiers, .. } => Some(*modifiers),
+            egui::Event::Key { modifiers, .. } | egui::Event::PointerButton { modifiers, .. } | egui::Event::MouseWheel { modifiers, .. } => Some(*modifiers),
             _ => None,
         })
         .unwrap_or_default();

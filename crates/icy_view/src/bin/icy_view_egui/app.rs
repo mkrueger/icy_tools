@@ -1309,9 +1309,20 @@ impl Viewer {
     }
 
     /// Preview with the playback controls on top, the minimap on the right and the info panel on the bottom left.
-    fn preview(&mut self, ui: &mut egui::Ui) {
+    pub(super) fn preview(&mut self, ui: &mut egui::Ui) {
         let font = self.font_bar.sync(&mut self.preview) && self.shuffle.is_none();
         self.playback_bar(ui, font);
+        if let Some(mode) = icy_engine_gui::egui::zoom::mouse_wheel(
+            ui,
+            !self.preview.file.is_empty() && !self.preview.loading,
+            self.preview.screen.zoom,
+            self.options.monitor_settings.use_integer_scaling,
+            ScalingMode::MIN_ZOOM..=ScalingMode::MAX_ZOOM,
+        ) {
+            self.options.monitor_settings.scaling_mode = mode;
+            self.stop_auto_scroll();
+            self.preview.screen.scroll_to = None;
+        }
         let area = ui.available_rect_before_wrap();
         let manual_scroll = ui.input(|input| {
             let Some(pointer) = input.pointer.hover_pos().filter(|pointer| area.contains(*pointer)) else {

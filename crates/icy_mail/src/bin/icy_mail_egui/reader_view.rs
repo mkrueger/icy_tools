@@ -1,7 +1,10 @@
 use eframe::egui;
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, Position, Selection, Size, TextScreen};
-use icy_engine_gui::egui::{appearance, screen::ScreenView};
+use icy_engine_gui::{
+    egui::{appearance, screen::ScreenView},
+    ScalingMode,
+};
 use icy_mail::{
     LANGUAGE_LOADER,
     drafts::{Draft, DraftKind},
@@ -307,6 +310,17 @@ impl MailApp {
         let query = if self.folder == Folder::Drafts { "" } else { &self.reader.filter };
         if let Err(error) = self.body_highlights.update(&mut self.screen, query, ui.visuals().dark_mode) {
             self.error = Some(error.to_string());
+        }
+        if let Some(mode) = icy_engine_gui::egui::zoom::mouse_wheel(
+            ui,
+            ui.is_enabled(),
+            self.screen.zoom,
+            self.settings.use_integer_scaling,
+            ScalingMode::MIN_ZOOM..=ScalingMode::MAX_ZOOM,
+        ) {
+            self.settings.scaling_mode = mode;
+            self.options_save_after = Some(ui.input(|input| input.time) + 0.25);
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
         }
         let response = self.screen.show(ui, &self.settings);
         self.content_rect = response.rect;

@@ -11,6 +11,42 @@ struct Harness {
     text_bounds: std::collections::HashMap<String, egui::Rect>,
 }
 
+#[test]
+fn command_wheel_zooms_the_terminal() {
+    let context = egui::Context::default();
+    let mut app = TerminalApp::new(TextScreen::default(), "Icy Term".into());
+    let size = egui::vec2(1000.0, 720.0);
+    let _ = context.run(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            ..Default::default()
+        },
+        |context| {
+            egui::CentralPanel::default().show(context, |ui| app.terminal_view(ui));
+        },
+    );
+    let before = app.terminal.get_zoom();
+    let _ = context.run(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            events: vec![
+                egui::Event::PointerMoved(egui::pos2(500.0, 300.0)),
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, 100.0),
+                    modifiers: egui::Modifiers::COMMAND,
+                },
+            ],
+            modifiers: egui::Modifiers::COMMAND,
+            ..Default::default()
+        },
+        |context| {
+            egui::CentralPanel::default().show(context, |ui| app.terminal_view(ui));
+        },
+    );
+    assert!(matches!(app.settings.scaling_mode, ScalingMode::Manual(zoom) if zoom > before));
+}
+
 #[tokio::test]
 #[ignore = "requires a working wgpu adapter"]
 async fn gpu_welcome_screen_startup() {

@@ -1374,18 +1374,10 @@ impl DrawApp {
         self.view.terminal.has_focus = self.canvas_focus && !blocked;
         self.document
             .with_state(|state| state.set_caret_visible(!self.document.paste_active() && matches!(self.document.tool, Tool::Click | Tool::Font)));
-        let zoom_delta = ui.input_mut(|input| {
-            if !blocked && input.modifiers.command && input.pointer.hover_pos().is_some_and(|point| ui.max_rect().contains(point)) {
-                let delta = input.smooth_scroll_delta.y;
-                input.smooth_scroll_delta = egui::Vec2::ZERO;
-                input.raw_scroll_delta = egui::Vec2::ZERO;
-                delta
-            } else {
-                0.0
-            }
-        });
-        if zoom_delta != 0.0 {
-            self.settings.monitor_settings.scaling_mode = ScalingMode::Manual((self.view.zoom * (zoom_delta * 0.002).exp()).clamp(0.25, 8.0));
+        if let Some(mode) =
+            icy_engine_gui::egui::zoom::mouse_wheel(ui, !blocked, self.view.zoom, self.settings.monitor_settings.use_integer_scaling, 0.25..=8.0)
+        {
+            self.settings.monitor_settings.scaling_mode = mode;
         }
         self.view.markers = Some(self.editor_markers());
         let mut response = self.view.show(ui, &self.settings.monitor_settings);
