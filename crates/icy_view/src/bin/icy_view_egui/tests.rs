@@ -1050,6 +1050,93 @@ fn press(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
 
 #[test]
 #[ignore = "requires a working wgpu adapter"]
+fn gpu_tdf_preview_survives_selection_and_cached_loading_tile() {
+    use icy_engine::Selection;
+    use icy_engine_gui::{
+        terminal::shared_render_cache::{SharedCachedTile, TileCacheKey},
+        TextureSliceData,
+    };
+
+    config();
+    let fixture = Fixture::new();
+    let mut gpu = futures::executor::block_on(Gpu::new());
+    icy_engine_gui::egui::appearance::apply(&gpu.context);
+    let mut app = app::Viewer::new(fixture.0.clone(), icy_view::Options::default(), &gpu.context).unwrap();
+    let size = [1100, 760];
+    gpu.capture(&mut app, size, 1.0, vec![], "tdf-warmup");
+    app.preview.load(
+        "ZETRAX.TDF".into(),
+        include_bytes!("../../items/sixteencolors/ZETRAX.TDF").to_vec(),
+        false,
+        &gpu.context,
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.preview.screen.terminal.screen.lock().height() <= 25 {
+        assert!(Instant::now() < deadline, "font load timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Exercise a screen replacement with no pending dirty lines or width change.
+    app.preview.screen.terminal.screen.lock().clear_dirty_lines();
+    let (width, height) = {
+        let screen = app.preview.screen.terminal.screen.lock();
+        let size = screen.resolution();
+        (size.width as u32, size.height.min(2048) as u32)
+    };
+    let blank = std::sync::Arc::new(vec![0; width as usize * height as usize * 4]);
+    let mut cache = app.preview.screen.terminal.render_cache.write();
+    cache.content_width = width;
+    cache.insert(
+        TileCacheKey::new(0, false),
+        SharedCachedTile {
+            texture: TextureSliceData {
+                rgba_data: blank.clone(),
+                width,
+                height,
+            },
+            height,
+            start_y: 0.0,
+        },
+    );
+    drop(cache);
+    let canvas_pixels = |pixels: &[u8], app: &app::Viewer| {
+        let info = app.preview.screen.terminal.render_info.read();
+        let left = (info.bounds_x + info.viewport_x).max(0.0) as usize;
+        let top = (info.bounds_y + info.viewport_y).max(0.0) as usize;
+        let right = (left + 500).min(size[0] as usize);
+        let bottom = (top + 400).min(size[1] as usize);
+        (top..bottom)
+            .flat_map(|y| (left..right).map(move |x| (y * size[0] as usize + x) * 4))
+            .filter(|&offset| pixels[offset..offset + 3].iter().any(|&channel| channel > 90))
+            .count()
+    };
+    let pixels = gpu.capture(&mut app, size, 1.0, vec![], "tdf-cached-load");
+    {
+        let cache = app.preview.screen.terminal.render_cache.read();
+        let tile = cache.get(&TileCacheKey::new(0, false)).expect("font tile rendered");
+        assert!(
+            !std::sync::Arc::ptr_eq(&tile.texture.rgba_data, &blank),
+            "stale blank tile was reused after loading"
+        );
+    }
+    let visible = canvas_pixels(&pixels, &app);
+    assert!(visible > 500, "font preview is black after loading: {visible} lit canvas pixels");
+
+    {
+        let mut screen = app.preview.screen.terminal.screen.lock();
+        let mut selection = Selection::new((0, 2));
+        selection.lead = (10, 4).into();
+        screen.set_selection(selection).unwrap();
+    }
+    let selected = gpu.capture(&mut app, size, 1.0, vec![], "tdf-selected");
+    assert!(canvas_pixels(&selected, &app) > 500);
+    app.preview.screen.terminal.screen.lock().clear_selection().unwrap();
+    let cleared = gpu.capture(&mut app, size, 1.0, vec![], "tdf-selection-cleared");
+    let visible = canvas_pixels(&cleared, &app);
+    assert!(visible > 500, "font preview goes black after clearing selection: {visible} lit canvas pixels");
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
 fn gpu_info_panel_ratings_palette_minimap_and_font_preview() {
     config();
     let fixture = Fixture::new();

@@ -330,6 +330,7 @@ impl Preview {
             }
             match event {
                 ViewEvent::LoadingCompleted => {
+                    self.screen.terminal.update_viewport_size();
                     self.loading = false;
                     self.loaded_at = Instant::now();
                 }
@@ -773,5 +774,40 @@ mod tests {
         }
         preview.poll(&context);
         assert!(!preview.loading);
+    }
+
+    #[test]
+    fn completed_stream_replaces_cached_blank_tiles() {
+        use icy_engine_gui::{
+            terminal::shared_render_cache::{SharedCachedTile, TileCacheKey},
+            TextureSliceData,
+        };
+
+        let context = egui::Context::default();
+        let mut preview = Preview::new(&context).unwrap();
+        let (sender, receiver) = mpsc::channel();
+        preview.events = receiver;
+        preview.accept_events = true;
+        preview.loading = true;
+        preview.screen.terminal.render_cache.write().insert(
+            TileCacheKey::new(0, false),
+            SharedCachedTile {
+                texture: TextureSliceData {
+                    rgba_data: Arc::new(vec![0; 4]),
+                    width: 1,
+                    height: 1,
+                },
+                height: 1,
+                start_y: 0.0,
+            },
+        );
+        sender
+            .send(ViewEvent::ForRequest(preview.generation, Box::new(ViewEvent::LoadingCompleted)))
+            .unwrap();
+
+        preview.poll(&context);
+
+        assert!(!preview.loading);
+        assert_eq!(preview.screen.terminal.render_cache.read().tile_count(), 0);
     }
 }
