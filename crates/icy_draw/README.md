@@ -59,14 +59,27 @@ The egui frontend currently includes:
 - Atomic native document/font/script saves with external-change checks and
   explicit overwrite confirmation. Save uses `.icy`, `.tdf`, or `.psf` as
   appropriate; ANSI and image formats use Export.
+- Autosave and crash recovery for drawings, TheDraw fonts, bitmap fonts and
+  animations. While a document has unsaved changes, a snapshot is written in the
+  background at most every 2 seconds (less often for very large documents) to the
+  `recovery` folder of the local data directory, and removed once the document is
+  saved, all changes are undone, or you discard them when closing. Snapshots
+  replace the previous one atomically and each window holds an OS file lock on
+  its own, so after a crash, kill or power loss, the next start offers exactly the
+  documents of windows that are no longer running: restore them (in this window,
+  or in new windows when this one has unsaved changes), discard them after a
+  confirmation, or decide later. A restored document keeps its file name and
+  counts as unsaved; if the file changed on disk in the meantime, saving asks
+  before replacing it. Undo history is not part of the snapshot. If autosave
+  cannot write, an error is shown.
 
 This is **not yet full legacy UI parity**. Use the legacy frontend for graphical
-collaboration sessions, session/autosave recovery, AV1 export, advanced bitmap
+collaboration sessions, AV1 export, advanced bitmap
 font import/export and font-slot management, free-form selections, reference
 images, and guides. The egui controls currently use English labels.
 Rich clipboard data is retained inside one editor instance; copying between
 instances uses plain text. New windows do not share live documents. Existing
-legacy session files are not migrated or modified by the egui frontend. Lua
+legacy session and autosave files are not migrated or modified by the egui frontend. Lua
 execution retains the existing backend's lack of a runtime cancellation limit.
 
 ```sh

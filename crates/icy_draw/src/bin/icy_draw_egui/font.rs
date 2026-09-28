@@ -91,6 +91,32 @@ impl FontEditor {
         self.content_hash() != self.baseline
     }
 
+    /// The font for crash recovery.
+    pub fn recovery_snapshot(&self) -> Result<icy_draw::recovery::Snapshot, String> {
+        Ok(icy_draw::recovery::Snapshot {
+            kind: icy_draw::recovery::RecoveryKind::BitFont,
+            path: self.path.clone(),
+            disk: self.disk_bytes.as_deref().map(icy_draw::recovery::Fingerprint::of),
+            payload: self.state.build_font().to_psf2_bytes().map_err(|error| error.to_string())?,
+        })
+    }
+
+    /// Restores a [`Self::recovery_snapshot`]; it counts as modified until saved.
+    pub fn from_recovery(snapshot: &icy_draw::recovery::Snapshot) -> Result<Self, String> {
+        let name = snapshot
+            .path
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .map_or_else(|| fl!("unsaved-title"), |name| name.to_string_lossy().into_owned());
+        let font = BitFont::from_bytes(name, &snapshot.payload).map_err(|error| error.to_string())?;
+        let mut editor = Self::new(font);
+        editor.path = snapshot.path.clone();
+        editor.disk_bytes = snapshot.path.as_deref().zip(snapshot.disk).and_then(|(path, disk)| disk.read_matching(path));
+        // No saved state matches the recovered glyphs until they are saved.
+        editor.baseline = !editor.content_hash();
+        Ok(editor)
+    }
+
     pub fn mcp_status(&self) -> icy_draw::mcp::types::BitFontStatus {
         let count = self.state.get_all_glyph_data().len();
         icy_draw::mcp::types::BitFontStatus {

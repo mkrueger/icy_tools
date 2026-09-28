@@ -26,6 +26,9 @@ struct Args {
     file: Option<PathBuf>,
     #[arg(long)]
     mcp_port: Option<u16>,
+    /// Restores an autosaved document; used by the recovery dialog for additional windows.
+    #[arg(long, hide = true, value_name = "ID")]
+    recover: Option<String>,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -65,9 +68,15 @@ fn main() -> anyhow::Result<()> {
             appearance::apply(&creation.egui_ctx);
             let mut editor = app::DrawApp::new();
             editor.persist_settings = true;
-            match args.file {
-                Some(path) => editor.open(path),
-                None => editor.show_start = true,
+            editor.enable_recovery(icy_draw::Settings::recovery_dir());
+            if let Some(id) = &args.recover {
+                editor.restore_recovered(id);
+            } else {
+                match args.file {
+                    Some(path) => editor.open(path),
+                    None => editor.show_start = true,
+                }
+                editor.offer_recovery();
             }
             if let Some(port) = args.mcp_port {
                 editor.enable_mcp(port, creation.egui_ctx.clone());

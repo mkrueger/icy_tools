@@ -130,6 +130,34 @@ impl AnimationEditor {
         self.source != self.baseline
     }
 
+    /// The script for crash recovery.
+    pub fn recovery_snapshot(&self) -> icy_draw::recovery::Snapshot {
+        icy_draw::recovery::Snapshot {
+            kind: icy_draw::recovery::RecoveryKind::Animation,
+            path: self.path.clone(),
+            disk: self.path.as_ref().map(|_| icy_draw::recovery::Fingerprint::of(self.baseline.as_bytes())),
+            payload: self.source.as_bytes().to_vec(),
+        }
+    }
+
+    /// Restores a [`Self::recovery_snapshot`]; it counts as modified until saved.
+    pub fn from_recovery(snapshot: &icy_draw::recovery::Snapshot) -> Result<Self, String> {
+        let mut editor = Self::new();
+        editor.source = String::from_utf8(snapshot.payload.clone()).map_err(|error| error.to_string())?;
+        editor.path = snapshot.path.clone();
+        // The baseline is also what saving expects on disk. Without a matching file, it matches
+        // neither the script nor the disk, so saving over a changed file needs confirmation.
+        editor.baseline = snapshot
+            .path
+            .as_deref()
+            .zip(snapshot.disk)
+            .and_then(|(path, disk)| disk.read_matching(path))
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .unwrap_or_else(|| "\0".into());
+        editor.compile();
+        Ok(editor)
+    }
+
     pub fn replace_text(&mut self, offset: usize, length: usize, text: &str) -> Result<(), String> {
         let end = offset.saturating_add(length).min(self.source.len());
         if self.source.get(offset..end).is_none() {

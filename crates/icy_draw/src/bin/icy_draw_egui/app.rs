@@ -33,6 +33,8 @@ mod font_select;
 mod mcp;
 #[path = "menus.rs"]
 mod menus;
+#[path = "recovery.rs"]
+mod recovery;
 #[path = "welcome.rs"]
 mod welcome;
 
@@ -60,6 +62,7 @@ enum Dialog {
     Shortcuts,
     About,
     Connect,
+    Recovery,
 }
 enum FileAction {
     Open,
@@ -269,6 +272,11 @@ pub struct DrawApp {
     pub canvas_rect: egui::Rect,
     about: Option<icy_engine_gui::egui::about::AboutDialog>,
     collab: collab::Collaboration,
+    recovery: Option<icy_draw::recovery::Recovery>,
+    offers: Vec<recovery::Offer>,
+    next_autosave: Option<std::time::Instant>,
+    autosave_error: Option<String>,
+    autosave_failing: bool,
 }
 
 impl DrawApp {
@@ -348,6 +356,11 @@ impl DrawApp {
             canvas_rect: egui::Rect::NOTHING,
             about: None,
             collab: collab::Collaboration::default(),
+            recovery: None,
+            offers: Vec::new(),
+            next_autosave: None,
+            autosave_error: None,
+            autosave_failing: false,
         }
     }
 
@@ -594,6 +607,7 @@ impl DrawApp {
     fn complete_close(&mut self, context: &egui::Context) {
         if self.quitting {
             self.allow_close = true;
+            self.finish_recovery();
             context.send_viewport_cmd(egui::ViewportCommand::Close);
         } else if std::mem::take(&mut self.pending_connect) {
             self.show_connect_dialog();
@@ -2130,6 +2144,7 @@ impl DrawApp {
             Dialog::About => keep = self.about.as_mut().is_some_and(|about| about.show(context)),
             Dialog::ReferenceImage => keep = !self.reference_image_dialog(context),
             Dialog::Connect => keep = !self.connect_dialog(context),
+            Dialog::Recovery => keep = self.recovery_dialog(context),
             Dialog::Monitor => {
                 #[derive(Clone, Copy)]
                 enum Action {
@@ -2701,6 +2716,18 @@ impl DrawApp {
     }
 
     pub fn show(&mut self, context: &egui::Context) {
+        if self.dialog.is_none() && !self.picker {
+            if let Some(error) = self.autosave_error.take() {
+                self.dialog = Some(Dialog::Error(fl!("recovery-failed", error = error)));
+            } else if !self.offers.is_empty() {
+                self.dialog = Some(Dialog::Recovery);
+            }
+        }
+        self.show_ui(context);
+        self.autosave(context);
+    }
+
+    fn show_ui(&mut self, context: &egui::Context) {
         // Ctrl+Plus/Minus zoom the canvas instead of the whole user interface.
         context.options_mut(|options| options.zoom_with_keyboard = false);
         if !context.will_discard() {
@@ -2808,6 +2835,13 @@ impl DrawApp {
                 context.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 editor.confirm_close = true;
             }
+        }
+        let closing = close_requested
+            && !self.picker
+            && (self.allow_close || (!self.modified() && !self.font_editor.as_ref().is_some_and(|editor| editor.apply_target && editor.modified())));
+        if closing {
+            // Waits for pending removals, since the process ends with the window.
+            self.finish_recovery();
         }
         if self.dialog.is_none() && !self.picker {
             for file in context.input(|input| input.raw.dropped_files.clone()) {

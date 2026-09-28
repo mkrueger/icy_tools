@@ -1751,3 +1751,284 @@ fn chat_panel_keeps_its_default_height() {
         assert_eq!(height, Some(220.0), "chat panel grew on frame {step}");
     }
 }
+
+fn recovery_files(dir: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|entry| entry.path())
+                .filter(|path| path.extension().is_some_and(|extension| extension == "recovery"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn recovering_app(dir: &Path) -> DrawApp {
+    let mut app = DrawApp::new();
+    app.enable_recovery(Some(dir.to_path_buf()));
+    assert!(app.recovery.is_some());
+    app
+}
+
+fn flush_recovery(app: &DrawApp) {
+    app.recovery.as_ref().unwrap().flush();
+}
+
+fn text_position(output: &egui::FullOutput, label: &str) -> Option<egui::Pos2> {
+    output.shapes.iter().find_map(|shape| match &shape.shape {
+        egui::Shape::Text(text) if text.galley.text() == label => Some(text.pos + text.galley.size() / 2.0),
+        _ => None,
+    })
+}
+
+fn click_text(context: &egui::Context, app: &mut DrawApp, size: egui::Vec2, label: &str) {
+    let output = frame(context, app, size, vec![]);
+    let position = text_position(&output, label).unwrap_or_else(|| panic!("no {label:?} on screen"));
+    frame(context, app, size, vec![egui::Event::PointerMoved(position)]);
+    for pressed in [true, false] {
+        frame(context, app, size, pointer(position, pressed));
+    }
+}
+
+#[test]
+fn autosave_restores_an_unsaved_drawing_after_a_crash() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::vec2(1280.0, 820.0);
+    let directory = tempfile::tempdir().unwrap();
+    let store = directory.path().join("recovery");
+    let art = directory.path().join("art.icy");
+    let mut original = Document::new(Size::new(40, 10));
+    original.type_text("OLD").unwrap();
+    original.save(&art, false).unwrap();
+
+    let mut app = recovering_app(&store);
+    app.open(art.clone());
+    frame(&context, &mut app, size, vec![]);
+    flush_recovery(&app);
+    assert!(recovery_files(&store).is_empty(), "nothing is unsaved");
+    app.document.with_state(|state| state.set_caret_position((0, 1).into()));
+    app.document.type_text("NEW").unwrap();
+    app.edit(|state| state.add_new_layer(0));
+    app.document.with_state(|state| state.set_caret_position((5, 5).into()));
+    app.document.type_text("L2").unwrap();
+    let output = frame(&context, &mut app, size, vec![]);
+    let repaint = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+    assert!(repaint <= recovery::AUTOSAVE_INTERVAL, "idle windows still write later edits ({repaint:?})");
+    flush_recovery(&app);
+    assert_eq!(recovery_files(&store).len(), 1);
+
+    let mut running = recovering_app(&store);
+    running.offer_recovery();
+    assert!(running.offers.is_empty(), "documents of running editors are not offered");
+    drop(running);
+    // A crash: the editor ends without closing its window.
+    drop(app);
+
+    let mut restored = recovering_app(&store);
+    restored.show_start = true;
+    restored.offer_recovery();
+    assert_eq!(restored.offers.len(), 1);
+    assert_eq!(restored.offers[0].disk, recovery::DiskState::Unchanged);
+    frame(&context, &mut restored, size, vec![]);
+    assert!(matches!(restored.dialog, Some(Dialog::Recovery)));
+    click_text(&context, &mut restored, size, "Restore");
+    assert!(restored.dialog.is_none(), "restoring the only document closes the dialog");
+    assert!(!restored.show_start);
+    assert!(restored.modified());
+    assert_eq!(restored.document.path.as_deref(), Some(art.as_path()));
+    restored.document.with_state(|state| {
+        let buffer = state.get_buffer();
+        assert_eq!(buffer.layers.len(), 2);
+        let text = |y: i32, from: i32, length: i32| (from..from + length).map(|x| buffer.char_at((x, y).into()).ch).collect::<String>();
+        assert_eq!(text(0, 0, 3), "OLD");
+        assert_eq!(text(1, 0, 3), "NEW");
+        assert_eq!(text(5, 5, 2), "L2");
+    });
+    flush_recovery(&restored);
+    let files = recovery_files(&store);
+    assert_eq!(files.len(), 1, "the restored document moved into the new editor's entry");
+    assert!(files[0].file_stem().unwrap().to_string_lossy() == restored.recovery.as_ref().unwrap().id());
+
+    restored.save_path(&context, art.clone(), false);
+    assert!(restored.dialog.is_none(), "the unchanged original can be saved over");
+    frame(&context, &mut restored, size, vec![]);
+    flush_recovery(&restored);
+    assert!(recovery_files(&store).is_empty(), "saving removes the snapshot");
+    let saved = Document::load(&art).unwrap();
+    assert_eq!(saved.with_state(|state| state.get_buffer().char_at((0, 1).into()).ch), 'N');
+}
+
+#[test]
+fn recovered_documents_never_silently_replace_files_changed_since() {
+    let context = egui::Context::default();
+    let size = egui::vec2(1280.0, 820.0);
+    let directory = tempfile::tempdir().unwrap();
+    let store = directory.path().join("recovery");
+    let art = directory.path().join("art.icy");
+    Document::new(Size::new(20, 5)).save(&art, false).unwrap();
+    let mut app = recovering_app(&store);
+    app.open(art.clone());
+    app.document.type_text("MINE").unwrap();
+    frame(&context, &mut app, size, vec![]);
+    flush_recovery(&app);
+    drop(app);
+    let mut newer = Document::new(Size::new(20, 5));
+    newer.type_text("THEIRS").unwrap();
+    newer.save(&art, true).unwrap();
+    let theirs = std::fs::read(&art).unwrap();
+
+    let mut restored = recovering_app(&store);
+    restored.offer_recovery();
+    assert_eq!(restored.offers[0].disk, recovery::DiskState::Changed);
+    restored.restore_offer(0);
+    assert_eq!(restored.document.with_state(|state| state.get_buffer().char_at((0, 0).into()).ch), 'M');
+    restored.save_path(&context, art.clone(), false);
+    assert!(matches!(restored.dialog, Some(Dialog::Error(_))), "saving over the newer file needs confirmation");
+    assert_eq!(std::fs::read(&art).unwrap(), theirs);
+    assert!(restored.modified());
+}
+
+#[test]
+fn autosave_follows_the_unsaved_state() {
+    let context = egui::Context::default();
+    let size = egui::vec2(1280.0, 820.0);
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = recovering_app(directory.path());
+    app.document.type_text("A").unwrap();
+    frame(&context, &mut app, size, vec![]);
+    flush_recovery(&app);
+    assert_eq!(recovery_files(directory.path()).len(), 1);
+    app.document.undo().unwrap();
+    frame(&context, &mut app, size, vec![]);
+    flush_recovery(&app);
+    assert!(recovery_files(directory.path()).is_empty(), "undoing all changes leaves nothing to recover");
+
+    // Undoing past the save point and then editing must not look unmodified.
+    let art = directory.path().join("art.icy");
+    app.document.type_text("B").unwrap();
+    app.save_path(&context, art.clone(), false);
+    app.document.undo().unwrap();
+    app.document.type_text("C").unwrap();
+    assert!(app.modified());
+    frame(&context, &mut app, size, vec![]);
+    flush_recovery(&app);
+    assert_eq!(recovery_files(directory.path()).len(), 1);
+
+    // Later edits replace the snapshot once the interval has passed.
+    app.document.type_text("D").unwrap();
+    app.next_autosave = Some(std::time::Instant::now());
+    frame(&context, &mut app, size, vec![]);
+    flush_recovery(&app);
+    let snapshot = icy_draw::recovery::orphans(directory.path(), None);
+    assert!(snapshot.is_empty(), "the running editor keeps its entry locked");
+    let bytes = std::fs::read(&recovery_files(directory.path())[0]).unwrap();
+    let id = app.recovery.as_ref().unwrap().id().to_owned();
+    drop(app);
+    let orphan = icy_draw::recovery::claim(directory.path(), &id).unwrap();
+    let recovered = Document::from_recovery(&orphan.load().unwrap()).unwrap();
+    assert_eq!(recovered.with_state(|state| state.get_buffer().char_at((1, 0).into()).ch), 'D');
+    assert!(!bytes.is_empty());
+}
+
+#[test]
+fn discarding_changes_on_quit_removes_the_snapshot() {
+    let context = egui::Context::default();
+    let size = egui::vec2(1280.0, 820.0);
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = recovering_app(directory.path());
+    app.document.type_text("GONE").unwrap();
+    frame(&context, &mut app, size, vec![]);
+    app.quitting = true;
+    app.complete_close(&context);
+    assert!(recovery_files(directory.path()).is_empty(), "removed before the window closes");
+    frame(&context, &mut app, size, vec![]);
+    flush_recovery(&app);
+    assert!(recovery_files(directory.path()).is_empty(), "not written again while closing");
+}
+
+#[test]
+fn recovery_dialog_can_postpone_and_discard() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::vec2(1280.0, 820.0);
+    let directory = tempfile::tempdir().unwrap();
+    let mut app = recovering_app(directory.path());
+    app.document.type_text("LATER").unwrap();
+    frame(&context, &mut app, size, vec![]);
+    flush_recovery(&app);
+    drop(app);
+
+    let mut first = recovering_app(directory.path());
+    first.offer_recovery();
+    frame(&context, &mut first, size, vec![]);
+    click_text(&context, &mut first, size, "Decide Later");
+    assert!(first.dialog.is_none() && first.offers.is_empty());
+    assert_eq!(recovery_files(directory.path()).len(), 1, "postponing keeps the file");
+    drop(first);
+
+    let mut second = recovering_app(directory.path());
+    second.offer_recovery();
+    assert_eq!(second.offers.len(), 1, "postponed documents are offered again");
+    frame(&context, &mut second, size, vec![]);
+    click_text(&context, &mut second, size, "Discard…");
+    assert_eq!(recovery_files(directory.path()).len(), 1, "discarding asks first");
+    click_text(&context, &mut second, size, "Discard Permanently");
+    assert!(recovery_files(directory.path()).is_empty());
+    assert!(second.offers.is_empty());
+    frame(&context, &mut second, size, vec![]);
+    assert!(second.dialog.is_none());
+}
+
+#[test]
+fn autosave_restores_fonts_and_animations() {
+    let context = egui::Context::default();
+    let size = egui::vec2(1280.0, 820.0);
+    let directory = tempfile::tempdir().unwrap();
+    let restore = |check: &dyn Fn(&DrawApp)| {
+        let mut restored = recovering_app(directory.path());
+        restored.offer_recovery();
+        assert_eq!(restored.offers.len(), 1);
+        restored.restore_offer(0);
+        assert!(restored.dialog.is_none());
+        assert!(restored.modified());
+        check(&restored);
+        restored.quitting = true;
+        restored.complete_close(&context);
+    };
+
+    let mut app = recovering_app(directory.path());
+    app.create(NewKind::TheDraw(icy_engine_edit::charset::TdfFontType::Color), Size::new(80, 25));
+    app.document.type_text("X").unwrap();
+    frame(&context, &mut app, size, vec![]);
+    flush_recovery(&app);
+    drop(app);
+    restore(&|app| {
+        let font = app.charfont.as_ref().expect("TheDraw editor");
+        assert!(font.state.get_glyph('A').is_some(), "the glyph being edited is included");
+        assert_eq!(app.document.with_state(|state| state.get_buffer().char_at((0, 0).into()).ch), 'X');
+    });
+
+    let mut app = recovering_app(directory.path());
+    app.create(NewKind::BitmapFont, Size::new(80, 25));
+    let editor = app.font_editor.as_mut().unwrap();
+    let before = editor.state.get_glyph_pixels('A')[0][0];
+    editor.state.set_pixel('A', 0, 0, !before).unwrap();
+    frame(&context, &mut app, size, vec![]);
+    flush_recovery(&app);
+    drop(app);
+    restore(&|app| {
+        let editor = app.font_editor.as_ref().expect("bitmap font editor");
+        assert_eq!(editor.state.get_glyph_pixels('A')[0][0], !before);
+    });
+
+    let mut app = recovering_app(directory.path());
+    app.create(NewKind::Animation, Size::new(80, 25));
+    app.animation.as_mut().unwrap().replace_text(0, 0, "-- unsaved\n").unwrap();
+    frame(&context, &mut app, size, vec![]);
+    flush_recovery(&app);
+    drop(app);
+    restore(&|app| assert_eq!(app.animation.as_ref().expect("animation editor").source, "-- unsaved\n"));
+    assert!(recovery_files(directory.path()).is_empty());
+}

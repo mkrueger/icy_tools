@@ -82,8 +82,17 @@ impl EditorUndoStack {
 
     /// Push an operation onto the undo stack (clears redo stack)
     pub fn push(&mut self, op: EditorUndoOp) {
+        self.forget_unreachable_save_point();
         self.undo_stack.push(op);
         self.redo_stack.clear();
+    }
+
+    /// A save point that was undone lies in the redo stack; once that is discarded, no
+    /// undo/redo sequence can return to the saved state, so the length must never match it again.
+    fn forget_unreachable_save_point(&mut self) {
+        if self.last_save_index > self.undo_stack.len() {
+            self.last_save_index = usize::MAX;
+        }
     }
 
     /// Push an operation onto the undo stack without clearing redo
@@ -93,6 +102,7 @@ impl EditorUndoStack {
 
     /// Clear the redo stack
     pub fn clear_redo(&mut self) {
+        self.forget_unreachable_save_point();
         self.redo_stack.clear();
     }
 
@@ -178,7 +188,9 @@ impl EditorUndoStack {
 
     /// Get operations since last save (for session serialization)
     pub fn operations_since_save(&self) -> &[EditorUndoOp] {
-        if self.last_save_index < self.undo_stack.len() {
+        if self.last_save_index == usize::MAX {
+            &self.undo_stack
+        } else if self.last_save_index < self.undo_stack.len() {
             &self.undo_stack[self.last_save_index..]
         } else {
             &[]
@@ -208,5 +220,64 @@ impl std::ops::Index<usize> for EditorUndoStack {
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.undo_stack[index]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn op() -> EditorUndoOp {
+        EditorUndoOp::ReverseCaretPosition {
+            pos: Default::default(),
+            old_pos: Default::default(),
+        }
+    }
+
+    fn undo(stack: &mut EditorUndoStack) {
+        let op = stack.pop_undo().unwrap();
+        stack.push_redo(op);
+    }
+
+    #[test]
+    fn a_new_edit_after_undoing_past_the_save_point_stays_modified() {
+        let mut stack = EditorUndoStack::new();
+        stack.push(op());
+        stack.push(op());
+        stack.mark_saved();
+        undo(&mut stack);
+        assert!(stack.is_modified());
+        stack.push(op());
+        assert_eq!(stack.len(), 2, "same length as when saved, but different content");
+        assert!(stack.is_modified());
+        undo(&mut stack);
+        stack.push(op());
+        assert!(stack.is_modified());
+        assert_eq!(stack.operations_since_save().len(), 2);
+    }
+
+    #[test]
+    fn undo_and_redo_back_to_the_save_point_is_unmodified() {
+        let mut stack = EditorUndoStack::new();
+        stack.push(op());
+        stack.mark_saved();
+        undo(&mut stack);
+        assert!(stack.is_modified());
+        let op = stack.pop_redo().unwrap();
+        stack.push_undo(op);
+        assert!(!stack.is_modified());
+        stack.clear_redo();
+        assert!(!stack.is_modified(), "clearing an empty redo stack keeps the save point");
+    }
+
+    #[test]
+    fn starting_an_atomic_edit_after_undo_forgets_the_save_point() {
+        let mut stack = EditorUndoStack::new();
+        stack.push(op());
+        stack.mark_saved();
+        undo(&mut stack);
+        stack.clear_redo();
+        stack.push_undo(op());
+        assert!(stack.is_modified());
     }
 }

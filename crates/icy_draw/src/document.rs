@@ -176,6 +176,40 @@ impl Document {
         self.stroke.is_some()
     }
 
+    /// The complete document for crash recovery, including an unanchored paste.
+    pub fn recovery_snapshot(&self) -> DrawResult<crate::recovery::Snapshot> {
+        let options = icy_engine::SaveOptions {
+            format: icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+                skip_thumbnail: true,
+                compress: true,
+            }),
+            ..icy_engine::SaveOptions::icy_draw()
+        };
+        Ok(crate::recovery::Snapshot {
+            kind: crate::recovery::RecoveryKind::Ansi,
+            path: self.path.clone(),
+            disk: self.baseline.as_deref().map(crate::recovery::Fingerprint::of),
+            payload: self.bytes(FileFormat::IcyDraw, options)?,
+        })
+    }
+
+    /// Restores a [`Self::recovery_snapshot`] as a modified document of its original file.
+    ///
+    /// When that file changed since the snapshot's edits began, saving to it requires
+    /// confirmation, just as for files changed while the document is open.
+    pub fn from_recovery(snapshot: &crate::recovery::Snapshot) -> DrawResult<Self> {
+        let loaded = FileFormat::IcyDraw.from_bytes(&snapshot.payload, None).map_err(|error| error.to_string())?;
+        let mut state = EditState::from_buffer(loaded.screen.buffer);
+        if let Some(sauce) = loaded.sauce_opt {
+            state.set_sauce_meta(sauce.metadata());
+        }
+        let mut document = Self::from_state(state);
+        document.path = snapshot.path.clone();
+        document.baseline = snapshot.path.as_deref().zip(snapshot.disk).and_then(|(path, disk)| disk.read_matching(path));
+        document.metadata_dirty = true;
+        Ok(document)
+    }
+
     pub fn paste_active(&self) -> bool {
         self.paste.is_some()
     }

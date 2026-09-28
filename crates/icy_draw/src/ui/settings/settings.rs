@@ -245,6 +245,12 @@ impl Settings {
         PROJECT_DIRS.as_ref().map(|p| p.config_dir().to_path_buf())
     }
 
+    /// Crash recovery snapshots of unsaved documents, see [`crate::recovery`].
+    #[must_use]
+    pub fn recovery_dir() -> Option<PathBuf> {
+        PROJECT_DIRS.as_ref().map(|p| p.data_local_dir().join("recovery"))
+    }
+
     #[must_use]
     pub fn config_file() -> Option<PathBuf> {
         Self::config_dir().map(|d| d.join(Self::FILE_NAME))

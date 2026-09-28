@@ -42,6 +42,40 @@ impl CharFontDocument {
         self.state.get_autosave_bytes().is_ok_and(|bytes| bytes != self.baseline)
     }
 
+    /// The font collection for crash recovery, including the glyph being edited in `document`.
+    pub fn recovery_snapshot(&self, document: &Document) -> DrawResult<crate::recovery::Snapshot> {
+        let mut fonts = self.state.fonts().to_vec();
+        if document.modified() {
+            if let (Some(character), Some(font)) = (self.state.selected_char(), fonts.get_mut(self.state.selected_font_index())) {
+                match document.with_state(|state| buffer_to_glyph(state.get_buffer(), font.font_type)) {
+                    Some(glyph) => font.add_glyph(character, glyph),
+                    None => {
+                        font.remove_glyph(character);
+                    }
+                }
+            }
+        }
+        Ok(crate::recovery::Snapshot {
+            kind: crate::recovery::RecoveryKind::CharFont,
+            path: self.path.clone(),
+            disk: self.disk_bytes.as_deref().map(crate::recovery::Fingerprint::of),
+            payload: retrofont::tdf::TdfFont::serialize_bundle(&fonts).map_err(|error| error.to_string())?,
+        })
+    }
+
+    /// Restores a [`Self::recovery_snapshot`]; it counts as modified until saved.
+    pub fn from_recovery(snapshot: &crate::recovery::Snapshot) -> DrawResult<Self> {
+        let fonts = icy_engine_edit::charset::load_tdf_fonts(&snapshot.payload).map_err(|error| error.to_string())?;
+        let mut state = CharSetEditState::with_fonts(fonts, snapshot.path.clone());
+        state.select_char('A');
+        Ok(Self {
+            state,
+            path: snapshot.path.clone(),
+            baseline: Vec::new(),
+            disk_bytes: snapshot.path.as_deref().zip(snapshot.disk).and_then(|(path, disk)| disk.read_matching(path)),
+        })
+    }
+
     pub fn commit(&mut self, document: &mut Document) {
         document.finish();
         if !document.modified() {

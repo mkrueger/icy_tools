@@ -6,6 +6,7 @@ pub mod fill;
 pub mod host;
 pub mod mcp;
 pub mod palette_files;
+pub mod recovery;
 #[path = "ui/editor/ansi/tools/paint.rs"]
 pub mod paint;
 #[path = "util/plugins.rs"]
