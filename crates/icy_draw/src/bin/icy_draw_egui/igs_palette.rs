@@ -48,14 +48,10 @@ pub fn pen_picker(ui: &mut egui::Ui, id: &str, palette: &icy_engine::Palette, re
             .stroke(ui.visuals().widgets.noninteractive.bg_stroke),
     );
     egui::Popup::menu(&response).id(egui::Id::new(("igs-pen", id))).show(|ui| {
-        egui::Grid::new(("igs-pen-grid", id)).spacing(egui::vec2(3.0, 3.0)).show(ui, |ui| {
+        egui::Grid::new(("igs-pen-grid", id)).spacing(egui::vec2(6.0, 6.0)).show(ui, |ui| {
             for pen in 0..pen_count(resolution) {
-                let selected = *value == pen;
-                let swatch = egui::Button::new("")
-                    .fill(pen_color(palette, resolution, pen))
-                    .min_size(egui::vec2(22.0, 22.0))
-                    .stroke(Stroke::new(if selected { 2.0 } else { 0.5 }, ui.visuals().strong_text_color()));
-                if ui.add(swatch).on_hover_text(fl!("igs-pen", pen = pen)).clicked() {
+                let response = pen_swatch(ui, pen_color(palette, resolution, pen), *value == pen);
+                if response.on_hover_text(fl!("igs-pen", pen = pen)).clicked() {
                     *value = pen;
                     changed = true;
                     ui.close();
@@ -67,6 +63,31 @@ pub fn pen_picker(ui: &mut egui::Ui, id: &str, palette: &icy_engine::Palette, re
         });
     });
     changed
+}
+
+/// A square pen swatch framed with the accent while selected and highlighted while hovered.
+fn pen_swatch(ui: &mut egui::Ui, color: Color32, selected: bool) -> egui::Response {
+    const SIZE: f32 = 22.0;
+    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(SIZE), egui::Sense::click());
+    let hovered = response.hovered();
+    let hover = ui.ctx().animate_bool_responsive(response.id, hovered);
+    let visuals = ui.visuals();
+    let accent = visuals.selection.stroke.color;
+    let rect = rect.expand(hover * 1.5);
+    let painter = ui.painter();
+    painter.rect_filled(rect, 3.0, color);
+    painter.rect_stroke(
+        rect,
+        3.0,
+        Stroke::new(1.0, visuals.widgets.noninteractive.bg_stroke.color),
+        egui::StrokeKind::Inside,
+    );
+    if selected {
+        painter.rect_stroke(rect.expand(3.0), 5.0, Stroke::new(2.0, accent), egui::StrokeKind::Inside);
+    } else if hovered {
+        painter.rect_stroke(rect.expand(3.0), 5.0, Stroke::new(1.5, visuals.strong_text_color()), egui::StrokeKind::Inside);
+    }
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn level_color([red, green, blue]: [u8; 3]) -> Color32 {
