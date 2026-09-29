@@ -77,6 +77,10 @@ fn german_locale_formats_labels_plurals_and_placeholders() {
     }
     assert!(loader.get("list-outbox-steps").contains(".REP-Datei"));
     assert_eq!(
+        loader.get_args_concrete("list-date-weekday", HashMap::from([("weekday", 1.into()), ("time", "08:00".into())])),
+        "Dienstag 08:00"
+    );
+    assert_eq!(
         loader.get_args("status-reading-progress", HashMap::from([("read", 2), ("total", 5), ("unread", 3)])),
         "2 von 5 gelesen · 3 ungelesen"
     );

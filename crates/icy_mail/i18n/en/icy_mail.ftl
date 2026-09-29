@@ -425,6 +425,17 @@ list-column-from = From
 list-column-subject-threads = Subject (threads)
 list-column-subject = Subject
 list-column-date = Date
+list-date-today = Today { $time }
+list-date-yesterday = Yesterday { $time }
+list-date-weekday = { $weekday ->
+    [0] Monday
+    [1] Tuesday
+    [2] Wednesday
+    [3] Thursday
+    [4] Friday
+    [5] Saturday
+   *[6] Sunday
+} { $time }
 list-column-lines = Lines
 list-column-title = Title
 list-column-file = File

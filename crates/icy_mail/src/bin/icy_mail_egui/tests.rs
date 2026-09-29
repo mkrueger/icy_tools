@@ -2313,3 +2313,24 @@ fn gpu_reader_deselecting_clears_the_rendered_highlight() {
     assert!(mail.screen.terminal.screen.lock().selection().is_none(), "a click must deselect");
     assert!(body_pixels(&clicked) == baseline, "a click must remove the highlight from the screen");
 }
+
+#[test]
+fn list_dates_are_relative_for_the_past_week() {
+    crate::use_english();
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 9, 29).unwrap();
+    let at = |day: u32, time: &str| {
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 9, day)
+            .unwrap()
+            .and_time(chrono::NaiveTime::parse_from_str(time, "%H:%M").unwrap());
+        list::friendly_date(date, &date.format("%Y-%m-%d %H:%M").to_string(), today)
+    };
+    assert_eq!(at(29, "08:00"), "Today 08:00");
+    assert_eq!(at(28, "23:59"), "Yesterday 23:59");
+    assert_eq!(at(27, "10:15"), "Sunday 10:15");
+    assert_eq!(at(23, "07:00"), "Wednesday 07:00");
+    assert_eq!(at(22, "07:00"), "2026-09-22");
+    assert_eq!(at(30, "07:00"), "2026-09-30", "future dates stay absolute");
+    let unparsed = chrono::NaiveDateTime::default();
+    assert_eq!(list::friendly_date(unparsed, "13-45-2612:00", today), "13-45-2612:00");
+    assert_eq!(list::friendly_qwk_date("09-28-2608:07", today), "Yesterday 08:07");
+}

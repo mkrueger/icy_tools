@@ -1,3 +1,4 @@
+use chrono::Datelike;
 use eframe::egui;
 use i18n_embed_fl::fl;
 use icy_engine_gui::egui::appearance;
@@ -192,6 +193,7 @@ impl MailApp {
                     self.reveal_message = false;
                 }
                 let needle = self.reader.filter.trim().to_owned();
+                let today = today();
                 let output = scroll.show_rows(ui, ROW_HEIGHT, self.reader.messages.len(), |ui, range| {
                     let Some(package) = self.reader.package.clone() else {
                         return;
@@ -201,6 +203,7 @@ impl MailApp {
                         let info = &package.infos[row.index];
                         let unread = !self.reader.is_read(row.index);
                         let selected = self.reader.selected_message == Some(row.index);
+                        let date = friendly_date(info.date, &info.date_str, today);
                         let collapsed = threaded && row.descendants > 0 && self.reader.is_collapsed(row.index);
                         let hidden_unread = if collapsed { self.reader.unread_replies(row.index) } else { 0 };
                         let replies = row.descendants.to_string();
@@ -216,7 +219,7 @@ impl MailApp {
                                     .highlight(&needle)
                                     .indent(if threaded { tree_indent(row.depth) } else { 0.0 })
                                     .badge(collapsed.then_some((replies.as_str(), hidden_unread > 0))),
-                                Cell::new(&info.date_str).weak(),
+                                Cell::new(&date).weak(),
                             ],
                             selected,
                             focused,
@@ -358,6 +361,7 @@ impl MailApp {
                     }
                     self.reveal_message = false;
                 }
+                let today = today();
                 let output = scroll.show_rows(ui, ROW_HEIGHT, store.drafts().len(), |ui, range| {
                     for draft in &store.drafts()[range] {
                         let title = draft_title(draft);
@@ -365,7 +369,7 @@ impl MailApp {
                             .iter()
                             .find(|(number, _)| *number == draft.conference)
                             .map_or_else(|| draft.conference.to_string(), |(_, name)| name.clone());
-                        let written = display_date(&draft.date);
+                        let written = friendly_qwk_date(&draft.date, today);
                         let to = if draft.to.trim().is_empty() {
                             fl!(LANGUAGE_LOADER, "list-no-recipient")
                         } else {
@@ -532,4 +536,36 @@ pub fn file_title(file: &PacketFile) -> String {
 /// Formats a QWK `MM-DD-YYHH:MM` header date like message dates (`YYYY-MM-DD HH:MM`).
 pub fn display_date(date: &str) -> String {
     chrono::NaiveDateTime::parse_from_str(date, "%m-%d-%y%H:%M").map_or_else(|_| date.to_string(), |date| date.format("%Y-%m-%d %H:%M").to_string())
+}
+
+/// Compact list date: "Today 08:00", "Yesterday 08:00", the weekday during the past week and
+/// the plain date for anything older (or in the future). Unparsed dates keep their raw `fallback`.
+pub fn friendly_date(date: chrono::NaiveDateTime, fallback: &str, today: chrono::NaiveDate) -> String {
+    if fallback != date.format("%Y-%m-%d %H:%M").to_string() {
+        return fallback.to_string();
+    }
+    let time = date.format("%H:%M").to_string();
+    match (today - date.date()).num_days() {
+        0 => fl!(LANGUAGE_LOADER, "list-date-today", time = time),
+        1 => fl!(LANGUAGE_LOADER, "list-date-yesterday", time = time),
+        2..=6 => fl!(
+            LANGUAGE_LOADER,
+            "list-date-weekday",
+            weekday = i64::from(date.weekday().num_days_from_monday()),
+            time = time
+        ),
+        _ => date.format("%Y-%m-%d").to_string(),
+    }
+}
+
+/// [`friendly_date`] for a QWK `MM-DD-YYHH:MM` header date, as stored in drafts.
+pub fn friendly_qwk_date(date: &str, today: chrono::NaiveDate) -> String {
+    match chrono::NaiveDateTime::parse_from_str(date, "%m-%d-%y%H:%M") {
+        Ok(parsed) => friendly_date(parsed, &parsed.format("%Y-%m-%d %H:%M").to_string(), today),
+        Err(_) => date.to_string(),
+    }
+}
+
+pub fn today() -> chrono::NaiveDate {
+    chrono::Local::now().date_naive()
 }

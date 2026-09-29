@@ -42,7 +42,9 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
   are remembered per packet across restarts.
 - Unread messages are bold with a dot; replied-to and private messages are
   flagged. Opening a folder selects its first unread message.
-- Sortable columns, list or thread view, and an **Unread** filter. Search
+- Sortable columns, list or thread view, and an **Unread** filter. Dates in the
+  lists read “Today”, “Yesterday” or the weekday during the past week; the
+  reader header shows the full date. Search
   matches author, recipient, subject and message text, ignoring case. Message
   bodies are searched in parallel using Rayon, in the background across the packet, including messages
   not opened yet; folder and unread filters still apply to the results.
