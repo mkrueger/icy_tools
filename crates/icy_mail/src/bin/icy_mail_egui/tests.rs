@@ -2818,13 +2818,13 @@ fn gpu_modern_reading_mode() {
     ]
     .concat();
     let package = mail.reader.package.clone().unwrap();
-    let key = (
+    let cache_key = (
         Arc::as_ptr(&package) as usize,
         modern_view::Document::Message(mail.reader.selected_message.unwrap()),
     );
     let classic = icy_mail::reader::render_body(&body).unwrap();
     let wide = icy_mail::reader::render_body_wide(&body).unwrap();
-    mail.modern_items = Some((key, modern_view::items(&gpu.context, &classic, modern_view::blocks(&classic, &wide))));
+    mail.modern_items = Some((cache_key, modern_view::items(&gpu.context, &classic, modern_view::blocks(&classic, &wide))));
     mail.reading_mode = icy_mail::options::ReadingMode::Modern;
     for (theme, font, name) in [
         (egui::Theme::Dark, icy_mail::options::ModernFont::Proportional, "modern-dark"),
@@ -2855,6 +2855,25 @@ fn gpu_modern_reading_mode() {
         gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
     }
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "modern-bulletin");
+    // The editor in the modern display: an empty new message, then a reply with quotes.
+    mail.select_folder(app::Folder::All);
+    for (theme, name) in [(egui::Theme::Dark, "dark"), (egui::Theme::Light, "light")] {
+        gpu.context.set_theme(theme);
+        gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::N, egui::Modifiers::COMMAND)], "warmup");
+        for _ in 0..3 {
+            gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+        }
+        let (_, output) = gpu.capture(&mut mail, [1100, 760], 1.0, vec![], &format!("modern-compose-empty-{name}"));
+        label(&output, "Write your message\u{2026} F1 shows all shortcuts.");
+        mail.cancel_composer();
+    }
+    gpu.context.set_theme(egui::Theme::Dark);
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::R, egui::Modifiers::COMMAND)], "warmup");
+    for _ in 0..3 {
+        gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+    }
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![egui::Event::Text("Thanks, that helps!".into())], "warmup");
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "modern-compose-reply");
 }
 
 #[test]

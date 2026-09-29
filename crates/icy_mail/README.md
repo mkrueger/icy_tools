@@ -137,8 +137,11 @@ window with an unsaved composer asks as well.
 ### Message editor
 
 The message text is written on an 80 column CP437 terminal, modeled after
-Synchronet's SlyEdit. Lines wrap at 79 columns and are saved as they appear on
-screen. Typing inserts or, after Insert, overwrites; the terminal's status bar
+Synchronet's SlyEdit. Lines wrap at 79 columns (a dashed line marks the
+column) and are saved as they appear on screen. With the modern message display
+the terminal fills the pane's width on a page in the theme's colors, like the
+reading view; the classic display keeps the black terminal and the zoom setting.
+An empty message shows a hint where to start. Typing inserts or, after Insert, overwrites; the terminal's status bar
 shows the mode, line and column, and the current color. The tools around the
 terminal are regular panels, reachable from the toolbar above it or by keyboard:
 

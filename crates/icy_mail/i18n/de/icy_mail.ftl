@@ -343,6 +343,7 @@ editor-find-not-found = „{ $query }“ wurde nicht gefunden
 editor-qwk-separator-unusable = Zeichen 227 (E3h) ist der QWK-Zeilentrenner und kann nicht verwendet werden
 editor-control-code-unusable = Zeichen { $code } ({ $hex }h) ist ein Terminal-Steuerzeichen und kann nicht verwendet werden
 editor-text-color-tooltip = Textfarbe (Ctrl+K)
+editor-placeholder = Schreib deine Nachricht… F1 zeigt alle Tastenkürzel.
 editor-characters = Zeichen
 editor-characters-tooltip = CP437-Zeichentabelle (Ctrl+G)
 editor-quote = Zitieren

@@ -343,6 +343,7 @@ editor-find-not-found = “{ $query }” was not found
 editor-qwk-separator-unusable = Character 227 (E3h) is the QWK line separator and cannot be used
 editor-control-code-unusable = Character { $code } ({ $hex }h) is a terminal control code and cannot be used
 editor-text-color-tooltip = Text color (Ctrl+K)
+editor-placeholder = Write your message… F1 shows all shortcuts.
 editor-characters = Characters
 editor-characters-tooltip = CP437 character table (Ctrl+G)
 editor-quote = Quote

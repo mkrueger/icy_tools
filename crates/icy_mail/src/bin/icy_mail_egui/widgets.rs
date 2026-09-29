@@ -46,6 +46,8 @@ pub enum Icon {
     More,
     Star,
     Starred,
+    Quote,
+    Characters,
 }
 
 impl Icon {
@@ -84,6 +86,8 @@ impl Icon {
             Self::More => include_bytes!("../../../data/icons/more_horiz.svg"),
             Self::Star => include_bytes!("../../../data/icons/star.svg"),
             Self::Starred => include_bytes!("../../../data/icons/star_filled.svg"),
+            Self::Quote => include_bytes!("../../../data/icons/format_quote.svg"),
+            Self::Characters => include_bytes!("../../../data/icons/grid_view.svg"),
         }
     }
 }

@@ -12,10 +12,14 @@ use icy_mail::{
     LANGUAGE_LOADER,
 };
 
-use super::widgets::{pill, Icon, Icons};
+use super::widgets::{self, Icon, Icons};
 
 pub const COLUMNS: usize = 80;
 const MIN_ROWS: usize = 6;
+/// Largest zoom when the modern display fills the width with the 80 columns.
+const MAX_MODERN_ZOOM: f32 = 2.0;
+/// Space around the text in the modern display, like the reading view's page.
+const PAGE_MARGIN: egui::Vec2 = egui::vec2(16.0, 10.0);
 const FIND_ID: &str = "editor-find";
 
 /// The CP437 table beside (or below) the text.
@@ -82,6 +86,8 @@ pub struct TerminalEditor {
     dragging: bool,
     wheel: f32,
     palette: [Color32; 16],
+    /// Display mode and theme the screen's palette was set up for.
+    theme: Option<(bool, bool)>,
     glyphs: Option<egui::TextureHandle>,
     color_button: egui::Rect,
 }
@@ -131,6 +137,7 @@ impl TerminalEditor {
             dragging: false,
             wheel: 0.0,
             palette,
+            theme: None,
             glyphs: None,
             color_button: egui::Rect::NOTHING,
         };
@@ -156,7 +163,9 @@ impl TerminalEditor {
         self.full_rows
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, settings: &MonitorSettings, icons: &mut Icons, enabled: bool) -> EditorOutput {
+    /// `modern` shows the text on a page in the theme's colors that fills the width, like the modern
+    /// reading mode; otherwise the classic terminal follows the zoom setting.
+    pub fn show(&mut self, ui: &mut egui::Ui, settings: &MonitorSettings, icons: &mut Icons, enabled: bool, modern: bool) -> EditorOutput {
         let mut output = EditorOutput::default();
         let context = ui.ctx().clone();
         self.focused = enabled && self.id.is_some_and(|id| context.memory(|memory| memory.has_focus(id)));
@@ -195,7 +204,7 @@ impl TerminalEditor {
                 .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 6)))
                 .show_inside(ui, |ui| self.quote_panel(ui, icons));
         }
-        self.terminal(ui, settings, enabled);
+        self.terminal(ui, settings, enabled, modern);
         if enabled && self.colors.is_some() {
             self.color_picker(&context);
         }
@@ -567,26 +576,51 @@ impl TerminalEditor {
                 }
                 self.request_focus();
             }
-            if pill(ui, self.chars.open, &fl!(LANGUAGE_LOADER, "editor-characters"))
-                .on_hover_text(fl!(LANGUAGE_LOADER, "editor-characters-tooltip"))
+            ui.add_space(2.0);
+            let captions = ui.available_width() >= 420.0;
+            let caption = |key: String| captions.then_some(key);
+            if icons
+                .tool(
+                    ui,
+                    Icon::Characters,
+                    caption(fl!(LANGUAGE_LOADER, "editor-characters")).as_deref(),
+                    &fl!(LANGUAGE_LOADER, "editor-characters-tooltip"),
+                    true,
+                    self.chars.open,
+                )
                 .clicked()
             {
                 self.toggle_chars(false);
                 self.request_focus();
             }
-            let quote = ui
-                .add_enabled_ui(!self.quotes.lines.is_empty(), |ui| {
-                    pill(ui, self.quotes.open, &fl!(LANGUAGE_LOADER, "editor-quote"))
-                })
-                .inner
-                .on_hover_text(fl!(LANGUAGE_LOADER, "editor-quote-tooltip"))
-                .on_disabled_hover_text(fl!(LANGUAGE_LOADER, "editor-quote-disabled-tooltip"));
-            if quote.clicked() {
+            let quote_tooltip = if self.quotes.lines.is_empty() {
+                fl!(LANGUAGE_LOADER, "editor-quote-disabled-tooltip")
+            } else {
+                fl!(LANGUAGE_LOADER, "editor-quote-tooltip")
+            };
+            if icons
+                .tool(
+                    ui,
+                    Icon::Quote,
+                    caption(fl!(LANGUAGE_LOADER, "editor-quote")).as_deref(),
+                    &quote_tooltip,
+                    !self.quotes.lines.is_empty(),
+                    self.quotes.open,
+                )
+                .clicked()
+            {
                 self.toggle_quotes();
                 self.request_focus();
             }
-            if pill(ui, self.find.is_some(), &fl!(LANGUAGE_LOADER, "editor-find"))
-                .on_hover_text(fl!(LANGUAGE_LOADER, "editor-find-tooltip"))
+            if icons
+                .tool(
+                    ui,
+                    Icon::Search,
+                    caption(fl!(LANGUAGE_LOADER, "editor-find")).as_deref(),
+                    &fl!(LANGUAGE_LOADER, "editor-find-tooltip"),
+                    true,
+                    self.find.is_some(),
+                )
                 .clicked()
             {
                 if self.find.is_some() {
@@ -990,13 +1024,24 @@ impl TerminalEditor {
         texture
     }
 
-    fn terminal(&mut self, ui: &mut egui::Ui, settings: &MonitorSettings, enabled: bool) {
-        let available = ui.available_size().max(egui::vec2(1.0, 1.0));
+    fn terminal(&mut self, ui: &mut egui::Ui, settings: &MonitorSettings, enabled: bool, modern: bool) {
+        let area = ui.available_rect_before_wrap();
+        let page = ui.visuals().extreme_bg_color;
+        if modern {
+            ui.painter().rect_filled(area, 0.0, page);
+        }
+        let margin = if modern { PAGE_MARGIN } else { egui::Vec2::ZERO };
+        let inner = area.shrink2(margin);
+        let available = inner.size().max(egui::vec2(1.0, 1.0));
         let font = self.font();
-        self.zoom = settings
-            .scaling_mode
-            .compute_zoom(COLUMNS as f32 * font.x, font.y, available.x, available.y, settings.use_integer_scaling)
-            .max(0.01);
+        self.zoom = if modern {
+            (available.x / (COLUMNS as f32 * font.x)).min(MAX_MODERN_ZOOM)
+        } else {
+            settings
+                .scaling_mode
+                .compute_zoom(COLUMNS as f32 * font.x, font.y, available.x, available.y, settings.use_integer_scaling)
+        }
+        .max(0.01);
         let row_height = font.y * self.zoom;
         let full_rows = ((available.y / row_height).floor() as usize).max(MIN_ROWS);
         // One more row than fits shows the top of the next line instead of leaving an empty gap.
@@ -1005,15 +1050,27 @@ impl TerminalEditor {
             self.rows = rows;
             self.full_rows = full_rows;
             self.view = screen_view(rows);
+            self.theme = None;
             self.drawn = None;
             self.follow = true;
         }
+        self.apply_theme(ui.visuals(), modern);
         self.view.terminal.has_focus = self.focused;
         self.redraw();
         let mut settings = settings.clone();
         settings.scaling_mode = ScalingMode::Manual(self.zoom);
         settings.use_integer_scaling = false;
-        let response = self.view.show(ui, &settings);
+        // The modern page centers the 80 columns when the zoom limit leaves room beside them.
+        let screen = if modern {
+            let width = COLUMNS as f32 * font.x * self.zoom;
+            egui::Rect::from_min_size(egui::pos2(inner.center().x - width / 2.0, inner.top()), egui::vec2(width, available.y))
+        } else {
+            inner
+        };
+        let response = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(screen), |ui| self.view.show(ui, &settings))
+            .inner;
+        ui.advance_cursor_after_rect(area);
         self.id = Some(response.id);
         self.rect = response.rect;
         if enabled && (self.focus_request || response.clicked() || response.drag_started()) {
@@ -1023,13 +1080,83 @@ impl TerminalEditor {
         if enabled {
             self.pointer(ui, &response);
         }
+        let cell = font * self.zoom;
+        let origin = self.view.terminal.render_info.read();
+        let left = if origin.font_width > 0.0 {
+            origin.bounds_x + origin.viewport_x
+        } else {
+            response.rect.left()
+        };
+        drop(origin);
+        let weak = ui.visuals().weak_text_color();
+        // Lines wrap after this column; the marker shows where.
+        let wrap = left + editor::WRAP_WIDTH as f32 * cell.x;
+        if wrap < response.rect.right() {
+            let color = if modern {
+                weak.gamma_multiply(0.35)
+            } else {
+                Color32::from_gray(90).gamma_multiply(0.6)
+            };
+            ui.painter().with_clip_rect(response.rect).extend(egui::Shape::dashed_line(
+                &[egui::pos2(wrap, response.rect.top()), egui::pos2(wrap, response.rect.bottom())],
+                egui::Stroke::new(1.0, color),
+                4.0,
+                4.0,
+            ));
+        }
+        if self.editor.paragraph_count() <= 1 && self.editor.plain_text().is_empty() {
+            let text = fl!(LANGUAGE_LOADER, "editor-placeholder");
+            let size = (cell.y * 0.6).clamp(11.0, 20.0);
+            let color = if modern { weak } else { Color32::from_gray(130) };
+            ui.painter().with_clip_rect(response.rect).text(
+                egui::pos2(left + cell.x * 1.5, response.rect.top() + cell.y / 2.0),
+                egui::Align2::LEFT_CENTER,
+                text,
+                egui::FontId::proportional(size),
+                color,
+            );
+        }
         if self.focused {
             let stroke = egui::Stroke::new(1.5, ui.visuals().selection.stroke.color);
-            ui.painter().rect_stroke(response.rect, 0.0, stroke, egui::StrokeKind::Inside);
+            let rect = if modern { response.rect.expand2(margin * 0.5) } else { response.rect };
+            ui.painter().rect_stroke(rect, if modern { 4.0 } else { 0.0 }, stroke, egui::StrokeKind::Inside);
         }
         if self.redraw() {
             ui.ctx().request_repaint();
         }
+    }
+
+    /// In the modern display the page takes the theme's colors: default text in the text color on
+    /// the page color, other colors adjusted to stay readable, as in the modern reading mode. The
+    /// classic display keeps the DOS palette.
+    fn apply_theme(&mut self, visuals: &egui::Visuals, modern: bool) {
+        let theme = (modern, visuals.dark_mode);
+        if self.theme == Some(theme) {
+            return;
+        }
+        self.theme = Some(theme);
+        let mut colors = self.palette;
+        if modern {
+            for (index, color) in colors.iter_mut().enumerate() {
+                *color = match index {
+                    0 => visuals.extreme_bg_color,
+                    7 => visuals.text_color(),
+                    8 => visuals.weak_text_color(),
+                    15 => visuals.strong_text_color(),
+                    _ => super::modern_view::readable([color.r(), color.g(), color.b()], false, visuals.dark_mode),
+                };
+            }
+        }
+        let mut screen = self.view.terminal.screen.lock();
+        if let Some(screen) = screen.as_editable() {
+            for (index, color) in colors.iter().enumerate() {
+                screen.palette_mut().set_color_rgb(index as u32, color.r(), color.g(), color.b());
+            }
+        }
+        drop(screen);
+        let page = colors[0];
+        *self.view.terminal.background_color.write() = [page.r(), page.g(), page.b(), 255].map(|channel| f32::from(channel) / 255.0);
+        self.drawn = None;
     }
 
     fn cell_at(&self, position: egui::Pos2) -> (i32, i32) {
@@ -1256,19 +1383,22 @@ fn color_name(index: u8) -> String {
     format!("{name} ({index:X})")
 }
 
-/// Toolbar button showing the current colors.
+/// Toolbar button showing the current colors, as tall as the other editor tools.
 fn color_button(ui: &mut egui::Ui, fg: Color32, bg: Color32, open: bool) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(58.0, 24.0), egui::Sense::click());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(60.0, widgets::TOOL_SIZE.y), egui::Sense::click());
     let visuals = ui.visuals();
-    let frame = if open || response.hovered() {
-        visuals.widgets.hovered.bg_stroke
+    let fill = if open {
+        visuals.selection.bg_fill.gamma_multiply(0.5)
+    } else if response.hovered() {
+        visuals.widgets.hovered.weak_bg_fill
     } else {
-        visuals.widgets.inactive.bg_stroke
+        Color32::TRANSPARENT
     };
+    ui.painter().rect_filled(rect, 6, fill);
+    let sample = egui::Rect::from_min_size(rect.min + egui::vec2(6.0, 5.0), egui::vec2(32.0, rect.height() - 10.0));
     ui.painter()
-        .rect(rect, 5, visuals.widgets.inactive.weak_bg_fill, frame, egui::StrokeKind::Inside);
-    let sample = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 4.0), egui::vec2(32.0, 16.0));
-    ui.painter().rect_filled(sample, 2, bg);
+        .rect_stroke(sample, 3, visuals.widgets.noninteractive.bg_stroke, egui::StrokeKind::Outside);
+    ui.painter().rect_filled(sample, 3, bg);
     ui.painter().text(
         sample.center(),
         egui::Align2::CENTER_CENTER,

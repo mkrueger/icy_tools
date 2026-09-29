@@ -317,7 +317,8 @@ impl MailApp {
                             }
                         });
                     });
-                let output = composer.editor.show(ui, &self.settings, &mut self.icons, enabled);
+                let modern = self.reading_mode == icy_mail::options::ReadingMode::Modern;
+                let output = composer.editor.show(ui, &self.settings, &mut self.icons, enabled, modern);
                 if output.changed {
                     composer.draft.body = composer.editor.editor.to_body();
                 }
