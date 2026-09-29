@@ -1,6 +1,6 @@
 use eframe::egui::{self, Color32, Key};
-use icy_draw::{brush::BrushPrimaryMode, document::Document, fl, Settings};
-use icy_engine::{FileFormat, Position, Selection, Size, TextPane};
+use icy_draw::{brush::BrushPrimaryMode, document::Document, fl, selection_drag::SelectionDrag, Settings};
+use icy_engine::{AddType, FileFormat, Position, Selection, Size, TextPane};
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::UndoState;
 use icy_engine_gui::system_clipboard::{self, PasteContent};
@@ -150,6 +150,17 @@ fn tdf_type_label(kind: icy_engine_edit::charset::TdfFontType) -> String {
 
 fn tdf_font_entry(index: usize, font: &retrofont::tdf::TdfFont) -> String {
     format!("{}. {} ({})", index + 1, font.name, tdf_type_label(font.font_type))
+}
+
+/// How a Select tool click combines with the current selection, matching `Document::start`.
+fn selection_add_type(modifiers: egui::Modifiers) -> AddType {
+    if modifiers.shift {
+        AddType::Add
+    } else if modifiers.ctrl || modifiers.mac_cmd {
+        AddType::Subtract
+    } else {
+        AddType::Default
+    }
 }
 
 fn filter_match_ranges(name: &str, filter: &str) -> Vec<std::ops::Range<usize>> {
@@ -1397,32 +1408,95 @@ impl DrawApp {
                 }
                 widgets::divider(ui);
                 let selected = self.document.with_state(|state| state.is_something_selected());
-                if self.icons.button(ui, "select", &fl!("menu-select-all"), false).clicked() {
+                let paint = self.document.can_paint();
+                let shortcut = |label: String, shortcut: &egui::KeyboardShortcut| format!("{label} ({})", context.format_shortcut(shortcut));
+                let key = |label: String, key: &str| format!("{label} ({key})");
+                if self
+                    .icons
+                    .button(ui, "select", &shortcut(fl!("menu-select-all"), &menus::SELECT_ALL), false)
+                    .clicked()
+                {
                     self.select_all();
                 }
                 ui.add_enabled_ui(selected, |ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
+                    if self
+                        .icons
+                        .button(ui, "deselect", &shortcut(fl!("select-deselect"), &menus::DESELECT), false)
+                        .clicked()
+                    {
+                        self.edit(|state| state.clear_selection());
+                    }
+                    widgets::divider(ui);
                     if self.icons.button(ui, "file_copy", &fl!("select-copy"), false).clicked() {
                         self.copy(context);
                     }
-                    ui.add_enabled_ui(self.document.can_paint(), |ui| {
+                    ui.add_enabled_ui(paint, |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
+                        if self.icons.button(ui, "library_add", &key(fl!("shortcut-block-copy"), "C"), false).clicked() {
+                            let result = self.document.float_selection(false);
+                            self.result(result);
+                        }
+                        if self.icons.button(ui, "move", &key(fl!("shortcut-block-move"), "M"), false).clicked() {
+                            let result = self.document.float_selection(true);
+                            self.result(result);
+                        }
+                        widgets::divider(ui);
+                        if self.icons.button(ui, "fill", &key(fl!("shortcut-block-fill"), "F"), false).clicked() {
+                            let result = self.document.fill_selection();
+                            self.result(result);
+                        }
+                        let erase = egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete);
+                        if self
+                            .icons
+                            .button(ui, "eraser", &shortcut(fl!("shortcut-erase-selection"), &erase), false)
+                            .clicked()
+                        {
+                            self.document.finish();
+                            self.edit(|state| state.erase_selection());
+                        }
+                        if self.icons.button(ui, "crop", &shortcut(fl!("menu-crop"), &menus::CROP), false).clicked() {
+                            self.edit(|state| state.crop());
+                        }
+                        widgets::divider(ui);
                         if self.icons.button(ui, "flip_tool", &fl!("menu-flip-x"), false).clicked() {
                             self.edit(|state| state.flip_x());
                         }
                         if self.icons.button(ui, "swap", &fl!("menu-flip-y"), false).clicked() {
                             self.edit(|state| state.flip_y());
                         }
+                        let justify = self.icons.button(ui, "format_align_center", &fl!("select-justify"), false);
+                        egui::Popup::menu(&justify).id(egui::Id::new("select-justify")).show(|ui| {
+                            if ui.button(fl!("menu-justifyleft")).clicked() {
+                                self.edit(|state| state.justify_left());
+                                ui.close();
+                            }
+                            if ui.button(fl!("menu-justifycenter")).clicked() {
+                                self.edit(|state| state.center());
+                                ui.close();
+                            }
+                            if ui.button(fl!("menu-justifyright")).clicked() {
+                                self.edit(|state| state.justify_right());
+                                ui.close();
+                            }
+                        });
                     });
-                    if self.icons.button(ui, "delete", &fl!("menu-select_nothing"), false).clicked() {
-                        self.edit(|state| state.clear_selection());
-                    }
                 });
                 widgets::divider(ui);
-                if let Some(bounds) = self.document.with_state(|state| state.selection().map(|selection| selection.as_rectangle())) {
-                    ui.weak(format!("{}, {}  ·  {} × {}", bounds.left(), bounds.top(), bounds.width(), bounds.height()));
-                } else {
-                    ui.weak(fl!("tool-select-description"));
+                match selection_add_type(ui.input(|input| input.modifiers)) {
+                    AddType::Add => {
+                        ui.label(egui::RichText::new(fl!("select-mode-add")).color(appearance::PRIMARY).strong());
+                    }
+                    AddType::Subtract => {
+                        ui.label(egui::RichText::new(fl!("select-mode-subtract")).color(appearance::PRIMARY).strong());
+                    }
+                    AddType::Default => {
+                        if let Some(bounds) = self.document.with_state(|state| state.selection().map(|selection| selection.as_rectangle())) {
+                            ui.weak(format!("{}, {}  ·  {} × {}", bounds.left(), bounds.top(), bounds.width(), bounds.height()));
+                        } else {
+                            ui.weak(fl!("tool-select-description"));
+                        }
+                    }
                 }
             }
 
@@ -1685,6 +1759,42 @@ impl DrawApp {
             } else {
                 egui::CursorIcon::Crosshair
             });
+        }
+        if matches!(self.document.tool, Tool::Select | Tool::Click | Tool::Font) && !blocked {
+            let modifiers = ui.input(|input| input.modifiers);
+            let add_type = if self.document.tool == Tool::Select {
+                selection_add_type(modifiers)
+            } else {
+                AddType::Default
+            };
+            // Modifiers start a new selection or move the layer instead of dragging a handle.
+            let hover = response
+                .hover_pos()
+                .filter(|_| !(modifiers.shift || modifiers.ctrl || modifiers.mac_cmd))
+                .and_then(|point| self.position(point));
+            let cursor = match self.document.selection_handle(hover) {
+                SelectionDrag::None | SelectionDrag::Create => None,
+                SelectionDrag::Move => Some(egui::CursorIcon::Move),
+                SelectionDrag::Left | SelectionDrag::Right => Some(egui::CursorIcon::ResizeHorizontal),
+                SelectionDrag::Top | SelectionDrag::Bottom => Some(egui::CursorIcon::ResizeVertical),
+                SelectionDrag::TopLeft | SelectionDrag::BottomRight => Some(egui::CursorIcon::ResizeNwSe),
+                SelectionDrag::TopRight | SelectionDrag::BottomLeft => Some(egui::CursorIcon::ResizeNeSw),
+            };
+            if let Some(cursor) = cursor.filter(|_| response.hovered() || response.is_pointer_button_down_on()) {
+                ui.ctx().set_cursor_icon(cursor);
+            }
+            if let Some(pointer) = response.hover_pos().filter(|_| add_type != AddType::Default) {
+                let painter = ui
+                    .ctx()
+                    .layer_painter(egui::LayerId::new(egui::Order::Tooltip, response.id.with("selection-add-type")));
+                let center = pointer + egui::vec2(14.0, 14.0);
+                let stroke = egui::Stroke::new(1.5, Color32::WHITE);
+                painter.circle_filled(center, 7.0, appearance::PRIMARY);
+                painter.line_segment([center - egui::vec2(3.5, 0.0), center + egui::vec2(3.5, 0.0)], stroke);
+                if add_type == AddType::Add {
+                    painter.line_segment([center - egui::vec2(0.0, 3.5), center + egui::vec2(0.0, 3.5)], stroke);
+                }
+            }
         }
         if self.document.tool == Tool::Pipette && !blocked {
             let modifiers = ui.input(|input| input.modifiers);

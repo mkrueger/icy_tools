@@ -939,6 +939,27 @@ impl Document {
             .is_some_and(|stroke| stroke.tool == Tool::Tag && !stroke.tag_offsets.is_empty() && stroke.start != stroke.last)
     }
 
+    /// The selection handle for the mouse cursor: the one being dragged, or else the one under `position`.
+    pub fn selection_handle(&self, position: Option<Position>) -> SelectionDrag {
+        if let Some(stroke) = &self.stroke {
+            return if stroke.layer_offset.is_none() {
+                stroke.selection_drag
+            } else {
+                SelectionDrag::None
+            };
+        }
+        let handles = match self.tool {
+            Tool::Select => self.selection_mode == SelectionMode::Rectangle,
+            Tool::Click => !self.with_state(|state| state.get_cur_layer().is_some_and(|layer| layer.role == icy_engine::Role::Image)),
+            Tool::Font => true,
+            _ => false,
+        };
+        match position {
+            Some(position) if handles && !self.paste_active() => self.with_state(|state| hit_test_selection(state.selection(), position)),
+            _ => SelectionDrag::None,
+        }
+    }
+
     pub fn tag_selection_rectangle(&self) -> Option<Rectangle> {
         let stroke = self.stroke.as_ref()?;
         (stroke.tool == Tool::Tag && stroke.tag_offsets.is_empty()).then(|| {
@@ -1082,6 +1103,31 @@ mod tests {
         document.finish();
         document.start_paste("XY", None).unwrap();
         assert_eq!(document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::new(7, 9));
+    }
+
+    #[test]
+    fn selection_handles_follow_the_hover_and_the_drag() {
+        let mut document = Document::new(Size::new(30, 20));
+        document.tool = Tool::Select;
+        document
+            .with_state(|state| state.set_selection(Selection::from(Rectangle::from(5, 3, 10, 8))))
+            .unwrap();
+        assert_eq!(document.selection_handle(Some(Position::new(9, 6))), SelectionDrag::Move);
+        assert_eq!(document.selection_handle(Some(Position::new(5, 3))), SelectionDrag::TopLeft);
+        assert_eq!(document.selection_handle(Some(Position::new(20, 15))), SelectionDrag::None);
+        assert_eq!(document.selection_handle(None), SelectionDrag::None);
+
+        // While resizing, the handle stays even when the pointer leaves the corner.
+        document.begin(Position::new(5, 3), MouseButton::Left);
+        document.update(Position::new(2, 1));
+        assert_eq!(document.selection_handle(Some(Position::new(20, 15))), SelectionDrag::TopLeft);
+        document.finish();
+
+        document.selection_mode = SelectionMode::Character;
+        assert_eq!(document.selection_handle(Some(Position::new(9, 6))), SelectionDrag::None);
+        document.selection_mode = SelectionMode::Rectangle;
+        document.tool = Tool::Pencil;
+        assert_eq!(document.selection_handle(Some(Position::new(9, 6))), SelectionDrag::None);
     }
 
     #[test]

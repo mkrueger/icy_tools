@@ -653,6 +653,74 @@ fn canvas_context_menu_opens_for_text_and_selection_tools() {
 }
 
 #[test]
+fn select_tool_shows_handle_cursors_and_the_add_mode() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    frame(&context, &mut app, size, vec![]);
+    {
+        let mut info = app.view.terminal.render_info.write();
+        info.display_scale = 2.0;
+        info.viewport_width = app.canvas_rect.width();
+        info.viewport_height = app.canvas_rect.height();
+        info.font_width = 8.0;
+        info.font_height = 16.0;
+        info.bounds_x = app.canvas_rect.left();
+        info.bounds_y = app.canvas_rect.top();
+    }
+    let info = app.view.terminal.render_info.read().clone();
+    let cell = |x: f32, y: f32| {
+        egui::pos2(
+            info.bounds_x + info.viewport_x + info.font_width * info.display_scale * (x + 0.5),
+            info.bounds_y + info.viewport_y + info.font_height * info.display_scale * (y + 0.5),
+        )
+    };
+    let hover = |app: &mut DrawApp, position: egui::Pos2, modifiers: egui::Modifiers| {
+        let time = context.input(|input| input.time) + 0.05;
+        context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                events: vec![egui::Event::PointerMoved(position)],
+                modifiers,
+                time: Some(time),
+                ..Default::default()
+            },
+            |context| app.show(context),
+        )
+    };
+    app.document.tool = Tool::Select;
+    app.document
+        .with_state(|state| state.set_selection(Selection::from(icy_engine::Rectangle::from(5, 3, 10, 8))))
+        .unwrap();
+
+    let cursor = |output: egui::FullOutput| output.platform_output.cursor_icon;
+    assert_eq!(cursor(hover(&mut app, cell(9.0, 6.0), egui::Modifiers::NONE)), egui::CursorIcon::Move);
+    assert_eq!(cursor(hover(&mut app, cell(5.0, 3.0), egui::Modifiers::NONE)), egui::CursorIcon::ResizeNwSe);
+    assert_eq!(
+        cursor(hover(&mut app, cell(5.0, 6.0), egui::Modifiers::NONE)),
+        egui::CursorIcon::ResizeHorizontal
+    );
+    assert_eq!(cursor(hover(&mut app, cell(9.0, 3.0), egui::Modifiers::NONE)), egui::CursorIcon::ResizeVertical);
+    assert_eq!(cursor(hover(&mut app, cell(30.0, 15.0), egui::Modifiers::NONE)), egui::CursorIcon::Default);
+
+    let output = hover(&mut app, cell(9.0, 6.0), egui::Modifiers::SHIFT);
+    assert!(text_position(&output, "Add to selection").is_some());
+    assert_eq!(cursor(output), egui::CursorIcon::Default, "shift starts a new selection instead of moving");
+    let output = hover(&mut app, cell(9.0, 6.0), egui::Modifiers::CTRL);
+    assert!(text_position(&output, "Remove from selection").is_some());
+    assert!(text_position(&hover(&mut app, cell(9.0, 6.0), egui::Modifiers::NONE), "5, 3  ·  10 × 8").is_some());
+
+    app.document.selection_mode = icy_draw::document::SelectionMode::Character;
+    assert_eq!(
+        cursor(hover(&mut app, cell(9.0, 6.0), egui::Modifiers::NONE)),
+        egui::CursorIcon::Default,
+        "matching modes do not drag the rectangle"
+    );
+}
+
+#[test]
 fn toolbar_color_switcher_swaps_and_opens_palette_popup() {
     let context = egui::Context::default();
     appearance::apply(&context);
