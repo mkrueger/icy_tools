@@ -2902,6 +2902,18 @@ fn gpu_modern_reading_mode() {
     }
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![egui::Event::Text("Thanks, that helps!".into())], "warmup");
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "modern-compose-reply");
+    gpu.context.set_theme(egui::Theme::Dark);
+    mail.composer = None;
+    mail.modal = None;
+    mail.reader.search_fields.text = false;
+    let (_, output) = gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+    let magnifier = label(&output, "Search in: Subject, From, To").left_center() - egui::vec2(14.0, 0.0);
+    gpu.capture(&mut mail, [1100, 760], 1.0, pointer(magnifier, true), "warmup");
+    gpu.capture(&mut mail, [1100, 760], 1.0, pointer(magnifier, false), "warmup");
+    for _ in 0..3 {
+        gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+    }
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "search-fields");
 }
 
 #[test]
@@ -3022,4 +3034,46 @@ fn modern_palette_keeps_color_pairs_apart_and_readable() {
         }
         assert_eq!(modern_color([0, 0, 170], false, dark), palette[1], "DOS colors take the palette entry");
     }
+}
+
+#[test]
+fn magnifier_menu_limits_what_the_search_looks_at() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    let output = settle(&context, &mut mail, size);
+    let magnifier = label(&output, "Search messages").left_center() - egui::vec2(14.0, 0.0);
+    for pressed in [true, false] {
+        frame(&context, &mut mail, size, pointer(magnifier, pressed));
+    }
+    let output = settle(&context, &mut mail, size);
+    label(&output, "Search in");
+    click_label(&context, &mut mail, size, "Message text");
+    click_label(&context, &mut mail, size, "To");
+    click_label(&context, &mut mail, size, "From");
+    assert_eq!(
+        mail.reader.search_fields,
+        icy_mail::reader::SearchFields {
+            from: false,
+            to: false,
+            subject: true,
+            text: false
+        }
+    );
+    // Subject is the last field searched and stays on.
+    click_label(&context, &mut mail, size, "Subject");
+    assert!(mail.reader.search_fields.subject);
+    frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
+    let output = settle(&context, &mut mail, size);
+    label(&output, "Search in: Subject");
+
+    search_messages(&context, &mut mail, "alice");
+    settle(&context, &mut mail, size);
+    assert!(mail.reader.messages.is_empty(), "the author is not searched any more");
+    assert_eq!(mail.loader.search_query.as_deref(), Some(""), "message text is not searched in the background");
+    search_messages(&context, &mut mail, "coffee");
+    settle(&context, &mut mail, size);
+    assert!(!mail.reader.messages.is_empty(), "subjects still match");
+    assert!(!mail.current_options(&context).search_fields.text, "the choice is saved");
 }

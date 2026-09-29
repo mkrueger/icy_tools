@@ -10,7 +10,11 @@ use i18n_embed_fl::fl;
 use icy_engine_gui::{MonitorSettings, ScalingMode};
 use serde::{Deserialize, Serialize};
 
-use crate::{drafts::atomic_write, reader::ViewMode, LANGUAGE_LOADER};
+use crate::{
+    drafts::atomic_write,
+    reader::{SearchFields, ViewMode},
+    LANGUAGE_LOADER,
+};
 
 const FILE_NAME: &str = "settings.toml";
 pub const DEFAULT_MODERN_FONT_SIZE: f32 = 15.0;
@@ -68,6 +72,8 @@ pub struct Options {
     pub reading_mode: ReadingMode,
     pub modern_font: ModernFont,
     pub modern_font_size: f32,
+    /// Parts of the messages the search looks at.
+    pub search_fields: SearchFields,
 }
 
 impl Default for Options {
@@ -87,6 +93,7 @@ impl Default for Options {
             reading_mode: ReadingMode::default(),
             modern_font: ModernFont::default(),
             modern_font_size: DEFAULT_MODERN_FONT_SIZE,
+            search_fields: SearchFields::default(),
         }
     }
 }
@@ -139,6 +146,7 @@ mod tests {
         options.reading_mode = ReadingMode::Classic;
         options.modern_font = ModernFont::Proportional;
         options.modern_font_size = 18.0;
+        options.search_fields.text = false;
         options.save_in(dir.path()).unwrap();
         assert_eq!(Options::load_in(dir.path()).unwrap(), options);
         fs::write(dir.path().join(FILE_NAME), "theme = \"Light\"\n").unwrap();
@@ -150,5 +158,6 @@ mod tests {
         assert_eq!(partial.reading_pane, ReadingPane::Automatic);
         assert_eq!(partial.reading_mode, ReadingMode::Modern, "new installations read in the modern mode");
         assert_eq!(partial.modern_font, ModernFont::Monospace);
+        assert!(partial.search_fields.all(), "search looks everywhere until restricted");
     }
 }

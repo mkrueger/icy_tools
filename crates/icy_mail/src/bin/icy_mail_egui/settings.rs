@@ -90,6 +90,7 @@ impl MailApp {
             reading_mode: self.reading_mode,
             modern_font: self.modern_font,
             modern_font_size: self.modern_font_size,
+            search_fields: self.reader.search_fields,
         }
     }
 
@@ -101,6 +102,9 @@ impl MailApp {
         self.reading_mode = options.reading_mode;
         self.modern_font = options.modern_font;
         self.modern_font_size = options.modern_font_size.clamp(*MODERN_FONT_SIZES.start(), *MODERN_FONT_SIZES.end());
+        if self.reader.search_fields != options.search_fields && options.search_fields.any() {
+            self.set_search_fields(options.search_fields);
+        }
         if self.reader.view_mode != options.view_mode {
             self.set_mode(options.view_mode);
         }

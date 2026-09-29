@@ -93,7 +93,12 @@ impl MailApp {
             );
             return;
         };
-        let needle = self.reader.filter.trim().to_owned();
+        let fields = self.reader.search_fields;
+        let (subject_needle, from_needle, to_needle) = (
+            self.search_needle(fields.subject),
+            self.search_needle(fields.from),
+            self.search_needle(fields.to),
+        );
         let compact = ui.available_height() < 220.0;
         let minimal = ui.available_height() < 160.0;
         let conference = self.folder_name(Folder::Conference(info.conference));
@@ -120,7 +125,7 @@ impl MailApp {
                         ui.set_min_width(width);
                         let size = if compact { 14.0 } else { 16.0 };
                         let mut job = widgets::header_job(ui, &info.subject, "", egui::FontId::proportional(size), ui.visuals().strong_text_color(), true);
-                        widgets::highlight(&mut job, 0, &needle, ui);
+                        widgets::highlight(&mut job, 0, &subject_needle, ui);
                         ui.add(egui::Label::new(job).truncate()).on_hover_text(info.subject.as_str());
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -191,7 +196,7 @@ impl MailApp {
                     let font = egui::FontId::proportional(12.0);
                     let mut job = egui::text::LayoutJob::default();
                     widgets::append_header(&mut job, ui, &info.from, "", font.clone(), color, false);
-                    widgets::highlight(&mut job, 0, &needle, ui);
+                    widgets::highlight(&mut job, 0, &from_needle, ui);
                     job.append(
                         " \u{2192} ",
                         0.0,
@@ -203,7 +208,7 @@ impl MailApp {
                     );
                     let start = job.text.len();
                     widgets::append_header(&mut job, ui, &info.to, "", font.clone(), color, false);
-                    widgets::highlight(&mut job, start, &needle, ui);
+                    widgets::highlight(&mut job, start, &to_needle, ui);
                     let suffix = format!("  \u{00b7}  {}  \u{00b7}  {conference}", info.date_str);
                     job.append(
                         &suffix,
@@ -225,11 +230,11 @@ impl MailApp {
                     widgets::avatar(ui, &info.from, 20.0);
                     ui.add_space(2.0);
                     let mut from = widgets::header_job(ui, &info.from, "", egui::FontId::proportional(13.0), ui.visuals().strong_text_color(), true);
-                    widgets::highlight(&mut from, 0, &needle, ui);
+                    widgets::highlight(&mut from, 0, &from_needle, ui);
                     ui.label(from);
                     ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "reader-to")).weak().size(12.5));
                     let mut to = widgets::header_job(ui, &info.to, "", egui::FontId::proportional(13.0), ui.visuals().text_color(), false);
-                    widgets::highlight(&mut to, 0, &needle, ui);
+                    widgets::highlight(&mut to, 0, &to_needle, ui);
                     ui.label(to);
                     if info.private {
                         ui.add_space(2.0);
@@ -380,7 +385,11 @@ impl MailApp {
 
     /// The message terminal with focus handling and mouse selection.
     pub(super) fn terminal_body(&mut self, ui: &mut egui::Ui) -> egui::Response {
-        let query = if self.folder.holds_messages() { &self.reader.filter } else { "" };
+        let query = if self.folder.holds_messages() && self.reader.search_fields.text {
+            &self.reader.filter
+        } else {
+            ""
+        };
         if let Err(error) = self.body_highlights.update(&mut self.screen, query, ui.visuals().dark_mode) {
             self.error = Some(error.to_string());
         }

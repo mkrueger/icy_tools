@@ -881,16 +881,31 @@ impl MailApp {
     }
 
     pub fn filter_changed(&mut self) {
-        if self
-            .loader
-            .search_query
-            .as_ref()
-            .is_some_and(|query| *query != self.reader.filter.trim().to_lowercase())
-        {
+        let query = if self.reader.search_fields.text {
+            self.reader.filter.trim().to_lowercase()
+        } else {
+            String::new()
+        };
+        if self.loader.search_query.as_ref().is_some_and(|searched| *searched != query) {
             self.loader.cancel_search();
         }
         self.reader.rebuild_messages();
         self.reveal_message = true;
+    }
+
+    /// The search text for highlighting a field, empty when the search does not look at it.
+    pub fn search_needle(&self, searched: bool) -> String {
+        if searched {
+            self.reader.filter.trim().to_owned()
+        } else {
+            String::new()
+        }
+    }
+
+    /// Changes what the search looks at and filters again.
+    pub fn set_search_fields(&mut self, fields: icy_mail::reader::SearchFields) {
+        self.reader.search_fields = fields;
+        self.filter_changed();
     }
 
     fn search_bodies(&mut self, context: &egui::Context) {
@@ -898,7 +913,13 @@ impl MailApp {
             return;
         }
         if let Some(package) = self.reader.package.clone() {
-            if let Err(error) = self.loader.search(package, self.reader.filter.trim().to_lowercase(), context) {
+            // Without the text field there is nothing to look for in the bodies.
+            let query = if self.reader.search_fields.text {
+                self.reader.filter.trim().to_lowercase()
+            } else {
+                String::new()
+            };
+            if let Err(error) = self.loader.search(package, query, context) {
                 self.error = Some(error);
             }
         }

@@ -2,7 +2,10 @@ use eframe::egui::{self, Key, KeyboardShortcut, Modifiers};
 use i18n_embed_fl::fl;
 use icy_engine_gui::ScalingMode;
 use icy_mail::LANGUAGE_LOADER;
-use icy_mail::{options::Theme, reader::ViewMode};
+use icy_mail::{
+    options::Theme,
+    reader::{SearchFields, ViewMode},
+};
 
 use super::{
     app::{Folder, MailApp, Modal, NoticeKind},
@@ -149,7 +152,43 @@ impl MailApp {
         let enabled = self.reader.package.is_some();
         ui.add_enabled_ui(enabled, |ui| {
             widgets::field(ui, width, id, |ui| {
-                ui.add(self.icons.image(ui.ctx(), Icon::Search, 16.0).tint(weak));
+                // The magnifier chooses what the search looks at; it takes the accent while limited.
+                let fields = self.reader.search_fields;
+                let tint = if fields.all() { weak } else { widgets::accent(ui) };
+                let image = self.icons.image(ui.ctx(), Icon::Search, 16.0).tint(tint);
+                let scope = ui
+                    .add(egui::Button::image(image).frame(false))
+                    .on_hover_text(fl!(LANGUAGE_LOADER, "search-fields-tooltip"));
+                egui::Popup::menu(&scope)
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                    .show(|ui| {
+                        ui.set_min_width(180.0);
+                        ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "search-fields-title")).weak());
+                        let mut fields = self.reader.search_fields;
+                        let only = |fields: SearchFields, field: bool| {
+                            field && [fields.from, fields.to, fields.subject, fields.text].iter().filter(|on| **on).count() == 1
+                        };
+                        let before = fields;
+                        for (value, label) in [
+                            (&mut fields.from, fl!(LANGUAGE_LOADER, "search-field-from")),
+                            (&mut fields.to, fl!(LANGUAGE_LOADER, "search-field-to")),
+                            (&mut fields.subject, fl!(LANGUAGE_LOADER, "search-field-subject")),
+                            (&mut fields.text, fl!(LANGUAGE_LOADER, "search-field-text")),
+                        ] {
+                            // The last field searched stays on, so the search never finds nothing by design.
+                            ui.add_enabled_ui(!only(before, *value), |ui| ui.checkbox(value, label));
+                        }
+                        ui.separator();
+                        if ui
+                            .add_enabled(!fields.all(), egui::Button::new(fl!(LANGUAGE_LOADER, "search-fields-all")))
+                            .clicked()
+                        {
+                            fields = SearchFields::default();
+                        }
+                        if fields != before && fields.any() {
+                            self.set_search_fields(fields);
+                        }
+                    });
                 if self.loader.searching {
                     ui.spinner().on_hover_text(fl!(LANGUAGE_LOADER, "search-bodies-running"));
                 }
@@ -161,7 +200,7 @@ impl MailApp {
                         .id(id)
                         .frame(false)
                         .margin(egui::vec2(4.0, 4.0))
-                        .hint_text(fl!(LANGUAGE_LOADER, "toolbar-search-hint")),
+                        .hint_text(search_hint(self.reader.search_fields)),
                 );
                 if response.has_focus() {
                     ui.memory_mut(|memory| {
@@ -476,6 +515,23 @@ impl MailApp {
             });
         });
     }
+}
+
+/// "Search messages", or which fields a limited search looks at.
+fn search_hint(fields: SearchFields) -> String {
+    if fields.all() {
+        return fl!(LANGUAGE_LOADER, "toolbar-search-hint");
+    }
+    let names: Vec<String> = [
+        (fields.subject, fl!(LANGUAGE_LOADER, "search-field-subject")),
+        (fields.from, fl!(LANGUAGE_LOADER, "search-field-from")),
+        (fields.to, fl!(LANGUAGE_LOADER, "search-field-to")),
+        (fields.text, fl!(LANGUAGE_LOADER, "search-field-text")),
+    ]
+    .into_iter()
+    .filter_map(|(on, name)| on.then_some(name))
+    .collect();
+    fl!(LANGUAGE_LOADER, "toolbar-search-hint-fields", fields = names.join(", "))
 }
 
 fn zoom_choices(ui: &mut egui::Ui, mode: &mut ScalingMode) {

@@ -443,7 +443,7 @@ impl MailApp {
         };
         let bold = egui::FontId::new(size, appearance::bold_family(ui));
         let palette = modern_palette(dark_mode);
-        let needle = if matches!(document, Document::Message(_)) {
+        let needle = if matches!(document, Document::Message(_)) && self.reader.search_fields.text {
             self.reader.filter.trim().to_owned()
         } else {
             String::new()

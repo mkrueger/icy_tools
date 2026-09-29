@@ -234,7 +234,8 @@ impl MailApp {
                     }
                     self.reveal_message = false;
                 }
-                let needle = self.reader.filter.trim().to_owned();
+                let from_needle = self.search_needle(self.reader.search_fields.from);
+                let subject_needle = self.search_needle(self.reader.search_fields.subject);
                 let today = today();
                 let output = scroll.show_rows(ui, ROW_HEIGHT, self.reader.messages.len(), |ui, range| {
                     let Some(package) = self.reader.package.clone() else {
@@ -263,10 +264,10 @@ impl MailApp {
                             &widths,
                             &[
                                 Cell::new(""),
-                                Cell::header(&info.from).strong(strong).highlight(&needle),
+                                Cell::header(&info.from).strong(strong).highlight(&from_needle),
                                 Cell::header(&info.subject)
                                     .strong(strong)
-                                    .highlight(&needle)
+                                    .highlight(&subject_needle)
                                     .indent(if threaded { tree_indent(row.depth) } else { 0.0 })
                                     .dim(repeated)
                                     .badge(collapsed.then_some((replies.as_str(), hidden_unread > 0))),

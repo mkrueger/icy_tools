@@ -65,7 +65,9 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
   subject or shared leading words such as a newsletter title) is dimmed. Dates in the
   lists read “Today”, “Yesterday” or the weekday during the past week; the
   reader header shows the full date. Search
-  matches author, recipient, subject and message text, ignoring case. Message
+  matches author, recipient, subject and message text, ignoring case; the
+  magnifier in the search field limits it to some of them (the placeholder then
+  names them, and the choice is kept). Message
   bodies are searched in parallel using Rayon, in the background across the packet, including messages
   not opened yet; folder and unread filters still apply to the results.
   Decoded, case-normalized body text is cached for the current packet, so later

@@ -7,6 +7,7 @@ use std::{
 use i18n_embed_fl::fl;
 use icy_engine::{EditableScreen, Size, TextScreen};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     qwk::{MessageInfo, QwkPackage},
@@ -99,6 +100,38 @@ pub struct ConferenceRow {
     pub count: usize,
 }
 
+/// Which parts of a message the search looks at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SearchFields {
+    pub from: bool,
+    pub to: bool,
+    pub subject: bool,
+    /// The message text, searched in the background.
+    pub text: bool,
+}
+
+impl Default for SearchFields {
+    fn default() -> Self {
+        Self {
+            from: true,
+            to: true,
+            subject: true,
+            text: true,
+        }
+    }
+}
+
+impl SearchFields {
+    pub fn all(self) -> bool {
+        self.from && self.to && self.subject && self.text
+    }
+
+    pub fn any(self) -> bool {
+        self.from || self.to || self.subject || self.text
+    }
+}
+
 pub struct Reader {
     pub package: Option<Arc<QwkPackage>>,
     pub selected_conference: Option<u16>,
@@ -131,8 +164,10 @@ pub struct Reader {
     unread: usize,
     /// Package index per `(conference, message number)`.
     numbers: HashMap<(u16, u32), usize>,
+    /// Parts of the messages the filter searches.
+    pub search_fields: SearchFields,
     /// Lowercased `from`, `to` and `subject` per package index, built on the first search.
-    search: Vec<String>,
+    search: Vec<[String; 3]>,
     /// Body matches supplied by a background search, keyed by its normalized query.
     body_matches: Option<(String, HashSet<usize>)>,
 }
@@ -160,6 +195,7 @@ impl Default for Reader {
             all_positions: Vec::new(),
             unread: 0,
             numbers: HashMap::new(),
+            search_fields: SearchFields::default(),
             search: Vec::new(),
             body_matches: None,
         }
@@ -233,17 +269,24 @@ impl Reader {
                 .infos
                 .par_iter()
                 .with_min_len(1024)
-                .map(|info| {
-                    [&info.from, &info.to, &info.subject]
-                        .iter()
-                        .map(|value| value.to_lowercase())
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                })
+                .map(|info| [info.from.to_lowercase(), info.to.to_lowercase(), info.subject.to_lowercase()])
                 .collect();
         }
         let personal = self.personal.as_ref().map(|name| name.trim().to_string());
-        let body_matches = self.body_matches.as_ref().filter(|(query, _)| *query == needle).map(|(_, matches)| matches);
+        let fields = self.search_fields;
+        let body_matches = self
+            .body_matches
+            .as_ref()
+            .filter(|(query, _)| fields.text && *query == needle)
+            .map(|(_, matches)| matches);
+        let search = &self.search;
+        let matches = |index: usize| {
+            let [from, to, subject] = &search[index];
+            (fields.from && from.contains(&needle))
+                || (fields.to && to.contains(&needle))
+                || (fields.subject && subject.contains(&needle))
+                || body_matches.is_some_and(|matches| matches.contains(&index))
+        };
         let mut infos: Vec<_> = package
             .infos
             .par_iter()
@@ -253,7 +296,7 @@ impl Reader {
                     && personal.as_ref().is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name))
                     && (!self.unread_only || !self.read[info.index])
                     && (!self.starred_only || self.starred[info.index])
-                    && (needle.is_empty() || self.search[info.index].contains(&needle) || body_matches.is_some_and(|matches| matches.contains(&info.index)))
+                    && (needle.is_empty() || matches(info.index))
             })
             .collect();
         self.all_messages = match self.view_mode {
@@ -838,6 +881,34 @@ mod tests {
         assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [1, 3]);
         reader.select_conference(Some(2));
         assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [3]);
+    }
+
+    #[test]
+    fn search_can_be_limited_to_some_fields() {
+        let (_dir, mut reader) = loaded();
+        let package = Arc::make_mut(reader.package.as_mut().unwrap());
+        package.infos[0].from = "Needle".into();
+        package.infos[1].to = "needle".into();
+        package.infos[2].subject = "A needle".into();
+        reader.filter = "needle".into();
+        reader.set_body_matches("needle".into(), HashSet::from([3]));
+        let found = |reader: &mut Reader| {
+            reader.rebuild_messages();
+            let mut rows: Vec<_> = reader.messages.iter().map(|row| row.index).collect();
+            rows.sort_unstable();
+            rows
+        };
+        assert_eq!(found(&mut reader), [0, 1, 2, 3]);
+        reader.search_fields = SearchFields {
+            from: false,
+            to: false,
+            subject: true,
+            text: false,
+        };
+        assert_eq!(found(&mut reader), [2]);
+        reader.search_fields.from = true;
+        reader.search_fields.text = true;
+        assert_eq!(found(&mut reader), [0, 2, 3]);
     }
 
     #[test]
