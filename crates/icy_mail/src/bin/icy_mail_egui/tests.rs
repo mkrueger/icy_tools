@@ -807,13 +807,15 @@ fn editor_panels_find_pick_colors_and_characters_with_the_mouse() {
     assert!(editor.has_focus());
     assert!(mail.composer.is_some());
 
-    // The color button opens the picker; keys still work in it and Apply sets the color.
+    // The color button opens the picker; keys still work in it and set the color at once, and the
+    // button closes it again.
     frame(&context, &mut mail, size, vec![key(egui::Key::End, egui::Modifiers::COMMAND)]);
     click_label(&context, &mut mail, size, "Aa");
     settle(&context, &mut mail, size);
     assert!(mail.composer.as_ref().unwrap().editor.colors.is_some());
     frame(&context, &mut mail, size, vec![key(egui::Key::ArrowRight, egui::Modifiers::NONE)]);
-    click_label(&context, &mut mail, size, "Apply");
+    assert_eq!(mail.composer.as_ref().unwrap().editor.editor.attr().fg, 8);
+    click_label(&context, &mut mail, size, "Aa");
     let editor = &mail.composer.as_ref().unwrap().editor;
     assert!(editor.colors.is_none());
     assert_eq!(editor.editor.attr().fg, 8);
@@ -849,7 +851,7 @@ fn color_picker_buttons_fit_side_by_side() {
     let popup = context
         .memory(|memory| memory.area_rect(egui::Id::new("editor-colors")))
         .expect("color picker is open");
-    let buttons: Vec<_> = ["editor-default", "editor-cancel", "editor-apply"]
+    let buttons: Vec<_> = ["editor-default"]
         .into_iter()
         .map(|id| label(&output, &icy_mail::LANGUAGE_LOADER.get(id)))
         .collect();
@@ -2902,6 +2904,14 @@ fn gpu_modern_reading_mode() {
     }
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![egui::Event::Text("Thanks, that helps!".into())], "warmup");
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "modern-compose-reply");
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::A, egui::Modifiers::COMMAND)], "warmup");
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::K, egui::Modifiers::COMMAND)], "warmup");
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![text("e")], "warmup");
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::Enter, egui::Modifiers::NONE)], "warmup");
+    for _ in 0..3 {
+        gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+    }
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "modern-compose-selection");
     gpu.context.set_theme(egui::Theme::Dark);
     mail.composer = None;
     mail.modal = None;
@@ -3165,4 +3175,60 @@ fn threads_can_be_marked_read_and_folded_together() {
     assert_eq!(mail.reader.messages.len(), threads, "Shift+Left collapses every thread");
     frame(&context, &mut mail, size, vec![key(egui::Key::ArrowRight, egui::Modifiers::SHIFT)]);
     assert!(mail.reader.messages.iter().any(|row| row.index == reply), "Shift+Right expands them again");
+}
+
+#[test]
+fn coloring_a_selection_shows_the_new_color_right_away() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    frame(&context, &mut mail, size, vec![key(egui::Key::N, egui::Modifiers::COMMAND)]);
+    settle(&context, &mut mail, size);
+    mail.composer.as_mut().unwrap().editor.request_focus();
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![text("Hello world")]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::A, egui::Modifiers::COMMAND)]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::K, egui::Modifiers::COMMAND)]);
+    frame(&context, &mut mail, size, vec![text("e")]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
+    settle(&context, &mut mail, size);
+    let editor = &mail.composer.as_ref().unwrap().editor;
+    assert_eq!(mail.composer.as_ref().unwrap().draft.body, "\x1b[0;1;33mHello world\x1b[0m");
+    assert!(editor.editor.selection().is_some(), "the selection stays for further changes");
+    assert_eq!(editor.cell_foreground(0, 0), 14, "selected text is drawn in its new color, not inverted");
+    assert_eq!(editor.selected_cells(), [(0, 0, 11)], "the selection is highlighted over the text");
+}
+
+#[test]
+fn picked_colors_apply_at_once_and_a_click_outside_closes_the_picker() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    frame(&context, &mut mail, size, vec![key(egui::Key::N, egui::Modifiers::COMMAND)]);
+    settle(&context, &mut mail, size);
+    mail.composer.as_mut().unwrap().editor.request_focus();
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![text("Hello")]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::A, egui::Modifiers::COMMAND)]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::K, egui::Modifiers::COMMAND)]);
+    frame(&context, &mut mail, size, vec![text("c")]);
+    assert_eq!(
+        mail.composer.as_ref().unwrap().draft.body,
+        "\x1b[0;1;31mHello\x1b[0m",
+        "the color applies without confirming"
+    );
+    assert!(mail.composer.as_ref().unwrap().editor.colors.is_some(), "the picker stays open for more");
+    let output = settle(&context, &mut mail, size);
+    assert_eq!(count(&output, "Apply"), 0);
+    assert_eq!(count(&output, "Cancel"), 1, "only the composer's own Cancel is left");
+
+    let outside = label(&output, "Save Draft").center();
+    for pressed in [true, false] {
+        frame(&context, &mut mail, size, pointer(outside + egui::vec2(0.0, 40.0), pressed));
+    }
+    let composer = mail.composer.as_ref().unwrap();
+    assert!(composer.editor.colors.is_none(), "a click outside closes the picker");
+    assert_eq!(composer.draft.body, "\x1b[0;1;31mHello\x1b[0m", "and keeps the picked color");
 }

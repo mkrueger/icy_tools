@@ -22,6 +22,9 @@ const MAX_MODERN_ZOOM: f32 = 2.0;
 const PAGE_MARGIN: egui::Vec2 = egui::vec2(16.0, 10.0);
 const FIND_ID: &str = "editor-find";
 
+/// Selected cells on the screen as `(row, first column, end column)`.
+type SelectedCells = Vec<(i32, i32, i32)>;
+
 /// The CP437 table beside (or below) the text.
 pub struct CharTable {
     pub open: bool,
@@ -88,6 +91,8 @@ pub struct TerminalEditor {
     palette: [Color32; 16],
     /// Display mode and theme the screen's palette was set up for.
     theme: Option<(bool, bool)>,
+    /// Selected cells as `(row, first column, end column)`, highlighted over the text.
+    selected_cells: SelectedCells,
     glyphs: Option<egui::TextureHandle>,
     color_button: egui::Rect,
 }
@@ -138,6 +143,7 @@ impl TerminalEditor {
             wheel: 0.0,
             palette,
             theme: None,
+            selected_cells: Vec::new(),
             glyphs: None,
             color_button: egui::Rect::NOTHING,
         };
@@ -157,6 +163,22 @@ impl TerminalEditor {
     /// Whether Escape closes something inside the editor rather than the composer.
     pub fn captures_escape(&self) -> bool {
         self.colors.is_some() || self.chars.open || self.quotes.open || self.find.is_some() || self.editor.selection().is_some()
+    }
+
+    /// Selected cells as `(row, first column, end column)`, for tests.
+    #[cfg(test)]
+    pub fn selected_cells(&self) -> &[(i32, i32, i32)] {
+        &self.selected_cells
+    }
+
+    /// The color index of a cell on the editor's screen, for tests.
+    #[cfg(test)]
+    pub fn cell_foreground(&self, x: i32, y: i32) -> u32 {
+        use icy_engine::TextPane;
+        match self.view.terminal.screen.lock().char_at(Position::new(x, y)).attribute.foreground_color() {
+            icy_engine::AttributeColor::Palette(index) => u32::from(index),
+            _ => u32::MAX,
+        }
     }
 
     fn text_rows(&self) -> usize {
@@ -294,9 +316,10 @@ impl TerminalEditor {
     }
 
     fn text(&mut self, text: &str) {
-        if let Some(pending) = &mut self.colors {
+        if let Some(mut pending) = self.colors {
             if let Some(fg) = text.chars().last().and_then(|ch| ch.to_digit(16)) {
                 pending.fg = fg as u8;
+                self.pick_color(pending);
             }
             return;
         }
@@ -448,19 +471,22 @@ impl TerminalEditor {
             Key::End => pending.fg = 15,
             Key::Space => pending.blink = !pending.blink,
             Key::Delete | Key::Backspace => pending = Attr::DEFAULT,
-            Key::Enter => return self.apply_color(pending),
-            Key::Escape | Key::K => {
+            Key::Enter | Key::Escape | Key::K => {
                 self.colors = None;
                 return;
             }
             _ => {}
         }
-        self.colors = Some(pending);
+        self.pick_color(pending);
     }
 
-    fn apply_color(&mut self, attr: Attr) {
-        self.editor.set_attr(attr);
-        self.colors = None;
+    /// Colors take effect as soon as they are picked: the selection, or the text typed next. Each
+    /// change is its own undo step; the picker stays open for more.
+    fn pick_color(&mut self, attr: Attr) {
+        if self.colors.is_some_and(|current| current != attr) {
+            self.editor.set_attr(attr);
+        }
+        self.colors = Some(attr);
     }
 
     /// Keys while picking from the character table; returns whether the key was used.
@@ -867,8 +893,6 @@ impl TerminalEditor {
         let Some(mut pending) = self.colors else {
             return;
         };
-        let mut apply = false;
-        let mut close = false;
         let title = if self.editor.selection().is_some() {
             fl!(LANGUAGE_LOADER, "editor-selection-color")
         } else {
@@ -880,21 +904,8 @@ impl TerminalEditor {
             .constrain(true)
             .show(context, |ui| {
                 egui::Frame::popup(ui.style()).inner_margin(12).show(ui, |ui| {
-                    let labels = [
-                        fl!(LANGUAGE_LOADER, "editor-default"),
-                        fl!(LANGUAGE_LOADER, "editor-cancel"),
-                        fl!(LANGUAGE_LOADER, "editor-apply"),
-                    ];
-                    // Translated button labels can be wider than the swatch rows.
-                    let font = egui::TextStyle::Button.resolve(ui.style());
-                    let buttons: f32 = labels
-                        .iter()
-                        .map(|label| {
-                            ui.painter().layout_no_wrap(label.clone(), font.clone(), Color32::PLACEHOLDER).size().x + 2.0 * ui.spacing().button_padding.x
-                        })
-                        .sum();
-                    let [default_label, cancel_label, apply_label] = labels;
-                    ui.set_width((8.0 * 30.0f32).max(buttons + 3.0 * ui.spacing().item_spacing.x));
+                    let default_label = fl!(LANGUAGE_LOADER, "editor-default");
+                    ui.set_width(8.0 * 30.0);
                     ui.label(egui::RichText::new(title).strong());
                     ui.add_space(6.0);
                     ui.label(
@@ -911,9 +922,6 @@ impl TerminalEditor {
                                 if response.clicked() {
                                     pending.fg = index;
                                 }
-                                if response.double_clicked() {
-                                    apply = true;
-                                }
                             }
                         });
                     }
@@ -929,9 +937,6 @@ impl TerminalEditor {
                             let response = swatch(ui, self.palette[usize::from(index)], pending.bg == index).on_hover_text(color_name(index));
                             if response.clicked() {
                                 pending.bg = index;
-                            }
-                            if response.double_clicked() {
-                                apply = true;
                             }
                         }
                     });
@@ -954,27 +959,13 @@ impl TerminalEditor {
                             .color(ui.visuals().weak_text_color()),
                     );
                     ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        if ui
-                            .button(default_label)
-                            .on_hover_text(fl!(LANGUAGE_LOADER, "editor-default-color-tooltip"))
-                            .clicked()
-                        {
-                            pending = Attr::DEFAULT;
-                        }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui
-                                .add(egui::Button::new(apply_label).fill(ui.visuals().selection.bg_fill))
-                                .on_hover_text("Enter")
-                                .clicked()
-                            {
-                                apply = true;
-                            }
-                            if ui.button(cancel_label).on_hover_text("Esc").clicked() {
-                                close = true;
-                            }
-                        });
-                    });
+                    if ui
+                        .button(default_label)
+                        .on_hover_text(fl!(LANGUAGE_LOADER, "editor-default-color-tooltip"))
+                        .clicked()
+                    {
+                        pending = Attr::DEFAULT;
+                    }
                 });
             });
         let outside = context.input(|input| {
@@ -987,14 +978,12 @@ impl TerminalEditor {
         if area.response.contains_pointer() && context.input(|input| input.pointer.any_released()) {
             self.request_focus();
         }
-        if apply {
-            self.apply_color(pending);
-            self.request_focus();
-        } else if close || outside {
+        // A click outside closes the picker; what was picked already applies.
+        if outside {
             self.colors = None;
             self.request_focus();
         } else {
-            self.colors = Some(pending);
+            self.pick_color(pending);
         }
     }
 
@@ -1088,6 +1077,20 @@ impl TerminalEditor {
             response.rect.left()
         };
         drop(origin);
+        // Painted over the text, so it tints it: a light blue at moderate strength stands out on
+        // dark pages while the text stays legible; light pages use the accent.
+        let highlight = if modern && !ui.visuals().dark_mode {
+            ui.visuals().selection.stroke.color.gamma_multiply(0.25)
+        } else {
+            Color32::from_rgb(90, 170, 255).gamma_multiply(0.35)
+        };
+        for &(row, from, to) in &self.selected_cells {
+            let rect = egui::Rect::from_min_size(
+                egui::pos2(left + from as f32 * cell.x, response.rect.top() + row as f32 * cell.y),
+                egui::vec2((to - from) as f32 * cell.x, cell.y),
+            );
+            ui.painter().with_clip_rect(response.rect).rect_filled(rect, 0.0, highlight);
+        }
         let weak = ui.visuals().weak_text_color();
         // Lines wrap after this column; the marker shows where.
         let wrap = left + editor::WRAP_WIDTH as f32 * cell.x;
@@ -1237,7 +1240,8 @@ impl TerminalEditor {
         }
         self.drawn = Some(key);
         let mut canvas = Canvas::new(COLUMNS, self.rows);
-        let caret = self.draw_text(&mut canvas, self.rows);
+        let (caret, selected_cells) = self.draw_text(&mut canvas, self.rows);
+        self.selected_cells = selected_cells;
         let mut screen = self.view.terminal.screen.lock();
         let Some(screen) = screen.as_editable() else {
             return true;
@@ -1259,26 +1263,40 @@ impl TerminalEditor {
         true
     }
 
-    fn draw_text(&self, canvas: &mut Canvas, text_rows: usize) -> Option<(i32, i32)> {
+    /// Draws the visible text and returns the caret cell and the selected cells as
+    /// `(row, first column, end column)`. The selection is painted over the text afterwards, so the
+    /// text keeps its colors, e.g. right after coloring the selection.
+    fn draw_text(&self, canvas: &mut Canvas, text_rows: usize) -> (Option<(i32, i32)>, SelectedCells) {
         let lines = self.editor.visual_lines();
         let selection = self.editor.selection();
+        let mut selected_cells = Vec::new();
         for row in 0..text_rows {
             let Some(line) = lines.get(self.top + row) else {
                 break;
             };
             let cells = self.editor.cells(line);
+            let mut span: Option<(i32, i32)> = None;
             for (index, cell) in cells.iter().enumerate() {
                 let pos = Pos::new(line.para, line.start + index);
-                let selected = selection.is_some_and(|(start, end)| start <= pos && pos < end);
-                canvas.put(index as i32, row as i32, cell.ch, if selected { inverse(cell.attr) } else { cell.attr });
+                if selection.is_some_and(|(start, end)| start <= pos && pos < end) {
+                    let column = index as i32;
+                    span = Some(span.map_or((column, column + 1), |(from, _)| (from, column + 1)));
+                }
+                canvas.put(index as i32, row as i32, cell.ch, cell.attr);
             }
+            // A selected line break shows as one selected cell after the text.
             let end = Pos::new(line.para, line.end);
             if line.last && selection.is_some_and(|(start, stop)| start <= end && end < stop) {
-                canvas.put(cells.len() as i32, row as i32, ' ', inverse(Attr::DEFAULT));
+                let column = cells.len() as i32;
+                span = Some(span.map_or((column, column + 1), |(from, _)| (from, column + 1)));
+            }
+            if let Some((from, to)) = span {
+                selected_cells.push((row as i32, from, to.min(COLUMNS as i32)));
             }
         }
         let (row, column) = self.editor.caret_visual();
-        (row >= self.top && row < self.top + text_rows).then(|| (column.min(COLUMNS - 1) as i32, (row - self.top) as i32))
+        let caret = (row >= self.top && row < self.top + text_rows).then(|| (column.min(COLUMNS - 1) as i32, (row - self.top) as i32));
+        (caret, selected_cells)
     }
 
     /// Editor part of the window status bar: a message or the editing shortcuts on the left, insert
@@ -1445,17 +1463,6 @@ fn screen_view(rows: usize) -> ScreenView {
     let mut view = ScreenView::new(screen);
     view.clip = true;
     view
-}
-
-/// Selection highlight: swapped colors, like DOS editors.
-fn inverse(attr: Attr) -> Attr {
-    let fg = attr.bg;
-    let bg = attr.fg & 7;
-    if fg == bg {
-        Attr::new(0, 7, false)
-    } else {
-        Attr::new(fg, bg, false)
-    }
 }
 
 fn text_attribute(attr: Attr) -> TextAttribute {
