@@ -67,6 +67,8 @@ pub struct Draft {
     pub to: String,
     pub from: String,
     pub subject: String,
+    /// The text as paragraphs: line breaks only where the author ended a paragraph, colors as ANSI
+    /// SGR codes. [`Self::text`] wraps it into message lines.
     pub body: String,
     pub conference: u16,
     pub ref_number: u32,
@@ -79,9 +81,10 @@ pub struct Draft {
 }
 
 impl Draft {
-    /// The message text as it is sent, with the tagline.
+    /// The message text as it is sent: the paragraphs wrapped into lines of at most
+    /// [`crate::editor::WRAP_WIDTH`] columns, with the tagline.
     pub fn text(&self) -> String {
-        crate::taglines::append(&self.body, &self.tagline)
+        crate::taglines::append(&crate::editor::wrap_body(&self.body), &self.tagline)
     }
 }
 

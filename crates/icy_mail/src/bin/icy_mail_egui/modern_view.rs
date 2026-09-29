@@ -301,6 +301,55 @@ pub fn is_quote(text: &str) -> bool {
     initials <= 4 && text.chars().nth(initials) == Some('>')
 }
 
+/// The 16 DOS colors on the modern page, in DOS order. Each normal color and its light variant stay
+/// clearly apart (light gray and white too), blue keeps its saturation, and all read well on the
+/// theme's page. Black text stays visible (dimmed on dark pages); where index 0 is the background,
+/// the page color replaces it.
+pub fn modern_palette(dark_mode: bool) -> [Color32; 16] {
+    let rgb = |value: u32| Color32::from_rgb((value >> 16) as u8, (value >> 8) as u8, value as u8);
+    let colors: [u32; 16] = if dark_mode {
+        [
+            0x4A5058, 0x4A78F0, 0x2EA043, 0x13A8B8, 0xD0453D, 0xB14FC5, 0xC28526, 0xAAB0B8, //
+            0x767C85, 0x8DB4FF, 0x6BE07A, 0x6FE6F2, 0xFF7B72, 0xF08CF5, 0xF4DE62, 0xFFFFFF,
+        ]
+    } else {
+        [
+            0x000000, 0x1D4FC4, 0x1A7F37, 0x0B7C8A, 0xB42318, 0x8A2BA0, 0x8A5A00, 0x4E555E, //
+            0x8C939C, 0x4B83F2, 0x2FA84F, 0x1FA3B3, 0xE5483E, 0xC04CD6, 0xB08D00, 0x000000,
+        ]
+    };
+    colors.map(rgb)
+}
+
+/// The standard VGA palette the message renderer uses for the 16 DOS colors.
+const DOS_COLORS: [[u8; 3]; 16] = [
+    [0, 0, 0],
+    [0, 0, 170],
+    [0, 170, 0],
+    [0, 170, 170],
+    [170, 0, 0],
+    [170, 0, 170],
+    [170, 85, 0],
+    [170, 170, 170],
+    [85, 85, 85],
+    [85, 85, 255],
+    [85, 255, 85],
+    [85, 255, 255],
+    [255, 85, 85],
+    [255, 85, 255],
+    [255, 255, 85],
+    [255, 255, 255],
+];
+
+/// A message color on the modern page: the 16 DOS colors take their [`modern_palette`] entry,
+/// other colors (256 color and true color) are kept readable with [`readable`].
+pub fn modern_color(color: [u8; 3], on_background: bool, dark_mode: bool) -> Color32 {
+    match DOS_COLORS.iter().position(|dos| *dos == color) {
+        Some(index) => modern_palette(dark_mode)[index],
+        None => readable(color, on_background, dark_mode),
+    }
+}
+
 /// Keeps a message color readable on the page: dark colors are lightened on dark themes and
 /// light ones darkened on light themes. Colors drawn on their own background stay as they are.
 pub fn readable(color: [u8; 3], on_background: bool, dark_mode: bool) -> Color32 {
@@ -393,6 +442,7 @@ impl MailApp {
             ModernFont::Monospace => fixed.clone(),
         };
         let bold = egui::FontId::new(size, appearance::bold_family(ui));
+        let palette = modern_palette(dark_mode);
         let needle = if matches!(document, Document::Message(_)) {
             self.reader.filter.trim().to_owned()
         } else {
@@ -445,8 +495,10 @@ impl MailApp {
                 );
             }
             for span in &line.spans {
-                let default = if line.quote { visuals.weak_text_color() } else { visuals.text_color() };
-                let color = span.foreground.map_or(default, |color| readable(color, span.background.is_some(), dark_mode));
+                let default = if line.quote { visuals.weak_text_color() } else { palette[7] };
+                let color = span
+                    .foreground
+                    .map_or(default, |color| modern_color(color, span.background.is_some(), dark_mode));
                 let font = if !proportional {
                     fixed.clone()
                 } else if span.bold {

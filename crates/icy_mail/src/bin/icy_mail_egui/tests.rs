@@ -2855,6 +2855,34 @@ fn gpu_modern_reading_mode() {
         gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
     }
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "modern-bulletin");
+    // All 16 DOS colors, normal and light side by side, on both themes.
+    let mut swatches = Vec::new();
+    for index in 0..8u8 {
+        swatches.extend(
+            format!(
+                "\x1b[0;{}mcolor {index:<2}  \x1b[1;{}mcolor {:<2}\x1b[0m\r\n",
+                30 + index,
+                30 + index,
+                index + 8
+            )
+            .into_bytes(),
+        );
+    }
+    let classic = icy_mail::reader::render_body(&swatches).unwrap();
+    let wide = icy_mail::reader::render_body_wide(&swatches).unwrap();
+    mail.select_folder(app::Folder::All);
+    let swatch_key = (
+        Arc::as_ptr(&package) as usize,
+        modern_view::Document::Message(mail.reader.selected_message.unwrap()),
+    );
+    for (theme, name) in [(egui::Theme::Dark, "dark"), (egui::Theme::Light, "light")] {
+        gpu.context.set_theme(theme);
+        mail.modern_items = Some((swatch_key, modern_view::items(&gpu.context, &classic, modern_view::blocks(&classic, &wide))));
+        for _ in 0..3 {
+            gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+        }
+        gpu.capture(&mut mail, [1100, 760], 1.0, vec![], &format!("modern-colors-{name}"));
+    }
     // The editor in the modern display: an empty new message, then a reply with quotes.
     mail.select_folder(app::Folder::All);
     for (theme, name) in [(egui::Theme::Dark, "dark"), (egui::Theme::Light, "light")] {
@@ -2933,4 +2961,65 @@ fn every_folder_shows_its_text_in_the_chosen_display() {
     mail.modern_items = None;
     settle(&context, &mut mail, size);
     assert!(mail.modern_items.is_none(), "the classic display draws the terminal instead");
+}
+
+#[test]
+fn saved_drafts_keep_paragraphs_and_send_wrapped_lines() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    frame(&context, &mut mail, size, vec![key(egui::Key::N, egui::Modifiers::COMMAND)]);
+    settle(&context, &mut mail, size);
+    {
+        let composer = mail.composer.as_mut().unwrap();
+        composer.draft.subject = "Long".into();
+        composer.editor.request_focus();
+    }
+    settle(&context, &mut mail, size);
+    let paragraph = "word ".repeat(40);
+    frame(&context, &mut mail, size, vec![egui::Event::Text(paragraph.trim_end().into())]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::S, egui::Modifiers::COMMAND)]);
+    let draft = mail.drafts.as_ref().unwrap().drafts()[0].clone();
+    assert!(!draft.body.contains('\n'), "the draft stores the paragraph: {:?}", draft.body);
+    let sent = draft.text();
+    assert!(sent.lines().count() >= 3, "the sent text is wrapped: {sent:?}");
+    assert!(sent.lines().all(|line| line.chars().count() <= icy_mail::editor::WRAP_WIDTH));
+
+    mail.edit_draft(&context, draft.id);
+    let composer = mail.composer.as_ref().unwrap();
+    assert_eq!(composer.editor.editor.paragraph_count(), 1, "reopening edits the same paragraph");
+}
+
+#[test]
+fn modern_palette_keeps_color_pairs_apart_and_readable() {
+    use modern_view::{modern_color, modern_palette};
+    let luminance = |color: egui::Color32| {
+        let channel = |value: u8| {
+            let value = f32::from(value) / 255.0;
+            if value <= 0.039_28 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * channel(color.r()) + 0.7152 * channel(color.g()) + 0.0722 * channel(color.b())
+    };
+    let contrast = |a: egui::Color32, b: egui::Color32| {
+        let (a, b) = (luminance(a), luminance(b));
+        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    };
+    for (dark, page) in [(true, egui::Color32::from_rgb(0x1b, 0x1d, 0x20)), (false, egui::Color32::WHITE)] {
+        let palette = modern_palette(dark);
+        for (index, color) in palette.iter().enumerate().skip(1) {
+            assert!(contrast(*color, page) >= 3.0, "color {index} is readable on the page (dark: {dark})");
+        }
+        for index in 1..8 {
+            assert!(
+                contrast(palette[index], palette[index + 8]) >= 1.6,
+                "color {index} and its light variant differ (dark: {dark})"
+            );
+        }
+        assert_eq!(modern_color([0, 0, 170], false, dark), palette[1], "DOS colors take the palette entry");
+    }
 }

@@ -1126,9 +1126,8 @@ impl TerminalEditor {
         }
     }
 
-    /// In the modern display the page takes the theme's colors: default text in the text color on
-    /// the page color, other colors adjusted to stay readable, as in the modern reading mode. The
-    /// classic display keeps the DOS palette.
+    /// In the modern display the page uses the theme's [`super::modern_view::modern_palette`] on the
+    /// page color, as in the modern reading mode. The classic display keeps the DOS palette.
     fn apply_theme(&mut self, visuals: &egui::Visuals, modern: bool) {
         let theme = (modern, visuals.dark_mode);
         if self.theme == Some(theme) {
@@ -1137,15 +1136,8 @@ impl TerminalEditor {
         self.theme = Some(theme);
         let mut colors = self.palette;
         if modern {
-            for (index, color) in colors.iter_mut().enumerate() {
-                *color = match index {
-                    0 => visuals.extreme_bg_color,
-                    7 => visuals.text_color(),
-                    8 => visuals.weak_text_color(),
-                    15 => visuals.strong_text_color(),
-                    _ => super::modern_view::readable([color.r(), color.g(), color.b()], false, visuals.dark_mode),
-                };
-            }
+            colors = super::modern_view::modern_palette(visuals.dark_mode);
+            colors[0] = visuals.extreme_bg_color;
         }
         let mut screen = self.view.terminal.screen.lock();
         if let Some(screen) = screen.as_editable() {

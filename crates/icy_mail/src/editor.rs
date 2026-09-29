@@ -172,8 +172,12 @@ impl Default for Editor {
 impl Editor {
     /// Parses message text containing ANSI color codes.
     pub fn from_body(body: &str) -> Self {
+        Self::with_paragraphs(parse(body, false))
+    }
+
+    fn with_paragraphs(paragraphs: Vec<Vec<Cell>>) -> Self {
         let mut editor = Self {
-            paragraphs: parse(body),
+            paragraphs,
             caret: Pos::default(),
             upstream: false,
             anchor: None,
@@ -211,6 +215,30 @@ impl Editor {
                 }
             }
             for cell in cells {
+                let compatible = cell.ch == ' ' && cell.attr.bg == current.bg;
+                if cell.attr != current && !compatible {
+                    body.push_str(&cell.attr.sgr());
+                    current = cell.attr;
+                }
+                body.push(cell.ch);
+            }
+        }
+        if current != Attr::DEFAULT {
+            body.push_str(&Attr::DEFAULT.sgr());
+        }
+        body
+    }
+
+    /// The text as paragraphs, for storing a draft: line breaks only where a paragraph ends, so
+    /// editing it later rewraps whole paragraphs. [`wrap_body`] turns it into message lines.
+    pub fn to_paragraphs(&self) -> String {
+        let mut body = String::new();
+        let mut current = Attr::DEFAULT;
+        for (index, paragraph) in self.paragraphs.iter().enumerate() {
+            if index > 0 {
+                body.push('\n');
+            }
+            for cell in paragraph {
                 let compatible = cell.ch == ' ' && cell.attr.bg == current.bg;
                 if cell.attr != current && !compatible {
                     body.push_str(&cell.attr.sgr());
@@ -852,7 +880,10 @@ fn wrap(cells: &[Cell], width: usize) -> Vec<(usize, usize)> {
     lines
 }
 
-fn parse(body: &str) -> Vec<Vec<Cell>> {
+/// Paragraphs and colors of a message body. The editor replaces what cannot be sent with `?`; `raw`
+/// keeps every character (tabs and control codes too), so wrapping for export changes nothing but
+/// the line breaks and the checks before exporting still see the original text.
+fn parse(body: &str, raw: bool) -> Vec<Vec<Cell>> {
     let mut paragraphs = vec![Vec::new()];
     let mut attr = Attr::DEFAULT;
     let mut chars = body.chars().peekable();
@@ -877,15 +908,15 @@ fn parse(body: &str) -> Vec<Vec<Cell>> {
             }
             '\r' => {}
             '\n' => paragraphs.push(Vec::new()),
-            '\t' => {
+            '\t' if !raw => {
                 let cells = paragraphs.last_mut().unwrap();
                 for _ in 0..TAB_WIDTH - cells.len() % TAB_WIDTH {
                     cells.push(Cell { ch: ' ', attr });
                 }
             }
-            ch if ch.is_control() => {}
+            ch if ch.is_control() && !raw => {}
             ch => paragraphs.last_mut().unwrap().push(Cell {
-                ch: if is_message_char(ch) { ch } else { '?' },
+                ch: if raw || is_message_char(ch) { ch } else { '?' },
                 attr,
             }),
         }
@@ -974,6 +1005,13 @@ pub fn initials(name: &str) -> String {
         .take(2)
         .flat_map(char::to_uppercase)
         .collect()
+}
+
+/// Wraps paragraphs (as stored by [`Editor::to_paragraphs`]) into message lines of at most
+/// [`WRAP_WIDTH`] columns, exactly as the editor shows them.
+#[must_use]
+pub fn wrap_body(body: &str) -> String {
+    Editor::with_paragraphs(parse(body, true)).to_body()
 }
 
 /// Quote lines for a reply, re-quoting existing quotes (`" AB> "` becomes `" AB>> "`) and wrapping long lines.
@@ -1126,6 +1164,35 @@ mod tests {
         editor.insert_lines(&[" A> quoted".into()]);
         assert_eq!(editor.plain_text(), "f\n A> quoted\nirst\nthird");
         assert_eq!(editor.caret(), Pos::new(2, 0));
+    }
+
+    #[test]
+    fn drafts_keep_paragraphs_and_wrap_only_for_sending() {
+        let text = "word ".repeat(40);
+        let mut editor = Editor::from_body(&format!("{}\n\x1b[1;33mSecond\x1b[0m paragraph", text.trim_end()));
+        assert_eq!(editor.visual_lines().len(), 4, "three wrapped rows and the second paragraph");
+        let stored = editor.to_paragraphs();
+        assert_eq!(stored.matches('\n').count(), 1, "only the paragraph end is a line break: {stored:?}");
+
+        // Reopening keeps the paragraph, so inserting at its start rewraps all of it.
+        let mut reopened = Editor::from_body(&stored);
+        assert_eq!(reopened.paragraph_count(), 2);
+        reopened.insert_text("New ");
+        let lines = reopened.to_body();
+        assert!(lines.lines().all(|line| strip_codes(line).chars().count() <= WRAP_WIDTH), "{lines}");
+        assert!(
+            lines.lines().nth(1).unwrap().starts_with("word"),
+            "the next row starts with a word again: {lines}"
+        );
+
+        let sent = wrap_body(&stored);
+        assert_eq!(sent, editor.to_body(), "sending wraps exactly as the editor shows it");
+        assert!(sent.lines().all(|line| strip_codes(line).chars().count() <= WRAP_WIDTH));
+        assert_eq!(
+            wrap_body("\u{3c0} and \t tab"),
+            "\u{3c0} and \t tab",
+            "the export checks still see what cannot be sent"
+        );
     }
 
     #[test]
