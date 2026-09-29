@@ -594,6 +594,14 @@ impl Editor {
         self.backspace();
     }
 
+    pub fn delete_word_forward(&mut self) {
+        if self.selection().is_none() {
+            self.anchor = Some(self.caret);
+            self.caret = self.word_right(self.caret);
+        }
+        self.delete();
+    }
+
     /// Removes the caret's screen row (SlyEdit Ctrl-D).
     pub fn delete_line(&mut self) {
         self.checkpoint(false);
@@ -1147,6 +1155,19 @@ mod tests {
         assert!(!editor.type_char('€'));
         assert!(!editor.type_char('\u{263a}'), "control-range glyphs are not stored");
         assert_eq!(editor.insert_text("a€\tb"), 1);
+    }
+
+    #[test]
+    fn words_delete_forward_and_back() {
+        let mut editor = typed("one two three");
+        editor.move_caret(Motion::DocumentStart, false);
+        editor.delete_word_forward();
+        assert_eq!(editor.plain_text(), "two three");
+        editor.move_caret(Motion::DocumentEnd, false);
+        editor.delete_word_back();
+        assert_eq!(editor.plain_text(), "two ");
+        editor.delete_word_forward();
+        assert_eq!(editor.plain_text(), "two ", "nothing follows the caret");
     }
 
     #[test]

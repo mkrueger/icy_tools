@@ -3232,3 +3232,43 @@ fn picked_colors_apply_at_once_and_a_click_outside_closes_the_picker() {
     assert!(composer.editor.colors.is_none(), "a click outside closes the picker");
     assert_eq!(composer.draft.body, "\x1b[0;1;31mHello\x1b[0m", "and keeps the picked color");
 }
+
+#[test]
+fn cua_clipboard_keys_work_in_the_message_editor_on_every_platform() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    frame(&context, &mut mail, size, vec![key(egui::Key::N, egui::Modifiers::COMMAND)]);
+    settle(&context, &mut mail, size);
+    mail.composer.as_mut().unwrap().editor.request_focus();
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![text("Hello")]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::A, egui::Modifiers::COMMAND)]);
+    let copied = |output: &egui::FullOutput| {
+        output.platform_output.commands.iter().find_map(|command| match command {
+            egui::OutputCommand::CopyText(text) => Some(text.clone()),
+            _ => None,
+        })
+    };
+    let output = frame(&context, &mut mail, size, vec![key(egui::Key::Insert, egui::Modifiers::CTRL)]);
+    assert_eq!(copied(&output).as_deref(), Some("Hello"), "Ctrl+Insert copies");
+    let output = frame(&context, &mut mail, size, vec![key(egui::Key::Delete, egui::Modifiers::SHIFT)]);
+    assert_eq!(copied(&output).as_deref(), Some("Hello"), "Shift+Delete cuts");
+    assert_eq!(mail.composer.as_ref().unwrap().draft.body, "");
+
+    let insert_mode = mail.composer.as_ref().unwrap().editor.editor.insert_mode();
+    let output = frame(&context, &mut mail, size, vec![key(egui::Key::Insert, egui::Modifiers::SHIFT)]);
+    let requested = output
+        .viewport_output
+        .get(&egui::ViewportId::ROOT)
+        .is_some_and(|viewport| viewport.commands.contains(&egui::ViewportCommand::RequestPaste));
+    assert!(requested, "Shift+Insert asks for the clipboard text");
+    assert_eq!(
+        mail.composer.as_ref().unwrap().editor.editor.insert_mode(),
+        insert_mode,
+        "Shift+Insert does not switch to overwrite"
+    );
+    frame(&context, &mut mail, size, vec![egui::Event::Paste("Hello".into())]);
+    assert_eq!(mail.composer.as_ref().unwrap().draft.body, "Hello");
+}

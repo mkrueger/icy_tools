@@ -154,9 +154,10 @@ terminal are regular panels, reachable from the toolbar above it or by keyboard:
 
 - **Colors** (Ctrl+K or the color button): a picker with the 16 foreground and
   8 background colors, blink and a preview. Click swatches or use the arrows
-  (left/right foreground, up/down background), 0-F and Space, then Apply or
-  Enter. With a selection the selected text is recolored, otherwise the color
-  applies to what you type next. Colors are stored as ANSI sequences in the
+  (left/right foreground, up/down background), 0-F and Space. A picked color
+  takes effect at once, each as its own undo step; Enter, Escape or a click
+  outside closes the picker. With a selection the selected text is recolored,
+  otherwise the color applies to what you type next. Colors are stored as ANSI sequences in the
   message, which most BBS readers display.
 - **Characters** (Ctrl+G or the toolbar): the CP437 table in the terminal's
   font, beside the text (below it in narrow windows). Clicking a character
@@ -173,9 +174,11 @@ terminal are regular panels, reachable from the toolbar above it or by keyboard:
   closes the panel. Forwards include the original quoted in full.
 - **Find** (Ctrl+F): a search field above the text; Enter or F3 finds the next
   match, Escape returns to the text.
-- **Editing**: Ctrl+D deletes the line, Ctrl+Z/Ctrl+Y undo and redo, Ctrl+A
-  selects all, Shift with arrows or the mouse selects, and Ctrl+C/X/V copy, cut
-  and paste.
+- **Editing**: Ctrl+D deletes the line, Ctrl+Backspace/Ctrl+Delete delete the
+  word before/after the caret, Ctrl+Z/Ctrl+Y undo and redo, Ctrl+A selects all,
+  Shift with arrows or the mouse selects, and Ctrl+C/X/V as well as
+  Ctrl+Insert, Shift+Delete and Shift+Insert copy, cut and paste on every
+  platform.
 
 Escape first closes the color picker, quote panel, character table, find field
 or selection before it cancels the message.

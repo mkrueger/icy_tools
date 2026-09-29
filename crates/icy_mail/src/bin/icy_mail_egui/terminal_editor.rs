@@ -309,6 +309,17 @@ impl TerminalEditor {
             }
             egui::Event::Key { key, modifiers, .. } => {
                 self.status = None;
+                // Shift+Insert, Ctrl+Insert and Shift+Delete paste, copy and cut as in DOS and
+                // Windows editors; egui only turns them into clipboard events on Windows.
+                if self.colors.is_none() {
+                    let command = modifiers.command || modifiers.ctrl;
+                    match key {
+                        Key::Insert if modifiers.shift && !command => return context.send_viewport_cmd(egui::ViewportCommand::RequestPaste),
+                        Key::Insert if command && !modifiers.shift => return self.event(context, egui::Event::Copy),
+                        Key::Delete if modifiers.shift && !command => return self.event(context, egui::Event::Cut),
+                        _ => {}
+                    }
+                }
                 self.key(key, modifiers);
             }
             _ => {}
@@ -369,6 +380,7 @@ impl TerminalEditor {
                 Key::ArrowUp => self.top = self.top.saturating_sub(1),
                 Key::ArrowDown => self.top += 1,
                 Key::Backspace => self.editor.delete_word_back(),
+                Key::Delete => self.editor.delete_word_forward(),
                 _ => return,
             }
             self.follow = !matches!(key, Key::ArrowUp | Key::ArrowDown);
