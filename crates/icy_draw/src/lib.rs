@@ -21,6 +21,8 @@ pub mod settings;
 pub mod shape_points;
 #[path = "util/tdf_font_library.rs"]
 pub mod text_art_fonts;
+#[path = "util/tag_replacements.rs"]
+pub mod tag_replacements;
 pub use settings::*;
 
 pub static VERSION: std::sync::LazyLock<semver::Version> = std::sync::LazyLock::new(|| semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap());

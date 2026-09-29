@@ -251,3 +251,121 @@ pub fn load_taglist(id: &str, taglists_dir: Option<&Path>) -> TagReplacementList
         entries: Vec::new(),
     })
 }
+
+/// Parses a taglist, reporting why it is not one.
+pub fn parse_taglist(id: &str, text: &str) -> Result<TagReplacementList, String> {
+    parse_taglist_toml(id, text).map_err(|error| error.message().to_string())
+}
+
+fn is_builtin(id: &str) -> bool {
+    id.eq_ignore_ascii_case("pcboard") || id.eq_ignore_ascii_case("icyboard")
+}
+
+/// Copies the taglist at `source` into `dir` after checking it parses; returns the id it is
+/// listed under. A file named like a built-in list gets a suffix, so it does not hide.
+pub fn import_taglist(source: &Path, dir: &Path) -> Result<String, String> {
+    let text = fs::read_to_string(source).map_err(|error| error.to_string())?;
+    let stem = source.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
+    let stem = if stem.trim().is_empty() { "taglist".to_string() } else { stem };
+    let id = if is_builtin(&stem) { format!("{stem}-custom") } else { stem };
+    let list = parse_taglist(&id, &text)?;
+    if list.entries.is_empty() {
+        return Err("the list has no [[entries]]".to_string());
+    }
+    fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+    fs::write(dir.join(format!("{id}.toml")), text).map_err(|error| error.to_string())?;
+    Ok(id)
+}
+
+/// Template of a new user taglist, documenting the format with one entry.
+pub const TAGLIST_TEMPLATE: &str = r#"# A tag replacement list for Icy Draw's tag tool.
+name = "My Tags"
+description = "Replacements of my BBS"
+comments = """Shown below the list."""
+version = "1.0.0"
+
+# One block per replacement: the text the BBS replaces, an example shown as the tag's
+# preview and a description.
+[[entries]]
+tag = "@USER@"
+example = "Sysop"
+description = "Name of the current user."
+"#;
+
+/// Creates a new taglist from [`TAGLIST_TEMPLATE`] in `dir` under a free name; returns its id
+/// and path.
+pub fn create_taglist(dir: &Path) -> Result<(String, PathBuf), String> {
+    fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+    let id = (1..)
+        .map(|number| if number == 1 { "my_tags".to_string() } else { format!("my_tags_{number}") })
+        .find(|id| !dir.join(format!("{id}.toml")).exists())
+        .expect("a free taglist name");
+    let path = dir.join(format!("{id}.toml"));
+    fs::write(&path, TAGLIST_TEMPLATE).map_err(|error| error.to_string())?;
+    Ok((id, path))
+}
+
+/// The entries of `list` whose tag, description or example contain `filter`, ignoring case;
+/// entries whose tag matches come first.
+pub fn filter_taglist<'a>(list: &'a TagReplacementList, filter: &str) -> Vec<&'a TagReplacement> {
+    let filter = filter.trim().to_lowercase();
+    let (mut tags, other): (Vec<_>, Vec<_>) = list
+        .entries
+        .iter()
+        .filter(|entry| {
+            filter.is_empty()
+                || entry.tag.to_lowercase().contains(&filter)
+                || entry.description.to_lowercase().contains(&filter)
+                || entry.example.to_lowercase().contains(&filter)
+        })
+        .partition(|entry| filter.is_empty() || entry.tag.to_lowercase().contains(&filter));
+    tags.extend(other);
+    tags
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtin_lists_parse_and_come_first() {
+        let lists = get_available_taglists(None);
+        assert_eq!(lists.iter().map(|list| list.id.as_str()).collect::<Vec<_>>(), ["pcboard", "icyboard"]);
+        for list in lists {
+            assert!(!load_taglist(&list.id, None).entries.is_empty(), "{} has entries", list.id);
+        }
+    }
+
+    #[test]
+    fn template_lists_are_created_imported_and_filtered() {
+        let dir = tempfile::tempdir().unwrap();
+        let (id, path) = create_taglist(dir.path()).unwrap();
+        assert_eq!(id, "my_tags");
+        assert_eq!(create_taglist(dir.path()).unwrap().0, "my_tags_2");
+        let list = load_taglist(&id, Some(dir.path()));
+        assert_eq!(list.name, "My Tags");
+        assert_eq!(list.entries[0].tag, "@USER@");
+
+        let imported = dir.path().join("import");
+        fs::create_dir(&imported).unwrap();
+        let source = dir.path().join("PCBoard.toml");
+        fs::copy(&path, &source).unwrap();
+        assert_eq!(import_taglist(&source, &imported).unwrap(), "PCBoard-custom", "built-in names stay visible");
+        let ids: Vec<_> = get_available_taglists(Some(&imported)).into_iter().map(|list| list.id).collect();
+        assert_eq!(ids, ["pcboard", "icyboard", "PCBoard-custom"]);
+
+        fs::write(&source, "entries = 5").unwrap();
+        assert!(import_taglist(&source, &imported).is_err(), "broken lists are not copied");
+
+        let pcboard = load_taglist("pcboard", None);
+        assert!(filter_taglist(&pcboard, "").len() == pcboard.entries.len());
+        assert!(filter_taglist(&pcboard, "beep").iter().all(|entry| {
+            format!("{}{}{}", entry.tag, entry.description, entry.example).to_lowercase().contains("beep")
+        }));
+        assert!(!filter_taglist(&pcboard, "BEEP").is_empty());
+        let users = filter_taglist(&pcboard, "user");
+        let first_description_match = users.iter().position(|entry| !entry.tag.to_lowercase().contains("user")).unwrap();
+        assert!(users[..first_description_match].iter().any(|entry| entry.tag == "@USER@"), "tag matches come first");
+        assert!(users[first_description_match..].iter().all(|entry| !entry.tag.to_lowercase().contains("user")));
+    }
+}

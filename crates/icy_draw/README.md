@@ -454,6 +454,24 @@ session/
 
 > **Tip**: Fonts and palettes can be loaded directly from `.zip` files — no need to extract!
 
+### Tag replacement lists
+
+The tag tool's properties dialog has a **…** button next to *Replacement* that opens the
+replacement lists: PCBoard and IcyBoard are built in, and your own lists are `.toml` files in
+`data/plugins/taglists/`. *Import…* copies a list there, *New List* creates one from a template
+and opens it in your editor, and *Open Folder* shows the folder. A list looks like this:
+
+```toml
+name = "My Tags"
+description = "Replacements of my BBS"
+comments = """Optional notes shown below the list."""
+
+[[entries]]
+tag = "@USER@"          # what the BBS replaces
+example = "Sysop"       # becomes the tag's preview
+description = "Name of the current user."
+```
+
 ## 🗺️ Roadmap
 
 Planned features for future releases:

@@ -37,6 +37,8 @@ mod recovery;
 mod settings_dialog;
 #[path = "shade.rs"]
 mod shade;
+#[path = "tag_picker.rs"]
+mod tag_picker;
 #[path = "welcome.rs"]
 mod welcome;
 
@@ -88,6 +90,7 @@ enum FileAction {
     ImportPalette,
     ExportPalette,
     LoadFont,
+    ImportTaglist,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -246,6 +249,8 @@ pub struct DrawApp {
     picker: bool,
     /// Moebius' attribute picker, opened by Escape without a selection; the render pass it opened in.
     attribute_picker: Option<u64>,
+    /// The replacement list browser of the open tag properties dialog.
+    tag_picker: Option<tag_picker::ReplacementPicker>,
     sender: Sender<Picked>,
     receiver: Receiver<Picked>,
     pending: Option<PathBuf>,
@@ -335,6 +340,7 @@ impl DrawApp {
             dialog: None,
             picker: false,
             attribute_picker: None,
+            tag_picker: None,
             sender,
             receiver,
             pending: None,
@@ -615,6 +621,7 @@ impl DrawApp {
                         dialog.add_filter(*name, extensions)
                     })
                     .save_file(),
+                FileAction::ImportTaglist => dialog.add_filter(fl!("tag-replacements-filter"), &["toml"]).pick_file(),
             };
             let _ = sender.send(Picked { action, path });
             context.request_repaint();
@@ -1440,6 +1447,12 @@ impl DrawApp {
                             let preview: String = tag.preview.chars().take(20).collect();
                             ui.strong(if preview.is_empty() { fl!("tag-empty") } else { preview.clone() });
                             ui.weak(fl!("tag-info", x = tag.position.x, y = tag.position.y, length = tag.len()));
+                            ui.weak("→");
+                            if tag.replacement_value.is_empty() {
+                                ui.weak(fl!("tag-toolbar-no-replacement"));
+                            } else {
+                                ui.label(egui::RichText::new(tag.replacement_value.chars().take(30).collect::<String>()).monospace());
+                            }
                         }
                     }
                     count => {
@@ -1933,7 +1946,85 @@ impl DrawApp {
                 })
         });
         self.dialog = Some(Dialog::TagProperties(index, Box::new(tag)));
+        self.tag_picker = None;
         self.canvas_focus = false;
+    }
+
+    /// Where the user's replacement lists live; tests run without one.
+    fn taglists_dir(&self) -> Option<PathBuf> {
+        self.persist_settings.then(Settings::taglists_dir).flatten()
+    }
+
+    fn select_taglist(&mut self, id: &str) {
+        self.settings.selected_taglist = id.to_owned();
+        if self.persist_settings {
+            self.settings.store_persistent();
+        }
+    }
+
+    fn tag_picker_action(&mut self, context: &egui::Context, action: tag_picker::Action, tag: &mut icy_engine::Tag) {
+        let result = match action {
+            tag_picker::Action::Pick(entry) => {
+                tag.preview = tag_picker::preview(&entry);
+                tag.replacement_value = entry.tag;
+                self.tag_picker = None;
+                Ok(())
+            }
+            tag_picker::Action::SelectList(id) => {
+                self.select_taglist(&id);
+                Ok(())
+            }
+            tag_picker::Action::Import => {
+                self.choose(context, FileAction::ImportTaglist);
+                Ok(())
+            }
+            tag_picker::Action::Create => self
+                .taglists_dir()
+                .ok_or_else(|| fl!("tag-replacements-no-folder"))
+                .and_then(|dir| icy_draw::tag_replacements::create_taglist(&dir))
+                .and_then(|(id, path)| {
+                    self.show_taglist(&id);
+                    open::that(&path).map_err(|error| error.to_string())
+                }),
+            tag_picker::Action::OpenFolder => self
+                .taglists_dir()
+                .ok_or_else(|| fl!("tag-replacements-no-folder"))
+                .and_then(|dir| open::that(&dir).map_err(|error| error.to_string())),
+            tag_picker::Action::Close => {
+                self.tag_picker = None;
+                Ok(())
+            }
+        };
+        if let (Err(error), Some(picker)) = (result, &mut self.tag_picker) {
+            picker.set_error(error);
+        }
+    }
+
+    /// Reloads the replacement lists and shows `id`, which becomes the remembered list.
+    fn show_taglist(&mut self, id: &str) {
+        if let Some(picker) = &mut self.tag_picker {
+            picker.reload(id);
+        }
+        self.select_taglist(id);
+    }
+
+    /// Copies a picked TOML file into the user's replacement lists and shows it.
+    fn import_taglist(&mut self, path: &Path) {
+        let result = self
+            .taglists_dir()
+            .ok_or_else(|| fl!("tag-replacements-no-folder"))
+            .and_then(|dir| icy_draw::tag_replacements::import_taglist(path, &dir));
+        match result {
+            Ok(id) => self.show_taglist(&id),
+            Err(error) => {
+                let file = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+                let error = fl!("tag-replacements-import-failed", file = file, error = error);
+                match &mut self.tag_picker {
+                    Some(picker) => picker.set_error(error),
+                    None => self.result(Err(error)),
+                }
+            }
+        }
     }
 
     /// Pastes for an egui paste event, which egui only sends when the clipboard holds text.
@@ -2618,6 +2709,9 @@ impl DrawApp {
                                                 icy_engine::TagRole::Displaycode => fl!("edit-tag-role-displaycode"),
                                                 icy_engine::TagRole::Hyperlink => fl!("edit-tag-role-hyperlink"),
                                             };
+                                            if !tag.replacement_value.is_empty() {
+                                                ui.label(egui::RichText::new(&tag.replacement_value).monospace());
+                                            }
                                             ui.weak(format!("{}, {}  ·  {role}", tag.position.x, tag.position.y));
                                             if !tag.is_enabled {
                                                 ui.weak(format!("· {}", fl!("tag-disabled")));
@@ -2659,14 +2753,23 @@ impl DrawApp {
                 enum Action {
                     Cancel,
                     Apply,
+                    Picker(fn() -> tag_picker::Action),
                 }
                 let mut tag = *draft.clone();
                 let mut apply = false;
+                let mut browse = false;
+                let mut picked = None;
                 let response = appearance::Dialog::new("tag-properties")
-                    .size(DialogSize::Width(440.0))
-                    .confirm_on_enter(true)
+                    .size(DialogSize::Width(if self.tag_picker.is_some() { 640.0 } else { 440.0 }))
+                    // Enter in the replacement filter picks the first match instead.
+                    .confirm_on_enter(self.tag_picker.is_none())
                     .show(context, |dialog| {
                         dialog.content(|ui| {
+                            // The replacement lists take the place of the form until one is picked.
+                            if let Some(picker) = &mut self.tag_picker {
+                                picked = picker.show(ui);
+                                return;
+                            }
                             appearance::group(ui, &if index.is_some() { fl!("edit-tag-title") } else { fl!("tag-new") }, |ui| {
                                 appearance::check_row(ui, &fl!("tag-enabled"), &mut tag.is_enabled);
                                 appearance::form_row(ui, &fl!("tag-edit-preview"), |ui| {
@@ -2677,11 +2780,20 @@ impl DrawApp {
                                     );
                                 });
                                 appearance::form_row(ui, &fl!("tag-edit-replacement"), |ui| {
-                                    ui.add(
-                                        appearance::text_edit(&mut tag.replacement_value)
-                                            .hint_text(fl!("tag-replacement-hint"))
-                                            .desired_width(f32::INFINITY),
-                                    );
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        if ui
+                                            .add(egui::Button::new("…").min_size(egui::vec2(28.0, 0.0)))
+                                            .on_hover_text(fl!("tag-replacement-browse"))
+                                            .clicked()
+                                        {
+                                            browse = true;
+                                        }
+                                        ui.add(
+                                            appearance::text_edit(&mut tag.replacement_value)
+                                                .hint_text(fl!("tag-replacement-hint"))
+                                                .desired_width(f32::INFINITY),
+                                        );
+                                    });
                                 });
                                 let role = |role: icy_engine::TagRole| match role {
                                     icy_engine::TagRole::Displaycode => fl!("edit-tag-role-displaycode"),
@@ -2728,15 +2840,40 @@ impl DrawApp {
                                 });
                             });
                         });
-                        dialog.buttons([
-                            DialogButton::cancel(labels::cancel(), Action::Cancel),
-                            DialogButton::primary(if index.is_some() { fl!("button-apply") } else { fl!("add_tag_tooltip") }, Action::Apply),
-                        ]);
+                        if let Some(picker) = &self.tag_picker {
+                            let folder = picker.has_folder();
+                            dialog.buttons([
+                                DialogButton::secondary(fl!("tag-replacements-import"), Action::Picker(|| tag_picker::Action::Import))
+                                    .leading()
+                                    .enabled(folder),
+                                DialogButton::secondary(fl!("tag-replacements-new"), Action::Picker(|| tag_picker::Action::Create))
+                                    .leading()
+                                    .enabled(folder)
+                                    .tooltip(fl!("tag-replacements-new-tooltip")),
+                                DialogButton::secondary(fl!("tag-replacements-open-folder"), Action::Picker(|| tag_picker::Action::OpenFolder))
+                                    .leading()
+                                    .enabled(folder)
+                                    .tooltip(fl!("tag-replacements-custom-hint")),
+                                DialogButton::cancel(fl!("tag-replacements-back"), Action::Picker(|| tag_picker::Action::Close)),
+                            ]);
+                        } else {
+                            dialog.buttons([
+                                DialogButton::cancel(labels::cancel(), Action::Cancel),
+                                DialogButton::primary(if index.is_some() { fl!("button-apply") } else { fl!("add_tag_tooltip") }, Action::Apply),
+                            ]);
+                        }
                     });
                 match response.action {
                     Some(Action::Apply) => apply = true,
                     Some(Action::Cancel) => keep = false,
+                    Some(Action::Picker(action)) => picked = Some(action()),
                     None => keep &= !response.dismissed,
+                }
+                if browse {
+                    self.tag_picker = Some(tag_picker::ReplacementPicker::new(&self.settings.selected_taglist, self.taglists_dir()));
+                }
+                if let Some(action) = picked {
+                    self.tag_picker_action(context, action, &mut tag);
                 }
                 if apply {
                     if let Some(index) = index {
@@ -2749,6 +2886,7 @@ impl DrawApp {
                     self.dialog = Some(Dialog::TagProperties(*index, Box::new(tag)));
                 }
                 if !keep {
+                    self.tag_picker = None;
                     self.canvas_focus = true;
                 }
             }
@@ -3197,6 +3335,7 @@ impl DrawApp {
                         }
                         self.palette_editor.export(&path);
                     }
+                    FileAction::ImportTaglist => self.import_taglist(&path),
                 }
             } else {
                 self.continue_after_save = false;
