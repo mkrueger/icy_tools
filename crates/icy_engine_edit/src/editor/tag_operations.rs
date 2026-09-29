@@ -1,5 +1,5 @@
 #![allow(clippy::missing_errors_doc)]
-use crate::{Position, Result, Tag};
+use crate::{Position, Rectangle, Result, Tag};
 
 use super::{undo_operation::EditorUndoOp, EditState};
 
@@ -65,4 +65,35 @@ impl EditState {
         self.current_tag = self.screen.buffer.tags.len().saturating_sub(1);
         Ok(())
     }
+
+    /// Moves or removes tags so they stay on the art an edit moved: `place` gets each tag and
+    /// returns its new position, or `None` when its cells are gone. Pushed as undo steps, so
+    /// callers group them with the edit.
+    pub(crate) fn place_tags(&mut self, mut place: impl FnMut(&Tag) -> Option<Position>) -> Result<()> {
+        let mut removed = Vec::new();
+        for (index, tag) in self.screen.buffer.tags.clone().iter().enumerate() {
+            match place(tag) {
+                Some(position) if position != tag.position => self.move_tag(index, position)?,
+                Some(_) => {}
+                None => removed.push(index),
+            }
+        }
+        for index in removed.into_iter().rev() {
+            self.remove_tag(index)?;
+        }
+        if self.current_tag >= self.screen.buffer.tags.len() {
+            self.current_tag = self.screen.buffer.tags.len().saturating_sub(1);
+        }
+        Ok(())
+    }
+
+    /// The document rectangle of the current layer.
+    pub(crate) fn current_layer_rectangle(&self) -> Option<Rectangle> {
+        self.get_cur_layer().map(crate::TextPane::rectangle)
+    }
+}
+
+/// Whether the tag's start lies inside `area`.
+pub(crate) fn starts_in(tag: &Tag, area: Rectangle) -> bool {
+    area.contains_pt(tag.position)
 }

@@ -455,3 +455,114 @@ fn test_scroll_empty_area_does_nothing() {
     // No undo operations should be pushed for empty operations
     assert_eq!(state.undo_stack_len(), initial_undo_len);
 }
+
+// ============================================================================
+// Tags follow the art
+// ============================================================================
+
+fn tag_at(x: i32, y: i32, preview: &str) -> icy_engine::Tag {
+    icy_engine::Tag {
+        is_enabled: true,
+        preview: preview.into(),
+        replacement_value: String::new(),
+        position: Position::new(x, y),
+        length: preview.len(),
+        alignment: std::fmt::Alignment::Left,
+        tag_placement: icy_engine::TagPlacement::InText,
+        tag_role: icy_engine::TagRole::Displaycode,
+        attribute: TextAttribute::default(),
+    }
+}
+
+fn tag_positions(state: &EditState) -> Vec<Position> {
+    state.get_buffer().tags.iter().map(|tag| tag.position).collect()
+}
+
+/// Two tags: one on row 2, one on row 5.
+fn state_with_tags() -> EditState {
+    let mut state = create_test_state(20, 10);
+    state.add_new_tag(tag_at(4, 2, "AB")).unwrap();
+    state.add_new_tag(tag_at(6, 5, "CD")).unwrap();
+    state
+}
+
+#[test]
+fn rows_and_columns_move_tags_as_one_undo_step() {
+    use icy_engine_edit::UndoState;
+    let mut state = state_with_tags();
+    let undo = state.undo_stack_len();
+    state.set_caret_position(Position::new(0, 3));
+    state.insert_row().unwrap();
+    assert_eq!(tag_positions(&state), [Position::new(4, 2), Position::new(6, 6)], "only tags below move");
+    assert_eq!(state.undo_stack_len(), undo + 1, "the row and the tags are one undo step");
+    state.undo().unwrap();
+    assert_eq!(tag_positions(&state), [Position::new(4, 2), Position::new(6, 5)]);
+
+    state.set_caret_position(Position::new(0, 2));
+    state.delete_row().unwrap();
+    assert_eq!(tag_positions(&state), [Position::new(6, 4)], "the deleted row takes its tag");
+    state.undo().unwrap();
+    assert_eq!(tag_positions(&state), [Position::new(4, 2), Position::new(6, 5)]);
+
+    state.set_caret_position(Position::new(5, 0));
+    state.insert_column().unwrap();
+    assert_eq!(tag_positions(&state), [Position::new(4, 2), Position::new(7, 5)]);
+    state.delete_column().unwrap();
+    state.delete_column().unwrap();
+    assert_eq!(tag_positions(&state), [Position::new(4, 2), Position::new(5, 5)]);
+
+    // A tag pushed off the bottom goes with its row.
+    let mut state = create_test_state(20, 10);
+    state.add_new_tag(tag_at(1, 9, "Z")).unwrap();
+    state.set_caret_position(Position::new(0, 0));
+    state.insert_row().unwrap();
+    assert!(state.get_buffer().tags.is_empty());
+}
+
+#[test]
+fn justify_moves_tags_with_their_row() {
+    let mut state = create_test_state(20, 3);
+    fill_region(&mut state, Rectangle::from(10, 1, 3, 1), 'X');
+    state.add_new_tag(tag_at(14, 1, "T")).unwrap();
+    state.add_new_tag(tag_at(14, 2, "U")).unwrap();
+    state.set_caret_position(Position::new(0, 1));
+    state.justify_line_left().unwrap();
+    assert_eq!(
+        tag_positions(&state),
+        [Position::new(4, 1), Position::new(14, 2)],
+        "the tag keeps its place after the art; the row without art stays"
+    );
+    // The tag is part of the line's content: justified right it ends at the edge, after the art.
+    state.justify_line_right().unwrap();
+    assert_eq!(tag_positions(&state)[0], Position::new(19, 1));
+    assert_eq!(state.get_buffer().layers[0].char_at(Position::new(15, 1)).ch, 'X');
+    assert!(!state.get_buffer().layers[0].char_at(Position::new(18, 1)).is_visible());
+    state.center_line().unwrap();
+    assert_eq!(tag_positions(&state)[0], Position::new(7 + 4, 1), "5 columns centered in 20 start at 7");
+    assert_eq!(state.get_buffer().layers[0].char_at(Position::new(7, 1)).ch, 'X');
+}
+
+#[test]
+fn scrolling_flipping_and_cropping_keep_tags_on_the_art() {
+    let mut state = state_with_tags();
+    state.set_selection(Selection::from(Rectangle::from(0, 2, 20, 4))).unwrap();
+    state.scroll_area_up().unwrap();
+    assert_eq!(
+        tag_positions(&state),
+        [Position::new(4, 5), Position::new(6, 4)],
+        "the top row wraps to the bottom"
+    );
+    state.scroll_area_down().unwrap();
+    assert_eq!(tag_positions(&state), [Position::new(4, 2), Position::new(6, 5)]);
+
+    state.set_selection(Selection::from(Rectangle::from(0, 0, 10, 10))).unwrap();
+    state.flip_x().unwrap();
+    assert_eq!(
+        tag_positions(&state),
+        [Position::new(4, 2), Position::new(2, 5)],
+        "mirrored tags still read left to right"
+    );
+
+    state.crop_rect(Rectangle::from(3, 2, 10, 2)).unwrap();
+    assert_eq!(tag_positions(&state), [Position::new(1, 0)], "tags outside the crop are removed");
+}

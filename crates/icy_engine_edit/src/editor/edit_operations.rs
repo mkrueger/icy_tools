@@ -383,36 +383,94 @@ impl EditState {
     pub fn delete_row(&mut self) -> Result<()> {
         let y = self.screen.caret.position().y;
         let layer = self.get_current_layer()?;
+        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete_row"));
         self.push_undo_action(EditorUndoOp::DeleteRow {
             layer,
             line: y,
             deleted_row: Line::new(),
+        })?;
+        // Tags on the row go with it, the ones below move up.
+        let Some(area) = self.current_layer_rectangle() else {
+            return Ok(());
+        };
+        let row = area.top() + y;
+        self.place_tags(|tag| {
+            if !super::tag_operations::starts_in(tag, area) || tag.position.y < row {
+                Some(tag.position)
+            } else if tag.position.y == row {
+                None
+            } else {
+                Some(tag.position - Position::new(0, 1))
+            }
         })
     }
 
     pub fn insert_row(&mut self) -> Result<()> {
         let y = self.screen.caret.position().y;
         let layer = self.get_current_layer()?;
+        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-insert_row"));
         self.push_undo_action(EditorUndoOp::InsertRow {
             layer,
             line: y,
             inserted_row: Line::new(),
+        })?;
+        // Tags from the row on move down; like the art they fall off the bottom of the layer.
+        let Some(area) = self.current_layer_rectangle() else {
+            return Ok(());
+        };
+        let row = area.top() + y;
+        self.place_tags(|tag| {
+            if !super::tag_operations::starts_in(tag, area) || tag.position.y < row {
+                Some(tag.position)
+            } else if tag.position.y + 1 >= area.bottom() {
+                None
+            } else {
+                Some(tag.position + Position::new(0, 1))
+            }
         })
     }
 
     pub fn insert_column(&mut self) -> Result<()> {
         let x = self.screen.caret.position().x;
         let layer = self.get_current_layer()?;
-        self.push_undo_action(EditorUndoOp::InsertColumn { layer, column: x })
+        let area = self.current_layer_rectangle();
+        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-insert_column"));
+        self.push_undo_action(EditorUndoOp::InsertColumn { layer, column: x })?;
+        // Tags from the column on move right with the art.
+        let Some(area) = area else {
+            return Ok(());
+        };
+        let column = area.left() + x;
+        self.place_tags(|tag| {
+            if super::tag_operations::starts_in(tag, area) && tag.position.x >= column {
+                Some(tag.position + Position::new(1, 0))
+            } else {
+                Some(tag.position)
+            }
+        })
     }
 
     pub fn delete_column(&mut self) -> Result<()> {
         let x = self.screen.caret.position().x;
         let layer = self.get_current_layer()?;
+        let area = self.current_layer_rectangle();
+        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete_column"));
         self.push_undo_action(EditorUndoOp::DeleteColumn {
             layer,
             column: x,
             deleted_chars: Vec::new(),
+        })?;
+        // Tags right of the column move left with the art.
+        let Some(area) = area else {
+            return Ok(());
+        };
+        let column = area.left() + x;
+        self.place_tags(|tag| {
+            if super::tag_operations::starts_in(tag, area) && tag.position.x > column {
+                Some(tag.position - Position::new(1, 0))
+            } else {
+                Some(tag.position)
+            }
         })
     }
 

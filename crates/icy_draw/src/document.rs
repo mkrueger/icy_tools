@@ -28,6 +28,8 @@ struct Stroke {
     add_type: AddType,
     layer_offset: Option<Position>,
     tag_offsets: Vec<(usize, Position)>,
+    /// A tag tool drag on empty canvas that creates a tag if it stays on one row.
+    tag_create: bool,
     undo: AtomicUndoGuard,
 }
 
@@ -62,6 +64,9 @@ struct PasteState {
     /// Every state of the paste before and after it was made transparent, so undoing back to a
     /// transparent state keeps the toggle working; see [`Document::paste_transparent`].
     transparent: Vec<(icy_engine_edit::CharGrid, icy_engine_edit::CharGrid)>,
+    /// Tags lifted with a block: where the block started and the tags inside it, which move
+    /// with a moved block and are copied with a copied one when it is anchored.
+    carried: Option<(Position, Vec<usize>, bool)>,
 }
 
 /// All characters of the current layer.
@@ -128,6 +133,8 @@ pub struct Document {
     pub selection_mode: SelectionMode,
     pub outline_font: bool,
     pub selected_tags: Vec<usize>,
+    /// Where a tag tool drag along one row asks for a new tag, and its width.
+    pub new_tag_request: Option<(Position, usize)>,
     pub preview: Vec<Position>,
     pub metadata_dirty: bool,
     pub baseline: Option<Vec<u8>>,
@@ -155,6 +162,7 @@ impl Document {
             selection_mode: SelectionMode::default(),
             outline_font: false,
             selected_tags: Vec::new(),
+            new_tag_request: None,
             preview: Vec::new(),
             metadata_dirty: false,
             stroke: None,
@@ -284,11 +292,31 @@ impl Document {
     /// Lifts the selected cells into a floating paste at the same place, like the Move Block and
     /// Copy Block of Moebius and PabloDraw; `cut` erases them from the layer below.
     pub fn float_selection(&mut self, cut: bool) -> DrawResult<()> {
-        let Some((data, start)) = self.with_state(|state| Some((state.clipboard_data()?, state.selection()?.as_rectangle().start))) else {
+        let Some((data, area)) = self.with_state(|state| Some((state.clipboard_data()?, state.selection()?.as_rectangle()))) else {
             return Ok(());
         };
-        self.with_state(|state| state.set_caret_from_document_position(start));
-        self.start_floating(cut, |state| state.paste_clipboard_data(&data))
+        // Tags that lie completely inside the block go with it.
+        let tags: Vec<usize> = self.with_state(|state| {
+            state
+                .get_buffer()
+                .tags
+                .iter()
+                .enumerate()
+                .filter(|(_, tag)| {
+                    let end = tag.position + Position::new(tag.len().max(1) as i32 - 1, 0);
+                    area.contains_pt(tag.position) && area.contains_pt(end)
+                })
+                .map(|(index, _)| index)
+                .collect()
+        });
+        self.with_state(|state| state.set_caret_from_document_position(area.start));
+        self.start_floating(cut, |state| state.paste_clipboard_data(&data))?;
+        if let Some(paste) = &mut self.paste {
+            if !tags.is_empty() {
+                paste.carried = Some((area.start, tags, cut));
+            }
+        }
+        Ok(())
     }
 
     /// Fills the selection with full blocks in the foreground color, or erases it for color 0,
@@ -349,6 +377,7 @@ impl Document {
                     previous_tool: self.tool,
                     undo,
                     transparent: Vec::new(),
+                    carried: None,
                 });
                 self.tool = Tool::Click;
                 Ok(())
@@ -358,6 +387,34 @@ impl Document {
                 result.map(|_| ()).map_err(|error| error.to_string())
             }
         }
+    }
+
+    /// Moves the tags lifted with a block to where it is placed, or copies them for a copied
+    /// block, within the paste's undo step.
+    fn place_carried_tags(&mut self) -> icy_engine::Result<()> {
+        let Some((origin, tags, cut)) = self.paste.as_mut().and_then(|paste| paste.carried.take()) else {
+            return Ok(());
+        };
+        self.with_state(|state| {
+            let Some(offset) = state.get_cur_layer().map(|layer| layer.offset()) else {
+                return Ok(());
+            };
+            let delta = offset - origin;
+            for index in tags {
+                let Some(tag) = state.get_buffer().tags.get(index).cloned() else {
+                    continue;
+                };
+                if cut {
+                    state.move_tag(index, tag.position + delta)?;
+                } else {
+                    state.add_new_tag(icy_engine::Tag {
+                        position: tag.position + delta,
+                        ..tag
+                    })?;
+                }
+            }
+            Ok(())
+        })
     }
 
     /// Whether the floating paste is transparent. Other edits of the paste turn it off.
@@ -392,6 +449,9 @@ impl Document {
             return Ok(());
         }
         self.finish();
+        if matches!(action, PasteAction::Anchor | PasteAction::Keep) {
+            self.place_carried_tags().map_err(|error| error.to_string())?;
+        }
         // Transparency is a toggle: the opaque characters are kept to turn it off again, and
         // rotating or flipping a transparent paste transforms the opaque one and reapplies it.
         let opaque = self.transparent_source();
@@ -489,6 +549,7 @@ impl Document {
         }
         let undo = self.with_state(|state| state.begin_atomic_undo(self.tool.name()));
         let mut tag_offsets = Vec::new();
+        let mut tag_create = false;
         if self.tool == Tool::Tag {
             let hit = self.with_state(|state| state.get_buffer().tags.iter().position(|tag| tag.contains(position)));
             if let Some(index) = hit {
@@ -516,6 +577,8 @@ impl Document {
             } else {
                 self.selected_tags.clear();
                 self.with_state(|state| state.set_caret_from_document_position(position));
+                // Shift+drag always selects; a plain drag along one row creates a tag.
+                tag_create = !shift && !modifiers.ctrl && !modifiers.meta;
             }
             if button != MouseButton::Left {
                 return;
@@ -599,6 +662,7 @@ impl Document {
             add_type,
             layer_offset,
             tag_offsets,
+            tag_create,
             undo,
         });
         if self.tool == Tool::Pencil {
@@ -711,6 +775,12 @@ impl Document {
 
     pub fn finish(&mut self) {
         if let Some(stroke) = self.stroke.take() {
+            if stroke.tool == Tool::Tag && stroke.tag_create && stroke.start != stroke.last && stroke.start.y == stroke.last.y {
+                let left = stroke.start.x.min(stroke.last.x);
+                let width = (stroke.start.x - stroke.last.x).unsigned_abs() as usize + 1;
+                self.selected_tags.clear();
+                self.new_tag_request = Some((Position::new(left, stroke.start.y), width));
+            }
             if let Some(offset) = stroke.layer_offset {
                 self.with_state(|state| {
                     state.set_layer_preview_offset(None);
@@ -782,7 +852,7 @@ impl Document {
             return self.paste_action(PasteAction::Cancel);
         }
         self.finish();
-        self.with_state(|state| state.undo()).map_err(|error| error.to_string())
+        self.edit_tags(|state| state.undo()).map_err(|error| error.to_string())
     }
 
     pub fn redo(&mut self) -> DrawResult<()> {
@@ -790,7 +860,18 @@ impl Document {
             return Ok(());
         }
         self.finish();
-        self.with_state(|state| state.redo()).map_err(|error| error.to_string())
+        self.edit_tags(|state| state.redo()).map_err(|error| error.to_string())
+    }
+
+    /// Runs an edit that may add or remove tags. The selected tags are indices, which a removal
+    /// shifts, so the tag selection is dropped when the number of tags changes.
+    pub fn edit_tags<T>(&mut self, action: impl FnOnce(&mut EditState) -> T) -> T {
+        let count = self.with_state(|state| state.get_buffer().tags.len());
+        let result = self.with_state(action);
+        if self.with_state(|state| state.get_buffer().tags.len()) != count {
+            self.selected_tags.clear();
+        }
+        result
     }
 
     pub fn type_text(&mut self, text: &str) -> DrawResult<()> {
@@ -1769,5 +1850,80 @@ mod tests {
         assert!(!document.modified());
         document.redo().unwrap();
         assert_eq!(document.with_state(|state| state.get_buffer().char_at(Position::new(3, 2)).ch), 'A');
+    }
+
+    fn tag(x: i32, y: i32, preview: &str) -> icy_engine::Tag {
+        icy_engine::Tag {
+            is_enabled: true,
+            preview: preview.into(),
+            replacement_value: String::new(),
+            position: Position::new(x, y),
+            length: preview.len(),
+            alignment: std::fmt::Alignment::Left,
+            tag_placement: icy_engine::TagPlacement::InText,
+            tag_role: icy_engine::TagRole::Displaycode,
+            attribute: icy_engine::TextAttribute::default(),
+        }
+    }
+
+    #[test]
+    fn dragging_along_a_row_asks_for_a_tag_and_other_drags_select() {
+        let mut document = Document::new(Size::new(30, 12));
+        document.with_state(|state| state.add_new_tag(tag(20, 6, "OLD"))).unwrap();
+        document.tool = Tool::Tag;
+        document.begin(Position::new(8, 3), MouseButton::Left);
+        document.update(Position::new(3, 3));
+        document.finish();
+        assert_eq!(document.new_tag_request.take(), Some((Position::new(3, 3), 6)), "dragged from either side");
+
+        document.begin(Position::new(4, 4), MouseButton::Left);
+        document.finish();
+        assert_eq!(document.new_tag_request, None, "a click only places the caret");
+
+        document.begin(Position::new(18, 5), MouseButton::Left);
+        document.update(Position::new(24, 7));
+        document.finish();
+        assert_eq!(document.new_tag_request, None);
+        assert_eq!(document.selected_tags, vec![0], "a drag over rows selects");
+
+        document.begin_with_shift(Position::new(18, 6), MouseButton::Left, true);
+        document.update(Position::new(24, 6));
+        document.finish();
+        assert_eq!(document.new_tag_request, None, "Shift+drag selects along a row too");
+        assert_eq!(document.selected_tags, vec![0]);
+    }
+
+    #[test]
+    fn moved_and_copied_blocks_take_their_tags_along() {
+        let mut document = Document::new(Size::new(30, 12));
+        document.type_text("ABCD").unwrap();
+        document.with_state(|state| {
+            state.add_new_tag(tag(1, 0, "TG"))?;
+            state.add_new_tag(tag(3, 0, "OUT"))
+        })
+        .unwrap();
+        let block = |document: &mut Document| {
+            let mut selection = Selection::new(Position::new(0, 0));
+            selection.lead = Position::new(2, 0);
+            document.with_state(|state| state.set_selection(selection)).unwrap();
+        };
+        block(&mut document);
+        document.float_selection(false).unwrap();
+        document.paste_action(PasteAction::Move(Position::new(0, 2))).unwrap();
+        document.paste_action(PasteAction::Anchor).unwrap();
+        let positions = |document: &Document| document.with_state(|state| state.get_buffer().tags.iter().map(|tag| tag.position).collect::<Vec<_>>());
+        assert_eq!(
+            positions(&document),
+            [Position::new(1, 0), Position::new(3, 0), Position::new(1, 2)],
+            "a copied block copies the tag inside it, not the one sticking out"
+        );
+
+        block(&mut document);
+        document.float_selection(true).unwrap();
+        document.paste_action(PasteAction::Move(Position::new(5, 4))).unwrap();
+        document.paste_action(PasteAction::Anchor).unwrap();
+        assert_eq!(positions(&document)[0], Position::new(6, 4), "a moved block moves it");
+        document.undo().unwrap();
+        assert_eq!(positions(&document)[0], Position::new(1, 0), "one undo puts block and tag back");
     }
 }

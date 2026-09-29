@@ -11,6 +11,13 @@ use crate::{AttributedChar, Position, Rectangle, Result, Selection, TextPane};
 
 use super::{undo_operation::EditorUndoOp, EditState};
 
+#[derive(Clone, Copy)]
+enum Justify {
+    Left,
+    Center,
+    Right,
+}
+
 fn get_area(sel: Option<Selection>, layer: Rectangle) -> Rectangle {
     if let Some(selection) = sel {
         let rect = selection.as_rectangle();
@@ -21,136 +28,7 @@ fn get_area(sel: Option<Selection>, layer: Rectangle) -> Rectangle {
 }
 
 impl EditState {
-    pub fn justify_left(&mut self) -> Result<()> {
-        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
-        let sel = self.selection();
-        if let Some(layer) = self.get_cur_layer_mut() {
-            let area = get_area(sel, layer.rectangle());
-            let old_layer = crate::chars_from_area(layer, area);
-            for y in area.y_range() {
-                let mut removed_chars = 0;
-                let len = area.width();
-                while removed_chars < len {
-                    let ch = layer.char_at((area.left() + removed_chars, y).into());
-                    if ch.is_visible() && !ch.is_transparent() {
-                        break;
-                    }
-                    removed_chars += 1;
-                }
-                if len <= removed_chars {
-                    continue;
-                }
-                for x in area.x_range() {
-                    let ch = if x + removed_chars < area.right() {
-                        layer.char_at((x + removed_chars, y).into())
-                    } else {
-                        AttributedChar::invisible()
-                    };
-                    layer.set_char(Position::new(x, y), ch);
-                }
-            }
-            let new_layer = crate::chars_from_area(layer, area);
-            let op = EditorUndoOp::LayerChange {
-                layer: self.get_current_layer()?,
-                pos: area.start,
-                old_chars: old_layer,
-                new_chars: new_layer,
-            };
-            self.push_plain_undo(op)
-        } else {
-            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
-        }
-    }
-
-    pub fn center(&mut self) -> Result<()> {
-        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-center"));
-        let sel = self.selection();
-        self.justify_left()?;
-        if let Some(layer) = self.get_cur_layer_mut() {
-            let area = get_area(sel, layer.rectangle());
-            let old_layer = crate::chars_from_area(layer, area);
-
-            for y in area.y_range() {
-                let mut removed_chars = 0;
-                let len = area.width();
-                while removed_chars < len {
-                    let ch = layer.char_at((area.right() - removed_chars - 1, y).into());
-                    if ch.is_visible() && !ch.is_transparent() {
-                        break;
-                    }
-                    removed_chars += 1;
-                }
-                if len == removed_chars {
-                    continue;
-                }
-                let removed_chars = removed_chars / 2;
-                for x in area.x_range().rev() {
-                    let ch = if x - removed_chars >= area.left() {
-                        layer.char_at((x - removed_chars, y).into())
-                    } else {
-                        AttributedChar::invisible()
-                    };
-
-                    layer.set_char((x, y), ch);
-                }
-            }
-            let new_layer = crate::chars_from_area(layer, area);
-            let op = EditorUndoOp::LayerChange {
-                layer: self.get_current_layer()?,
-                pos: area.start,
-                old_chars: old_layer,
-                new_chars: new_layer,
-            };
-            self.push_plain_undo(op)
-        } else {
-            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
-        }
-    }
-
-    pub fn justify_right(&mut self) -> Result<()> {
-        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-right"));
-        let sel = self.selection();
-        if let Some(layer) = self.get_cur_layer_mut() {
-            let area = get_area(sel, layer.rectangle());
-            let old_layer = crate::chars_from_area(layer, area);
-
-            for y in area.y_range() {
-                let mut removed_chars = 0;
-                let len = area.width();
-                while removed_chars < len {
-                    let ch = layer.char_at((area.right() - removed_chars - 1, y).into());
-                    if ch.is_visible() && !ch.is_transparent() {
-                        break;
-                    }
-                    removed_chars += 1;
-                }
-                if len == removed_chars {
-                    continue;
-                }
-                for x in area.x_range().rev() {
-                    let ch = if x - removed_chars >= area.left() {
-                        layer.char_at((x - removed_chars, y).into())
-                    } else {
-                        AttributedChar::invisible()
-                    };
-
-                    layer.set_char((x, y), ch);
-                }
-            }
-            let new_layer = crate::chars_from_area(layer, area);
-            let op = EditorUndoOp::LayerChange {
-                layer: self.get_current_layer()?,
-                pos: area.start,
-                old_chars: old_layer,
-                new_chars: new_layer,
-            };
-            self.push_plain_undo(op)
-        } else {
-            Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
-        }
-    }
-
-    pub fn flip_x(&mut self) -> Result<()> {
+    fn flip_x_art(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-x"));
         let sel = self.selection();
         let mut flip_tables = HashMap::new();
@@ -176,7 +54,7 @@ impl EditState {
         }
     }
 
-    pub fn flip_y(&mut self) -> Result<()> {
+    fn flip_y_art(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-y"));
         let sel = self.selection();
 
@@ -212,7 +90,7 @@ impl EditState {
         }
     }
 
-    pub fn crop_rect(&mut self, rect: Rectangle) -> Result<()> {
+    fn crop_rect_art(&mut self, rect: Rectangle) -> Result<()> {
         let old_size = self.get_buffer().size();
         let mut old_layers = Vec::new();
         mem::swap(&mut self.get_buffer_mut().layers, &mut old_layers);
@@ -314,7 +192,7 @@ impl EditState {
         self.push_undo_action(op)
     }
 
-    pub fn scroll_area_up(&mut self) -> Result<()> {
+    fn scroll_area_up_art(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -362,7 +240,7 @@ impl EditState {
         }
     }
 
-    pub fn scroll_area_down(&mut self) -> Result<()> {
+    fn scroll_area_down_art(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -409,7 +287,7 @@ impl EditState {
         }
     }
 
-    pub fn scroll_area_left(&mut self) -> Result<()> {
+    fn scroll_area_left_art(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -439,7 +317,7 @@ impl EditState {
         }
     }
 
-    pub fn scroll_area_right(&mut self) -> Result<()> {
+    fn scroll_area_right_art(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -467,6 +345,181 @@ impl EditState {
         } else {
             Err(crate::EngineError::Generic("Current layer is invalid".to_string()))
         }
+    }
+
+    /// The area an area operation works on, in the current layer's and in document coordinates.
+    fn operation_area(&self) -> Option<(Rectangle, Rectangle)> {
+        let layer = self.get_cur_layer()?;
+        let area = get_area(self.selection(), layer.rectangle());
+        Some((area, area + layer.offset()))
+    }
+
+    /// Runs `edit` and moves the tags starting in the operation area with `place`, which gets
+    /// the area in document coordinates.
+    fn keep_tags_in_area(&mut self, label: String, edit: impl FnOnce(&mut Self) -> Result<()>, place: impl Fn(Position, Rectangle) -> Position) -> Result<()> {
+        let _undo = self.begin_atomic_undo(label);
+        let area = self.operation_area().map(|(_, document_area)| document_area);
+        edit(self)?;
+        let Some(area) = area else {
+            return Ok(());
+        };
+        self.place_tags(|tag| {
+            Some(if area.contains_pt(tag.position) {
+                place(tag.position, area)
+            } else {
+                tag.position
+            })
+        })
+    }
+
+    pub fn justify_left(&mut self) -> Result<()> {
+        self.justify_rows(Justify::Left, fl!(crate::LANGUAGE_LOADER, "undo-justify-left"))
+    }
+
+    pub fn center(&mut self) -> Result<()> {
+        self.justify_rows(Justify::Center, fl!(crate::LANGUAGE_LOADER, "undo-center"))
+    }
+
+    pub fn justify_right(&mut self) -> Result<()> {
+        self.justify_rows(Justify::Right, fl!(crate::LANGUAGE_LOADER, "undo-justify-right"))
+    }
+
+    /// Moves the content of each row of the operation area to its left, center or right. A
+    /// row's content is its visible characters and the tags starting in it, so a tag keeps its
+    /// place next to the art.
+    fn justify_rows(&mut self, justify: Justify, label: String) -> Result<()> {
+        let _undo = self.begin_atomic_undo(label);
+        let Some((area, document_area)) = self.operation_area() else {
+            return Err(crate::EngineError::Generic("Current layer is invalid".to_string()));
+        };
+        let offset = document_area.start - area.start;
+        let tags: Vec<(i32, i32, i32)> = self
+            .screen
+            .buffer
+            .tags
+            .iter()
+            .filter(|tag| document_area.contains_pt(tag.position))
+            .map(|tag| (tag.position.y - offset.y, tag.position.x - offset.x, tag.len() as i32))
+            .collect();
+        let mut shifts = HashMap::new();
+        let layer_index = self.get_current_layer()?;
+        let Some(layer) = self.get_cur_layer_mut() else {
+            return Err(crate::EngineError::Generic("Current layer is invalid".to_string()));
+        };
+        let old_layer = crate::chars_from_area(layer, area);
+        for y in area.y_range() {
+            let visible: Vec<i32> = area
+                .x_range()
+                .filter(|x| {
+                    let ch = layer.char_at((*x, y).into());
+                    ch.is_visible() && !ch.is_transparent()
+                })
+                .collect();
+            let tag_extents = tags.iter().filter(|(row, _, _)| *row == y).map(|(_, x, width)| (*x, *x + (*width).max(1)));
+            let extents = visible
+                .first()
+                .map(|first| (*first, visible.last().unwrap() + 1))
+                .into_iter()
+                .chain(tag_extents);
+            let Some((left, right)) = extents.reduce(|(left, right), (x0, x1)| (left.min(x0), right.max(x1))) else {
+                continue;
+            };
+            let width = right - left;
+            if width > area.width() {
+                continue;
+            }
+            let target = match justify {
+                Justify::Left => area.left(),
+                Justify::Center => area.left() + (area.width() - width) / 2,
+                Justify::Right => area.right() - width,
+            };
+            let delta = target - left;
+            if delta == 0 {
+                continue;
+            }
+            let row: Vec<AttributedChar> = area.x_range().map(|x| layer.char_at((x, y).into())).collect();
+            for x in area.x_range() {
+                let source = x - delta;
+                let ch = if area.x_range().contains(&source) {
+                    row[(source - area.left()) as usize]
+                } else {
+                    AttributedChar::invisible()
+                };
+                layer.set_char(Position::new(x, y), ch);
+            }
+            shifts.insert(y + offset.y, delta);
+        }
+        let new_layer = crate::chars_from_area(layer, area);
+        self.push_plain_undo(EditorUndoOp::LayerChange {
+            layer: layer_index,
+            pos: area.start,
+            old_chars: old_layer,
+            new_chars: new_layer,
+        })?;
+        self.place_tags(|tag| {
+            let delta = shifts.get(&tag.position.y).filter(|_| document_area.contains_pt(tag.position));
+            Some(tag.position + Position::new(delta.copied().unwrap_or(0), 0))
+        })
+    }
+
+    /// Mirrors the tags with the art; a tag keeps reading left to right.
+    pub fn flip_x(&mut self) -> Result<()> {
+        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-x"));
+        let area = self.operation_area().map(|(_, document_area)| document_area);
+        self.flip_x_art()?;
+        let Some(area) = area else {
+            return Ok(());
+        };
+        self.place_tags(|tag| {
+            Some(if area.contains_pt(tag.position) {
+                Position::new(area.left() + area.right() - tag.position.x - tag.len() as i32, tag.position.y)
+            } else {
+                tag.position
+            })
+        })
+    }
+
+    pub fn flip_y(&mut self) -> Result<()> {
+        self.keep_tags_in_area(fl!(crate::LANGUAGE_LOADER, "undo-flip-y"), Self::flip_y_art, |position, area| {
+            Position::new(position.x, area.top() + area.bottom() - 1 - position.y)
+        })
+    }
+
+    pub fn scroll_area_up(&mut self) -> Result<()> {
+        self.keep_tags_in_area(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"), Self::scroll_area_up_art, |position, area| {
+            Position::new(position.x, if position.y == area.top() { area.bottom() - 1 } else { position.y - 1 })
+        })
+    }
+
+    pub fn scroll_area_down(&mut self) -> Result<()> {
+        self.keep_tags_in_area(
+            fl!(crate::LANGUAGE_LOADER, "undo-justify-left"),
+            Self::scroll_area_down_art,
+            |position, area| Position::new(position.x, if position.y + 1 >= area.bottom() { area.top() } else { position.y + 1 }),
+        )
+    }
+
+    pub fn scroll_area_left(&mut self) -> Result<()> {
+        self.keep_tags_in_area(
+            fl!(crate::LANGUAGE_LOADER, "undo-justify-left"),
+            Self::scroll_area_left_art,
+            |position, area| Position::new(if position.x == area.left() { area.right() - 1 } else { position.x - 1 }, position.y),
+        )
+    }
+
+    pub fn scroll_area_right(&mut self) -> Result<()> {
+        self.keep_tags_in_area(
+            fl!(crate::LANGUAGE_LOADER, "undo-justify-left"),
+            Self::scroll_area_right_art,
+            |position, area| Position::new(if position.x + 1 >= area.right() { area.left() } else { position.x + 1 }, position.y),
+        )
+    }
+
+    /// Crops to `rect`; tags inside keep their place on the art, the others are removed.
+    pub fn crop_rect(&mut self, rect: Rectangle) -> Result<()> {
+        let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-crop"));
+        self.crop_rect_art(rect)?;
+        self.place_tags(|tag| rect.contains_pt(tag.position).then(|| tag.position - rect.start))
     }
 }
 

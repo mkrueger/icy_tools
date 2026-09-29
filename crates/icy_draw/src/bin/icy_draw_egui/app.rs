@@ -783,7 +783,7 @@ impl DrawApp {
     }
 
     fn edit(&mut self, action: impl FnOnce(&mut icy_engine_edit::EditState) -> icy_engine::Result<()>) {
-        let result = self.document.with_state(action).map_err(|error| error.to_string());
+        let result = self.document.edit_tags(action).map_err(|error| error.to_string());
         self.result(result);
     }
 
@@ -1976,9 +1976,13 @@ impl DrawApp {
                 self.document.finish();
             }
         }
-        if self.document.tool == Tool::Tag && response.double_clicked() && !self.document.selected_tags.is_empty() {
+        if self.document.tool == Tool::Tag && response.double_clicked() {
             self.document.finish();
+            // A double click on a tag edits it; on empty canvas it adds one there.
             self.open_tag_properties(self.document.selected_tags.first().copied());
+        }
+        if let Some((position, width)) = self.document.new_tag_request.take() {
+            self.open_new_tag(position, width);
         }
         if self.document.tool == Tool::Tag {
             response.context_menu(|ui| {
@@ -2042,6 +2046,17 @@ impl DrawApp {
             self.paste_content(content);
         } else {
             context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+        }
+    }
+
+    /// Opens the new tag dialog for a tag dragged out along a row: `width` cells from `position`,
+    /// shown as "TAG" padded to that width until a replacement is picked.
+    fn open_new_tag(&mut self, position: Position, width: usize) {
+        self.open_tag_properties(None);
+        if let Some(Dialog::TagProperties(None, tag)) = &mut self.dialog {
+            tag.position = position;
+            tag.length = width;
+            tag.preview = format!("{:<width$}", "TAG").chars().take(width).collect();
         }
     }
 
