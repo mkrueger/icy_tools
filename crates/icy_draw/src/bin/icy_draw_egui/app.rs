@@ -1231,16 +1231,23 @@ impl DrawApp {
                 if widgets::segmented(ui, &mut primary, modes) {
                     self.document.brush.primary = primary;
                 }
-                widgets::divider(ui);
-                if self.document.brush.primary == BrushPrimaryMode::Shading && tool != Tool::Fill {
-                    self.shade_options(ui, font.as_ref());
-                } else if let Some(font) = &font {
-                    if widgets::glyph(ui, font, self.document.brush.paint_char, false, widgets::CONTROL_HEIGHT)
-                        .on_hover_text(fl!("brush-char-tooltip"))
-                        .clicked()
-                    {
-                        self.dialog = Some(Dialog::Characters);
+                match primary {
+                    BrushPrimaryMode::Shading => {
+                        widgets::divider(ui);
+                        self.shade_options(ui, font.as_ref());
                     }
+                    BrushPrimaryMode::Char | BrushPrimaryMode::Replace => {
+                        if let Some(font) = &font {
+                            widgets::divider(ui);
+                            if widgets::glyph(ui, font, self.document.brush.paint_char, false, widgets::CONTROL_HEIGHT)
+                                .on_hover_text(fl!("brush-char-tooltip"))
+                                .clicked()
+                            {
+                                self.dialog = Some(Dialog::Characters);
+                            }
+                        }
+                    }
+                    _ => {}
                 }
                 if self.document.tool == Tool::Pencil {
                     widgets::divider(ui);
