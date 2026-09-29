@@ -1541,6 +1541,7 @@ igs-pattern-shift-down = Nach unten verschieben
 igs-pattern-clear = Leeren
 igs-pattern-invert = Invertieren
 igs-sound-play = Sound abspielen
+igs-sound-stop = Sound stoppen
 playback-animation = Animation
 playback-play-pause = Animation abspielen oder pausieren
 playback-previous = Vorheriger Befehl

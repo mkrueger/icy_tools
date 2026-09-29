@@ -1557,6 +1557,7 @@ igs-pattern-shift-down = Move down
 igs-pattern-clear = Clear
 igs-pattern-invert = Invert
 igs-sound-play = Play sound
+igs-sound-stop = Stop sound
 playback-animation = Animation
 playback-play-pause = Play or pause the animation
 playback-previous = Previous command
