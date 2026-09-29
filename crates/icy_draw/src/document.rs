@@ -8,6 +8,7 @@ use icy_engine_edit::{tools::Tool, AtomicUndoGuard, EditState, UndoState};
 use parking_lot::Mutex;
 
 use crate::{
+    box_lines::{self, BoxStyle},
     brush::BrushPrimaryMode,
     paint::{apply_stamp_at_doc_pos, BrushSettings},
     selection_drag::{compute_dragged_selection, hit_test_selection, DragParameters, SelectionDrag},
@@ -129,6 +130,11 @@ pub struct Document {
     pub screen: Arc<Mutex<Box<dyn Screen>>>,
     pub path: Option<PathBuf>,
     pub brush: BrushSettings,
+    /// The line tool draws box-drawing lines in this style, joined with the lines they meet,
+    /// instead of using the brush.
+    pub box_line: Option<BoxStyle>,
+    /// The box-line style last chosen, kept while the line tool draws with the brush.
+    pub box_style: BoxStyle,
     pub tool: Tool,
     pub selection_mode: SelectionMode,
     pub outline_font: bool,
@@ -136,6 +142,8 @@ pub struct Document {
     /// Where a tag tool drag along one row asks for a new tag, and its width.
     pub new_tag_request: Option<(Position, usize)>,
     pub preview: Vec<Position>,
+    /// The characters a box line drag will draw, with the joins, for the canvas to show as they will look.
+    pub box_preview: Vec<(Position, char, icy_engine::TextAttribute)>,
     pub metadata_dirty: bool,
     pub baseline: Option<Vec<u8>>,
     stroke: Option<Stroke>,
@@ -160,12 +168,15 @@ impl Document {
             path: None,
             baseline: None,
             brush: BrushSettings::default(),
+            box_line: None,
+            box_style: BoxStyle::default(),
             tool: Tool::Click,
             selection_mode: SelectionMode::default(),
             outline_font: false,
             selected_tags: Vec::new(),
             new_tag_request: None,
             preview: Vec::new(),
+            box_preview: Vec::new(),
             metadata_dirty: false,
             stroke: None,
             paste: None,
@@ -679,6 +690,7 @@ impl Document {
             return;
         };
         let (start, last, tool, brush, button) = (stroke.start, stroke.last, stroke.tool, stroke.brush, stroke.button);
+        let clear = stroke.clear;
         if tool == Tool::Tag {
             if stroke.tag_offsets.is_empty() {
                 let area = Rectangle::from(
@@ -721,6 +733,9 @@ impl Document {
             for point in icy_engine_edit::brushes::get_line_points(last, position).into_iter().skip(1) {
                 self.stamp(point, brush, button);
             }
+        } else if let Some(style) = self.box_line.filter(|_| tool == Tool::Line) {
+            self.preview = box_lines::box_path(start, position);
+            self.box_preview = if clear { Vec::new() } else { self.box_cells(start, position, style, button) };
         } else if tool.is_shape_tool() {
             self.preview = shape_points(tool, start, position);
         } else if matches!(tool, Tool::Select | Tool::Click | Tool::Font) {
@@ -753,6 +768,71 @@ impl Document {
             }
         }
         self.stroke.as_mut().unwrap().last = position;
+    }
+
+    /// The characters of a box line (as Unicode) with their colors, joined with the box characters
+    /// already on the layer, for the cells inside the layer and the selection. The colors are the
+    /// caret's (swapped by the right button); the brush's Apply switches keep a cell's own
+    /// foreground or background.
+    pub fn box_cells(&self, start: Position, end: Position, style: BoxStyle, button: MouseButton) -> Vec<(Position, char, icy_engine::TextAttribute)> {
+        let brush = self.brush;
+        self.with_state(|state| {
+            let Some(layer) = state.get_cur_layer() else {
+                return Vec::new();
+            };
+            let (offset, width, height) = (layer.offset(), layer.width(), layer.height());
+            let buffer_type = state.get_buffer().buffer_type;
+            let inside = |point: Position| {
+                let local = point - offset;
+                local.x >= 0 && local.y >= 0 && local.x < width && local.y < height
+            };
+            let cells = box_lines::box_line(start, end, style, |point| {
+                inside(point)
+                    .then(|| layer.char_at(point - offset).ch)
+                    .and_then(|ch| box_lines::arms_of(buffer_type.convert_to_unicode(ch)))
+            });
+            let mut caret = state.get_caret().attribute;
+            if button == MouseButton::Right {
+                let foreground = caret.foreground();
+                caret.set_foreground(caret.background());
+                caret.set_background(foreground);
+            }
+            let selected = state.is_something_selected();
+            cells
+                .into_iter()
+                .filter(|(point, _)| inside(*point) && (!selected || state.is_selected(*point)))
+                .map(|(point, ch)| {
+                    // Start from the caret, so empty (transparent) cells become visible.
+                    let own = layer.char_at(point - offset).attribute;
+                    let mut attribute = caret;
+                    if !brush.colorize_fg {
+                        attribute.set_foreground(own.foreground());
+                    }
+                    if !brush.colorize_bg {
+                        attribute.set_background(own.background());
+                    }
+                    (point, ch, attribute)
+                })
+                .collect()
+        })
+    }
+
+    /// Draws a box line, joining the box characters already on the layer; see [`Self::box_cells`].
+    fn draw_box_line(&self, start: Position, end: Position, style: BoxStyle, button: MouseButton) {
+        if !self.can_paint() {
+            return;
+        }
+        let cells = self.box_cells(start, end, style, button);
+        self.with_state(|state| {
+            let Some(offset) = state.get_cur_layer().map(|layer| layer.offset()) else {
+                return;
+            };
+            let buffer_type = state.get_buffer().buffer_type;
+            for (point, ch, attribute) in cells {
+                let character = icy_engine::AttributedChar::new(buffer_type.convert_from_unicode(ch), attribute);
+                let _ = state.set_char_in_atomic(point - offset, character);
+            }
+        });
     }
 
     fn stamp(&self, position: Position, brush: BrushSettings, button: MouseButton) {
@@ -806,6 +886,11 @@ impl Document {
                 });
             }
             if stroke.tool.is_shape_tool() {
+                if let Some(style) = self.box_line.filter(|_| stroke.tool == Tool::Line && !stroke.clear) {
+                    self.preview.clear();
+                    self.box_preview.clear();
+                    self.draw_box_line(stroke.start, stroke.last, style, stroke.button);
+                }
                 for point in std::mem::take(&mut self.preview) {
                     if stroke.clear {
                         if !self.can_paint() {
@@ -838,6 +923,7 @@ impl Document {
             drop(stroke);
         }
         self.preview.clear();
+        self.box_preview.clear();
     }
 
     pub fn cancel(&mut self) {
@@ -848,6 +934,7 @@ impl Document {
             });
         }
         self.preview.clear();
+        self.box_preview.clear();
     }
 
     pub fn undo(&mut self) -> DrawResult<()> {
@@ -1601,6 +1688,94 @@ mod tests {
         assert_ne!(doc.with_state(|state| state.get_cur_layer().unwrap().char_at((1, 1).into()).ch), '#');
         doc.redo().unwrap();
         assert_eq!(doc.with_state(|state| state.get_cur_layer().unwrap().char_at((5, 1).into()).ch), '#');
+    }
+
+    #[test]
+    fn half_block_pencil_paints_brush_size_half_pixels() {
+        let mut doc = Document::new(Size::new(20, 10));
+        doc.tool = Tool::Pencil;
+        doc.brush.primary = BrushPrimaryMode::HalfBlock;
+        doc.brush.brush_size = 3;
+        doc.with_state(|state| state.set_caret_attribute(icy_engine::TextAttribute::from_color(4, 0)));
+        // Half-block position (10, 10) is the top half of cell (10, 5).
+        doc.begin(Position::new(10, 10), MouseButton::Left);
+        doc.finish();
+        let cell = |x: i32, y: i32| doc.with_state(|state| state.get_buffer().char_at((x, y).into()));
+        for x in 9..=11 {
+            let (upper, middle, lower) = (cell(x, 4), cell(x, 5), cell(x, 6));
+            assert_eq!(upper.ch, '\u{DC}', "the lower half of row 4 at column {x}");
+            assert_eq!(upper.attribute.foreground(), 4);
+            assert_eq!(middle.ch, '\u{DB}', "both halves of row 5 at column {x}");
+            assert_eq!(lower.ch, ' ', "row 6 stays empty at column {x}");
+        }
+        for x in [8, 12] {
+            assert_eq!(cell(x, 5).ch, ' ', "column {x} is outside the brush");
+        }
+    }
+
+    #[test]
+    fn box_lines_join_what_they_cross_in_one_undo_step() {
+        let mut doc = Document::new(Size::new(20, 10));
+        doc.tool = Tool::Line;
+        doc.brush.primary = BrushPrimaryMode::Char;
+        doc.box_line = Some(BoxStyle::Single);
+        let line = |doc: &mut Document, start: (i32, i32), end: (i32, i32), button| {
+            doc.begin(Position::new(start.0, start.1), button);
+            doc.update(Position::new(end.0, end.1));
+            doc.finish();
+        };
+        let row = |doc: &Document, y: i32| -> String {
+            doc.with_state(|state| {
+                let buffer = state.get_buffer();
+                (0..8)
+                    .map(|x| buffer.buffer_type.convert_to_unicode(buffer.char_at((x, y).into()).ch))
+                    .collect()
+            })
+        };
+        line(&mut doc, (3, 0), (3, 4), MouseButton::Left);
+        line(&mut doc, (0, 2), (6, 2), MouseButton::Left);
+        assert_eq!(row(&doc, 2), "───┼─── ", "the second line crosses the first");
+        doc.box_line = Some(BoxStyle::Double);
+        line(&mut doc, (3, 4), (6, 4), MouseButton::Left);
+        assert_eq!(
+            row(&doc, 4),
+            "   ╘═══ ",
+            "a double line from the end of a single one turns its end into a corner"
+        );
+        assert_eq!(row(&doc, 3), "   │    ");
+        doc.undo().unwrap();
+        assert_eq!(row(&doc, 4), "   │    ", "one undo step per line");
+
+        // The right button swaps the colors, Shift erases along the line like other shapes.
+        doc.with_state(|state| state.set_caret_foreground(14));
+        line(&mut doc, (0, 6), (2, 6), MouseButton::Right);
+        let attribute = doc.with_state(|state| state.get_buffer().char_at((1, 6).into()).attribute);
+        assert_eq!((attribute.foreground(), attribute.background()), (0, 14));
+        doc.box_line = None;
+        doc.brush.paint_char = '#';
+        line(&mut doc, (0, 8), (2, 8), MouseButton::Left);
+        assert_eq!(row(&doc, 8), "###     ", "without the box style the brush draws");
+
+        // While dragging, the preview holds the characters the line will draw, joins included.
+        doc.box_line = Some(BoxStyle::Single);
+        doc.begin(Position::new(0, 1), MouseButton::Left);
+        doc.update(Position::new(5, 1));
+        let preview: String = doc.box_preview.iter().map(|(_, ch, _)| *ch).collect();
+        assert_eq!(preview, "───┼──", "the preview crosses the existing line");
+        assert_eq!(row(&doc, 1), "   │    ", "the canvas only changes when the line is finished");
+        doc.finish();
+        assert!(doc.box_preview.is_empty());
+        assert_eq!(row(&doc, 1), "───┼──  ");
+
+        // The brush's Apply switches keep a cell's own colors, like for the other modes.
+        doc.with_state(|state| {
+            state.set_caret_foreground(4);
+            state.set_caret_background(1);
+        });
+        doc.brush.colorize_bg = false;
+        line(&mut doc, (0, 9), (2, 9), MouseButton::Left);
+        let attribute = doc.with_state(|state| state.get_buffer().char_at((1, 9).into()).attribute);
+        assert_eq!((attribute.foreground(), attribute.background()), (4, 0), "the background stays");
     }
 
     #[test]

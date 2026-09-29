@@ -1,5 +1,5 @@
 use eframe::egui::{self, Color32, Key};
-use icy_draw::{brush::BrushPrimaryMode, document::Document, fl, selection_drag::SelectionDrag, Settings};
+use icy_draw::{box_lines::BoxStyle, brush::BrushPrimaryMode, document::Document, fl, selection_drag::SelectionDrag, Settings};
 use icy_engine::{AddType, FileFormat, Position, Selection, Size, TextPane};
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::UndoState;
@@ -1233,21 +1233,41 @@ impl DrawApp {
                     (BrushPrimaryMode::Char, fl!("tool-character"), fl!("brush-mode-char-tooltip")),
                     (BrushPrimaryMode::Colorize, fl!("tool-colorize"), fl!("brush-mode-colorize-tooltip")),
                 ];
-                let modes = if tool == Tool::Fill { fill_modes.as_slice() } else { all_modes.as_slice() };
-                let mut primary = match self.document.brush.primary {
+                let brush_modes = if tool == Tool::Fill { fill_modes.as_slice() } else { all_modes.as_slice() };
+                // `None` is the line tool's outline mode, which draws box-drawing lines instead of the brush.
+                let mut modes: Vec<(Option<BrushPrimaryMode>, String, String)> = brush_modes
+                    .iter()
+                    .map(|(mode, label, tooltip)| (Some(*mode), label.clone(), tooltip.clone()))
+                    .collect();
+                if tool == Tool::Line {
+                    modes.push((None, fl!("line-style-outline"), fl!("line-style-outline-tooltip")));
+                }
+                let primary = match self.document.brush.primary {
                     BrushPrimaryMode::Char | BrushPrimaryMode::HalfBlock | BrushPrimaryMode::Colorize => self.document.brush.primary,
                     _ if tool == Tool::Fill => BrushPrimaryMode::Char,
                     mode => mode,
                 };
-                if widgets::segmented(ui, &mut primary, modes) {
-                    self.document.brush.primary = primary;
+                let outline = tool == Tool::Line && self.document.box_line.is_some();
+                let mut choice = if outline { None } else { Some(primary) };
+                if widgets::segmented(ui, &mut choice, &modes) {
+                    match choice {
+                        Some(mode) => {
+                            self.document.brush.primary = mode;
+                            self.document.box_line = None;
+                        }
+                        None => self.document.box_line = Some(self.document.box_style),
+                    }
                 }
-                match primary {
-                    BrushPrimaryMode::Shading => {
+                match choice {
+                    None => {
+                        widgets::divider(ui);
+                        self.outline_style(ui);
+                    }
+                    Some(BrushPrimaryMode::Shading) => {
                         widgets::divider(ui);
                         self.shade_options(ui, font.as_ref());
                     }
-                    BrushPrimaryMode::Char | BrushPrimaryMode::Replace => {
+                    Some(BrushPrimaryMode::Char | BrushPrimaryMode::Replace) => {
                         if let Some(font) = &font {
                             widgets::divider(ui);
                             if widgets::glyph(ui, font, self.document.brush.paint_char, false, widgets::CONTROL_HEIGHT)
@@ -1707,6 +1727,30 @@ impl DrawApp {
     fn half_blocks(&self) -> bool {
         self.document.brush.primary == BrushPrimaryMode::HalfBlock
             && (self.document.tool == Tool::Pencil || self.document.tool == Tool::Fill || self.document.tool.is_shape_tool())
+            && !(self.document.tool == Tool::Line && self.document.box_line.is_some())
+    }
+
+    /// The outline mode's line style, shown beside the modes like the shading options.
+    fn outline_style(&mut self, ui: &mut egui::Ui) {
+        let mut style = self.document.box_style;
+        let options = [
+            (BoxStyle::Single, BoxStyle::Single.sample().to_string(), fl!("line-style-single-tooltip")),
+            (BoxStyle::Double, BoxStyle::Double.sample().to_string(), fl!("line-style-double-tooltip")),
+            (
+                BoxStyle::DoubleHorizontal,
+                BoxStyle::DoubleHorizontal.sample().to_string(),
+                fl!("line-style-double-horizontal-tooltip"),
+            ),
+            (
+                BoxStyle::DoubleVertical,
+                BoxStyle::DoubleVertical.sample().to_string(),
+                fl!("line-style-double-vertical-tooltip"),
+            ),
+        ];
+        if widgets::segmented(ui, &mut style, &options) {
+            self.document.box_style = style;
+            self.document.box_line = Some(style);
+        }
     }
 
     fn position(&self, point: egui::Pos2) -> Option<Position> {
@@ -1852,12 +1896,35 @@ impl DrawApp {
                 );
             }
         }
-        for point in &self.document.preview {
-            let rect = egui::Rect::from_min_size(
-                origin + egui::vec2(point.x as f32 * cell_size.x, point.y as f32 * cell_size.y) * info.display_scale,
-                cell_size * info.display_scale,
-            );
-            painter.rect_filled(rect, 0, Color32::from_rgba_unmultiplied(red, green, blue, 160));
+        if self.document.box_preview.is_empty() {
+            for point in &self.document.preview {
+                let rect = egui::Rect::from_min_size(
+                    origin + egui::vec2(point.x as f32 * cell_size.x, point.y as f32 * cell_size.y) * info.display_scale,
+                    cell_size * info.display_scale,
+                );
+                painter.rect_filled(rect, 0, Color32::from_rgba_unmultiplied(red, green, blue, 160));
+            }
+        } else {
+            // Box lines show the characters they will draw, joins included, in their colors.
+            let (font, buffer_type, palette) = self.document.with_state(|state| {
+                let buffer = state.get_buffer();
+                let font_page = state.get_caret().attribute.font_page();
+                (buffer.font(font_page).cloned(), buffer.buffer_type, buffer.palette.clone())
+            });
+            let rgb = |index: u32| {
+                let (red, green, blue) = palette.rgb(index);
+                Color32::from_rgb(red, green, blue)
+            };
+            for (point, ch, attribute) in &self.document.box_preview {
+                let rect = egui::Rect::from_min_size(
+                    origin + egui::vec2(point.x as f32 * cell_size.x, point.y as f32 * cell_size.y) * info.display_scale,
+                    cell_size * info.display_scale,
+                );
+                painter.rect_filled(rect, 0, rgb(attribute.background()));
+                if let Some(font) = &font {
+                    widgets::paint_glyph_on(&painter, font, buffer_type.convert_from_unicode(*ch), rect, rgb(attribute.foreground()));
+                }
+            }
         }
         let tool = self.document.tool;
         let show_paint_hover =

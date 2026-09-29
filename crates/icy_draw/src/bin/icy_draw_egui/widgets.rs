@@ -484,10 +484,16 @@ struct GlyphAtlas {
 
 /// Paints `code` of `font` into `target` using a cached 16×16 glyph atlas texture.
 pub fn paint_glyph(ui: &egui::Ui, font: &icy_engine::BitFont, code: char, target: egui::Rect, color: Color32) {
+    paint_glyph_on(ui.painter(), font, code, target, color);
+}
+
+/// [`paint_glyph`] with a given painter, e.g. one clipped to the canvas.
+pub fn paint_glyph_on(painter: &egui::Painter, font: &icy_engine::BitFont, code: char, target: egui::Rect, color: Color32) {
+    let context = painter.ctx();
     let dimensions = font.size();
     // Keyed per font so previews in the default font and buffer glyphs do not evict each other.
     let key = egui::Id::new(("glyph-atlas", font.name().to_string(), dimensions.width, dimensions.height));
-    let existing = ui.ctx().data(|data| data.get_temp::<std::sync::Arc<GlyphAtlas>>(key));
+    let existing = context.data(|data| data.get_temp::<std::sync::Arc<GlyphAtlas>>(key));
     let atlas = if let Some(atlas) = existing.filter(|atlas| atlas.font == *font) {
         atlas
     } else {
@@ -505,12 +511,12 @@ pub fn paint_glyph(ui: &egui::Ui, font: &icy_engine::BitFont, code: char, target
         }
         let atlas = std::sync::Arc::new(GlyphAtlas {
             font: font.clone(),
-            texture: ui.ctx().load_texture("glyph-atlas", image, egui::TextureOptions::NEAREST),
+            texture: context.load_texture("glyph-atlas", image, egui::TextureOptions::NEAREST),
         });
-        ui.ctx().data_mut(|data| data.insert_temp(key, atlas.clone()));
+        context.data_mut(|data| data.insert_temp(key, atlas.clone()));
         atlas
     };
     let code = (code as u32).min(255);
     let uv = egui::Rect::from_min_size(egui::pos2((code % 16) as f32 / 16.0, (code / 16) as f32 / 16.0), egui::Vec2::splat(1.0 / 16.0));
-    ui.painter().image(atlas.texture.id(), target, uv, color);
+    painter.image(atlas.texture.id(), target, uv, color);
 }

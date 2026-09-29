@@ -1884,3 +1884,11 @@ attribute-picker-pair = Foreground { $foreground } · background { $background }
 attribute-picker-foreground = Foreground { $color }
 attribute-picker-background = Background { $color }
 attribute-picker-keys = ↑↓ foreground · ←→ background · Enter or Esc closes
+
+# Line tool: outline mode (box-drawing lines)
+line-style-outline = Outline
+line-style-outline-tooltip = Draw box-drawing lines that join the lines they meet
+line-style-single-tooltip = Single box-drawing lines, joined with the lines they meet
+line-style-double-tooltip = Double box-drawing lines, joined with the lines they meet
+line-style-double-horizontal-tooltip = Double across, single down, joined with the lines they meet
+line-style-double-vertical-tooltip = Single across, double down, joined with the lines they meet

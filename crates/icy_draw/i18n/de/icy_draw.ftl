@@ -1868,3 +1868,11 @@ attribute-picker-pair = Vordergrund { $foreground } · Hintergrund { $background
 attribute-picker-foreground = Vordergrund { $color }
 attribute-picker-background = Hintergrund { $color }
 attribute-picker-keys = ↑↓ Vordergrund · ←→ Hintergrund · Enter oder Esc schließt
+
+# Line tool: outline mode (box-drawing lines)
+line-style-outline = Rahmen
+line-style-outline-tooltip = Rahmenlinien zeichnen, die sich mit vorhandenen Linien verbinden
+line-style-single-tooltip = Einfache Rahmenlinien, die sich mit vorhandenen Linien verbinden
+line-style-double-tooltip = Doppelte Rahmenlinien, die sich mit vorhandenen Linien verbinden
+line-style-double-horizontal-tooltip = Waagerecht doppelt, senkrecht einfach – verbindet sich mit vorhandenen Linien
+line-style-double-vertical-tooltip = Waagerecht einfach, senkrecht doppelt – verbindet sich mit vorhandenen Linien

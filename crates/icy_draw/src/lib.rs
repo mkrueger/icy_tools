@@ -1,3 +1,4 @@
+pub mod box_lines;
 pub mod brush;
 pub mod charfont;
 pub mod document;

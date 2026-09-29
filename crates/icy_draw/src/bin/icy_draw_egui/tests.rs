@@ -2692,3 +2692,89 @@ fn keys_reach_the_canvas_after_clicking_panels_and_follow_moebius() {
     frame(&context, &mut app, size, vec![key_event(Key::P, egui::Modifiers::NONE)]);
     assert_eq!(app.document.tool, Tool::Fill);
 }
+
+#[test]
+fn line_tool_outline_mode_shows_its_styles_like_shading() {
+    use icy_draw::box_lines::BoxStyle;
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    app.document.tool = Tool::Line;
+    let output = frame(&context, &mut app, size, vec![]);
+    assert!(text_position(&output, "Outline").is_some(), "outline is one of the line tool's modes");
+    assert!(text_position(&output, "\u{256c}").is_none(), "the styles only show in outline mode");
+    click_text(&context, &mut app, size, "Outline");
+    assert_eq!(app.document.box_line, Some(BoxStyle::Single));
+    click_text(&context, &mut app, size, "\u{256c}");
+    assert_eq!(app.document.box_line, Some(BoxStyle::Double));
+    click_text(&context, &mut app, size, "Character");
+    assert_eq!(app.document.box_line, None);
+    assert_eq!(app.document.brush.primary, BrushPrimaryMode::Char);
+    let output = frame(&context, &mut app, size, vec![]);
+    assert!(text_position(&output, "\u{256c}").is_none());
+    click_text(&context, &mut app, size, "Outline");
+    assert_eq!(app.document.box_line, Some(BoxStyle::Double), "the last style is kept");
+
+    app.document.tool = Tool::RectangleOutline;
+    let output = frame(&context, &mut app, size, vec![]);
+    assert!(text_position(&output, "Outline").is_none(), "only the line tool has the outline mode");
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_box_lines_render() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        app.document.tool = Tool::Line;
+        app.document.brush.primary = BrushPrimaryMode::Char;
+        let mut line = |style, start: (i32, i32), end: (i32, i32)| {
+            app.document.box_line = Some(style);
+            app.document.box_style = style;
+            app.document.begin(Position::new(start.0, start.1), icy_engine::MouseButton::Left);
+            app.document.update(Position::new(end.0, end.1));
+            app.document.finish();
+        };
+        use icy_draw::box_lines::BoxStyle;
+        // A double frame with a single divider and a single column that crosses it.
+        line(BoxStyle::Double, (2, 1), (30, 1));
+        line(BoxStyle::Double, (30, 1), (30, 10));
+        line(BoxStyle::Double, (30, 10), (2, 10));
+        line(BoxStyle::Double, (2, 10), (2, 1));
+        line(BoxStyle::Single, (2, 4), (30, 4));
+        line(BoxStyle::Single, (14, 1), (14, 10));
+        // An elbow connector from the frame.
+        line(BoxStyle::Single, (30, 7), (40, 12));
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "box-lines-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "box-lines");
+        // A line being dragged across the frame previews its characters and joins.
+        app.document.box_line = Some(BoxStyle::Double);
+        app.document.box_style = BoxStyle::Double;
+        let info = app.view.terminal.render_info.read().clone();
+        let cell = |x: f32, y: f32| {
+            egui::pos2(
+                info.bounds_x + info.viewport_x + info.font_width * info.display_scale * (x + 0.5),
+                info.bounds_y + info.viewport_y + info.font_height * info.display_scale * (y + 0.5),
+            )
+        };
+        let (start, end) = (cell(8.0, 7.0), cell(36.0, 7.0));
+        let press = |pressed| egui::Event::PointerButton {
+            pos: start,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        gpu.capture(
+            &mut app,
+            [1280, 820],
+            1.0,
+            vec![egui::Event::PointerMoved(start), press(true)],
+            "box-lines-drag-warmup",
+        );
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![egui::Event::PointerMoved(end)], "box-lines-drag-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "box-lines-drag");
+        assert!(!app.document.box_preview.is_empty(), "the drag is still running");
+    });
+}

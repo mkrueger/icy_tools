@@ -41,6 +41,14 @@ The egui frontend currently includes:
   While the canvas has keyboard focus, arrow keys move the text caret rather
   than switching focus to other controls; Tab and Escape also stay with the
   canvas. Clicking another control or opening a dialog still transfers input.
+- Box-drawing lines: the line tool's **Outline** mode (after the brush modes)
+  draws with CP437 line characters in one of four styles, chosen beside it like
+  the shading options (`─│` single, `═║` double, `═│` and `─║` mixed). Lines
+  join the lines they meet with the matching junction (`┼ ╬ ├ ╤ …`), and a loose
+  line end they leave from becomes a corner; the drag previews the characters
+  and joins. Dragging diagonally draws an elbow along the longer direction
+  first; the right button swaps the colors, the Apply switches keep a cell's own
+  colors, and Shift erases along the line, like the other shapes.
 - Shading with user-defined ramps. The Shade brush mode offers a character ramp
   (`░▒▓█` by default, any CP437 characters from light to dark, or keep the
   characters) and an optional foreground color ramp. Each stroke moves a cell one
