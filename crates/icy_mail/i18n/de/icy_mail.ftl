@@ -102,7 +102,21 @@ welcome-opening = { $name } wird geöffnet…
 welcome-tagline = BBS-Nachrichten offline lesen und beantworten.
 welcome-open-packet = Paket öffnen…
 welcome-open-packet-tooltip = QWK-Paket öffnen (Ctrl+O)
-welcome-drop-hint = oder ein .QWK-Paket auf dieses Fenster ziehen
+welcome-drop-title = QWK-Paket hierher ziehen
+welcome-drop-release = Loslassen, um das Paket zu öffnen
+welcome-recent-unread = { $count } ungelesen
+welcome-recent-all-read = Alles gelesen
+welcome-recent-messages = { $count ->
+    [one] 1 Nachricht
+   *[other] { $count } Nachrichten
+}
+welcome-recent-starred = { $count } markiert
+welcome-recent-drafts = { $count ->
+    [one] 1 Entwurf zu exportieren
+   *[other] { $count } Entwürfe zu exportieren
+}
+welcome-recent-created = Gepackt { $date }
+welcome-recent-missing = { $file } wurde verschoben oder gelöscht
 welcome-recent-packets = Zuletzt geöffnete Pakete
 welcome-forget-recent = Aus der Liste entfernen
 

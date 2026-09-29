@@ -723,6 +723,12 @@ pub fn unread_dot(ui: &egui::Ui, rect: Rect, color: Color32) {
 /// Circle with the initial of `name`, coloured by the name, like the avatars of most mail clients.
 pub fn avatar(ui: &mut egui::Ui, name: &str, size: f32) {
     let (rect, _) = ui.allocate_exact_size(egui::Vec2::splat(size), Sense::hover());
+    paint_avatar(ui, rect, name);
+}
+
+/// Circle with the initial of `name`, colored by a hash of it, filling `rect`.
+pub fn paint_avatar(ui: &egui::Ui, rect: Rect, name: &str) {
+    let size = rect.width().min(rect.height());
     let hash = name.bytes().fold(0x811c_9dc5u32, |hash, byte| {
         (hash ^ u32::from(byte.to_ascii_lowercase())).wrapping_mul(0x0100_0193)
     });

@@ -11,9 +11,12 @@ frontend.
 cargo run -p icy_mail -- [packet.qwk]
 ```
 
-Open a packet with **Open**, Ctrl/Cmd+O, by dropping it on the window, or from
-the start screen's recent packet list (hover an entry and press × to forget
-it). Packets are unpacked with [unarc-rs](https://github.com/mkrueger/unarc-rs),
+Open a packet with **Open**, Ctrl/Cmd+O, by dropping it on the window (the
+start screen's drop zone lights up while a file is dragged over it), or from
+the start screen's recent packets. Each recent packet is a card with the BBS
+name, unread count, file size, packing date, and the starred messages and
+drafts still to export, as they were when the packet was last open; hover a
+card and press × to forget it. Packets are unpacked with [unarc-rs](https://github.com/mkrueger/unarc-rs),
 so ZIP, ARJ, LHA/LZH, RAR, 7z, ARC, ZOO and the other formats it detects work;
 the archive must contain `CONTROL.DAT` and `MESSAGES.DAT`. Standalone REP
 archives are export files, not readable incoming packets.

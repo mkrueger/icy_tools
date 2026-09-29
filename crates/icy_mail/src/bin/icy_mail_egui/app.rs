@@ -12,7 +12,7 @@ use icy_mail::{
     options::{Options, ReadingPane},
     qwk::MessageInfo,
     reader::{NavigateDirection, Pane, Reader, ViewMode},
-    state::{ReadState, RecentPackets},
+    state::{PacketSummary, ReadState, RecentPackets},
     taglines::{self, Taglines},
     text, LANGUAGE_LOADER,
 };
@@ -153,6 +153,8 @@ pub struct MailApp {
     pub address_dialog: Option<AddressDialog>,
     pub about: Option<icy_engine_gui::egui::about::AboutDialog>,
     pub latest_version: Option<semver::Version>,
+    /// The start page summary last stored for the open packet.
+    summary: Option<PacketSummary>,
     version_check: Option<std::sync::mpsc::Receiver<semver::Version>>,
     /// The tagline found in a message, keyed by packet and message index.
     tagline_cache: Option<((usize, usize), Option<String>)>,
@@ -242,6 +244,7 @@ impl MailApp {
             address_dialog: None,
             about: None,
             latest_version: None,
+            summary: None,
             version_check: None,
             tagline_cache: None,
             children: Vec::new(),
@@ -514,6 +517,34 @@ impl MailApp {
             .as_ref()
             .map(|package| text::HeaderText::new(package.control_file.qmail_user_name.trim()).to_string())
             .unwrap_or_default()
+    }
+
+    /// Keeps the start page's summary of the open packet current: unread and starred messages and drafts.
+    fn sync_summary(&mut self) {
+        let (Some(path), Some(package)) = (&self.path, &self.reader.package) else {
+            return;
+        };
+        if self.loading.is_some() || self.recent.is_none() {
+            return;
+        }
+        let summary = PacketSummary {
+            path: path.clone(),
+            bbs_name: self.bbs_name(),
+            created: package.control_file.creation_time.to_string().trim().to_string(),
+            messages: package.message_count(),
+            unread: self.counts.unread,
+            starred: self.counts.starred,
+            drafts: self.draft_count(),
+        };
+        if self.summary.as_ref() == Some(&summary) {
+            return;
+        }
+        if let Some(recent) = &mut self.recent {
+            if let Err(error) = recent.set_summary(summary.clone()) {
+                log::warn!("unable to update the recent packet summary: {error}");
+            }
+        }
+        self.summary = Some(summary);
     }
 
     pub fn bbs_name(&self) -> String {
@@ -1111,6 +1142,7 @@ impl MailApp {
             });
         if !blocked && !context.will_discard() {
             self.sync_body(context);
+            self.sync_summary();
         }
         self.modals(context);
         if !matches!(self.modal, Some(Modal::Settings)) {

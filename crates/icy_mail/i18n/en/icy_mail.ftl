@@ -102,7 +102,21 @@ welcome-opening = Opening { $name }…
 welcome-tagline = Read and answer your BBS mail offline.
 welcome-open-packet = Open Packet…
 welcome-open-packet-tooltip = Open a QWK packet (Ctrl+O)
-welcome-drop-hint = or drop a .QWK packet onto this window
+welcome-drop-title = Drop a QWK packet here
+welcome-drop-release = Release to open the packet
+welcome-recent-unread = { $count } unread
+welcome-recent-all-read = All read
+welcome-recent-messages = { $count ->
+    [one] 1 message
+   *[other] { $count } messages
+}
+welcome-recent-starred = { $count } starred
+welcome-recent-drafts = { $count ->
+    [one] 1 draft to export
+   *[other] { $count } drafts to export
+}
+welcome-recent-created = Packed { $date }
+welcome-recent-missing = { $file } was moved or deleted
 welcome-recent-packets = Recent packets
 welcome-forget-recent = Remove from the list
 

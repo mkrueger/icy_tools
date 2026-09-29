@@ -161,10 +161,31 @@ pub fn data_directory() -> crate::Res<PathBuf> {
         .to_path_buf())
 }
 
-#[derive(Default, Serialize, Deserialize)]
+/// What the start page shows about a recent packet; kept up to date while the packet is open.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PacketSummary {
+    pub path: PathBuf,
+    pub bbs_name: String,
+    /// Creation time as written by the BBS, usually `MM-DD-YYYY,HH:MM:SS`.
+    pub created: String,
+    pub messages: usize,
+    pub unread: usize,
+    pub starred: usize,
+    /// Drafts in the outbox that still need to be exported.
+    pub drafts: usize,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StoredRecent {
     packets: Vec<PathBuf>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    summaries: Vec<PacketSummary>,
+}
+
+fn canonical(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Most recently opened packets, newest first.
@@ -172,6 +193,7 @@ struct StoredRecent {
 pub struct RecentPackets {
     path: PathBuf,
     pub packets: Vec<PathBuf>,
+    pub summaries: Vec<PacketSummary>,
 }
 
 impl RecentPackets {
@@ -181,51 +203,76 @@ impl RecentPackets {
 
     pub fn open_in(directory: &Path) -> crate::Res<Self> {
         let path = directory.join("recent.toml");
-        let packets = Self::read(&path)?;
-        Ok(Self { path, packets })
+        let stored = Self::read(&path)?;
+        Ok(Self {
+            path,
+            packets: stored.packets,
+            summaries: stored.summaries,
+        })
     }
 
-    fn read(path: &Path) -> crate::Res<Vec<PathBuf>> {
+    fn read(path: &Path) -> crate::Res<StoredRecent> {
         if !path.exists() {
-            return Ok(Vec::new());
+            return Ok(StoredRecent::default());
         }
-        let stored: StoredRecent = toml::from_str(&fs::read_to_string(path)?)?;
-        Ok(stored.packets)
+        Ok(toml::from_str(&fs::read_to_string(path)?)?)
     }
 
     /// The stored list, which another window may have changed since this one was opened.
-    fn current(&self) -> Vec<PathBuf> {
-        Self::read(&self.path).unwrap_or_else(|_| self.packets.clone())
+    fn current(&self) -> StoredRecent {
+        Self::read(&self.path).unwrap_or_else(|_| StoredRecent {
+            packets: self.packets.clone(),
+            summaries: self.summaries.clone(),
+        })
     }
 
     pub fn add(&mut self, packet: &Path) -> crate::Res<()> {
-        let packet = packet.canonicalize().unwrap_or_else(|_| packet.to_path_buf());
-        let mut packets = self.current();
-        packets.retain(|existing| *existing != packet);
-        packets.insert(0, packet);
-        packets.truncate(MAX_RECENT);
-        self.commit(packets)
+        let packet = canonical(packet);
+        let mut stored = self.current();
+        stored.packets.retain(|existing| *existing != packet);
+        stored.packets.insert(0, packet);
+        stored.packets.truncate(MAX_RECENT);
+        self.commit(stored)
     }
 
     pub fn remove(&mut self, packet: &Path) -> crate::Res<()> {
-        let mut packets = self.current();
-        packets.retain(|existing| existing != packet);
-        self.commit(packets)
+        let canonical = canonical(packet);
+        let mut stored = self.current();
+        stored.packets.retain(|existing| existing != packet && *existing != canonical);
+        self.commit(stored)
     }
 
-    fn commit(&mut self, packets: Vec<PathBuf>) -> crate::Res<()> {
-        if packets == self.packets {
+    pub fn summary(&self, packet: &Path) -> Option<&PacketSummary> {
+        self.summaries.iter().find(|summary| summary.path == packet)
+    }
+
+    /// Stores what the start page shows about a packet in the list.
+    pub fn set_summary(&mut self, mut summary: PacketSummary) -> crate::Res<()> {
+        summary.path = canonical(&summary.path);
+        if self.summary(&summary.path) == Some(&summary) {
+            return Ok(());
+        }
+        let mut stored = self.current();
+        stored.summaries.retain(|existing| existing.path != summary.path);
+        stored.summaries.push(summary);
+        self.commit(stored)
+    }
+
+    fn commit(&mut self, mut stored: StoredRecent) -> crate::Res<()> {
+        stored.summaries.retain(|summary| stored.packets.contains(&summary.path));
+        if stored.packets == self.packets && stored.summaries == self.summaries {
             return Ok(());
         }
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let content = toml::to_string(&StoredRecent { packets: packets.clone() })?;
+        let content = toml::to_string(&stored)?;
         atomic_write(&self.path, |file| {
             file.write_all(content.as_bytes())?;
             Ok(())
         })?;
-        self.packets = packets;
+        self.packets = stored.packets;
+        self.summaries = stored.summaries;
         Ok(())
     }
 }
@@ -312,5 +359,34 @@ mod tests {
         let mut reloaded = reloaded;
         reloaded.remove(&dir.path().join("P5.QWK")).unwrap();
         assert!(!RecentPackets::open_in(dir.path()).unwrap().packets.iter().any(|path| path.ends_with("P5.QWK")));
+    }
+
+    #[test]
+    fn recent_packets_keep_a_summary_only_while_listed() {
+        let (dir, _package) = crate::qwk::tests::load();
+        let packet = dir.path().join("TEST.QWK");
+        let mut recent = RecentPackets::open_in(dir.path()).unwrap();
+        recent.add(&packet).unwrap();
+        let summary = PacketSummary {
+            path: packet.clone(),
+            bbs_name: "Test BBS".into(),
+            created: "09-28-2026,08:00:00".into(),
+            messages: 4,
+            unread: 3,
+            starred: 1,
+            drafts: 2,
+        };
+        recent.set_summary(summary.clone()).unwrap();
+        let canonical = packet.canonicalize().unwrap();
+        let reloaded = RecentPackets::open_in(dir.path()).unwrap();
+        let stored = reloaded.summary(&canonical).unwrap();
+        assert_eq!((stored.bbs_name.as_str(), stored.unread, stored.drafts), ("Test BBS", 3, 2));
+        let mut reloaded = reloaded;
+        reloaded.remove(&packet).unwrap();
+        let reloaded = RecentPackets::open_in(dir.path()).unwrap();
+        assert!(
+            reloaded.packets.is_empty() && reloaded.summaries.is_empty(),
+            "forgetting a packet drops its summary"
+        );
     }
 }

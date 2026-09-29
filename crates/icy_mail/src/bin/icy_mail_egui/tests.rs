@@ -1516,28 +1516,43 @@ fn welcome_page_opens_and_forgets_recent_packets() {
     let size = egui::vec2(1100.0, 760.0);
     let output = settle(&context, &mut mail, size);
     label(&output, "Open Packet\u{2026}");
+    label(&output, "Drop a QWK packet here");
+    // Without a stored summary the card is titled by the file.
     click_label(&context, &mut mail, size, "TEST.QWK");
     wait(&mut mail, &context);
     assert!(mail.reader.package.is_some());
+    mail.set_starred(&context, 2, true);
+    settle(&context, &mut mail, size);
+
     let mut fresh = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    fresh.recent.as_mut().unwrap().add(&dir.path().join("GONE.QWK")).unwrap();
     let output = settle(&context, &mut fresh, size);
-    let row = label(&output, "TEST.QWK");
-    let packet = fresh.recent.as_ref().unwrap().packets[0].clone();
-    let bytes = std::fs::metadata(&packet).unwrap().len();
-    let expected = if bytes >= 1024 {
-        format!("{:.1} KiB", bytes as f64 / 1024.0)
-    } else {
-        format!("{bytes} B")
-    };
-    let size_label = label(&output, &expected);
-    assert!(size_label.left() > row.right(), "packet size is shown beside the name");
-    assert!((size_label.center().y - row.center().y).abs() < 1.0);
-    let forget = egui::pos2(row.left() - 40.0 + 460.0 - 18.0, row.bottom());
+    let texts: Vec<String> = output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) => Some(text.galley.text().to_string()),
+            _ => None,
+        })
+        .collect();
+    let has = |needle: &str| texts.iter().any(|text| text.contains(needle));
+    assert!(has("GONE.QWK was moved or deleted"), "{texts:?}");
+    let title = label(&output, "TEST BBS");
+    assert!(label(&output, "2 unread").left() > title.right(), "the unread count sits on the title line");
+    assert!(has("TEST.QWK  \u{b7}  "), "file name and size follow: {texts:?}");
+    assert!(has("Packed 2020-01-01"), "the packing date reads like a list date: {texts:?}");
+    assert!(has("4 messages  \u{b7}  \u{2605} 1 starred"), "{texts:?}");
+
+    let card_center = egui::pos2(title.left() - 60.0 + 280.0, title.center().y + 19.0);
+    let forget = egui::pos2(title.left() - 60.0 + 560.0 - 20.0, card_center.y);
+    frame(&context, &mut fresh, size, vec![egui::Event::PointerMoved(card_center)]);
     frame(&context, &mut fresh, size, vec![egui::Event::PointerMoved(forget)]);
     for pressed in [true, false] {
         frame(&context, &mut fresh, size, pointer(forget, pressed));
     }
-    assert!(fresh.recent.as_ref().unwrap().packets.is_empty());
+    let recent = fresh.recent.as_ref().unwrap();
+    assert!(!recent.packets.iter().any(|path| path.ends_with("TEST.QWK")), "{:?}", recent.packets);
+    assert!(recent.summaries.is_empty());
     assert!(fresh.reader.package.is_none());
 }
 
@@ -2087,7 +2102,7 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
             gpu.capture(&mut welcome, [1100, 760], 1.0, vec![], "warmup");
         }
         let (_, output) = gpu.capture(&mut welcome, [1100, 760], 1.0, vec![], &format!("welcome-{theme:?}"));
-        label(&output, "TEST.QWK");
+        label(&output, "TEST BBS");
     }
     gpu.context.set_theme(egui::Theme::Dark);
     welcome.open_about();
@@ -2442,4 +2457,27 @@ fn stars_keep_messages_for_later_and_survive_reopening() {
     wait(&mut reopened, &context);
     assert!(reopened.reader.is_starred(first) && !reopened.reader.is_starred(carol));
     assert_eq!(reopened.counts.starred, 1);
+}
+
+#[test]
+fn dragging_a_file_over_the_start_page_highlights_the_drop_zone() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, _mail) = loaded(&context);
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    let size = egui::vec2(1100.0, 760.0);
+    let output = settle(&context, &mut mail, size);
+    assert_eq!(count(&output, "Release to open the packet"), 0);
+    let output = context.run(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            hovered_files: vec![egui::HoveredFile {
+                path: Some(dir.path().join("TEST.QWK")),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        |context| mail.show(context),
+    );
+    label(&output, "Release to open the packet");
 }
