@@ -7,16 +7,11 @@ toolbar-open = Öffnen
 toolbar-open-tooltip = Nachrichtenpaket öffnen (Ctrl+O)
 toolbar-new = Neu
 toolbar-new-tooltip = Neue Nachricht schreiben (Ctrl+N)
-toolbar-reply = Antworten
-toolbar-reply-tooltip = Auf die Nachricht antworten (Ctrl+R)
-toolbar-forward = Weiterleiten
-toolbar-forward-tooltip = Nachricht weiterleiten (Ctrl+L)
 toolbar-export = Antworten exportieren
 toolbar-export-count = Antworten exportieren ({ $count })
 toolbar-export-tooltip = Antwortpaket zum Hochladen in die BBS speichern (Ctrl+Shift+E)
 toolbar-next-unread = Nächste ungelesene
 toolbar-next-unread-tooltip = Nächste ungelesene Nachricht öffnen (N)
-toolbar-reading-progress = { $read } von { $total } gelesen · { $unread } ungelesen
 toolbar-menu = Menü
 toolbar-threads-tooltip = Nachrichten nach Diskussionsfäden gruppieren (Ctrl+T)
 toolbar-list-tooltip = Nachrichten als Liste anzeigen (Ctrl+T)
@@ -55,11 +50,8 @@ menu-new-window = Neues Fenster
 menu-close-window = Fenster schließen
 
 # Status bar
-status-drafts = { $count ->
-    [one] 1 Entwurf
-   *[other] { $count } Entwürfe
-}
-status-messages = { $count } Nachrichten · { $unread } ungelesen
+status-reading-progress = { $read } von { $total } gelesen · { $unread } ungelesen
+status-reading-progress-tooltip = Gelesene Nachrichten in diesem Paket
 status-no-packet = Kein Paket geöffnet
 status-update-available = Update verfügbar: { $version }
 status-message-zoom = Nachrichtenzoom
@@ -375,6 +367,10 @@ reader-copy-message-text = Nachrichtentext kopieren
 reader-no-tagline = Diese Nachricht enthält keine Tagline
 reader-save-tagline = Tagline „{ $tagline }“ speichern (T)
 reader-add-author-address-book = Absender zum Adressbuch hinzufügen (Shift+A)
+reader-more-actions = Weitere Aktionen
+reader-menu-copy-message-text = Nachrichtentext kopieren
+reader-menu-save-tagline = Tagline speichern
+reader-menu-add-author = Absender zum Adressbuch hinzufügen
 reader-mark-as-read-short = Als gelesen markieren (M)
 reader-mark-as-unread-short = Als ungelesen markieren (M)
 reader-forward-short = Weiterleiten (Ctrl+L)

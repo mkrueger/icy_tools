@@ -138,14 +138,8 @@ impl MailApp {
         let context = ui.ctx().clone();
         ui.spacing_mut().item_spacing.y = 0.0;
         let width = ui.available_width().max(560.0);
-        let widths = [FLAGS_WIDTH, 170.0, width - FLAGS_WIDTH - 170.0 - 136.0 - 56.0, 136.0, 56.0];
-        let columns = [
-            None,
-            Some(MessageColumn::From),
-            Some(MessageColumn::Subject),
-            Some(MessageColumn::Date),
-            Some(MessageColumn::Lines),
-        ];
+        let widths = [FLAGS_WIDTH, 170.0, width - FLAGS_WIDTH - 170.0 - 136.0, 136.0];
+        let columns = [None, Some(MessageColumn::From), Some(MessageColumn::Subject), Some(MessageColumn::Date)];
         let threaded = self.reader.view_mode == ViewMode::Threads;
         let active = columns.iter().position(|column| *column == Some(self.reader.message_sort.0));
         let focused = self.focus == Pane::Messages;
@@ -177,8 +171,7 @@ impl MailApp {
                     fl!(LANGUAGE_LOADER, "list-column-subject")
                 };
                 let column_date = fl!(LANGUAGE_LOADER, "list-column-date");
-                let column_lines = fl!(LANGUAGE_LOADER, "list-column-lines");
-                let labels = ["", column_from.as_str(), column_subject.as_str(), column_date.as_str(), column_lines.as_str()];
+                let labels = ["", column_from.as_str(), column_subject.as_str(), column_date.as_str()];
                 if let Some(column) = widgets::header(
                     ui,
                     &widths,
@@ -207,7 +200,6 @@ impl MailApp {
                         let row = self.reader.messages[position];
                         let info = &package.infos[row.index];
                         let unread = !self.reader.is_read(row.index);
-                        let lines = info.lines.to_string();
                         let selected = self.reader.selected_message == Some(row.index);
                         let collapsed = threaded && row.descendants > 0 && self.reader.is_collapsed(row.index);
                         let hidden_unread = if collapsed { self.reader.unread_replies(row.index) } else { 0 };
@@ -225,7 +217,6 @@ impl MailApp {
                                     .indent(if threaded { tree_indent(row.depth) } else { 0.0 })
                                     .badge(collapsed.then_some((replies.as_str(), hidden_unread > 0))),
                                 Cell::new(&info.date_str).weak(),
-                                Cell::new(&lines).weak().right(),
                             ],
                             selected,
                             focused,

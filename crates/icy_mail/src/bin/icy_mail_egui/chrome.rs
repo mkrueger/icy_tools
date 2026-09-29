@@ -36,7 +36,6 @@ impl MailApp {
         let captions = width >= CAPTION_WIDTH;
         let inline_search = width >= INLINE_SEARCH_WIDTH;
         let open = self.reader.package.is_some();
-        let selected = self.message_selected();
         let drafts = self.draft_count();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
@@ -71,37 +70,6 @@ impl MailApp {
             {
                 self.new_draft(&context);
             }
-            if self
-                .icons
-                .tool(
-                    ui,
-                    Icon::Reply,
-                    captions.then_some(fl!(LANGUAGE_LOADER, "toolbar-reply").as_str()),
-                    &fl!(LANGUAGE_LOADER, "toolbar-reply-tooltip"),
-                    selected,
-                    false,
-                )
-                .clicked()
-            {
-                self.reply(&context, false);
-            }
-            if self
-                .icons
-                .tool(
-                    ui,
-                    Icon::Forward,
-                    captions.then_some(fl!(LANGUAGE_LOADER, "toolbar-forward").as_str()),
-                    &fl!(LANGUAGE_LOADER, "toolbar-forward-tooltip"),
-                    selected,
-                    false,
-                )
-                .clicked()
-            {
-                self.reply(&context, true);
-            }
-            ui.add_space(4.0);
-            ui.separator();
-            ui.add_space(4.0);
             let export = if drafts > 0 {
                 fl!(LANGUAGE_LOADER, "toolbar-export-count", count = drafts)
             } else {
@@ -120,6 +88,12 @@ impl MailApp {
                 .clicked()
             {
                 self.export(&context);
+            }
+            if open && inline_search {
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(4.0);
+                self.next_unread_button(ui);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let menu = self.icons.button(ui, Icon::Menu, &fl!(LANGUAGE_LOADER, "toolbar-menu"), true);
@@ -141,35 +115,27 @@ impl MailApp {
         });
         if !inline_search {
             ui.add_space(4.0);
-            self.search(ui, ui.available_width());
-        }
-        if open {
-            ui.add_space(4.0);
-            self.reading_progress(ui);
+            ui.horizontal(|ui| {
+                if open {
+                    self.next_unread_button(ui);
+                    ui.add_space(4.0);
+                }
+                self.search(ui, ui.available_width());
+            });
         }
     }
 
-    fn reading_progress(&mut self, ui: &mut egui::Ui) {
-        let total = self.reader.package.as_ref().map_or(0, |package| package.message_count());
-        let unread = self.counts.unread;
-        let read = total.saturating_sub(unread);
+    /// The primary reading action; N and Space do the same from the keyboard.
+    fn next_unread_button(&mut self, ui: &mut egui::Ui) {
         let context = ui.ctx().clone();
         let label = fl!(LANGUAGE_LOADER, "toolbar-next-unread");
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(unread > 0, icy_engine_gui::egui::appearance::primary_button(&label))
-                .on_hover_text(fl!(LANGUAGE_LOADER, "toolbar-next-unread-tooltip"))
-                .clicked()
-            {
-                self.next_unread(&context);
-            }
-            let progress = fl!(LANGUAGE_LOADER, "toolbar-reading-progress", read = read, total = total, unread = unread);
-            let width = if ui.available_width() >= 330.0 { 240.0 } else { ui.available_width() };
-            ui.add_sized([width, 28.0], egui::Label::new(egui::RichText::new(progress).weak().size(12.0)).truncate());
-            if ui.available_width() >= 100.0 {
-                ui.add(egui::ProgressBar::new(read as f32 / total.max(1) as f32).desired_width(ui.available_width().min(150.0)));
-            }
-        });
+        if ui
+            .add_enabled(self.counts.unread > 0, icy_engine_gui::egui::appearance::primary_button(&label))
+            .on_hover_text(fl!(LANGUAGE_LOADER, "toolbar-next-unread-tooltip"))
+            .clicked()
+        {
+            self.next_unread(&context);
+        }
     }
 
     fn search(&mut self, ui: &mut egui::Ui, width: f32) {
@@ -390,16 +356,17 @@ impl MailApp {
                 let text = notice.text.clone();
                 ui.add(self.icons.image(&context, icon, 16.0).tint(color));
                 ui.add(egui::Label::new(text).truncate());
-            } else if self.reader.package.is_some() {
-                let text = if self.folder == Folder::Drafts {
-                    fl!(LANGUAGE_LOADER, "status-drafts", count = self.draft_count())
-                } else if self.folder == Folder::Bulletins {
-                    fl!(LANGUAGE_LOADER, "status-files", count = self.file_count())
-                } else {
-                    let unread = self.reader.unread_count();
-                    fl!(LANGUAGE_LOADER, "status-messages", count = self.reader.all_messages().len(), unread = unread)
-                };
-                ui.label(text);
+            } else if let Some(package) = &self.reader.package {
+                let total = package.message_count();
+                let unread = self.counts.unread;
+                let text = fl!(
+                    LANGUAGE_LOADER,
+                    "status-reading-progress",
+                    read = total.saturating_sub(unread),
+                    total = total,
+                    unread = unread
+                );
+                ui.label(text).on_hover_text(fl!(LANGUAGE_LOADER, "status-reading-progress-tooltip"));
             } else if self.loading.is_none() {
                 ui.weak(fl!(LANGUAGE_LOADER, "status-no-packet"));
             }

@@ -59,8 +59,8 @@ fn german_locale_formats_labels_plurals_and_placeholders() {
     assert_eq!(loader.get("folder-outbox"), "Postausgang");
     assert_eq!(loader.get("address-title-manage"), "Adressbuch");
 
-    for (count, expected) in [(0, "0 Entwürfe"), (1, "1 Entwurf"), (2, "2 Entwürfe")] {
-        assert_eq!(loader.get_args("status-drafts", HashMap::from([("count", count)])), expected);
+    for (count, expected) in [(0, "0 Dateien"), (1, "1 Datei"), (2, "2 Dateien")] {
+        assert_eq!(loader.get_args("status-files", HashMap::from([("count", count)])), expected);
     }
     for (key, singular, plural) in [
         ("status-outbox-drafts", "1 Entwurf im Postausgang", "2 Entwürfe im Postausgang"),
@@ -77,7 +77,7 @@ fn german_locale_formats_labels_plurals_and_placeholders() {
     }
     assert!(loader.get("list-outbox-steps").contains(".REP-Datei"));
     assert_eq!(
-        loader.get_args("toolbar-reading-progress", HashMap::from([("read", 2), ("total", 5), ("unread", 3)])),
+        loader.get_args("status-reading-progress", HashMap::from([("read", 2), ("total", 5), ("unread", 3)])),
         "2 von 5 gelesen · 3 ungelesen"
     );
     assert!(loader

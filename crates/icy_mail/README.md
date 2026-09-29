@@ -57,10 +57,11 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
   text. Body highlights update with the filter and disappear when it is cleared,
   without changing the original message colors, text selection or copied text.
 - The reader header links to the referenced message (“reply to #n”) and offers
-  reply, forward, mark read/unread, copy and previous/next actions.
-- A visible **Next Unread** action shares the N/Space navigation through
-  conferences; a read/total/unread indicator tracks progress across the
-  packet. On narrow windows, advancing opens the message pane.
+  reply, forward, mark read/unread and previous/next actions; copying the
+  text, saving the tagline and adding the author are in its **⋯** menu.
+- A visible **Next Unread** action in the toolbar shares the N/Space navigation
+  through conferences; the status bar tracks read/total/unread messages across
+  the packet. On narrow windows, advancing opens the message pane.
 - ANSI/CP437 rendering, text/rectangular selection and copy, zoom, light/dark
   themes and additional native windows.
 - **Settings** (Ctrl/Cmd+,): theme, message zoom and the shared monitor
@@ -80,8 +81,9 @@ message filter; search fields and open dialogs retain their own Escape behavior.
 
 ## Writing replies
 
-Use **New** (Ctrl/Cmd+N), **Reply** (Ctrl/Cmd+R) or **Forward** (Ctrl/Cmd+L)
-from the toolbar, the message context menu or the reader header. The composer
+Use **New** (Ctrl/Cmd+N) from the toolbar, or **Reply** (Ctrl/Cmd+R) and
+**Forward** (Ctrl/Cmd+L) from the reader header, the message context menu or
+the menu. The composer
 replaces the reader pane: choose the conference and privacy, edit recipient,
 subject and sender (with QWK's 25 character limits shown), and write the
 message in the BBS editor described below.
@@ -151,7 +153,7 @@ characters.
   choosing, shuffling and removing it.
 - Ctrl+T (or clicking the tagline) opens the picker: filter, arrows and Enter,
   **Random** or **No Tagline**.
-- **T** or the tag button in the reader header saves the tagline of the shown
+- **T** or **Save Tagline** in the reader header's **⋯** menu saves the tagline of the shown
   message (its last `... ` line) to the list, like MultiMail's tagline stealer.
 - Ctrl/Cmd+Shift+T or **Taglines…** in the menu manages the list: add, edit
   (Enter) and delete (Delete) entries.
@@ -164,7 +166,7 @@ addresses are recognized by their `@`).
 
 - **A** or **Address Book…** in the menu opens it: filter, add, edit and delete
   contacts, or **Write Message** to start a new message to the selected one.
-- **Shift+A** or the person button in the reader header adds the author of the
+- **Shift+A** or the reader header's **⋯** menu adds the author of the
   shown message.
 - While writing, Ctrl+B or the contacts button next to **To** picks the
   recipient.

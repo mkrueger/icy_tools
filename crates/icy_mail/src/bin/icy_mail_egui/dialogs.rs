@@ -80,7 +80,10 @@ impl MailApp {
                 if let Some(open_folder) = response.action.or(response.dismissed.then_some(false)) {
                     self.modal = None;
                     if open_folder {
-                        let folder = path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| std::path::Path::new("."));
+                        let folder = path
+                            .parent()
+                            .filter(|parent| !parent.as_os_str().is_empty())
+                            .unwrap_or_else(|| std::path::Path::new("."));
                         if let Err(error) = open::that(folder) {
                             self.error = Some(fl!(
                                 LANGUAGE_LOADER,

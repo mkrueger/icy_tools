@@ -1,4 +1,4 @@
-use eframe::egui;
+use eframe::egui::{self, Key, Modifiers};
 use i18n_embed_fl::fl;
 use icy_engine::{AttributedChar, Position, Selection, Size, TextScreen};
 use icy_engine_gui::{
@@ -14,9 +14,13 @@ use icy_mail::{
 
 use super::{
     app::{draft_title, Folder, MailApp, Modal},
+    chrome,
     list::{self, display_date},
     widgets::{self, Icon},
 };
+
+/// Space between the message text and the edges of the reading pane.
+const BODY_PADDING: egui::Vec2 = egui::vec2(12.0, 8.0);
 
 #[derive(Default)]
 pub struct BodyHighlights {
@@ -103,16 +107,16 @@ impl MailApp {
             .inner_margin(egui::Margin {
                 left: 14,
                 right: 8,
-                top: if compact { 2 } else { 8 },
-                bottom: if compact { 2 } else { 8 },
+                top: if compact { 2 } else { 6 },
+                bottom: if compact { 2 } else { 6 },
             })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let actions = 8.0 * 32.0 + 18.0;
+                    let actions = 6.0 * 32.0 + 18.0;
                     let width = (ui.available_width() - actions).max(40.0);
-                    ui.allocate_ui_with_layout(egui::vec2(width, 30.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.allocate_ui_with_layout(egui::vec2(width, 28.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         ui.set_min_width(width);
-                        let size = if compact { 14.0 } else { 17.0 };
+                        let size = if compact { 14.0 } else { 16.0 };
                         let mut job = widgets::header_job(ui, &info.subject, "", egui::FontId::proportional(size), ui.visuals().strong_text_color(), true);
                         widgets::highlight(&mut job, 0, &needle, ui);
                         ui.add(egui::Label::new(job).truncate()).on_hover_text(info.subject.as_str());
@@ -145,28 +149,8 @@ impl MailApp {
                             navigate = Some(NavigateDirection::Up);
                         }
                         ui.add_space(6.0);
-                        if self
-                            .icons
-                            .button(ui, Icon::Copy, &fl!(LANGUAGE_LOADER, "reader-copy-message-text"), !self.body_loading)
-                            .clicked()
-                        {
-                            self.copy_message(&context);
-                        }
-                        let tagline = self.message_tagline();
-                        let tooltip = tagline.as_ref().map_or_else(
-                            || fl!(LANGUAGE_LOADER, "reader-no-tagline"),
-                            |tagline| fl!(LANGUAGE_LOADER, "reader-save-tagline", tagline = tagline.as_str()),
-                        );
-                        if self.icons.button(ui, Icon::Tag, &tooltip, tagline.is_some()).clicked() {
-                            self.save_tagline(&context);
-                        }
-                        if self
-                            .icons
-                            .button(ui, Icon::PersonAdd, &fl!(LANGUAGE_LOADER, "reader-add-author-address-book"), true)
-                            .clicked()
-                        {
-                            self.add_sender(&context);
-                        }
+                        let more = self.icons.button(ui, Icon::More, &fl!(LANGUAGE_LOADER, "reader-more-actions"), true);
+                        egui::Popup::menu(&more).show(|ui| self.message_actions_menu(ui));
                         ui.add_space(6.0);
                         let (icon, tooltip) = if unread {
                             (Icon::Read, fl!(LANGUAGE_LOADER, "reader-mark-as-read-short"))
@@ -223,50 +207,59 @@ impl MailApp {
                     ui.add(egui::Label::new(job).truncate()).on_hover_text(details);
                     return;
                 }
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    widgets::avatar(ui, &info.from, 34.0);
-                    ui.add_space(4.0);
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 1.0;
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 4.0;
-                            let mut from = widgets::header_job(ui, &info.from, "", egui::FontId::proportional(13.5), ui.visuals().strong_text_color(), true);
-                            widgets::highlight(&mut from, 0, &needle, ui);
-                            ui.label(from);
-                            ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "reader-to")).weak().size(12.5));
-                            let mut to = widgets::header_job(ui, &info.to, "", egui::FontId::proportional(13.5), ui.visuals().text_color(), false);
-                            widgets::highlight(&mut to, 0, &needle, ui);
-                            ui.label(to);
-                            if info.private {
-                                ui.add_space(6.0);
-                                appearance::status_badge(ui, &fl!(LANGUAGE_LOADER, "reader-private"), widgets::warning(ui));
-                            }
-                        });
-                        ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing.x = 4.0;
-                            let weak = |text: String| egui::RichText::new(text).weak().size(12.0);
-                            ui.label(weak(format!("{}  \u{00b7}  {conference}  \u{00b7}  #{}", info.date_str, info.number)));
-                            if info.ref_number != 0 {
-                                ui.label(weak("\u{00b7}".into()));
-                                let text = fl!(LANGUAGE_LOADER, "reader-reply-to", number = info.ref_number);
-                                if parent.is_some_and(|index| self.reader.contains(index)) {
-                                    let link = egui::RichText::new(text.clone()).size(12.0).color(widgets::accent(ui));
-                                    if ui
-                                        .add(egui::Label::new(link).sense(egui::Sense::click()))
-                                        .on_hover_text(fl!(LANGUAGE_LOADER, "reader-show-original-message"))
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                        .clicked()
-                                    {
-                                        open_parent = true;
-                                    }
-                                } else {
-                                    ui.label(weak(text));
-                                }
-                            }
-                        });
+                // Sender, recipient and details share one line; narrow panes split them into two.
+                let parent_visible = parent.is_some_and(|index| self.reader.contains(index));
+                let people = |ui: &mut egui::Ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    widgets::avatar(ui, &info.from, 20.0);
+                    ui.add_space(2.0);
+                    let mut from = widgets::header_job(ui, &info.from, "", egui::FontId::proportional(13.0), ui.visuals().strong_text_color(), true);
+                    widgets::highlight(&mut from, 0, &needle, ui);
+                    ui.label(from);
+                    ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "reader-to")).weak().size(12.5));
+                    let mut to = widgets::header_job(ui, &info.to, "", egui::FontId::proportional(13.0), ui.visuals().text_color(), false);
+                    widgets::highlight(&mut to, 0, &needle, ui);
+                    ui.label(to);
+                    if info.private {
+                        ui.add_space(2.0);
+                        appearance::status_badge(ui, &fl!(LANGUAGE_LOADER, "reader-private"), widgets::warning(ui));
+                    }
+                };
+                let details = |ui: &mut egui::Ui| -> bool {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    let weak = |text: String| egui::RichText::new(text).weak().size(12.0);
+                    ui.label(weak(format!("{}  \u{00b7}  {conference}  \u{00b7}  #{}", info.date_str, info.number)));
+                    if info.ref_number == 0 {
+                        return false;
+                    }
+                    ui.label(weak("\u{00b7}".into()));
+                    let text = fl!(LANGUAGE_LOADER, "reader-reply-to", number = info.ref_number);
+                    if !parent_visible {
+                        ui.label(weak(text));
+                        return false;
+                    }
+                    let link = egui::RichText::new(text).size(12.0).color(widgets::accent(ui));
+                    ui.add(egui::Label::new(link).sense(egui::Sense::click()))
+                        .on_hover_text(fl!(LANGUAGE_LOADER, "reader-show-original-message"))
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                };
+                ui.add_space(2.0);
+                ui.spacing_mut().interact_size.y = 22.0;
+                ui.spacing_mut().item_spacing.y = 2.0;
+                if ui.available_width() >= 620.0 {
+                    ui.horizontal(|ui| {
+                        people(ui);
+                        ui.add_space(10.0);
+                        open_parent = details(ui);
                     });
-                });
+                } else {
+                    ui.horizontal(people);
+                    ui.horizontal(|ui| {
+                        ui.add_space(26.0);
+                        open_parent = details(ui);
+                    });
+                }
             });
         let separator = ui.visuals().widgets.noninteractive.bg_stroke;
         let top = ui.cursor().top();
@@ -309,6 +302,58 @@ impl MailApp {
         });
     }
 
+    /// Less frequent message actions behind the header's "more" button.
+    fn message_actions_menu(&mut self, ui: &mut egui::Ui) {
+        let context = ui.ctx().clone();
+        let entry = |ui: &mut egui::Ui, image: egui::Image<'static>, label: String, shortcut: String, enabled: bool, tooltip: Option<String>| {
+            let button = egui::Button::image_and_text(image, label)
+                .image_tint_follows_text_color(true)
+                .shortcut_text(egui::RichText::new(shortcut).weak());
+            let mut response = ui.add_enabled(enabled, button);
+            if let Some(tooltip) = tooltip {
+                response = response.on_hover_text(tooltip.clone()).on_disabled_hover_text(tooltip);
+            }
+            let clicked = response.clicked();
+            if clicked {
+                ui.close();
+            }
+            clicked
+        };
+        let copy = self.icons.image(&context, Icon::Copy, 16.0);
+        if entry(
+            ui,
+            copy,
+            fl!(LANGUAGE_LOADER, "reader-menu-copy-message-text"),
+            String::new(),
+            !self.body_loading,
+            None,
+        ) {
+            self.copy_message(&context);
+        }
+        let tagline = self.message_tagline();
+        let tooltip = tagline.as_ref().map_or_else(
+            || fl!(LANGUAGE_LOADER, "reader-no-tagline"),
+            |tagline| fl!(LANGUAGE_LOADER, "reader-save-tagline", tagline = tagline.as_str()),
+        );
+        let tag = self.icons.image(&context, Icon::Tag, 16.0);
+        let shortcut = chrome::shortcut(&context, Modifiers::NONE, Key::T);
+        if entry(
+            ui,
+            tag,
+            fl!(LANGUAGE_LOADER, "reader-menu-save-tagline"),
+            shortcut,
+            tagline.is_some(),
+            Some(tooltip),
+        ) {
+            self.save_tagline(&context);
+        }
+        let add = self.icons.image(&context, Icon::PersonAdd, 16.0);
+        let shortcut = chrome::shortcut(&context, Modifiers::SHIFT, Key::A);
+        if entry(ui, add, fl!(LANGUAGE_LOADER, "reader-menu-add-author"), shortcut, true, None) {
+            self.add_sender(&context);
+        }
+    }
+
     /// The message terminal with focus handling and mouse selection.
     fn terminal_body(&mut self, ui: &mut egui::Ui) -> egui::Response {
         let query = if self.folder.holds_messages() { &self.reader.filter } else { "" };
@@ -326,7 +371,19 @@ impl MailApp {
             self.options_save_after = Some(ui.input(|input| input.time) + 0.25);
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
         }
-        let response = self.screen.show(ui, &self.settings);
+        // Pad the text away from the pane edges; the margin keeps the terminal's background color.
+        let area = ui.available_rect_before_wrap();
+        let (red, green, blue) = self.screen.terminal.screen.lock().palette().rgb(0);
+        ui.painter().rect_filled(area, 0.0, egui::Color32::from_rgb(red, green, blue));
+        *self.screen.terminal.background_color.write() = [red, green, blue, 255].map(|channel| f32::from(channel) / 255.0);
+        let inner = egui::Rect::from_min_max(
+            area.min + egui::vec2(BODY_PADDING.x, BODY_PADDING.y),
+            egui::pos2((area.max.x - BODY_PADDING.x).max(area.min.x + 1.0), area.max.y),
+        );
+        let response = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| self.screen.show(ui, &self.settings))
+            .inner;
+        ui.advance_cursor_after_rect(area);
         self.content_rect = response.rect;
         if response.clicked() || response.drag_started() {
             self.set_focus(Pane::Content, ui.ctx());

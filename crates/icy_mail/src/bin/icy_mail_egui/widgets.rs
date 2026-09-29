@@ -43,6 +43,7 @@ pub enum Icon {
     PersonAdd,
     Shuffle,
     Tag,
+    More,
 }
 
 impl Icon {
@@ -78,6 +79,7 @@ impl Icon {
             Self::PersonAdd => include_bytes!("../../../data/icons/person_add.svg"),
             Self::Shuffle => include_bytes!("../../../data/icons/shuffle.svg"),
             Self::Tag => include_bytes!("../../../data/icons/sell.svg"),
+            Self::More => include_bytes!("../../../data/icons/more_horiz.svg"),
         }
     }
 }

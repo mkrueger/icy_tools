@@ -7,16 +7,11 @@ toolbar-open = Open
 toolbar-open-tooltip = Open a mail packet (Ctrl+O)
 toolbar-new = New
 toolbar-new-tooltip = Write a new message (Ctrl+N)
-toolbar-reply = Reply
-toolbar-reply-tooltip = Reply to the message (Ctrl+R)
-toolbar-forward = Forward
-toolbar-forward-tooltip = Forward the message (Ctrl+L)
 toolbar-export = Export Replies
 toolbar-export-count = Export Replies ({ $count })
 toolbar-export-tooltip = Save the reply packet to upload to the BBS (Ctrl+Shift+E)
 toolbar-next-unread = Next Unread
 toolbar-next-unread-tooltip = Open the next unread message (N)
-toolbar-reading-progress = { $read } of { $total } read · { $unread } unread
 toolbar-menu = Menu
 toolbar-threads-tooltip = Group messages into threads (Ctrl+T)
 toolbar-list-tooltip = Show messages as a list (Ctrl+T)
@@ -55,11 +50,8 @@ menu-new-window = New Window
 menu-close-window = Close Window
 
 # Status bar
-status-drafts = { $count ->
-    [one] 1 draft
-   *[other] { $count } drafts
-}
-status-messages = { $count } messages · { $unread } unread
+status-reading-progress = { $read } of { $total } read · { $unread } unread
+status-reading-progress-tooltip = Messages read in this packet
 status-no-packet = No packet open
 status-update-available = Update available: { $version }
 status-message-zoom = Message zoom
@@ -375,6 +367,10 @@ reader-copy-message-text = Copy message text
 reader-no-tagline = This message has no tagline
 reader-save-tagline = Save tagline “{ $tagline }” (T)
 reader-add-author-address-book = Add the author to the address book (Shift+A)
+reader-more-actions = More actions
+reader-menu-copy-message-text = Copy Message Text
+reader-menu-save-tagline = Save Tagline
+reader-menu-add-author = Add Author to Address Book
 reader-mark-as-read-short = Mark as read (M)
 reader-mark-as-unread-short = Mark as unread (M)
 reader-forward-short = Forward (Ctrl+L)

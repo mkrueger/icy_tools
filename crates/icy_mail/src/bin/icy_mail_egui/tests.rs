@@ -618,12 +618,10 @@ fn compose_reply_edit_delete_and_export_from_ui() {
     assert!(mail.notice.as_ref().is_some_and(|notice| notice.text.contains("not sent")));
     click_label(&context, &mut mail, size, "Outbox");
     let output = settle(&context, &mut mail, size);
-    assert!(
-        output
-            .shapes
-            .iter()
-            .any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text().contains("upload it to your BBS")))
-    );
+    assert!(output
+        .shapes
+        .iter()
+        .any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text().contains("upload it to your BBS"))));
     let draft = mail.drafts.as_ref().unwrap().drafts()[0].clone();
     let draft = &draft;
     assert_eq!(draft.to, "alice");
@@ -696,7 +694,7 @@ fn new_and_forward_create_distinct_drafts() {
     assert_eq!(draft.to, "ALL");
     assert_eq!(draft.conference, 1);
     assert_eq!(draft.ref_number, 0);
-    click_label(&context, &mut mail, size, "Forward");
+    frame(&context, &mut mail, size, vec![key(egui::Key::L, egui::Modifiers::COMMAND)]);
     mail.composer.as_mut().unwrap().draft.to = "bob".into();
     click_label(&context, &mut mail, size, "Save Draft");
     let draft = &mail.drafts.as_ref().unwrap().drafts()[1];
@@ -1282,11 +1280,20 @@ fn responsive_toolbar_has_one_search_field_and_keeps_actions_on_screen() {
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
         assert!(screen.contains_rect(label(&output, "Search messages")), "{size:?}");
         if size.x >= 900.0 {
-            for text in ["Open", "New", "Reply", "Forward", "Export Replies"] {
+            for text in ["Open", "New", "Export Replies"] {
                 assert!(screen.contains_rect(label(&output, text)), "{size:?}: {text}");
             }
+            assert_eq!(count(&output, "Reply"), 0, "{size:?}: reply lives in the message header");
+            assert_eq!(count(&output, "Lines"), 0, "{size:?}: message list has no line count column");
+            let toolbar = label(&output, "Open").center().y;
+            assert!(
+                (label(&output, "Next Unread").center().y - toolbar).abs() < 2.0,
+                "{size:?}: next unread sits in the toolbar"
+            );
+            let progress = label(&output, "1 of 4 read · 3 unread");
+            assert!(progress.top() > size.y - 30.0, "{size:?}: reading progress lives in the status bar");
         } else {
-            assert_eq!(count(&output, "Reply"), 0, "{size:?}: compact toolbar shows icons only");
+            assert_eq!(count(&output, "New"), 0, "{size:?}: compact toolbar shows icons only");
         }
     }
 }
@@ -1305,7 +1312,10 @@ fn next_unread_button_shows_progress_and_opens_the_message_on_narrow_windows() {
         let output = settle(&context, &mut mail, size);
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
         assert!(screen.contains_rect(label(&output, "Next Unread")), "{size:?}: next unread must be visible");
-        assert!(screen.contains_rect(label(&output, "1 of 4 read · 3 unread")), "{size:?}: progress must be visible");
+        assert!(
+            screen.contains_rect(label(&output, "1 of 4 read · 3 unread")),
+            "{size:?}: progress must be visible"
+        );
     }
     let size = egui::vec2(360.0, 480.0);
     mail.set_focus(Pane::Messages, &context);
@@ -1343,7 +1353,11 @@ fn next_unread_wraps_to_earlier_unread_mail() {
     settle(&context, &mut mail, size);
     assert!(mail.error.is_none(), "{:?}", mail.error);
     click_label(&context, &mut mail, size, "Next Unread");
-    assert_eq!(mail.reader.selected_message, Some(1), "the button should wrap instead of claiming there is no unread mail");
+    assert_eq!(
+        mail.reader.selected_message,
+        Some(1),
+        "the button should wrap instead of claiming there is no unread mail"
+    );
 }
 
 #[test]
