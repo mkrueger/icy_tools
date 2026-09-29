@@ -3,20 +3,20 @@
 //! This module provides a central registry for all supported file formats,
 //! enabling consistent file type detection, parser selection, and save/load operations.
 //!
-use std::{
-    io::{Read, Seek},
-    path::Path,
-};
+#[cfg(feature = "archives")]
+use std::io::{Read, Seek};
+use std::path::Path;
 
-use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{CommandParser, MusicOption};
+#[cfg(feature = "archives")]
 use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
-use crate::{BufferType, EngineError, Result, ScreenMode, TextBuffer, TextPane};
+use crate::{BufferType, EngineError, Result, ScreenMode, TerminalEmulation, TextBuffer, TextPane};
 
 use super::{io, BitFontFormat, CharacterFontFormat, ImageFormat, LoadData, LoadedDocument, PaletteFormat, SaveOptions};
 
 /// Map file extension to archive format (replacement for private `ArchiveFormat::from_extension`)
+#[cfg(feature = "archives")]
 fn archive_format_from_extension(ext: &str) -> Option<ArchiveFormat> {
     match ext {
         "ace" => Some(ArchiveFormat::Ace),
@@ -42,6 +42,35 @@ fn archive_format_from_extension(ext: &str) -> Option<ArchiveFormat> {
         "tar.z" => Some(ArchiveFormat::TarZ),
         "uc2" => Some(ArchiveFormat::Uc2),
         _ => None,
+    }
+}
+
+/// File extensions recognized for an archive format.
+#[cfg(feature = "archives")]
+fn archive_extensions(arc: ArchiveFormat) -> &'static [&'static str] {
+    match arc {
+        ArchiveFormat::Zip => &["zip"],
+        ArchiveFormat::Arc => &["arc", "pak"],
+        ArchiveFormat::Ace => &["ace"],
+        ArchiveFormat::Arj => &["arj"],
+        ArchiveFormat::Zoo => &["zoo"],
+        ArchiveFormat::Sq => &["sq", "sq2", "qqq"],
+        ArchiveFormat::Sqz => &["sqz"],
+        ArchiveFormat::Z => &["z"],
+        ArchiveFormat::Gz => &["gz"],
+        ArchiveFormat::Bz2 => &["bz2"],
+        ArchiveFormat::Ice | ArchiveFormat::PackIce => &["ice"],
+        ArchiveFormat::Hyp => &["hyp"],
+        ArchiveFormat::Ha => &["ha"],
+        ArchiveFormat::Jar => &["j"],
+        ArchiveFormat::Lha => &["lha", "lzh"],
+        ArchiveFormat::Rar => &["rar"],
+        ArchiveFormat::SevenZ => &["7z"],
+        ArchiveFormat::Tar => &["tar"],
+        ArchiveFormat::Tgz => &["tgz", "tar.gz"],
+        ArchiveFormat::Tbz => &["tbz", "tbz2", "tar.bz2"],
+        ArchiveFormat::TarZ => &["tar.z"],
+        ArchiveFormat::Uc2 => &["uc2"],
     }
 }
 
@@ -120,6 +149,7 @@ pub enum FileFormat {
 
     // Archive formats
     /// Archive format (ZIP, ARJ, LHA, etc.)
+    #[cfg(feature = "archives")]
     Archive(ArchiveFormat),
 }
 
@@ -189,14 +219,23 @@ impl FileFormat {
         FileFormat::Image(ImageFormat::WindowsFont),
         FileFormat::Image(ImageFormat::AmigaFont),
         FileFormat::Image(ImageFormat::BgiFont),
+        #[cfg(feature = "archives")]
         FileFormat::Archive(ArchiveFormat::Zip),
+        #[cfg(feature = "archives")]
         FileFormat::Archive(ArchiveFormat::Arc),
+        #[cfg(feature = "archives")]
         FileFormat::Archive(ArchiveFormat::Arj),
+        #[cfg(feature = "archives")]
         FileFormat::Archive(ArchiveFormat::Zoo),
+        #[cfg(feature = "archives")]
         FileFormat::Archive(ArchiveFormat::Lha),
+        #[cfg(feature = "archives")]
         FileFormat::Archive(ArchiveFormat::Rar),
+        #[cfg(feature = "archives")]
         FileFormat::Archive(ArchiveFormat::Sqz),
+        #[cfg(feature = "archives")]
         FileFormat::Archive(ArchiveFormat::Hyp),
+        #[cfg(feature = "archives")]
         FileFormat::Archive(ArchiveFormat::Uc2),
     ];
 
@@ -356,9 +395,11 @@ impl FileFormat {
                     Some(FileFormat::CharacterFont(char_font_fmt))
                 } else if let Some(font_fmt) = BitFontFormat::from_extension(&ext_lower) {
                     Some(FileFormat::BitFont(font_fmt))
-                } else if let Some(arc_fmt) = archive_format_from_extension(&ext_lower) {
-                    Some(FileFormat::Archive(arc_fmt))
                 } else {
+                    #[cfg(feature = "archives")]
+                    if let Some(arc_fmt) = archive_format_from_extension(&ext_lower) {
+                        return Some(FileFormat::Archive(arc_fmt));
+                    }
                     Some(FileFormat::Ansi)
                 }
             }
@@ -436,6 +477,7 @@ impl FileFormat {
             },
             FileFormat::CharacterFont(char_font_fmt) => char_font_fmt.extension(),
             FileFormat::Image(img) => img.extension(),
+            #[cfg(feature = "archives")]
             FileFormat::Archive(arc) => match arc {
                 ArchiveFormat::Ace => "ace",
                 ArchiveFormat::Arc => "arc",
@@ -514,28 +556,8 @@ impl FileFormat {
             FileFormat::Image(ImageFormat::WindowsFont) => &["fon", "fnt"],
             FileFormat::Image(ImageFormat::AmigaFont) => ImageFormat::AMIGA_FONT_EXTENSIONS,
             FileFormat::Image(ImageFormat::BgiFont) => &["chr"],
-            FileFormat::Archive(ArchiveFormat::Zip) => &["zip"],
-            FileFormat::Archive(ArchiveFormat::Arc) => &["arc", "pak"],
-            FileFormat::Archive(ArchiveFormat::Ace) => &["ace"],
-            FileFormat::Archive(ArchiveFormat::Arj) => &["arj"],
-            FileFormat::Archive(ArchiveFormat::Zoo) => &["zoo"],
-            FileFormat::Archive(ArchiveFormat::Sq) => &["sq", "sq2", "qqq"],
-            FileFormat::Archive(ArchiveFormat::Sqz) => &["sqz"],
-            FileFormat::Archive(ArchiveFormat::Z) => &["z"],
-            FileFormat::Archive(ArchiveFormat::Gz) => &["gz"],
-            FileFormat::Archive(ArchiveFormat::Bz2) => &["bz2"],
-            FileFormat::Archive(ArchiveFormat::Ice | ArchiveFormat::PackIce) => &["ice"],
-            FileFormat::Archive(ArchiveFormat::Hyp) => &["hyp"],
-            FileFormat::Archive(ArchiveFormat::Ha) => &["ha"],
-            FileFormat::Archive(ArchiveFormat::Jar) => &["j"],
-            FileFormat::Archive(ArchiveFormat::Lha) => &["lha", "lzh"],
-            FileFormat::Archive(ArchiveFormat::Rar) => &["rar"],
-            FileFormat::Archive(ArchiveFormat::SevenZ) => &["7z"],
-            FileFormat::Archive(ArchiveFormat::Tar) => &["tar"],
-            FileFormat::Archive(ArchiveFormat::Tgz) => &["tgz", "tar.gz"],
-            FileFormat::Archive(ArchiveFormat::Tbz) => &["tbz", "tbz2", "tar.bz2"],
-            FileFormat::Archive(ArchiveFormat::TarZ) => &["tar.z"],
-            FileFormat::Archive(ArchiveFormat::Uc2) => &["uc2"],
+            #[cfg(feature = "archives")]
+            FileFormat::Archive(arc) => archive_extensions(*arc),
         }
     }
 
@@ -569,6 +591,7 @@ impl FileFormat {
             FileFormat::BitFont(font_fmt) => font_fmt.name(),
             FileFormat::CharacterFont(char_font_fmt) => char_font_fmt.name(),
             FileFormat::Image(img) => img.name(),
+            #[cfg(feature = "archives")]
             FileFormat::Archive(arc) => match arc {
                 ArchiveFormat::Ace => "ACE Archive",
                 ArchiveFormat::Arc => "ARC Archive",
@@ -646,7 +669,9 @@ impl FileFormat {
             FileFormat::Rip | FileFormat::SkyPix | FileFormat::Vt52 | FileFormat::Igs => C::empty(),
 
             // Non-buffer formats
-            FileFormat::Palette(_) | FileFormat::BitFont(_) | FileFormat::CharacterFont(_) | FileFormat::Image(_) | FileFormat::Archive(_) => C::empty(),
+            FileFormat::Palette(_) | FileFormat::BitFont(_) | FileFormat::CharacterFont(_) | FileFormat::Image(_) => C::empty(),
+            #[cfg(feature = "archives")]
+            FileFormat::Archive(_) => C::empty(),
         }
     }
 
@@ -795,12 +820,16 @@ impl FileFormat {
         matches!(self, FileFormat::Image(_))
     }
 
-    /// Check if this is an archive format.
+    /// Check if this is an archive format. Always false without the `archives` feature.
     pub fn is_archive(&self) -> bool {
-        matches!(self, FileFormat::Archive(_))
+        #[cfg(feature = "archives")]
+        return matches!(self, FileFormat::Archive(_));
+        #[cfg(not(feature = "archives"))]
+        false
     }
 
     /// Get the `ArchiveFormat` if this is an archive, None otherwise.
+    #[cfg(feature = "archives")]
     pub fn as_archive(&self) -> Option<ArchiveFormat> {
         match self {
             FileFormat::Archive(arc) => Some(*arc),
@@ -972,6 +1001,7 @@ impl FileFormat {
             FileFormat::CharacterFont(_) => &[],
 
             // Archive formats don't contain displayable content directly
+            #[cfg(feature = "archives")]
             FileFormat::Archive(_) => &[],
 
             // Palette formats don't contain text buffer content
@@ -1077,8 +1107,9 @@ impl FileFormat {
             | FileFormat::BitFont(_)
             | FileFormat::CharacterFont(_)
             | FileFormat::Image(_)
-            | FileFormat::Archive(_)
             | FileFormat::Palette(_) => None,
+            #[cfg(feature = "archives")]
+            FileFormat::Archive(_) => None,
         }
     }
 
@@ -1113,6 +1144,7 @@ impl FileFormat {
             FileFormat::BitFont(_) => ScreenMode::Vga(80, 25),       // Default for fonts
             FileFormat::CharacterFont(_) => ScreenMode::Vga(80, 25), // Default for character fonts
             FileFormat::Image(_) => ScreenMode::Vga(80, 25),         // Default for images
+            #[cfg(feature = "archives")]
             FileFormat::Archive(_) => ScreenMode::Vga(80, 25),       // Default for archives
             FileFormat::Palette(_) => ScreenMode::Vga(80, 25),       // Default for palettes
         }
@@ -1168,8 +1200,9 @@ impl FileFormat {
             | FileFormat::BitFont(_)
             | FileFormat::CharacterFont(_)
             | FileFormat::Image(_)
-            | FileFormat::Archive(_)
             | FileFormat::Palette(_) => None,
+            #[cfg(feature = "archives")]
+            FileFormat::Archive(_) => None,
         }
     }
 
@@ -1372,6 +1405,7 @@ impl FileFormat {
         self.bitfont_format().is_some()
     }
 
+    #[cfg(feature = "archives")]
     pub fn open_archive<T: Read + Seek>(&self, reader: T) -> Result<UnifiedArchive<T>> {
         match self {
             FileFormat::Archive(arc_fmt) => Ok(arc_fmt.open(reader)?),

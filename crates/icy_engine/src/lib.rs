@@ -81,6 +81,9 @@ pub use mouse_handling::*;
 
 pub mod limits;
 
+mod terminal_emulation;
+pub use terminal_emulation::TerminalEmulation;
+
 pub mod char_set;
 
 pub mod gif_encoder;

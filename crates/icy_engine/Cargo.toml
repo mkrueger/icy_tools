@@ -7,8 +7,14 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = [ "minimal"]
+default = [ "minimal", "net", "archives"]
 minimal = []
+# icy_net's TerminalEmulation (and with it tokio, rustls and russh). Without
+# it, icy_engine defines the same enum itself (src/terminal_emulation.rs).
+net = ["dep:icy_net"]
+# Opening archives (ZIP, ARJ, LHA, RAR, ...) through unarc-rs, and the
+# FileFormat::Archive variant.
+archives = ["dep:unarc-rs"]
 
 [dependencies]
 lazy_static = { workspace = true }
@@ -25,7 +31,7 @@ byteorder = "1"
 bstr = { workspace = true }
 codepages = { workspace = true }
 rayon = { workspace = true }
-icy_net = { workspace = true }
+icy_net = { workspace = true, optional = true }
 parking_lot = { workspace = true }
 retrofont = { workspace = true }
 
@@ -36,7 +42,7 @@ bitflags = { workspace = true }
 utf8parse = "0.2"
 unicode-segmentation = "1.13.3"
 unicode-width = "0.2.2"
-unarc-rs = { workspace = true }
+unarc-rs = { workspace = true, optional = true }
 
 zip = { workspace = true }
 libyaff = { workspace = true }

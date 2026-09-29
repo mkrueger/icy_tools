@@ -170,6 +170,7 @@ pub enum EngineError {
     #[error("{0}")]
     Generic(String),
 
+    #[cfg(feature = "archives")]
     #[error("Archive error: {0}")]
     Archive(#[from] unarc_rs::error::ArchiveError),
 }
