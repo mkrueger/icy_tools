@@ -2246,7 +2246,13 @@ impl RipEditor {
                     let (chosen, edited, before) = (self.selected, self.editing.as_ref().map(|(index, _)| *index), self.document.commands().len());
                     self.commit_properties();
                     let shift = self.document.commands().len() as isize - before as isize;
-                    self.selected = chosen.map(|index| if edited.is_some_and(|edited| index > edited) { (index as isize + shift).max(0) as usize } else { index });
+                    self.selected = chosen.map(|index| {
+                        if edited.is_some_and(|edited| index > edited) {
+                            (index as isize + shift).max(0) as usize
+                        } else {
+                            index
+                        }
+                    });
                     self.editing = None;
                     if self.preview_to_selection {
                         self.preview_dirty = true;
@@ -4208,13 +4214,20 @@ mod tests {
             *x1 = 120;
         }
         let panel = egui::pos2(1200.0, 500.0);
-        run(&context, &mut editor, vec![egui::Event::PointerMoved(panel), button_event(panel, egui::PointerButton::Primary, true)]);
+        run(
+            &context,
+            &mut editor,
+            vec![egui::Event::PointerMoved(panel), button_event(panel, egui::PointerButton::Primary, true)],
+        );
         assert!(matches!(editor.document.commands()[rect], RipCommand::Rectangle { x1: 60, .. }));
         assert!(matches!(&editor.shown_replacement, Some((index, RipCommand::Rectangle { x1: 120, .. })) if *index == rect));
         run(&context, &mut editor, vec![button_event(panel, egui::PointerButton::Primary, false)]);
         assert!(matches!(editor.document.commands()[rect], RipCommand::Rectangle { x1: 120, .. }));
         editor.undo(false);
-        assert!(matches!(editor.document.commands()[rect], RipCommand::Rectangle { x1: 60, .. }), "one change is one undo step");
+        assert!(
+            matches!(editor.document.commands()[rect], RipCommand::Rectangle { x1: 60, .. }),
+            "one change is one undo step"
+        );
 
         // A pending edit is kept when another command is chosen.
         editor.select_shape(Some(rect));
