@@ -1817,3 +1817,9 @@ rip-button-create-tooltip = Art, Beschriftung und Stil eines neuen Buttons wähl
 rip-button-create-title = Button erstellen
 rip-button-place = Platzieren
 rip-button-place-hint = Klicken setzt den Button mit { $width } × { $height }, Ziehen bestimmt die Größe; Esc bricht ab.
+
+# Attribute picker (Escape without a selection)
+attribute-picker-pair = Vordergrund { $foreground } · Hintergrund { $background }
+attribute-picker-foreground = Vordergrund { $color }
+attribute-picker-background = Hintergrund { $color }
+attribute-picker-keys = ↑↓ Vordergrund · ←→ Hintergrund · Enter oder Esc schließt

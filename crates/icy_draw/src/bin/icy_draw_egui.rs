@@ -9,6 +9,8 @@ mod animation;
 mod animation_export;
 #[path = "icy_draw_egui/app.rs"]
 mod app;
+#[path = "icy_draw_egui/attribute_picker.rs"]
+mod attribute_picker;
 #[path = "icy_draw_egui/export.rs"]
 mod export;
 #[path = "icy_draw_egui/font.rs"]

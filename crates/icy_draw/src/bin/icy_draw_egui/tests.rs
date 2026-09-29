@@ -1204,6 +1204,10 @@ fn gpu_editor_modes_and_dialogs_render() {
         app.open(sample);
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "art-warmup");
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "art");
+        app.attribute_picker = Some(0);
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "attribute-picker-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "attribute-picker");
+        app.attribute_picker = None;
         app.dialog = Some(Dialog::Characters);
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "characters-warmup");
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "characters");
@@ -2506,4 +2510,46 @@ fn shared_dialog_labels_are_translated() {
     ] {
         assert!(!label.contains("No localization"), "{label}");
     }
+}
+
+#[test]
+fn escape_without_a_selection_opens_the_attribute_picker() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    frame(&context, &mut app, size, vec![]);
+    let caret = |app: &DrawApp| {
+        app.document.with_state(|state| {
+            let attribute = state.get_caret().attribute;
+            (attribute.foreground(), attribute.background())
+        })
+    };
+    assert_eq!(caret(&app), (7, 0));
+
+    // With a selection Escape only deselects.
+    app.select_all();
+    frame(&context, &mut app, size, vec![key_event(Key::Escape, egui::Modifiers::NONE)]);
+    assert!(!app.document.with_state(|state| state.is_something_selected()));
+    assert!(app.attribute_picker.is_none());
+
+    frame(&context, &mut app, size, vec![key_event(Key::Escape, egui::Modifiers::NONE)]);
+    assert!(app.attribute_picker.is_some(), "the next Escape opens the picker");
+    frame(&context, &mut app, size, vec![]);
+    assert!(app.attribute_picker.is_some(), "the Escape that opened it does not close it");
+
+    // Up and down change the foreground, left and right the background, at once and wrapping.
+    frame(&context, &mut app, size, vec![key_event(Key::ArrowDown, egui::Modifiers::NONE)]);
+    frame(&context, &mut app, size, vec![key_event(Key::ArrowLeft, egui::Modifiers::NONE)]);
+    assert_eq!(caret(&app), (8, 15), "the default palette has iCE colors");
+    frame(&context, &mut app, size, vec![key_event(Key::Enter, egui::Modifiers::NONE)]);
+    assert!(app.attribute_picker.is_none());
+    assert_eq!(caret(&app), (8, 15), "closing keeps the colors");
+    frame(&context, &mut app, size, vec![egui::Event::Text("A".into())]);
+    assert_eq!(
+        app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch),
+        'A',
+        "typing works again"
+    );
 }

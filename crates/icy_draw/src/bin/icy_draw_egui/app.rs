@@ -244,6 +244,8 @@ pub struct DrawApp {
     icons: Icons,
     dialog: Option<Dialog>,
     picker: bool,
+    /// Moebius' attribute picker, opened by Escape without a selection; the render pass it opened in.
+    attribute_picker: Option<u64>,
     sender: Sender<Picked>,
     receiver: Receiver<Picked>,
     pending: Option<PathBuf>,
@@ -330,6 +332,7 @@ impl DrawApp {
             icons: Icons::default(),
             dialog: None,
             picker: false,
+            attribute_picker: None,
             sender,
             receiver,
             pending: None,
@@ -1962,8 +1965,59 @@ impl DrawApp {
         self.dialog = Some(if self.modified() { Dialog::Close } else { Dialog::New });
     }
 
+    /// Escape first ends what is going on (pasting, a stroke, a selection); only then does it open
+    /// the attribute picker, like in Moebius.
+    fn escape_opens_attribute_picker(&self) -> bool {
+        !self.document.paste_active()
+            && !self.document.stroke_active()
+            && self.document.selected_tags.is_empty()
+            && !self.document.with_state(|state| state.is_something_selected())
+    }
+
+    /// Shows the attribute picker while it is open and applies what is picked at once.
+    fn attribute_picker(&mut self, context: &egui::Context) {
+        let Some(opened) = self.attribute_picker else {
+            return;
+        };
+        let (palette, foreground, background, high_backgrounds) = self.document.with_state(|state| {
+            let buffer = state.get_buffer();
+            let attribute = state.get_caret().attribute;
+            (
+                buffer.palette.clone(),
+                attribute.foreground(),
+                attribute.background(),
+                buffer.ice_mode.has_high_bg_colors(),
+            )
+        });
+        let available = palette.len().max(1) as u32;
+        let colors = super::attribute_picker::Colors {
+            palette: &palette,
+            foreground,
+            background,
+            foregrounds: available.min(16),
+            backgrounds: available.min(if high_backgrounds { 16 } else { 8 }),
+        };
+        let center = if self.canvas_rect.is_positive() {
+            self.canvas_rect.center()
+        } else {
+            context.content_rect().center()
+        };
+        let keys = context.cumulative_pass_nr() != opened;
+        let (picks, open) = super::attribute_picker::show(context, center, &colors, keys);
+        for pick in picks {
+            let result = match pick {
+                super::attribute_picker::Pick::Foreground(color) => self.document.set_caret_foreground(color),
+                super::attribute_picker::Pick::Background(color) => self.document.set_caret_background(color),
+            };
+            self.result(result);
+        }
+        if !open {
+            self.attribute_picker = None;
+        }
+    }
+
     fn keys(&mut self, context: &egui::Context) {
-        if self.dialog.is_some() || self.picker || self.layer_properties_open() {
+        if self.dialog.is_some() || self.picker || self.layer_properties_open() || self.attribute_picker.is_some() {
             return;
         }
         let before = self.document.with_state(|state| state.layer_to_document_position(state.get_caret().position()));
@@ -1980,6 +2034,15 @@ impl DrawApp {
                 continue;
             }
             match event {
+                egui::Event::Key {
+                    key: Key::Escape,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if self.canvas_focus && modifiers.is_none() && self.escape_opens_attribute_picker() => {
+                    self.attribute_picker = Some(context.cumulative_pass_nr());
+                    break;
+                }
                 egui::Event::Key {
                     key, pressed: true, modifiers, ..
                 } if modifiers.alt && !modifiers.shift && (self.canvas_focus || key == Key::Enter) && self.alt_key(context, key, modifiers) => {
@@ -3340,6 +3403,7 @@ impl DrawApp {
         });
         if !blocked && !self.layer_properties_open() {
             self.keys(context);
+            self.attribute_picker(context);
         }
         self.sync_collaboration();
         self.font_slots_window(context, blocked || self.dialog.is_some());
