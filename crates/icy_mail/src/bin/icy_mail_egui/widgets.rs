@@ -274,6 +274,21 @@ pub fn section_with(ui: &mut egui::Ui, title: &str, right: impl FnOnce(&mut egui
     ui.add_space(2.0);
 }
 
+/// Collapsible group heading in the sidebar: a disclosure triangle, the name and the group's count.
+pub fn group_row(ui: &mut egui::Ui, label: &str, badge: Badge, open: bool) -> Response {
+    let response = nav_row_indented(ui, None, label, badge, false, false, 14.0);
+    let inner = response.rect.shrink2(egui::vec2(6.0, 1.0));
+    let center = egui::pos2(inner.left() + 13.0, inner.center().y);
+    let color = ui.visuals().weak_text_color();
+    let points = if open {
+        vec![center + egui::vec2(-4.0, -2.5), center + egui::vec2(4.0, -2.5), center + egui::vec2(0.0, 3.0)]
+    } else {
+        vec![center + egui::vec2(-2.5, -4.0), center + egui::vec2(3.0, 0.0), center + egui::vec2(-2.5, 4.0)]
+    };
+    ui.painter().add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
+    response
+}
+
 /// Count shown at the right of a sidebar entry: accented pill for unread messages, weak total otherwise.
 pub enum Badge {
     None,
@@ -284,6 +299,19 @@ pub enum Badge {
 
 /// Sidebar entry with an optional icon, a label and a count badge.
 pub fn nav_row(ui: &mut egui::Ui, image: Option<egui::Image<'static>>, label: &str, badge: Badge, selected: bool, focused: bool) -> Response {
+    nav_row_indented(ui, image, label, badge, selected, focused, 0.0)
+}
+
+/// [`nav_row`] whose icon and label start `indent` points further right, e.g. inside a group.
+pub fn nav_row_indented(
+    ui: &mut egui::Ui,
+    image: Option<egui::Image<'static>>,
+    label: &str,
+    badge: Badge,
+    selected: bool,
+    focused: bool,
+    indent: f32,
+) -> Response {
     let width = ui.available_width();
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, NAV_HEIGHT), Sense::click());
     if !ui.is_rect_visible(rect) {
@@ -306,7 +334,7 @@ pub fn nav_row(ui: &mut egui::Ui, image: Option<egui::Image<'static>>, label: &s
     } else {
         visuals.text_color()
     };
-    let mut left = inner.left() + 8.0;
+    let mut left = inner.left() + 8.0 + indent;
     if let Some(image) = image {
         let icon = Rect::from_center_size(egui::pos2(left + 9.0, inner.center().y), egui::Vec2::splat(18.0));
         image.tint(color).paint_at(ui, icon);

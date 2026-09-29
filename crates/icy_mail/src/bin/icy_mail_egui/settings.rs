@@ -72,6 +72,7 @@ impl MailApp {
             random_tagline: self.random_tagline,
             view_mode: self.reader.view_mode,
             reading_pane: self.reading_pane,
+            conferences_unread_only: self.conferences_unread_only,
         }
     }
 
@@ -79,6 +80,7 @@ impl MailApp {
         self.settings = options.monitor_settings.clone();
         self.random_tagline = options.random_tagline;
         self.reading_pane = options.reading_pane;
+        self.conferences_unread_only = options.conferences_unread_only;
         if self.reader.view_mode != options.view_mode {
             self.set_mode(options.view_mode);
         }

@@ -46,6 +46,11 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
   lists are loaded in sections of 2,048 lines; scrolling or Page Up/Down at
   the end of a section continues into the next one without visible page controls.
   A packet without those files does not show the folder.
+- Conferences of the same network (`fsx.Chat`, `fsx.BBS Ads`, …) are grouped
+  under a collapsible heading with the network's unread count; networks with
+  unread mail start open, and Next Unread opens a closed one when it continues
+  there. The envelope button next to the sort button lists only conferences
+  with unread messages.
 - **All Messages**, **Personal** (messages addressed to you) and each
   conference show unread counts. Showing a message marks it read; read marks
   are remembered per packet across restarts.

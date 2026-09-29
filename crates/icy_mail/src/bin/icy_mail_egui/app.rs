@@ -147,6 +147,9 @@ pub struct MailApp {
     /// New messages start with a random tagline.
     pub random_tagline: bool,
     pub reading_pane: ReadingPane,
+    pub conferences_unread_only: bool,
+    /// Networks the user opened or closed in the sidebar, by lowercased name; others follow their unread state.
+    pub network_open: HashMap<String, bool>,
     pub taglines: Option<Taglines>,
     pub tagline_dialog: Option<TaglineDialog>,
     pub address_book: Option<AddressBook>,
@@ -235,6 +238,8 @@ impl MailApp {
             closed: false,
             random_tagline: options.random_tagline,
             reading_pane: options.reading_pane,
+            conferences_unread_only: options.conferences_unread_only,
+            network_open: HashMap::new(),
             options,
             options_save_after: None,
             settings_dialog: None,
@@ -450,6 +455,7 @@ impl MailApp {
                 self.reader.select_message(index);
             }
         } else {
+            self.network_open.clear();
             self.folder = Folder::All;
             self.selected_draft = None;
             self.select_folder(Folder::All);
@@ -594,7 +600,15 @@ impl MailApp {
         if self.file_count() > 0 {
             folders.push(Folder::Bulletins);
         }
-        folders.extend(self.reader.conferences.iter().filter_map(|row| row.number.map(Folder::Conference)));
+        folders.extend(self.conference_folders(true));
+        folders
+    }
+
+    /// Every folder in sidebar order, including conferences hidden in closed networks or by the unread filter.
+    pub fn all_folders(&self) -> Vec<Folder> {
+        let mut folders = self.folders();
+        folders.retain(|folder| !matches!(folder, Folder::Conference(_)));
+        folders.extend(self.conference_folders(false));
         folders
     }
 
@@ -624,6 +638,9 @@ impl MailApp {
         }
         if folder == Folder::Bulletins {
             return;
+        }
+        if let Folder::Conference(number) = folder {
+            self.reveal_conference(number);
         }
         self.reader.personal = (folder == Folder::Personal).then(|| self.user_name());
         self.reader.starred_only = folder == Folder::Starred;
@@ -775,7 +792,7 @@ impl MailApp {
                 return;
             }
         }
-        let folders = self.folders();
+        let folders = self.all_folders();
         let current = folders.iter().position(|folder| *folder == self.folder).unwrap_or(0);
         let next = if self.reader.filter.trim().is_empty() {
             folders.iter().skip(current + 1).find_map(|folder| match folder {

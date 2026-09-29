@@ -43,6 +43,8 @@ pub struct Options {
     /// Message list shown flat or as threads.
     pub view_mode: ViewMode,
     pub reading_pane: ReadingPane,
+    /// The sidebar lists only conferences with unread messages.
+    pub conferences_unread_only: bool,
 }
 
 impl Default for Options {
@@ -58,6 +60,7 @@ impl Default for Options {
             random_tagline: true,
             view_mode: ViewMode::default(),
             reading_pane: ReadingPane::default(),
+            conferences_unread_only: false,
         }
     }
 }

@@ -81,6 +81,9 @@ sidebar-sort-conferences = Konferenzen sortieren
 sidebar-sort-number = Nach Nummer
 sidebar-sort-name = Nach Name
 sidebar-sort-count = Nach Nachrichtenanzahl
+sidebar-unread-conferences-only = Nur Konferenzen mit ungelesenen Nachrichten zeigen
+sidebar-network-tooltip = { $network }: { $conferences } Konferenzen, { $unread } ungelesen
+sidebar-conferences-all-read = Alle Konferenzen sind gelesen
 sidebar-conference-tooltip = Konferenz { $number }
     { $count } Nachrichten, { $unread } ungelesen
 folder-all = Alle Nachrichten

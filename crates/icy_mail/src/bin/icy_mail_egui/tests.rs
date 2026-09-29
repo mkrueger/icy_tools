@@ -1971,12 +1971,33 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
     mail.set_mode(ViewMode::Threads);
     let starred = mail.reader.messages[0].index;
     mail.set_starred(&gpu.context.clone(), starred, true);
+    for row in &mut mail.reader.conferences {
+        if let Some(number) = row.number {
+            row.name = format!("fsx.{}", if number == 1 { "General" } else { "Retro Computing" });
+        }
+    }
+    for (number, name, count) in [
+        (20, "fsx.BBS Support/Dev", 3),
+        (21, "DOVE.Advertisements", 1),
+        (22, "DOVE.General", 4),
+        (23, "DOVE.Debate", 2),
+        (24, "tqw.BBS Ads", 8),
+        (25, "tqw.Linux", 1),
+        (26, "Local Chat", 5),
+    ] {
+        mail.reader.conferences.push(icy_mail::reader::ConferenceRow {
+            number: Some(number),
+            name: name.into(),
+            count,
+        });
+    }
     for _ in 0..3 {
         gpu.capture(&mut mail, [1600, 900], 1.0, vec![], "warmup");
     }
     gpu.capture(&mut mail, [1600, 900], 1.0, vec![], "wide-threads");
     assert!(mail.content_rect.top() < 200.0, "wide windows show the message beside the list");
     mail.set_starred(&gpu.context.clone(), starred, false);
+    mail.reader.rebuild_conferences();
     mail.set_mode(ViewMode::List);
     mail.reader.filter = "coffee".into();
     for _ in 0..3 {
@@ -2540,4 +2561,105 @@ fn main_menu_groups_actions_and_opens_a_new_window() {
     }
     let output = frame(&context, &mut mail, size, vec![]);
     assert_eq!(output.viewport_output.len(), 2, "a second window was opened");
+}
+
+#[test]
+fn conference_names_split_into_network_and_area() {
+    use sidebar::network_of;
+    assert_eq!(network_of("fsx.Chat, Testing + More"), Some(("fsx", "Chat, Testing + More")));
+    assert_eq!(network_of("DOVE.General"), Some(("DOVE", "General")));
+    assert_eq!(network_of("Mr. Smith's Area"), None, "a space after the dot is a sentence");
+    assert_eq!(network_of("Release v1.2 notes"), None);
+    assert_eq!(network_of("v1.2"), None, "version numbers are no network");
+    assert_eq!(network_of("General"), None);
+    assert_eq!(network_of(".hidden"), None);
+}
+
+#[test]
+fn conferences_group_by_network_in_sidebar_order() {
+    use sidebar::{conference_tree, ConferenceNode};
+    let rows = |names: &[&str]| {
+        names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| (index as u16 + 1, name.to_string(), 10))
+            .collect::<Vec<_>>()
+    };
+    let tree = conference_tree(&rows(&["fsx.Chat", "Local", "DOVE.General", "fsx.BBS Ads", "dove.Debate", "tqw.Linux"]));
+    assert_eq!(
+        tree,
+        vec![
+            ConferenceNode::Group {
+                network: "fsx".into(),
+                members: vec![(1, "Chat".into(), 10), (4, "BBS Ads".into(), 10)],
+            },
+            ConferenceNode::Single {
+                number: 2,
+                name: "Local".into(),
+                count: 10
+            },
+            ConferenceNode::Group {
+                network: "DOVE".into(),
+                members: vec![(3, "General".into(), 10), (5, "Debate".into(), 10)],
+            },
+            ConferenceNode::Single {
+                number: 6,
+                name: "tqw.Linux".into(),
+                count: 10
+            },
+        ],
+        "networks need two conferences and match case-insensitively"
+    );
+    let single_network = conference_tree(&rows(&["fsx.Chat", "fsx.Ads"]));
+    assert!(
+        single_network.iter().all(|node| matches!(node, ConferenceNode::Single { .. })),
+        "one network holding everything stays flat"
+    );
+}
+
+#[test]
+fn network_groups_collapse_filter_and_open_for_next_unread() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    for row in &mut mail.reader.conferences {
+        if let Some(number) = row.number {
+            row.name = format!("net.{}", if number == 1 { "General" } else { "Retro" });
+        }
+    }
+    // First in the sidebar, so the next conference with unread mail lies in the network.
+    mail.reader.conferences.insert(
+        1,
+        icy_mail::reader::ConferenceRow {
+            number: Some(9),
+            name: "Local".into(),
+            count: 0,
+        },
+    );
+    let output = settle(&context, &mut mail, size);
+    let header = label(&output, "net");
+    let general = label(&output, "General");
+    assert!(general.left() > header.left(), "members are indented under the network");
+    label(&output, "Local");
+    assert_eq!(mail.folders().iter().filter(|folder| matches!(folder, app::Folder::Conference(_))).count(), 3);
+
+    click_label(&context, &mut mail, size, "net");
+    let output = settle(&context, &mut mail, size);
+    assert_eq!(count(&output, "General"), 0, "a closed network hides its conferences");
+    assert!(!mail.folders().contains(&app::Folder::Conference(1)), "arrow keys skip hidden conferences");
+    assert!(mail.all_folders().contains(&app::Folder::Conference(1)));
+
+    // Next Unread still walks into the closed network and opens it.
+    click_label(&context, &mut mail, size, "Local");
+    assert_eq!(mail.folder, app::Folder::Conference(9));
+    mail.next_unread(&context);
+    assert!(matches!(mail.folder, app::Folder::Conference(1 | 2)), "{:?}", mail.folder);
+    let output = settle(&context, &mut mail, size);
+    label(&output, "General");
+
+    mail.conferences_unread_only = true;
+    let output = settle(&context, &mut mail, size);
+    assert_eq!(count(&output, "Local"), 0, "conferences without unread messages are hidden");
+    assert!(mail.current_options(&context).conferences_unread_only, "the filter is saved");
 }
