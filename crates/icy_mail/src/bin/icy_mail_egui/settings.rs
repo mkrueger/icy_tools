@@ -5,7 +5,7 @@ use icy_engine_gui::{
     ScalingMode,
 };
 use icy_mail::{
-    options::{Options, Theme},
+    options::{Options, ReadingPane, Theme},
     LANGUAGE_LOADER,
 };
 
@@ -41,6 +41,16 @@ pub fn zoom_name(mode: ScalingMode) -> String {
     }
 }
 
+pub const READING_PANES: [ReadingPane; 3] = [ReadingPane::Automatic, ReadingPane::Below, ReadingPane::Right];
+
+pub fn reading_pane_name(pane: ReadingPane) -> String {
+    match pane {
+        ReadingPane::Automatic => fl!(LANGUAGE_LOADER, "settings-reading-pane-automatic"),
+        ReadingPane::Below => fl!(LANGUAGE_LOADER, "settings-reading-pane-below"),
+        ReadingPane::Right => fl!(LANGUAGE_LOADER, "settings-reading-pane-right"),
+    }
+}
+
 fn theme_preference(theme: Theme) -> egui::ThemePreference {
     match theme {
         Theme::System => egui::ThemePreference::System,
@@ -61,12 +71,14 @@ impl MailApp {
             monitor_settings: self.settings.clone(),
             random_tagline: self.random_tagline,
             view_mode: self.reader.view_mode,
+            reading_pane: self.reading_pane,
         }
     }
 
     pub fn apply_options(&mut self, context: &egui::Context, options: &Options) {
         self.settings = options.monitor_settings.clone();
         self.random_tagline = options.random_tagline;
+        self.reading_pane = options.reading_pane;
         if self.reader.view_mode != options.view_mode {
             self.set_mode(options.view_mode);
         }
@@ -146,6 +158,7 @@ impl MailApp {
                 dialog.draft.theme = defaults.theme;
                 dialog.draft.monitor_settings.scaling_mode = defaults.monitor_settings.scaling_mode;
                 dialog.draft.random_tagline = defaults.random_tagline;
+                dialog.draft.reading_pane = defaults.reading_pane;
             }
             Some(Footer::Restore) => {
                 let zoom = dialog.draft.monitor_settings.scaling_mode;
@@ -186,6 +199,12 @@ fn general(ui: &mut egui::Ui, options: &mut Options) {
         appearance::combo_row(ui, &fl!(LANGUAGE_LOADER, "settings-zoom-label"), zoom_name(*zoom), |ui| {
             for mode in ZOOMS {
                 ui.selectable_value(zoom, mode, zoom_name(mode));
+            }
+        });
+        let pane = &mut options.reading_pane;
+        appearance::combo_row(ui, &fl!(LANGUAGE_LOADER, "settings-reading-pane-label"), reading_pane_name(*pane), |ui| {
+            for choice in READING_PANES {
+                ui.selectable_value(pane, choice, reading_pane_name(choice));
             }
         });
     });

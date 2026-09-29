@@ -305,6 +305,17 @@ impl MailApp {
                 self.set_unread_only(unread_only);
             }
             ui.separator();
+            ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "menu-reading-pane")).weak());
+            for pane in settings::READING_PANES {
+                if ui
+                    .add(egui::Button::selectable(self.reading_pane == pane, settings::reading_pane_name(pane)))
+                    .clicked()
+                {
+                    self.reading_pane = pane;
+                    ui.close();
+                }
+            }
+            ui.separator();
             ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "menu-message-zoom")).weak());
             zoom_choices(ui, &mut self.settings.scaling_mode);
             ui.separator();

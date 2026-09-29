@@ -22,6 +22,16 @@ pub enum Theme {
     Dark,
 }
 
+/// Where the message is shown relative to the message list.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReadingPane {
+    /// To the right on wide windows, below the list otherwise.
+    #[default]
+    Automatic,
+    Below,
+    Right,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Options {
@@ -32,6 +42,7 @@ pub struct Options {
     pub random_tagline: bool,
     /// Message list shown flat or as threads.
     pub view_mode: ViewMode,
+    pub reading_pane: ReadingPane,
 }
 
 impl Default for Options {
@@ -46,6 +57,7 @@ impl Default for Options {
             },
             random_tagline: true,
             view_mode: ViewMode::default(),
+            reading_pane: ReadingPane::default(),
         }
     }
 }
@@ -94,6 +106,7 @@ mod tests {
         options.monitor_settings.scaling_mode = ScalingMode::Manual(2.0);
         options.monitor_settings.use_scanlines = true;
         options.view_mode = ViewMode::Threads;
+        options.reading_pane = ReadingPane::Right;
         options.save_in(dir.path()).unwrap();
         assert_eq!(Options::load_in(dir.path()).unwrap(), options);
         fs::write(dir.path().join(FILE_NAME), "theme = \"Light\"\n").unwrap();
@@ -102,5 +115,6 @@ mod tests {
         assert_eq!(partial.monitor_settings, Options::default().monitor_settings);
         assert!(partial.random_tagline);
         assert_eq!(partial.view_mode, ViewMode::List);
+        assert_eq!(partial.reading_pane, ReadingPane::Automatic);
     }
 }

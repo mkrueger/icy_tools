@@ -16,6 +16,8 @@ use super::{
 };
 
 const FLAGS_WIDTH: f32 = 52.0;
+/// Below this width the list scrolls sideways instead of squeezing its columns further.
+const MIN_LIST_WIDTH: f32 = 420.0;
 /// Width of one thread level in the subject column.
 const TREE_STEP: f32 = 14.0;
 /// Deeper replies share the last level, so long chains do not push the subject out of view.
@@ -23,6 +25,39 @@ const TREE_MAX_DEPTH: u16 = 12;
 
 fn tree_indent(depth: u16) -> f32 {
     f32::from(depth.min(TREE_MAX_DEPTH) + 1) * TREE_STEP
+}
+
+/// Position of the row a thread reply answers: the closest earlier row one level up.
+fn parent_position(rows: &[Row], position: usize) -> Option<usize> {
+    let depth = rows[position].depth;
+    if depth == 0 {
+        return None;
+    }
+    rows[..position].iter().rposition(|row| row.depth < depth)
+}
+
+/// Leading bytes of a reply's subject that repeat its parent's: `Re:` prefixes, and either the whole
+/// subject or the shared words before the first difference ("FidoNews 43:39 " of numbered parts).
+pub fn repeated_subject_len(subject: &str, parent: &str) -> usize {
+    let prefix = icy_mail::qwk::reply_prefix_len(subject);
+    let rest = &subject[prefix..];
+    let parent = &parent[icy_mail::qwk::reply_prefix_len(parent)..];
+    if rest.trim_end().eq_ignore_ascii_case(parent.trim_end()) {
+        return subject.len();
+    }
+    let common = rest
+        .char_indices()
+        .zip(parent.chars())
+        .take_while(|((_, own), other)| own.to_lowercase().eq(other.to_lowercase()))
+        .last()
+        .map_or(0, |((index, own), _)| index + own.len_utf8());
+    let words = rest[..common]
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| ch.is_whitespace())
+        .map_or(0, |(index, ch)| index + ch.len_utf8());
+    // Short matches such as "A " or "The " are coincidence rather than a shared title.
+    prefix + if rest[..words].trim().len() >= 4 { words } else { 0 }
 }
 
 /// Draws the connector lines of a thread row and its disclosure triangle.
@@ -138,8 +173,10 @@ impl MailApp {
     fn message_list(&mut self, ui: &mut egui::Ui) -> bool {
         let context = ui.ctx().clone();
         ui.spacing_mut().item_spacing.y = 0.0;
-        let width = ui.available_width().max(560.0);
-        let widths = [FLAGS_WIDTH, 170.0, width - FLAGS_WIDTH - 170.0 - 136.0, 136.0];
+        let width = ui.available_width().max(MIN_LIST_WIDTH);
+        let from = (width * 0.25).clamp(110.0, 170.0);
+        let date = (width * 0.22).clamp(112.0, 136.0);
+        let widths = [FLAGS_WIDTH, from, width - FLAGS_WIDTH - from - date, date];
         let columns = [None, Some(MessageColumn::From), Some(MessageColumn::Subject), Some(MessageColumn::Date)];
         let threaded = self.reader.view_mode == ViewMode::Threads;
         let active = columns.iter().position(|column| *column == Some(self.reader.message_sort.0));
@@ -204,6 +241,14 @@ impl MailApp {
                         let unread = !self.reader.is_read(row.index);
                         let selected = self.reader.selected_message == Some(row.index);
                         let date = friendly_date(info.date, &info.date_str, today);
+                        let repeated = if threaded {
+                            parent_position(&self.reader.messages, position).map_or(0, |parent| {
+                                let parent = &package.infos[self.reader.messages[parent].index];
+                                repeated_subject_len(info.subject.as_str(), parent.subject.as_str())
+                            })
+                        } else {
+                            0
+                        };
                         let collapsed = threaded && row.descendants > 0 && self.reader.is_collapsed(row.index);
                         let hidden_unread = if collapsed { self.reader.unread_replies(row.index) } else { 0 };
                         let replies = row.descendants.to_string();
@@ -218,6 +263,7 @@ impl MailApp {
                                     .strong(strong)
                                     .highlight(&needle)
                                     .indent(if threaded { tree_indent(row.depth) } else { 0.0 })
+                                    .dim(repeated)
                                     .badge(collapsed.then_some((replies.as_str(), hidden_unread > 0))),
                                 Cell::new(&date).weak(),
                             ],
@@ -331,8 +377,11 @@ impl MailApp {
             return false;
         };
         let conferences = self.choices.clone();
-        let width = ui.available_width().max(560.0);
-        let widths = [FLAGS_WIDTH, 160.0, width - FLAGS_WIDTH - 160.0 - 150.0 - 136.0, 150.0, 136.0];
+        let width = ui.available_width().max(MIN_LIST_WIDTH);
+        let to = (width * 0.22).clamp(100.0, 160.0);
+        let conference = (width * 0.2).clamp(90.0, 150.0);
+        let date = (width * 0.22).clamp(112.0, 136.0);
+        let widths = [FLAGS_WIDTH, to, width - FLAGS_WIDTH - to - conference - date, conference, date];
         let focused = self.focus == Pane::Messages;
         let warning = widgets::warning(ui);
         let mut select = None;
@@ -458,8 +507,9 @@ impl MailApp {
         let Some(package) = self.reader.package.clone() else {
             return false;
         };
-        let width = ui.available_width().max(560.0);
-        let widths = [FLAGS_WIDTH, width - FLAGS_WIDTH - 200.0 - 56.0, 200.0, 56.0];
+        let width = ui.available_width().max(MIN_LIST_WIDTH);
+        let file = (width * 0.3).clamp(120.0, 200.0);
+        let widths = [FLAGS_WIDTH, width - FLAGS_WIDTH - file - 56.0, file, 56.0];
         let focused = self.focus == Pane::Messages;
         let mut select = None;
         egui::ScrollArea::horizontal()

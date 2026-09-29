@@ -9,7 +9,7 @@ use icy_mail::{
     address_book::AddressBook,
     drafts::{Compose, Draft, DraftStore},
     editor,
-    options::Options,
+    options::{Options, ReadingPane},
     qwk::MessageInfo,
     reader::{NavigateDirection, Pane, Reader, ViewMode},
     state::{ReadState, RecentPackets},
@@ -26,6 +26,13 @@ use super::{
     tagline_dialog::TaglineDialog,
     widgets::{Icons, ROW_HEIGHT},
 };
+
+/// Narrowest message list beside the reading pane.
+const MIN_SIDE_LIST_WIDTH: f32 = 420.0;
+/// Narrowest reading pane beside the list; 80 columns stay readable at this width.
+const MIN_SIDE_READER_WIDTH: f32 = 560.0;
+/// Area right of the sidebar from which the automatic layout puts the message beside the list.
+const AUTO_SIDE_WIDTH: f32 = 1180.0;
 
 /// What the sidebar has selected and the list shows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -137,6 +144,7 @@ pub struct MailApp {
     pub settings_dialog: Option<SettingsDialog>,
     /// New messages start with a random tagline.
     pub random_tagline: bool,
+    pub reading_pane: ReadingPane,
     pub taglines: Option<Taglines>,
     pub tagline_dialog: Option<TaglineDialog>,
     pub address_book: Option<AddressBook>,
@@ -222,6 +230,7 @@ impl MailApp {
             new_window: false,
             closed: false,
             random_tagline: options.random_tagline,
+            reading_pane: options.reading_pane,
             options,
             options_save_after: None,
             settings_dialog: None,
@@ -1038,14 +1047,26 @@ impl MailApp {
                             .show_inside(ui, |ui| {
                                 self.sidebar(ui);
                             });
-                        egui::TopBottomPanel::top("messages")
-                            .default_height(260.0)
-                            .height_range(120.0..=(ui.available_height() - 140.0).max(120.0))
-                            .resizable(true)
-                            .frame(egui::Frame::new())
-                            .show_inside(ui, |ui| {
-                                self.list(ui);
-                            });
+                        if self.reading_pane_right(ui.available_width()) {
+                            let width = ui.available_width();
+                            egui::SidePanel::left("messages-side")
+                                .default_width((width * 0.45).clamp(MIN_SIDE_LIST_WIDTH, 720.0))
+                                .width_range(MIN_SIDE_LIST_WIDTH..=(width - MIN_SIDE_READER_WIDTH).max(MIN_SIDE_LIST_WIDTH))
+                                .resizable(true)
+                                .frame(egui::Frame::new())
+                                .show_inside(ui, |ui| {
+                                    self.list(ui);
+                                });
+                        } else {
+                            egui::TopBottomPanel::top("messages")
+                                .default_height(260.0)
+                                .height_range(120.0..=(ui.available_height() - 140.0).max(120.0))
+                                .resizable(true)
+                                .frame(egui::Frame::new())
+                                .show_inside(ui, |ui| {
+                                    self.list(ui);
+                                });
+                        }
                         egui::CentralPanel::default().frame(egui::Frame::new()).show_inside(ui, |ui| self.content(ui));
                     }
                 });
@@ -1058,6 +1079,15 @@ impl MailApp {
             self.persist_options(context);
         }
         self.windows(context);
+    }
+
+    /// Whether the message goes beside the list in an area `width` wide right of the sidebar.
+    pub fn reading_pane_right(&self, width: f32) -> bool {
+        match self.reading_pane {
+            ReadingPane::Automatic => width >= AUTO_SIDE_WIDTH,
+            ReadingPane::Right => width >= MIN_SIDE_LIST_WIDTH + MIN_SIDE_READER_WIDTH,
+            ReadingPane::Below => false,
+        }
     }
 
     fn narrow(&mut self, ui: &mut egui::Ui) {

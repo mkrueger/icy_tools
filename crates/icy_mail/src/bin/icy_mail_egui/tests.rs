@@ -1952,6 +1952,14 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
         }
     }
     gpu.context.set_theme(egui::Theme::Dark);
+    mail.focus = Pane::Messages;
+    mail.set_mode(ViewMode::Threads);
+    for _ in 0..3 {
+        gpu.capture(&mut mail, [1600, 900], 1.0, vec![], "warmup");
+    }
+    gpu.capture(&mut mail, [1600, 900], 1.0, vec![], "wide-threads");
+    assert!(mail.content_rect.top() < 200.0, "wide windows show the message beside the list");
+    mail.set_mode(ViewMode::List);
     mail.reader.filter = "coffee".into();
     for _ in 0..3 {
         gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
@@ -2333,4 +2341,46 @@ fn list_dates_are_relative_for_the_past_week() {
     let unparsed = chrono::NaiveDateTime::default();
     assert_eq!(list::friendly_date(unparsed, "13-45-2612:00", today), "13-45-2612:00");
     assert_eq!(list::friendly_qwk_date("09-28-2608:07", today), "Yesterday 08:07");
+}
+
+#[test]
+fn thread_replies_dim_the_subject_they_repeat() {
+    let dim = |subject: &str, parent: &str| subject[..list::repeated_subject_len(subject, parent)].to_string();
+    assert_eq!(dim("Re: Amiga demos", "Amiga demos"), "Re: Amiga demos");
+    assert_eq!(dim("RE[2]: amiga DEMOS ", "Re: Amiga demos"), "RE[2]: amiga DEMOS ");
+    assert_eq!(
+        dim("FidoNews 43:39 [01/06]: Jamnntpd Servers List", "FidoNews 43:39 [00/06]: The Front Page"),
+        "FidoNews 43:39 "
+    );
+    assert_eq!(dim("Re: Amiga games", "Amiga demos"), "Re: Amiga ");
+    assert_eq!(dim("Re: A new topic", "A question"), "Re: ", "short shared words stay visible");
+    assert_eq!(dim("Something else", "Amiga demos"), "");
+    assert_eq!(dim("Grüße aus Köln", "Grüße aus Bonn"), "Grüße aus ");
+}
+
+#[test]
+fn reading_pane_moves_beside_the_list_on_wide_windows() {
+    use icy_mail::options::ReadingPane;
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let beside = |mail: &mut app::MailApp, size: egui::Vec2| {
+        settle(&context, mail, size);
+        let list = mail.content_rect;
+        list.top() < 200.0
+    };
+    let wide = egui::vec2(1600.0, 900.0);
+    let desktop = egui::vec2(1100.0, 760.0);
+    assert!(beside(&mut mail, wide), "automatic layout uses the width");
+    let output = settle(&context, &mut mail, wide);
+    assert!(
+        label(&output, "Subject").right() < mail.content_rect.left(),
+        "list columns sit left of the message"
+    );
+    assert!(!beside(&mut mail, desktop), "automatic layout stacks on smaller windows");
+    mail.reading_pane = ReadingPane::Right;
+    assert!(beside(&mut mail, egui::vec2(1300.0, 800.0)), "right is honored while both fit");
+    assert!(!beside(&mut mail, desktop), "too narrow for side by side");
+    mail.reading_pane = ReadingPane::Below;
+    assert!(!beside(&mut mail, wide));
 }

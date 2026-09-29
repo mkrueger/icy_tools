@@ -30,7 +30,9 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
 ## Reading
 
 - Three-pane layout: mailboxes and conferences, message list, and reader.
-  Windows narrower than 600 px switch to a single pane with
+  The reader sits beside the list on wide windows and below it otherwise;
+  **Reading Pane** in the View menu or the settings fixes either placement.
+  Windows narrower than 760 px switch to a single pane with
   Folders/Messages/Message tabs; short windows collapse the message header.
 - **Bulletins** appears when the packet contains welcome/news screens, bulletins,
   goodbye screens or a new-files list. Files up to 16 MiB are supported; large
@@ -42,7 +44,9 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
   are remembered per packet across restarts.
 - Unread messages are bold with a dot; replied-to and private messages are
   flagged. Opening a folder selects its first unread message.
-- Sortable columns, list or thread view, and an **Unread** filter. Dates in the
+- Sortable columns, list or thread view, and an **Unread** filter. In threads,
+  the part of a reply's subject that repeats its parent (`Re:`, the whole
+  subject or shared leading words such as a newsletter title) is dimmed. Dates in the
   lists read “Today”, “Yesterday” or the weekday during the past week; the
   reader header shows the full date. Search
   matches author, recipient, subject and message text, ignoring case. Message

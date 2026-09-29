@@ -328,6 +328,8 @@ pub struct Cell<'a> {
     pub highlight: &'a str,
     /// Count pill at the right edge; filled with the accent colour when `true`.
     pub badge: Option<(&'a str, bool)>,
+    /// Leading bytes of the text drawn in the weak colour, e.g. a subject repeated from the parent.
+    pub dim: usize,
 }
 
 impl<'a> Cell<'a> {
@@ -341,6 +343,7 @@ impl<'a> Cell<'a> {
             right: false,
             highlight: "",
             badge: None,
+            dim: 0,
         }
     }
 
@@ -378,6 +381,11 @@ impl<'a> Cell<'a> {
 
     pub fn badge(mut self, badge: Option<(&'a str, bool)>) -> Self {
         self.badge = badge;
+        self
+    }
+
+    pub fn dim(mut self, bytes: usize) -> Self {
+        self.dim = bytes;
         self
     }
 }
@@ -459,6 +467,9 @@ pub fn row(ui: &mut egui::Ui, widths: &[f32], cells: &[Cell], selected: bool, fo
             }
             CellText::Header(header) => {
                 let mut job = header_job(ui, header, value.prefix, font, color, value.strong);
+                if value.dim > 0 && header.styled().is_none() {
+                    dim(&mut job, value.prefix.len() + value.dim, weak);
+                }
                 highlight(&mut job, value.prefix.len(), value.highlight, ui);
                 paint_job(ui, area, job, color, align);
             }
@@ -631,6 +642,29 @@ pub fn highlight(job: &mut egui::text::LayoutJob, start: usize, needle: &str, ui
             start = to;
         }
         push(&mut sections, start..section.byte_range.end, false);
+    }
+    job.sections = sections;
+}
+
+/// Draws the first `end` bytes of `job` in `color`, splitting the section that crosses `end`.
+fn dim(job: &mut egui::text::LayoutJob, end: usize, color: Color32) {
+    let mut sections = Vec::with_capacity(job.sections.len() + 1);
+    for mut section in std::mem::take(&mut job.sections) {
+        let range = section.byte_range.clone();
+        if range.end <= end {
+            section.format.color = color;
+            sections.push(section);
+        } else if range.start < end {
+            let mut head = section.clone();
+            head.byte_range = range.start..end;
+            head.format.color = color;
+            section.byte_range = end..range.end;
+            section.leading_space = 0.0;
+            sections.push(head);
+            sections.push(section);
+        } else {
+            sections.push(section);
+        }
     }
     job.sections = sections;
 }

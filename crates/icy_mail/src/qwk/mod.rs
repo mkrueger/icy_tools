@@ -48,7 +48,13 @@ pub struct MessageInfo {
 /// Strips any number of leading `Re:` / `Re[2]:` / `Fwd:` prefixes and lowercases the rest.
 #[must_use]
 pub fn normalize_subject(subject: &str) -> String {
-    let mut rest = subject.trim();
+    subject[reply_prefix_len(subject)..].trim_end().to_ascii_lowercase()
+}
+
+/// Byte length of the leading `Re:` / `Re[2]:` / `Fwd:` prefixes of `subject`, including surrounding spaces.
+#[must_use]
+pub fn reply_prefix_len(subject: &str) -> usize {
+    let mut rest = subject.trim_start();
     loop {
         let lower = rest.to_ascii_lowercase();
         let stripped = ["re:", "fwd:", "fw:", "aw:"]
@@ -74,7 +80,7 @@ pub fn normalize_subject(subject: &str) -> String {
             None => break,
         }
     }
-    rest.to_ascii_lowercase()
+    subject.len() - rest.len()
 }
 
 pub struct QwkPackage {
