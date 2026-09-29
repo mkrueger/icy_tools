@@ -21,6 +21,10 @@ search-message-error = Unable to search message { $number }: { $error }
 toolbar-search-clear = Clear Search (Esc)
 
 # Main menu
+menu-file = File
+menu-message = Message
+menu-tools = Tools
+menu-help = Help
 menu-open-packet = Open Packet…
 menu-open-recent = Open Recent
 menu-reload-packet = Reload Packet

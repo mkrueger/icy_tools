@@ -1,8 +1,8 @@
 use eframe::egui::{self, Key, KeyboardShortcut, Modifiers};
 use i18n_embed_fl::fl;
 use icy_engine_gui::ScalingMode;
-use icy_mail::reader::ViewMode;
 use icy_mail::LANGUAGE_LOADER;
+use icy_mail::{options::Theme, reader::ViewMode};
 
 use super::{
     app::{Folder, MailApp, Modal, NoticeKind},
@@ -17,6 +17,11 @@ const INLINE_SEARCH_WIDTH: f32 = 600.0;
 
 pub fn shortcut(context: &egui::Context, modifiers: Modifiers, key: Key) -> String {
     context.format_shortcut(&KeyboardShortcut::new(modifiers, key))
+}
+
+/// Menus and their submenus share one width, so shortcuts and submenu arrows line up.
+fn menu_width(ui: &mut egui::Ui) {
+    ui.set_min_width(250.0);
 }
 
 /// Menu entry with a right-aligned shortcut; closes the menu when clicked.
@@ -192,18 +197,32 @@ impl MailApp {
         });
     }
 
+    /// The main menu: File, Message, View, Tools and Help, like Icy Term's.
     fn menu(&mut self, ui: &mut egui::Ui) {
+        menu_width(ui);
+        ui.menu_button(fl!(LANGUAGE_LOADER, "menu-file"), |ui| self.file_menu(ui));
+        ui.menu_button(fl!(LANGUAGE_LOADER, "menu-message"), |ui| self.message_menu(ui));
+        ui.menu_button(fl!(LANGUAGE_LOADER, "menu-view"), |ui| self.view_menu(ui));
+        ui.menu_button(fl!(LANGUAGE_LOADER, "menu-tools"), |ui| self.tools_menu(ui));
+        ui.menu_button(fl!(LANGUAGE_LOADER, "menu-help"), |ui| self.help_menu(ui));
+    }
+
+    fn file_menu(&mut self, ui: &mut egui::Ui) {
+        menu_width(ui);
         let context = ui.ctx().clone();
         let command = |key| shortcut(&context, Modifiers::COMMAND, key);
+        let command_shift = |key| shortcut(&context, Modifiers::COMMAND | Modifiers::SHIFT, key);
         let open = self.reader.package.is_some();
-        let selected = self.message_selected();
-        ui.set_min_width(240.0);
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-new-window"), &command_shift(Key::N), true) {
+            self.new_window = true;
+        }
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-open-packet"), &command(Key::O), !self.loader.picking) {
             self.loader.pick(&context);
         }
         let recent = self.recent.as_ref().map(|recent| recent.packets.clone()).unwrap_or_default();
         ui.add_enabled_ui(!recent.is_empty(), |ui| {
             ui.menu_button(fl!(LANGUAGE_LOADER, "menu-open-recent"), |ui| {
+                menu_width(ui);
                 for path in &recent {
                     let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
                     if ui.button(name).on_hover_text(path.display().to_string()).clicked() {
@@ -220,6 +239,24 @@ impl MailApp {
             self.modal = Some(Modal::PacketInfo);
         }
         ui.separator();
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-export-replies"), &command_shift(Key::E), self.draft_count() > 0) {
+            self.export(&context);
+        }
+        ui.separator();
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-settings"), &command(Key::Comma), true) {
+            self.open_settings(&context);
+        }
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-close-window"), &command(Key::W), true) {
+            self.close(&context);
+        }
+    }
+
+    fn message_menu(&mut self, ui: &mut egui::Ui) {
+        menu_width(ui);
+        let context = ui.ctx().clone();
+        let command = |key| shortcut(&context, Modifiers::COMMAND, key);
+        let open = self.reader.package.is_some();
+        let selected = self.message_selected();
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-new-message"), &command(Key::N), open) {
             self.new_draft(&context);
         }
@@ -229,42 +266,26 @@ impl MailApp {
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-forward"), &command(Key::L), selected) {
             self.reply(&context, true);
         }
-        if item(
-            ui,
-            &fl!(LANGUAGE_LOADER, "menu-export-replies"),
-            &shortcut(&context, Modifiers::COMMAND | Modifiers::SHIFT, Key::E),
-            self.draft_count() > 0,
-        ) {
-            self.export(&context);
-        }
         ui.separator();
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-next-unread"), "N", open) {
             self.next_unread(&context);
         }
         let unread = self.reader.selected_message.is_some_and(|index| !self.reader.is_read(index));
-        if item(
-            ui,
-            &if unread {
-                fl!(LANGUAGE_LOADER, "menu-mark-read")
-            } else {
-                fl!(LANGUAGE_LOADER, "menu-mark-unread")
-            },
-            "M",
-            selected,
-        ) {
+        let label = if unread {
+            fl!(LANGUAGE_LOADER, "menu-mark-read")
+        } else {
+            fl!(LANGUAGE_LOADER, "menu-mark-unread")
+        };
+        if item(ui, &label, "M", selected) {
             self.toggle_read(&context);
         }
         let starred = self.reader.selected_message.is_some_and(|index| self.reader.is_starred(index));
-        if item(
-            ui,
-            &if starred {
-                fl!(LANGUAGE_LOADER, "menu-unstar")
-            } else {
-                fl!(LANGUAGE_LOADER, "menu-star")
-            },
-            "S",
-            selected,
-        ) {
+        let label = if starred {
+            fl!(LANGUAGE_LOADER, "menu-unstar")
+        } else {
+            fl!(LANGUAGE_LOADER, "menu-star")
+        };
+        if item(ui, &label, "S", selected) {
             self.toggle_star(&context);
         }
         if item(
@@ -276,6 +297,75 @@ impl MailApp {
             self.mark_folder_read(&context);
         }
         ui.separator();
+        let tagline = selected && self.message_tagline().is_some();
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-save-tagline"), "T", tagline) {
+            self.save_tagline(&context);
+        }
+        if item(
+            ui,
+            &fl!(LANGUAGE_LOADER, "menu-add-author"),
+            &shortcut(&context, Modifiers::SHIFT, Key::A),
+            selected,
+        ) {
+            self.add_sender(&context);
+        }
+    }
+
+    fn view_menu(&mut self, ui: &mut egui::Ui) {
+        menu_width(ui);
+        let context = ui.ctx().clone();
+        let switch = shortcut(&context, Modifiers::COMMAND, Key::T);
+        for (mode, label) in [
+            (ViewMode::List, fl!(LANGUAGE_LOADER, "menu-view-list")),
+            (ViewMode::Threads, fl!(LANGUAGE_LOADER, "menu-view-threads")),
+        ] {
+            let button = egui::Button::selectable(self.reader.view_mode == mode, label).shortcut_text(egui::RichText::new(&switch).weak());
+            if ui.add(button).clicked() {
+                self.set_mode(mode);
+                ui.close();
+            }
+        }
+        let unread_only = self.reader.unread_only;
+        if ui
+            .add(egui::Button::selectable(unread_only, fl!(LANGUAGE_LOADER, "menu-unread-only")))
+            .clicked()
+        {
+            self.set_unread_only(!unread_only);
+            ui.close();
+        }
+        ui.separator();
+        ui.menu_button(fl!(LANGUAGE_LOADER, "menu-reading-pane"), |ui| {
+            menu_width(ui);
+            for pane in settings::READING_PANES {
+                if ui
+                    .add(egui::Button::selectable(self.reading_pane == pane, settings::reading_pane_name(pane)))
+                    .clicked()
+                {
+                    self.reading_pane = pane;
+                    ui.close();
+                }
+            }
+        });
+        ui.menu_button(fl!(LANGUAGE_LOADER, "menu-message-zoom"), |ui| {
+            menu_width(ui);
+            zoom_choices(ui, &mut self.settings.scaling_mode);
+        });
+        ui.menu_button(fl!(LANGUAGE_LOADER, "menu-appearance"), |ui| {
+            menu_width(ui);
+            let current = context.options(|options| options.theme_preference);
+            for theme in [Theme::System, Theme::Light, Theme::Dark] {
+                let preference = settings::theme_preference(theme);
+                if ui.add(egui::Button::selectable(current == preference, settings::theme_name(theme))).clicked() {
+                    context.set_theme(preference);
+                    ui.close();
+                }
+            }
+        });
+    }
+
+    fn tools_menu(&mut self, ui: &mut egui::Ui) {
+        menu_width(ui);
+        let context = ui.ctx().clone();
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-address-book"), "A", true) {
             self.open_address_book(false);
         }
@@ -287,74 +377,15 @@ impl MailApp {
         ) {
             self.open_taglines(false);
         }
-        if item(
-            ui,
-            &fl!(LANGUAGE_LOADER, "menu-add-author"),
-            &shortcut(&context, Modifiers::SHIFT, Key::A),
-            selected && self.folder.holds_messages(),
-        ) {
-            self.add_sender(&context);
-        }
-        let tagline = selected && self.message_tagline().is_some();
-        if item(ui, &fl!(LANGUAGE_LOADER, "menu-save-tagline"), "T", tagline) {
-            self.save_tagline(&context);
-        }
-        ui.separator();
-        ui.menu_button(fl!(LANGUAGE_LOADER, "menu-view"), |ui| {
-            ui.set_min_width(200.0);
-            for (mode, label) in [
-                (ViewMode::List, fl!(LANGUAGE_LOADER, "menu-view-list")),
-                (ViewMode::Threads, fl!(LANGUAGE_LOADER, "menu-view-threads")),
-            ] {
-                let button = egui::Button::selectable(self.reader.view_mode == mode, label).shortcut_text(egui::RichText::new(command(Key::T)).weak());
-                if ui.add(button).clicked() {
-                    self.set_mode(mode);
-                    ui.close();
-                }
-            }
-            ui.separator();
-            let mut unread_only = self.reader.unread_only;
-            if ui.checkbox(&mut unread_only, fl!(LANGUAGE_LOADER, "menu-unread-only")).changed() {
-                self.set_unread_only(unread_only);
-            }
-            ui.separator();
-            ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "menu-reading-pane")).weak());
-            for pane in settings::READING_PANES {
-                if ui
-                    .add(egui::Button::selectable(self.reading_pane == pane, settings::reading_pane_name(pane)))
-                    .clicked()
-                {
-                    self.reading_pane = pane;
-                    ui.close();
-                }
-            }
-            ui.separator();
-            ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "menu-message-zoom")).weak());
-            zoom_choices(ui, &mut self.settings.scaling_mode);
-            ui.separator();
-            ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "menu-appearance")).weak());
-            egui::widgets::global_theme_preference_buttons(ui);
-        });
-        if item(ui, &fl!(LANGUAGE_LOADER, "menu-settings"), &command(Key::Comma), true) {
-            self.open_settings(&context);
-        }
+    }
+
+    fn help_menu(&mut self, ui: &mut egui::Ui) {
+        menu_width(ui);
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-keyboard-shortcuts"), "F1", true) {
             self.modal = Some(Modal::Shortcuts);
         }
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-about"), "", true) {
             self.open_about();
-        }
-        ui.separator();
-        if item(
-            ui,
-            &fl!(LANGUAGE_LOADER, "menu-new-window"),
-            &shortcut(&context, Modifiers::COMMAND | Modifiers::SHIFT, Key::N),
-            true,
-        ) {
-            self.new_window = true;
-        }
-        if item(ui, &fl!(LANGUAGE_LOADER, "menu-close-window"), &command(Key::W), true) {
-            self.close(&context);
         }
     }
 

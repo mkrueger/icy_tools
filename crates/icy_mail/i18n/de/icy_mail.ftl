@@ -21,6 +21,10 @@ search-message-error = Nachricht { $number } konnte nicht durchsucht werden: { $
 toolbar-search-clear = Suche löschen (Esc)
 
 # Main menu
+menu-file = Datei
+menu-message = Nachricht
+menu-tools = Werkzeuge
+menu-help = Hilfe
 menu-open-packet = Paket öffnen…
 menu-open-recent = Zuletzt geöffnet
 menu-reload-packet = Paket neu laden

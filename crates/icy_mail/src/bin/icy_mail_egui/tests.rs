@@ -2105,6 +2105,27 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
         label(&output, "TEST BBS");
     }
     gpu.context.set_theme(egui::Theme::Dark);
+    let (_, output) = gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+    let menu = egui::pos2(1100.0 - 8.0 - widgets::TOOL_SIZE.x / 2.0, label(&output, "Search messages").center().y);
+    gpu.capture(&mut mail, [1100, 760], 1.0, pointer(menu, true), "warmup");
+    gpu.capture(&mut mail, [1100, 760], 1.0, pointer(menu, false), "warmup");
+    let (_, output) = gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "menu");
+    let (_, output) = gpu.capture(
+        &mut mail,
+        [1100, 760],
+        1.0,
+        vec![egui::Event::PointerMoved(label(&output, "Message").center())],
+        "warmup",
+    );
+    let message = label(&output, "Message").center();
+    gpu.capture(&mut mail, [1100, 760], 1.0, pointer(message, true), "warmup");
+    gpu.capture(&mut mail, [1100, 760], 1.0, pointer(message, false), "warmup");
+    for _ in 0..3 {
+        gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+    }
+    let (_, output) = gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "menu-message");
+    label(&output, "Next Unread");
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![key(egui::Key::Escape, egui::Modifiers::NONE)], "warmup");
     welcome.open_about();
     for _ in 0..3 {
         gpu.capture(&mut welcome, [1100, 760], 1.0, vec![], "warmup");
@@ -2480,4 +2501,43 @@ fn dragging_a_file_over_the_start_page_highlights_the_drop_zone() {
         |context| mail.show(context),
     );
     label(&output, "Release to open the packet");
+}
+
+#[test]
+fn main_menu_groups_actions_and_opens_a_new_window() {
+    let context = egui::Context::default();
+    context.set_embed_viewports(false);
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    let output = settle(&context, &mut mail, size);
+    let toolbar = label(&output, "Search messages").center().y;
+    let menu = egui::pos2(size.x - 8.0 - widgets::TOOL_SIZE.x / 2.0, toolbar);
+    for pressed in [true, false] {
+        frame(&context, &mut mail, size, pointer(menu, pressed));
+    }
+    let output = settle(&context, &mut mail, size);
+    for title in ["File", "Message", "View", "Tools", "Help"] {
+        label(&output, title);
+    }
+    for hidden in ["New Window", "Reply", "Address Book\u{2026}", "About Icy Mail"] {
+        assert_eq!(count(&output, hidden), 0, "{hidden} belongs in a submenu");
+    }
+    let file = label(&output, "File").center();
+    frame(&context, &mut mail, size, vec![egui::Event::PointerMoved(file)]);
+    for pressed in [true, false] {
+        frame(&context, &mut mail, size, pointer(file, pressed));
+    }
+    let output = settle(&context, &mut mail, size);
+    let new_window = label(&output, "New Window");
+    assert!(
+        new_window.top() <= label(&output, "Open Packet\u{2026}").top(),
+        "New Window leads the File menu"
+    );
+    frame(&context, &mut mail, size, vec![egui::Event::PointerMoved(new_window.center())]);
+    for pressed in [true, false] {
+        frame(&context, &mut mail, size, pointer(new_window.center(), pressed));
+    }
+    let output = frame(&context, &mut mail, size, vec![]);
+    assert_eq!(output.viewport_output.len(), 2, "a second window was opened");
 }

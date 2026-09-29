@@ -25,7 +25,7 @@ pub const ZOOMS: [ScalingMode; 4] = [
     ScalingMode::Manual(2.0),
 ];
 
-fn theme_name(theme: Theme) -> String {
+pub fn theme_name(theme: Theme) -> String {
     match theme {
         Theme::System => fl!(LANGUAGE_LOADER, "settings-theme-follow-system"),
         Theme::Light => fl!(LANGUAGE_LOADER, "settings-theme-light"),
@@ -51,7 +51,7 @@ pub fn reading_pane_name(pane: ReadingPane) -> String {
     }
 }
 
-fn theme_preference(theme: Theme) -> egui::ThemePreference {
+pub fn theme_preference(theme: Theme) -> egui::ThemePreference {
     match theme {
         Theme::System => egui::ThemePreference::System,
         Theme::Light => egui::ThemePreference::Light,

@@ -34,7 +34,11 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
 
 - Three-pane layout: mailboxes and conferences, message list, and reader.
   The reader sits beside the list on wide windows and below it otherwise;
-  **Reading Pane** in the View menu or the settings fixes either placement.
+  **View ▸ Reading Pane** in the main menu or the settings fixes either placement.
+  The ☰ main menu groups everything under **File** (new window, open, recent,
+  reload, export, settings), **Message**, **View**, **Tools** (address book,
+  taglines) and **Help**; **File ▸ New Window** (Ctrl/Cmd+Shift+N) opens
+  another window for a second packet.
   Windows narrower than 760 px switch to a single pane with
   Folders/Messages/Message tabs; short windows collapse the message header.
 - **Bulletins** appears when the packet contains welcome/news screens, bulletins,
@@ -96,7 +100,7 @@ message filter; search fields and open dialogs retain their own Escape behavior.
 
 Use **New** (Ctrl/Cmd+N) from the toolbar, or **Reply** (Ctrl/Cmd+R) and
 **Forward** (Ctrl/Cmd+L) from the reader header, the message context menu or
-the menu. The composer
+**Message** in the main menu. The composer
 replaces the reader pane: choose the conference and privacy, edit recipient,
 subject and sender (with QWK's 25 character limits shown), and write the
 message in the BBS editor described below.
@@ -168,7 +172,7 @@ characters.
   **Random** or **No Tagline**.
 - **T** or **Save Tagline** in the reader header's **⋯** menu saves the tagline of the shown
   message (its last `... ` line) to the list, like MultiMail's tagline stealer.
-- Ctrl/Cmd+Shift+T or **Taglines…** in the menu manages the list: add, edit
+- Ctrl/Cmd+Shift+T or **Tools ▸ Taglines…** manages the list: add, edit
   (Enter) and delete (Delete) entries.
 
 ## Address book
@@ -177,7 +181,7 @@ Contacts are stored in `addressbook.txt` in the user data directory in
 MultiMail's address book format (name line, address line, blank line; Internet
 addresses are recognized by their `@`).
 
-- **A** or **Address Book…** in the menu opens it: filter, add, edit and delete
+- **A** or **Tools ▸ Address Book…** opens it: filter, add, edit and delete
   contacts, or **Write Message** to start a new message to the selected one.
 - **Shift+A** or the reader header's **⋯** menu adds the author of the
   shown message.
