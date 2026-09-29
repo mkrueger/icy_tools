@@ -2722,6 +2722,9 @@ async fn wait_for_transfer<Future: std::future::Future>(
 }
 
 fn copy_downloaded_files(transfer_state: &mut TransferState, download_dir: Option<&PathBuf>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if transfer_state.recieve_state.finished_files.is_empty() {
+        return Ok(());
+    }
     let upload_location = if let Some(dir) = download_dir {
         dir.clone()
     } else if let Some(dirs) = UserDirs::new() {
