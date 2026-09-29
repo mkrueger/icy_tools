@@ -193,11 +193,23 @@ impl MailApp {
                 vec![
                     ("\u{2191}+\u{2193}".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-previous-next-entry")),
                     ("\u{2190}+\u{2192}".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-collapse-expand-thread")),
+                    (
+                        format!(
+                            "{}+{}",
+                            shortcut(context, Modifiers::SHIFT, Key::ArrowLeft),
+                            shortcut(context, Modifiers::SHIFT, Key::ArrowRight)
+                        ),
+                        fl!(LANGUAGE_LOADER, "shortcuts-reading-collapse-expand-all-threads"),
+                    ),
                     ("Tab".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-next-pane")),
                     ("Enter".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-open-selected-folder-message")),
                     ("Space".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-page-down-next-unread")),
                     ("N".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-next-unread")),
                     ("M".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-mark-read-unread")),
+                    (
+                        shortcut(context, Modifiers::SHIFT, Key::M),
+                        fl!(LANGUAGE_LOADER, "shortcuts-reading-mark-thread-read"),
+                    ),
                     ("S".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-star")),
                     (
                         shortcut(context, Modifiers::SHIFT, Key::C),

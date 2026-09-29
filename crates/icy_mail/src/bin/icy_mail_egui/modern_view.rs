@@ -5,6 +5,7 @@
 use std::ops::Range;
 
 use eframe::egui::{self, Color32};
+use i18n_embed_fl::fl;
 use icy_engine::{Rectangle, RenderOptions, TextPane, TextScreen};
 use icy_engine_gui::egui::appearance;
 use icy_mail::{
@@ -12,9 +13,48 @@ use icy_mail::{
     options::{ModernFont, ReadingMode, MODERN_FONT_SIZES},
     reader::{render_body, render_body_wide, render_file_page, render_file_page_wide, Pane},
     text::{styled_lines, StyledSpan},
+    LANGUAGE_LOADER,
 };
 
 use super::{app::MailApp, widgets};
+
+/// Quotes of at least this many lines fold away below their first [`QUOTE_CONTEXT`] lines.
+const FOLD_QUOTE_LINES: usize = 6;
+/// Quoted lines that stay visible above a folded quote, to show what is answered.
+const QUOTE_CONTEXT: usize = 2;
+
+/// One piece of the modern view: text, art, or the switch of a long quote.
+enum Part {
+    Text(egui::text::LayoutJob),
+    Art(egui::TextureHandle),
+    /// The quote starting at item `start` with `hidden` more lines below its context.
+    Fold {
+        start: usize,
+        hidden: usize,
+        open: bool,
+    },
+}
+
+/// Long quotes as `(first item, first folded item, end)`, see [`FOLD_QUOTE_LINES`].
+fn quote_folds(items: &[Item]) -> Vec<(usize, usize, usize)> {
+    let quote = |item: &Item| matches!(item, Item::Text(line) if line.quote);
+    let mut folds = Vec::new();
+    let mut index = 0;
+    while index < items.len() {
+        if !quote(&items[index]) {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < items.len() && quote(&items[index]) {
+            index += 1;
+        }
+        if index - start >= FOLD_QUOTE_LINES {
+            folds.push((start, start + QUOTE_CONTEXT, index));
+        }
+    }
+    folds
+}
 
 /// Space between the text and the edges of the reading pane.
 const MARGIN: egui::Vec2 = egui::vec2(24.0, 16.0);
@@ -420,6 +460,7 @@ impl MailApp {
                 }
             };
             self.modern_items = Some((key, rendered));
+            self.open_quotes.clear();
         }
         if let Some(zoom) = ui.input(|input| (input.zoom_delta() != 1.0).then(|| input.zoom_delta())) {
             if ui.rect_contains_pointer(ui.available_rect_before_wrap()) {
@@ -460,14 +501,42 @@ impl MailApp {
             job
         };
         let mut job = new_job();
-        let mut parts: Vec<Result<egui::text::LayoutJob, egui::TextureHandle>> = Vec::new();
-        for item in self.modern_items.as_ref().map_or(&[][..], |(_, items)| items.as_slice()) {
+        let mut parts: Vec<Part> = Vec::new();
+        let items = self.modern_items.as_ref().map_or(&[][..], |(_, items)| items.as_slice());
+        let folds = quote_folds(items);
+        let lowered = needle.to_lowercase();
+        let mut skip_until = 0;
+        for (index, item) in items.iter().enumerate() {
+            if index < skip_until {
+                continue;
+            }
+            if let Some(&(start, _, end)) = folds.iter().find(|(_, folded, _)| *folded == index) {
+                if !job.text.is_empty() {
+                    parts.push(Part::Text(std::mem::replace(&mut job, new_job())));
+                }
+                // A search match inside the quote opens it, so the match is not hidden.
+                let matched = !lowered.is_empty()
+                    && items[index..end].iter().any(|item| match item {
+                        Item::Text(line) => line.spans.iter().any(|span| span.text.to_lowercase().contains(&lowered)),
+                        Item::Art(_) => false,
+                    });
+                let open = matched || self.open_quotes.contains(&start);
+                parts.push(Part::Fold {
+                    start,
+                    hidden: end - index,
+                    open,
+                });
+                if !open {
+                    skip_until = end;
+                    continue;
+                }
+            }
             let line = match item {
                 Item::Art(texture) => {
                     if !job.text.is_empty() {
-                        parts.push(Ok(std::mem::replace(&mut job, new_job())));
+                        parts.push(Part::Text(std::mem::replace(&mut job, new_job())));
                     }
-                    parts.push(Err(texture.clone()));
+                    parts.push(Part::Art(texture.clone()));
                     continue;
                 }
                 Item::Text(line) => line,
@@ -525,7 +594,7 @@ impl MailApp {
             }
         }
         if !job.text.is_empty() {
-            parts.push(Ok(job));
+            parts.push(Part::Text(job));
         }
 
         let mut scroll = egui::ScrollArea::vertical().id_salt("modern-body").auto_shrink([false, false]);
@@ -538,6 +607,7 @@ impl MailApp {
         } else if self.screen.scroll_to.is_some() {
             ui.ctx().request_repaint();
         }
+        let mut toggle = None;
         let output = scroll.show(ui, |ui| {
             egui::Frame::new()
                 .inner_margin(egui::Margin::symmetric(MARGIN.x as i8, MARGIN.y as i8))
@@ -546,14 +616,31 @@ impl MailApp {
                     let mut response = ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover());
                     for part in parts {
                         let part_response = match part {
-                            Ok(mut job) => {
+                            Part::Text(mut job) => {
                                 widgets::highlight(&mut job, 0, &needle, ui);
                                 ui.add(egui::Label::new(job).selectable(true))
                             }
-                            Err(texture) => {
+                            Part::Art(texture) => {
                                 let size = texture.size_vec2() * art_scale;
                                 let size = size * (text_width / size.x).min(1.0);
                                 ui.add(egui::Image::new((texture.id(), size)))
+                            }
+                            Part::Fold { start, hidden, open } => {
+                                let text = if open {
+                                    format!("\u{25be}  {}", fl!(LANGUAGE_LOADER, "modern-quote-fold"))
+                                } else {
+                                    format!("\u{25b8}  {}", fl!(LANGUAGE_LOADER, "modern-quote-unfold", count = hidden))
+                                };
+                                ui.add_space(2.0);
+                                let link = egui::RichText::new(text).size((size * 0.85).max(11.0)).color(widgets::accent(ui));
+                                let fold = ui
+                                    .add(egui::Label::new(link).sense(egui::Sense::click()).selectable(false))
+                                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                ui.add_space(2.0);
+                                if fold.clicked() {
+                                    toggle = Some((start, !open));
+                                }
+                                fold
                             }
                         };
                         response = response.union(part_response);
@@ -562,6 +649,13 @@ impl MailApp {
                 })
                 .inner
         });
+        if let Some((start, open)) = toggle {
+            if open {
+                self.open_quotes.insert(start);
+            } else {
+                self.open_quotes.remove(&start);
+            }
+        }
         let max = (output.content_size - output.inner_rect.size()).max(egui::Vec2::ZERO);
         self.screen.offset = egui::vec2(0.0, output.state.offset.y.min(max.y));
         self.screen.max_offset = egui::vec2(0.0, max.y);

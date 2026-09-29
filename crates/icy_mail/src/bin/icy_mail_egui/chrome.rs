@@ -335,6 +335,14 @@ impl MailApp {
         ) {
             self.mark_folder_read(&context);
         }
+        if item(
+            ui,
+            &fl!(LANGUAGE_LOADER, "menu-mark-thread-read"),
+            &shortcut(&context, Modifiers::SHIFT, Key::M),
+            self.thread_selected(),
+        ) {
+            self.mark_thread_read(&context);
+        }
         ui.separator();
         let tagline = selected && self.message_tagline().is_some();
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-save-tagline"), "T", tagline) {
@@ -379,6 +387,23 @@ impl MailApp {
         {
             self.set_unread_only(!unread_only);
             ui.close();
+        }
+        let threads = self.reader.package.is_some() && self.reader.view_mode == ViewMode::Threads;
+        if item(
+            ui,
+            &fl!(LANGUAGE_LOADER, "menu-collapse-all-threads"),
+            &shortcut(&context, Modifiers::SHIFT, Key::ArrowLeft),
+            threads,
+        ) {
+            self.set_all_threads_collapsed(true);
+        }
+        if item(
+            ui,
+            &fl!(LANGUAGE_LOADER, "menu-expand-all-threads"),
+            &shortcut(&context, Modifiers::SHIFT, Key::ArrowRight),
+            threads,
+        ) {
+            self.set_all_threads_collapsed(false);
         }
         ui.separator();
         ui.menu_button(fl!(LANGUAGE_LOADER, "menu-reading-pane"), |ui| {

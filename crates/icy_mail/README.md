@@ -60,7 +60,10 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
   message for later; **Starred** lists them. Stars are saved with the read
   marks, and a message unstarred there stays listed until the folder is
   reopened, so a slip can be undone.
-- Sortable columns, list or thread view, and an **Unread** filter. In threads,
+- Sortable columns, list or thread view, and an **Unread** filter. In the
+  thread view, **Mark Thread as Read** (Shift+M, also in the message's context
+  menu) and **Collapse/Expand All Threads** (Shift+←/→, View menu) act on whole
+  threads. In threads,
   the part of a reply's subject that repeats its parent (`Re:`, the whole
   subject or shared leading words such as a newsletter title) is dimmed. Dates in the
   lists read “Today”, “Yesterday” or the weekday during the past week; the
@@ -93,7 +96,9 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
   selectable text, in the fixed-width font unless the proportional one is
   chosen. Text wraps at the pane's width rather than at 80 columns, ANSI
   colors are kept but adjusted where they would be hard to read on the theme,
-  CP437 box drawing becomes Unicode, and plain quote lines are dimmed. Tables
+  CP437 box drawing becomes Unicode, and plain quote lines are dimmed; quotes
+  of six lines or more fold below their first two lines (click to unfold; a
+  search match inside opens them). Tables
   and lines with aligned columns use the fixed-width font. ANSI art is drawn
   with the BBS font on the 80 column grid, exactly as in the classic view, at
   the size of the fixed-width text: a paragraph with block graphics (▀ ▄ █ ░ ▒
@@ -229,6 +234,8 @@ addresses are recognized by their `@`).
 | Space | Page down, then next unread message |
 | N | Next unread message (continues into the next conference) |
 | M | Toggle read/unread |
+| Shift+M | Mark the thread read |
+| Shift+←/→ | Collapse/expand all threads |
 | S | Star or unstar the message |
 | Shift+C | Mark folder read |
 | Arrows, Home/End, Page Up/Down | Navigate the focused pane |

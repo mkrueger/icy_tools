@@ -155,6 +155,8 @@ pub struct MailApp {
     /// The shown message as text and rendered art for the modern reading mode, built on first use
     /// and keyed by the packet and message they came from.
     pub modern_items: Option<((usize, Document), Vec<Item>)>,
+    /// Long quotes the reader unfolded in the shown document, by their first item.
+    pub open_quotes: std::collections::HashSet<usize>,
     /// Networks the user opened or closed in the sidebar, by lowercased name; others follow their unread state.
     pub network_open: HashMap<String, bool>,
     pub taglines: Option<Taglines>,
@@ -252,6 +254,7 @@ impl MailApp {
             modern_font: options.modern_font,
             modern_font_size: options.modern_font_size,
             modern_items: None,
+            open_quotes: std::collections::HashSet::new(),
             network_open: HashMap::new(),
             options,
             options_save_after: None,
@@ -796,6 +799,31 @@ impl MailApp {
     pub fn toggle_star(&mut self, context: &egui::Context) {
         if let Some(index) = self.reader.selected_message.filter(|_| self.message_selected()) {
             self.set_starred(context, index, !self.reader.is_starred(index));
+        }
+    }
+
+    /// Whether thread actions apply: the thread view with a message selected.
+    pub fn thread_selected(&self) -> bool {
+        self.message_selected() && self.reader.view_mode == ViewMode::Threads
+    }
+
+    /// Marks every message of the selected message's thread read.
+    pub fn mark_thread_read(&mut self, context: &egui::Context) {
+        let Some(index) = self.reader.selected_message.filter(|_| self.thread_selected()) else {
+            return;
+        };
+        let thread = self.reader.thread_of(index);
+        let count = thread.iter().filter(|index| !self.reader.is_read(**index)).count();
+        self.set_read(context, &thread, true);
+        if count > 0 {
+            self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-marked-read", count = count));
+        }
+    }
+
+    /// Collapses every thread to its first message, or expands them all.
+    pub fn set_all_threads_collapsed(&mut self, collapsed: bool) {
+        if self.reader.view_mode == ViewMode::Threads && self.reader.set_all_collapsed(collapsed) {
+            self.reveal_message = true;
         }
     }
 
@@ -1560,6 +1588,15 @@ impl MailApp {
             if key(context, Key::ArrowRight, false, false) && self.reader.expand_or_child() {
                 self.reveal_message = true;
             }
+            if key(context, Key::ArrowLeft, false, true) {
+                self.set_all_threads_collapsed(true);
+            }
+            if key(context, Key::ArrowRight, false, true) {
+                self.set_all_threads_collapsed(false);
+            }
+        }
+        if key(context, Key::M, false, true) {
+            self.mark_thread_read(context);
         }
         if key(context, Key::Space, false, false) && self.folder != Folder::Drafts {
             if self.folder == Folder::Bulletins || self.screen.offset.y + 1.0 < self.screen.max_offset.y {

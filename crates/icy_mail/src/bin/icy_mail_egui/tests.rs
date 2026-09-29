@@ -2914,6 +2914,27 @@ fn gpu_modern_reading_mode() {
         gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
     }
     gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "search-fields");
+    frame(
+        &gpu.context,
+        &mut mail,
+        egui::vec2(1100.0, 760.0),
+        vec![key(egui::Key::Escape, egui::Modifiers::NONE)],
+    );
+    let quote: String = (1..=12)
+        .map(|line| format!(" AL> The facility team said it will take some time, part {line}.\r\n"))
+        .collect();
+    let body = format!("Hi Alice,\r\n\r\n{quote}\r\nThanks for the update, I will bring my own coffee then.\r\n");
+    let classic = icy_mail::reader::render_body(body.as_bytes()).unwrap();
+    let wide = icy_mail::reader::render_body_wide(body.as_bytes()).unwrap();
+    let quote_key = (
+        Arc::as_ptr(&package) as usize,
+        modern_view::Document::Message(mail.reader.selected_message.unwrap()),
+    );
+    mail.modern_items = Some((quote_key, modern_view::items(&gpu.context, &classic, modern_view::blocks(&classic, &wide))));
+    for _ in 0..3 {
+        gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+    }
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "modern-quote-fold");
 }
 
 #[test]
@@ -3076,4 +3097,72 @@ fn magnifier_menu_limits_what_the_search_looks_at() {
     settle(&context, &mut mail, size);
     assert!(!mail.reader.messages.is_empty(), "subjects still match");
     assert!(!mail.current_options(&context).search_fields.text, "the choice is saved");
+}
+
+#[test]
+fn long_quotes_fold_below_their_first_lines() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    let quote: String = (1..=10).map(|line| format!(" AL> quoted line {line}\r\n")).collect();
+    let body = format!("Hi Alice,\r\n\r\n{quote}\r\nMy answer.\r\n");
+    let classic = icy_mail::reader::render_body(body.as_bytes()).unwrap();
+    let wide = icy_mail::reader::render_body_wide(body.as_bytes()).unwrap();
+    let key = (
+        Arc::as_ptr(mail.reader.package.as_ref().unwrap()) as usize,
+        modern_view::Document::Message(mail.reader.selected_message.unwrap()),
+    );
+    mail.modern_items = Some((key, modern_view::items(&context, &classic, modern_view::blocks(&classic, &wide))));
+    let text = |output: &egui::FullOutput| -> String {
+        output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) => Some(text.galley.text().to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let output = settle(&context, &mut mail, size);
+    let shown = text(&output);
+    assert!(shown.contains("quoted line 2") && !shown.contains("quoted line 3"), "{shown}");
+    assert!(shown.contains("My answer."), "the answer after the quote stays visible");
+    click_label(&context, &mut mail, size, "\u{25b8}  8 more quoted lines");
+    let shown = text(&settle(&context, &mut mail, size));
+    assert!(shown.contains("quoted line 10"), "{shown}");
+    click_label(&context, &mut mail, size, "\u{25be}  Fold the quote");
+    let shown = text(&settle(&context, &mut mail, size));
+    assert!(!shown.contains("quoted line 10"));
+
+    // A search match inside the quote unfolds it.
+    // The seeded text is not the packet's, so the background search must not filter the message away.
+    mail.reader.filter = "line 9".into();
+    mail.loader.search_query = Some("line 9".into());
+    let shown = text(&settle(&context, &mut mail, size));
+    assert!(shown.contains("quoted line 9"), "{shown}");
+}
+
+#[test]
+fn threads_can_be_marked_read_and_folded_together() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    mail.set_mode(ViewMode::Threads);
+    settle(&context, &mut mail, size);
+    let reply = mail.reader.messages.iter().find(|row| row.depth > 0).unwrap().index;
+    let thread = mail.reader.thread_of(reply);
+    mail.reader.select_message(thread[0]);
+    mail.set_focus(Pane::Messages, &context);
+    frame(&context, &mut mail, size, vec![key(egui::Key::M, egui::Modifiers::SHIFT)]);
+    assert!(thread.iter().all(|index| mail.reader.is_read(*index)), "Shift+M marks the whole thread read");
+
+    let threads = mail.reader.messages.iter().filter(|row| row.depth == 0).count();
+    frame(&context, &mut mail, size, vec![key(egui::Key::ArrowLeft, egui::Modifiers::SHIFT)]);
+    assert_eq!(mail.reader.messages.len(), threads, "Shift+Left collapses every thread");
+    frame(&context, &mut mail, size, vec![key(egui::Key::ArrowRight, egui::Modifiers::SHIFT)]);
+    assert!(mail.reader.messages.iter().any(|row| row.index == reply), "Shift+Right expands them again");
 }

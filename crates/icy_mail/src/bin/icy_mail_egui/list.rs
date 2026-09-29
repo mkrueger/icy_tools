@@ -341,6 +341,10 @@ impl MailApp {
                                 action = Some(("toggle", index));
                                 ui.close();
                             }
+                            if threaded && ui.button(fl!(LANGUAGE_LOADER, "list-mark-thread-read")).clicked() {
+                                action = Some(("thread", index));
+                                ui.close();
+                            }
                             let label = if starred {
                                 fl!(LANGUAGE_LOADER, "list-unstar")
                             } else {
@@ -395,6 +399,7 @@ impl MailApp {
                 "reply" => self.reply(&context, false),
                 "forward" => self.reply(&context, true),
                 "star" => self.set_starred(&context, index, !self.reader.is_starred(index)),
+                "thread" => self.mark_thread_read(&context),
                 _ => {
                     let read = !self.reader.is_read(index);
                     self.set_read(&context, &[index], read);

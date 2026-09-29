@@ -463,6 +463,41 @@ impl Reader {
         self.set_collapsed(index, !self.is_collapsed(index))
     }
 
+    /// Every message of the thread `index` belongs to, the thread's first message first. Only the
+    /// thread view knows threads; elsewhere this is just the message itself.
+    pub fn thread_of(&self, index: usize) -> Vec<usize> {
+        let Some(position) = self.all_position(index).filter(|_| self.view_mode == ViewMode::Threads) else {
+            return vec![index];
+        };
+        let root = self.all_messages[..=position].iter().rposition(|row| row.depth == 0).unwrap_or(position);
+        let end = root + self.all_messages[root].descendants as usize;
+        self.all_messages[root..=end].iter().map(|row| row.index).collect()
+    }
+
+    /// Collapses every thread to its first message, or expands them all. A selected reply moves to its
+    /// thread's first message. Returns whether anything changed.
+    pub fn set_all_collapsed(&mut self, collapsed: bool) -> bool {
+        let before = self.collapsed.len();
+        if collapsed {
+            let roots: Vec<usize> = self
+                .all_messages
+                .iter()
+                .filter(|row| row.depth == 0 && row.descendants > 0)
+                .map(|row| row.index)
+                .collect();
+            if let Some(root) = self.selected_message.and_then(|selected| self.thread_of(selected).first().copied()) {
+                self.selected_message = Some(root);
+            }
+            self.collapsed.clear();
+            self.collapsed.extend(roots);
+        } else {
+            self.collapsed.clear();
+        }
+        let changed = before != self.collapsed.len() || collapsed;
+        self.apply_collapsed();
+        changed
+    }
+
     /// Unread replies below a message, at any depth.
     pub fn unread_replies(&self, index: usize) -> usize {
         self.all_position(index).map_or(0, |position| {
@@ -881,6 +916,36 @@ mod tests {
         assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [1, 3]);
         reader.select_conference(Some(2));
         assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [3]);
+    }
+
+    #[test]
+    fn threads_are_marked_and_folded_as_a_whole() {
+        let (_dir, mut reader) = loaded();
+        reader.view_mode = ViewMode::Threads;
+        reader.rebuild_messages();
+        let roots: Vec<usize> = reader.messages.iter().filter(|row| row.depth == 0).map(|row| row.index).collect();
+        let (root, reply) = reader
+            .messages
+            .iter()
+            .find(|row| row.depth > 0)
+            .map(|reply| {
+                let root = reader.thread_of(reply.index)[0];
+                (root, reply.index)
+            })
+            .unwrap();
+        assert_eq!(reader.thread_of(reply), reader.thread_of(root), "a reply belongs to its root's thread");
+        assert!(reader.thread_of(root).contains(&reply));
+
+        reader.select_message(reply);
+        assert!(reader.set_all_collapsed(true));
+        assert_eq!(reader.selected_message, Some(root), "the selection moves up to the collapsed thread");
+        assert_eq!(reader.messages.len(), roots.len(), "only the threads' first messages stay");
+        reader.set_all_collapsed(false);
+        assert!(reader.messages.iter().any(|row| row.index == reply));
+
+        reader.view_mode = ViewMode::List;
+        reader.rebuild_messages();
+        assert_eq!(reader.thread_of(reply), [reply], "the flat list has no threads");
     }
 
     #[test]
