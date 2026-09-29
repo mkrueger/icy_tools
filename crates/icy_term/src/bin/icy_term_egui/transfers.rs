@@ -211,7 +211,7 @@ impl Transfers {
     }
 
     pub fn menu(&mut self, ui: &mut egui::Ui, connected: bool) {
-        use super::hotkeys::{Action, shortcut};
+        use super::hotkeys::{shortcut, Action};
         ui.add_enabled_ui(connected && !self.active, |ui| {
             if ui
                 .add(egui::Button::new(&*tr!("egui-upload-command")).shortcut_text(shortcut(Action::Upload)))
