@@ -63,6 +63,35 @@ impl MailApp {
                     self.modal = None;
                 }
             }
+            Modal::Exported(path) => {
+                let path = path.clone();
+                let response = appearance::MessageBox::new(
+                    "mail-exported",
+                    appearance::MessageKind::Info,
+                    fl!(LANGUAGE_LOADER, "dialog-mail-exported-title"),
+                    fl!(LANGUAGE_LOADER, "dialog-mail-exported-message", path = path.display().to_string()),
+                )
+                .copyable()
+                .buttons([
+                    appearance::DialogButton::cancel(appearance::labels::close(), false).cancels(),
+                    appearance::DialogButton::primary(fl!(LANGUAGE_LOADER, "dialog-mail-open-folder"), true),
+                ])
+                .show(context);
+                if let Some(open_folder) = response.action.or(response.dismissed.then_some(false)) {
+                    self.modal = None;
+                    if open_folder {
+                        let folder = path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| std::path::Path::new("."));
+                        if let Err(error) = open::that(folder) {
+                            self.error = Some(fl!(
+                                LANGUAGE_LOADER,
+                                "dialog-mail-open-folder-error",
+                                path = folder.display().to_string(),
+                                error = error.to_string()
+                            ));
+                        }
+                    }
+                }
+            }
             Modal::DeleteDraft(id) => {
                 let id = *id;
                 let title = self

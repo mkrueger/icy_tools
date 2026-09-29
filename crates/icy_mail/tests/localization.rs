@@ -63,18 +63,26 @@ fn german_locale_formats_labels_plurals_and_placeholders() {
         assert_eq!(loader.get_args("status-drafts", HashMap::from([("count", count)])), expected);
     }
     for (key, singular, plural) in [
-        ("status-replies-to-send", "1 Antwort zum Senden", "2 Antworten zum Senden"),
+        ("status-outbox-drafts", "1 Entwurf im Postausgang", "2 Entwürfe im Postausgang"),
         ("notice-marked-read", "1 Nachricht als gelesen markiert", "2 Nachrichten als gelesen markiert"),
         (
             "composer-draft-saved-outbox",
-            "Entwurf gespeichert - 1 Nachricht im Postausgang",
-            "Entwurf gespeichert - 2 Nachrichten im Postausgang",
+            "Entwurf im Postausgang gespeichert, noch nicht versendet. Exportiere die Antworten, wenn du bereit bist.",
+            "Entwurf im Postausgang gespeichert (2 Entwürfe), noch nicht versendet. Exportiere die Antworten, wenn du bereit bist.",
         ),
         ("list-draft-count", "1 Nachricht", "2 Nachrichten"),
     ] {
         assert_eq!(loader.get_args(key, HashMap::from([("count", 1)])), singular);
         assert_eq!(loader.get_args(key, HashMap::from([("count", 2)])), plural);
     }
+    assert!(loader.get("list-outbox-steps").contains(".REP-Datei"));
+    assert_eq!(
+        loader.get_args("toolbar-reading-progress", HashMap::from([("read", 2), ("total", 5), ("unread", 3)])),
+        "2 von 5 gelesen · 3 ungelesen"
+    );
+    assert!(loader
+        .get_args("dialog-mail-exported-message", HashMap::from([("path", "/tmp/OUT.rep")]))
+        .contains("/tmp/OUT.rep"));
     assert_eq!(
         loader.get_args_concrete(
             "draft-issue-field-too-long",

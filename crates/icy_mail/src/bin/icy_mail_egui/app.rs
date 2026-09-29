@@ -71,6 +71,7 @@ pub enum Modal {
     About,
     Shortcuts,
     PacketInfo,
+    Exported(PathBuf),
     DeleteDraft(u64),
     Discard(AfterDiscard),
     ExportProblems(Vec<String>),
@@ -107,6 +108,7 @@ pub struct MailApp {
     /// Index into the packet's `files` while the bulletins folder is open.
     pub selected_file: Option<usize>,
     pub selected_file_page: usize,
+    file_page_scroll_to_end: bool,
     pub composer: Option<Composer>,
     pub modal: Option<Modal>,
     pub notice: Option<Notice>,
@@ -199,6 +201,7 @@ impl MailApp {
             selected_draft: None,
             selected_file: None,
             selected_file_page: 0,
+            file_page_scroll_to_end: false,
             composer: None,
             modal: None,
             notice: None,
@@ -300,6 +303,10 @@ impl MailApp {
                     match result {
                         Ok(screen) => {
                             self.screen = ScreenView::new(screen);
+                            if self.folder == Folder::Bulletins && self.file_page_scroll_to_end {
+                                self.screen.scroll_to = Some(egui::vec2(0.0, f32::MAX));
+                            }
+                            self.file_page_scroll_to_end = false;
                             if self.folder.holds_messages() {
                                 if let Some(index) = self.rendered {
                                     if !self.reader.is_read(index) {
@@ -337,8 +344,7 @@ impl MailApp {
                     if let Some((path, result)) = result {
                         match result {
                             Ok(()) => {
-                                let file = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                                self.notify(context, NoticeKind::Success, fl!(LANGUAGE_LOADER, "notice-exported", file = file));
+                                self.modal = Some(Modal::Exported(path));
                             }
                             Err(error) => {
                                 self.error = Some(fl!(
@@ -456,6 +462,9 @@ impl MailApp {
             if self.rendered_file == Some(index) && self.rendered_file_page == self.selected_file_page && self.rendered_draft.is_none() {
                 return;
             }
+            if self.rendered_file != Some(index) {
+                self.file_page_scroll_to_end = false;
+            }
             self.rendered = None;
             self.rendered_draft = None;
             self.rendered_file = Some(index);
@@ -473,6 +482,7 @@ impl MailApp {
         self.rendered = self.reader.selected_message;
         self.rendered_draft = None;
         self.rendered_file = None;
+        self.file_page_scroll_to_end = false;
         self.selection_anchor = None;
         self.last_reader_click = None;
         self.reveal_message = true;
@@ -683,22 +693,53 @@ impl MailApp {
             if let Some(index) = self.reader.next_unread(self.reader.selected_message) {
                 self.reader.select_message(index);
                 self.reveal_message = true;
+                self.reveal_next_unread(context);
                 return;
             }
         }
         let folders = self.folders();
         let current = folders.iter().position(|folder| *folder == self.folder).unwrap_or(0);
-        let next = folders.iter().skip(current + 1).find_map(|folder| match folder {
-            Folder::Conference(number) if self.counts.conferences.get(number).copied().unwrap_or(0) > 0 => Some(*folder),
-            _ => None,
-        });
+        let next = if self.reader.filter.trim().is_empty() {
+            folders.iter().skip(current + 1).find_map(|folder| match folder {
+                Folder::Conference(number) if self.counts.conferences.get(number).copied().unwrap_or(0) > 0 => Some(*folder),
+                _ => None,
+            })
+        } else {
+            None
+        };
         match next {
             Some(folder) => {
                 self.select_folder(folder);
+                self.reveal_next_unread(context);
                 let name = self.folder_name(folder);
                 self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-continuing-in", name = name));
             }
-            None => self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-no-more-unread")),
+            None => {
+                if self.counts.unread > 0 && self.reader.filter.trim().is_empty() {
+                    let previous = self.reader.selected_message;
+                    self.select_folder(Folder::All);
+                    let first = self.reader.next_unread(None);
+                    let next = if first == previous { self.reader.next_unread(first) } else { first };
+                    if let Some(index) = next {
+                        self.reader.select_message(index);
+                        self.reveal_message = true;
+                        self.reveal_next_unread(context);
+                        return;
+                    }
+                }
+                let notice = if self.counts.unread > 0 && !self.reader.filter.trim().is_empty() {
+                    fl!(LANGUAGE_LOADER, "notice-no-more-unread-filtered")
+                } else {
+                    fl!(LANGUAGE_LOADER, "notice-no-more-unread")
+                };
+                self.notify(context, NoticeKind::Info, notice);
+            }
+        }
+    }
+
+    fn reveal_next_unread(&mut self, context: &egui::Context) {
+        if context.content_rect().width() < 760.0 || context.content_rect().height() < 300.0 {
+            self.set_focus(Pane::Content, context);
         }
     }
 
@@ -1159,7 +1200,36 @@ impl MailApp {
         self.notify(context, NoticeKind::Info, notice);
     }
 
+    pub(super) fn change_file_page(&mut self, forward: bool) -> bool {
+        if self.folder != Folder::Bulletins || self.body_loading {
+            return false;
+        }
+        let Some(pages) = self.selected_file().map(|file| file.pages()) else {
+            return false;
+        };
+        let next = if forward {
+            self.selected_file_page.checked_add(1).filter(|page| *page < pages)
+        } else {
+            self.selected_file_page.checked_sub(1)
+        };
+        let Some(next) = next else {
+            return false;
+        };
+        self.selected_file_page = next;
+        self.file_page_scroll_to_end = !forward;
+        true
+    }
+
     fn scroll_content(&mut self, direction: NavigateDirection) {
+        if self.folder == Folder::Bulletins {
+            let forward = matches!(direction, NavigateDirection::Down | NavigateDirection::PageDown);
+            let backward = matches!(direction, NavigateDirection::Up | NavigateDirection::PageUp);
+            if ((forward && self.screen.offset.y + 1.0 >= self.screen.max_offset.y) || (backward && self.screen.offset.y <= 1.0))
+                && self.change_file_page(forward)
+            {
+                return;
+            }
+        }
         let mut offset = self.screen.offset;
         let page = (self.content_rect.height() - ROW_HEIGHT).max(ROW_HEIGHT);
         offset.y = match direction {
@@ -1308,7 +1378,7 @@ impl MailApp {
             }
         }
         if key(context, Key::Space, false, false) && self.folder != Folder::Drafts {
-            if self.screen.offset.y + 1.0 < self.screen.max_offset.y {
+            if self.folder == Folder::Bulletins || self.screen.offset.y + 1.0 < self.screen.max_offset.y {
                 self.scroll_content(NavigateDirection::PageDown);
             } else {
                 self.next_unread(context);

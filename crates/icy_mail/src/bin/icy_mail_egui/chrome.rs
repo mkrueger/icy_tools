@@ -143,6 +143,33 @@ impl MailApp {
             ui.add_space(4.0);
             self.search(ui, ui.available_width());
         }
+        if open {
+            ui.add_space(4.0);
+            self.reading_progress(ui);
+        }
+    }
+
+    fn reading_progress(&mut self, ui: &mut egui::Ui) {
+        let total = self.reader.package.as_ref().map_or(0, |package| package.message_count());
+        let unread = self.counts.unread;
+        let read = total.saturating_sub(unread);
+        let context = ui.ctx().clone();
+        let label = fl!(LANGUAGE_LOADER, "toolbar-next-unread");
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(unread > 0, icy_engine_gui::egui::appearance::primary_button(&label))
+                .on_hover_text(fl!(LANGUAGE_LOADER, "toolbar-next-unread-tooltip"))
+                .clicked()
+            {
+                self.next_unread(&context);
+            }
+            let progress = fl!(LANGUAGE_LOADER, "toolbar-reading-progress", read = read, total = total, unread = unread);
+            let width = if ui.available_width() >= 330.0 { 240.0 } else { ui.available_width() };
+            ui.add_sized([width, 28.0], egui::Label::new(egui::RichText::new(progress).weak().size(12.0)).truncate());
+            if ui.available_width() >= 100.0 {
+                ui.add(egui::ProgressBar::new(read as f32 / total.max(1) as f32).desired_width(ui.available_width().min(150.0)));
+            }
+        });
     }
 
     fn search(&mut self, ui: &mut egui::Ui, width: f32) {
@@ -400,7 +427,7 @@ impl MailApp {
                 let drafts = self.draft_count();
                 if drafts > 0 && ui.available_width() > 260.0 {
                     ui.separator();
-                    let label = fl!(LANGUAGE_LOADER, "status-replies-to-send", count = drafts);
+                    let label = fl!(LANGUAGE_LOADER, "status-outbox-drafts", count = drafts);
                     let link = egui::RichText::new(label).size(12.0).color(widgets::accent(ui));
                     if ui
                         .add(egui::Label::new(link).sense(egui::Sense::click()))

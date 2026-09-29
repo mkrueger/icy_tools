@@ -615,6 +615,15 @@ fn compose_reply_edit_delete_and_export_from_ui() {
     frame(&context, &mut mail, size, vec![key(egui::Key::A, egui::Modifiers::COMMAND)]);
     click_label(&context, &mut mail, size, "Save Draft");
     assert_eq!(mail.drafts.as_ref().unwrap().drafts().len(), 1);
+    assert!(mail.notice.as_ref().is_some_and(|notice| notice.text.contains("not sent")));
+    click_label(&context, &mut mail, size, "Outbox");
+    let output = settle(&context, &mut mail, size);
+    assert!(
+        output
+            .shapes
+            .iter()
+            .any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text().contains("upload it to your BBS")))
+    );
     let draft = mail.drafts.as_ref().unwrap().drafts()[0].clone();
     let draft = &draft;
     assert_eq!(draft.to, "alice");
@@ -632,6 +641,41 @@ fn compose_reply_edit_delete_and_export_from_ui() {
     click_label(&context, &mut mail, size, "Delete");
     assert!(mail.drafts.as_ref().unwrap().drafts().is_empty());
     assert!(mail.composer.is_none());
+}
+
+#[test]
+fn exporting_replies_shows_the_saved_file_and_next_step() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    let path = dir.path().join("OUT.rep");
+    frame(&context, &mut mail, size, vec![key(egui::Key::R, egui::Modifiers::COMMAND)]);
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![key(egui::Key::A, egui::Modifiers::COMMAND)]);
+    click_label(&context, &mut mail, size, "Save Draft");
+    mail.drafts.as_ref().unwrap().export_rep(&path).unwrap();
+    mail.loader.export_picking = true;
+    mail.loader.sender.send(loading::Event::Exported(Some((path.clone(), Ok(()))))).unwrap();
+    let output = settle(&context, &mut mail, size);
+    assert!(!mail.loader.export_picking);
+    assert!(path.exists());
+    assert_eq!(mail.draft_count(), 1, "export must not delete the draft");
+    assert!(matches!(&mail.modal, Some(app::Modal::Exported(saved)) if saved == &path));
+    label(&output, "Reply packet ready");
+    label(&output, "Open Folder");
+    assert!(output.shapes.iter().any(|shape| {
+        matches!(&shape.shape, egui::Shape::Text(text)
+            if text.galley.text().contains(&path.display().to_string())
+                && text.galley.text().contains("not been sent")
+                && text.galley.text().contains("drafts remain in the Outbox"))
+    }));
+    let narrow = settle(&context, &mut mail, egui::vec2(390.0, 640.0));
+    label(&narrow, "Open Folder");
+    frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
+    assert!(mail.modal.is_none());
+    let output = settle(&context, &mut mail, size);
+    label(&output, "1 draft in Outbox");
 }
 
 #[test]
@@ -1008,6 +1052,78 @@ fn file_loading_populates_an_initially_empty_reader_and_reports_errors() {
 }
 
 #[test]
+fn large_bulletins_scroll_between_sections_without_page_controls() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let dir = packet_tests::TempDir::new();
+    let mut data = b"FIRST\n".to_vec();
+    data.extend(b"filler\n".repeat(icy_mail::reader::FILE_PAGE_LINES - 1));
+    data.extend(b"LAST\n");
+    let path = packet_tests::write_packet_with_newfiles(dir.path(), Some(&data));
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    mail.open(path, &context);
+    wait(&mut mail, &context);
+    mail.select_folder(app::Folder::Bulletins);
+    mail.selected_file = mail.reader.package.as_ref().unwrap().files.iter().position(|file| file.name == "NEWFILES.DAT");
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    wait(&mut mail, &context);
+    let output = settle(&context, &mut mail, size);
+    assert_eq!(mail.screen.terminal.screen.lock().char_at((0, 0).into()).ch, 'F');
+    for text in ["Previous page", "Next page", "Page 1 of 2"] {
+        assert_eq!(count(&output, text), 0, "{text} should not be visible");
+    }
+
+    mail.set_focus(Pane::Content, &context);
+    mail.screen.scroll_to = Some(egui::vec2(0.0, f32::MAX));
+    settle(&context, &mut mail, size);
+    assert!(mail.screen.max_offset.y > 0.0);
+    assert!((mail.screen.offset.y - mail.screen.max_offset.y).abs() <= 1.0);
+    let wheel = |position, delta| {
+        vec![
+            egui::Event::PointerMoved(position),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, delta),
+                modifiers: egui::Modifiers::NONE,
+            },
+        ]
+    };
+    let position = mail.content_rect.center();
+    frame(&context, &mut mail, size, wheel(position, -80.0));
+    assert_eq!(mail.selected_file_page, 1, "scrolling past the end loads the following section");
+    wait(&mut mail, &context);
+    settle(&context, &mut mail, size);
+    assert_eq!(mail.screen.terminal.screen.lock().char_at((0, 0).into()).ch, 'L');
+    mail.screen.scroll_to = Some(egui::Vec2::ZERO);
+    settle(&context, &mut mail, size);
+    let position = mail.content_rect.center();
+    frame(&context, &mut mail, size, wheel(position, 80.0));
+    assert_eq!(mail.selected_file_page, 0, "scrolling above the start loads the previous section");
+    wait(&mut mail, &context);
+    settle(&context, &mut mail, size);
+    assert!(
+        mail.screen.max_offset.y - mail.screen.offset.y < 100.0,
+        "the previous section opens near its end, allowing for the wheel delta"
+    );
+    mail.screen.scroll_to = Some(egui::vec2(0.0, f32::MAX));
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![key(egui::Key::PageDown, egui::Modifiers::NONE)]);
+    assert_eq!(mail.selected_file_page, 1, "Page Down also continues into the next section");
+    wait(&mut mail, &context);
+    settle(&context, &mut mail, size);
+    mail.screen.scroll_to = Some(egui::Vec2::ZERO);
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![key(egui::Key::PageUp, egui::Modifiers::NONE)]);
+    assert_eq!(mail.selected_file_page, 0, "Page Up returns to the previous section");
+    wait(&mut mail, &context);
+    mail.screen.scroll_to = Some(egui::vec2(0.0, f32::MAX));
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![key(egui::Key::Space, egui::Modifiers::NONE)]);
+    assert_eq!(mail.selected_file_page, 1, "Space continues the bulletin before moving on to mail");
+}
+
+#[test]
 fn new_window_shortcut_uses_exact_modifiers_and_registers_native_viewport() {
     let context = egui::Context::default();
     context.set_embed_viewports(false);
@@ -1176,6 +1292,61 @@ fn responsive_toolbar_has_one_search_field_and_keeps_actions_on_screen() {
 }
 
 #[test]
+fn next_unread_button_shows_progress_and_opens_the_message_on_narrow_windows() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    for size in [
+        egui::vec2(1100.0, 760.0),
+        egui::vec2(600.0, 500.0),
+        egui::vec2(360.0, 480.0),
+        egui::vec2(360.0, 240.0),
+    ] {
+        let output = settle(&context, &mut mail, size);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        assert!(screen.contains_rect(label(&output, "Next Unread")), "{size:?}: next unread must be visible");
+        assert!(screen.contains_rect(label(&output, "1 of 4 read · 3 unread")), "{size:?}: progress must be visible");
+    }
+    let size = egui::vec2(360.0, 480.0);
+    mail.set_focus(Pane::Messages, &context);
+    click_label(&context, &mut mail, size, "Next Unread");
+    assert_eq!(mail.reader.selected_message, Some(1));
+    assert_eq!(mail.focus, Pane::Content);
+    wait(&mut mail, &context);
+    let output = settle(&context, &mut mail, size);
+    label(&output, "2 of 4 read · 2 unread");
+    let remaining: Vec<_> = mail
+        .reader
+        .package
+        .as_ref()
+        .unwrap()
+        .infos
+        .iter()
+        .filter(|info| !mail.reader.is_read(info.index))
+        .map(|info| info.index)
+        .collect();
+    mail.set_read(&context, &remaining, true);
+    let output = settle(&context, &mut mail, size);
+    label(&output, "4 of 4 read · 0 unread");
+    let selected = mail.reader.selected_message;
+    click_label(&context, &mut mail, size, "Next Unread");
+    assert_eq!(mail.reader.selected_message, selected, "button is disabled once all messages are read");
+}
+
+#[test]
+fn next_unread_wraps_to_earlier_unread_mail() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    mail.reader.select_message(3);
+    settle(&context, &mut mail, size);
+    assert!(mail.error.is_none(), "{:?}", mail.error);
+    click_label(&context, &mut mail, size, "Next Unread");
+    assert_eq!(mail.reader.selected_message, Some(1), "the button should wrap instead of claiming there is no unread mail");
+}
+
+#[test]
 fn reading_marks_messages_and_next_unread_walks_the_conferences() {
     let context = egui::Context::default();
     appearance::apply(&context);
@@ -1196,7 +1367,7 @@ fn reading_marks_messages_and_next_unread_walks_the_conferences() {
     assert_eq!(mail.folder, app::Folder::Conference(1));
     assert_eq!(mail.reader.selected_message, Some(1), "the folder opens at its first unread message");
     wait(&mut mail, &context);
-    frame(&context, &mut mail, size, vec![key(egui::Key::N, egui::Modifiers::NONE)]);
+    click_label(&context, &mut mail, size, "Next Unread");
     assert_eq!(mail.folder, app::Folder::Conference(2), "next unread continues in the next conference");
     frame(&context, &mut mail, size, vec![key(egui::Key::C, egui::Modifiers::SHIFT)]);
     assert_eq!(mail.counts.conferences.get(&2).copied().unwrap_or(0), 0);
@@ -1229,7 +1400,7 @@ fn outbox_lists_drafts_and_edits_or_deletes_them_from_the_keyboard() {
     assert!(mail.composer.is_none());
     assert_eq!(mail.draft_count(), 1);
     let output = settle(&context, &mut mail, size);
-    label(&output, "1 reply to send");
+    label(&output, "1 draft in Outbox");
     click_label(&context, &mut mail, size, "Outbox");
     assert_eq!(mail.folder, app::Folder::Drafts);
     let output = settle(&context, &mut mail, size);

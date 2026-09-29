@@ -85,6 +85,7 @@ impl MailApp {
 
     fn list_title(&mut self, ui: &mut egui::Ui) {
         let context = ui.ctx().clone();
+        let drafts = self.folder == Folder::Drafts;
         egui::Frame::new()
             .inner_margin(egui::Margin {
                 left: 12,
@@ -127,6 +128,9 @@ impl MailApp {
                         }
                     });
                 });
+                if drafts {
+                    ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "list-outbox-steps")).weak().size(12.0));
+                }
             });
     }
 

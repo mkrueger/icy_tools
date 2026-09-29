@@ -14,6 +14,9 @@ toolbar-forward-tooltip = Forward the message (Ctrl+L)
 toolbar-export = Export Replies
 toolbar-export-count = Export Replies ({ $count })
 toolbar-export-tooltip = Save the reply packet to upload to the BBS (Ctrl+Shift+E)
+toolbar-next-unread = Next Unread
+toolbar-next-unread-tooltip = Open the next unread message (N)
+toolbar-reading-progress = { $read } of { $total } read · { $unread } unread
 toolbar-menu = Menu
 toolbar-threads-tooltip = Group messages into threads (Ctrl+T)
 toolbar-list-tooltip = Show messages as a list (Ctrl+T)
@@ -60,9 +63,9 @@ status-messages = { $count } messages · { $unread } unread
 status-no-packet = No packet open
 status-update-available = Update available: { $version }
 status-message-zoom = Message zoom
-status-replies-to-send = { $count ->
-    [one] 1 reply to send
-   *[other] { $count } replies to send
+status-outbox-drafts = { $count ->
+    [one] 1 draft in Outbox
+   *[other] { $count } drafts in Outbox
 }
 status-show-outbox = Show the outbox
 status-files = { $count ->
@@ -140,7 +143,6 @@ app-forward-header = --- Forwarded message ---
     Date: { $date }
     Subject: { $subject }
 notice-finish-writing = Save or discard the message you are writing first
-notice-exported = Reply packet saved as { $file } - upload it to the BBS
 notice-read-marks-unavailable = Read marks are unavailable: { $error }
 notice-read-marks-failed = Unable to save read marks: { $error }
 notice-marked-read = { $count ->
@@ -149,6 +151,7 @@ notice-marked-read = { $count ->
 }
 notice-continuing-in = Continuing in { $name }
 notice-no-more-unread = No more unread messages
+notice-no-more-unread-filtered = No more unread messages in this search. Clear the search to see the rest.
 notice-draft-deleted = Draft deleted
 notice-nothing-to-export = There are no replies to export
 notice-no-tagline = This message has no tagline
@@ -190,6 +193,15 @@ dialog-mail-export-problems-message =
 
     { $problems }
 dialog-mail-show-outbox = Show Outbox
+dialog-mail-exported-title = Reply packet ready
+dialog-mail-exported-message = The reply packet was saved to:
+
+    { $path }
+
+    It has not been sent. Upload this .REP file to your BBS to deliver your replies. Your drafts remain in the Outbox.
+dialog-mail-open-folder = Open Folder
+dialog-mail-open-folder-error = Unable to open { $path }:
+    { $error }
 dialog-mail-packet-info-subtitle = Packet information
 dialog-mail-packet-board = Board
 dialog-mail-packet-location = Location
@@ -261,8 +273,8 @@ composer-title-reply = Reply
 composer-title-forward-message = Forward Message
 composer-draft-saved-needs-changes = Draft saved - it needs changes before it can be exported
 composer-draft-saved-outbox = { $count ->
-    [one] Draft saved - 1 message in the outbox
-   *[other] Draft saved - { $count } messages in the outbox
+    [one] Draft saved in the Outbox, not sent. Export Replies when ready.
+   *[other] Draft saved in the Outbox ({ $count } drafts), not sent. Export Replies when ready.
 }
 composer-save-error = Unable to save the draft: { $error }
 composer-forwarding-origin = Forwarding { $origin }
@@ -396,9 +408,6 @@ reader-fix-before-export = Fix before exporting
 reader-copy-file-text = Copy text
 reader-next-file = Next file
 reader-previous-file = Previous file
-reader-previous-page = Previous page
-reader-next-page = Next page
-reader-file-page = Page { $page } of { $total }
 file-kind-welcome = Welcome screen
 file-kind-news = News
 file-kind-bulletin = Bulletin
@@ -413,6 +422,7 @@ list-draft-count = { $count ->
 }
 list-message-count-unread = { $count } · { $unread } unread
 list-export-replies = Export Replies…
+list-outbox-steps = Drafts are saved locally, not sent. Export Replies to create a .REP file, then upload it to your BBS.
 list-unread = Unread
 list-show-only-unread-messages = Show only unread messages
 list-column-from = From

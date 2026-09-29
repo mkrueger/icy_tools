@@ -14,6 +14,9 @@ toolbar-forward-tooltip = Nachricht weiterleiten (Ctrl+L)
 toolbar-export = Antworten exportieren
 toolbar-export-count = Antworten exportieren ({ $count })
 toolbar-export-tooltip = Antwortpaket zum Hochladen in die BBS speichern (Ctrl+Shift+E)
+toolbar-next-unread = Nächste ungelesene
+toolbar-next-unread-tooltip = Nächste ungelesene Nachricht öffnen (N)
+toolbar-reading-progress = { $read } von { $total } gelesen · { $unread } ungelesen
 toolbar-menu = Menü
 toolbar-threads-tooltip = Nachrichten nach Diskussionsfäden gruppieren (Ctrl+T)
 toolbar-list-tooltip = Nachrichten als Liste anzeigen (Ctrl+T)
@@ -60,9 +63,9 @@ status-messages = { $count } Nachrichten · { $unread } ungelesen
 status-no-packet = Kein Paket geöffnet
 status-update-available = Update verfügbar: { $version }
 status-message-zoom = Nachrichtenzoom
-status-replies-to-send = { $count ->
-    [one] 1 Antwort zum Senden
-   *[other] { $count } Antworten zum Senden
+status-outbox-drafts = { $count ->
+    [one] 1 Entwurf im Postausgang
+   *[other] { $count } Entwürfe im Postausgang
 }
 status-show-outbox = Postausgang anzeigen
 status-files = { $count ->
@@ -140,7 +143,6 @@ app-forward-header = --- Weitergeleitete Nachricht ---
     Datum: { $date }
     Betreff: { $subject }
 notice-finish-writing = Zuerst die aktuelle Nachricht speichern oder verwerfen
-notice-exported = Antwortpaket als { $file } gespeichert - bitte in die BBS hochladen
 notice-read-marks-unavailable = Lesemarkierungen sind nicht verfügbar: { $error }
 notice-read-marks-failed = Lesemarkierungen konnten nicht gespeichert werden: { $error }
 notice-marked-read = { $count ->
@@ -149,6 +151,7 @@ notice-marked-read = { $count ->
 }
 notice-continuing-in = Weiter in { $name }
 notice-no-more-unread = Keine weiteren ungelesenen Nachrichten
+notice-no-more-unread-filtered = Keine weiteren ungelesenen Nachrichten in dieser Suche. Lösche die Suche, um die übrigen zu sehen.
 notice-draft-deleted = Entwurf gelöscht
 notice-nothing-to-export = Keine Antworten zum Exportieren vorhanden
 notice-no-tagline = Diese Nachricht enthält keine Tagline
@@ -190,6 +193,15 @@ dialog-mail-export-problems-message =
 
     { $problems }
 dialog-mail-show-outbox = Postausgang anzeigen
+dialog-mail-exported-title = Antwortpaket bereit
+dialog-mail-exported-message = Das Antwortpaket wurde hier gespeichert:
+
+    { $path }
+
+    Es wurde noch nicht versendet. Lade diese .REP-Datei in deine BBS hoch, um die Antworten zuzustellen. Die Entwürfe bleiben im Postausgang.
+dialog-mail-open-folder = Ordner öffnen
+dialog-mail-open-folder-error = { $path } konnte nicht geöffnet werden:
+    { $error }
 dialog-mail-packet-info-subtitle = Paketinformationen
 dialog-mail-packet-board = BBS
 dialog-mail-packet-location = Standort
@@ -261,8 +273,8 @@ composer-title-reply = Antworten
 composer-title-forward-message = Nachricht weiterleiten
 composer-draft-saved-needs-changes = Entwurf gespeichert - vor dem Export sind noch Änderungen nötig
 composer-draft-saved-outbox = { $count ->
-    [one] Entwurf gespeichert - 1 Nachricht im Postausgang
-   *[other] Entwurf gespeichert - { $count } Nachrichten im Postausgang
+    [one] Entwurf im Postausgang gespeichert, noch nicht versendet. Exportiere die Antworten, wenn du bereit bist.
+   *[other] Entwurf im Postausgang gespeichert ({ $count } Entwürfe), noch nicht versendet. Exportiere die Antworten, wenn du bereit bist.
 }
 composer-save-error = Entwurf konnte nicht gespeichert werden: { $error }
 composer-forwarding-origin = Weiterleitung von { $origin }
@@ -396,9 +408,6 @@ reader-fix-before-export = Vor dem Export korrigieren
 reader-copy-file-text = Text kopieren
 reader-next-file = Nächste Datei
 reader-previous-file = Vorherige Datei
-reader-previous-page = Vorherige Seite
-reader-next-page = Nächste Seite
-reader-file-page = Seite { $page } von { $total }
 file-kind-welcome = Begrüßung
 file-kind-news = Neuigkeiten
 file-kind-bulletin = Bulletin
@@ -413,6 +422,7 @@ list-draft-count = { $count ->
 }
 list-message-count-unread = { $count } · { $unread } ungelesen
 list-export-replies = Antworten exportieren…
+list-outbox-steps = Entwürfe werden lokal gespeichert, nicht versendet. Exportiere die Antworten als .REP-Datei und lade sie dann in deine BBS hoch.
 list-unread = Ungelesen
 list-show-only-unread-messages = Nur ungelesene Nachrichten anzeigen
 list-column-from = Von

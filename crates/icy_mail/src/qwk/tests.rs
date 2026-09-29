@@ -93,7 +93,7 @@ fn write_packet(dir: &std::path::Path) -> std::path::PathBuf {
     write_packet_with_newfiles(dir, None)
 }
 
-fn write_packet_with_newfiles(dir: &std::path::Path, newfiles: Option<&[u8]>) -> std::path::PathBuf {
+pub(crate) fn write_packet_with_newfiles(dir: &std::path::Path, newfiles: Option<&[u8]>) -> std::path::PathBuf {
     let mut messages = vec![b' '; 128]; // packet header block
 
     message(&mut messages, 10, "01/02/2010:00", "alice", "Coffee machine", 0, 1, 3);

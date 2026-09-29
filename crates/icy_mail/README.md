@@ -34,7 +34,8 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
   Folders/Messages/Message tabs; short windows collapse the message header.
 - **Bulletins** appears when the packet contains welcome/news screens, bulletins,
   goodbye screens or a new-files list. Files up to 16 MiB are supported; large
-  lists are shown in pages of 2,048 lines with Previous/Next page controls.
+  lists are loaded in sections of 2,048 lines; scrolling or Page Up/Down at
+  the end of a section continues into the next one without visible page controls.
   A packet without those files does not show the folder.
 - **All Messages**, **Personal** (messages addressed to you) and each
   conference show unread counts. Showing a message marks it read; read marks
@@ -57,6 +58,9 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
   without changing the original message colors, text selection or copied text.
 - The reader header links to the referenced message (“reply to #n”) and offers
   reply, forward, mark read/unread, copy and previous/next actions.
+- A visible **Next Unread** action shares the N/Space navigation through
+  conferences; a read/total/unread indicator tracks progress across the
+  packet. On narrow windows, advancing opens the message pane.
 - ANSI/CP437 rendering, text/rectangular selection and copy, zoom, light/dark
   themes and additional native windows.
 - **Settings** (Ctrl/Cmd+,): theme, message zoom and the shared monitor
@@ -124,13 +128,16 @@ or selection before it cancels the message.
 Saved drafts appear in the **Outbox**. Select one to preview it in the message terminal
 (with colors, like received mail), press Enter or
 double-click to edit it, and Delete to remove it. Drafts are stored separately
-for each source packet and survive restarts.
+for each source packet and survive restarts. Saving a draft does not send it;
+the Outbox shows the remaining steps to deliver it.
 
 **Export Replies** (Ctrl/Cmd+Shift+E) saves all drafts as a QWK `.rep` ZIP
 archive containing the BBS's `.MSG` reply file. Transfer that file to the BBS
 using your usual offline mail workflow. Drafts with problems are listed instead
 of being exported. Export does not delete drafts. Unsupported characters and
-invalid QWK fields are reported rather than silently replaced.
+invalid QWK fields are reported rather than silently replaced. After a successful
+export, the confirmation shows the full `.rep` file path and offers **Open Folder**
+so you can find the file to upload. The packet is not sent automatically.
 
 ## Taglines
 
