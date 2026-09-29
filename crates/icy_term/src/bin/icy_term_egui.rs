@@ -127,6 +127,8 @@ struct TerminalApp {
 
 impl TerminalApp {
     fn new(screen: TextScreen, document_name: String) -> Self {
+        #[cfg(test)]
+        icy_engine_gui::system_clipboard::disable();
         let shader_state = CRTShaderState::from_screen(&screen);
         let screen_mode = icy_engine::ScreenMode::Vga(screen.width(), screen.height());
         Self {
@@ -470,9 +472,19 @@ impl TerminalApp {
         });
     }
 
+    /// Copies the selection as text, RTF, an image and Icy data, so it pastes into Icy Draw with
+    /// its colors.
     fn copy_selection(&self, context: &egui::Context) {
-        if let Some(text) = navigation::selected_text(&**self.terminal.screen.lock()) {
-            context.copy_text(text);
+        let screen = self.terminal.screen.lock();
+        let Some(text) = navigation::selected_text(&**screen) else {
+            return;
+        };
+        match icy_engine_gui::prepare_clipboard_data(&**screen) {
+            Ok(mut data) => {
+                data.text = text;
+                icy_engine_gui::system_clipboard::copy_data_or_text(context, &data);
+            }
+            Err(_) => icy_engine_gui::system_clipboard::copy_text_or_egui(context, text),
         }
     }
 

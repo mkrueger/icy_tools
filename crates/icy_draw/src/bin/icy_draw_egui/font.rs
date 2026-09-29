@@ -2,12 +2,13 @@ use super::widgets::{self, Icons};
 use eframe::egui::{self, Color32};
 use icy_draw::fl;
 use icy_engine::BitFont;
-use icy_engine_edit::bitfont::{BitFontAtomicUndoGuard, BitFontClipboardData, BitFontEditState, BitFontFocusedPanel, BitFontUndoState};
+use icy_engine_edit::bitfont::{BitFontAtomicUndoGuard, BitFontClipboardData, BitFontEditState, BitFontFocusedPanel, BitFontUndoState, BITFONT_CLIPBOARD_TYPE};
 use icy_engine_edit::tools::Tool;
 use icy_engine_gui::egui::{
     appearance::{self, labels, DialogButton, MessageBox, MessageKind},
     screen::ScreenView,
 };
+use icy_engine_gui::system_clipboard;
 use std::path::{Path, PathBuf};
 
 pub enum Action {
@@ -395,8 +396,19 @@ impl FontEditor {
         self.state.can_redo()
     }
 
+    /// Copies the selected pixels to the system clipboard, with the pixels as text art so egui
+    /// notices a paste and other programs get something readable.
     pub fn copy(&mut self) {
-        self.clipboard = Some(BitFontClipboardData::new(self.state.get_copy_data()));
+        let data = BitFontClipboardData::new(self.state.get_copy_data());
+        let art: String = data
+            .pixels
+            .iter()
+            .map(|row| row.iter().map(|&set| if set { '#' } else { '.' }).chain(['\n']).collect::<String>())
+            .collect();
+        if let Err(error) = system_clipboard::copy_format(BITFONT_CLIPBOARD_TYPE, data.to_bytes(), &art) {
+            log::warn!("could not copy glyph pixels to the system clipboard: {error}");
+        }
+        self.clipboard = Some(data);
     }
 
     pub fn cut(&mut self) {
@@ -404,14 +416,16 @@ impl FontEditor {
         self.operation(|state| state.erase_selection());
     }
 
+    /// Pastes pixels from the system clipboard, or the pixels copied last in this window.
     pub fn paste(&mut self) {
-        if let Some(data) = self.clipboard.clone() {
+        let copied = system_clipboard::read_format(BITFONT_CLIPBOARD_TYPE).and_then(|bytes| BitFontClipboardData::from_bytes(&bytes).ok());
+        if let Some(data) = copied.or_else(|| self.clipboard.clone()) {
             self.operation(|state| state.paste_data(data));
         }
     }
 
     pub fn has_clipboard(&self) -> bool {
-        self.clipboard.is_some()
+        self.clipboard.is_some() || system_clipboard::read_format(BITFONT_CLIPBOARD_TYPE).is_some()
     }
 
     pub fn select_all(&mut self) {

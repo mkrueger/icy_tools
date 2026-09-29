@@ -549,12 +549,9 @@ impl Preview {
 
     pub fn copy(&self, context: &egui::Context) {
         if let Some(pixels) = &self.image_pixels {
-            context.copy_image(egui::ColorImage::from_rgba_unmultiplied(
-                [pixels.width() as usize, pixels.height() as usize],
-                pixels.as_raw(),
-            ));
-        } else if let Some(text) = self.screen.terminal.screen.lock().copy_text() {
-            context.copy_text(text);
+            icy_engine_gui::system_clipboard::copy_image_or_egui(context, pixels);
+        } else {
+            icy_engine_gui::system_clipboard::copy_selection(context, &**self.screen.terminal.screen.lock());
         }
     }
 

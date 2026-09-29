@@ -143,6 +143,39 @@ fn native_close_commits_shape_and_waits_for_picker() {
 }
 
 #[test]
+fn clipboard_images_and_icy_data_paste_into_floating_layers() {
+    let mut app = DrawApp::new();
+    app.document.with_state(|state| state.set_caret_foreground(12));
+    app.document.type_text("AB").unwrap();
+    let mut selection = Selection::new(Position::new(0, 0));
+    selection.lead = Position::new(1, 0);
+    app.document.with_state(|state| state.set_selection(selection)).unwrap();
+    let data = icy_engine_gui::prepare_clipboard_data(&**app.document.screen.lock()).unwrap();
+    assert!(data.rtf.is_some() && data.image.is_some(), "a selection is copied as rich text and image too");
+    app.document.with_state(|state| state.set_caret_position(Position::new(0, 3)));
+    app.paste_content(icy_engine_gui::system_clipboard::PasteContent::Icy {
+        text: data.text.clone(),
+        data: data.icy_data.unwrap(),
+    });
+    assert!(app.document.paste_active());
+    assert_eq!(
+        app.document
+            .with_state(|state| state.get_buffer().char_at(Position::new(0, 3)).attribute.foreground()),
+        12
+    );
+    let _ = app.document.paste_action(icy_draw::document::PasteAction::Keep);
+
+    let layers = app.document.with_state(|state| state.get_buffer().layers.len());
+    app.paste_content(icy_engine_gui::system_clipboard::PasteContent::Image(image::RgbaImage::from_pixel(
+        16,
+        16,
+        image::Rgba([255, 0, 0, 255]),
+    )));
+    assert!(app.document.paste_active(), "an image pastes as a floating layer");
+    assert_eq!(app.document.with_state(|state| state.get_buffer().layers.len()), layers + 1);
+}
+
+#[test]
 fn internal_copy_paste_preserves_colors() {
     let mut app = DrawApp::new();
     app.document.with_state(|state| state.set_caret_foreground(12));

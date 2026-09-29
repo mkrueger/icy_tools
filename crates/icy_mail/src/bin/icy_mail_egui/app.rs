@@ -184,6 +184,8 @@ impl MailApp {
     }
 
     fn create(context: &egui::Context, storage: Option<PathBuf>) -> Self {
+        #[cfg(test)]
+        icy_engine_gui::system_clipboard::disable();
         let options = storage
             .clone()
             .or_else(|| Options::directory().ok())
@@ -1328,9 +1330,7 @@ impl MailApp {
 
     pub fn copy(&self, context: &egui::Context) {
         if !self.body_loading {
-            if let Some(text) = self.screen.terminal.screen.lock().copy_text() {
-                context.copy_text(text);
-            }
+            icy_engine_gui::system_clipboard::copy_selection(context, &**self.screen.terminal.screen.lock());
         }
     }
 
@@ -1366,8 +1366,9 @@ impl MailApp {
             let mut selection = Selection::new((0, 0));
             selection.lead = (screen.width() - 1, screen.height() - 1).into();
             let _ = screen.set_selection(selection);
-            if let Some(text) = screen.copy_text() {
-                context.copy_text(text.trim_end().to_string());
+            if let Ok(mut data) = icy_engine_gui::prepare_clipboard_data(&**screen) {
+                data.text = data.text.trim_end().to_string();
+                icy_engine_gui::system_clipboard::copy_data_or_text(context, &data);
             }
             if let Some(selection) = old {
                 let _ = screen.set_selection(selection);

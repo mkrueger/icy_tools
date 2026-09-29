@@ -44,6 +44,7 @@ bytemuck = { workspace = true, features = ["derive"] }
 
 egui = { version = "0.33.3", optional = true, default-features = false }
 egui-wgpu = { version = "0.33.3", optional = true, default-features = false }
+clipboard-rs = { workspace = true, optional = true }
 
 # Sound/Music dependencies
 anyhow = { workspace = true }
@@ -65,7 +66,9 @@ cpal = { workspace = true }
 [features]
 default = ["legacy-ui", "opus-audio"]
 legacy-ui = ["dep:icy_ui", "dep:rfd"]
-egui = ["dep:egui", "dep:egui-wgpu", "dep:rfd", "wgpu/default"]
+egui = ["dep:egui", "dep:egui-wgpu", "dep:rfd", "wgpu/default", "system-clipboard"]
+# Copy and paste through the system clipboard with every format Icy tools exchange.
+system-clipboard = ["dep:clipboard-rs"]
 # Ogg-Opus playback for the SyncTERM audio APC music tier. Links libopus,
 # so disabling it drops the C dependency; the capability reply follows suit.
 opus-audio = ["dep:opus", "dep:symphonia"]

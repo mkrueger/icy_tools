@@ -1,9 +1,9 @@
-use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext};
 use eframe::egui::{self, Color32, Key};
 use icy_draw::{brush::BrushPrimaryMode, document::Document, fl, Settings};
 use icy_engine::{FileFormat, Position, Selection, Size, TextPane};
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::UndoState;
+use icy_engine_gui::system_clipboard::{self, PasteContent};
 use icy_engine_gui::{
     egui::{
         appearance::{self, labels, DialogButton, DialogSize, MessageBox, MessageKind},
@@ -265,8 +265,8 @@ pub struct DrawApp {
     igs: Option<super::igs::IgsEditor>,
     /// Resolution of IGS drawings created from the New dialog.
     new_igs_resolution: icy_parser_core::TerminalResolution,
+    /// The text and ICY data copied last, to paste with attributes without a system clipboard.
     clipboard: Option<(String, Vec<u8>)>,
-    system_clipboard: Option<ClipboardContext>,
     font_selector: font_select::FontSelector,
     font_slots_open: bool,
     font_selection_target: Option<FontSelectionTarget>,
@@ -321,12 +321,8 @@ impl DrawApp {
         settings.monitor_settings.scaling_mode = ScalingMode::Manual(2.0);
         let show_line_numbers = settings.show_line_numbers;
         let (sender, receiver) = mpsc::channel();
-        #[cfg(not(test))]
-        let system_clipboard = ClipboardContext::new()
-            .inspect_err(|error| log::warn!("could not initialize the system clipboard: {error}"))
-            .ok();
         #[cfg(test)]
-        let system_clipboard = None;
+        system_clipboard::disable();
         Self {
             document,
             view,
@@ -355,7 +351,6 @@ impl DrawApp {
             igs: None,
             new_igs_resolution: icy_draw::igs_document::DEFAULT_RESOLUTION,
             clipboard: None,
-            system_clipboard,
             font_selector: Default::default(),
             font_slots_open: false,
             font_selection_target: None,
@@ -1875,20 +1870,9 @@ impl DrawApp {
             return;
         }
         let screen = self.document.screen.lock();
-        if let Some(text) = screen.copy_text() {
-            let data = screen.clipboard_data();
-            self.clipboard = data.clone().map(|data| (text.clone(), data));
-            if let Some(clipboard) = &self.system_clipboard {
-                let mut contents = vec![ClipboardContent::Text(text.clone())];
-                if let Some(data) = data {
-                    contents.push(ClipboardContent::Other(icy_engine::clipboard::ICY_CLIPBOARD_TYPE.into(), data));
-                }
-                match clipboard.set(contents) {
-                    Ok(()) => return,
-                    Err(error) => log::warn!("could not copy Icy Draw data to the system clipboard: {error}"),
-                }
-            }
-            context.copy_text(text);
+        if let Ok(data) = icy_engine_gui::prepare_clipboard_data(&**screen) {
+            self.clipboard = data.icy_data.clone().map(|icy| (data.text.clone(), icy));
+            system_clipboard::copy_data_or_text(context, &data);
         }
     }
 
@@ -1913,19 +1897,22 @@ impl DrawApp {
         self.canvas_focus = false;
     }
 
+    /// Pastes for an egui paste event, which egui only sends when the clipboard holds text.
     fn paste(&mut self, text: &str) {
-        let data = self
-            .clipboard
-            .as_ref()
-            .filter(|(copied, _)| copied == text)
-            .map(|(_, data)| data.clone())
-            .or_else(|| {
-                let clipboard = self.system_clipboard.as_ref()?;
-                (clipboard.get_text().ok().as_deref() == Some(text))
-                    .then(|| clipboard.get_buffer(icy_engine::clipboard::ICY_CLIPBOARD_TYPE).ok())
-                    .flatten()
-            });
-        let result = self.document.start_paste(text, data.as_deref());
+        self.paste_content(system_clipboard::paste_event(text));
+    }
+
+    /// Pastes the richest clipboard content: characters with attributes, an image or text.
+    pub(crate) fn paste_content(&mut self, content: PasteContent) {
+        let result = match content {
+            PasteContent::Icy { text, data } => self.document.start_paste(&text, Some(&data)),
+            PasteContent::Image(image) => self.document.start_image_paste(&image),
+            PasteContent::Text(text) => {
+                // Without a system clipboard, text copied here still pastes with its attributes.
+                let data = self.clipboard.as_ref().filter(|(copied, _)| *copied == text).map(|(_, data)| data.clone());
+                self.document.start_paste(&text, data.as_deref())
+            }
+        };
         self.result(result);
     }
 

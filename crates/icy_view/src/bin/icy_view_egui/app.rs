@@ -56,6 +56,8 @@ pub struct Viewer {
 
 impl Viewer {
     pub fn new(path: PathBuf, options: Options, context: &egui::Context) -> anyhow::Result<Self> {
+        #[cfg(test)]
+        icy_engine_gui::system_clipboard::disable();
         let mut options = options;
         options.monitor_settings.scaling_mode = super::preview::viewer_scaling(&options.monitor_settings);
         let mut browser = Browser::new(path, options.sort_order)?;

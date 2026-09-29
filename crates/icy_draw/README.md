@@ -229,8 +229,13 @@ This is **not yet full legacy UI parity**. Use the legacy frontend for graphical
 collaboration sessions, AV1 export, advanced bitmap
 font import/export and font-slot management, free-form selections, reference
 images, and guides. The egui controls currently use English labels.
-Rich clipboard data is retained inside one editor instance; copying between
-instances uses plain text. New windows do not share live documents. Existing
+Copying puts the selection on the system clipboard as text, RTF, a PNG image and
+Icy data, so it pastes with its colors into other Icy Draw instances and from
+Icy Term, Icy View and Icy Mail. Paste prefers Icy data, then an image (as a
+floating image layer), then text; **Edit ▸ Paste** also pastes a clipboard that
+holds only an image, which Ctrl+V cannot because egui reports no paste for it.
+Bitmap font pixels are copied in their own format with the pixels as `#`/`.`
+text. New windows do not share live documents. Existing
 legacy session and autosave files are not migrated or modified by the egui frontend. Lua
 execution retains the existing backend's lack of a runtime cancellation limit.
 

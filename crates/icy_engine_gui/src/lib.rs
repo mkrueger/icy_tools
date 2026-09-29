@@ -56,6 +56,11 @@ pub use export_settings::{ExportOptionKind, ExportSettings};
 // Re-export proc macros
 pub use icy_engine_gui_macros::dialog_wrapper;
 
+pub mod clipboard_data;
+pub use clipboard_data::*;
+#[cfg(feature = "system-clipboard")]
+pub mod system_clipboard;
+
 #[cfg(feature = "legacy-ui")]
 pub mod clipboard;
 #[cfg(feature = "legacy-ui")]

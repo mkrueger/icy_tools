@@ -436,8 +436,13 @@ impl DrawApp {
         if item(ui, &fl!("menu-paste"), Some(&PASTE), animation || paint) {
             if animation {
                 context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
+                context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            } else if let Some(content) = icy_engine_gui::system_clipboard::read() {
+                // Read directly: egui reports no paste for a clipboard with only an image.
+                self.paste_content(content);
+            } else {
+                context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
-            context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
         if animation {
             ui.separator();
