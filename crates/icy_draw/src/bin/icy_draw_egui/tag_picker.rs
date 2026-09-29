@@ -88,7 +88,12 @@ impl ReplacementPicker {
         let mut action = None;
         appearance::group(ui, &fl!("tag-replacements-title"), |ui| {
             ui.horizontal(|ui| {
-                let name = self.lists.iter().find(|list| list.id == self.list.id).map(|list| list.name.clone()).unwrap_or_default();
+                let name = self
+                    .lists
+                    .iter()
+                    .find(|list| list.id == self.list.id)
+                    .map(|list| list.name.clone())
+                    .unwrap_or_default();
                 egui::ComboBox::from_id_salt("tag-replacement-list")
                     .selected_text(name)
                     .width(170.0)
@@ -121,20 +126,24 @@ impl ReplacementPicker {
             }
             ui.add_space(4.0);
             let entries = tag_replacements::filter_taglist(&self.list, &self.filter);
-            egui::ScrollArea::vertical().id_salt("tag-replacement-entries").min_scrolled_height(LIST_HEIGHT).max_height(LIST_HEIGHT).show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
-                ui.spacing_mut().item_spacing.y = 1.0;
-                ui.spacing_mut().interact_size.y = 18.0;
-                if entries.is_empty() {
-                    ui.add_space(8.0);
-                    ui.vertical_centered(|ui| ui.weak(fl!("tag-replacements-none")));
-                }
-                for (index, entry) in entries.iter().enumerate() {
-                    if entry_row(ui, index, entry).clicked() {
-                        action = Some(Action::Pick((*entry).clone()));
+            egui::ScrollArea::vertical()
+                .id_salt("tag-replacement-entries")
+                .min_scrolled_height(LIST_HEIGHT)
+                .max_height(LIST_HEIGHT)
+                .show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    ui.spacing_mut().interact_size.y = 18.0;
+                    if entries.is_empty() {
+                        ui.add_space(8.0);
+                        ui.vertical_centered(|ui| ui.weak(fl!("tag-replacements-none")));
                     }
-                }
-            });
+                    for (index, entry) in entries.iter().enumerate() {
+                        if entry_row(ui, index, entry).clicked() {
+                            action = Some(Action::Pick((*entry).clone()));
+                        }
+                    }
+                });
             if !self.list.comments.trim().is_empty() {
                 ui.add_space(4.0);
                 egui::CollapsingHeader::new(fl!("tag-replacements-notes"))
@@ -166,7 +175,11 @@ fn entry_row(ui: &mut egui::Ui, index: usize, entry: &TagReplacement) -> egui::R
             ui.horizontal(|ui| {
                 ui.allocate_ui_with_layout(egui::vec2(TAG_COLUMN, 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.set_min_width(TAG_COLUMN);
-                    ui.add(egui::Label::new(egui::RichText::new(&entry.tag).monospace().strong()).truncate().selectable(false));
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(&entry.tag).monospace().strong())
+                            .truncate()
+                            .selectable(false),
+                    );
                 });
                 ui.add(egui::Label::new(&entry.description).wrap().selectable(false));
             });
@@ -264,11 +277,17 @@ mod tests {
         let context = egui::Context::default();
         icy_engine_gui::egui::appearance::apply(&context);
         let mut app = DrawApp::new();
+        // Settings come from the user's configuration; start from the default list.
+        app.settings.selected_taglist.clear();
         frame(&context, &mut app, vec![]);
         app.open_tag_properties(None);
 
         click(&context, &mut app, "…");
-        assert_eq!(app.tag_picker.as_ref().map(|picker| picker.selected()), Some("pcboard"), "the first list is shown");
+        assert_eq!(
+            app.tag_picker.as_ref().map(|picker| picker.selected()),
+            Some("pcboard"),
+            "the first list is shown"
+        );
         type_filter(&context, &mut app, "user");
         click(&context, &mut app, "@USER@");
         let tag = draft(&app);

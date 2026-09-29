@@ -359,13 +359,16 @@ mod tests {
 
         let pcboard = load_taglist("pcboard", None);
         assert!(filter_taglist(&pcboard, "").len() == pcboard.entries.len());
-        assert!(filter_taglist(&pcboard, "beep").iter().all(|entry| {
-            format!("{}{}{}", entry.tag, entry.description, entry.example).to_lowercase().contains("beep")
-        }));
+        assert!(filter_taglist(&pcboard, "beep")
+            .iter()
+            .all(|entry| { format!("{}{}{}", entry.tag, entry.description, entry.example).to_lowercase().contains("beep") }));
         assert!(!filter_taglist(&pcboard, "BEEP").is_empty());
         let users = filter_taglist(&pcboard, "user");
         let first_description_match = users.iter().position(|entry| !entry.tag.to_lowercase().contains("user")).unwrap();
-        assert!(users[..first_description_match].iter().any(|entry| entry.tag == "@USER@"), "tag matches come first");
+        assert!(
+            users[..first_description_match].iter().any(|entry| entry.tag == "@USER@"),
+            "tag matches come first"
+        );
         assert!(users[first_description_match..].iter().all(|entry| !entry.tag.to_lowercase().contains("user")));
     }
 }

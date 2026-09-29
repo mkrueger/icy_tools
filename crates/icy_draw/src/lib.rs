@@ -19,10 +19,10 @@ pub mod selection_drag;
 pub mod settings;
 #[path = "ui/editor/ansi/shape_points.rs"]
 pub mod shape_points;
-#[path = "util/tdf_font_library.rs"]
-pub mod text_art_fonts;
 #[path = "util/tag_replacements.rs"]
 pub mod tag_replacements;
+#[path = "util/tdf_font_library.rs"]
+pub mod text_art_fonts;
 pub use settings::*;
 
 pub static VERSION: std::sync::LazyLock<semver::Version> = std::sync::LazyLock::new(|| semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap());

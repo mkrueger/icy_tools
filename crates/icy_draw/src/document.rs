@@ -102,6 +102,20 @@ pub const OUTLINE_KEYS: [(&str, char); 18] = [
 ];
 
 /// Outline code typed by the digit keys 1–8.
+/// The character `font` draws for `character`: itself, a space as wide as the font's spacing,
+/// or the other case in fonts that have only upper or only lower case letters.
+fn art_glyph(font: &retrofont::Font, character: char) -> Option<char> {
+    if font.has_char(character) || character == ' ' {
+        return Some(character);
+    }
+    let other = if character.is_lowercase() {
+        character.to_uppercase().next()
+    } else {
+        character.to_lowercase().next()
+    };
+    other.filter(|other| *other != character && font.has_char(*other))
+}
+
 fn outline_digit(character: char) -> Option<char> {
     OUTLINE_KEYS[10..].iter().find(|(key, _)| key.starts_with(character)).map(|(_, code)| *code)
 }
@@ -119,6 +133,9 @@ pub struct Document {
     pub baseline: Option<Vec<u8>>,
     stroke: Option<Stroke>,
     paste: Option<PasteState>,
+    /// The caret after the last font text and the column its line started at, so Enter returns
+    /// there while typing continues from where the text left off.
+    art_line: Option<(Position, i32)>,
 }
 
 impl Document {
@@ -142,6 +159,7 @@ impl Document {
             metadata_dirty: false,
             stroke: None,
             paste: None,
+            art_line: None,
         }
     }
 
@@ -828,23 +846,27 @@ impl Document {
         if !self.can_paint() {
             return Ok(());
         }
-        self.with_state(|state| {
+        let art_line = self.art_line;
+        let (caret, line_start) = self.with_state(|state| {
             let _undo = state.begin_typed_atomic_undo("Render font character", icy_engine_edit::OperationType::RenderCharacter);
             state.undo_caret_position()?;
+            let caret = state.get_caret().position();
+            // Text continues its line unless the caret was moved elsewhere since.
+            let line_start = art_line.filter(|(after, _)| *after == caret).map_or(caret.x, |(_, column)| column);
             for character in text.chars() {
                 let start = state.get_caret().position();
                 if character == '\n' {
-                    state.set_caret_position(Position::new(0, start.y + font.max_height() as i32));
-                } else if font.has_char(character) {
+                    state.set_caret_position(Position::new(line_start, start.y + font.max_height() as i32));
+                } else if let Some(glyph) = art_glyph(font, character) {
                     let mut renderer = icy_engine_edit::TdfEditStateRenderer::new(state, start.x, start.y)?;
                     if matches!(font, retrofont::Font::Tdf(tdf) if matches!(tdf.font_type(), retrofont::tdf::TdfFontType::Block | retrofont::tdf::TdfFontType::Outline)) {
-                        if let Some((width, height)) = font.glyph_size(character) {
+                        if let Some((width, height)) = font.glyph_size(glyph) {
                             renderer.fill_background(width, height)?;
                         }
                     }
                     font.render_glyph(
                         &mut renderer,
-                        character,
+                        glyph,
                         &retrofont::RenderOptions {
                             outline_style,
                             ..Default::default()
@@ -855,9 +877,11 @@ impl Document {
                     state.set_caret_position(Position::new(end, start.y));
                 }
             }
-            Ok::<(), icy_engine::EngineError>(())
+            Ok::<_, icy_engine::EngineError>((state.get_caret().position(), line_start))
         })
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+        self.art_line = Some((caret, line_start));
+        Ok(())
     }
 
     pub fn font_backspace(&mut self) -> DrawResult<()> {
@@ -891,7 +915,13 @@ impl Document {
                 state.backspace()
             }
         })
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+        // Backspace stays on the same text, so its line keeps its start column.
+        let caret = self.with_state(|state| state.get_caret().position());
+        if let Some((after, _)) = &mut self.art_line {
+            *after = caret;
+        }
+        Ok(())
     }
 
     pub fn tag_preview_position(&self, index: usize, position: Position) -> Position {
@@ -1426,6 +1456,73 @@ mod tests {
             assert_eq!(doc.with_state(|state| state.get_buffer().char_at((3, 1).into()).ch), ' ');
             assert_eq!(doc.with_state(|state| state.get_buffer().char_at((4, 0).into()).attribute.background()), 0);
         }
+    }
+
+    /// A color font with only an upper case 'A', 3 × 2 cells, and a spacing of 2.
+    fn upper_case_font() -> retrofont::Font {
+        let mut tdf = retrofont::tdf::TdfFont::new("upper", icy_engine_edit::charset::TdfFontType::Color, 2);
+        let mut glyph = retrofont::Glyph::new(3, 2);
+        glyph.parts = vec![
+            retrofont::GlyphPart::Char('A'),
+            retrofont::GlyphPart::Char('A'),
+            retrofont::GlyphPart::Char('A'),
+            retrofont::GlyphPart::NewLine,
+            retrofont::GlyphPart::Char('a'),
+            retrofont::GlyphPart::Char('a'),
+            retrofont::GlyphPart::Char('a'),
+        ];
+        tdf.add_glyph('A', glyph);
+        retrofont::Font::Tdf(Box::new(tdf))
+    }
+
+    #[test]
+    fn text_art_types_spaces_and_the_other_case() {
+        let font = upper_case_font();
+        let mut doc = Document::new(Size::new(30, 12));
+        doc.type_art_text("a A", &font, 0).unwrap();
+        let caret = doc.with_state(|state| state.get_caret().position());
+        assert_eq!(caret, Position::new(3 + 2 + 3, 0), "a lower case letter and the space advance the caret");
+        for x in [0, 5] {
+            assert_eq!(
+                doc.with_state(|state| state.get_buffer().char_at((x, 0).into()).ch),
+                'A',
+                "a glyph at column {x}"
+            );
+        }
+        doc.type_art_text("?", &font, 0).unwrap();
+        assert_eq!(doc.with_state(|state| state.get_caret().position()), caret, "missing glyphs are still skipped");
+    }
+
+    #[test]
+    fn text_art_enter_returns_to_the_start_column() {
+        let font = upper_case_font();
+        let mut doc = Document::new(Size::new(40, 12));
+        doc.with_state(|state| state.set_caret_position(Position::new(10, 1)));
+        doc.type_art_text("AA", &font, 0).unwrap();
+        // Each key is typed on its own, like in the editor.
+        doc.type_art_text("\n", &font, 0).unwrap();
+        doc.type_art_text("A", &font, 0).unwrap();
+        assert_eq!(
+            doc.with_state(|state| state.get_buffer().char_at((10, 3).into()).ch),
+            'A',
+            "the second line starts below the first"
+        );
+        doc.font_backspace().unwrap();
+        assert_eq!(doc.with_state(|state| state.get_caret().position()), Position::new(10, 3));
+        doc.type_art_text("A\n", &font, 0).unwrap();
+        assert_eq!(
+            doc.with_state(|state| state.get_caret().position()),
+            Position::new(10, 5),
+            "backspace keeps the line start"
+        );
+
+        doc.with_state(|state| state.set_caret_position(Position::new(20, 8)));
+        doc.type_art_text("A\n", &font, 0).unwrap();
+        assert_eq!(
+            doc.with_state(|state| state.get_caret().position()),
+            Position::new(20, 10),
+            "moving the caret starts a new text"
+        );
     }
 
     #[test]

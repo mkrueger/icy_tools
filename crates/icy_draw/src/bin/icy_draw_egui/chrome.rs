@@ -623,7 +623,11 @@ impl DrawApp {
         });
         let painter = ui.painter();
         for index in 0..count {
-            let (column, row) = if column_major { (index / rows, index % rows) } else { (index % columns, index / columns) };
+            let (column, row) = if column_major {
+                (index / rows, index % rows)
+            } else {
+                (index % columns, index / columns)
+            };
             let target = egui::Rect::from_min_size(rect.min + egui::vec2(column as f32 * cell, row as f32 * cell), egui::Vec2::splat(cell)).shrink(gap / 2.0);
             let (red, green, blue) = palette.rgb(index as u32);
             painter.rect_filled(target, rounding, Color32::from_rgb(red, green, blue));
