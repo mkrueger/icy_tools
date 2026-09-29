@@ -587,7 +587,7 @@ impl DrawApp {
         }
     }
 
-    /// Row-major palette grid: left click sets the foreground, right click the background.
+    /// Palette grid: left click sets the foreground, right click the background.
     fn palette_grid(&mut self, ui: &mut egui::Ui, width: f32) {
         let (palette, foreground, background) = self.document.with_state(|state| {
             let attribute = state.get_caret().attribute;
@@ -609,6 +609,9 @@ impl DrawApp {
         .min(count);
         let cell = width / columns as f32;
         let rows = count.div_ceil(columns);
+        // Two columns hold the low colors on the left and their high counterparts next to them, like Moebius.
+        let column_major = columns == 2;
+        let index_at = |column: usize, row: usize| if column_major { column * rows + row } else { row * columns + column };
         let (rect, response) = ui.allocate_exact_size(egui::vec2(width, cell * rows as f32), egui::Sense::click());
         let gap = if cell >= 16.0 { 3.0 } else { 1.0 };
         let rounding = if cell >= 16.0 { 4 } else { 1 };
@@ -616,11 +619,11 @@ impl DrawApp {
         let hovered = response.hover_pos().and_then(|point| {
             let local = point - rect.min;
             let (column, row) = ((local.x / cell) as usize, (local.y / cell) as usize);
-            (local.x >= 0.0 && local.y >= 0.0 && column < columns && row * columns + column < count).then_some(row * columns + column)
+            (local.x >= 0.0 && local.y >= 0.0 && column < columns && row < rows && index_at(column, row) < count).then(|| index_at(column, row))
         });
         let painter = ui.painter();
         for index in 0..count {
-            let (column, row) = (index % columns, index / columns);
+            let (column, row) = if column_major { (index / rows, index % rows) } else { (index % columns, index / columns) };
             let target = egui::Rect::from_min_size(rect.min + egui::vec2(column as f32 * cell, row as f32 * cell), egui::Vec2::splat(cell)).shrink(gap / 2.0);
             let (red, green, blue) = palette.rgb(index as u32);
             painter.rect_filled(target, rounding, Color32::from_rgb(red, green, blue));
@@ -1549,56 +1552,66 @@ mod tests {
     }
 
     #[test]
-    fn palette_grid_is_row_major_and_accepts_both_mouse_buttons() {
+    fn palette_grid_pairs_low_and_high_colors_and_accepts_both_mouse_buttons() {
         let context = egui::Context::default();
         let mut app = DrawApp::new();
         let mut origin = egui::Pos2::ZERO;
-        let mut draw = |app: &mut DrawApp, events: Vec<egui::Event>| {
+        let mut draw = |app: &mut DrawApp, width: f32, events: Vec<egui::Event>| {
             let _ = context.run(
                 egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 300.0))),
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(240.0, 400.0))),
                     events,
                     ..Default::default()
                 },
                 |context| {
                     egui::CentralPanel::default().show(context, |ui| {
                         origin = ui.cursor().min;
-                        app.palette_grid(ui, 208.0);
+                        app.palette_grid(ui, width);
                     });
                 },
             );
             origin
         };
-        let origin = draw(&mut app, vec![]);
-        for (column, row, index, button) in [
+        // Eight columns are row-major: the high colors form the second row.
+        let wide = [
             (1, 0, 1, egui::PointerButton::Primary),
             (0, 1, 8, egui::PointerButton::Primary),
             (7, 1, 15, egui::PointerButton::Secondary),
-        ] {
-            let point = origin + egui::vec2(column as f32 * 26.0 + 13.0, row as f32 * 26.0 + 13.0);
-            for pressed in [true, false] {
-                draw(
-                    &mut app,
-                    vec![
-                        egui::Event::PointerMoved(point),
-                        egui::Event::PointerButton {
-                            pos: point,
-                            button,
-                            pressed,
-                            modifiers: egui::Modifiers::NONE,
-                        },
-                    ],
-                );
-            }
-            let attribute = app.document.with_state(|state| state.get_caret().attribute);
-            assert_eq!(
-                if button == egui::PointerButton::Primary {
+        ];
+        // Two columns are column-major: each high color sits right of its low color.
+        let narrow = [
+            (1, 0, 8, egui::PointerButton::Primary),
+            (0, 1, 1, egui::PointerButton::Primary),
+            (1, 7, 15, egui::PointerButton::Secondary),
+            (0, 7, 7, egui::PointerButton::Secondary),
+        ];
+        for (width, cases) in [(208.0, &wide[..]), (52.0, &narrow[..])] {
+            let origin = draw(&mut app, width, vec![]);
+            for &(column, row, index, button) in cases {
+                let point = origin + egui::vec2(column as f32 * 26.0 + 13.0, row as f32 * 26.0 + 13.0);
+                for pressed in [true, false] {
+                    draw(
+                        &mut app,
+                        width,
+                        vec![
+                            egui::Event::PointerMoved(point),
+                            egui::Event::PointerButton {
+                                pos: point,
+                                button,
+                                pressed,
+                                modifiers: egui::Modifiers::NONE,
+                            },
+                        ],
+                    );
+                }
+                let attribute = app.document.with_state(|state| state.get_caret().attribute);
+                let picked = if button == egui::PointerButton::Primary {
                     attribute.foreground()
                 } else {
                     attribute.background()
-                },
-                index
-            );
+                };
+                assert_eq!(picked, index, "{width} wide grid at column {column}, row {row}");
+            }
         }
     }
 

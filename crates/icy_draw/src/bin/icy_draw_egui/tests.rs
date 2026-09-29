@@ -579,6 +579,80 @@ fn paint_tools_show_hover_preview_with_half_block_height() {
 }
 
 #[test]
+fn canvas_context_menu_opens_for_text_and_selection_tools() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    frame(&context, &mut app, size, vec![]);
+    {
+        let mut info = app.view.terminal.render_info.write();
+        info.display_scale = 2.0;
+        info.viewport_width = app.canvas_rect.width();
+        info.viewport_height = app.canvas_rect.height();
+        info.font_width = 8.0;
+        info.font_height = 16.0;
+        info.bounds_x = app.canvas_rect.left();
+        info.bounds_y = app.canvas_rect.top();
+    }
+    let info = app.view.terminal.render_info.read().clone();
+    let cell = |x: f32, y: f32| {
+        egui::pos2(
+            info.bounds_x + info.viewport_x + info.font_width * info.display_scale * (x + 0.5),
+            info.bounds_y + info.viewport_y + info.font_height * info.display_scale * (y + 0.5),
+        )
+    };
+    let right_click = |app: &mut DrawApp, position: egui::Pos2| {
+        frame(&context, app, size, vec![egui::Event::PointerMoved(position)]);
+        for pressed in [true, false] {
+            frame(
+                &context,
+                app,
+                size,
+                vec![egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Secondary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        }
+        frame(&context, app, size, vec![])
+    };
+    let menu_open = |output: &egui::FullOutput| text_position(output, "Select All").is_some() && text_position(output, "Paste").is_some();
+    let caret = |app: &DrawApp| app.document.with_state(|state| state.get_caret().position());
+
+    let output = right_click(&mut app, cell(5.0, 3.0));
+    assert!(menu_open(&output), "the text tool opens the context menu");
+    assert_eq!(caret(&app), Position::new(5, 3), "the caret moves to the clicked cell");
+    click_text(&context, &mut app, size, "Select All");
+    assert!(app.document.with_state(|state| state.is_something_selected()));
+
+    frame(&context, &mut app, size, vec![]);
+    let output = right_click(&mut app, cell(10.0, 8.0));
+    assert!(menu_open(&output), "a right click in the selection opens the context menu");
+    assert_eq!(caret(&app), Position::new(5, 3), "inside the selection the caret stays");
+    assert!(app.document.with_state(|state| state.is_something_selected()), "the selection is kept");
+    click_text(&context, &mut app, size, "Deselect");
+    assert!(!app.document.with_state(|state| state.is_something_selected()));
+
+    app.document.tool = Tool::Select;
+    app.select_all();
+    let output = right_click(&mut app, cell(2.0, 2.0));
+    assert!(menu_open(&output), "the selection tool opens the context menu");
+    assert!(
+        app.document.with_state(|state| state.is_something_selected()),
+        "the right button does not start a new selection"
+    );
+    frame(&context, &mut app, size, vec![key_event(Key::Escape, egui::Modifiers::NONE)]);
+
+    app.document.tool = Tool::Pencil;
+    let output = right_click(&mut app, cell(4.0, 4.0));
+    assert!(!menu_open(&output), "painting tools keep the right button for the swapped colors");
+}
+
+#[test]
 fn toolbar_color_switcher_swaps_and_opens_palette_popup() {
     let context = egui::Context::default();
     appearance::apply(&context);

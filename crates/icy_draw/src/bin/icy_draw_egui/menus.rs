@@ -4,7 +4,7 @@ use super::{Dialog, DrawApp, FileAction};
 use eframe::egui::{self, Key, KeyboardShortcut, Modifiers};
 use icy_draw::fl;
 use icy_engine::TextPane;
-use icy_engine_edit::UndoState;
+use icy_engine_edit::{tools::Tool, UndoState};
 use icy_engine_gui::{
     egui::{
         appearance::{self, labels, DialogButton, DialogSize},
@@ -395,6 +395,64 @@ impl DrawApp {
             return;
         }
         let animation = self.animation.is_some();
+        let selected = self.undo_items(ui, animation);
+        ui.separator();
+        let paint = self.document.can_paint();
+        if item(ui, &fl!("menu-cut"), Some(&CUT), animation || (selected && paint)) {
+            if animation {
+                context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
+                context.input_mut(|input| input.events.push(egui::Event::Cut));
+            } else {
+                self.cut(context);
+            }
+        }
+        if item(ui, &fl!("menu-copy"), Some(&COPY), animation || selected) {
+            self.copy(context);
+        }
+        if item(ui, &fl!("menu-paste"), Some(&PASTE), animation || paint) {
+            if animation {
+                context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
+                context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            } else {
+                self.paste_clipboard(context);
+            }
+        }
+        if animation {
+            ui.separator();
+            if item(ui, &fl!("menu-select-all"), Some(&SELECT_ALL), true) {
+                context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
+                context.input_mut(|input| {
+                    input.events.push(egui::Event::Key {
+                        key: Key::A,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: egui::Modifiers::COMMAND,
+                    })
+                });
+            }
+            return;
+        }
+        if item(ui, &fl!("menu-insert-image"), None, paint && !self.document.paste_active()) {
+            self.choose(context, FileAction::InsertImage);
+        }
+        ui.separator();
+        ui.add_enabled_ui(paint, |ui| {
+            ui.menu_button(fl!("menu-area-operations"), |ui| self.area_menu(ui));
+        });
+        ui.separator();
+        if item(ui, &fl!("menu-open_font_selector"), None, true) {
+            self.open_font_selector();
+        }
+        ui.separator();
+        let mut mirror = self.document.with_state(|state| state.get_mirror_mode());
+        if check_item(ui, &fl!("menu-mirror_mode"), None, &mut mirror) {
+            self.document.with_state(|state| state.set_mirror_mode(mirror));
+        }
+    }
+
+    /// Undo and redo entries naming the operation they revert; returns whether something is selected.
+    fn undo_items(&mut self, ui: &mut egui::Ui, animation: bool) -> bool {
         let (undo, redo, selected) = self.document.with_state(|state| {
             let describe = |description: Option<String>| description.filter(|text| !text.is_empty());
             (
@@ -419,75 +477,74 @@ impl DrawApp {
         if item(ui, &redo_label, Some(&REDO), animation || redo.is_some() || font_redo) {
             self.undo(true);
         }
-        ui.separator();
-        let paint = self.document.can_paint();
-        if item(ui, &fl!("menu-cut"), Some(&CUT), animation || (selected && paint)) {
-            if animation {
-                context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
-                context.input_mut(|input| input.events.push(egui::Event::Cut));
-            } else {
-                self.copy(context);
-                self.edit(|state| state.erase_selection());
+        selected
+    }
+
+    fn area_menu(&mut self, ui: &mut egui::Ui) {
+        for entry in AREA_MENU {
+            match entry {
+                Some(operation) => {
+                    if item(ui, &operation.label(), operation.shortcut().as_ref(), true) {
+                        self.area_operation(operation);
+                    }
+                }
+                None => {
+                    ui.separator();
+                }
             }
         }
-        if item(ui, &fl!("menu-copy"), Some(&COPY), animation || selected) {
+    }
+
+    /// Whether a right click on the canvas opens [`Self::canvas_context_menu`]: in the text and
+    /// selection tools, whose right button does not paint.
+    pub(super) fn has_canvas_context_menu(&self) -> bool {
+        matches!(self.document.tool, Tool::Click | Tool::Font | Tool::Select) && !self.document.paste_active()
+    }
+
+    /// The most common editing commands at the canvas: clipboard, selection and area operations.
+    pub(super) fn canvas_context_menu(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        let selected = self.undo_items(ui, false);
+        let paint = self.document.can_paint();
+        ui.separator();
+        if item(ui, &fl!("menu-cut"), Some(&CUT), selected && paint) {
+            self.cut(context);
+        }
+        if item(ui, &fl!("menu-copy"), Some(&COPY), selected) {
             self.copy(context);
         }
-        if item(ui, &fl!("menu-paste"), Some(&PASTE), animation || paint) {
-            if animation {
-                context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
-                context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
-            } else if let Some(content) = icy_engine_gui::system_clipboard::read() {
-                // Read directly: egui reports no paste for a clipboard with only an image.
-                self.paste_content(content);
-            } else {
-                context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
-            }
+        if item(ui, &fl!("menu-paste"), Some(&PASTE), paint) {
+            self.paste_clipboard(context);
         }
-        if animation {
-            ui.separator();
-            if item(ui, &fl!("menu-select-all"), Some(&SELECT_ALL), true) {
-                context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
-                context.input_mut(|input| {
-                    input.events.push(egui::Event::Key {
-                        key: Key::A,
-                        physical_key: None,
-                        pressed: true,
-                        repeat: false,
-                        modifiers: egui::Modifiers::COMMAND,
-                    })
-                });
-            }
-            return;
+        if item(ui, &fl!("menu-delete"), None, selected && paint) {
+            self.document.finish();
+            self.edit(|state| state.erase_selection());
         }
-        if item(ui, &fl!("menu-insert-image"), None, paint && !self.document.paste_active()) {
-            self.choose(context, FileAction::InsertImage);
+        ui.separator();
+        if item(ui, &fl!("menu-select-all"), Some(&SELECT_ALL), true) {
+            self.select_all();
+        }
+        if item(ui, &fl!("menu-select_nothing"), Some(&DESELECT), selected) {
+            self.edit(|state| state.clear_selection());
+        }
+        if item(ui, &fl!("cmd-select-inverse-menu"), Some(&INVERT_SELECTION), true) {
+            self.edit(|state| state.inverse_selection());
+        }
+        ui.separator();
+        if item(ui, &fl!("menu-flip-x"), None, paint) {
+            self.edit(|state| state.flip_x());
+        }
+        if item(ui, &fl!("menu-flip-y"), None, paint) {
+            self.edit(|state| state.flip_y());
+        }
+        if item(ui, &fl!("menu-crop"), None, selected && paint) {
+            self.edit(|state| state.crop());
         }
         ui.separator();
         ui.add_enabled_ui(paint, |ui| {
-            ui.menu_button(fl!("menu-area-operations"), |ui| {
-                for entry in AREA_MENU {
-                    match entry {
-                        Some(operation) => {
-                            if item(ui, &operation.label(), operation.shortcut().as_ref(), true) {
-                                self.area_operation(operation);
-                            }
-                        }
-                        None => {
-                            ui.separator();
-                        }
-                    }
-                }
-            });
+            ui.menu_button(fl!("menu-area-operations"), |ui| self.area_menu(ui));
         });
-        ui.separator();
-        if item(ui, &fl!("menu-open_font_selector"), None, true) {
-            self.open_font_selector();
-        }
-        ui.separator();
-        let mut mirror = self.document.with_state(|state| state.get_mirror_mode());
-        if check_item(ui, &fl!("menu-mirror_mode"), None, &mut mirror) {
-            self.document.with_state(|state| state.set_mirror_mode(mirror));
+        if item(ui, &fl!("menu-pick_attribute_under_caret"), Some(&PICK_ATTRIBUTE), true) {
+            self.color_operation(ColorOp::PickAttributeUnderCaret);
         }
     }
 

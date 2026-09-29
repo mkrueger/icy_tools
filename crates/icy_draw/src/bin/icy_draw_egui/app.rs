@@ -1795,6 +1795,16 @@ impl DrawApp {
                             meta: modifiers.mac_cmd,
                         },
                     );
+                } else if pointer.button_pressed(egui::PointerButton::Secondary) && self.has_canvas_context_menu() {
+                    // The right button opens the context menu; outside a selection it first moves the caret there.
+                    if self.document.tool != Tool::Select {
+                        self.document.finish();
+                        self.document.with_state(|state| {
+                            if !state.is_selected(position) {
+                                state.set_caret_from_document_position(position);
+                            }
+                        });
+                    }
                 } else {
                     let button = if pointer.button_pressed(egui::PointerButton::Secondary) {
                         icy_engine::MouseButton::Right
@@ -1858,6 +1868,10 @@ impl DrawApp {
                 });
             });
         }
+        if self.has_canvas_context_menu() {
+            let context = ui.ctx().clone();
+            response.context_menu(|ui| self.canvas_context_menu(ui, &context));
+        }
         if pointer.any_pressed() && !response.hovered() {
             self.canvas_focus = false;
         }
@@ -1873,6 +1887,21 @@ impl DrawApp {
         if let Ok(data) = icy_engine_gui::prepare_clipboard_data(&**screen) {
             self.clipboard = data.icy_data.clone().map(|icy| (data.text.clone(), icy));
             system_clipboard::copy_data_or_text(context, &data);
+        }
+    }
+
+    fn cut(&mut self, context: &egui::Context) {
+        self.copy(context);
+        self.edit(|state| state.erase_selection());
+    }
+
+    /// Pastes the system clipboard, falling back to asking egui for a text paste.
+    fn paste_clipboard(&mut self, context: &egui::Context) {
+        if let Some(content) = system_clipboard::read() {
+            // Read directly: egui reports no paste for a clipboard with only an image.
+            self.paste_content(content);
+        } else {
+            context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
     }
 
@@ -1973,10 +2002,7 @@ impl DrawApp {
                     _ => {}
                 },
                 egui::Event::Copy if self.canvas_focus => self.copy(context),
-                egui::Event::Cut if self.canvas_focus && self.document.can_paint() => {
-                    self.copy(context);
-                    self.edit(|state| state.erase_selection());
-                }
+                egui::Event::Cut if self.canvas_focus && self.document.can_paint() => self.cut(context),
                 egui::Event::Paste(text) if self.canvas_focus && self.document.can_paint() => self.paste(&text),
                 egui::Event::Text(text) if self.canvas_focus && self.document.tool == Tool::Click && !self.document.paste_active() => {
                     if !(hard_blank && text == " ") {
