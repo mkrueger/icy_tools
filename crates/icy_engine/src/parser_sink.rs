@@ -224,9 +224,16 @@ impl<'a> ScreenSink<'a> {
             self.screen.caret().attribute
         };
 
-        if self.screen.terminal_state().ice_colors && attr.is_blinking() && attr.background() < 8 {
-            attr.set_is_blinking(false);
-            attr.set_background(attr.background() + 8);
+        // iCE: the blink bit is the high bit of a 16-color background. It
+        // doesn't apply to RGB or extended backgrounds (e.g. PabloDraw's
+        // `ESC[0;R;G;Bt`), which `background()` reports as 0.
+        if self.screen.terminal_state().ice_colors && attr.is_blinking() {
+            if let crate::AttributeColor::Palette(bg) = attr.background_color() {
+                if bg < 8 {
+                    attr.set_is_blinking(false);
+                    attr.set_background(u32::from(bg) + 8);
+                }
+            }
         }
         attr
     }
@@ -536,6 +543,15 @@ impl<'a> ScreenSink<'a> {
     }
 }
 
+impl ScreenSink<'_> {
+    /// A CP437 art file being loaded, as opposed to a terminal session or
+    /// another character set: control bytes the ANSI parser doesn't
+    /// interpret are glyphs here.
+    fn is_cp437_art(&self) -> bool {
+        !self.screen.terminal_state().is_terminal_buffer && matches!(self.screen.buffer_type(), BufferType::CP437)
+    }
+}
+
 impl CommandSink for ScreenSink<'_> {
     fn print(&mut self, text: &[u8]) {
         if !self.screen.text_output_enabled() {
@@ -616,10 +632,21 @@ impl CommandSink for ScreenSink<'_> {
                 self.screen.ff();
             }
             TerminalCommand::Bell => {
-                // Bell is typically handled by the application layer
+                // In a terminal, the application rings the bell. In a CP437
+                // art file, 0x07 is the bullet glyph, as ansilove and
+                // PabloDraw draw it.
+                if self.is_cp437_art() {
+                    self.print(&[0x07]);
+                }
             }
             TerminalCommand::Delete => {
-                self.screen.del();
+                // In a CP437 art file, 0x7F is the house glyph, not DEL.
+                // PETSCII and ATASCII deletes stay deletes.
+                if self.is_cp437_art() {
+                    self.print(&[0x7F]);
+                } else {
+                    self.screen.del();
+                }
             }
 
             // Cursor movement
@@ -1283,8 +1310,48 @@ impl CommandSink for ScreenSink<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Screen;
+    use crate::{Screen, TextPane};
     use icy_parser_core::{AnsiParser, CommandParser};
+
+    #[test]
+    fn art_files_draw_bel_and_del_as_glyphs() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        screen.terminal_state_mut().is_terminal_buffer = false;
+        AnsiParser::new().parse(b"A\x07B\x7fC", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.caret_position(), Position::new(5, 0));
+        assert_eq!(screen.char_at(Position::new(1, 0)).ch as u32, 0x07);
+        assert_eq!(screen.char_at(Position::new(3, 0)).ch as u32, 0x7F);
+        assert_eq!(screen.char_at(Position::new(4, 0)).ch, 'C');
+    }
+
+    #[test]
+    fn terminals_still_treat_bel_as_a_bell() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        AnsiParser::new().parse(b"A\x07B", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.caret_position(), Position::new(2, 0));
+        assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'B');
+    }
+
+    #[test]
+    fn ice_colors_leave_rgb_backgrounds_alone() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        screen.terminal_state_mut().ice_colors = true;
+        // Blink + brown, then a PabloDraw 24-bit background.
+        AnsiParser::new().parse(b"\x1b[5;43m\x1b[0;255;255;87t ", &mut ScreenSink::new(&mut screen));
+        let attr = screen.char_at(Position::new(0, 0)).attribute;
+        assert_eq!(attr.background_color(), crate::AttributeColor::Rgb(255, 255, 87));
+    }
+
+    #[test]
+    fn ice_colors_still_brighten_palette_backgrounds() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        screen.terminal_state_mut().ice_colors = true;
+        AnsiParser::new().parse(b"\x1b[5;43m ", &mut ScreenSink::new(&mut screen));
+        let attr = screen.char_at(Position::new(0, 0)).attribute;
+        // SGR 43 is DOS brown (6); iCE makes it yellow (14).
+        assert_eq!(attr.background_color(), crate::AttributeColor::Palette(14));
+        assert!(!attr.is_blinking());
+    }
 
     #[test]
     fn syncdoom_mouse_modes_enable_and_disable() {
