@@ -169,3 +169,21 @@ fn fixture_commands_have_canonical_encodings() {
         }
     }
 }
+
+#[test]
+fn single_parameter_vt52_commands_wait_for_their_terminator() {
+    // `v`, `w` and `m` used to end at a chunk boundary, leaving their `:` as text.
+    let items = parse_igs_stream(b"G#v>1:w>0:m>1,2:");
+    assert!(items.iter().all(|item| matches!(item, IgsItem::Command(_))), "{items:?}");
+    assert_eq!(
+        commands(&items),
+        vec![
+            IgsCommand::InverseVideo { enabled: true },
+            IgsCommand::LineWrap { enabled: false },
+            IgsCommand::CursorMotion {
+                direction: icy_parser_core::Direction::Down,
+                count: 2,
+            },
+        ]
+    );
+}

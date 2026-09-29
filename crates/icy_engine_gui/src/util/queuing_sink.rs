@@ -164,6 +164,29 @@ impl CommandSink for QueueingSink<'_> {
     }
 
     fn emit_igs(&mut self, cmd: IgsCommand) {
+        // A color rotation with a delay shows one shift at a time.
+        if let IgsCommand::RotateColorRegisters {
+            start_reg,
+            end_reg,
+            count,
+            delay,
+        } = cmd
+        {
+            if count > 0 && delay > 0 && start_reg != end_reg {
+                for _ in 0..count.min(9999) {
+                    self.command_queue.push_back(QueuedCommand::Igs(IgsCommand::RotateColorRegisters {
+                        start_reg,
+                        end_reg,
+                        count: 1,
+                        delay: 0,
+                    }));
+                    self.command_queue.push_back(QueuedCommand::Igs(IgsCommand::Pause {
+                        pause_type: icy_parser_core::PauseType::MilliSeconds(delay.min(9999) as u32 * 5),
+                    }));
+                }
+                return;
+            }
+        }
         self.command_queue.push_back(QueuedCommand::Igs(cmd));
     }
 
@@ -189,5 +212,45 @@ impl CommandSink for QueueingSink<'_> {
 
     fn request(&mut self, request: TerminalRequest) {
         self.command_queue.push_back(QueuedCommand::TerminalRequest(request));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use icy_parser_core::PauseType;
+
+    #[test]
+    fn delayed_color_rotation_is_queued_one_shift_at_a_time() {
+        let mut queue = VecDeque::new();
+        let mut sink = QueueingSink::new(&mut queue);
+        sink.emit_igs(IgsCommand::RotateColorRegisters {
+            start_reg: 1,
+            end_reg: 15,
+            count: 3,
+            delay: 10,
+        });
+        sink.emit_igs(IgsCommand::RotateColorRegisters {
+            start_reg: 1,
+            end_reg: 15,
+            count: 0,
+            delay: 10,
+        });
+        let shifts = queue
+            .iter()
+            .filter(|command| matches!(command, QueuedCommand::Igs(IgsCommand::RotateColorRegisters { count: 1, delay: 0, .. })))
+            .count();
+        let pauses = queue
+            .iter()
+            .filter(|command| {
+                matches!(
+                    command,
+                    QueuedCommand::Igs(IgsCommand::Pause {
+                        pause_type: PauseType::MilliSeconds(50)
+                    })
+                )
+            })
+            .count();
+        assert_eq!((shifts, pauses, queue.len()), (3, 3, 7), "the reset is queued unchanged");
     }
 }

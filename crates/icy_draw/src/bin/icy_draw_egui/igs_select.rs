@@ -182,6 +182,10 @@ pub fn geometry(command: &IgsCommand, canvas: &Canvas, text_size: u8) -> Option<
             ry: canvas.circle_y_radius(value(y_radius)?),
         },
         IgsCommand::DefineZone { zone_id, x1, y1, x2, y2, .. } if !(9997..=9999).contains(zone_id) => rect(value(x1)?, value(y1)?, value(x2)?, value(y2)?),
+        IgsCommand::SprayPaint { x, y, width, height, density } if value(density)? > 0 => {
+            let (x, y) = (value(x)?, value(y)?);
+            rect(x, y, x + value(width)?, y + value(height)?)
+        }
         // A copied area is placed by its destination; its size follows the source.
         IgsCommand::GrabScreen {
             operation:
@@ -231,6 +235,12 @@ pub fn apply(command: &IgsCommand, geometry: &Geometry, canvas: &Canvas) -> IgsC
             set(y1, *y0);
             set(x2, *r);
             set(y2, *b);
+        }
+        (IgsCommand::SprayPaint { x, y, width, height, .. }, Geometry::Rect { x0, y0, x1: r, y1: b }) => {
+            set(x, *x0);
+            set(y, *y0);
+            set(width, (r - x0).min(255));
+            set(height, (b - y0).min(255));
         }
         (
             IgsCommand::GrabScreen {

@@ -97,3 +97,4 @@ pub fn test_ignite() {
         super::run_parser_compare(&mut screen, &cur_entry, &data);
     }
 }
+mod commands;

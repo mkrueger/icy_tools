@@ -1,4 +1,4 @@
-use icy_parser_core::{DrawingMode, LineKind, ParameterBounds, PatternType, PolymarkerKind, TextEffects, TextRotation};
+use icy_parser_core::{ArrowEnd, DrawingMode, LineKind, ParameterBounds, PatternType, PolymarkerKind, TextEffects, TextRotation};
 
 mod blitting;
 mod circle;
@@ -32,7 +32,15 @@ pub struct VdiPaint {
     pub drawing_mode: DrawingMode,
     pub polymarker_size: i32,
     pub line_thickness: i32,
+    /// Start and end styles of lines (`vsl_ends`).
+    pub line_ends: (ArrowEnd, ArrowEnd),
     line_user_mask: u16,
+
+    /// The pen the next spray paint marker uses and the first pen it cycles back to, while
+    /// spray paint color rotation is on.
+    pub spray_rotation: Option<(u8, u8)>,
+    /// The color registers before the first rotation, restored by a rotation reset.
+    pub rotation_palette: Option<crate::Palette>,
 
     fill_pattern_type: PatternType,
     pub fill_draw_border: bool,
@@ -71,7 +79,10 @@ impl VdiPaint {
             drawing_mode: DrawingMode::Replace,
             polymarker_size: 1,
             line_thickness: 1,
+            line_ends: (ArrowEnd::Square, ArrowEnd::Square),
             line_user_mask: 0b1010_1010_1010_1010,
+            spray_rotation: None,
+            rotation_palette: None,
 
             fill_pattern_type: PatternType::Solid,
             fill_draw_border: false,
@@ -123,7 +134,7 @@ impl VdiPaint {
         self.line_kind = LineKind::Solid;
         self.line_color = default_color;
         self.line_thickness = 1;
-        // Note: line endpoints (vsl_ends) are not stored as separate attributes
+        self.line_ends = (ArrowEnd::Square, ArrowEnd::Square);
 
         // Reset fill attributes (vsf_*)
         self.fill_pattern_type = PatternType::Solid;

@@ -55,6 +55,7 @@ quantette = { workspace = true }
 
 imgref = "1.12.2"
 rgb = "0.8.53"
+fastrand.workspace = true
 
 [dev-dependencies]
 walkdir = { workspace = true }

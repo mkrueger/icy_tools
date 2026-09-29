@@ -85,7 +85,8 @@ impl VdiPaint {
 
     pub fn draw_arc(&mut self, buf: &mut dyn EditableScreen, center_x: i32, center_y: i32, radius_x: i32, radius_y: i32, start_angle: i32, end_angle: i32) {
         let points = gdp_curve(center_x, center_y, radius_x, radius_y, start_angle * 10, end_angle * 10);
-        self.draw_poly(buf, &points, self.line_color, false);
+        let color = self.line_color;
+        self.draw_styled_polyline(buf, &points, color);
     }
 
     pub fn draw_circle_pub(&mut self, buf: &mut dyn crate::EditableScreen, center_x: i32, center_y: i32, radius: i32) {

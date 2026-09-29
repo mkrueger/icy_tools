@@ -4,8 +4,8 @@
 use eframe::egui;
 use icy_draw::fl;
 use icy_parser_core::{
-    ArrowEnd, BlitMode, BlitOperation, DrawingMode, IgsCommand, IgsParameter, LineKind, LineMarkerStyle, PaletteMode, PatternType, PauseType, PenType,
-    PolymarkerKind, ScreenClearMode, SoundEffect, TerminalResolution, TextEffects, TextRotation,
+    ArrowEnd, BlitMode, BlitOperation, CursorMode, DrawingMode, IgsCommand, IgsParameter, LineKind, LineMarkerStyle, PaletteMode, PatternType, PauseType,
+    PenType, PolymarkerKind, ScreenClearMode, SoundEffect, StopType, TerminalResolution, TextColorLayer, TextEffects, TextRotation,
 };
 
 use super::palette;
@@ -141,6 +141,45 @@ pub fn drawing_mode(ui: &mut egui::Ui, id: &str, value: &mut DrawingMode) {
     combo(ui, id, value, &MODES, super::drawing_mode_name);
 }
 
+fn line_end_name(end: ArrowEnd) -> String {
+    match end {
+        ArrowEnd::Square => fl!("igs-end-square"),
+        ArrowEnd::Arrow => fl!("igs-end-arrow"),
+        ArrowEnd::Rounded => fl!("igs-end-rounded"),
+    }
+}
+
+/// The style of one end of a line.
+pub fn line_end(ui: &mut egui::Ui, id: &str, value: &mut ArrowEnd) -> egui::Response {
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(line_end_name(*value))
+        .show_ui(ui, |ui| {
+            for end in [ArrowEnd::Square, ArrowEnd::Arrow, ArrowEnd::Rounded] {
+                ui.selectable_value(value, end, line_end_name(end));
+            }
+        })
+        .response
+}
+
+/// An ST color word (`0x0RGB`, 0 to 7 per channel on the ST) edited as its channels, with the
+/// color it shows.
+fn st_color(ui: &mut egui::Ui, name: &str, value: &mut i32) {
+    row(ui, name, |ui| {
+        let channel = |value: i32, shift: i32| (value >> shift) & 7;
+        let (mut red, mut green, mut blue) = (channel(*value, 8), channel(*value, 4), channel(*value, 0));
+        let color = egui::Color32::from_rgb((red * 34) as u8, (green * 34) as u8, (blue * 34) as u8);
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(22.0, 18.0), egui::Sense::hover());
+        ui.painter().rect_filled(rect, 3.0, color);
+        let mut changed = false;
+        for (channel, label) in [(&mut red, "R"), (&mut green, "G"), (&mut blue, "B")] {
+            changed |= ui.add(egui::DragValue::new(channel).range(0..=7).prefix(label)).changed();
+        }
+        if changed {
+            *value = red << 8 | green << 4 | blue;
+        }
+    });
+}
+
 fn sound_effect(ui: &mut egui::Ui, value: &mut SoundEffect) {
     row(ui, &fl!("igs-template-sound"), |ui| {
         let name = |effect: SoundEffect| format!("{} · {}", effect as u8, super::sound_name(effect as usize));
@@ -219,6 +258,28 @@ pub fn rotation(ui: &mut egui::Ui, value: &mut TextRotation) {
     ]
     .map(|rotation| (rotation, format!("{}°", rotation as u16 * 90), fl!("igs-text-rotation")));
     super::widgets::segmented(ui, value, &options);
+}
+
+/// What the `<` input command waits for.
+fn input_kind_name(kind: i32) -> String {
+    match kind {
+        0 => fl!("igs-input-key"),
+        1 => fl!("igs-input-line"),
+        2 => fl!("igs-input-zones-marker"),
+        _ => {
+            let pointer = match kind {
+                3 => fl!("igs-pointer-arrow"),
+                4 => fl!("igs-pointer-hourglass"),
+                5 => fl!("igs-pointer-bee"),
+                6 => fl!("igs-pointer-finger"),
+                7 => fl!("igs-pointer-hand"),
+                8 => fl!("igs-pointer-thin-cross"),
+                9 => fl!("igs-pointer-thick-cross"),
+                _ => fl!("igs-pointer-outlined-cross"),
+            };
+            fl!("igs-input-zones", pointer = pointer)
+        }
+    }
 }
 
 fn text(ui: &mut egui::Ui, value: &mut Vec<u8>) {
@@ -409,14 +470,12 @@ pub fn command(ui: &mut egui::Ui, command: &mut IgsCommand, palette: &icy_engine
             }
             LineMarkerStyle::LineEndpoints(kind, left, right) => {
                 row(ui, &fl!("igs-line"), |ui| line_kind(ui, "igs-line-property", kind));
-                let ends = [ArrowEnd::Square, ArrowEnd::Arrow, ArrowEnd::Rounded];
-                let end_name = |end: ArrowEnd| match end {
-                    ArrowEnd::Square => fl!("igs-end-square"),
-                    ArrowEnd::Arrow => fl!("igs-end-arrow"),
-                    ArrowEnd::Rounded => fl!("igs-end-rounded"),
-                };
-                row(ui, &fl!("igs-end-start"), |ui| combo(ui, "igs-end-left", left, &ends, end_name));
-                row(ui, &fl!("igs-end-end"), |ui| combo(ui, "igs-end-right", right, &ends, end_name));
+                row(ui, &fl!("igs-end-start"), |ui| {
+                    line_end(ui, "igs-end-left", left);
+                });
+                row(ui, &fl!("igs-end-end"), |ui| {
+                    line_end(ui, "igs-end-right", right);
+                });
             }
         },
         IgsCommand::SetPenColor { pen, red, green, blue } => {
@@ -483,6 +542,147 @@ pub fn command(ui: &mut egui::Ui, command: &mut IgsCommand, palette: &icy_engine
             PauseType::MilliSeconds(_) => return false,
         },
         IgsCommand::BellsAndWhistles { sound_effect: value } => sound_effect(ui, value),
+        IgsCommand::SprayPaint { x, y, width, height, density } => {
+            if super::is_spray_rotation(width, height, density) {
+                // X 0,pen,0,0,0,0 switches color rotation of sprayed markers.
+                let before = super::select::value(x).unwrap_or(0).clamp(0, 15) as u8;
+                let mut pen = before;
+                let mut on = pen > 0;
+                if ui.checkbox(&mut on, fl!("igs-spray-rotation")).changed() {
+                    pen = u8::from(on);
+                }
+                if on {
+                    row(ui, &fl!("igs-spray-rotation-pen"), |ui| {
+                        palette::pen_picker(ui, "spray-rotation", palette, resolution, &mut pen, egui::vec2(30.0, 22.0));
+                        ui.add(egui::DragValue::new(&mut pen).range(1..=palette::pen_count(resolution).saturating_sub(1)));
+                    });
+                    pen = pen.max(1);
+                }
+                if pen != before {
+                    *x = IgsParameter::Value(i32::from(pen));
+                }
+            } else {
+                for (name, value) in [("x", x), ("y", y), ("width", width), ("height", height)] {
+                    parameter(ui, name, value);
+                }
+                parameter(ui, &fl!("igs-spray-density"), density);
+            }
+        }
+        IgsCommand::RotateColorRegisters {
+            start_reg,
+            end_reg,
+            count,
+            delay,
+        } => {
+            let last = palette::pen_count(resolution).saturating_sub(1);
+            number(ui, &fl!("igs-rotate-start"), start_reg, 0..=last);
+            number(ui, &fl!("igs-rotate-end"), end_reg, 0..=last);
+            number(ui, &fl!("igs-rotate-count"), count, 0..=9999);
+            number(ui, &fl!("igs-rotate-delay"), delay, 0..=9999);
+            ui.weak(fl!("igs-rotate-hint"));
+        }
+        IgsCommand::SetColorRegister { register, value } => {
+            number(ui, &fl!("igs-color-register"), register, 0..=palette::pen_count(resolution).saturating_sub(1));
+            st_color(ui, &fl!("igs-color"), value);
+        }
+        IgsCommand::ChipMusic {
+            sound_effect: value,
+            voice,
+            volume,
+            pitch,
+            timing,
+            stop_type,
+        } => {
+            sound_effect(ui, value);
+            number(ui, &fl!("igs-chip-voice"), voice, 0..=2);
+            number(ui, &fl!("igs-chip-volume"), volume, 0..=15);
+            number(ui, &fl!("igs-chip-pitch"), pitch, 0..=255);
+            number(ui, &fl!("igs-chip-timing"), timing, 0..=9999);
+            row(ui, &fl!("igs-chip-stop"), |ui| {
+                combo(
+                    ui,
+                    "igs-chip-stop",
+                    stop_type,
+                    &[
+                        StopType::NoEffect,
+                        StopType::SndOff,
+                        StopType::StopSnd,
+                        StopType::SndOffAll,
+                        StopType::StopSndAll,
+                    ],
+                    |stop| match stop {
+                        StopType::NoEffect => fl!("igs-chip-stop-none"),
+                        StopType::SndOff => fl!("igs-chip-stop-release"),
+                        StopType::StopSnd => fl!("igs-chip-stop-voice"),
+                        StopType::SndOffAll => fl!("igs-chip-stop-release-all"),
+                        StopType::StopSndAll => fl!("igs-chip-stop-all"),
+                    },
+                );
+            });
+        }
+        IgsCommand::SetEffectLoops { count } => number(ui, &fl!("igs-effect-loops"), count, 1..=16),
+        IgsCommand::Cursor { mode } => row(ui, &fl!("igs-cursor"), |ui| {
+            combo(
+                ui,
+                "igs-cursor-property",
+                mode,
+                &[
+                    CursorMode::Off,
+                    CursorMode::On,
+                    CursorMode::DestructiveBackspace,
+                    CursorMode::NonDestructiveBackspace,
+                ],
+                |mode| match mode {
+                    CursorMode::Off => fl!("igs-cursor-off"),
+                    CursorMode::On => fl!("igs-cursor-on"),
+                    CursorMode::DestructiveBackspace => fl!("igs-cursor-destructive"),
+                    CursorMode::NonDestructiveBackspace => fl!("igs-cursor-non-destructive"),
+                },
+            );
+        }),
+        IgsCommand::InverseVideo { enabled } => {
+            ui.checkbox(enabled, fl!("igs-inverse-video"));
+        }
+        IgsCommand::SetTextColor { layer, color } => {
+            row(ui, &fl!("igs-text-layer"), |ui| {
+                combo(
+                    ui,
+                    "igs-text-layer",
+                    layer,
+                    &[TextColorLayer::Foreground, TextColorLayer::Background],
+                    |layer| match layer {
+                        TextColorLayer::Foreground => fl!("igs-text-foreground"),
+                        TextColorLayer::Background => fl!("igs-text-background"),
+                    },
+                );
+            });
+            row(ui, &fl!("igs-color"), |ui| {
+                palette::pen_picker(ui, "text-color", palette, resolution, color, egui::vec2(30.0, 22.0));
+                ui.add(egui::DragValue::new(color).range(0..=15).clamp_existing_to_range(false));
+            });
+        }
+        IgsCommand::InputCommand { input_type, params } if params.len() >= 2 => {
+            let mut transmit_return = *input_type != 0;
+            if ui.checkbox(&mut transmit_return, fl!("igs-input-return")).changed() {
+                *input_type = u8::from(transmit_return);
+            }
+            let (kind, output) = params.split_at_mut(1);
+            if let (IgsParameter::Value(kind), IgsParameter::Value(output)) = (&mut kind[0], &mut output[0]) {
+                row(ui, &fl!("igs-input-kind"), |ui| {
+                    combo(ui, "igs-input-kind", kind, &(0..=10).collect::<Vec<_>>(), input_kind_name);
+                });
+                row(ui, &fl!("igs-input-output"), |ui| {
+                    combo(ui, "igs-input-output", output, &[1, 0, 2, 3], |output| match output {
+                        0 => fl!("igs-input-hide"),
+                        1 => fl!("igs-input-show"),
+                        2 => fl!("igs-input-show-discard"),
+                        _ => fl!("igs-input-hide-discard"),
+                    });
+                });
+            } else {
+                return false;
+            }
+        }
         _ => return false,
     }
     true

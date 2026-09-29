@@ -20,6 +20,24 @@ fn get_color_map(buf: &dyn EditableScreen) -> (usize, &'static [u8; 16]) {
     }
 }
 
+/// The RGB of an ST/STE color word, e.g. 1911 = 0x777 for white. Each nibble holds a channel
+/// with the STE's extra low bit in bit 3.
+fn st_color(value: i32) -> crate::Color {
+    let level = |shift: i32| {
+        let nibble = (value >> shift) & 0xF;
+        (((nibble & 7) << 1 | nibble >> 3) * 17) as u8
+    };
+    crate::Color::new(level(8), level(4), level(0))
+}
+
+/// Sets a hardware color register (Xbios 7), unlike `S`, which sets the register of a pen.
+fn set_color_register(buf: &mut dyn EditableScreen, register: usize, value: i32) {
+    let (register_count, _) = get_color_map(buf);
+    if register < register_count {
+        buf.palette_mut().set_color(register as u32, st_color(value));
+    }
+}
+
 fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsCommand) {
     //  println!("Executing IGS command: {:?}", cmd); // --- IGNORE ---
     match cmd {
@@ -95,7 +113,8 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
         IgsCommand::PolyLine { points } => {
             if !points.is_empty() {
                 let int_points: Vec<i32> = points.iter().map(|p| p.evaluate(&paint.random_bounds, 0, 0)).collect();
-                paint.draw_polyline(buf, paint.line_color, &int_points);
+                let color = paint.line_color;
+                paint.draw_styled_polyline(buf, &int_points, color);
                 if int_points.len() >= 2 {
                     let last_idx = int_points.len() - 2;
                     paint.draw_to_position = (int_points[last_idx], int_points[last_idx + 1]).into();
@@ -143,10 +162,9 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
                     paint.line_thickness = thickness as i32;
                     // Thickness mode: no special endpoint handling needed
                 }
-                LineMarkerStyle::LineEndpoints(lk, _left, _right) => {
+                LineMarkerStyle::LineEndpoints(lk, left, right) => {
                     paint.line_kind = lk;
-                    // TODO: Implement vsl_ends() for arrow/rounded endpoints
-                    // For now, just set the line kind
+                    paint.line_ends = (left, right);
                 }
             }
         }
@@ -500,18 +518,37 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
         }
 
         // Extended X commands
-        IgsCommand::SprayPaint {
-            x: _,
-            y: _,
-            width: _,
-            height: _,
-            density: _,
-        } => {
-            log::info!("IGS SprayPaint not implemented");
+        IgsCommand::SprayPaint { x, y, width, height, density } => {
+            let (x, y, width, height, density) = (
+                x.evaluate(&paint.random_bounds, 0, 0),
+                y.evaluate(&paint.random_bounds, 0, 0),
+                width.evaluate(&paint.random_bounds, 0, 0),
+                height.evaluate(&paint.random_bounds, 0, 0),
+                density.evaluate(&paint.random_bounds, 0, 0),
+            );
+            let (pen_count, color_map) = get_color_map(buf);
+            if width == 0 && height == 0 && density == 0 {
+                // `X 0,pen,0,0,0,0` cycles sprayed markers through the pens from `pen` on;
+                // pen 0 turns that off.
+                paint.spray_rotation = (x > 0 && (x as usize) < pen_count).then_some((x as u8, x as u8));
+                return;
+            }
+            let (width, height) = (width.clamp(0, 255), height.clamp(0, 255));
+            let marker_color = paint.polymarker_color;
+            for _ in 0..density.clamp(0, 9999) {
+                if let Some((pen, first)) = paint.spray_rotation {
+                    paint.polymarker_color = color_map[pen as usize];
+                    let next = if pen as usize + 1 >= pen_count { first } else { pen + 1 };
+                    paint.spray_rotation = Some((next, first));
+                }
+                let (px, py) = (x + fastrand::i32(0..=width), y + fastrand::i32(0..=height));
+                paint.draw_poly_marker(buf, px, py);
+            }
+            paint.polymarker_color = marker_color;
         }
 
         IgsCommand::SetColorRegister { register, value } => {
-            log::info!("IGS SetColorRegister {register} = {value} not implemented");
+            set_color_register(buf, register as usize, value);
         }
 
         IgsCommand::SetRandomRange { range_type } => {
@@ -583,8 +620,35 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
             paint.user_patterns[pattern as usize] = data;
         }
 
-        IgsCommand::RotateColorRegisters { .. } => {
-            log::info!("IGS RotateColorRegisters not implemented");
+        IgsCommand::RotateColorRegisters {
+            start_reg,
+            end_reg,
+            count,
+            delay: _,
+        } => {
+            // Terminals split rotations with a delay into single shifts; this applies them all.
+            let (pen_count, _) = get_color_map(buf);
+            if count == 0 || start_reg == end_reg {
+                // X 8,start,end,0 and X 8,1,1,1,1 restore the registers from before rotating.
+                if let Some(saved) = paint.rotation_palette.take() {
+                    *buf.palette_mut() = saved;
+                }
+            } else if (start_reg.max(end_reg) as usize) < pen_count {
+                if paint.rotation_palette.is_none() {
+                    paint.rotation_palette = Some(buf.palette().clone());
+                }
+                let (low, high) = (start_reg.min(end_reg) as u32, start_reg.max(end_reg) as u32);
+                let mut colors: Vec<crate::Color> = (low..=high).map(|register| buf.palette().color(register)).collect();
+                let shift = count.unsigned_abs() as usize % colors.len();
+                if start_reg < end_reg {
+                    colors.rotate_right(shift);
+                } else {
+                    colors.rotate_left(shift);
+                }
+                for (register, color) in (low..=high).zip(colors) {
+                    buf.palette_mut().set_color(register, color);
+                }
+            }
         }
 
         IgsCommand::LoadMidiBuffer { .. } => {
@@ -596,12 +660,22 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
             paint.draw_to_position = (x, y).into();
         }
 
-        IgsCommand::LoadBitblitMemory { .. } => {
-            log::info!("IGS LoadBitblitMemory not implemented");
+        IgsCommand::LoadBitblitMemory { params } => {
+            let values: Vec<i32> = params.iter().map(|parameter| parameter.evaluate(&paint.random_bounds, 0, 0)).collect();
+            match values.as_slice() {
+                [0, section, value, ..] => paint.wipe_blit_memory(buf, *section, *value),
+                // Loading needs the raw bytes that follow the command, which are not parsed yet.
+                _ => log::info!("IGS LoadBitblitMemory {values:?} not implemented"),
+            }
         }
 
-        IgsCommand::LoadColorPalette { .. } => {
-            log::info!("IGS LoadColorPalette not implemented");
+        IgsCommand::LoadColorPalette { params } => {
+            let values: Vec<i32> = params.iter().map(|parameter| parameter.evaluate(&paint.random_bounds, 0, 0)).collect();
+            if let Some((bank, colors)) = values.split_first() {
+                for (offset, value) in colors.iter().take(4).enumerate() {
+                    set_color_register(buf, (*bank).clamp(0, 3) as usize * 4 + offset, *value);
+                }
+            }
         }
 
         // Additional VT52 commands

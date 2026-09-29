@@ -1044,21 +1044,5 @@ impl CommandParser for IgsParser {
                 }
             }
         }
-        // Flush pending ESC-style parameter commands without explicit ':' terminator (e.g. ESC m1,20)
-        if let State::ReadParams(cmd_type) = self.state {
-            match cmd_type {
-                IgsCommandType::CursorMotion | IgsCommandType::InverseVideo | IgsCommandType::LineWrap => {
-                    // Ensure last param captured
-                    if !self.current_param.is_empty() || !self.params.is_empty() {
-                        self.push_current_param(sink);
-                    }
-                    if !self.params.is_empty() {
-                        self.emit_command(cmd_type, sink);
-                        self.state = State::Default;
-                    }
-                }
-                _ => {}
-            }
-        }
     }
 }

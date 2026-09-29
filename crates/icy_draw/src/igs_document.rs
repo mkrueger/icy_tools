@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 
 use icy_engine::{AutoWrapMode, EditableScreen, GraphicsType, PaletteScreenBuffer, Screen, ScreenSink, Size};
 use icy_parser_core::{
-    encode_igs_stream, encode_igs_stream_checked, parse_igs_stream, CommandParser, CommandSink, DeviceControlString, DrawingMode, ErrorLevel, IgsCommand,
-    IgsEncodeError, IgsItem, IgsParser, IgsText, InitializationType, LineMarkerStyle, OperatingSystemCommand, PaletteMode, ParseError, PatternType, PenType,
-    ScreenClearMode, TerminalCommand, TerminalResolution, TextEffects, TextRotation,
+    encode_igs_stream, encode_igs_stream_checked, parse_igs_stream, ArrowEnd, CommandParser, CommandSink, DeviceControlString, DrawingMode, ErrorLevel,
+    IgsCommand, IgsEncodeError, IgsItem, IgsParser, IgsText, InitializationType, LineMarkerStyle, OperatingSystemCommand, PaletteMode, ParseError, PatternType,
+    PenType, ScreenClearMode, TerminalCommand, TerminalResolution, TextEffects, TextRotation,
 };
 use thiserror::Error;
 
@@ -125,6 +125,26 @@ impl CommandSink for StepSink<'_, '_> {
         if matches!(cmd, IgsCommand::Pause { .. }) {
             self.remaining -= 1;
         }
+        // A color rotation with a delay advances one shift per step.
+        if let IgsCommand::RotateColorRegisters {
+            start_reg,
+            end_reg,
+            count,
+            delay,
+        } = cmd
+        {
+            if count > 0 && delay > 0 && start_reg != end_reg {
+                let shown = (count as usize).min(self.remaining);
+                self.remaining -= shown;
+                self.inner.emit_igs(IgsCommand::RotateColorRegisters {
+                    start_reg,
+                    end_reg,
+                    count: shown as i32,
+                    delay,
+                });
+                return;
+            }
+        }
         self.inner.emit_igs(cmd);
     }
 
@@ -171,7 +191,10 @@ pub struct IgsDrawState {
     pub text_color: Option<u8>,
     pub marker_color: Option<u8>,
     pub fill: Option<(PatternType, bool)>,
+    /// Line type and width, always as [`LineMarkerStyle::LineThickness`].
     pub line: Option<LineMarkerStyle>,
+    /// Line start and end styles, which VDI keeps apart from the width.
+    pub line_ends: Option<(ArrowEnd, ArrowEnd)>,
     pub marker: Option<LineMarkerStyle>,
     pub drawing_mode: Option<DrawingMode>,
     pub text: Option<(TextEffects, u8, TextRotation)>,
@@ -189,6 +212,7 @@ impl Default for IgsDrawState {
             marker_color: None,
             fill: None,
             line: None,
+            line_ends: None,
             marker: None,
             drawing_mode: None,
             text: None,
@@ -219,7 +243,16 @@ impl IgsDrawState {
             IgsCommand::AttributeForFills { pattern_type, border } => self.fill = Some((*pattern_type, *border)),
             IgsCommand::SetLineOrMarkerStyle { style } => match style {
                 LineMarkerStyle::PolyMarkerSize(..) => self.marker = Some(*style),
-                LineMarkerStyle::LineThickness(..) | LineMarkerStyle::LineEndpoints(..) => self.line = Some(*style),
+                LineMarkerStyle::LineThickness(..) => self.line = Some(*style),
+                LineMarkerStyle::LineEndpoints(kind, left, right) => {
+                    self.line_ends = Some((*left, *right));
+                    // The line type changes too; the width stays.
+                    self.line = match self.line {
+                        Some(LineMarkerStyle::LineThickness(_, width)) => Some(LineMarkerStyle::LineThickness(*kind, width)),
+                        None if self.uncertain => None,
+                        _ => Some(LineMarkerStyle::LineThickness(*kind, 1)),
+                    };
+                }
             },
             IgsCommand::DrawingMode { mode } => self.drawing_mode = Some(*mode),
             IgsCommand::HollowSet { enabled } => {

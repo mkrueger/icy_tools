@@ -8,7 +8,7 @@ use icy_draw::{
 };
 use icy_engine::Screen;
 use icy_parser_core::{
-    BlitMode, BlitOperation, DrawingMode, IgsCommand, IgsItem, IgsParameter, LineKind, LineMarkerStyle, PatternType, PenType, PolymarkerKind,
+    ArrowEnd, BlitMode, BlitOperation, DrawingMode, IgsCommand, IgsItem, IgsParameter, LineKind, LineMarkerStyle, PatternType, PenType, PolymarkerKind,
     TerminalResolution, TextEffects, TextRotation,
 };
 use std::path::Path;
@@ -29,6 +29,11 @@ mod select;
 use select::{Canvas, Geometry, Handle, Point};
 
 const TOOLBAR_HEIGHT: f32 = 44.0;
+/// The tool sidebar fits three 38 point tool buttons; longer labels widen it up to the maximum.
+const SIDEBAR_WIDTH: f32 = 148.0;
+const SIDEBAR_MAX_WIDTH: f32 = 320.0;
+const SIDEBAR_MARGIN: f32 = 6.0;
+const PEN_SWATCH: egui::Vec2 = egui::vec2(30.0, 24.0);
 /// Screen distance in points within which a handle is picked up.
 const HANDLE_RADIUS: f32 = 8.0;
 const COMMAND_ROW_HEIGHT: f32 = 24.0;
@@ -53,12 +58,13 @@ enum Tool {
     Polygon,
     FloodFill,
     Text,
+    Spray,
     CopyArea,
     Zone,
 }
 
 impl Tool {
-    const ALL: [Self; 18] = [
+    const ALL: [Self; 19] = [
         Self::Select,
         Self::Marker,
         Self::Line,
@@ -75,6 +81,7 @@ impl Tool {
         Self::Polygon,
         Self::FloodFill,
         Self::Text,
+        Self::Spray,
         Self::CopyArea,
         Self::Zone,
     ];
@@ -97,6 +104,7 @@ impl Tool {
             Self::Polygon => fl!("igs-tool-polygon"),
             Self::FloodFill => fl!("igs-tool-flood-fill"),
             Self::Text => fl!("igs-tool-text"),
+            Self::Spray => fl!("igs-tool-spray"),
             Self::CopyArea => fl!("igs-tool-copy-area"),
             Self::Zone => fl!("igs-tool-zone"),
         }
@@ -118,6 +126,7 @@ impl Tool {
             Self::Polygon => "rip_polygon_filled",
             Self::FloodFill => "fill",
             Self::Text => "text",
+            Self::Spray => "spray",
             Self::CopyArea => "select",
             Self::Zone => "rip_mouse",
         }
@@ -127,7 +136,7 @@ impl Tool {
     fn pen(self) -> Option<PenType> {
         Some(match self {
             Self::Select | Self::CopyArea | Self::Zone => return None,
-            Self::Marker => PenType::Polymarker,
+            Self::Marker | Self::Spray => PenType::Polymarker,
             Self::Line | Self::PolyLine | Self::Arc | Self::EllipticalArc => PenType::Line,
             Self::Text => PenType::Text,
             _ => PenType::Fill,
@@ -159,7 +168,8 @@ impl Tool {
     }
 
     /// The shape command from `from` to `to`, without the attribute commands before it.
-    fn command(self, canvas: &Canvas, from: Point, to: Point, (start_angle, end_angle): (i32, i32)) -> Option<IgsCommand> {
+    fn command(self, canvas: &Canvas, from: Point, to: Point, attributes: &Attributes) -> Option<IgsCommand> {
+        let (start_angle, end_angle) = (attributes.start_angle, attributes.end_angle);
         let v = IgsParameter::Value;
         let ((x0, y0), (x1, y1)) = (from, to);
         let (left, top, right, bottom) = (x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1));
@@ -169,6 +179,14 @@ impl Tool {
             Self::Select | Self::Text | Self::PolyLine | Self::Polygon | Self::CopyArea | Self::Zone => return None,
             Self::Marker => IgsCommand::PolymarkerPlot { x: v(x1), y: v(y1) },
             Self::FloodFill => IgsCommand::FloodFill { x: v(x1), y: v(y1) },
+            // IG sprays at most 255 pixels in each direction.
+            Self::Spray => IgsCommand::SprayPaint {
+                x: v(left),
+                y: v(top),
+                width: v((right - left).min(255)),
+                height: v((bottom - top).min(255)),
+                density: v(attributes.spray_density),
+            },
             Self::Line => IgsCommand::Line {
                 x1: v(x0),
                 y1: v(y0),
@@ -260,6 +278,7 @@ fn shape_tool(command: &IgsCommand) -> Option<Tool> {
         IgsCommand::PolyFill { .. } => Tool::Polygon,
         IgsCommand::FloodFill { .. } => Tool::FloodFill,
         IgsCommand::WriteText { .. } => Tool::Text,
+        IgsCommand::SprayPaint { width, height, density, .. } if !is_spray_rotation(width, height, density) => Tool::Spray,
         IgsCommand::GrabScreen {
             operation: BlitOperation::ScreenToScreen { .. },
             ..
@@ -271,6 +290,11 @@ fn shape_tool(command: &IgsCommand) -> Option<Tool> {
 
 fn is_zone(command: &IgsCommand) -> bool {
     shape_tool(command) == Some(Tool::Zone)
+}
+
+/// `X 0,pen,0,0,0,0` switches spray paint color rotation instead of spraying.
+fn is_spray_rotation(width: &IgsParameter, height: &IgsParameter, density: &IgsParameter) -> bool {
+    [width, height, density].iter().all(|parameter| **parameter == IgsParameter::Value(0))
 }
 
 fn blit_mode_name(mode: BlitMode) -> String {
@@ -422,6 +446,12 @@ impl SoundPlayer {
 fn steps(command: &IgsCommand) -> usize {
     match command {
         IgsCommand::Loop(data) if data.delay > 0 && data.step != 0 && !data.params.is_empty() => ((data.to - data.from).abs() / data.step.abs() + 1) as usize,
+        IgsCommand::RotateColorRegisters {
+            start_reg,
+            end_reg,
+            count,
+            delay,
+        } if *count > 0 && *delay > 0 && start_reg != end_reg => (*count).min(9999) as usize,
         _ => 1,
     }
 }
@@ -433,6 +463,7 @@ fn delay_ms(command: &IgsCommand) -> u64 {
         IgsCommand::ChipMusic { timing, .. } => (*timing).max(0) as u64 * 5,
         // The delay is in 1/200 seconds.
         IgsCommand::Loop(data) if data.delay > 0 => data.delay as u64 * 5,
+        IgsCommand::RotateColorRegisters { delay, .. } => (*delay).clamp(0, 9999) as u64 * 5,
         _ => 0,
     }
 }
@@ -578,6 +609,15 @@ fn item_name(item: &IgsItem) -> String {
         IgsCommand::ChipMusic { .. } => fl!("igs-command-chip-music"),
         IgsCommand::StopAllSound => fl!("igs-command-stop-sound"),
         IgsCommand::DefineZone { .. } => fl!("igs-command-clear-zones"),
+        IgsCommand::SprayPaint { .. } => fl!("igs-command-spray-rotation"),
+        IgsCommand::RotateColorRegisters { .. } => fl!("igs-command-color-rotation"),
+        IgsCommand::SetColorRegister { .. } => fl!("igs-command-color-register"),
+        IgsCommand::LoadColorPalette { .. } => fl!("igs-command-color-registers"),
+        IgsCommand::InputCommand { .. } => fl!("igs-command-input"),
+        IgsCommand::Cursor { .. } => fl!("igs-cursor"),
+        IgsCommand::InverseVideo { .. } => fl!("igs-inverse-video"),
+        IgsCommand::SetTextColor { .. } => fl!("igs-template-text-color"),
+        IgsCommand::LoadBitblitMemory { .. } => fl!("igs-command-blit-memory"),
         // Other commands are named after their variant, without the parameters.
         other => {
             let debug = format!("{other:?}");
@@ -638,6 +678,21 @@ fn item_summary(item: &IgsItem) -> String {
                 },
             ..
         } => format!("{src_x1}, {src_y1} → {src_x2}, {src_y2} ⇒ {dest_x}, {dest_y}"),
+        IgsCommand::SprayPaint { x, width, height, density, .. } if is_spray_rotation(width, height, density) => match x {
+            IgsParameter::Value(0) => fl!("igs-off"),
+            pen => fl!("igs-spray-rotation-summary", pen = pen.to_string()),
+        },
+        IgsCommand::SprayPaint { width, height, density, .. } => format!("{width} × {height} · {density}"),
+        IgsCommand::RotateColorRegisters {
+            start_reg, end_reg, count: 0, ..
+        } => format!("{start_reg}–{end_reg} · {}", fl!("igs-rotate-reset")),
+        IgsCommand::RotateColorRegisters {
+            start_reg,
+            end_reg,
+            count,
+            delay,
+        } => format!("{start_reg} → {end_reg} · {count}× · {} ms", delay * 5),
+        IgsCommand::SetColorRegister { register, value } => format!("{register} = {:03X}", value),
         _ => describe(command).unwrap_or_default(),
     }
 }
@@ -658,6 +713,10 @@ fn item_icon(item: &IgsItem) -> Option<&'static str> {
         IgsCommand::LoadFillPattern { .. } => "fill",
         IgsCommand::BellsAndWhistles { .. } | IgsCommand::AlterSoundEffect { .. } | IgsCommand::ChipMusic { .. } | IgsCommand::StopAllSound => "play",
         IgsCommand::LineDrawTo { .. } => "line",
+        IgsCommand::SprayPaint { .. } => "spray",
+        IgsCommand::RotateColorRegisters { .. } => "repeat",
+        IgsCommand::SetColorRegister { .. } | IgsCommand::LoadColorPalette { .. } => "dropper",
+        IgsCommand::InputCommand { .. } => "rip_mouse",
         _ => return None,
     })
 }
@@ -667,6 +726,10 @@ fn item_swatch(item: &IgsItem, palette: &icy_engine::Palette, resolution: Termin
     match item.command()? {
         IgsCommand::ColorSet { color, .. } => Some(palette::pen_color(palette, resolution, *color)),
         IgsCommand::SetPenColor { red, green, blue, .. } => Some(Color32::from_rgb(red.min(&7) * 34, green.min(&7) * 34, blue.min(&7) * 34)),
+        IgsCommand::SetColorRegister { value, .. } => {
+            let channel = |shift: i32| ((value >> shift) & 7) as u8 * 34;
+            Some(Color32::from_rgb(channel(8), channel(4), channel(0)))
+        }
         _ => None,
     }
 }
@@ -691,6 +754,13 @@ fn templates() -> Vec<(String, &'static [u8])> {
         (fl!("igs-template-cursor-off"), b"G#k>0:"),
         (fl!("igs-template-position-cursor"), b"G#p>0,0:"),
         (fl!("igs-template-text-color"), b"G#c>1,3:"),
+        (fl!("igs-template-inverse-text"), b"G#v>1:"),
+        (fl!("igs-template-input"), b"G#<>1,0,1:"),
+        (fl!("igs-template-color-register"), b"G#X>1,4,1911:"),
+        (fl!("igs-template-color-rotation"), b"G#X>8,1,15,20,10:"),
+        (fl!("igs-template-color-rotation-reset"), b"G#X>8,1,15,0,0:"),
+        (fl!("igs-template-spray-rotation"), b"G#X>0,1,0,0,0,0:"),
+        (fl!("igs-template-wipe-blit"), b"G#X>11,0,0,0:"),
         (fl!("igs-template-text"), b"Hello, Atari!"),
     ]
 }
@@ -727,6 +797,18 @@ fn restore(changed: &IgsCommand, state: &IgsDrawState) -> Option<IgsCommand> {
         } => IgsCommand::SetLineOrMarkerStyle {
             style: known(state.marker, LineMarkerStyle::PolyMarkerSize(PolymarkerKind::Point, 1), state)?,
         },
+        IgsCommand::SetLineOrMarkerStyle {
+            style: LineMarkerStyle::LineEndpoints(..),
+        } => {
+            let (left, right) = known(state.line_ends, (ArrowEnd::Square, ArrowEnd::Square), state)?;
+            let kind = match known(state.line, LineMarkerStyle::LineThickness(LineKind::Solid, 1), state)? {
+                LineMarkerStyle::LineThickness(kind, _) => kind,
+                _ => LineKind::Solid,
+            };
+            IgsCommand::SetLineOrMarkerStyle {
+                style: LineMarkerStyle::LineEndpoints(kind, left, right),
+            }
+        }
         IgsCommand::SetLineOrMarkerStyle { .. } => IgsCommand::SetLineOrMarkerStyle {
             style: known(state.line, LineMarkerStyle::LineThickness(LineKind::Solid, 1), state)?,
         },
@@ -756,8 +838,12 @@ struct Attributes {
     border: bool,
     line_kind: LineKind,
     line_thickness: u8,
+    /// Styles of the start and end of lines, polylines and arcs.
+    line_ends: (ArrowEnd, ArrowEnd),
     marker: PolymarkerKind,
     marker_size: u8,
+    /// Markers sprayed by the spray tool.
+    spray_density: i32,
     drawing_mode: DrawingMode,
     text_effects: TextEffects,
     text_size: u8,
@@ -780,8 +866,10 @@ impl Default for Attributes {
             border: false,
             line_kind: LineKind::Solid,
             line_thickness: 1,
+            line_ends: (ArrowEnd::Square, ArrowEnd::Square),
             marker: PolymarkerKind::Point,
             marker_size: 1,
+            spray_density: 200,
             drawing_mode: DrawingMode::Replace,
             text_effects: TextEffects::NORMAL,
             text_size: 9,
@@ -815,6 +903,12 @@ impl Attributes {
             if state.line != Some(style) {
                 commands.push(IgsCommand::SetLineOrMarkerStyle { style });
             }
+            if known(state.line_ends, (ArrowEnd::Square, ArrowEnd::Square), state) != Some(self.line_ends) {
+                let (left, right) = self.line_ends;
+                commands.push(IgsCommand::SetLineOrMarkerStyle {
+                    style: LineMarkerStyle::LineEndpoints(self.line_kind, left, right),
+                });
+            }
         }
         if tool.uses_fill() && state.fill != Some((self.pattern, self.border)) {
             commands.push(IgsCommand::AttributeForFills {
@@ -822,7 +916,7 @@ impl Attributes {
                 border: self.border,
             });
         }
-        if tool == Tool::Marker {
+        if matches!(tool, Tool::Marker | Tool::Spray) {
             let style = LineMarkerStyle::PolyMarkerSize(self.marker, self.marker_size);
             if state.marker != Some(style) {
                 commands.push(IgsCommand::SetLineOrMarkerStyle { style });
@@ -1152,8 +1246,7 @@ impl IgsEditor {
     }
 
     fn shape_commands(&self, from: Point, to: Point) -> Vec<IgsCommand> {
-        let angles = (self.attributes.start_angle, self.attributes.end_angle);
-        match self.tool.command(&self.canvas, from, to, angles) {
+        match self.tool.command(&self.canvas, from, to, &self.attributes) {
             Some(shape) => self.with_attributes(self.tool, shape),
             None => Vec::new(),
         }
@@ -1882,6 +1975,9 @@ impl IgsEditor {
                 properties::line_kind(ui, "igs-tool-line-kind", &mut attributes.line_kind);
                 ui.add(egui::DragValue::new(&mut attributes.line_thickness).range(1..=41).suffix(" px"))
                     .on_hover_text(fl!("igs-thickness"));
+                let (start, end) = &mut attributes.line_ends;
+                properties::line_end(ui, "igs-tool-line-start", start).on_hover_text(fl!("igs-end-start"));
+                properties::line_end(ui, "igs-tool-line-end", end).on_hover_text(fl!("igs-end-end"));
             }
             if self.tool.uses_fill() && self.tool != Tool::FloodFill {
                 properties::pattern(ui, "igs-tool-pattern", &mut attributes.pattern);
@@ -1889,10 +1985,18 @@ impl IgsEditor {
             } else if self.tool == Tool::FloodFill {
                 properties::pattern(ui, "igs-tool-pattern", &mut attributes.pattern);
             }
-            if self.tool == Tool::Marker {
+            if matches!(self.tool, Tool::Marker | Tool::Spray) {
                 properties::marker(ui, "igs-tool-marker", &mut attributes.marker);
                 ui.add(egui::DragValue::new(&mut attributes.marker_size).range(1..=8))
                     .on_hover_text(fl!("igs-size"));
+            }
+            if self.tool == Tool::Spray {
+                ui.add(
+                    egui::DragValue::new(&mut attributes.spray_density)
+                        .range(1..=9999)
+                        .prefix(fl!("igs-spray-density-prefix")),
+                )
+                .on_hover_text(fl!("igs-spray-density"));
             }
             if self.tool.has_angles() {
                 ui.label(fl!("igs-start-angle"));
@@ -1957,18 +2061,44 @@ impl IgsEditor {
         });
     }
 
+    /// The sidebar width that fits its labels in the current language: at least the three tool
+    /// buttons, at most [`SIDEBAR_MAX_WIDTH`], beyond which labels are truncated.
+    fn sidebar_width(context: &egui::Context) -> f32 {
+        let style = context.style();
+        let spacing = &style.spacing;
+        let text = |text: String, text_style: egui::TextStyle| {
+            let font = text_style.resolve(&style);
+            context.fonts_mut(|fonts| fonts.layout_no_wrap(text, font, Color32::WHITE).size().x)
+        };
+        let button = |label: String| text(label, egui::TextStyle::Button) + 2.0 * spacing.button_padding.x;
+        let combo = |label: String| button(label) + spacing.icon_spacing + spacing.icon_width;
+        let pen = |label: String| text(label, egui::TextStyle::Body) + spacing.item_spacing.x + PEN_SWATCH.x;
+        let widths = [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High]
+            .map(|resolution| combo(resolution_name(resolution)))
+            .into_iter()
+            .chain(properties::MODES.map(|mode| combo(drawing_mode_name(mode))))
+            .chain([fl!("igs-pen-line"), fl!("igs-pen-fill"), fl!("igs-pen-text"), fl!("igs-pen-marker")].map(pen))
+            .chain([fl!("igs-palette-edit"), fl!("igs-pattern-edit")].map(button))
+            .chain([text(fl!("igs-drawing-mode"), egui::TextStyle::Body)]);
+        let content = widths.fold(0.0, f32::max);
+        (content + 2.0 * SIDEBAR_MARGIN).ceil().clamp(SIDEBAR_WIDTH, SIDEBAR_MAX_WIDTH)
+    }
+
     fn sidebar(&mut self, context: &egui::Context, blocked: bool) {
         let panel_fill = context.style().visuals.panel_fill;
+        // Content wider than a side panel is clipped but still takes its width, which is left
+        // unpainted, so the panel is sized to its labels and they truncate beyond that.
         egui::SidePanel::left("igs-tools")
-            .exact_width(148.0)
+            .exact_width(Self::sidebar_width(context))
             .resizable(false)
-            .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::symmetric(6, 6)))
+            .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::same(SIDEBAR_MARGIN as i8)))
             .show(context, |ui| {
                 ui.add_enabled_ui(!blocked, |ui| {
                     let start = self.start_resolution();
                     let mut chosen = start;
                     egui::ComboBox::from_id_salt("igs-resolution")
                         .width(ui.available_width())
+                        .truncate()
                         .selected_text(resolution_name(chosen))
                         .show_ui(ui, |ui| {
                             for resolution in [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High] {
@@ -1988,30 +2118,23 @@ impl IgsEditor {
                         ("marker", fl!("igs-pen-marker"), &mut self.attributes.marker_color),
                     ] {
                         *pen = (*pen).min(palette::pen_count(resolution) - 1);
-                        ui.horizontal(|ui| {
-                            ui.label(label);
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                palette::pen_picker(ui, id, &self.palette, resolution, pen, egui::vec2(30.0, 24.0));
+                        let row = egui::vec2(ui.available_width(), PEN_SWATCH.y);
+                        ui.allocate_ui_with_layout(row, egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            palette::pen_picker(ui, id, &self.palette, resolution, pen, PEN_SWATCH);
+                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                ui.add(egui::Label::new(label).truncate());
                             });
                         });
                     }
-                    if ui
-                        .add(egui::Button::new(fl!("igs-palette-edit")).min_size(egui::vec2(ui.available_width(), 26.0)))
-                        .on_hover_text(fl!("igs-palette-edit-tooltip"))
-                        .clicked()
-                    {
+                    let full = egui::vec2(ui.available_width(), 26.0);
+                    let wide = |label: String| egui::Button::new(label).truncate().min_size(full);
+                    if ui.add(wide(fl!("igs-palette-edit"))).on_hover_text(fl!("igs-palette-edit-tooltip")).clicked() {
                         self.open_palette_dialog();
                     }
-                    if ui
-                        .add(egui::Button::new(fl!("igs-pattern-edit")).min_size(egui::vec2(ui.available_width(), 26.0)))
-                        .on_hover_text(fl!("igs-pattern-edit-tooltip"))
-                        .clicked()
-                    {
+                    if ui.add(wide(fl!("igs-pattern-edit"))).on_hover_text(fl!("igs-pattern-edit-tooltip")).clicked() {
                         self.open_pattern_dialog(None);
                     }
-                    ui.horizontal(|ui| {
-                        ui.label(fl!("igs-drawing-mode"));
-                    });
+                    ui.add(egui::Label::new(fl!("igs-drawing-mode")).truncate());
                     properties::drawing_mode(ui, "igs-tool-mode", &mut self.attributes.drawing_mode);
                     ui.separator();
                     egui::Grid::new("igs-tools-grid").num_columns(3).show(ui, |ui| {
@@ -3725,5 +3848,179 @@ mod tests {
         ));
         editor.undo(false);
         assert!(matches!(editor.document.command(index), Some(IgsCommand::Circle { radius: IgsParameter::Value(radius), .. }) if *radius != 12));
+    }
+
+    #[test]
+    fn the_tool_sidebar_widens_to_fit_its_labels() {
+        let context = egui::Context::default();
+        // Large text stands in for long translations such as "IGS-Palette bearbeiten…".
+        context.style_mut(|style| {
+            for font in style.text_styles.values_mut() {
+                font.size *= 1.8;
+            }
+        });
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        let sidebar = || egui::containers::panel::PanelState::load(&context, egui::Id::new("igs-tools")).unwrap().rect;
+        // The widest clip region along the left edge is where the sidebar is painted.
+        let frame = |editor: &mut IgsEditor| {
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    ..Default::default()
+                },
+                |context| editor.show(context, false),
+            );
+            output
+                .shapes
+                .iter()
+                .map(|shape| shape.clip_rect)
+                .filter(|clip| clip.min.x <= 0.5 && clip.max.x < 640.0 && clip.height() > 400.0)
+                .map(|clip| clip.width())
+                .fold(0.0, f32::max)
+        };
+        frame(&mut editor);
+        frame(&mut editor);
+        let painted = frame(&mut editor);
+        let panel = sidebar();
+        assert!(panel.width() > SIDEBAR_WIDTH, "{panel:?}");
+        assert_eq!(painted, panel.width(), "the sidebar paints all of the width it takes");
+        assert!(editor.canvas_rect.unwrap().min.x >= panel.max.x);
+    }
+
+    #[test]
+    fn line_ends_are_written_when_they_change_and_restored_after_inserts() {
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.select_tool(Tool::Line);
+        editor.add_shape((0, 0), (40, 0));
+        assert!(
+            !commands(&editor).iter().any(|command| matches!(
+                command,
+                IgsCommand::SetLineOrMarkerStyle {
+                    style: LineMarkerStyle::LineEndpoints(..)
+                }
+            )),
+            "square ends are the default"
+        );
+        let first = editor.document.len() - 1;
+        editor.attributes.line_ends = (ArrowEnd::Square, ArrowEnd::Arrow);
+        editor.add_shape((0, 20), (40, 20));
+        let arrow = IgsCommand::SetLineOrMarkerStyle {
+            style: LineMarkerStyle::LineEndpoints(LineKind::Solid, ArrowEnd::Square, ArrowEnd::Arrow),
+        };
+        assert_eq!(commands(&editor).iter().filter(|command| **command == arrow).count(), 1);
+        editor.add_shape((0, 40), (40, 40));
+        assert_eq!(
+            commands(&editor).iter().filter(|command| **command == arrow).count(),
+            1,
+            "unchanged ends are not repeated"
+        );
+        assert_eq!(
+            editor.document.state_before(editor.document.len()).line_ends,
+            Some((ArrowEnd::Square, ArrowEnd::Arrow))
+        );
+
+        // A line inserted after the first one restores the square ends for the lines after it.
+        editor.preview_to_selection = true;
+        editor.selected = Some(first);
+        editor.add_shape((0, 60), (40, 60));
+        assert_eq!(editor.document.command(first + 1), Some(&arrow));
+        assert_eq!(
+            editor.document.command(first + 3),
+            Some(&IgsCommand::SetLineOrMarkerStyle {
+                style: LineMarkerStyle::LineEndpoints(LineKind::Solid, ArrowEnd::Square, ArrowEnd::Square),
+            })
+        );
+    }
+
+    #[test]
+    fn spray_areas_are_drawn_moved_and_limited_to_255_pixels() {
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.select_tool(Tool::Spray);
+        editor.attributes.spray_density = 50;
+        editor.attributes.marker = PolymarkerKind::Plus;
+        editor.add_shape((20, 30), (80, 60));
+        let index = editor.document.len() - 1;
+        assert_eq!(
+            editor.document.command(index),
+            Some(&IgsCommand::SprayPaint {
+                x: IgsParameter::Value(20),
+                y: IgsParameter::Value(30),
+                width: IgsParameter::Value(60),
+                height: IgsParameter::Value(30),
+                density: IgsParameter::Value(50),
+            })
+        );
+        assert!(commands(&editor).contains(&IgsCommand::SetLineOrMarkerStyle {
+            style: LineMarkerStyle::PolyMarkerSize(PolymarkerKind::Plus, 1)
+        }));
+        let (command, geometry) = editor.shape(index).unwrap();
+        let moved = select::apply(&command, &select::translate(&geometry, &editor.canvas, 10, 5), &editor.canvas);
+        assert!(matches!(
+            moved,
+            IgsCommand::SprayPaint {
+                x: IgsParameter::Value(30),
+                y: IgsParameter::Value(35),
+                width: IgsParameter::Value(60),
+                ..
+            }
+        ));
+        let wide = select::apply(&command, &Geometry::Rect { x0: 0, y0: 0, x1: 319, y1: 10 }, &editor.canvas);
+        assert!(matches!(
+            wide,
+            IgsCommand::SprayPaint {
+                width: IgsParameter::Value(255),
+                ..
+            }
+        ));
+
+        // The color rotation switch is not an area.
+        let document = IgsDocument::from_bytes(b"G#X>0,1,0,0,0,0:\r\n").unwrap();
+        assert_eq!(shape_tool(document.command(0).unwrap()), None);
+        assert_eq!(item_name(&document.items()[0]), fl!("igs-command-spray-rotation"));
+    }
+
+    #[test]
+    fn delayed_color_rotation_plays_one_shift_per_step() {
+        let document = IgsDocument::from_bytes(b"G#R>0,2:X>1,1,1792:X>1,2,112:X>1,3,7:X>8,1,3,2,10:").unwrap();
+        let rotation = document.command(document.len() - 1).unwrap();
+        assert_eq!((steps(rotation), delay_ms(rotation)), (2, 50));
+        let register = |steps| {
+            let preview = IgsDocument::render_steps(document.items(), steps).unwrap();
+            preview.screen().palette().rgb(1)
+        };
+        assert_eq!(register(Some(1)), (0, 0, 238), "the first shift brings the last color to the front");
+        assert_eq!(register(Some(2)), (0, 238, 0));
+        assert_eq!(register(None), (0, 238, 0));
+    }
+
+    #[test]
+    fn extended_commands_have_property_panels() {
+        let context = egui::Context::default();
+        let palette = icy_engine::Palette::default();
+        for source in [
+            &b"G#X>0,1,0,0,0,0:"[..],
+            b"G#X>8,1,15,20,10:",
+            b"G#X>1,4,1911:",
+            b"G#n>0,0,15,40,50,0:",
+            b"G#b>23,2:",
+            b"G#k>0:",
+            b"G#v>1:",
+            b"G#c>1,3:",
+            b"G#<>1,0,1:",
+        ] {
+            let document = IgsDocument::from_bytes(source).unwrap();
+            assert_eq!(document.len(), 1, "{}", String::from_utf8_lossy(source));
+            let mut command = document.command(0).unwrap().clone();
+            let _ = context.run(egui::RawInput::default(), |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    assert!(
+                        properties::command(ui, &mut command, &palette, TerminalResolution::Low),
+                        "{}",
+                        String::from_utf8_lossy(source)
+                    );
+                });
+            });
+            assert_eq!(&command, document.command(0).unwrap(), "showing the panel changes nothing");
+        }
     }
 }

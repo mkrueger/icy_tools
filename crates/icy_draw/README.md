@@ -140,10 +140,13 @@ The egui frontend currently includes:
   IGS engine; medium resolution pixels are shown twice as tall as wide, like on an
   Atari ST monitor. The left-hand tools draw markers, lines, polylines, boxes,
   rounded boxes, filled rectangles, circles, ellipses, arcs, elliptical arcs, pie
-  slices, elliptical pie slices, filled polygons, flood fills and text. The pens for
+  slices, elliptical pie slices, filled polygons, flood fills, text and spray paint
+  (`X 0`: random markers in a dragged area of up to 255 × 255 pixels, with the marker
+  type, size and a density from the toolbar). The pens for
   lines, fills, text and markers are picked from the colors they render with, and the
-  drawing mode applies to every tool; the toolbar holds line style and thickness,
-  fill pattern and border, marker type and size, arc angles, and text size, effects
+  drawing mode applies to every tool; the toolbar holds line style, thickness and
+  start/end styles (square, arrow, rounded), fill pattern and border, marker type
+  and size, arc angles, and text size, effects
   and rotation. Only attribute commands (`C`, `T`, `A`, `M`, `E`) whose value changes
   are written before a shape. Text is typed on the canvas like in the RIP editor;
   `@` ends IGS text and cannot be typed. **Edit IGS palette…** sets the colors of
@@ -157,7 +160,10 @@ The egui frontend currently includes:
   source, where bytes outside printable ASCII are written as `\xNN` (`\r`, `\n`,
   `\e` and `\\` are accepted too); loops and other commands are edited
   this way. Sound effect commands offer a named selection of all 20 Atari ST
-  effects (0–19) in the property panel. Random (`r`, `R`) and loop (`x`, `y`)
+  effects (0–19) in the property panel; chip music, effect repeats, cursor, VT52
+  inverse text and text colors, user input (`<`), spray color rotation, color
+  registers (`X 1`, set as ST color words) and color rotation (`X 8`) have property
+  fields too. Random (`r`, `R`) and loop (`x`, `y`)
   parameters are shown but only changed in the source. Opening and saving keeps
   the file byte for byte; only edited or new commands are rewritten, one `G#`
   command per line. Previews use a
@@ -168,8 +174,10 @@ The egui frontend currently includes:
   restored after it, so later shapes look unchanged. Ctrl+C, Ctrl+X and Ctrl+V copy,
   cut and paste entries as IGS source, and Ctrl+D (or the duplicate button)
   duplicates one. The **+** button adds loops, pauses, sound effects, chip music,
-  clear screen, initialization, resolution, random range, draw-to, cursor, VT52 text
-  and other commands from templates, to be adjusted in the property panel or source.
+  clear screen, initialization, resolution, random range, draw-to, cursor, VT52 text,
+  inverse text, user input, color registers, color rotation and its reset, spray
+  paint color rotation, wiping BitBlit memory and other commands from templates, to
+  be adjusted in the property panel or source.
   The resolution box sets the first `R` command (or adds one); an `R` after drawing
   commands is flagged. **Fill patterns…** draws one of the eight 16 × 16 user
   patterns (`X 7`) with a tiled preview; applying adds the pattern and selects it
@@ -188,8 +196,8 @@ The egui frontend currently includes:
   eye turns a paused animation into an editable preview through its frame. Stop
   ends both and shows the whole drawing. Playback
   waits for IGS pauses, chip music timing and loop delays, draws loops with a delay
-  iteration by iteration as a terminal shows them (e.g. blit animations), and plays
-  sound effects.
+  iteration by iteration as a terminal shows them (e.g. blit animations), shifts
+  color rotations one step per delay, and plays sound effects.
   A selectable BPS rate (1200 by default, or Max for no transmission delay)
   approximates the time needed to transmit each item's source bytes, so drawings
   without explicit pauses animate too. After pausing, Play resumes at the next

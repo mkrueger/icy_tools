@@ -339,4 +339,49 @@ impl VdiPaint {
             Self::blit_buffer_to_screen(buf, &temp_buffer, dest, blit_mode);
         }
     }
+
+    /// Fills the blit memory (`X 11,0,section,value`) as the ST fills its 32000 bytes of
+    /// planar screen memory: `section` 0 is all of it, 1 to 8 one of eight horizontal bands.
+    /// Every byte gets `value`, or a random byte for 256.
+    pub fn wipe_blit_memory(&mut self, buf: &dyn EditableScreen, section: i32, value: i32) {
+        let res = buf.resolution();
+        let (width, height) = (res.width.max(0) as usize, res.height.max(0) as usize);
+        let planes = match self.terminal_resolution {
+            icy_parser_core::TerminalResolution::Low => 4,
+            icy_parser_core::TerminalResolution::Medium => 2,
+            icy_parser_core::TerminalResolution::High => 1,
+        };
+        if self.blit_buffer.width != width || self.blit_buffer.height != height {
+            // The ST memory always covers the whole screen; a smaller grab stays at the top left.
+            let mut memory = BlitSurface::new(width, height);
+            memory.data.resize(width * height, 0);
+            for y in 0..self.blit_buffer.height.min(height) {
+                for x in 0..self.blit_buffer.width.min(width) {
+                    memory.data[y * width + x] = self.blit_buffer.data[y * self.blit_buffer.width + x];
+                }
+            }
+            self.blit_buffer = memory;
+        }
+        let rows = match section {
+            1..=8 => {
+                let band = height / 8;
+                (section as usize - 1) * band..section as usize * band
+            }
+            _ => 0..height,
+        };
+        let byte = || if value == 256 { fastrand::u8(..) } else { value.clamp(0, 255) as u8 };
+        for y in rows {
+            for group in (0..width).step_by(16) {
+                let words: Vec<u16> = (0..planes).map(|_| u16::from_be_bytes([byte(), byte()])).collect();
+                for x in group..(group + 16).min(width) {
+                    let bit = 15 - (x - group);
+                    let color = words
+                        .iter()
+                        .enumerate()
+                        .fold(0u8, |color, (plane, word)| color | ((((word >> bit) & 1) as u8) << plane));
+                    self.blit_buffer.data[y * width + x] = color;
+                }
+            }
+        }
+    }
 }
