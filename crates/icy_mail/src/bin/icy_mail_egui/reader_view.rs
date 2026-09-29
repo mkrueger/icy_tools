@@ -112,7 +112,7 @@ impl MailApp {
             })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let actions = 6.0 * 32.0 + 18.0;
+                    let actions = 7.0 * 32.0 + 18.0;
                     let width = (ui.available_width() - actions).max(40.0);
                     ui.allocate_ui_with_layout(egui::vec2(width, 28.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         ui.set_min_width(width);
@@ -152,6 +152,15 @@ impl MailApp {
                         let more = self.icons.button(ui, Icon::More, &fl!(LANGUAGE_LOADER, "reader-more-actions"), true);
                         egui::Popup::menu(&more).show(|ui| self.message_actions_menu(ui));
                         ui.add_space(6.0);
+                        let starred = self.reader.is_starred(info.index);
+                        let tooltip = if starred {
+                            fl!(LANGUAGE_LOADER, "reader-unstar-short")
+                        } else {
+                            fl!(LANGUAGE_LOADER, "reader-star-short")
+                        };
+                        if self.icons.star_button(ui, starred, &tooltip).clicked() {
+                            self.set_starred(&context, info.index, !starred);
+                        }
                         let (icon, tooltip) = if unread {
                             (Icon::Read, fl!(LANGUAGE_LOADER, "reader-mark-as-read-short"))
                         } else {

@@ -198,6 +198,7 @@ impl MailApp {
                     ("Space".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-page-down-next-unread")),
                     ("N".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-next-unread")),
                     ("M".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-mark-read-unread")),
+                    ("S".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-star")),
                     (
                         shortcut(context, Modifiers::SHIFT, Key::C),
                         fl!(LANGUAGE_LOADER, "shortcuts-reading-mark-folder-read"),

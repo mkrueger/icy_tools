@@ -108,7 +108,11 @@ pub struct Reader {
     pub personal: Option<String>,
     /// Read flag per package index.
     read: Vec<bool>,
+    /// Star per package index.
+    starred: Vec<bool>,
     pub unread_only: bool,
+    /// Only starred messages, for the starred mailbox.
+    pub starred_only: bool,
     pub view_mode: ViewMode,
     pub message_sort: (MessageColumn, SortDirection),
     pub conference_sort: (ConferenceColumn, SortDirection),
@@ -142,7 +146,9 @@ impl Default for Reader {
             filter: String::new(),
             personal: None,
             read: Vec::new(),
+            starred: Vec::new(),
             unread_only: false,
+            starred_only: false,
             view_mode: ViewMode::List,
             message_sort: (MessageColumn::Date, SortDirection::Ascending),
             conference_sort: (ConferenceColumn::Area, SortDirection::Ascending),
@@ -168,7 +174,9 @@ impl Reader {
         self.filter.clear();
         self.personal = None;
         self.read.clear();
+        self.starred.clear();
         self.unread_only = false;
+        self.starred_only = false;
         self.numbers.clear();
         self.search.clear();
         self.body_matches = None;
@@ -218,6 +226,7 @@ impl Reader {
         };
         let package = package.clone();
         self.read.resize(package.infos.len(), false);
+        self.starred.resize(package.infos.len(), false);
         let needle = self.filter.trim().to_lowercase();
         if !needle.is_empty() && self.search.len() != package.infos.len() {
             self.search = package
@@ -243,6 +252,7 @@ impl Reader {
                 self.selected_conference.is_none_or(|number| info.conference == number)
                     && personal.as_ref().is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name))
                     && (!self.unread_only || !self.read[info.index])
+                    && (!self.starred_only || self.starred[info.index])
                     && (needle.is_empty() || self.search[info.index].contains(&needle) || body_matches.is_some_and(|matches| matches.contains(&info.index)))
             })
             .collect();
@@ -498,6 +508,37 @@ impl Reader {
             }
         }
         self.unread = self.all_messages.iter().filter(|row| !self.read[row.index]).count();
+    }
+
+    pub fn is_starred(&self, index: usize) -> bool {
+        self.starred.get(index).copied().unwrap_or(false)
+    }
+
+    /// Updates one star; the starred mailbox keeps showing an unstarred message until it is rebuilt,
+    /// so a mistaken click can be undone in place. Returns whether it changed.
+    pub fn set_starred(&mut self, index: usize, starred: bool) -> bool {
+        match self.starred.get_mut(index) {
+            Some(flag) if *flag != starred => {
+                *flag = starred;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Replaces all stars by the given package indices.
+    pub fn set_stars(&mut self, indices: impl IntoIterator<Item = usize>) {
+        let len = self.package.as_ref().map_or(0, |package| package.infos.len());
+        self.starred.clear();
+        self.starred.resize(len, false);
+        for index in indices {
+            if let Some(flag) = self.starred.get_mut(index) {
+                *flag = true;
+            }
+        }
+        if self.starred_only {
+            self.rebuild_messages();
+        }
     }
 
     /// Unread messages in the current list.
@@ -780,6 +821,20 @@ mod tests {
         assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [1, 3]);
         reader.select_conference(Some(2));
         assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [3]);
+    }
+
+    #[test]
+    fn starred_filter_keeps_unstarred_messages_until_rebuilt() {
+        let (_dir, mut reader) = loaded();
+        reader.starred_only = true;
+        reader.set_stars([1, 3]);
+        assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [1, 3]);
+        assert!(reader.set_starred(3, false));
+        assert!(!reader.set_starred(3, false));
+        assert_eq!(reader.messages.len(), 2, "unstarring in place allows undo");
+        reader.rebuild_messages();
+        assert_eq!(reader.messages.iter().map(|row| row.index).collect::<Vec<_>>(), [1]);
+        assert!(reader.is_starred(1) && !reader.is_starred(3));
     }
 
     #[test]

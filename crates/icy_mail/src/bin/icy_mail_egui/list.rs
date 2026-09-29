@@ -16,6 +16,8 @@ use super::{
 };
 
 const FLAGS_WIDTH: f32 = 52.0;
+/// Message rows also hold the star between the unread dot and the reply and private flags.
+const MESSAGE_FLAGS_WIDTH: f32 = 68.0;
 /// Below this width the list scrolls sideways instead of squeezing its columns further.
 const MIN_LIST_WIDTH: f32 = 420.0;
 /// Width of one thread level in the subject column.
@@ -176,7 +178,7 @@ impl MailApp {
         let width = ui.available_width().max(MIN_LIST_WIDTH);
         let from = (width * 0.25).clamp(110.0, 170.0);
         let date = (width * 0.22).clamp(112.0, 136.0);
-        let widths = [FLAGS_WIDTH, from, width - FLAGS_WIDTH - from - date, date];
+        let widths = [MESSAGE_FLAGS_WIDTH, from, width - MESSAGE_FLAGS_WIDTH - from - date, date];
         let columns = [None, Some(MessageColumn::From), Some(MessageColumn::Subject), Some(MessageColumn::Date)];
         let threaded = self.reader.view_mode == ViewMode::Threads;
         let active = columns.iter().position(|column| *column == Some(self.reader.message_sort.0));
@@ -197,6 +199,9 @@ impl MailApp {
         let mut select = None;
         let mut action = None;
         let mut toggle = None;
+        let mut star = None;
+        let star_color = widgets::star(ui);
+        let star_tooltip = fl!(LANGUAGE_LOADER, "list-star-tooltip");
         egui::ScrollArea::horizontal()
             .id_salt("message-columns")
             .auto_shrink([false, false])
@@ -284,10 +289,25 @@ impl MailApp {
                         }
                         let flags = cells[0];
                         if unread {
-                            let dot = egui::Rect::from_center_size(egui::pos2(flags.left() + 12.0, flags.center().y), egui::Vec2::splat(8.0));
+                            let dot = egui::Rect::from_center_size(egui::pos2(flags.left() + 10.0, flags.center().y), egui::Vec2::splat(8.0));
                             widgets::unread_dot(ui, dot, if colors.selected { colors.text } else { accent });
                         }
-                        let mut left = flags.left() + 22.0;
+                        let starred = self.reader.is_starred(row.index);
+                        let star_rect = egui::Rect::from_center_size(egui::pos2(flags.left() + 27.0, flags.center().y), egui::Vec2::splat(16.0));
+                        let star_hit = ui
+                            .interact(star_rect.expand(3.0), ui.id().with(("message-star", row.index)), egui::Sense::click())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text(&star_tooltip);
+                        if starred {
+                            self.icons.paint(ui, Icon::Starred, star_rect, star_color);
+                        } else if response.hovered() || star_hit.hovered() {
+                            self.icons.paint(ui, Icon::Star, star_rect, colors.weak);
+                        }
+                        let star_clicked = star_hit.clicked();
+                        if star_clicked {
+                            star = Some((row.index, !starred));
+                        }
+                        let mut left = flags.left() + 38.0;
                         if replied.contains(&(info.conference, info.number)) {
                             let rect = egui::Rect::from_min_size(egui::pos2(left, flags.center().y - 7.0), egui::Vec2::splat(14.0));
                             self.icons.paint(ui, Icon::Reply, rect, colors.weak);
@@ -297,7 +317,7 @@ impl MailApp {
                             let rect = egui::Rect::from_min_size(egui::pos2(left, flags.center().y - 7.0), egui::Vec2::splat(14.0));
                             self.icons.paint(ui, Icon::Lock, rect, colors.weak);
                         }
-                        if !twisty_clicked && (response.clicked() || response.secondary_clicked()) {
+                        if !twisty_clicked && !star_clicked && (response.clicked() || response.secondary_clicked()) {
                             select = Some((row.index, response.double_clicked()));
                         }
                         let index = row.index;
@@ -320,6 +340,15 @@ impl MailApp {
                                 action = Some(("toggle", index));
                                 ui.close();
                             }
+                            let label = if starred {
+                                fl!(LANGUAGE_LOADER, "list-unstar")
+                            } else {
+                                fl!(LANGUAGE_LOADER, "list-star")
+                            };
+                            if ui.button(label).clicked() {
+                                action = Some(("star", index));
+                                ui.close();
+                            }
                         });
                     }
                 });
@@ -334,10 +363,13 @@ impl MailApp {
                     } else if self.folder == Folder::Personal {
                         let name = self.user_name();
                         fl!(LANGUAGE_LOADER, "list-no-personal", name = name.as_str())
+                    } else if self.folder == Folder::Starred {
+                        fl!(LANGUAGE_LOADER, "list-no-starred")
                     } else {
                         fl!(LANGUAGE_LOADER, "list-folder-empty")
                     };
-                    let image = self.icons.image(&context, Icon::Inbox, 40.0);
+                    let icon = if self.folder == Folder::Starred { Icon::Star } else { Icon::Inbox };
+                    let image = self.icons.image(&context, icon, 40.0);
                     let rect = output.inner_rect;
                     ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
                         widgets::empty(ui, image, &fl!(LANGUAGE_LOADER, "list-no-messages"), &detail);
@@ -347,6 +379,9 @@ impl MailApp {
         if let Some(index) = toggle {
             self.reader.toggle_collapsed(index);
             self.set_focus(Pane::Messages, &context);
+        }
+        if let Some((index, starred)) = star {
+            self.set_starred(&context, index, starred);
         }
         let picked = select.is_some();
         if let Some((index, open)) = select {
@@ -358,6 +393,7 @@ impl MailApp {
             match action {
                 "reply" => self.reply(&context, false),
                 "forward" => self.reply(&context, true),
+                "star" => self.set_starred(&context, index, !self.reader.is_starred(index)),
                 _ => {
                     let read = !self.reader.is_read(index);
                     self.set_read(&context, &[index], read);

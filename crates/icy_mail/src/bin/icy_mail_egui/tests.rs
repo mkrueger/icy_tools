@@ -1954,11 +1954,14 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
     gpu.context.set_theme(egui::Theme::Dark);
     mail.focus = Pane::Messages;
     mail.set_mode(ViewMode::Threads);
+    let starred = mail.reader.messages[0].index;
+    mail.set_starred(&gpu.context.clone(), starred, true);
     for _ in 0..3 {
         gpu.capture(&mut mail, [1600, 900], 1.0, vec![], "warmup");
     }
     gpu.capture(&mut mail, [1600, 900], 1.0, vec![], "wide-threads");
     assert!(mail.content_rect.top() < 200.0, "wide windows show the message beside the list");
+    mail.set_starred(&gpu.context.clone(), starred, false);
     mail.set_mode(ViewMode::List);
     mail.reader.filter = "coffee".into();
     for _ in 0..3 {
@@ -2383,4 +2386,60 @@ fn reading_pane_moves_beside_the_list_on_wide_windows() {
     assert!(!beside(&mut mail, desktop), "too narrow for side by side");
     mail.reading_pane = ReadingPane::Below;
     assert!(!beside(&mut mail, wide));
+}
+
+#[test]
+fn stars_keep_messages_for_later_and_survive_reopening() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    let first = mail.reader.selected_message.unwrap();
+    click_label(&context, &mut mail, size, "Starred");
+    let output = settle(&context, &mut mail, size);
+    assert!(
+        output
+            .shapes
+            .iter()
+            .any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text().starts_with("Star messages with S"))),
+        "the empty starred mailbox explains how to fill it"
+    );
+    click_label(&context, &mut mail, size, "All Messages");
+    mail.reader.select_message(first);
+    mail.set_focus(Pane::Messages, &context);
+    frame(&context, &mut mail, size, vec![key(egui::Key::S, egui::Modifiers::NONE)]);
+    assert!(mail.reader.is_starred(first));
+    assert_eq!(mail.counts.starred, 1);
+
+    // The star beside another row toggles it without moving the selection.
+    let output = settle(&context, &mut mail, size);
+    let carol = label(&output, "carol");
+    let star = egui::pos2(carol.left() - 47.0, carol.center().y);
+    for pressed in [true, false] {
+        frame(&context, &mut mail, size, pointer(star, pressed));
+    }
+    let package = mail.reader.package.clone().unwrap();
+    let carol = package.infos.iter().position(|info| info.from.as_str() == "carol").unwrap();
+    assert!(mail.reader.is_starred(carol), "clicking the row's star stars it");
+    assert_eq!(mail.reader.selected_message, Some(first), "starring from the list keeps the selection");
+    assert_eq!(mail.counts.starred, 2);
+
+    click_label(&context, &mut mail, size, "Starred");
+    assert_eq!(mail.folder, app::Folder::Starred);
+    let mut rows: Vec<_> = mail.reader.messages.iter().map(|row| row.index).collect();
+    rows.sort_unstable();
+    let mut expected = vec![first, carol];
+    expected.sort_unstable();
+    assert_eq!(rows, expected);
+    mail.reader.select_message(carol);
+    frame(&context, &mut mail, size, vec![key(egui::Key::S, egui::Modifiers::NONE)]);
+    assert!(!mail.reader.is_starred(carol));
+    assert_eq!(mail.reader.messages.len(), 2, "an unstarred message stays until the folder is reopened");
+
+    let mut reopened = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    reopened.open(dir.path().join("TEST.QWK"), &context);
+    wait(&mut reopened, &context);
+    assert!(reopened.reader.is_starred(first) && !reopened.reader.is_starred(carol));
+    assert_eq!(reopened.counts.starred, 1);
 }

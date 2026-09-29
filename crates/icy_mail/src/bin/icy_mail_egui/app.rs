@@ -39,6 +39,7 @@ const AUTO_SIDE_WIDTH: f32 = 1180.0;
 pub enum Folder {
     All,
     Personal,
+    Starred,
     Drafts,
     /// Welcome, news and goodbye screens, bulletins and new files lists of the packet.
     Bulletins,
@@ -91,6 +92,7 @@ pub enum Modal {
 #[derive(Default)]
 pub struct Counts {
     pub unread: usize,
+    pub starred: usize,
     pub personal: (usize, usize),
     pub conferences: HashMap<u16, usize>,
 }
@@ -415,6 +417,7 @@ impl MailApp {
         match read_state {
             Ok(state) => {
                 self.reader.set_read_marks(state.indices(&package));
+                self.reader.set_stars(state.starred_indices(&package));
                 self.read_state = Some(state);
             }
             Err(error) => {
@@ -528,6 +531,9 @@ impl MailApp {
             for info in &package.infos {
                 let unread = !self.reader.is_read(info.index);
                 let personal = is_personal(info, &user);
+                if self.reader.is_starred(info.index) {
+                    counts.starred += 1;
+                }
                 if personal {
                     counts.personal.1 += 1;
                 }
@@ -552,6 +558,7 @@ impl MailApp {
         if !self.user_name().is_empty() {
             folders.push(Folder::Personal);
         }
+        folders.push(Folder::Starred);
         folders.push(Folder::Drafts);
         if self.file_count() > 0 {
             folders.push(Folder::Bulletins);
@@ -588,6 +595,7 @@ impl MailApp {
             return;
         }
         self.reader.personal = (folder == Folder::Personal).then(|| self.user_name());
+        self.reader.starred_only = folder == Folder::Starred;
         self.reader.select_conference(match folder {
             Folder::Conference(number) => Some(number),
             _ => None,
@@ -601,6 +609,7 @@ impl MailApp {
         match folder {
             Folder::All => fl!(LANGUAGE_LOADER, "folder-all"),
             Folder::Personal => fl!(LANGUAGE_LOADER, "folder-personal"),
+            Folder::Starred => fl!(LANGUAGE_LOADER, "folder-starred"),
             Folder::Drafts => fl!(LANGUAGE_LOADER, "folder-outbox"),
             Folder::Bulletins => fl!(LANGUAGE_LOADER, "folder-bulletins"),
             Folder::Conference(number) => self
@@ -678,6 +687,35 @@ impl MailApp {
                 // Keep the message unread instead of marking it again as soon as it is shown.
                 self.rendered = self.reader.selected_message;
             }
+        }
+    }
+
+    /// Stars or unstars a message and saves it with the read marks.
+    pub fn set_starred(&mut self, context: &egui::Context, index: usize, starred: bool) {
+        let Some(info) = self.reader.package.as_ref().and_then(|package| package.infos.get(index)).cloned() else {
+            return;
+        };
+        if let Some(state) = &mut self.read_state {
+            if let Err(error) = state.set_starred(&info, starred) {
+                self.notify(
+                    context,
+                    NoticeKind::Warning,
+                    fl!(LANGUAGE_LOADER, "notice-stars-failed", error = error.to_string()),
+                );
+            }
+        }
+        if self.reader.set_starred(index, starred) {
+            if starred {
+                self.counts.starred += 1;
+            } else {
+                self.counts.starred = self.counts.starred.saturating_sub(1);
+            }
+        }
+    }
+
+    pub fn toggle_star(&mut self, context: &egui::Context) {
+        if let Some(index) = self.reader.selected_message.filter(|_| self.message_selected()) {
+            self.set_starred(context, index, !self.reader.is_starred(index));
         }
     }
 
@@ -1419,6 +1457,9 @@ impl MailApp {
         }
         if key(context, Key::M, false, false) {
             self.toggle_read(context);
+        }
+        if key(context, Key::S, false, false) {
+            self.toggle_star(context);
         }
         if key(context, Key::T, false, false) {
             self.save_tagline(context);

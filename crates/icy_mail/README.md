@@ -44,6 +44,10 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
   are remembered per packet across restarts.
 - Unread messages are bold with a dot; replied-to and private messages are
   flagged. Opening a folder selects its first unread message.
+- **S**, the star beside a message or the star in the reader header keeps a
+  message for later; **Starred** lists them. Stars are saved with the read
+  marks, and a message unstarred there stays listed until the folder is
+  reopened, so a slip can be undone.
 - Sortable columns, list or thread view, and an **Unread** filter. In threads,
   the part of a reply's subject that repeats its parent (`Re:`, the whole
   subject or shared leading words such as a newsletter title) is dimmed. Dates in the
@@ -187,6 +191,7 @@ addresses are recognized by their `@`).
 | Space | Page down, then next unread message |
 | N | Next unread message (continues into the next conference) |
 | M | Toggle read/unread |
+| S | Star or unstar the message |
 | Shift+C | Mark folder read |
 | Arrows, Home/End, Page Up/Down | Navigate the focused pane |
 | Tab/Shift+Tab, Enter | Cycle panes, open the selection |

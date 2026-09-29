@@ -254,6 +254,19 @@ impl MailApp {
         ) {
             self.toggle_read(&context);
         }
+        let starred = self.reader.selected_message.is_some_and(|index| self.reader.is_starred(index));
+        if item(
+            ui,
+            &if starred {
+                fl!(LANGUAGE_LOADER, "menu-unstar")
+            } else {
+                fl!(LANGUAGE_LOADER, "menu-star")
+            },
+            "S",
+            selected,
+        ) {
+            self.toggle_star(&context);
+        }
         if item(
             ui,
             &fl!(LANGUAGE_LOADER, "menu-mark-folder-read"),

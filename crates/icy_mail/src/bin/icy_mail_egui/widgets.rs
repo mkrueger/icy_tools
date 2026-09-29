@@ -44,6 +44,8 @@ pub enum Icon {
     Shuffle,
     Tag,
     More,
+    Star,
+    Starred,
 }
 
 impl Icon {
@@ -80,6 +82,8 @@ impl Icon {
             Self::Shuffle => include_bytes!("../../../data/icons/shuffle.svg"),
             Self::Tag => include_bytes!("../../../data/icons/sell.svg"),
             Self::More => include_bytes!("../../../data/icons/more_horiz.svg"),
+            Self::Star => include_bytes!("../../../data/icons/star.svg"),
+            Self::Starred => include_bytes!("../../../data/icons/star_filled.svg"),
         }
     }
 }
@@ -141,6 +145,34 @@ impl Icons {
         .inner
         .on_hover_text(tooltip)
         .on_disabled_hover_text(tooltip)
+    }
+
+    /// Like [`Self::button`]; a set star is filled and gold.
+    pub fn star_button(&mut self, ui: &mut egui::Ui, starred: bool, tooltip: &str) -> Response {
+        if !starred {
+            return self.button(ui, Icon::Star, tooltip, true);
+        }
+        let image = self.image(ui.ctx(), Icon::Starred, 18.0).tint(star(ui));
+        let button = egui::Button::image(image)
+            .frame_when_inactive(false)
+            .stroke(Stroke::NONE)
+            .corner_radius(6)
+            .min_size(TOOL_SIZE);
+        ui.scope(|ui| {
+            ui.spacing_mut().button_padding = egui::vec2(6.0, 4.0);
+            ui.add(button)
+        })
+        .inner
+        .on_hover_text(tooltip)
+    }
+}
+
+/// Gold of filled stars, readable on both themes and on the selection.
+pub fn star(ui: &egui::Ui) -> Color32 {
+    if ui.visuals().dark_mode {
+        Color32::from_rgb(250, 196, 40)
+    } else {
+        Color32::from_rgb(222, 150, 0)
     }
 }
 

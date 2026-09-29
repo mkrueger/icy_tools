@@ -80,6 +80,17 @@ impl MailApp {
                     fl!(LANGUAGE_LOADER, "folder-personal-tooltip", user = user.as_str()),
                 ));
             }
+            entries.push((
+                Folder::Starred,
+                Some(Icon::Star),
+                fl!(LANGUAGE_LOADER, "folder-starred"),
+                if self.counts.starred > 0 {
+                    Badge::Total(self.counts.starred)
+                } else {
+                    Badge::None
+                },
+                fl!(LANGUAGE_LOADER, "folder-starred-tooltip"),
+            ));
             let drafts = self.draft_count();
             let problems = self
                 .drafts

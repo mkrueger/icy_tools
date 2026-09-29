@@ -1,4 +1,4 @@
-//! Per-packet read marks and the list of recently opened packets.
+//! Per-packet read marks and stars, and the list of recently opened packets.
 
 use std::collections::{BTreeSet, HashSet};
 use std::fs;
@@ -25,14 +25,18 @@ struct StoredRead {
     /// the packet is reloaded and keep the file small for packets with many read messages.
     #[serde(default)]
     ranges: Vec<(u16, u32, u32)>,
+    /// `(conference, message number)` of starred messages.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    starred: Vec<(u16, u32)>,
 }
 
-/// Which messages of a packet the user has already read.
+/// Which messages of a packet the user has already read or starred.
 #[derive(Clone, Debug)]
 pub struct ReadState {
     path: PathBuf,
     bbs_id: String,
     read: BTreeSet<(u16, u32)>,
+    starred: BTreeSet<(u16, u32)>,
 }
 
 impl ReadState {
@@ -48,7 +52,7 @@ impl ReadState {
     fn load(packet_path: &Path, package: &QwkPackage, directory: Option<&Path>) -> crate::Res<Self> {
         let bbs_id = bbs_id(package)?;
         let path = storage_path(packet_path, &bbs_id, directory, ".read.toml")?;
-        let read = if path.exists() {
+        let (read, starred) = if path.exists() {
             let stored: StoredRead = toml::from_str(&fs::read_to_string(&path)?)?;
             if stored.bbs_id != bbs_id {
                 return Err(DraftError::WrongPacket.into());
@@ -70,15 +74,37 @@ impl ReadState {
                         .map(|info| (info.conference, info.number)),
                 );
             }
-            read
+            (read, stored.starred.into_iter().collect())
         } else {
-            BTreeSet::new()
+            (BTreeSet::new(), BTreeSet::new())
         };
-        Ok(Self { path, bbs_id, read })
+        Ok(Self { path, bbs_id, read, starred })
     }
 
     pub fn is_read(&self, info: &MessageInfo) -> bool {
         self.read.contains(&(info.conference, info.number))
+    }
+
+    pub fn is_starred(&self, info: &MessageInfo) -> bool {
+        self.starred.contains(&(info.conference, info.number))
+    }
+
+    /// Package indices of the starred messages.
+    pub fn starred_indices(&self, package: &QwkPackage) -> HashSet<usize> {
+        if self.starred.is_empty() {
+            return HashSet::new();
+        }
+        package.infos.iter().filter(|info| self.is_starred(info)).map(|info| info.index).collect()
+    }
+
+    /// Stars or unstars the message and saves the change. Returns whether anything changed.
+    pub fn set_starred(&mut self, info: &MessageInfo, starred: bool) -> crate::Res<bool> {
+        let key = (info.conference, info.number);
+        let changed = if starred { self.starred.insert(key) } else { self.starred.remove(&key) };
+        if changed {
+            self.save()?;
+        }
+        Ok(changed)
     }
 
     /// Package indices of the read messages.
@@ -117,6 +143,7 @@ impl ReadState {
             bbs_id: self.bbs_id.clone(),
             read: Vec::new(),
             ranges,
+            starred: self.starred.iter().copied().collect(),
         })?;
         atomic_write(&self.path, |file| {
             file.write_all(content.as_bytes())?;
@@ -223,6 +250,24 @@ mod tests {
         let mut other = package.clone();
         other.control_file.bbs_id = "OTHER".into();
         assert!(ReadState::open_in(&packet, &other, dir.path()).unwrap().indices(&other).is_empty());
+    }
+
+    #[test]
+    fn stars_survive_reloading_independently_of_read_marks() {
+        let (dir, package) = crate::qwk::tests::load();
+        let packet = dir.path().join("TEST.QWK");
+        let mut state = ReadState::open_in(&packet, &package, dir.path()).unwrap();
+        assert!(state.starred_indices(&package).is_empty());
+        assert!(state.set_starred(&package.infos[2], true).unwrap());
+        assert!(!state.set_starred(&package.infos[2], true).unwrap());
+        state.set([&package.infos[0]], true).unwrap();
+        let mut state = ReadState::open_in(&packet, &package, dir.path()).unwrap();
+        assert_eq!(state.starred_indices(&package), HashSet::from([2]));
+        assert_eq!(state.indices(&package), HashSet::from([0]));
+        assert!(state.set_starred(&package.infos[2], false).unwrap());
+        let state = ReadState::open_in(&packet, &package, dir.path()).unwrap();
+        assert!(state.starred_indices(&package).is_empty());
+        assert!(!fs::read_to_string(&state.path).unwrap().contains("starred"), "no empty list is written");
     }
 
     #[test]
