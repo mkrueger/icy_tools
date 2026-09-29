@@ -482,6 +482,15 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
 
         IgsCommand::SetResolution { resolution, palette } => {
             use icy_parser_core::PaletteMode;
+            // "The R command sets the resolution then sets each VDI Pen color": pens keep their
+            // numbers, so the registers they draw with follow the new resolution.
+            if paint.get_terminal_resolution() != resolution {
+                let default = resolution.default_fg_color();
+                paint.polymarker_color = default;
+                paint.line_color = default;
+                paint.fill_color = default;
+                paint.text_color = default;
+            }
             buf.set_graphics_type(GraphicsType::IGS(resolution));
 
             // Update executor's terminal resolution

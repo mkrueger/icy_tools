@@ -142,13 +142,17 @@ The egui frontend currently includes:
   rounded boxes, filled rectangles, circles, ellipses, arcs, elliptical arcs, pie
   slices, elliptical pie slices, filled polygons, flood fills, text and spray paint
   (`X 0`: random markers in a dragged area of up to 255 × 255 pixels, with the marker
-  type, size and a density from the toolbar). The pens for
-  lines, fills, text and markers are picked from the colors they render with, and the
-  drawing mode applies to every tool; the toolbar holds line style, thickness and
-  start/end styles (square, arrow, rounded), fill pattern and border, marker type
-  and size, arc angles, and text size, effects
-  and rotation. Only attribute commands (`C`, `T`, `A`, `M`, `E`) whose value changes
-  are written before a shape. Text is typed on the canvas like in the RIP editor;
+  type, size and a density from the toolbar). Drawing attributes are explicit
+  commands, as in IG's own drawing program: the sidebar (pens for lines, fills,
+  text and markers, fill pattern, drawing mode) and the toolbar (line style,
+  thickness and start/end styles, fill pattern and border, marker type and size,
+  text size, effects and rotation) show the attributes in effect where new commands
+  go, and changing one adds its `C`, `A`, `T`, `M` or `E` command there at once. A
+  command for the same attribute right before that point is changed instead, so
+  trying out colors leaves one command; shapes are inserted on their own. The fill
+  pattern control opens all patterns like IG's pattern screen: hollow, solid, the 24
+  patterns, the 12 hatches and the eight user patterns as swatches, the border, and
+  **Draw user pattern…**. Text is typed on the canvas like in the RIP editor;
   `@` ends IGS text and cannot be typed. **Edit IGS palette…** sets the colors of
   the pens in the eight Atari ST levels per channel with a live preview and adds one
   `S` command per changed pen. The select tool moves, resizes, nudges and deletes
@@ -169,19 +173,19 @@ The egui frontend currently includes:
   command per line. Previews use a
   fixed seed for random parameters so they do not flicker, and run loops. Undo/redo,
   autosave and crash recovery work like in the other editors.
-  While the eye button previews through the selected entry, new shapes, templates
-  and pasted commands are inserted after it; attributes changed for a new shape are
-  restored after it, so later shapes look unchanged. Ctrl+C, Ctrl+X and Ctrl+V copy,
+  While the eye button previews through the selected entry, new shapes, attribute
+  commands, templates and pasted commands are inserted after it, so an attribute
+  changed there applies to the commands after it too. Ctrl+C, Ctrl+X and Ctrl+V copy,
   cut and paste entries as IGS source, and Ctrl+D (or the duplicate button)
-  duplicates one. The **+** button adds loops, pauses, sound effects, chip music,
-  clear screen, initialization, resolution, random range, draw-to, cursor, VT52 text,
-  inverse text, user input, color registers, color rotation and its reset, spray
-  paint color rotation, wiping BitBlit memory and other commands from templates, to
-  be adjusted in the property panel or source.
+  duplicates one. The **+** button adds commands from templates in groups: drawing
+  attributes, drawing (draw-to, random range, spray color rotation), screen (clear,
+  initialize, resolution, wipe BitBlit memory), color registers (set, rotate,
+  restore), loops and pauses, VT52 text and cursor, sound, and input and mouse
+  zones, to be adjusted in the property panel or source.
   The resolution box sets the first `R` command (or adds one); an `R` after drawing
-  commands is flagged. **Fill patterns…** draws one of the eight 16 × 16 user
-  patterns (`X 7`) with a tiled preview; applying adds the pattern and selects it
-  for fills, and a selected pattern command is edited in place. The copy area tool
+  commands is flagged. **Draw user pattern…** draws one of the eight 16 × 16 user
+  patterns (`X 7`) with a tiled preview; applying adds the pattern and a fill
+  command selecting it, and a selected pattern command is edited in place. The copy area tool
   drags out an area and places screen-to-screen copies (`G`) with a copy mode, which
   move like shapes. Mouse zones (`X 4`) are drawn, moved and resized with their own
   tool like RIP mouse regions, with the host string from the toolbar and the next

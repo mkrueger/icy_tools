@@ -734,102 +734,90 @@ fn item_swatch(item: &IgsItem, palette: &icy_engine::Palette, resolution: Termin
     }
 }
 
-/// Commands offered by the Add menu, as IGS source.
-fn templates() -> Vec<(String, &'static [u8])> {
+/// A named group of the Add menu with its commands as IGS source.
+type TemplateGroup = (String, Vec<(String, &'static [u8])>);
+
+/// Commands offered by the Add menu, as IGS source, grouped like the menu of IG's drawing
+/// program.
+fn templates() -> Vec<TemplateGroup> {
     vec![
-        (fl!("igs-template-loop"), b"G#&>10,100,10,0,O,3,x,100,x:"),
-        (fl!("igs-template-pause-seconds"), b"G#t>1:"),
-        (fl!("igs-template-pause-vsync"), b"G#q>30:"),
-        (fl!("igs-template-sound"), b"G#b>0:"),
-        (fl!("igs-template-chip-music"), b"G#n>0,0,15,40,50,0:"),
-        (fl!("igs-template-effect-loops"), b"G#b>23,2:"),
-        (fl!("igs-template-stop-sound"), b"G#b>21:"),
-        (fl!("igs-template-clear"), b"G#s>4:"),
-        (fl!("igs-template-initialize"), b"G#I>0:"),
-        (fl!("igs-template-resolution"), b"G#R>0,2:"),
-        (fl!("igs-template-random-range"), b"G#X>2,0,100:"),
-        (fl!("igs-template-draw-to-start"), b"G#X>10,0,0:"),
-        (fl!("igs-template-draw-to"), b"G#D>100,100:"),
-        (fl!("igs-template-clear-zones"), b"G#X>4,9999:"),
-        (fl!("igs-template-cursor-off"), b"G#k>0:"),
-        (fl!("igs-template-position-cursor"), b"G#p>0,0:"),
-        (fl!("igs-template-text-color"), b"G#c>1,3:"),
-        (fl!("igs-template-inverse-text"), b"G#v>1:"),
-        (fl!("igs-template-input"), b"G#<>1,0,1:"),
-        (fl!("igs-template-color-register"), b"G#X>1,4,1911:"),
-        (fl!("igs-template-color-rotation"), b"G#X>8,1,15,20,10:"),
-        (fl!("igs-template-color-rotation-reset"), b"G#X>8,1,15,0,0:"),
-        (fl!("igs-template-spray-rotation"), b"G#X>0,1,0,0,0,0:"),
-        (fl!("igs-template-wipe-blit"), b"G#X>11,0,0,0:"),
-        (fl!("igs-template-text"), b"Hello, Atari!"),
+        (
+            fl!("igs-group-attributes"),
+            vec![
+                (fl!("igs-template-pen-color"), b"G#C>1,1:"),
+                (fl!("igs-template-pen-palette"), b"G#S>1,7,0,0:"),
+                (fl!("igs-template-drawing-mode"), b"G#M>1:"),
+                (fl!("igs-template-line-style"), b"G#T>2,1,1:"),
+                (fl!("igs-template-marker-style"), b"G#T>1,1,1:"),
+                (fl!("igs-template-fill"), b"G#A>2,2,1:"),
+                (fl!("igs-template-hollow"), b"G#H>1:"),
+                (fl!("igs-template-text-effects"), b"G#E>0,9,0:"),
+            ],
+        ),
+        (
+            fl!("igs-group-drawing"),
+            vec![
+                (fl!("igs-template-draw-to-start"), b"G#X>10,0,0:"),
+                (fl!("igs-template-draw-to"), b"G#D>100,100:"),
+                (fl!("igs-template-random-range"), b"G#X>2,0,100:"),
+                (fl!("igs-template-spray-rotation"), b"G#X>0,1,0,0,0,0:"),
+            ],
+        ),
+        (
+            fl!("igs-group-screen"),
+            vec![
+                (fl!("igs-template-clear"), b"G#s>4:"),
+                (fl!("igs-template-initialize"), b"G#I>0:"),
+                (fl!("igs-template-resolution"), b"G#R>0,2:"),
+                (fl!("igs-template-wipe-blit"), b"G#X>11,0,0,0:"),
+            ],
+        ),
+        (
+            fl!("igs-group-colors"),
+            vec![
+                (fl!("igs-template-color-register"), b"G#X>1,4,1911:"),
+                (fl!("igs-template-color-rotation"), b"G#X>8,1,15,20,10:"),
+                (fl!("igs-template-color-rotation-reset"), b"G#X>8,1,15,0,0:"),
+            ],
+        ),
+        (
+            fl!("igs-group-flow"),
+            vec![
+                (fl!("igs-template-loop"), b"G#&>10,100,10,0,O,3,x,100,x:"),
+                (fl!("igs-template-pause-seconds"), b"G#t>1:"),
+                (fl!("igs-template-pause-vsync"), b"G#q>30:"),
+            ],
+        ),
+        (
+            fl!("igs-group-text"),
+            vec![
+                (fl!("igs-template-text"), b"Hello, Atari!"),
+                (fl!("igs-template-text-color"), b"G#c>1,3:"),
+                (fl!("igs-template-inverse-text"), b"G#v>1:"),
+                (fl!("igs-template-cursor-off"), b"G#k>0:"),
+                (fl!("igs-template-position-cursor"), b"G#p>0,0:"),
+            ],
+        ),
+        (
+            fl!("igs-group-sound"),
+            vec![
+                (fl!("igs-template-sound"), b"G#b>0:"),
+                (fl!("igs-template-chip-music"), b"G#n>0,0,15,40,50,0:"),
+                (fl!("igs-template-effect-loops"), b"G#b>23,2:"),
+                (fl!("igs-template-stop-sound"), b"G#b>21:"),
+            ],
+        ),
+        (
+            fl!("igs-group-interaction"),
+            vec![(fl!("igs-template-input"), b"G#<>1,0,1:"), (fl!("igs-template-clear-zones"), b"G#X>4,9999:")],
+        ),
     ]
 }
 
-/// The value of an attribute in `state`: the VDI default when it was never set, unless a
-/// loop may have changed it.
-fn known<T>(value: Option<T>, default: T, state: &IgsDrawState) -> Option<T> {
-    match value {
-        Some(value) => Some(value),
-        None if state.uncertain => None,
-        None => Some(default),
-    }
-}
-
-/// The command that brings back the attribute `changed` modifies, as it is in `state`.
-fn restore(changed: &IgsCommand, state: &IgsDrawState) -> Option<IgsCommand> {
-    // Pen 1 draws with the default foreground register in every resolution.
-    Some(match changed {
-        IgsCommand::ColorSet { pen, .. } => IgsCommand::ColorSet {
-            pen: *pen,
-            color: known(
-                match pen {
-                    PenType::Line => state.line_color,
-                    PenType::Fill => state.fill_color,
-                    PenType::Text => state.text_color,
-                    PenType::Polymarker => state.marker_color,
-                },
-                1,
-                state,
-            )?,
-        },
-        IgsCommand::SetLineOrMarkerStyle {
-            style: LineMarkerStyle::PolyMarkerSize(..),
-        } => IgsCommand::SetLineOrMarkerStyle {
-            style: known(state.marker, LineMarkerStyle::PolyMarkerSize(PolymarkerKind::Point, 1), state)?,
-        },
-        IgsCommand::SetLineOrMarkerStyle {
-            style: LineMarkerStyle::LineEndpoints(..),
-        } => {
-            let (left, right) = known(state.line_ends, (ArrowEnd::Square, ArrowEnd::Square), state)?;
-            let kind = match known(state.line, LineMarkerStyle::LineThickness(LineKind::Solid, 1), state)? {
-                LineMarkerStyle::LineThickness(kind, _) => kind,
-                _ => LineKind::Solid,
-            };
-            IgsCommand::SetLineOrMarkerStyle {
-                style: LineMarkerStyle::LineEndpoints(kind, left, right),
-            }
-        }
-        IgsCommand::SetLineOrMarkerStyle { .. } => IgsCommand::SetLineOrMarkerStyle {
-            style: known(state.line, LineMarkerStyle::LineThickness(LineKind::Solid, 1), state)?,
-        },
-        IgsCommand::AttributeForFills { .. } => {
-            let (pattern_type, border) = known(state.fill, (PatternType::Solid, false), state)?;
-            IgsCommand::AttributeForFills { pattern_type, border }
-        }
-        IgsCommand::TextEffects { .. } => {
-            let (effects, size, rotation) = known(state.text, (TextEffects::NORMAL, 9, TextRotation::Degrees0), state)?;
-            IgsCommand::TextEffects { effects, size, rotation }
-        }
-        IgsCommand::DrawingMode { .. } => IgsCommand::DrawingMode {
-            mode: known(state.drawing_mode, DrawingMode::Replace, state)?,
-        },
-        _ => return None,
-    })
-}
-
-/// Tool settings: the attributes new shapes are drawn with.
-#[derive(Clone, Debug, PartialEq)]
-struct Attributes {
+/// Drawing attributes in effect where new commands are inserted, with the VDI defaults for
+/// those never set. The tool controls show these and change them with explicit commands.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Current {
     line_color: u8,
     fill_color: u8,
     text_color: u8,
@@ -838,18 +826,133 @@ struct Attributes {
     border: bool,
     line_kind: LineKind,
     line_thickness: u8,
-    /// Styles of the start and end of lines, polylines and arcs.
     line_ends: (ArrowEnd, ArrowEnd),
     marker: PolymarkerKind,
     marker_size: u8,
-    /// Markers sprayed by the spray tool.
-    spray_density: i32,
     drawing_mode: DrawingMode,
     text_effects: TextEffects,
     text_size: u8,
     text_rotation: TextRotation,
+}
+
+impl Current {
+    fn new(state: &IgsDrawState) -> Self {
+        // Pen 1 draws with the default foreground register in every resolution.
+        let (line_kind, line_thickness) = match state.line {
+            Some(LineMarkerStyle::LineThickness(kind, width)) => (kind, width),
+            _ => (LineKind::Solid, 1),
+        };
+        let (marker, marker_size) = match state.marker {
+            Some(LineMarkerStyle::PolyMarkerSize(kind, size)) => (kind, size),
+            _ => (PolymarkerKind::Point, 1),
+        };
+        let (pattern, border) = state.fill.unwrap_or((PatternType::Solid, false));
+        let (text_effects, text_size, text_rotation) = state.text.unwrap_or((TextEffects::NORMAL, 9, TextRotation::Degrees0));
+        Self {
+            line_color: state.line_color.unwrap_or(1),
+            fill_color: state.fill_color.unwrap_or(1),
+            text_color: state.text_color.unwrap_or(1),
+            marker_color: state.marker_color.unwrap_or(1),
+            pattern,
+            border,
+            line_kind,
+            line_thickness,
+            line_ends: state.line_ends.unwrap_or((ArrowEnd::Square, ArrowEnd::Square)),
+            marker,
+            marker_size,
+            drawing_mode: state.drawing_mode.unwrap_or(DrawingMode::Replace),
+            text_effects,
+            text_size,
+            text_rotation,
+        }
+    }
+
+    fn pen(&self, pen: PenType) -> u8 {
+        match pen {
+            PenType::Line => self.line_color,
+            PenType::Fill => self.fill_color,
+            PenType::Text => self.text_color,
+            PenType::Polymarker => self.marker_color,
+        }
+    }
+
+    fn pen_mut(&mut self, pen: PenType) -> &mut u8 {
+        match pen {
+            PenType::Line => &mut self.line_color,
+            PenType::Fill => &mut self.fill_color,
+            PenType::Text => &mut self.text_color,
+            PenType::Polymarker => &mut self.marker_color,
+        }
+    }
+
+    /// The commands that turn these attributes into `wanted`, one per attribute that differs.
+    fn changes(&self, wanted: &Current) -> Vec<IgsCommand> {
+        let mut commands = Vec::new();
+        for pen in [PenType::Line, PenType::Fill, PenType::Text, PenType::Polymarker] {
+            if self.pen(pen) != wanted.pen(pen) {
+                commands.push(IgsCommand::ColorSet { pen, color: wanted.pen(pen) });
+            }
+        }
+        if (self.pattern, self.border) != (wanted.pattern, wanted.border) {
+            commands.push(IgsCommand::AttributeForFills {
+                pattern_type: wanted.pattern,
+                border: wanted.border,
+            });
+        }
+        if (self.line_kind, self.line_thickness) != (wanted.line_kind, wanted.line_thickness) {
+            // IG only draws solid lines wide.
+            let width = if wanted.line_kind == LineKind::Solid { wanted.line_thickness } else { 1 };
+            commands.push(IgsCommand::SetLineOrMarkerStyle {
+                style: LineMarkerStyle::LineThickness(wanted.line_kind, width),
+            });
+        }
+        if self.line_ends != wanted.line_ends {
+            let (left, right) = wanted.line_ends;
+            commands.push(IgsCommand::SetLineOrMarkerStyle {
+                style: LineMarkerStyle::LineEndpoints(wanted.line_kind, left, right),
+            });
+        }
+        if (self.marker, self.marker_size) != (wanted.marker, wanted.marker_size) {
+            commands.push(IgsCommand::SetLineOrMarkerStyle {
+                style: LineMarkerStyle::PolyMarkerSize(wanted.marker, wanted.marker_size),
+            });
+        }
+        if self.drawing_mode != wanted.drawing_mode {
+            commands.push(IgsCommand::DrawingMode { mode: wanted.drawing_mode });
+        }
+        if (self.text_effects, self.text_size, self.text_rotation) != (wanted.text_effects, wanted.text_size, wanted.text_rotation) {
+            commands.push(IgsCommand::TextEffects {
+                effects: wanted.text_effects,
+                size: wanted.text_size,
+                rotation: wanted.text_rotation,
+            });
+        }
+        commands
+    }
+}
+
+/// Whether `a` and `b` set the same attribute, so the later one makes the earlier redundant.
+fn same_attribute(a: &IgsCommand, b: &IgsCommand) -> bool {
+    match (a, b) {
+        (IgsCommand::ColorSet { pen: first, .. }, IgsCommand::ColorSet { pen: second, .. }) => first == second,
+        (IgsCommand::SetLineOrMarkerStyle { style: first }, IgsCommand::SetLineOrMarkerStyle { style: second }) => {
+            std::mem::discriminant(first) == std::mem::discriminant(second)
+        }
+        (IgsCommand::AttributeForFills { .. }, IgsCommand::AttributeForFills { .. })
+        | (IgsCommand::DrawingMode { .. }, IgsCommand::DrawingMode { .. })
+        | (IgsCommand::TextEffects { .. }, IgsCommand::TextEffects { .. }) => true,
+        _ => false,
+    }
+}
+
+/// Parameters of new shapes that are not IGS state: arc angles, spray density, the copy mode
+/// and the host string of mouse zones.
+#[derive(Clone, Debug, PartialEq)]
+struct Attributes {
     start_angle: i32,
     end_angle: i32,
+    /// Markers sprayed by the spray tool.
+    spray_density: i32,
     blit_mode: BlitMode,
     /// The host string of new mouse zones.
     zone_host: String,
@@ -858,81 +961,12 @@ struct Attributes {
 impl Default for Attributes {
     fn default() -> Self {
         Self {
-            line_color: 1,
-            fill_color: 1,
-            text_color: 1,
-            marker_color: 1,
-            pattern: PatternType::Solid,
-            border: false,
-            line_kind: LineKind::Solid,
-            line_thickness: 1,
-            line_ends: (ArrowEnd::Square, ArrowEnd::Square),
-            marker: PolymarkerKind::Point,
-            marker_size: 1,
-            spray_density: 200,
-            drawing_mode: DrawingMode::Replace,
-            text_effects: TextEffects::NORMAL,
-            text_size: 9,
-            text_rotation: TextRotation::Degrees0,
             start_angle: 0,
             end_angle: 90,
+            spray_density: 200,
             blit_mode: BlitMode::Replace,
             zone_host: String::new(),
         }
-    }
-}
-
-impl Attributes {
-    /// The commands that make `state` match these attributes for `tool`.
-    fn commands(&self, tool: Tool, state: &IgsDrawState) -> Vec<IgsCommand> {
-        let mut commands = Vec::new();
-        let Some(pen) = tool.pen() else {
-            return commands;
-        };
-        let (current, wanted) = match pen {
-            PenType::Line => (state.line_color, self.line_color),
-            PenType::Fill => (state.fill_color, self.fill_color),
-            PenType::Text => (state.text_color, self.text_color),
-            PenType::Polymarker => (state.marker_color, self.marker_color),
-        };
-        if current != Some(wanted) {
-            commands.push(IgsCommand::ColorSet { pen, color: wanted });
-        }
-        if tool.uses_line_style() {
-            let style = LineMarkerStyle::LineThickness(self.line_kind, self.line_thickness);
-            if state.line != Some(style) {
-                commands.push(IgsCommand::SetLineOrMarkerStyle { style });
-            }
-            if known(state.line_ends, (ArrowEnd::Square, ArrowEnd::Square), state) != Some(self.line_ends) {
-                let (left, right) = self.line_ends;
-                commands.push(IgsCommand::SetLineOrMarkerStyle {
-                    style: LineMarkerStyle::LineEndpoints(self.line_kind, left, right),
-                });
-            }
-        }
-        if tool.uses_fill() && state.fill != Some((self.pattern, self.border)) {
-            commands.push(IgsCommand::AttributeForFills {
-                pattern_type: self.pattern,
-                border: self.border,
-            });
-        }
-        if matches!(tool, Tool::Marker | Tool::Spray) {
-            let style = LineMarkerStyle::PolyMarkerSize(self.marker, self.marker_size);
-            if state.marker != Some(style) {
-                commands.push(IgsCommand::SetLineOrMarkerStyle { style });
-            }
-        }
-        if tool == Tool::Text && state.text != Some((self.text_effects, self.text_size, self.text_rotation)) {
-            commands.push(IgsCommand::TextEffects {
-                effects: self.text_effects,
-                size: self.text_size,
-                rotation: self.text_rotation,
-            });
-        }
-        if state.drawing_mode != Some(self.drawing_mode) {
-            commands.push(IgsCommand::DrawingMode { mode: self.drawing_mode });
-        }
-        commands
     }
 }
 
@@ -1007,6 +1041,10 @@ pub struct IgsEditor {
     listed_selection: Option<usize>,
     visible_rows: std::ops::Range<usize>,
     error: Option<String>,
+    /// Attribute changes from the tool controls not added as commands yet.
+    attribute_draft: Option<Current>,
+    /// The user pattern slot the fill pattern picker asked to draw.
+    pattern_request: Option<u8>,
     #[cfg(test)]
     canvas_rect: Option<egui::Rect>,
 }
@@ -1049,6 +1087,8 @@ impl IgsEditor {
             listed_selection: None,
             visible_rows: 0..0,
             error: None,
+            attribute_draft: None,
+            pattern_request: None,
             #[cfg(test)]
             canvas_rect: None,
         }
@@ -1092,6 +1132,7 @@ impl IgsEditor {
         if self.animating() {
             self.stop_playback();
         }
+        self.attribute_draft = None;
         // These hold item indices that undo and redo may shift.
         self.shape_drag = None;
         self.drag = None;
@@ -1231,29 +1272,83 @@ impl IgsEditor {
         }
     }
 
-    /// Attribute commands for `tool` followed by `shape`. Inserted before other items, the
-    /// changed attributes are restored after it so that later items look unchanged.
-    fn with_attributes(&self, tool: Tool, shape: IgsCommand) -> Vec<IgsCommand> {
-        let index = self.insertion_index();
-        let state = self.document.state_before(index);
-        let mut commands = self.attributes.commands(tool, &state);
-        let changed = commands.clone();
-        commands.push(shape);
-        if index < self.document.len() {
-            commands.extend(changed.iter().filter_map(|command| restore(command, &state)));
+    /// The drawing attributes where new commands are inserted.
+    fn current(&self) -> Current {
+        Current::new(&self.document.state_before(self.insertion_index()))
+    }
+
+    /// Changes drawing attributes with explicit commands where new commands are inserted. A
+    /// command for the same attribute right before that point is changed instead of adding
+    /// another one, so trying out colors leaves one command.
+    fn set_attributes(&mut self, wanted: Current) {
+        let changes = self.current().changes(&wanted);
+        if changes.is_empty() {
+            return;
         }
-        commands
+        self.finish_pending();
+        self.commit_properties();
+        for command in changes {
+            let index = self.insertion_index();
+            let previous = index
+                .checked_sub(1)
+                .filter(|previous| self.document.command(*previous).is_some_and(|existing| same_attribute(existing, &command)));
+            match previous {
+                Some(previous) => {
+                    self.replace_command(previous, command);
+                    self.selected = Some(previous);
+                }
+                None => self.add_commands(vec![command]),
+            }
+        }
+    }
+
+    /// Keeps attribute changes from the tool controls until the pointer is released and no field
+    /// is being typed in, so dragging a value adds one command.
+    fn draft_attributes(&mut self, wanted: Current) {
+        self.attribute_draft = (wanted != self.current()).then_some(wanted);
+    }
+
+    fn commit_attribute_draft(&mut self, context: &egui::Context) {
+        let busy = context.input(|input| input.pointer.any_down()) || context.wants_keyboard_input();
+        if !busy {
+            if let Some(wanted) = self.attribute_draft.take() {
+                self.set_attributes(wanted);
+            }
+        }
+    }
+
+    /// The user patterns where new commands go, as fills there use them.
+    fn user_patterns(&self) -> [Vec<u16>; 8] {
+        pattern::user_patterns(self.document.items()[..self.insertion_index()].iter().filter_map(IgsItem::command))
+    }
+
+    /// Swatch colors: the fill pen on the background register.
+    fn fill_colors(&self, fill: u8) -> (Color32, Color32) {
+        let resolution = self.canvas.resolution;
+        (
+            palette::pen_color(&self.palette, resolution, fill),
+            palette::pen_color(&self.palette, resolution, 0),
+        )
+    }
+
+    fn apply_picker(&mut self, wanted: &mut Current, change: pattern::PickerChange) {
+        if let Some(pattern) = change.pattern {
+            wanted.pattern = pattern;
+        }
+        if let Some(border) = change.border {
+            wanted.border = border;
+        }
+        if let Some(slot) = change.edit {
+            self.pattern_request = Some(slot);
+        }
     }
 
     fn shape_commands(&self, from: Point, to: Point) -> Vec<IgsCommand> {
-        match self.tool.command(&self.canvas, from, to, &self.attributes) {
-            Some(shape) => self.with_attributes(self.tool, shape),
-            None => Vec::new(),
-        }
+        self.tool.command(&self.canvas, from, to, &self.attributes).into_iter().collect()
     }
 
     fn text_commands(&self, edit: &TextEdit) -> Vec<IgsCommand> {
-        self.with_attributes(Tool::Text, edit.command())
+        vec![edit.command()]
     }
 
     /// Inserts commands as one undo step and selects the shape among them, or the last one.
@@ -1263,20 +1358,12 @@ impl IgsEditor {
         }
         self.commit_properties();
         let index = self.insertion_index();
-        let state = self.document.state_before(index);
-        let unrestored = index < self.document.len()
-            && commands
-                .iter()
-                .any(|command| restore(command, &state).is_none() && restore(command, &IgsDrawState::default()).is_some());
         let offset = commands.iter().rposition(|command| shape_tool(command).is_some()).unwrap_or(commands.len() - 1);
         let result = self.document.insert_many(index, commands);
         if self.set_error(result) {
             self.selected = Some(index + offset);
             self.editing = None;
             self.source = None;
-            if unrestored {
-                self.error = Some(fl!("igs-insert-after-loop-warning"));
-            }
         }
     }
 
@@ -1397,7 +1484,7 @@ impl IgsEditor {
     fn finish_poly(&mut self) {
         let minimum = if self.tool == Tool::PolyLine { 2 } else { 3 };
         if self.poly.len() >= minimum {
-            let commands = self.with_attributes(self.tool, poly_command(self.tool, &self.poly));
+            let commands = vec![poly_command(self.tool, &self.poly)];
             self.add_commands(commands);
         }
         self.poly.clear();
@@ -1425,7 +1512,7 @@ impl IgsEditor {
             },
             _ => {
                 // The anchor is the baseline; the click marks the top of the glyphs.
-                let (_, _, top) = select::text_extent(self.attributes.text_size, 1);
+                let (_, _, top) = select::text_extent(self.current().text_size, 1);
                 TextEdit {
                     at: (point.0, point.1 + top),
                     text: Vec::new(),
@@ -1529,7 +1616,7 @@ impl IgsEditor {
                 PatternDialog::new(pattern, rows, Some(index))
             }
             _ => {
-                let slot = match self.attributes.pattern {
+                let slot = match self.current().pattern {
                     PatternType::UserDefined(slot) => slot.min(7),
                     _ => 0,
                 };
@@ -1537,6 +1624,13 @@ impl IgsEditor {
             }
         };
         self.pattern_dialog = Some(dialog);
+    }
+
+    /// Draws the user pattern of `slot` for a new pattern command.
+    fn open_user_pattern(&mut self, slot: u8) {
+        self.finish_pending();
+        self.commit_properties();
+        self.pattern_dialog = Some(PatternDialog::new(slot, self.pattern_before(slot), None));
     }
 
     /// The user pattern of `slot` where new commands are inserted.
@@ -1549,8 +1643,11 @@ impl IgsEditor {
             Some(index) if matches!(self.document.command(index), Some(IgsCommand::LoadFillPattern { .. })) => self.replace_command(index, dialog.command()),
             Some(_) => {}
             None => {
+                // The new pattern is loaded and then selected for fills, both as commands.
                 self.add_commands(vec![dialog.command()]);
-                self.attributes.pattern = PatternType::UserDefined(dialog.slot());
+                let mut wanted = self.current();
+                wanted.pattern = PatternType::UserDefined(dialog.slot());
+                self.set_attributes(wanted);
             }
         }
     }
@@ -1750,7 +1847,7 @@ impl IgsEditor {
             }
             let minimum = if self.tool == Tool::PolyLine { 2 } else { 3 };
             if points.len() >= minimum {
-                return self.with_attributes(self.tool, poly_command(self.tool, &points));
+                return vec![poly_command(self.tool, &points)];
             }
         }
         match self.drag {
@@ -1970,26 +2067,34 @@ impl IgsEditor {
             ui.add(self.icons.image(ui, self.tool.icon(), 18.0).tint(ui.visuals().text_color()));
             ui.label(icy_engine_gui::egui::appearance::bold(ui, self.tool.label()));
             widgets::divider(ui);
-            let attributes = &mut self.attributes;
+            // The drawing attributes are those where new commands go; changing one adds a command.
+            let mut wanted = self.attribute_draft.unwrap_or_else(|| self.current());
             if self.tool.uses_line_style() {
-                properties::line_kind(ui, "igs-tool-line-kind", &mut attributes.line_kind);
-                ui.add(egui::DragValue::new(&mut attributes.line_thickness).range(1..=41).suffix(" px"))
-                    .on_hover_text(fl!("igs-thickness"));
-                let (start, end) = &mut attributes.line_ends;
+                properties::line_kind(ui, "igs-tool-line-kind", &mut wanted.line_kind);
+                ui.add_enabled(
+                    wanted.line_kind == LineKind::Solid,
+                    egui::DragValue::new(&mut wanted.line_thickness).range(1..=41).suffix(" px"),
+                )
+                .on_hover_text(fl!("igs-thickness"));
+                let (start, end) = &mut wanted.line_ends;
                 properties::line_end(ui, "igs-tool-line-start", start).on_hover_text(fl!("igs-end-start"));
                 properties::line_end(ui, "igs-tool-line-end", end).on_hover_text(fl!("igs-end-end"));
             }
-            if self.tool.uses_fill() && self.tool != Tool::FloodFill {
-                properties::pattern(ui, "igs-tool-pattern", &mut attributes.pattern);
-                ui.checkbox(&mut attributes.border, fl!("igs-fill-border"));
-            } else if self.tool == Tool::FloodFill {
-                properties::pattern(ui, "igs-tool-pattern", &mut attributes.pattern);
+            if self.tool.uses_fill() {
+                let user = self.user_patterns();
+                let colors = self.fill_colors(wanted.fill_color);
+                let change = pattern::picker(ui, "igs-tool-pattern", wanted.pattern, wanted.border, &user, colors, 64.0);
+                self.apply_picker(&mut wanted, change);
+                if self.tool != Tool::FloodFill {
+                    ui.checkbox(&mut wanted.border, fl!("igs-fill-border"));
+                }
             }
             if matches!(self.tool, Tool::Marker | Tool::Spray) {
-                properties::marker(ui, "igs-tool-marker", &mut attributes.marker);
-                ui.add(egui::DragValue::new(&mut attributes.marker_size).range(1..=8))
+                properties::marker(ui, "igs-tool-marker", &mut wanted.marker);
+                ui.add(egui::DragValue::new(&mut wanted.marker_size).range(1..=8))
                     .on_hover_text(fl!("igs-size"));
             }
+            let attributes = &mut self.attributes;
             if self.tool == Tool::Spray {
                 ui.add(
                     egui::DragValue::new(&mut attributes.spray_density)
@@ -2006,9 +2111,9 @@ impl IgsEditor {
             }
             match self.tool {
                 Tool::Text => {
-                    ui.add(egui::DragValue::new(&mut attributes.text_size).range(1..=40).prefix(fl!("igs-size-prefix")));
-                    properties::text_effects(ui, &mut attributes.text_effects);
-                    properties::rotation(ui, &mut attributes.text_rotation);
+                    ui.add(egui::DragValue::new(&mut wanted.text_size).range(1..=40).prefix(fl!("igs-size-prefix")));
+                    properties::text_effects(ui, &mut wanted.text_effects);
+                    properties::rotation(ui, &mut wanted.text_rotation);
                     ui.weak(if self.text_edit.is_some() {
                         fl!("igs-text-typing-hint")
                     } else {
@@ -2049,6 +2154,7 @@ impl IgsEditor {
                 },
                 _ => {}
             }
+            self.draft_attributes(wanted);
             let edited = match self.tool {
                 Tool::Select => self.selected_shape().and_then(|index| self.shape(index)).map(|(command, _)| command),
                 _ => self.pending_commands().pop(),
@@ -2078,8 +2184,8 @@ impl IgsEditor {
             .into_iter()
             .chain(properties::MODES.map(|mode| combo(drawing_mode_name(mode))))
             .chain([fl!("igs-pen-line"), fl!("igs-pen-fill"), fl!("igs-pen-text"), fl!("igs-pen-marker")].map(pen))
-            .chain([fl!("igs-palette-edit"), fl!("igs-pattern-edit")].map(button))
-            .chain([text(fl!("igs-drawing-mode"), egui::TextStyle::Body)]);
+            .chain([fl!("igs-palette-edit")].map(button))
+            .chain([fl!("igs-drawing-mode"), fl!("igs-fill-pattern-label")].map(|label| text(label, egui::TextStyle::Body)));
         let content = widths.fold(0.0, f32::max);
         (content + 2.0 * SIDEBAR_MARGIN).ceil().clamp(SIDEBAR_WIDTH, SIDEBAR_MAX_WIDTH)
     }
@@ -2111,31 +2217,45 @@ impl IgsEditor {
                         self.set_resolution(chosen);
                     }
                     let resolution = self.canvas.resolution;
+                    // The pens (C), fill (A) and drawing mode (M) where new commands go; changing
+                    // one adds its command there.
+                    let mut wanted = self.attribute_draft.unwrap_or_else(|| self.current());
                     for (id, label, pen) in [
-                        ("line", fl!("igs-pen-line"), &mut self.attributes.line_color),
-                        ("fill", fl!("igs-pen-fill"), &mut self.attributes.fill_color),
-                        ("text", fl!("igs-pen-text"), &mut self.attributes.text_color),
-                        ("marker", fl!("igs-pen-marker"), &mut self.attributes.marker_color),
+                        ("line", fl!("igs-pen-line"), PenType::Line),
+                        ("fill", fl!("igs-pen-fill"), PenType::Fill),
+                        ("text", fl!("igs-pen-text"), PenType::Text),
+                        ("marker", fl!("igs-pen-marker"), PenType::Polymarker),
                     ] {
-                        *pen = (*pen).min(palette::pen_count(resolution) - 1);
+                        // Out-of-range pens from a file are shown clamped but only change when picked.
+                        let shown = wanted.pen(pen).min(palette::pen_count(resolution) - 1);
+                        let mut picked = shown;
                         let row = egui::vec2(ui.available_width(), PEN_SWATCH.y);
                         ui.allocate_ui_with_layout(row, egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            palette::pen_picker(ui, id, &self.palette, resolution, pen, PEN_SWATCH);
+                            palette::pen_picker(ui, id, &self.palette, resolution, &mut picked, PEN_SWATCH);
                             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                                 ui.add(egui::Label::new(label).truncate());
                             });
                         });
+                        if picked != shown {
+                            *wanted.pen_mut(pen) = picked;
+                        }
                     }
+                    ui.add(egui::Label::new(fl!("igs-fill-pattern-label")).truncate());
+                    let user = self.user_patterns();
+                    let colors = self.fill_colors(wanted.fill_color);
+                    let change = pattern::picker(ui, "igs-sidebar-pattern", wanted.pattern, wanted.border, &user, colors, ui.available_width());
+                    self.apply_picker(&mut wanted, change);
+                    ui.add(egui::Label::new(fl!("igs-drawing-mode")).truncate());
+                    properties::drawing_mode(ui, "igs-tool-mode", &mut wanted.drawing_mode);
+                    self.draft_attributes(wanted);
                     let full = egui::vec2(ui.available_width(), 26.0);
-                    let wide = |label: String| egui::Button::new(label).truncate().min_size(full);
-                    if ui.add(wide(fl!("igs-palette-edit"))).on_hover_text(fl!("igs-palette-edit-tooltip")).clicked() {
+                    if ui
+                        .add(egui::Button::new(fl!("igs-palette-edit")).truncate().min_size(full))
+                        .on_hover_text(fl!("igs-palette-edit-tooltip"))
+                        .clicked()
+                    {
                         self.open_palette_dialog();
                     }
-                    if ui.add(wide(fl!("igs-pattern-edit"))).on_hover_text(fl!("igs-pattern-edit-tooltip")).clicked() {
-                        self.open_pattern_dialog(None);
-                    }
-                    ui.add(egui::Label::new(fl!("igs-drawing-mode")).truncate());
-                    properties::drawing_mode(ui, "igs-tool-mode", &mut self.attributes.drawing_mode);
                     ui.separator();
                     egui::Grid::new("igs-tools-grid").num_columns(3).show(ui, |ui| {
                         for (index, tool) in Tool::ALL.into_iter().enumerate() {
@@ -2195,11 +2315,15 @@ impl IgsEditor {
                         egui::Popup::menu(&add).id(egui::Id::new("igs-add-command")).show(|ui| {
                             ui.set_min_width(220.0);
                             ui.weak(fl!("igs-editor-add-hint"));
-                            for (name, source) in templates() {
-                                if ui.button(name).clicked() {
-                                    template = Some(source);
-                                    ui.close();
-                                }
+                            for (group, commands) in templates() {
+                                ui.menu_button(group, |ui| {
+                                    for (name, source) in commands {
+                                        if ui.button(name).clicked() {
+                                            template = Some(source);
+                                            ui.close();
+                                        }
+                                    }
+                                });
                             }
                         });
                         widgets::divider(ui);
@@ -2452,6 +2576,12 @@ impl IgsEditor {
         self.sidebar(context, editing_blocked);
         // The command list follows and seeks the animation; only its editing waits.
         self.command_list(context, blocked, editing_blocked);
+        if !editing_blocked {
+            self.commit_attribute_draft(context);
+            if let Some(slot) = self.pattern_request.take() {
+                self.open_user_pattern(slot);
+            }
+        }
         if !blocked && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
             self.cancel();
         }
@@ -2496,11 +2626,17 @@ impl IgsEditor {
             }
             self.canvas(ui, editing_blocked);
         });
+        let (fill, background) = self.fill_colors(self.current().fill_color);
+        // A fill pen that matches the background would show nothing.
+        let colors = if fill == background {
+            (Color32::BLACK, Color32::WHITE)
+        } else {
+            (fill, background)
+        };
         if let Some(dialog) = &mut self.pattern_dialog {
             let document = &self.document;
             let end = dialog.target.unwrap_or(document.len()).min(document.len());
-            let color = palette::pen_color(&self.palette, self.canvas.resolution, self.attributes.fill_color);
-            let result = dialog.show(context, color, |slot| {
+            let result = dialog.show(context, colors, |slot| {
                 pattern::pattern_before(document.items()[..end].iter().filter_map(IgsItem::command), slot)
             });
             match result {
@@ -2654,7 +2790,7 @@ impl IgsEditor {
             if let Some(edit) = self.text_edit.as_ref().filter(|_| editing) {
                 let size = match edit.index {
                     Some(index) => self.document.state_before(index).text.map_or(9, |(_, size, _)| size),
-                    None => self.attributes.text_size,
+                    None => self.current().text_size,
                 };
                 let (width, height, top) = select::text_extent(size, edit.text.len());
                 let (glyph, _, _) = select::text_extent(size, 1);
@@ -2966,19 +3102,28 @@ mod tests {
         run(context, editor, vec![]);
     }
 
+    /// Changes drawing attributes the way the tool controls do.
+    fn set(editor: &mut IgsEditor, change: impl FnOnce(&mut Current)) {
+        let mut wanted = editor.current();
+        change(&mut wanted);
+        editor.set_attributes(wanted);
+    }
+
     fn commands(editor: &IgsEditor) -> Vec<IgsCommand> {
         editor.document.items().iter().filter_map(IgsItem::command).cloned().collect()
     }
 
     #[test]
-    fn every_tool_adds_its_shape_with_attributes_as_one_undo_step() {
+    fn every_tool_adds_just_its_shape_as_one_undo_step() {
         for tool in Tool::ALL.into_iter().filter(|tool| tool.pen().is_some() && *tool != Tool::Text) {
             let mut editor = IgsEditor::new(TerminalResolution::Low);
-            let before = editor.document.len();
             editor.select_tool(tool);
-            editor.attributes.line_color = 3;
-            editor.attributes.fill_color = 4;
-            editor.attributes.marker_color = 5;
+            set(&mut editor, |wanted| {
+                wanted.line_color = 3;
+                wanted.fill_color = 4;
+                wanted.marker_color = 5;
+            });
+            let before = editor.document.len();
             editor.attributes.start_angle = 10;
             editor.attributes.end_angle = 120;
             if tool.is_poly() {
@@ -2988,6 +3133,7 @@ mod tests {
                 editor.add_shape((100, 100), (160, 140));
             }
             assert!(editor.error.is_none(), "{tool:?}: {:?}", editor.error);
+            assert_eq!(editor.document.len(), before + 1, "{tool:?}: no attribute commands come with the shape");
             let commands = commands(&editor);
             let shape = commands.last().unwrap();
             assert_eq!(shape_tool(shape), Some(tool), "{tool:?}");
@@ -3002,11 +3148,6 @@ mod tests {
                     pen: tool.pen().unwrap(),
                     color
                 }),
-                "{tool:?}"
-            );
-            assert_eq!(
-                commands.iter().any(|command| matches!(command, IgsCommand::AttributeForFills { .. })),
-                tool.uses_fill(),
                 "{tool:?}"
             );
             if tool.has_angles() {
@@ -3051,19 +3192,107 @@ mod tests {
     }
 
     #[test]
-    fn attributes_are_only_written_when_they_change() {
+    fn changing_an_attribute_adds_its_command_at_once() {
         let mut editor = IgsEditor::new(TerminalResolution::Low);
+        let before = editor.document.len();
+        set(&mut editor, |wanted| wanted.line_color = 1);
+        assert_eq!(editor.document.len(), before, "the default pen needs no command");
+        set(&mut editor, |wanted| wanted.line_color = 2);
+        assert_eq!(editor.document.command(before), Some(&IgsCommand::ColorSet { pen: PenType::Line, color: 2 }));
+        assert_eq!(editor.selected, Some(before));
+        // Trying out colors changes that command instead of adding more.
+        set(&mut editor, |wanted| wanted.line_color = 3);
+        assert_eq!(editor.document.len(), before + 1);
+        assert_eq!(editor.document.command(before), Some(&IgsCommand::ColorSet { pen: PenType::Line, color: 3 }));
+        assert_eq!(editor.current().line_color, 3);
         editor.select_tool(Tool::Line);
         editor.add_shape((0, 0), (10, 10));
-        let first = editor.document.len();
-        editor.add_shape((10, 10), (20, 0));
-        assert_eq!(editor.document.len(), first + 1, "the second line reuses the attributes");
-        editor.attributes.line_color = 2;
-        editor.add_shape((20, 0), (30, 10));
+        set(&mut editor, |wanted| wanted.line_color = 4);
+        assert_eq!(editor.document.len(), before + 3, "after a shape a new command follows it");
+        editor.undo(false);
+        assert_eq!(editor.current().line_color, 3);
+
+        // Each attribute has its command.
+        set(&mut editor, |wanted| {
+            wanted.pattern = PatternType::Hatch(3);
+            wanted.border = true;
+            wanted.line_kind = LineKind::Dotted;
+            wanted.line_thickness = 5;
+            wanted.line_ends = (ArrowEnd::Arrow, ArrowEnd::Square);
+            wanted.marker = PolymarkerKind::Star;
+            wanted.drawing_mode = DrawingMode::Xor;
+            wanted.text_size = 18;
+        });
+        let added = commands(&editor)[before + 2..].to_vec();
         assert_eq!(
-            editor.document.command(editor.document.len() - 2),
-            Some(&IgsCommand::ColorSet { pen: PenType::Line, color: 2 })
+            added,
+            vec![
+                IgsCommand::AttributeForFills {
+                    pattern_type: PatternType::Hatch(3),
+                    border: true
+                },
+                IgsCommand::SetLineOrMarkerStyle {
+                    style: LineMarkerStyle::LineThickness(LineKind::Dotted, 1)
+                },
+                IgsCommand::SetLineOrMarkerStyle {
+                    style: LineMarkerStyle::LineEndpoints(LineKind::Dotted, ArrowEnd::Arrow, ArrowEnd::Square)
+                },
+                IgsCommand::SetLineOrMarkerStyle {
+                    style: LineMarkerStyle::PolyMarkerSize(PolymarkerKind::Star, 1)
+                },
+                IgsCommand::DrawingMode { mode: DrawingMode::Xor },
+                IgsCommand::TextEffects {
+                    effects: TextEffects::NORMAL,
+                    size: 18,
+                    rotation: TextRotation::Degrees0
+                },
+            ],
+            "only IG's solid lines are wide"
         );
+        let reopened = IgsDocument::from_bytes(&editor.document.to_bytes().unwrap()).unwrap();
+        assert_eq!(
+            reopened.items().iter().filter_map(IgsItem::command).cloned().collect::<Vec<_>>(),
+            commands(&editor)
+        );
+    }
+
+    #[test]
+    fn toolbar_changes_wait_for_the_pointer_and_add_one_command() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        run(&context, &mut editor, vec![]);
+        let before = editor.document.len();
+        let mut wanted = editor.current();
+        wanted.fill_color = 5;
+        editor.draft_attributes(wanted);
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::PointerButton {
+                    pos: egui::pos2(5.0, 5.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            },
+            |context| editor.commit_attribute_draft(context),
+        );
+        assert_eq!(editor.document.len(), before, "nothing is added while the pointer is down");
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::PointerButton {
+                    pos: egui::pos2(5.0, 5.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            },
+            |_| {},
+        );
+        let _ = context.run(egui::RawInput::default(), |context| editor.commit_attribute_draft(context));
+        assert_eq!(editor.document.command(before), Some(&IgsCommand::ColorSet { pen: PenType::Fill, color: 5 }));
+        assert!(editor.attribute_draft.is_none());
     }
 
     #[test]
@@ -3071,7 +3300,7 @@ mod tests {
         let context = egui::Context::default();
         let mut editor = IgsEditor::new(TerminalResolution::Medium);
         editor.select_tool(Tool::Rectangle);
-        editor.attributes.fill_color = 2;
+        set(&mut editor, |wanted| wanted.fill_color = 2);
         run(&context, &mut editor, vec![]);
         let rect = editor.canvas_rect.unwrap();
         // Medium resolution pixels are shown twice as tall as wide.
@@ -3136,7 +3365,7 @@ mod tests {
         let context = egui::Context::default();
         let mut editor = IgsEditor::new(TerminalResolution::Low);
         editor.select_tool(Tool::Text);
-        editor.attributes.text_color = 3;
+        set(&mut editor, |wanted| wanted.text_color = 3);
         run(&context, &mut editor, vec![]);
         click(&context, &mut editor, (40, 40));
         assert!(editor.text_edit.is_some());
@@ -3330,7 +3559,7 @@ mod tests {
 
     #[test]
     fn every_template_inserts_one_item_that_saves() {
-        for (name, source) in templates() {
+        for (name, source) in templates().into_iter().flat_map(|(_, commands)| commands) {
             let mut editor = IgsEditor::new(TerminalResolution::Low);
             editor.insert_source(source);
             assert!(editor.error.is_none(), "{name}: {:?}", editor.error);
@@ -3345,27 +3574,23 @@ mod tests {
     }
 
     #[test]
-    fn shapes_inserted_after_the_selection_restore_the_attributes() {
+    fn attributes_changed_after_the_selection_apply_to_the_commands_after_it() {
         let mut editor = IgsEditor::new(TerminalResolution::Low);
         editor.select_tool(Tool::Line);
-        editor.attributes.line_color = 1;
         editor.add_shape((0, 0), (10, 10));
         let first = editor.document.len() - 1;
         editor.add_shape((10, 10), (20, 0));
-        let second = editor.document.len() - 1;
         editor.preview_to_selection = true;
         editor.selected = Some(first);
-        editor.attributes.line_color = 2;
+        set(&mut editor, |wanted| wanted.line_color = 2);
+        assert_eq!(editor.document.command(first + 1), Some(&IgsCommand::ColorSet { pen: PenType::Line, color: 2 }));
+        assert_eq!(editor.selected, Some(first + 1), "new commands follow the attribute command");
         editor.add_shape((30, 30), (40, 40));
         assert_eq!(editor.selected, Some(first + 2));
-        assert_eq!(editor.document.command(first + 1), Some(&IgsCommand::ColorSet { pen: PenType::Line, color: 2 }));
-        assert_eq!(editor.document.command(first + 3), Some(&IgsCommand::ColorSet { pen: PenType::Line, color: 1 }));
-        let moved = second + 3;
-        assert!(matches!(editor.document.command(moved), Some(IgsCommand::Line { .. })));
-        assert_eq!(editor.document.state_before(moved).line_color, Some(1));
-        // The next shape goes after the new one and needs no attributes.
-        editor.add_shape((50, 50), (60, 60));
-        assert_eq!(editor.selected, Some(first + 3));
+        assert!(matches!(editor.document.command(first + 2), Some(IgsCommand::Line { .. })));
+        // Explicit, as in IG's drawing program: the lines after it are drawn in the new pen too.
+        assert_eq!(editor.document.state_before(first + 3).line_color, Some(2));
+        assert_eq!(editor.document.len(), first + 4, "nothing is restored implicitly");
     }
 
     #[test]
@@ -3411,10 +3636,18 @@ mod tests {
             dialog.toggle(0, y);
         }
         editor.apply_pattern(dialog);
-        assert!(matches!(editor.document.command(editor.document.len() - 1), Some(IgsCommand::LoadFillPattern { pattern: 0, data }) if data[3] == 0x8000));
-        assert_eq!(editor.attributes.pattern, PatternType::UserDefined(0));
+        let loaded = editor.document.len() - 2;
+        assert!(matches!(editor.document.command(loaded), Some(IgsCommand::LoadFillPattern { pattern: 0, data }) if data[3] == 0x8000));
+        assert_eq!(
+            editor.document.command(loaded + 1),
+            Some(&IgsCommand::AttributeForFills {
+                pattern_type: PatternType::UserDefined(0),
+                border: false
+            }),
+            "the new pattern is selected for fills with a command"
+        );
+        assert_eq!(editor.current().pattern, PatternType::UserDefined(0));
         editor.select_tool(Tool::FilledRectangle);
-        editor.attributes.fill_color = 1;
         editor.add_shape((0, 0), (63, 31));
         let preview = editor.document.preview().unwrap();
         let register = palette::pens(TerminalResolution::Low)[1];
@@ -3439,7 +3672,6 @@ mod tests {
         let context = egui::Context::default();
         let mut editor = IgsEditor::new(TerminalResolution::Low);
         editor.select_tool(Tool::FilledRectangle);
-        editor.attributes.fill_color = 1;
         editor.add_shape((10, 10), (30, 30));
         editor.select_tool(Tool::CopyArea);
         run(&context, &mut editor, vec![]);
@@ -3779,23 +4011,61 @@ mod tests {
     }
 
     #[test]
-    fn unset_attributes_are_restored_to_the_defaults() {
-        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#L>0,0,10,10:\r\nG#L>0,10,10,0:\r\n").unwrap());
-        editor.preview_to_selection = true;
-        editor.selected = Some(0);
-        editor.select_tool(Tool::Line);
-        editor.attributes.line_color = 2;
-        editor.add_shape((20, 20), (30, 30));
-        assert!(editor.error.is_none());
-        let last = editor.document.len() - 1;
-        assert_eq!(editor.document.state_before(last).line_color, Some(1));
+    fn the_fill_pattern_picker_sets_patterns_and_opens_user_patterns() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        let mut wanted = editor.current();
+        editor.apply_picker(
+            &mut wanted,
+            pattern::PickerChange {
+                pattern: Some(PatternType::Hatch(4)),
+                border: Some(true),
+                edit: None,
+            },
+        );
+        editor.set_attributes(wanted);
+        assert_eq!(
+            commands(&editor).last(),
+            Some(&IgsCommand::AttributeForFills {
+                pattern_type: PatternType::Hatch(4),
+                border: true
+            })
+        );
+        let mut wanted = editor.current();
+        editor.apply_picker(
+            &mut wanted,
+            pattern::PickerChange {
+                edit: Some(3),
+                ..Default::default()
+            },
+        );
+        run(&context, &mut editor, vec![]);
+        assert_eq!(editor.pattern_dialog.as_ref().map(PatternDialog::slot), Some(3));
+        let user = pattern::user_patterns(
+            [IgsCommand::LoadFillPattern {
+                pattern: 2,
+                data: vec![0xAAAA; 16],
+            }]
+            .iter(),
+        );
+        assert_eq!(PatternType::UserDefined(2).fill_pattern(&user)[0], 0xAAAA);
+    }
 
-        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#&>0,10,2,0,C,2,1,x:\r\nG#L>0,10,10,0:\r\n").unwrap());
+    #[test]
+    fn attributes_show_the_state_where_commands_are_inserted() {
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#C>1,2:\r\nG#L>0,0,10,10:\r\nG#C>1,5:\r\n").unwrap());
+        assert_eq!(editor.current().line_color, 5);
         editor.preview_to_selection = true;
+        editor.selected = Some(1);
+        assert_eq!(editor.current().line_color, 2);
         editor.selected = Some(0);
-        editor.select_tool(Tool::Line);
-        editor.add_shape((20, 20), (30, 30));
-        assert!(editor.error.is_some(), "a loop may have changed the colors");
+        set(&mut editor, |wanted| wanted.line_color = 3);
+        assert_eq!(
+            editor.document.command(0),
+            Some(&IgsCommand::ColorSet { pen: PenType::Line, color: 3 }),
+            "the command right before the insertion point is changed"
+        );
+        assert_eq!(editor.document.len(), 3);
     }
 
     #[test]
@@ -3888,48 +4158,31 @@ mod tests {
     }
 
     #[test]
-    fn line_ends_are_written_when_they_change_and_restored_after_inserts() {
+    fn line_ends_are_set_with_their_own_command() {
         let mut editor = IgsEditor::new(TerminalResolution::Low);
-        editor.select_tool(Tool::Line);
-        editor.add_shape((0, 0), (40, 0));
-        assert!(
-            !commands(&editor).iter().any(|command| matches!(
-                command,
-                IgsCommand::SetLineOrMarkerStyle {
-                    style: LineMarkerStyle::LineEndpoints(..)
-                }
-            )),
-            "square ends are the default"
-        );
-        let first = editor.document.len() - 1;
-        editor.attributes.line_ends = (ArrowEnd::Square, ArrowEnd::Arrow);
-        editor.add_shape((0, 20), (40, 20));
+        set(&mut editor, |wanted| wanted.line_thickness = 7);
+        set(&mut editor, |wanted| wanted.line_ends = (ArrowEnd::Square, ArrowEnd::Arrow));
         let arrow = IgsCommand::SetLineOrMarkerStyle {
             style: LineMarkerStyle::LineEndpoints(LineKind::Solid, ArrowEnd::Square, ArrowEnd::Arrow),
         };
-        assert_eq!(commands(&editor).iter().filter(|command| **command == arrow).count(), 1);
-        editor.add_shape((0, 40), (40, 40));
+        assert_eq!(commands(&editor).last(), Some(&arrow));
+        assert_eq!(editor.current().line_thickness, 7, "the ends keep the width");
+        set(&mut editor, |wanted| wanted.line_ends = (ArrowEnd::Rounded, ArrowEnd::Arrow));
         assert_eq!(
-            commands(&editor).iter().filter(|command| **command == arrow).count(),
-            1,
-            "unchanged ends are not repeated"
+            commands(&editor)
+                .iter()
+                .filter(|command| matches!(
+                    command,
+                    IgsCommand::SetLineOrMarkerStyle {
+                        style: LineMarkerStyle::LineEndpoints(..)
+                    }
+                ))
+                .count(),
+            1
         );
-        assert_eq!(
-            editor.document.state_before(editor.document.len()).line_ends,
-            Some((ArrowEnd::Square, ArrowEnd::Arrow))
-        );
-
-        // A line inserted after the first one restores the square ends for the lines after it.
-        editor.preview_to_selection = true;
-        editor.selected = Some(first);
-        editor.add_shape((0, 60), (40, 60));
-        assert_eq!(editor.document.command(first + 1), Some(&arrow));
-        assert_eq!(
-            editor.document.command(first + 3),
-            Some(&IgsCommand::SetLineOrMarkerStyle {
-                style: LineMarkerStyle::LineEndpoints(LineKind::Solid, ArrowEnd::Square, ArrowEnd::Square),
-            })
-        );
+        editor.select_tool(Tool::Line);
+        editor.add_shape((0, 20), (40, 20));
+        assert!(matches!(commands(&editor).last(), Some(IgsCommand::Line { .. })));
     }
 
     #[test]
@@ -3937,7 +4190,7 @@ mod tests {
         let mut editor = IgsEditor::new(TerminalResolution::Low);
         editor.select_tool(Tool::Spray);
         editor.attributes.spray_density = 50;
-        editor.attributes.marker = PolymarkerKind::Plus;
+        set(&mut editor, |wanted| wanted.marker = PolymarkerKind::Plus);
         editor.add_shape((20, 30), (80, 60));
         let index = editor.document.len() - 1;
         assert_eq!(
