@@ -224,9 +224,15 @@ impl<'a> ScreenSink<'a> {
             self.screen.caret().attribute
         };
 
-        if self.screen.terminal_state().ice_colors && attr.is_blinking() && attr.background() < 8 {
+        // iCE has no blinking; the blink bit only brightens a 16-color background.
+        // RGB and extended backgrounds (e.g. PabloDraw's `ESC[0;R;G;Bt`) keep their color.
+        if self.screen.terminal_state().ice_colors && attr.is_blinking() {
             attr.set_is_blinking(false);
-            attr.set_background(attr.background() + 8);
+            if let crate::AttributeColor::Palette(bg) = attr.background_color() {
+                if bg < 8 {
+                    attr.set_background(u32::from(bg) + 8);
+                }
+            }
         }
         attr
     }
@@ -618,9 +624,13 @@ impl CommandSink for ScreenSink<'_> {
             TerminalCommand::Bell => {
                 // Bell is typically handled by the application layer
             }
-            TerminalCommand::Delete => {
-                self.screen.del();
-            }
+            TerminalCommand::Delete => match self.screen.buffer_type() {
+                // DEL is the house glyph in CP437, as in SyncTERM's ANSI-BBS mode.
+                BufferType::CP437 if self.screen.graphics_type() != crate::GraphicsType::Skypix => self.print(&[0x7F]),
+                // xterm ignores DEL on output.
+                BufferType::Unicode => {}
+                _ => self.screen.del(),
+            },
 
             // Cursor movement
             TerminalCommand::CsiMoveCursor(direction, n, wrapping) => {
@@ -1283,8 +1293,93 @@ impl CommandSink for ScreenSink<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Screen;
+    use crate::{Screen, TextPane};
     use icy_parser_core::{AnsiParser, CommandParser};
+
+    #[test]
+    fn cp437_draws_del_as_house_glyph() {
+        for is_terminal_buffer in [true, false] {
+            let mut screen = crate::TextScreen::new((80, 25));
+            screen.terminal_state_mut().is_terminal_buffer = is_terminal_buffer;
+            AnsiParser::new().parse(b"AB\x7fC", &mut ScreenSink::new(&mut screen));
+            assert_eq!(screen.caret_position(), Position::new(4, 0), "terminal: {is_terminal_buffer}");
+            assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'B', "terminal: {is_terminal_buffer}");
+            assert_eq!(screen.char_at(Position::new(2, 0)).ch as u32, 0x7F, "terminal: {is_terminal_buffer}");
+            assert_eq!(screen.char_at(Position::new(3, 0)).ch, 'C', "terminal: {is_terminal_buffer}");
+        }
+    }
+
+    #[test]
+    fn unicode_ignores_del() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        screen.buffer.buffer_type = BufferType::Unicode;
+        AnsiParser::new().parse(b"AB\x7fC", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.caret_position(), Position::new(3, 0));
+        assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'B');
+        assert_eq!(screen.char_at(Position::new(2, 0)).ch, 'C');
+    }
+
+    #[test]
+    fn bel_is_not_printed() {
+        for is_terminal_buffer in [true, false] {
+            let mut screen = crate::TextScreen::new((80, 25));
+            screen.terminal_state_mut().is_terminal_buffer = is_terminal_buffer;
+            AnsiParser::new().parse(b"A\x07B", &mut ScreenSink::new(&mut screen));
+            assert_eq!(screen.caret_position(), Position::new(2, 0), "terminal: {is_terminal_buffer}");
+            assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'B', "terminal: {is_terminal_buffer}");
+        }
+    }
+
+    #[test]
+    fn ice_colors_leave_rgb_backgrounds_alone() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        screen.terminal_state_mut().ice_colors = true;
+        // Blink + brown, then a PabloDraw 24-bit background.
+        AnsiParser::new().parse(b"\x1b[5;43m\x1b[0;255;255;87t ", &mut ScreenSink::new(&mut screen));
+        let attr = screen.char_at(Position::new(0, 0)).attribute;
+        assert_eq!(attr.background_color(), crate::AttributeColor::Rgb(255, 255, 87));
+        assert!(!attr.is_blinking());
+    }
+
+    #[test]
+    fn ice_colors_clear_blink_on_extended_backgrounds() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        screen.terminal_state_mut().ice_colors = true;
+        AnsiParser::new().parse(b"\x1b[5;48;5;3m ", &mut ScreenSink::new(&mut screen));
+        let attr = screen.char_at(Position::new(0, 0)).attribute;
+        assert_eq!(attr.background_color(), crate::AttributeColor::ExtendedPalette(3));
+        assert!(!attr.is_blinking());
+    }
+
+    #[test]
+    fn ice_rgb_background_cell_renders_foreground() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        screen.terminal_state_mut().is_terminal_buffer = false;
+        screen.terminal_state_mut().ice_colors = true;
+        screen.buffer.ice_mode = crate::IceMode::Ice;
+        // Red full block on a blinking brown background replaced by RGB yellow.
+        AnsiParser::new().parse(b"\x1b[5;31;43m\x1b[0;255;255;87t\xdb", &mut ScreenSink::new(&mut screen));
+        // The GUI renders iCE screens with `blink_on: false`.
+        let options = crate::RenderOptions {
+            rect: crate::Rectangle::from(0, 0, 1, 1).into(),
+            blink_on: false,
+            ..Default::default()
+        };
+        let (size, pixels) = screen.render_to_rgba(&options);
+        assert_eq!(size, crate::Size::new(8, 16));
+        assert!(pixels.chunks_exact(4).all(|px| px == [170, 0, 0, 255]));
+    }
+
+    #[test]
+    fn ice_colors_still_brighten_palette_backgrounds() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        screen.terminal_state_mut().ice_colors = true;
+        AnsiParser::new().parse(b"\x1b[5;43m ", &mut ScreenSink::new(&mut screen));
+        let attr = screen.char_at(Position::new(0, 0)).attribute;
+        // SGR 43 is DOS brown (6); iCE makes it yellow (14).
+        assert_eq!(attr.background_color(), crate::AttributeColor::Palette(14));
+        assert!(!attr.is_blinking());
+    }
 
     #[test]
     fn syncdoom_mouse_modes_enable_and_disable() {
