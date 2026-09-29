@@ -283,6 +283,37 @@ impl EditState {
         self.push_undo_action(op)
     }
 
+    /// Sets every selected cell of the current layer to `ch`, as one undo step.
+    pub fn fill_selection(&mut self, ch: AttributedChar) -> Result<()> {
+        if !self.is_something_selected() {
+            return Ok(());
+        }
+        let _undo: crate::AtomicUndoGuard = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-fill-selection"));
+        let layer_idx = self.get_current_layer()?;
+        let (area, old_chars, offset) = if let Some(layer) = self.screen.buffer.layers.get(layer_idx) {
+            let area = layer.rectangle();
+            (area, crate::chars_from_area(layer, area), layer.offset())
+        } else {
+            return Err(crate::EngineError::Generic("Current layer is invalid".to_string()));
+        };
+        for y in 0..area.height() {
+            for x in 0..area.width() {
+                let pos = Position::new(x, y);
+                if self.is_selected(pos + offset) {
+                    self.screen.buffer.layers.get_mut(layer_idx).unwrap().set_char(pos, ch);
+                }
+            }
+        }
+        let new_chars = crate::chars_from_area(self.screen.buffer.layers.get(layer_idx).unwrap(), area);
+        let op = EditorUndoOp::LayerChange {
+            layer: layer_idx,
+            pos: area.start,
+            old_chars,
+            new_chars,
+        };
+        self.push_undo_action(op)
+    }
+
     pub fn scroll_area_up(&mut self) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();

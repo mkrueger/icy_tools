@@ -6,6 +6,7 @@ undo-merge_down_layer=Merge down
 undo-toggle_layer_visibility=Layer visibility
 undo-set_char=Character
 undo-delete-selection=Delete selection
+undo-fill-selection=Fill selection
 undo-move_layer=Move layer
 undo-set_layer_size=Change layer size
 undo-paste=Paste

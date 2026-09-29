@@ -1,7 +1,22 @@
 use eframe::egui::{Key, Modifiers};
-use icy_draw::{document::Document, FKeySets};
+use icy_draw::{brush::BrushPrimaryMode, document::Document, FKeySets};
 use icy_engine::{Position, Selection, TextPane};
 use icy_engine_edit::tools::Tool;
+
+const FUNCTION_KEYS: [Key; 12] = [
+    Key::F1,
+    Key::F2,
+    Key::F3,
+    Key::F4,
+    Key::F5,
+    Key::F6,
+    Key::F7,
+    Key::F8,
+    Key::F9,
+    Key::F10,
+    Key::F11,
+    Key::F12,
+];
 
 pub fn key(document: &mut Document, fkeys: &mut FKeySets, key: Key, modifiers: Modifiers) -> Result<bool, String> {
     if document.paste_active() {
@@ -18,6 +33,7 @@ pub fn key(document: &mut Document, fkeys: &mut FKeySets, key: Key, modifiers: M
             Key::X if !modifiers.command && !modifiers.ctrl => PasteAction::FlipX,
             Key::Y if !modifiers.command && !modifiers.ctrl => PasteAction::FlipY,
             Key::T if !modifiers.command && !modifiers.ctrl => PasteAction::Transparent,
+            Key::Equals if !modifiers.command && !modifiers.ctrl && !modifiers.alt => PasteAction::Center,
             _ => return Ok(true),
         };
         document.paste_action(action)?;
@@ -36,42 +52,47 @@ pub fn key(document: &mut Document, fkeys: &mut FKeySets, key: Key, modifiers: M
         document.delete_selected_tags()?;
         return Ok(true);
     }
-    if (document.tool == Tool::Pencil || document.tool.is_shape_tool()) && modifiers.alt && !modifiers.ctrl && !modifiers.command {
+    let brush_tool = document.tool == Tool::Pencil || document.tool.is_shape_tool();
+    if brush_tool && modifiers.alt && !modifiers.ctrl && !modifiers.command {
         match key {
             Key::Equals | Key::Plus => document.brush.brush_size = (document.brush.brush_size + 1).min(9),
             Key::Minus => document.brush.brush_size = document.brush.brush_size.saturating_sub(1).max(1),
-            Key::CloseBracket => document.brush.brush_size = 1,
+            Key::CloseBracket | Key::Num0 => document.brush.brush_size = 1,
             _ => return Ok(false),
         }
         return Ok(true);
     }
-    if document.tool == Tool::Select {
-        if matches!(key, Key::Delete | Key::Backspace) && document.can_paint() {
-            document.finish();
-            document.with_state(|state| state.erase_selection()).map_err(|error| error.to_string())?;
+    // As in Moebius, F1–F12 pick the brush character from the current set in the brush tools.
+    if brush_tool && !modifiers.any() {
+        if let Some(slot) = FUNCTION_KEYS.iter().position(|candidate| *candidate == key) {
+            let code = fkeys.code_at(fkeys.current_set(), slot);
+            document.brush.primary = BrushPrimaryMode::Char;
+            document.brush.paint_char = char::from_u32(code as u32).unwrap_or(' ');
             return Ok(true);
         }
-        return Ok(false);
+    }
+    if document.tool == Tool::Select {
+        let selected = document.with_state(|state| state.is_something_selected());
+        // The block keys of Moebius: move, copy, fill and erase the selection.
+        let plain = !modifiers.any() || modifiers.shift_only();
+        let result = match key {
+            Key::Delete | Key::Backspace | Key::E if selected && document.can_paint() && (plain || key != Key::E) => {
+                document.finish();
+                document.with_state(|state| state.erase_selection()).map_err(|error| error.to_string())
+            }
+            Key::M if selected && plain => document.float_selection(true),
+            Key::C if selected && plain => document.float_selection(false),
+            Key::F if selected && plain => document.fill_selection(),
+            _ => return Ok(false),
+        };
+        result?;
+        return Ok(true);
     }
     if !matches!(document.tool, Tool::Click | Tool::Font) {
         return Ok(false);
     }
     if document.tool == Tool::Click {
-        let function_keys = [
-            Key::F1,
-            Key::F2,
-            Key::F3,
-            Key::F4,
-            Key::F5,
-            Key::F6,
-            Key::F7,
-            Key::F8,
-            Key::F9,
-            Key::F10,
-            Key::F11,
-            Key::F12,
-        ];
-        if let Some(slot) = function_keys.iter().position(|candidate| *candidate == key) {
+        if let Some(slot) = FUNCTION_KEYS.iter().position(|candidate| *candidate == key) {
             if document.outline_font {
                 if slot < 10 && document.can_paint() {
                     document.type_text(&char::from_u32('A' as u32 + slot as u32).unwrap().to_string())?;
@@ -227,11 +248,69 @@ mod tests {
             let mut fkeys = FKeySets::default();
             document.tool = tool;
             for pressed in [Key::F1, Key::Enter, Key::Tab, Key::ArrowRight, Key::Insert] {
-                assert!(!key(&mut document, &mut fkeys, pressed, Modifiers::NONE).unwrap(), "{tool:?}: {pressed:?}");
+                // F1–F12 pick the brush character in the brush tools instead of typing.
+                let brush = tool == Tool::Pencil || tool.is_shape_tool();
+                let handled = key(&mut document, &mut fkeys, pressed, Modifiers::NONE).unwrap();
+                assert_eq!(handled, brush && pressed == Key::F1, "{tool:?}: {pressed:?}");
             }
             assert_eq!(document.with_state(|state| state.get_caret().position()), Position::default());
             assert!(!document.modified());
         }
+    }
+
+    #[test]
+    fn moebius_keys_pick_brush_characters_and_work_on_blocks() {
+        let mut document = Document::new(Size::new(20, 10));
+        let mut fkeys = FKeySets::default();
+        document.tool = Tool::Line;
+        key(&mut document, &mut fkeys, Key::F3, Modifiers::NONE).unwrap();
+        assert_eq!(document.brush.primary, BrushPrimaryMode::Char);
+        assert_eq!(document.brush.paint_char as u32, fkeys.code_at(fkeys.current_set(), 2) as u32);
+        document.brush.brush_size = 5;
+        key(&mut document, &mut fkeys, Key::Num0, Modifiers::ALT).unwrap();
+        assert_eq!(document.brush.brush_size, 1, "Alt+0 resets the brush size");
+
+        // Select: F fills with full blocks in the foreground color, C floats a copy, M moves it.
+        document.tool = Tool::Click;
+        document.type_text("AB").unwrap();
+        document.tool = Tool::Select;
+        let mut selection = Selection::new(Position::new(0, 0));
+        selection.lead = Position::new(1, 0);
+        document.with_state(|state| state.set_selection(selection)).unwrap();
+        key(&mut document, &mut fkeys, Key::C, Modifiers::NONE).unwrap();
+        assert!(document.paste_active(), "C floats a copy of the block");
+        key(&mut document, &mut fkeys, Key::Equals, Modifiers::NONE).unwrap();
+        assert_eq!(
+            document.with_state(|state| state.get_cur_layer().unwrap().offset()),
+            Position::new(9, 0),
+            "= centers it"
+        );
+        key(&mut document, &mut fkeys, Key::Escape, Modifiers::NONE).unwrap();
+        assert_eq!(document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch), 'A');
+
+        document.with_state(|state| state.set_selection(selection)).unwrap();
+        key(&mut document, &mut fkeys, Key::M, Modifiers::NONE).unwrap();
+        assert!(document.paste_active());
+        key(&mut document, &mut fkeys, Key::ArrowDown, Modifiers::NONE).unwrap();
+        key(&mut document, &mut fkeys, Key::Enter, Modifiers::NONE).unwrap();
+        let at = |document: &Document, x, y| document.with_state(|state| state.get_buffer().char_at(Position::new(x, y)).ch);
+        assert_eq!(
+            (at(&document, 0, 0), at(&document, 0, 1), at(&document, 1, 1)),
+            (' ', 'A', 'B'),
+            "M moves the block and erases it below"
+        );
+
+        document.with_state(|state| state.set_selection(selection)).unwrap();
+        key(&mut document, &mut fkeys, Key::F, Modifiers::NONE).unwrap();
+        let filled = document.with_state(|state| state.get_buffer().char_at(Position::new(1, 0)));
+        assert_eq!(filled.ch as u32, 219, "F fills with full blocks");
+        assert_eq!(
+            filled.attribute.foreground(),
+            document.with_state(|state| state.get_caret().attribute.foreground())
+        );
+        document.with_state(|state| state.set_selection(selection)).unwrap();
+        key(&mut document, &mut fkeys, Key::E, Modifiers::NONE).unwrap();
+        assert_eq!(at(&document, 1, 0), ' ', "E erases the block");
     }
 
     #[test]

@@ -6,6 +6,7 @@ undo-merge_down_layer=Nach unten vereinen
 undo-toggle_layer_visibility=Ebenensichtbarkeit
 undo-set_char=Zeichen
 undo-delete-selection=Auswahl löschen
+undo-fill-selection=Auswahl füllen
 undo-move_layer=Ebene verschieben
 undo-set_layer_size=Ebenengröße ändern
 undo-paste=Einfügen

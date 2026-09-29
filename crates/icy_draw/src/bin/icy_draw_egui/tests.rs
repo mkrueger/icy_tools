@@ -993,8 +993,13 @@ fn animation_export_dialog_exports_and_asks_before_overwriting() {
     animation.compile_for_test();
     app.animation = Some(animation);
     let size = egui::vec2(1280.0, 820.0);
-    frame(&context, &mut app, size, vec![key_event(Key::E, egui::Modifiers::COMMAND)]);
-    assert!(app.animation.as_ref().unwrap().export_dialog_open(), "Ctrl+E opens the export dialog");
+    frame(
+        &context,
+        &mut app,
+        size,
+        vec![key_event(Key::E, egui::Modifiers::COMMAND | egui::Modifiers::SHIFT)],
+    );
+    assert!(app.animation.as_ref().unwrap().export_dialog_open(), "Ctrl+Shift+E opens the export dialog");
     let directory = tempfile::tempdir().unwrap();
     let target = directory.path().join("demo");
     app.animation.as_mut().unwrap().set_export_path(target.clone());
@@ -2552,4 +2557,70 @@ fn escape_without_a_selection_opens_the_attribute_picker() {
         'A',
         "typing works again"
     );
+}
+
+#[test]
+fn keys_reach_the_canvas_after_clicking_panels_and_follow_moebius() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    app.document.tool = Tool::Click;
+    for _ in 0..2 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    // A click beside the canvas used to leave the keyboard nowhere, so F1 typed nothing.
+    let rail = egui::pos2(app.canvas_rect.right() + 150.0, app.canvas_rect.bottom() - 4.0);
+    for pressed in [true, false] {
+        frame(&context, &mut app, size, pointer(rail, pressed));
+    }
+    frame(&context, &mut app, size, vec![key_event(Key::F1, egui::Modifiers::NONE)]);
+    let expected = app.settings.fkeys.code_at(app.settings.fkeys.current_set(), 0) as u32;
+    assert_eq!(
+        app.document.with_state(|state| state.get_buffer().char_at(Position::default()).ch as u32),
+        expected
+    );
+
+    let colors = |app: &DrawApp| {
+        app.document.with_state(|state| {
+            let attribute = state.get_caret().attribute;
+            (attribute.foreground(), attribute.background())
+        })
+    };
+    frame(&context, &mut app, size, vec![key_event(Key::Num4, egui::Modifiers::COMMAND)]);
+    assert_eq!(colors(&app).0, 4, "Ctrl+4 picks dark red");
+    frame(&context, &mut app, size, vec![key_event(Key::Num4, egui::Modifiers::COMMAND)]);
+    assert_eq!(colors(&app).0, 12, "pressed again it turns bright");
+    frame(&context, &mut app, size, vec![key_event(Key::Num1, egui::Modifiers::ALT)]);
+    assert_eq!(colors(&app).1, 1, "Alt+1 picks the background");
+    frame(&context, &mut app, size, vec![key_event(Key::D, egui::Modifiers::COMMAND)]);
+    assert_eq!(colors(&app), (7, 0), "Ctrl+D restores the default colors");
+
+    // Zoom keys follow the desktop convention of Icy Term and Icy View.
+    frame(&context, &mut app, size, vec![key_event(Key::Num9, egui::Modifiers::COMMAND)]);
+    assert_eq!(app.settings.monitor_settings.scaling_mode, ScalingMode::Auto);
+    frame(&context, &mut app, size, vec![key_event(Key::Num0, egui::Modifiers::COMMAND)]);
+    assert_eq!(app.settings.monitor_settings.scaling_mode, ScalingMode::Manual(1.0));
+
+    let ice = |app: &DrawApp| app.document.with_state(|state| state.get_buffer().ice_mode);
+    let before = ice(&app);
+    frame(&context, &mut app, size, vec![key_event(Key::E, egui::Modifiers::COMMAND)]);
+    assert_ne!(ice(&app), before, "Ctrl+E toggles iCE colors");
+    assert!(app.dialog.is_none(), "export moved to Ctrl+Shift+E");
+
+    // Outside the text tools K switches to the keyboard tool without typing the letter.
+    app.document.tool = Tool::Pencil;
+    let before = app.document.with_state(|state| state.get_buffer().char_at(Position::new(1, 0)).ch);
+    frame(
+        &context,
+        &mut app,
+        size,
+        vec![key_event(Key::K, egui::Modifiers::NONE), egui::Event::Text("k".into())],
+    );
+    assert_eq!(app.document.tool, Tool::Click);
+    assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(1, 0)).ch), before);
+    app.document.tool = Tool::Select;
+    frame(&context, &mut app, size, vec![key_event(Key::I, egui::Modifiers::NONE)]);
+    assert_eq!((app.document.tool, app.document.brush.primary), (Tool::Pencil, BrushPrimaryMode::Shading));
+    frame(&context, &mut app, size, vec![key_event(Key::P, egui::Modifiers::NONE)]);
+    assert_eq!(app.document.tool, Tool::Fill);
 }

@@ -18,7 +18,7 @@ pub(super) const NEW: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAN
 pub(super) const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
 pub(super) const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
 pub(super) const SAVE_AS: KeyboardShortcut = KeyboardShortcut::new(COMMAND_SHIFT, Key::S);
-pub(super) const EXPORT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::E);
+pub(super) const EXPORT: KeyboardShortcut = KeyboardShortcut::new(COMMAND_SHIFT, Key::E);
 pub(super) const NEW_WINDOW: KeyboardShortcut = KeyboardShortcut::new(COMMAND_SHIFT, Key::N);
 pub(super) const QUIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Q);
 pub(super) const UNDO: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Z);
@@ -27,12 +27,13 @@ pub(super) const CUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAN
 pub(super) const COPY: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::C);
 pub(super) const PASTE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::V);
 pub(super) const SELECT_ALL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::A);
-pub(super) const DESELECT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::D);
+pub(super) const DESELECT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::Escape);
 pub(super) const INVERT_SELECTION: KeyboardShortcut = KeyboardShortcut::new(COMMAND_SHIFT, Key::I);
 pub(super) const ZOOM_IN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Plus);
 pub(super) const ZOOM_OUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus);
-pub(super) const ZOOM_FIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0);
-pub(super) const ZOOM_ACTUAL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num1);
+// Zoom keys follow the desktop convention shared by Icy Term and Icy View.
+pub(super) const ZOOM_FIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num9);
+pub(super) const ZOOM_ACTUAL: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Num0);
 pub(super) const GRID: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::G);
 pub(super) const PANELS: KeyboardShortcut = KeyboardShortcut::new(COMMAND_SHIFT, Key::P);
 pub(super) const LINE_NUMBERS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::R);
@@ -49,6 +50,31 @@ pub(super) const NEXT_BG: KeyboardShortcut = KeyboardShortcut::new(Modifiers::CO
 pub(super) const PREV_BG: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::ArrowLeft);
 pub(super) const PICK_ATTRIBUTE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::U);
 pub(super) const SWAP_COLORS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::ALT, Key::X);
+// The canvas shortcuts below follow Moebius.
+pub(super) const SWAP_COLORS_MOEBIUS: KeyboardShortcut = KeyboardShortcut::new(COMMAND_SHIFT, Key::X);
+pub(super) const DEFAULT_COLORS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::D);
+pub(super) const ICE_COLORS: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::E);
+pub(super) const LETTER_SPACING: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::F);
+pub(super) const CROP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::K);
+pub(super) const CANVAS_SIZE: KeyboardShortcut = KeyboardShortcut::new(COMMAND_ALT, Key::C);
+pub(super) const MIRROR_MODE: KeyboardShortcut = KeyboardShortcut::new(COMMAND_ALT, Key::M);
+
+/// The color Ctrl+1–7 (foreground) and Alt+0–7 (background) toggle: the dark color, or its
+/// bright variant when that color is already set, as in Moebius.
+pub(super) fn toggled_color(current: u32, color: u32) -> u32 {
+    if current == color || (current >= 8 && current != color + 8) {
+        color + 8
+    } else {
+        color
+    }
+}
+
+fn digit(key: Key) -> Option<u32> {
+    [Key::Num0, Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5, Key::Num6, Key::Num7]
+        .iter()
+        .position(|candidate| *candidate == key)
+        .map(|index| index as u32)
+}
 
 const COMMAND_ALT: Modifiers = Modifiers::COMMAND.plus(Modifiers::ALT);
 
@@ -156,7 +182,9 @@ impl AreaOp {
             AreaOp::EraseRow => alt(Key::E),
             AreaOp::EraseRowToStart => alt(Key::Home),
             AreaOp::EraseRowToEnd => alt(Key::End),
-            AreaOp::EraseColumn | AreaOp::EraseColumnToStart | AreaOp::EraseColumnToEnd => None,
+            AreaOp::EraseColumn => Some(KeyboardShortcut::new(Modifiers::ALT.plus(Modifiers::SHIFT), Key::E)),
+            AreaOp::EraseColumnToStart => alt(Key::PageUp),
+            AreaOp::EraseColumnToEnd => alt(Key::PageDown),
             AreaOp::ScrollUp => command_alt(Key::ArrowUp),
             AreaOp::ScrollDown => command_alt(Key::ArrowDown),
             AreaOp::ScrollLeft => command_alt(Key::ArrowLeft),
@@ -197,6 +225,8 @@ pub(super) enum ColorOp {
     PickAttributeUnderCaret,
     Swap,
     Default,
+    ToggleForeground(u32),
+    ToggleBackground(u32),
 }
 
 /// Guide presets of the original editor: (label, columns, rows).
@@ -446,7 +476,7 @@ impl DrawApp {
         }
         ui.separator();
         let mut mirror = self.document.with_state(|state| state.get_mirror_mode());
-        if check_item(ui, &fl!("menu-mirror_mode"), None, &mut mirror) {
+        if check_item(ui, &fl!("menu-mirror_mode"), Some(&MIRROR_MODE), &mut mirror) {
             self.document.with_state(|state| state.set_mirror_mode(mirror));
         }
     }
@@ -536,7 +566,7 @@ impl DrawApp {
         if item(ui, &fl!("menu-flip-y"), None, paint) {
             self.edit(|state| state.flip_y());
         }
-        if item(ui, &fl!("menu-crop"), None, selected && paint) {
+        if item(ui, &fl!("menu-crop"), Some(&CROP), selected && paint) {
             self.edit(|state| state.crop());
         }
         ui.separator();
@@ -567,7 +597,7 @@ impl DrawApp {
         if item(ui, &fl!("menu-flip-y"), None, paint) {
             self.edit(|state| state.flip_y());
         }
-        if item(ui, &fl!("menu-crop"), None, selected && paint) {
+        if item(ui, &fl!("menu-crop"), Some(&CROP), selected && paint) {
             self.edit(|state| state.crop());
         }
         ui.separator();
@@ -594,7 +624,7 @@ impl DrawApp {
             (ColorOp::PreviousBackground, fl!("menu-prev_bg_color"), Some(&PREV_BG)),
             (ColorOp::PickAttributeUnderCaret, fl!("menu-pick_attribute_under_caret"), Some(&PICK_ATTRIBUTE)),
             (ColorOp::Swap, fl!("menu-toggle_color"), Some(&SWAP_COLORS)),
-            (ColorOp::Default, fl!("menu-default_color"), None),
+            (ColorOp::Default, fl!("menu-default_color"), Some(&DEFAULT_COLORS)),
         ] {
             if matches!(operation, ColorOp::NextBackground | ColorOp::PickAttributeUnderCaret) {
                 ui.separator();
@@ -639,6 +669,8 @@ impl DrawApp {
                 .and_then(|()| self.document.set_caret_background(under_caret.background())),
             ColorOp::Swap => self.document.swap_caret_colors(),
             ColorOp::Default => self.document.reset_caret_colors(),
+            ColorOp::ToggleForeground(color) => self.document.set_caret_foreground(toggled_color(foreground, color) % count),
+            ColorOp::ToggleBackground(color) => self.document.set_caret_background(toggled_color(background, color) % count),
         };
         self.result(result);
     }
@@ -648,7 +680,7 @@ impl DrawApp {
             self.open_file_settings();
         }
         ui.separator();
-        if item(ui, &fl!("menu-set-canvas-size"), None, self.charfont.is_none()) {
+        if item(ui, &fl!("menu-set-canvas-size"), Some(&CANVAS_SIZE), self.charfont.is_none()) {
             self.open_resize();
         }
         if item(ui, &fl!("menu-edit-sauce"), None, self.charfont.is_none()) {
@@ -933,15 +965,34 @@ impl DrawApp {
         match key {
             Key::N if shift => self.new_window(),
             Key::Q if !shift => context.send_viewport_cmd(egui::ViewportCommand::Close),
-            Key::E if !shift && self.animation.is_some() => self.animation.as_mut().unwrap().open_export_dialog(),
-            Key::E if !shift && !animation => self.dialog = Some(Dialog::Export),
+            Key::E if shift && self.animation.is_some() => self.animation.as_mut().unwrap().open_export_dialog(),
+            Key::E if shift && !animation => self.dialog = Some(Dialog::Export),
             Key::Plus | Key::Equals if !animation => self.zoom_step(1),
             Key::Minus if !animation => self.zoom_step(-1),
-            Key::Num0 if !animation => self.settings.monitor_settings.scaling_mode = ScalingMode::Auto,
-            Key::Num1 if !animation => self.settings.monitor_settings.scaling_mode = ScalingMode::Manual(1.0),
+            Key::Num0 if !shift && !animation => self.settings.monitor_settings.scaling_mode = ScalingMode::Manual(1.0),
+            Key::Num9 if !shift && !animation => self.settings.monitor_settings.scaling_mode = ScalingMode::Auto,
+            _ if !shift && !animation && self.canvas_focus && key != Key::Num0 && digit(key).is_some() => {
+                self.color_operation(ColorOp::ToggleForeground(digit(key).unwrap()));
+            }
             Key::G if !shift && !animation => self.show_grid = !self.show_grid,
             Key::P if shift && !animation => self.show_inspector = !self.show_inspector,
-            Key::D if !shift && !animation && self.canvas_focus => self.edit(|state| state.clear_selection()),
+            Key::D if !shift && !animation && self.canvas_focus => self.color_operation(ColorOp::Default),
+            Key::X if shift && !animation && self.canvas_focus => self.color_operation(ColorOp::Swap),
+            Key::E if !shift && !animation => {
+                let ice = self.document.with_state(|state| state.get_buffer().ice_mode != icy_engine::IceMode::Blink);
+                let mode = if ice { icy_engine::IceMode::Blink } else { icy_engine::IceMode::Ice };
+                self.edit(|state| state.set_ice_mode(mode));
+            }
+            // On macOS Cmd+Ctrl+F is fullscreen.
+            Key::F if !shift && (!cfg!(target_os = "macos") || !modifiers.ctrl) && !animation => {
+                let spacing = self.document.with_state(|state| state.get_buffer().use_letter_spacing());
+                self.edit(|state| state.set_use_letter_spacing(!spacing));
+            }
+            Key::K if !shift && !animation && self.canvas_focus && self.document.can_paint() => {
+                if self.document.with_state(|state| state.is_something_selected()) {
+                    self.edit(|state| state.crop());
+                }
+            }
             Key::I if shift && !animation && self.canvas_focus => self.edit(|state| state.inverse_selection()),
             Key::ArrowDown if !shift && !animation && self.canvas_focus => self.color_operation(ColorOp::NextForeground),
             Key::ArrowUp if !shift && !animation && self.canvas_focus => self.color_operation(ColorOp::PreviousForeground),
@@ -988,6 +1039,21 @@ impl DrawApp {
             self.color_operation(operation);
             return true;
         }
+        if modifiers.matches_exact(CANVAS_SIZE.modifiers) && key == CANVAS_SIZE.logical_key {
+            self.open_resize();
+            return true;
+        }
+        if modifiers.matches_exact(MIRROR_MODE.modifiers) && key == MIRROR_MODE.logical_key {
+            let mirror = self.document.with_state(|state| state.get_mirror_mode());
+            self.document.with_state(|state| state.set_mirror_mode(!mirror));
+            return true;
+        }
+        // Alt+0 resets the brush size in the brush tools, as in Moebius.
+        let brush_tool = self.document.tool == Tool::Pencil || self.document.tool.is_shape_tool();
+        if let Some(color) = digit(key).filter(|_| modifiers.matches_exact(Modifiers::ALT) && !(brush_tool && key == Key::Num0)) {
+            self.color_operation(ColorOp::ToggleBackground(color));
+            return true;
+        }
         false
     }
 
@@ -1016,6 +1082,7 @@ impl DrawApp {
                     (format(&PASTE), fl!("shortcut-paste")),
                     (format(&SELECT_ALL), fl!("shortcut-select-all")),
                     (format(&DESELECT), fl!("shortcut-deselect")),
+                    (format(&CROP), fl!("shortcut-crop")),
                     (format(&INVERT_SELECTION), fl!("shortcut-invert-selection")),
                     ("Del".into(), fl!("shortcut-erase-selection")),
                     ("Esc".into(), fl!("shortcut-cancel-stroke")),
@@ -1036,6 +1103,10 @@ impl DrawApp {
                     (format(&TOGGLE_REFERENCE_IMAGE), fl!("shortcut-toggle-reference-image")),
                     (format(&PANELS), fl!("shortcut-toggle-side-panel")),
                     (format(&FULLSCREEN), fl!("shortcut-fullscreen")),
+                    (format(&ICE_COLORS), fl!("shortcut-ice-colors")),
+                    (format(&LETTER_SPACING), fl!("shortcut-letter-spacing")),
+                    (format(&CANVAS_SIZE), fl!("shortcut-canvas-size")),
+                    (format(&MIRROR_MODE), fl!("shortcut-mirror-mode")),
                 ],
             ),
             (
@@ -1046,7 +1117,19 @@ impl DrawApp {
                     (format(&NEXT_BG), fl!("shortcut-next-bg")),
                     (format(&PREV_BG), fl!("shortcut-prev-bg")),
                     (format(&PICK_ATTRIBUTE), fl!("shortcut-pick-attribute")),
-                    (format(&SWAP_COLORS), fl!("shortcut-swap-colors")),
+                    (
+                        format!("{} / {}", format(&SWAP_COLORS), format(&SWAP_COLORS_MOEBIUS)),
+                        fl!("shortcut-swap-colors"),
+                    ),
+                    (format(&DEFAULT_COLORS), fl!("shortcut-default-colors")),
+                    (
+                        format!("{}–7", format(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Num1))),
+                        fl!("shortcut-toggle-fg"),
+                    ),
+                    (
+                        format!("{}–7", format(&KeyboardShortcut::new(Modifiers::ALT, Key::Num0))),
+                        fl!("shortcut-toggle-bg"),
+                    ),
                 ],
             ),
             (
@@ -1074,9 +1157,28 @@ impl DrawApp {
             (
                 fl!("shortcut-group-brushes"),
                 vec![
+                    ("F1–F12".into(), fl!("shortcut-brush-char")),
                     ("Alt++".into(), fl!("shortcut-brush-larger")),
                     ("Alt+-".into(), fl!("shortcut-brush-smaller")),
-                    ("Alt+]".into(), fl!("shortcut-brush-reset")),
+                    ("Alt+0 / Alt+]".into(), fl!("shortcut-brush-reset")),
+                ],
+            ),
+            (
+                fl!("shortcut-group-selection"),
+                vec![
+                    ("M".into(), fl!("shortcut-block-move")),
+                    ("C".into(), fl!("shortcut-block-copy")),
+                    ("F".into(), fl!("shortcut-block-fill")),
+                    ("E / Del".into(), fl!("shortcut-block-erase")),
+                ],
+            ),
+            (
+                fl!("shortcut-group-modes"),
+                vec![
+                    ("K".into(), fl!("shortcut-mode-keyboard")),
+                    ("B".into(), fl!("shortcut-mode-brush")),
+                    ("I".into(), fl!("shortcut-mode-shifter")),
+                    ("P".into(), fl!("shortcut-mode-fill")),
                 ],
             ),
             (
@@ -1089,6 +1191,7 @@ impl DrawApp {
                     ("X".into(), fl!("shortcut-paste-flip-x")),
                     ("Y".into(), fl!("shortcut-paste-flip-y")),
                     ("T".into(), fl!("shortcut-paste-transparent")),
+                    ("=".into(), fl!("shortcut-paste-center")),
                     ("Esc".into(), fl!("shortcut-paste-cancel")),
                 ],
             ),

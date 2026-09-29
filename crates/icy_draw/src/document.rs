@@ -49,6 +49,8 @@ pub enum PasteAction {
     FlipX,
     FlipY,
     Transparent,
+    /// Centers the paste horizontally on the canvas.
+    Center,
     Anchor,
     Keep,
     Cancel,
@@ -261,13 +263,49 @@ impl Document {
         self.paste_action(PasteAction::Keep)
     }
 
+    /// Lifts the selected cells into a floating paste at the same place, like the Move Block and
+    /// Copy Block of Moebius and PabloDraw; `cut` erases them from the layer below.
+    pub fn float_selection(&mut self, cut: bool) -> DrawResult<()> {
+        let Some((data, start)) = self.with_state(|state| Some((state.clipboard_data()?, state.selection()?.as_rectangle().start))) else {
+            return Ok(());
+        };
+        self.with_state(|state| state.set_caret_from_document_position(start));
+        self.start_floating(cut, |state| state.paste_clipboard_data(&data))
+    }
+
+    /// Fills the selection with full blocks in the foreground color, or erases it for color 0,
+    /// like Moebius.
+    pub fn fill_selection(&mut self) -> DrawResult<()> {
+        if !self.can_paint() {
+            return Ok(());
+        }
+        self.finish();
+        self.with_state(|state| {
+            let attribute = state.get_caret().attribute;
+            if attribute.foreground() == 0 {
+                return state.erase_selection();
+            }
+            let mut block = icy_engine::TextAttribute::default();
+            block.set_foreground(attribute.foreground());
+            state.fill_selection(icy_engine::AttributedChar::new('\u{00DB}', block))
+        })
+        .map_err(|error| error.to_string())
+    }
+
     fn start_floating_paste(&mut self, paste: impl FnOnce(&mut EditState) -> icy_engine::Result<()>) -> DrawResult<()> {
+        self.start_floating(false, paste)
+    }
+
+    fn start_floating(&mut self, erase_selection: bool, paste: impl FnOnce(&mut EditState) -> icy_engine::Result<()>) -> DrawResult<()> {
         self.finish();
         if self.paste_active() || !self.can_paint() {
             return Ok(());
         }
         let mut undo = self.with_state(|state| state.begin_atomic_undo("Paste"));
         let result = self.with_state(|state| {
+            if erase_selection {
+                state.erase_selection()?;
+            }
             let offset = state.get_cur_layer().map(|layer| layer.offset()).unwrap_or_default();
             let count = state.get_buffer().layers.len();
             // While the caret still sits on a corner of the selection (where the drag began or ended), the paste
@@ -342,6 +380,12 @@ impl Document {
         let mut transparent = None;
         self.with_state(|state| match action {
             PasteAction::Move(delta) => state.move_layer(state.get_cur_layer().unwrap().offset() + delta),
+            PasteAction::Center => {
+                let layer = state.get_cur_layer().unwrap();
+                let (width, y) = (layer.width(), layer.offset().y);
+                let x = ((state.get_buffer().width() - width) / 2).max(0);
+                state.move_layer(Position::new(x, y))
+            }
             PasteAction::Stamp => state.stamp_layer_down(),
             PasteAction::Rotate | PasteAction::FlipX | PasteAction::FlipY => {
                 let name = match action {

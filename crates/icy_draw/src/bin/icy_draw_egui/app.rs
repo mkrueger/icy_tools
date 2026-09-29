@@ -256,6 +256,8 @@ pub struct DrawApp {
     new_size: [i32; 2],
     show_inspector: bool,
     canvas_focus: bool,
+    /// A text field had the keyboard in the previous frame.
+    field_focused_last_frame: bool,
     export_dialog: Option<ExportDialog>,
     font_editor: Option<super::font::FontEditor>,
     palette_editor: super::palette::PaletteEditor,
@@ -343,6 +345,7 @@ impl DrawApp {
             new_size: [80, 25],
             show_inspector: true,
             canvas_focus: true,
+            field_focused_last_frame: false,
             export_dialog: None,
             font_editor: None,
             palette_editor: Default::default(),
@@ -1678,9 +1681,16 @@ impl DrawApp {
                 ui.ctx().request_repaint();
             }
         }
-        if ui.ctx().wants_keyboard_input() && !response.has_focus() {
+        // Like Moebius, the canvas keeps the keyboard when panels, tools or colors are clicked;
+        // only a focused text field takes it. It comes back a frame after the field lets go, so
+        // the Enter that ends a field (e.g. chat) does not also reach the canvas.
+        let field_focused = ui.ctx().wants_keyboard_input() && !response.has_focus();
+        if field_focused {
             self.canvas_focus = false;
+        } else if !self.field_focused_last_frame && !self.layer_properties_open() {
+            self.canvas_focus = true;
         }
+        self.field_focused_last_frame = field_focused;
         let info = self.view.terminal.render_info.read().clone();
         let (red, green, blue) = self.document.preview_color();
         let cell_size = egui::vec2(
@@ -1875,9 +1885,6 @@ impl DrawApp {
             let context = ui.ctx().clone();
             response.context_menu(|ui| self.canvas_context_menu(ui, &context));
         }
-        if pointer.any_pressed() && !response.hovered() {
-            self.canvas_focus = false;
-        }
     }
 
     fn copy(&mut self, context: &egui::Context) {
@@ -2045,7 +2052,7 @@ impl DrawApp {
                 }
                 egui::Event::Key {
                     key, pressed: true, modifiers, ..
-                } if modifiers.alt && !modifiers.shift && (self.canvas_focus || key == Key::Enter) && self.alt_key(context, key, modifiers) => {
+                } if modifiers.alt && (self.canvas_focus || key == Key::Enter) && self.alt_key(context, key, modifiers) => {
                     alt_consumed = true;
                 }
                 egui::Event::Key {
@@ -2079,6 +2086,12 @@ impl DrawApp {
                 }
                 egui::Event::Key {
                     key, pressed: true, modifiers, ..
+                } if self.canvas_focus && !modifiers.any() && self.mode_key(key) => {
+                    // The key's text must not be typed by the keyboard tool it may switch to.
+                    alt_consumed = true;
+                }
+                egui::Event::Key {
+                    key, pressed: true, modifiers, ..
                 } if self.canvas_focus => {
                     if key == Key::Enter && self.document.tool == Tool::Font && !modifiers.alt {
                         let result = self.type_art_text("\n");
@@ -2098,6 +2111,30 @@ impl DrawApp {
         if after != before {
             self.reveal_caret(after);
         }
+    }
+
+    /// The mode keys of Moebius outside the text tools: K keyboard, B brush, I shifter (the
+    /// shading brush) and P paint bucket.
+    fn mode_key(&mut self, key: Key) -> bool {
+        if matches!(self.document.tool, Tool::Click | Tool::Font) || self.document.paste_active() {
+            return false;
+        }
+        match key {
+            Key::K => self.select_tool(Tool::Click),
+            Key::B => {
+                if self.document.brush.primary == BrushPrimaryMode::Shading {
+                    self.document.brush.primary = BrushPrimaryMode::HalfBlock;
+                }
+                self.select_tool(Tool::Pencil);
+            }
+            Key::I => {
+                self.document.brush.primary = BrushPrimaryMode::Shading;
+                self.select_tool(Tool::Pencil);
+            }
+            Key::P => self.select_tool(Tool::Fill),
+            _ => return false,
+        }
+        true
     }
 
     fn reveal_caret(&mut self, position: Position) {
