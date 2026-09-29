@@ -165,6 +165,8 @@ fn message_search_highlights_body_and_clears_with_filter() {
 
     let context = egui::Context::default();
     let (_dir, mut mail) = loaded(&context);
+    // The classic terminal view is what this test is about.
+    mail.reading_mode = icy_mail::options::ReadingMode::Classic;
     search_messages(&context, &mut mail, "LINE 1");
     wait(&mut mail, &context);
     settle(&context, &mut mail, egui::vec2(1100.0, 760.0));
@@ -315,6 +317,8 @@ fn reader_selection_coordinates_include_partial_cell_scroll_before_rounding() {
 fn command_wheel_zooms_the_message() {
     let context = egui::Context::default();
     let (_dir, mut mail) = loaded(&context);
+    // The classic terminal view is what this test is about.
+    mail.reading_mode = icy_mail::options::ReadingMode::Classic;
     let size = egui::vec2(1100.0, 760.0);
     settle(&context, &mut mail, size);
     let pointer = mail.content_rect.center();
@@ -340,6 +344,8 @@ fn reader_drag_uses_release_position_in_both_directions_and_clamps_to_body() {
     for reverse in [false, true] {
         let context = egui::Context::default();
         let (_dir, mut mail) = loaded(&context);
+        // The classic terminal view is what this test is about.
+        mail.reading_mode = icy_mail::options::ReadingMode::Classic;
         let size = egui::vec2(1100.0, 760.0);
         settle(&context, &mut mail, size);
         mail.screen = icy_engine_gui::egui::screen::ScreenView::new(icy_mail::reader::render_body(b"HELLO WORLD\nSECOND LINE").unwrap());
@@ -1877,6 +1883,8 @@ fn gpu_message_body_search_highlights() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let mut gpu = runtime.block_on(Gpu::new());
     let (_dir, mut mail) = loaded(&gpu.context);
+    // The classic terminal view is what this test is about.
+    mail.reading_mode = icy_mail::options::ReadingMode::Classic;
     mail.reader.filter = "line 1".into();
     mail.filter_changed();
     for (scale, theme) in [(1.0, egui::Theme::Dark), (2.0, egui::Theme::Light)] {
@@ -1927,6 +1935,8 @@ fn gpu_mail_layout_themes_narrow_and_hidpi() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let mut gpu = runtime.block_on(Gpu::new());
     let (_dir, mut mail) = loaded(&gpu.context);
+    // The classic terminal view is what this test is about.
+    mail.reading_mode = icy_mail::options::ReadingMode::Classic;
     let package = Arc::make_mut(mail.reader.package.as_mut().unwrap());
     let other = package.infos.iter().position(|info| Some(info.index) != mail.reader.selected_message).unwrap();
     package.infos[other].from = b"Andr\x82 \xb1\xdb".as_slice().into();
@@ -2160,6 +2170,8 @@ fn gpu_long_message_scroll_and_selection_copy() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let mut gpu = runtime.block_on(Gpu::new());
     let (_dir, mut mail) = loaded(&gpu.context);
+    // The classic terminal view is what this test is about.
+    mail.reading_mode = icy_mail::options::ReadingMode::Classic;
     let body = format!("\x1b[31mHELLO WORLD\x1b[0m\n{}THE END", "more text\n".repeat(200));
     mail.screen = icy_engine_gui::egui::screen::ScreenView::new(icy_mail::reader::render_body(body.as_bytes()).unwrap());
     mail.focus = Pane::Content;
@@ -2319,6 +2331,8 @@ fn gpu_reader_deselecting_clears_the_rendered_highlight() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let mut gpu = runtime.block_on(Gpu::new());
     let (_dir, mut mail) = loaded(&gpu.context);
+    // The classic terminal view is what this test is about.
+    mail.reading_mode = icy_mail::options::ReadingMode::Classic;
     let body = format!("HELLO WORLD\n{}THE END", "more text\n".repeat(80));
     mail.screen = icy_engine_gui::egui::screen::ScreenView::new(icy_mail::reader::render_body(body.as_bytes()).unwrap());
     mail.set_focus(Pane::Messages, &gpu.context);
@@ -2662,4 +2676,242 @@ fn network_groups_collapse_filter_and_open_for_next_unread() {
     let output = settle(&context, &mut mail, size);
     assert_eq!(count(&output, "Local"), 0, "conferences without unread messages are hidden");
     assert!(mail.current_options(&context).conferences_unread_only, "the filter is saved");
+}
+
+#[test]
+fn modern_reading_mode_sets_lines_by_content() {
+    use modern_view::{blocks, is_quote, readable, Block};
+    let render = |data: &[u8]| (icy_mail::reader::render_body(data).unwrap(), icy_mail::reader::render_body_wide(data).unwrap());
+    let (classic, wide) = render(b"Hello there,\r\n JD> quoted text\r\n> > nested\r\nName    Size    Date\r\n\xda\xc4\xc4\xbf\r\n\x1b[1;34mblue\x1b[0m\r\n");
+    let lines: Vec<_> = blocks(&classic, &wide)
+        .into_iter()
+        .map(|block| match block {
+            Block::Text(line) => line,
+            Block::Art { .. } => panic!("no art in plain text"),
+        })
+        .collect();
+    let flags: Vec<(bool, bool)> = lines.iter().map(|line| (line.fixed, line.quote)).collect();
+    assert_eq!(
+        flags,
+        [(false, false), (false, true), (false, true), (true, false), (true, false), (false, false)],
+        "{lines:?}"
+    );
+    assert!(!is_quote("Hello > world"), "a marker after words is no quote");
+    assert!(!is_quote("Longname> text"));
+    let dark_blue = readable([0, 0, 170], false, true);
+    assert!(dark_blue.r() > 100, "dark colors are lightened on dark themes: {dark_blue:?}");
+    let yellow = readable([255, 255, 85], false, false);
+    assert!(yellow.g() < 180, "light colors are darkened on light themes: {yellow:?}");
+    assert_eq!(
+        readable([0, 0, 170], true, true),
+        egui::Color32::from_rgb(0, 0, 170),
+        "colors on their own background stay"
+    );
+
+    // Text stays whole; block graphics and colored backgrounds become art, including short gaps.
+    let data = [
+        b"word ".repeat(30),
+        b"\r\n\r\n  \xdc\xdf\xdb\xb0\r\n\r\n \x1b[44m    \x1b[0m\r\ntext\r\n\xdb\r\n\r\n\r\n\r\n\xdb\r\n".to_vec(),
+    ]
+    .concat();
+    let describe = |(classic, wide): (icy_engine::TextScreen, icy_engine::TextScreen)| -> Vec<String> {
+        blocks(&classic, &wide)
+            .into_iter()
+            .map(|block| match block {
+                Block::Text(line) => format!("text {}", line.spans.iter().map(|span| span.text.as_str()).collect::<String>()),
+                Block::Art { rows, columns } => format!("art {rows:?} {columns}"),
+            })
+            .collect()
+    };
+    let parts = describe(render(&data));
+    assert_eq!(
+        parts[0],
+        format!("text {}", "word ".repeat(30).trim_end()),
+        "wrapped text is joined, keeping the space"
+    );
+    assert_eq!(parts[1..], ["text ", "art 3..12 6"], "paragraphs with art and short gaps form one picture");
+
+    // Bullets like ■ in a tagline are text, not art.
+    assert_eq!(
+        describe(render(b"---\r\n \xfe SLMR Rob  \xfe It costs $1.25 to mint a penny \xfe\r\n")),
+        ["text ---", "text  \u{25a0} SLMR Rob  \u{25a0} It costs $1.25 to mint a penny \u{25a0}"]
+    );
+
+    // Colored lines between two pieces of art belong to the picture; a plain paragraph ends it.
+    let ad = b"\xdb\xdb\r\n\r\n\x1b[36mtelnet>>bbs.example.com\x1b[0m\r\n\r\n\xdf\xdf\r\n\r\nJust some words.\r\n\r\n\xdc\xdc\r\n";
+    assert_eq!(describe(render(ad)), ["art 0..5 23", "text ", "text Just some words.", "text ", "art 8..9 2"]);
+
+    // Art filling whole 80 column rows without line breaks relies on the terminal wrapping.
+    let art = [vec![0xdb; 80], vec![0xb0; 80], b"\r\n\x1b[36mfsxNet 21:2/150\x1b[0m\r\n".to_vec()].concat();
+    assert_eq!(
+        describe(render(&art)),
+        ["art 0..2 80", "text ", "text fsxNet 21:2/150"],
+        "the terminal's empty row stays"
+    );
+    let exact = [b"x".repeat(80), b"\r\n".to_vec(), b"word ".repeat(17), b"end\r\n".to_vec()].concat();
+    assert_eq!(
+        describe(render(&exact)),
+        [format!("text {}", "x".repeat(80)), "text ".into(), format!("text {}end", "word ".repeat(17))],
+        "a full row does not stop later lines from being joined"
+    );
+}
+
+#[test]
+fn modern_reading_mode_shows_selectable_text_and_keeps_keyboard_reading() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    mail.reading_mode = icy_mail::options::ReadingMode::Modern;
+    let output = settle(&context, &mut mail, size);
+    let body = output
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.text().starts_with("line 0\nline 1\n") => Some(text.galley.rect.translate(text.pos.to_vec2())),
+            _ => None,
+        })
+        .expect("the message is drawn as text");
+    assert!(body.left() >= mail.content_rect.left() + 20.0, "the text keeps a margin");
+    assert_eq!(mail.screen.max_offset.y, 0.0, "a short message does not scroll");
+    let first = mail.reader.selected_message;
+    mail.set_focus(Pane::Content, &context);
+    frame(&context, &mut mail, size, vec![key(egui::Key::Space, egui::Modifiers::NONE)]);
+    assert_ne!(mail.reader.selected_message, first, "Space at the end continues with the next unread message");
+    assert!(mail.current_options(&context).reading_mode == icy_mail::options::ReadingMode::Modern);
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_modern_reading_mode() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let mut gpu = runtime.block_on(Gpu::new());
+    let (_dir, mut mail) = loaded(&gpu.context);
+    let body: Vec<u8> = [
+        b"Hi Alice,\r\n\r\n".as_slice(),
+        b" AL> The coffee machine on the third floor is broken again.\r\n".as_slice(),
+        b" AL> Does anyone know who to call?\r\n\r\n".as_slice(),
+        b"I called the facility team this morning. They will fix it on \x1b[1;33mTuesday\x1b[0m, and until then\r\n".as_slice(),
+        b"we can use the one in the \x1b[1;36mkitchen downstairs\x1b[0m. Here is the \x1b[1;31mupdated\x1b[0m plan:\r\n\r\n".as_slice(),
+        b"\xda\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc2\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xbf\r\n".as_slice(),
+        b"\xb3 Day      \xb3 Machine    \xb3\r\n".as_slice(),
+        b"\xc3\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc5\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xb4\r\n".as_slice(),
+        b"\xb3 Mon-Mon  \xb3 \x1b[32mkitchen\x1b[0m    \xb3\r\n".as_slice(),
+        b"\xb3 Tuesday  \xb3 \x1b[32mthird floor\x1b[0m\xb3\r\n".as_slice(),
+        b"\xc0\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc1\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xd9\r\n\r\n".as_slice(),
+        b"Cheers,\r\nBob\r\n\r\n".as_slice(),
+        b"\x1b[1;30m... \x1b[0;34mI'd rather be downloading.\x1b[0m\r\n".as_slice(),
+    ]
+    .concat();
+    // The long line checks that text is not cut at the terminal's 80 columns.
+    let body = [
+        body.as_slice(),
+        b"P.S. This line is longer than eighty columns, so the classic terminal would have to wrap it.\r\n\r\n",
+        b"  \x1b[1;36m\xdc\xdc\xdc\xdc\xdc  \x1b[1;33m\xdc\xdc\xdc\xdc\xdc  \x1b[1;35m\xdb\xdb   \xdb\xdb\x1b[0m\r\n",
+        b"  \x1b[1;36m\xdb\x1b[46m \x1b[0;36m\xb1\xb1\x1b[1;36m\x1b[40m\xdb  \x1b[1;33m\xdb\x1b[0;33m\xb2\xb2\xb2\x1b[1;33m\xdb  \x1b[1;35m\xdb\xdb\xdc \xdc\xdb\xdb  \x1b[0mIcy Mail\r\n",
+        b"  \x1b[1;36m\xdf\xdf\xdf\xdf\xdf  \x1b[1;33m\xdf\xdf\xdf\xdf\xdf  \x1b[1;35m\xdf\xdf \xdf \xdf\xdf\x1b[0m\r\n",
+        b"\x1b[0;37m\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\x1b[0m\r\n",
+        b"\x1b[36mtelnet>>\x1b[1;36micy.example.com\x1b[0;36m:1337\x1b[0m\r\n\r\n",
+        b"   \x1b[1;36mfsxNet \x1b[0;36m21:2/150      \x1b[1;36mDove-Net      \x1b[1;36mtqwNet \x1b[0;36m1337:3/129\x1b[0m\r\n\r\n",
+        b"\x1b[0;37m\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\xdc\xdf\x1b[0m\r\n\r\n\r\n",
+        b"--- Icy Mail\r\n * Origin: Somewhere (21:2/150)\r\n",
+    ]
+    .concat();
+    let package = mail.reader.package.clone().unwrap();
+    let key = (
+        Arc::as_ptr(&package) as usize,
+        modern_view::Document::Message(mail.reader.selected_message.unwrap()),
+    );
+    let classic = icy_mail::reader::render_body(&body).unwrap();
+    let wide = icy_mail::reader::render_body_wide(&body).unwrap();
+    mail.modern_items = Some((key, modern_view::items(&gpu.context, &classic, modern_view::blocks(&classic, &wide))));
+    mail.reading_mode = icy_mail::options::ReadingMode::Modern;
+    for (theme, font, name) in [
+        (egui::Theme::Dark, icy_mail::options::ModernFont::Proportional, "modern-dark"),
+        (egui::Theme::Light, icy_mail::options::ModernFont::Proportional, "modern-light"),
+        (egui::Theme::Dark, icy_mail::options::ModernFont::Monospace, "modern-monospace"),
+    ] {
+        gpu.context.set_theme(theme);
+        mail.modern_font = font;
+        for _ in 0..3 {
+            gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+        }
+        let (_, output) = gpu.capture(&mut mail, [1100, 760], 1.0, vec![], name);
+        assert!(output
+            .shapes
+            .iter()
+            .any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text().contains("\u{250c}\u{2500}"))));
+    }
+    gpu.context.set_theme(egui::Theme::Dark);
+    mail.modern_font = icy_mail::options::ModernFont::Proportional;
+    mail.screen.scroll_to = Some(egui::vec2(0.0, f32::MAX));
+    for _ in 0..3 {
+        gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+    }
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "modern-end");
+    mail.select_folder(app::Folder::Bulletins);
+    wait(&mut mail, &gpu.context);
+    for _ in 0..3 {
+        gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
+    }
+    gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "modern-bulletin");
+}
+
+#[test]
+fn messages_are_saved_as_written_or_as_utf8() {
+    let context = egui::Context::default();
+    let (_dir, mail) = loaded(&context);
+    let package = mail.reader.package.clone().unwrap();
+    let index = mail.reader.selected_message.unwrap();
+    let info = &package.infos[index];
+    let (name, original) = app::message_file(&package, index, false).unwrap();
+    assert_eq!(name, format!("{}-{}.ans", info.conference, info.number));
+    assert_eq!(original, package.get_message(index).unwrap().text.to_vec(), "the original bytes are kept");
+    let (name, utf8) = app::message_file(&package, index, true).unwrap();
+    assert!(name.ends_with(".txt"));
+    assert!(String::from_utf8(utf8).unwrap().contains("line 0"));
+}
+
+#[test]
+fn every_folder_shows_its_text_in_the_chosen_display() {
+    use modern_view::Document;
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    assert_eq!(mail.reading_mode, icy_mail::options::ReadingMode::Modern);
+    let shown = |mail: &app::MailApp| mail.modern_items.as_ref().map(|((_, document), _)| *document);
+    let texts = |output: &egui::FullOutput| -> Vec<String> {
+        output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) => Some(text.galley.text().to_string()),
+                _ => None,
+            })
+            .collect()
+    };
+
+    settle(&context, &mut mail, size);
+    assert!(matches!(shown(&mail), Some(Document::Message(_))));
+
+    frame(&context, &mut mail, size, vec![key(egui::Key::R, egui::Modifiers::COMMAND)]);
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
+    frame(&context, &mut mail, size, vec![egui::Event::Text("Modern draft".into())]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::S, egui::Modifiers::COMMAND)]);
+    click_label(&context, &mut mail, size, "Outbox");
+    let output = settle(&context, &mut mail, size);
+    assert!(matches!(shown(&mail), Some(Document::Draft(..))), "the outbox preview uses the modern view");
+    assert!(texts(&output).iter().any(|text| text.contains("Modern draft")), "{:?}", texts(&output));
+
+    click_label(&context, &mut mail, size, "Bulletins");
+    wait(&mut mail, &context);
+    settle(&context, &mut mail, size);
+    assert!(matches!(shown(&mail), Some(Document::File(0, 0))), "bulletins use the modern view");
+
+    mail.reading_mode = icy_mail::options::ReadingMode::Classic;
+    mail.modern_items = None;
+    settle(&context, &mut mail, size);
+    assert!(mail.modern_items.is_none(), "the classic display draws the terminal instead");
 }

@@ -156,6 +156,19 @@ pub fn find_ignore_case(text: &str, needle: &str) -> Vec<std::ops::Range<usize>>
     matches
 }
 
+/// Message text as UTF-8 for saving: CP437 bytes become their Unicode characters, while ASCII,
+/// control codes and ANSI escape sequences stay as they are. Text that already is UTF-8 is kept.
+#[must_use]
+pub fn to_utf8(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => text.to_owned(),
+        Err(_) => bytes
+            .iter()
+            .map(|&byte| if byte < 0x80 { char::from(byte) } else { cp437_char(byte) })
+            .collect(),
+    }
+}
+
 fn decode_unstyled(bytes: &[u8]) -> String {
     match std::str::from_utf8(bytes) {
         Ok(text) => text.to_owned(),
@@ -208,7 +221,7 @@ fn parse_ansi(bytes: &[u8]) -> HeaderText {
     HeaderText { plain, styled }
 }
 
-fn push_span(spans: &mut Vec<StyledSpan>, ch: char, attribute: icy_engine::TextAttribute, screen: &TextScreen) {
+fn push_span(spans: &mut Vec<StyledSpan>, ch: char, attribute: icy_engine::TextAttribute, screen: &dyn Screen) {
     let foreground = color(attribute.foreground_color(), screen, true);
     let background = color(attribute.background_color(), screen, false);
     let style = StyledSpan {
@@ -227,7 +240,7 @@ fn push_span(spans: &mut Vec<StyledSpan>, ch: char, attribute: icy_engine::TextA
     }
 }
 
-fn color(color: AttributeColor, screen: &TextScreen, foreground: bool) -> Option<[u8; 3]> {
+fn color(color: AttributeColor, screen: &dyn Screen, foreground: bool) -> Option<[u8; 3]> {
     match color {
         AttributeColor::Palette(index) if (foreground && index == 7) || (!foreground && index == 0) => None,
         AttributeColor::Palette(index) => {
@@ -241,6 +254,36 @@ fn color(color: AttributeColor, screen: &TextScreen, foreground: bool) -> Option
         AttributeColor::Rgb(red, green, blue) => Some([red, green, blue]),
         AttributeColor::Transparent => None,
     }
+}
+
+/// The rows of a rendered message as styled text, for reading it outside the terminal view.
+/// Trailing blanks of a row and blank rows at the end are dropped; default colors stay `None`.
+#[must_use]
+pub fn styled_lines(screen: &dyn Screen) -> Vec<Vec<StyledSpan>> {
+    let (width, height) = (screen.width(), screen.height());
+    let buffer_type = screen.buffer_type();
+    let mut lines = Vec::with_capacity(height.max(0) as usize);
+    for y in 0..height {
+        let mut end = 0;
+        for x in 0..width {
+            let cell = screen.char_at(Position::new(x, y));
+            let background = color(cell.attribute.background_color(), screen, false);
+            if (cell.ch != ' ' && cell.ch != '\0') || background.is_some() {
+                end = x + 1;
+            }
+        }
+        let mut spans = Vec::new();
+        for x in 0..end {
+            let cell = screen.char_at(Position::new(x, y));
+            let ch = if cell.ch == '\0' { ' ' } else { buffer_type.convert_to_unicode(cell.ch) };
+            push_span(&mut spans, ch, cell.attribute, screen);
+        }
+        lines.push(spans);
+    }
+    while lines.last().is_some_and(Vec::is_empty) {
+        lines.pop();
+    }
+    lines
 }
 
 fn same_style(left: &StyledSpan, right: &StyledSpan) -> bool {
@@ -274,6 +317,37 @@ mod tests {
         assert_eq!(HeaderText::new(b"Alice"), "Alice");
         assert_eq!(HeaderText::new("Andr\u{e9}".as_bytes()), "Andr\u{e9}");
         assert_eq!(HeaderText::new(b"Andr\x82 \xb0\xdb"), "Andr\u{e9} \u{2591}\u{2588}");
+    }
+
+    #[test]
+    fn rendered_messages_become_styled_lines() {
+        let screen = crate::reader::render_body(b"Plain \x1b[1;33mbright\x1b[0m\r\n\r\n\xda\xc4\xbf box\r\n\x1b[44m  \x1b[0m\r\n\r\n").unwrap();
+        let lines = styled_lines(&screen);
+        assert_eq!(lines.len(), 4, "blank rows at the end are dropped: {lines:?}");
+        assert_eq!(lines[0][0].text, "Plain ");
+        assert_eq!(lines[0][0].foreground, None, "default colors stay unset");
+        assert_eq!(lines[0][1].text, "bright");
+        assert!(lines[0][1].foreground.is_some(), "{:?}", lines[0][1]);
+        assert!(lines[1].is_empty());
+        assert_eq!(
+            lines[2].iter().map(|span| span.text.as_str()).collect::<String>(),
+            "\u{250c}\u{2500}\u{2510} box"
+        );
+        assert_eq!(lines[3][0].text, "  ", "colored blanks are kept");
+        assert!(lines[3][0].background.is_some());
+
+        let long = format!("{}tail\r\nnext\r\n", "word ".repeat(17));
+        let lines = styled_lines(&crate::reader::render_body_wide(long.as_bytes()).unwrap());
+        assert_eq!(lines.len(), 2, "the wide rendering keeps long lines whole");
+    }
+
+    #[test]
+    fn saved_text_turns_cp437_into_utf8_and_keeps_ansi() {
+        assert_eq!(
+            to_utf8(b"\x1b[1;31m\xdb\xb0 Andr\x82\x1b[0m\r\n"),
+            "\x1b[1;31m\u{2588}\u{2591} Andr\u{e9}\x1b[0m\r\n"
+        );
+        assert_eq!(to_utf8("Grüße".as_bytes()), "Grüße", "UTF-8 stays");
     }
 
     #[test]

@@ -19,6 +19,8 @@ mod dialogs;
 mod list;
 #[path = "icy_mail_egui/loading.rs"]
 mod loading;
+#[path = "icy_mail_egui/modern_view.rs"]
+mod modern_view;
 #[path = "icy_mail_egui/reader_view.rs"]
 mod reader_view;
 #[path = "icy_mail_egui/settings.rs"]

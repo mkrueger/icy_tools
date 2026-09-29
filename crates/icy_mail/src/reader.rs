@@ -625,7 +625,15 @@ pub fn step(current: usize, direction: NavigateDirection, len: usize) -> usize {
 }
 
 pub fn render_body(data: &[u8]) -> Res<TextScreen> {
-    render_with(data, &mut icy_parser_core::AnsiParser::new())
+    render_with(data, &mut icy_parser_core::AnsiParser::new(), 80)
+}
+
+/// Columns of [`render_body_wide`]; longer lines still wrap.
+pub const WIDE_COLUMNS: i32 = 256;
+
+/// Renders a message without wrapping lines at 80 columns, for reading it as flowing text.
+pub fn render_body_wide(data: &[u8]) -> Res<TextScreen> {
+    render_with(data, &mut icy_parser_core::AnsiParser::new(), WIDE_COLUMNS)
 }
 
 /// Renders a bulletin, news or new files screen. These stop at the DOS end-of-file mark and may use
@@ -638,6 +646,15 @@ pub fn render_file(data: &[u8]) -> Res<TextScreen> {
 pub const FILE_PAGE_LINES: usize = 2048;
 
 pub fn render_file_page(data: &[u8], page: usize) -> Res<TextScreen> {
+    render_file_page_width(data, page, 80)
+}
+
+/// [`render_file_page`] without wrapping lines at 80 columns, like [`render_body_wide`].
+pub fn render_file_page_wide(data: &[u8], page: usize) -> Res<TextScreen> {
+    render_file_page_width(data, page, WIDE_COLUMNS)
+}
+
+fn render_file_page_width(data: &[u8], page: usize, width: i32) -> Res<TextScreen> {
     let data = data.split(|byte| *byte == 0x1A).next().unwrap_or_default();
     let offset = page.saturating_mul(FILE_PAGE_LINES);
     let page_data: Vec<u8> = data
@@ -651,13 +668,13 @@ pub fn render_file_page(data: &[u8], page: usize) -> Res<TextScreen> {
         .windows(4)
         .any(|code| code[0] == b'@' && code[1].eq_ignore_ascii_case(&b'x') && code[2].is_ascii_hexdigit() && code[3].is_ascii_hexdigit());
     if pcboard {
-        render_with(data, &mut icy_parser_core::PcBoardParser::new())
+        render_with(data, &mut icy_parser_core::PcBoardParser::new(), width)
     } else {
-        render_body(data)
+        render_with(data, &mut icy_parser_core::AnsiParser::new(), width)
     }
 }
 
-fn render_with(data: &[u8], parser: &mut dyn icy_parser_core::CommandParser) -> Res<TextScreen> {
+fn render_with(data: &[u8], parser: &mut dyn icy_parser_core::CommandParser, width: i32) -> Res<TextScreen> {
     let mut normalized = Vec::with_capacity(data.len() + data.len() / 8);
     let mut previous = 0;
     for byte in data {
@@ -668,7 +685,7 @@ fn render_with(data: &[u8], parser: &mut dyn icy_parser_core::CommandParser) -> 
         previous = *byte;
     }
     let height = normalized.iter().filter(|byte| **byte == b'\n').count().max(24) + 1;
-    let mut screen = TextScreen::new(Size::new(80, height as i32));
+    let mut screen = TextScreen::new(Size::new(width, height as i32));
     screen.terminal_state_mut().is_terminal_buffer = false;
     icy_engine::load_with_parser(&mut screen, parser, &normalized, true, -1)?;
     screen.caret_mut().visible = false;

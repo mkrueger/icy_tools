@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use crate::{drafts::atomic_write, reader::ViewMode, LANGUAGE_LOADER};
 
 const FILE_NAME: &str = "settings.toml";
+pub const DEFAULT_MODERN_FONT_SIZE: f32 = 15.0;
+pub const MODERN_FONT_SIZES: std::ops::RangeInclusive<f32> = 11.0..=24.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Theme {
@@ -32,6 +34,24 @@ pub enum ReadingPane {
     Right,
 }
 
+/// How message text is shown.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReadingMode {
+    /// The 80 column terminal with the BBS font, as on the board.
+    Classic,
+    /// Selectable text that wraps to the pane and follows the theme; ANSI art keeps the BBS font.
+    #[default]
+    Modern,
+}
+
+/// Font of the modern reading mode; graphics and aligned lines always use the fixed-width font.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModernFont {
+    Proportional,
+    #[default]
+    Monospace,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Options {
@@ -45,6 +65,9 @@ pub struct Options {
     pub reading_pane: ReadingPane,
     /// The sidebar lists only conferences with unread messages.
     pub conferences_unread_only: bool,
+    pub reading_mode: ReadingMode,
+    pub modern_font: ModernFont,
+    pub modern_font_size: f32,
 }
 
 impl Default for Options {
@@ -61,6 +84,9 @@ impl Default for Options {
             view_mode: ViewMode::default(),
             reading_pane: ReadingPane::default(),
             conferences_unread_only: false,
+            reading_mode: ReadingMode::default(),
+            modern_font: ModernFont::default(),
+            modern_font_size: DEFAULT_MODERN_FONT_SIZE,
         }
     }
 }
@@ -110,6 +136,9 @@ mod tests {
         options.monitor_settings.use_scanlines = true;
         options.view_mode = ViewMode::Threads;
         options.reading_pane = ReadingPane::Right;
+        options.reading_mode = ReadingMode::Classic;
+        options.modern_font = ModernFont::Proportional;
+        options.modern_font_size = 18.0;
         options.save_in(dir.path()).unwrap();
         assert_eq!(Options::load_in(dir.path()).unwrap(), options);
         fs::write(dir.path().join(FILE_NAME), "theme = \"Light\"\n").unwrap();
@@ -119,5 +148,7 @@ mod tests {
         assert!(partial.random_tagline);
         assert_eq!(partial.view_mode, ViewMode::List);
         assert_eq!(partial.reading_pane, ReadingPane::Automatic);
+        assert_eq!(partial.reading_mode, ReadingMode::Modern, "new installations read in the modern mode");
+        assert_eq!(partial.modern_font, ModernFont::Monospace);
     }
 }

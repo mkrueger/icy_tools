@@ -9,7 +9,7 @@ use icy_mail::{
     address_book::AddressBook,
     drafts::{Compose, Draft, DraftStore},
     editor,
-    options::{Options, ReadingPane},
+    options::{ModernFont, Options, ReadingMode, ReadingPane},
     qwk::MessageInfo,
     reader::{NavigateDirection, Pane, Reader, ViewMode},
     state::{PacketSummary, ReadState, RecentPackets},
@@ -22,6 +22,7 @@ use super::{
     address_dialog::AddressDialog,
     composer::Composer,
     loading::{BodySource, Event, Loader},
+    modern_view::{Document, Item},
     settings::SettingsDialog,
     tagline_dialog::TaglineDialog,
     widgets::{Icons, ROW_HEIGHT},
@@ -148,6 +149,12 @@ pub struct MailApp {
     pub random_tagline: bool,
     pub reading_pane: ReadingPane,
     pub conferences_unread_only: bool,
+    pub reading_mode: ReadingMode,
+    pub modern_font: ModernFont,
+    pub modern_font_size: f32,
+    /// The shown message as text and rendered art for the modern reading mode, built on first use
+    /// and keyed by the packet and message they came from.
+    pub modern_items: Option<((usize, Document), Vec<Item>)>,
     /// Networks the user opened or closed in the sidebar, by lowercased name; others follow their unread state.
     pub network_open: HashMap<String, bool>,
     pub taglines: Option<Taglines>,
@@ -239,6 +246,10 @@ impl MailApp {
             random_tagline: options.random_tagline,
             reading_pane: options.reading_pane,
             conferences_unread_only: options.conferences_unread_only,
+            reading_mode: options.reading_mode,
+            modern_font: options.modern_font,
+            modern_font_size: options.modern_font_size,
+            modern_items: None,
             network_open: HashMap::new(),
             options,
             options_save_after: None,
@@ -356,6 +367,25 @@ impl MailApp {
                     self.loader.picking = false;
                     if let Some(path) = path {
                         self.open(path, context);
+                    }
+                }
+                Event::MessageSaved(result) => {
+                    self.loader.save_picking = false;
+                    match result {
+                        Some((path, Ok(()))) => self.notify(
+                            context,
+                            NoticeKind::Success,
+                            fl!(LANGUAGE_LOADER, "notice-message-saved", path = path.display().to_string()),
+                        ),
+                        Some((path, Err(error))) => {
+                            self.error = Some(fl!(
+                                LANGUAGE_LOADER,
+                                "app-save-message-failed",
+                                path = path.display().to_string(),
+                                error = error
+                            ))
+                        }
+                        None => {}
                     }
                 }
                 Event::Exported(result) => {
@@ -1283,6 +1313,21 @@ impl MailApp {
         }
     }
 
+    /// Saves the shown message's text as it is in the packet (`.ans`), or converted to UTF-8 (`.txt`),
+    /// e.g. to look at it in another viewer or to report a display problem.
+    pub fn save_message(&mut self, context: &egui::Context, utf8: bool) {
+        let Some(index) = self.reader.selected_message.filter(|_| self.message_selected()) else {
+            return;
+        };
+        let Some(package) = self.reader.package.clone() else {
+            return;
+        };
+        match message_file(&package, index, utf8) {
+            Ok((name, data)) => self.loader.pick_save_message(name, data, context),
+            Err(error) => self.error = Some(error),
+        }
+    }
+
     /// Copies the whole message, or the whole bulletin in the bulletins folder.
     pub fn copy_message(&mut self, context: &egui::Context) {
         let file = self.folder == Folder::Bulletins;
@@ -1547,7 +1592,9 @@ impl MailApp {
             self.reader.filter.clear();
             self.filter_changed();
         }
-        if self.focus == Pane::Content {
+        // The modern reading mode's text keeps its own selection, which egui copies.
+        let modern = self.reading_mode == ReadingMode::Modern;
+        if self.focus == Pane::Content && !modern {
             let copy_event = context.input(|input| input.events.iter().any(|event| matches!(event, egui::Event::Copy)));
             if key(context, Key::C, true, false) || copy_event {
                 self.copy(context);
@@ -1602,6 +1649,18 @@ impl MailApp {
             }
         }
     }
+}
+
+/// File name (`<conference>-<number>.ans` or `.txt`) and content of a saved message.
+pub fn message_file(package: &icy_mail::qwk::QwkPackage, index: usize, utf8: bool) -> Result<(String, Vec<u8>), String> {
+    let message = package.get_message(index).map_err(|error| error.to_string())?;
+    let info = &package.infos[index];
+    let (data, extension) = if utf8 {
+        (icy_mail::text::to_utf8(&message.text).into_bytes(), "txt")
+    } else {
+        (message.text.to_vec(), "ans")
+    };
+    Ok((format!("{}-{}.{extension}", info.conference, info.number), data))
 }
 
 pub fn sidebar_fill(visuals: &egui::Visuals) -> egui::Color32 {

@@ -5,7 +5,7 @@ use icy_engine_gui::{
     ScalingMode,
 };
 use icy_mail::{
-    options::{Options, ReadingPane, Theme},
+    options::{ModernFont, Options, ReadingMode, ReadingPane, Theme, MODERN_FONT_SIZES},
     LANGUAGE_LOADER,
 };
 
@@ -41,6 +41,20 @@ pub fn zoom_name(mode: ScalingMode) -> String {
     }
 }
 
+fn reading_mode_name(mode: ReadingMode) -> String {
+    match mode {
+        ReadingMode::Classic => fl!(LANGUAGE_LOADER, "settings-reading-mode-classic"),
+        ReadingMode::Modern => fl!(LANGUAGE_LOADER, "settings-reading-mode-modern"),
+    }
+}
+
+fn modern_font_name(font: ModernFont) -> String {
+    match font {
+        ModernFont::Proportional => fl!(LANGUAGE_LOADER, "settings-modern-font-proportional"),
+        ModernFont::Monospace => fl!(LANGUAGE_LOADER, "settings-modern-font-monospace"),
+    }
+}
+
 pub const READING_PANES: [ReadingPane; 3] = [ReadingPane::Automatic, ReadingPane::Below, ReadingPane::Right];
 
 pub fn reading_pane_name(pane: ReadingPane) -> String {
@@ -73,6 +87,9 @@ impl MailApp {
             view_mode: self.reader.view_mode,
             reading_pane: self.reading_pane,
             conferences_unread_only: self.conferences_unread_only,
+            reading_mode: self.reading_mode,
+            modern_font: self.modern_font,
+            modern_font_size: self.modern_font_size,
         }
     }
 
@@ -81,6 +98,9 @@ impl MailApp {
         self.random_tagline = options.random_tagline;
         self.reading_pane = options.reading_pane;
         self.conferences_unread_only = options.conferences_unread_only;
+        self.reading_mode = options.reading_mode;
+        self.modern_font = options.modern_font;
+        self.modern_font_size = options.modern_font_size.clamp(*MODERN_FONT_SIZES.start(), *MODERN_FONT_SIZES.end());
         if self.reader.view_mode != options.view_mode {
             self.set_mode(options.view_mode);
         }
@@ -161,6 +181,9 @@ impl MailApp {
                 dialog.draft.monitor_settings.scaling_mode = defaults.monitor_settings.scaling_mode;
                 dialog.draft.random_tagline = defaults.random_tagline;
                 dialog.draft.reading_pane = defaults.reading_pane;
+                dialog.draft.reading_mode = defaults.reading_mode;
+                dialog.draft.modern_font = defaults.modern_font;
+                dialog.draft.modern_font_size = defaults.modern_font_size;
             }
             Some(Footer::Restore) => {
                 let zoom = dialog.draft.monitor_settings.scaling_mode;
@@ -197,6 +220,28 @@ fn general(ui: &mut egui::Ui, options: &mut Options) {
         });
     });
     appearance::group(ui, &fl!(LANGUAGE_LOADER, "settings-section-messages"), |ui| {
+        let mode = &mut options.reading_mode;
+        appearance::combo_row(ui, &fl!(LANGUAGE_LOADER, "settings-reading-mode-label"), reading_mode_name(*mode), |ui| {
+            for choice in [ReadingMode::Classic, ReadingMode::Modern] {
+                ui.selectable_value(mode, choice, reading_mode_name(choice));
+            }
+        });
+        let modern = options.reading_mode == ReadingMode::Modern;
+        ui.add_enabled_ui(modern, |ui| {
+            let font = &mut options.modern_font;
+            appearance::combo_row(ui, &fl!(LANGUAGE_LOADER, "settings-modern-font-label"), modern_font_name(*font), |ui| {
+                for choice in [ModernFont::Proportional, ModernFont::Monospace] {
+                    ui.selectable_value(font, choice, modern_font_name(choice));
+                }
+            });
+            appearance::slider_row(
+                ui,
+                &fl!(LANGUAGE_LOADER, "settings-modern-font-size-label"),
+                &mut options.modern_font_size,
+                MODERN_FONT_SIZES,
+            );
+            options.modern_font_size = options.modern_font_size.round();
+        });
         let zoom = &mut options.monitor_settings.scaling_mode;
         appearance::combo_row(ui, &fl!(LANGUAGE_LOADER, "settings-zoom-label"), zoom_name(*zoom), |ui| {
             for mode in ZOOMS {

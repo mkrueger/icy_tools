@@ -8,6 +8,7 @@ use icy_engine_gui::{
 use icy_mail::{
     drafts::{Draft, DraftKind},
     editor,
+    options::ReadingMode,
     reader::{NavigateDirection, Pane},
     LANGUAGE_LOADER,
 };
@@ -16,6 +17,7 @@ use super::{
     app::{draft_title, Folder, MailApp, Modal},
     chrome,
     list::{self, display_date},
+    modern_view::Document,
     widgets::{self, Icon},
 };
 
@@ -289,9 +291,11 @@ impl MailApp {
             });
             return;
         }
-        let response = self.terminal_body(ui);
+        let modern = self.reading_mode == ReadingMode::Modern;
+        let response = self.document_body(ui, Document::Message(info.index));
         response.context_menu(|ui| {
-            if ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
+            // The modern view copies its own text selection with Ctrl+C.
+            if !modern && ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
                 self.copy(ui.ctx());
                 ui.close();
             }
@@ -361,10 +365,21 @@ impl MailApp {
         if entry(ui, add, fl!(LANGUAGE_LOADER, "reader-menu-add-author"), shortcut, true, None) {
             self.add_sender(&context);
         }
+        ui.separator();
+        let saving = !self.loader.save_picking;
+        for (utf8, label) in [
+            (false, fl!(LANGUAGE_LOADER, "menu-save-message")),
+            (true, fl!(LANGUAGE_LOADER, "menu-save-message-utf8")),
+        ] {
+            let image = self.icons.image(&context, Icon::Export, 16.0);
+            if entry(ui, image, label, String::new(), saving, None) {
+                self.save_message(&context, utf8);
+            }
+        }
     }
 
     /// The message terminal with focus handling and mouse selection.
-    fn terminal_body(&mut self, ui: &mut egui::Ui) -> egui::Response {
+    pub(super) fn terminal_body(&mut self, ui: &mut egui::Ui) -> egui::Response {
         let query = if self.folder.holds_messages() { &self.reader.filter } else { "" };
         if let Err(error) = self.body_highlights.update(&mut self.screen, query, ui.visuals().dark_mode) {
             self.error = Some(error.to_string());
@@ -588,7 +603,9 @@ impl MailApp {
             });
             return;
         }
-        let response = self.terminal_body(ui);
+        let modern = self.reading_mode == ReadingMode::Modern;
+        let document = Document::File(self.selected_file.unwrap_or(0), self.selected_file_page);
+        let response = self.document_body(ui, document);
         if navigate.is_none() && ui.is_enabled() && response.hovered() && !ui.ctx().will_discard() {
             let wheel = ui.input(|input| input.raw_scroll_delta.y);
             if wheel != 0.0 {
@@ -600,7 +617,8 @@ impl MailApp {
             }
         }
         response.context_menu(|ui| {
-            if ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
+            // The modern view copies its own text selection with Ctrl+C.
+            if !modern && ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
                 self.copy(ui.ctx());
                 ui.close();
             }
@@ -692,13 +710,22 @@ impl MailApp {
         let separator = ui.visuals().widgets.noninteractive.bg_stroke;
         ui.painter().hline(ui.max_rect().x_range(), ui.cursor().top(), separator);
         self.render_draft(&draft);
-        let response = self.terminal_body(ui);
+        let modern = self.reading_mode == ReadingMode::Modern;
+        let text = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            draft.text().hash(&mut hasher);
+            hasher.finish()
+        };
+        let response = self.document_body(ui, Document::Draft(draft.id, text));
         response.context_menu(|ui| {
-            if ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
+            if !modern && ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
                 self.copy(ui.ctx());
                 ui.close();
             }
-            ui.separator();
+            if !modern {
+                ui.separator();
+            }
             if ui.button(fl!(LANGUAGE_LOADER, "reader-edit")).clicked() {
                 edit = true;
                 ui.close();

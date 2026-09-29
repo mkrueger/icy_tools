@@ -86,7 +86,28 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
   the packet. On narrow windows, advancing opens the message pane.
 - ANSI/CP437 rendering, text/rectangular selection and copy, zoom, light/dark
   themes and additional native windows.
-- **Settings** (Ctrl/Cmd+,): theme, message zoom and the shared monitor
+- **Modern message display** (the default; Settings ▸ Messages ▸ Message
+  display switches to the classic BBS terminal): messages are shown as
+  selectable text, in the fixed-width font unless the proportional one is
+  chosen. Text wraps at the pane's width rather than at 80 columns, ANSI
+  colors are kept but adjusted where they would be hard to read on the theme,
+  CP437 box drawing becomes Unicode, and plain quote lines are dimmed. Tables
+  and lines with aligned columns use the fixed-width font. ANSI art is drawn
+  with the BBS font on the 80 column grid, exactly as in the classic view, at
+  the size of the fixed-width text: a paragraph with block graphics (▀ ▄ █ ░ ▒
+  ▓ …) or colored backgrounds becomes a picture (bullets like ■ or ► stay text), together with short colored or aligned
+  paragraphs up to the next piece of art (like a BBS ad); the next plain text
+  paragraph switches back to text. Only text lines the terminal wrapped are
+  joined again. The font (proportional or
+  fixed width) and its size are set there too; Ctrl+mouse wheel over the text
+  changes the size. The setting applies everywhere text is shown: messages,
+  bulletins and the outbox preview.
+- **Message ▸ Save Message…** stores the shown message's text exactly as it is
+  in the packet (`<conference>-<number>.ans`), **Save Message as UTF-8…** as a
+  `.txt` with CP437 characters converted and ANSI codes kept; both are also in
+  the reader header's **⋯** menu. Handy for other viewers or to report a
+  display problem.
+- **Settings** (Ctrl/Cmd+,): theme, message display and zoom, and the shared monitor
   emulation (monitor color, scaling, filtering, brightness, contrast, CRT
   effects…). Changes preview live; Cancel restores the previous values. They
   are saved to `settings.toml` in the icy_mail configuration directory.

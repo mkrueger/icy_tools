@@ -24,6 +24,7 @@ pub enum Event {
     Search(u64, String, Result<HashSet<usize>, String>),
     Picked(Option<PathBuf>),
     Exported(Option<(PathBuf, Result<(), String>)>),
+    MessageSaved(Option<(PathBuf, Result<(), String>)>),
 }
 
 type Jobs<T> = mpsc::Sender<(T, egui::Context)>;
@@ -87,6 +88,7 @@ pub struct Loader {
     pub body_generation: u64,
     pub picking: bool,
     pub export_picking: bool,
+    pub save_picking: bool,
     pub sender: mpsc::Sender<Event>,
     pub receiver: mpsc::Receiver<Event>,
     packages: Jobs<(u64, PathBuf)>,
@@ -143,6 +145,7 @@ impl Default for Loader {
             body_generation: 0,
             picking: false,
             export_picking: false,
+            save_picking: false,
             sender,
             receiver,
             packages,
@@ -215,6 +218,34 @@ impl Loader {
                 .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-all"), &["*"])
                 .pick_file();
             let _ = sender.send(Event::Picked(path));
+            context.request_repaint();
+        });
+    }
+
+    /// Asks where to save a message's text and writes `data` there.
+    pub fn pick_save_message(&mut self, name: String, data: Vec<u8>, context: &egui::Context) {
+        if self.save_picking {
+            return;
+        }
+        self.save_picking = true;
+        let sender = self.sender.clone();
+        let context = context.clone();
+        std::thread::spawn(move || {
+            let extension = std::path::Path::new(&name)
+                .extension()
+                .map(|extension| extension.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let path = rfd::FileDialog::new()
+                .set_title(fl!(LANGUAGE_LOADER, "loading-save-message-title"))
+                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-message"), &[extension.as_str()])
+                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-all"), &["*"])
+                .set_file_name(name)
+                .save_file();
+            let result = path.map(|path| {
+                let result = std::fs::write(&path, data).map_err(|error| error.to_string());
+                (path, result)
+            });
+            let _ = sender.send(Event::MessageSaved(result));
             context.request_repaint();
         });
     }

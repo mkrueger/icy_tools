@@ -309,6 +309,14 @@ impl MailApp {
         ) {
             self.add_sender(&context);
         }
+        ui.separator();
+        let saving = selected && !self.loader.save_picking;
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-save-message"), "", saving) {
+            self.save_message(&context, false);
+        }
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-save-message-utf8"), "", saving) {
+            self.save_message(&context, true);
+        }
     }
 
     fn view_menu(&mut self, ui: &mut egui::Ui) {
