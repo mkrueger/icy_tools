@@ -976,6 +976,10 @@ impl DrawApp {
             }
             Key::G if !shift && !animation => self.show_grid = !self.show_grid,
             Key::P if shift && !animation => self.show_inspector = !self.show_inspector,
+            Key::D if !shift && !animation && self.canvas_focus && self.document.tool == Tool::Tag && !self.document.selected_tags.is_empty() => {
+                let result = self.document.duplicate_selected_tags();
+                self.result(result.map(|_| ()));
+            }
             Key::D if !shift && !animation && self.canvas_focus => self.color_operation(ColorOp::Default),
             Key::X if shift && !animation && self.canvas_focus => self.color_operation(ColorOp::Swap),
             Key::E if !shift && !animation => {
@@ -1170,6 +1174,20 @@ impl DrawApp {
                     ("C".into(), fl!("shortcut-block-copy")),
                     ("F".into(), fl!("shortcut-block-fill")),
                     ("E / Del".into(), fl!("shortcut-block-erase")),
+                ],
+            ),
+            (
+                fl!("shortcut-group-tags"),
+                vec![
+                    ("Arrows".into(), fl!("shortcut-tag-nudge")),
+                    ("Shift+Arrows".into(), fl!("shortcut-tag-nudge-far")),
+                    ("Tab / Shift+Tab".into(), fl!("shortcut-tag-next")),
+                    (
+                        format!("{} / {} / {}", format(&COPY), format(&CUT), format(&PASTE)),
+                        fl!("shortcut-tag-clipboard"),
+                    ),
+                    (format(&DEFAULT_COLORS), fl!("shortcut-tag-duplicate")),
+                    ("Del".into(), fl!("shortcut-tag-delete")),
                 ],
             ),
             (

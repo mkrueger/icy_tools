@@ -1996,15 +1996,8 @@ impl DrawApp {
                         ui.close();
                     }
                     if ui.button(fl!("tag-duplicate")).clicked() {
-                        self.document.finish();
-                        let selected = self.document.selected_tags.clone();
-                        self.edit(|state| {
-                            let _undo = state.begin_atomic_undo(fl!("tag-duplicate"));
-                            for index in selected {
-                                state.clone_tag(index)?;
-                            }
-                            Ok(())
-                        });
+                        let result = self.document.duplicate_selected_tags();
+                        self.result(result.map(|_| ()));
                         ui.close();
                     }
                     if ui.button(fl!("tag-toolbar-delete")).clicked() {
@@ -2027,6 +2020,12 @@ impl DrawApp {
             context.input_mut(|input| input.events.push(egui::Event::Copy));
             return;
         }
+        if self.document.tool == Tool::Tag {
+            if let Some(text) = self.document.copy_selected_tags() {
+                system_clipboard::copy_text_or_egui(context, text);
+                return;
+            }
+        }
         let screen = self.document.screen.lock();
         if let Ok(data) = icy_engine_gui::prepare_clipboard_data(&**screen) {
             self.clipboard = data.icy_data.clone().map(|icy| (data.text.clone(), icy));
@@ -2036,6 +2035,11 @@ impl DrawApp {
 
     fn cut(&mut self, context: &egui::Context) {
         self.copy(context);
+        if self.document.tool == Tool::Tag && !self.document.selected_tags.is_empty() {
+            let result = self.document.delete_selected_tags();
+            self.result(result);
+            return;
+        }
         self.edit(|state| state.erase_selection());
     }
 
@@ -2166,6 +2170,12 @@ impl DrawApp {
 
     /// Pastes the richest clipboard content: characters with attributes, an image or text.
     pub(crate) fn paste_content(&mut self, content: PasteContent) {
+        if let (Tool::Tag, PasteContent::Text(text)) = (self.document.tool, &content) {
+            match self.document.paste_tags(text) {
+                Ok(false) => {}
+                result => return self.result(result.map(|_| ())),
+            }
+        }
         let result = match content {
             PasteContent::Icy { text, data } => self.document.start_paste(&text, Some(&data)),
             PasteContent::Image(image) => self.document.start_image_paste(&image),

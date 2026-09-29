@@ -52,6 +52,18 @@ pub fn key(document: &mut Document, fkeys: &mut FKeySets, key: Key, modifiers: M
         document.delete_selected_tags()?;
         return Ok(true);
     }
+    if document.tool == Tool::Tag && !modifiers.alt && !modifiers.ctrl && !modifiers.command {
+        let step = if modifiers.shift { 10 } else { 1 };
+        let delta = match key {
+            Key::Tab => return Ok(document.select_next_tag(modifiers.shift)),
+            Key::ArrowLeft => Position::new(-step, 0),
+            Key::ArrowRight => Position::new(step, 0),
+            Key::ArrowUp => Position::new(0, -step),
+            Key::ArrowDown => Position::new(0, step),
+            _ => return Ok(false),
+        };
+        return document.nudge_selected_tags(delta);
+    }
     let brush_tool = document.tool == Tool::Pencil || document.tool.is_shape_tool();
     if brush_tool && modifiers.alt && !modifiers.ctrl && !modifiers.command {
         match key {
@@ -256,6 +268,31 @@ mod tests {
             assert_eq!(document.with_state(|state| state.get_caret().position()), Position::default());
             assert!(!document.modified());
         }
+    }
+
+    #[test]
+    fn tag_tool_tabs_through_tags_and_nudges_them_with_arrows() {
+        let mut document = Document::new(Size::new(20, 10));
+        let mut fkeys = FKeySets::default();
+        document.tool = Tool::Tag;
+        let tag = icy_engine::Tag {
+            is_enabled: true,
+            preview: "T".into(),
+            replacement_value: String::new(),
+            position: Position::new(4, 4),
+            length: 1,
+            alignment: std::fmt::Alignment::Left,
+            tag_placement: icy_engine::TagPlacement::InText,
+            tag_role: icy_engine::TagRole::Displaycode,
+            attribute: icy_engine::TextAttribute::default(),
+        };
+        document.with_state(|state| state.add_new_tag(tag)).unwrap();
+        assert!(!key(&mut document, &mut fkeys, Key::ArrowRight, Modifiers::NONE).unwrap(), "nothing selected");
+        assert!(key(&mut document, &mut fkeys, Key::Tab, Modifiers::NONE).unwrap());
+        assert_eq!(document.selected_tags, vec![0]);
+        key(&mut document, &mut fkeys, Key::ArrowRight, Modifiers::NONE).unwrap();
+        key(&mut document, &mut fkeys, Key::ArrowDown, Modifiers::SHIFT).unwrap();
+        assert_eq!(document.with_state(|state| state.get_buffer().tags[0].position), Position::new(5, 9));
     }
 
     #[test]

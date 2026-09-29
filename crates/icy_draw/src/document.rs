@@ -143,6 +143,8 @@ pub struct Document {
     /// The caret after the last font text and the column its line started at, so Enter returns
     /// there while typing continues from where the text left off.
     art_line: Option<(Position, i32)>,
+    /// Tags copied in the tag tool and the clipboard text put there for them.
+    tag_clipboard: Option<(String, Vec<icy_engine::Tag>)>,
 }
 
 impl Document {
@@ -168,6 +170,7 @@ impl Document {
             stroke: None,
             paste: None,
             art_line: None,
+            tag_clipboard: None,
         }
     }
 
@@ -1149,6 +1152,149 @@ impl Document {
         })
         .map_err(|error| error.to_string())
     }
+
+    /// The selected tags in reading order.
+    fn selected_tag_copies(&mut self) -> Vec<icy_engine::Tag> {
+        let selected = self.selected_tags.clone();
+        let mut tags: Vec<_> = self.with_state(|state| selected.iter().filter_map(|index| state.get_buffer().tags.get(*index).cloned()).collect());
+        tags.sort_by_key(|tag| (tag.position.y, tag.position.x));
+        tags
+    }
+
+    /// Adds `tags` shifted by `delta` and kept on the canvas, and selects them.
+    fn add_tag_copies(&mut self, label: &str, tags: Vec<icy_engine::Tag>, delta: Position) -> DrawResult<()> {
+        self.finish();
+        let first = self.with_state(|state| state.get_buffer().tags.len());
+        let count = tags.len();
+        self.with_state(|state| {
+            let (width, height) = (state.get_buffer().width(), state.get_buffer().height());
+            let _undo = state.begin_atomic_undo(label);
+            for mut tag in tags {
+                let position = tag.position + delta;
+                tag.position = Position::new(position.x.clamp(0, (width - tag.len() as i32).max(0)), position.y.clamp(0, (height - 1).max(0)));
+                state.add_new_tag(tag)?;
+            }
+            Ok::<(), icy_engine::EngineError>(())
+        })
+        .map_err(|error| error.to_string())?;
+        self.selected_tags = (first..first + count).collect();
+        Ok(())
+    }
+
+    /// Moves the selected tags by `delta`, as far as they stay on the canvas. Returns false when
+    /// no tag is selected.
+    pub fn nudge_selected_tags(&mut self, delta: Position) -> DrawResult<bool> {
+        self.finish();
+        let tags = self.selected_tag_copies();
+        if tags.is_empty() {
+            return Ok(false);
+        }
+        let selected = self.selected_tags.clone();
+        self.with_state(|state| {
+            let (width, height) = (state.get_buffer().width(), state.get_buffer().height());
+            let left = tags.iter().map(|tag| tag.position.x).min().unwrap_or(0);
+            let top = tags.iter().map(|tag| tag.position.y).min().unwrap_or(0);
+            let right = tags.iter().map(|tag| tag.position.x + tag.len() as i32).max().unwrap_or(0);
+            let bottom = tags.iter().map(|tag| tag.position.y + 1).max().unwrap_or(0);
+            let delta = Position::new(
+                delta.x.clamp(-left, (width - right).max(-left)),
+                delta.y.clamp(-top, (height - bottom).max(-top)),
+            );
+            if delta == Position::default() {
+                return Ok(());
+            }
+            let _undo = state.begin_atomic_undo("Move tags");
+            for index in selected {
+                if let Some(position) = state.get_buffer().tags.get(index).map(|tag| tag.position) {
+                    state.move_tag(index, position + delta)?;
+                }
+            }
+            Ok::<(), icy_engine::EngineError>(())
+        })
+        .map_err(|error| error.to_string())?;
+        Ok(true)
+    }
+
+    /// Copies the selected tags for [`Self::paste_tags`] and returns the text to put on the
+    /// clipboard for them: their replacements, which is what the BBS would show.
+    pub fn copy_selected_tags(&mut self) -> Option<String> {
+        let tags = self.selected_tag_copies();
+        if tags.is_empty() {
+            return None;
+        }
+        let text = tags
+            .iter()
+            .map(|tag| {
+                if tag.replacement_value.is_empty() {
+                    &tag.preview
+                } else {
+                    &tag.replacement_value
+                }
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" ");
+        // The clipboard drops empty text, which would lose the paste.
+        let text = if text.trim().is_empty() { "TAG".to_string() } else { text };
+        self.tag_clipboard = Some((text.clone(), tags));
+        Some(text)
+    }
+
+    /// Pastes the copied tags with their upper left one at the caret when `text` is still what
+    /// was copied for them. Returns false for any other clipboard content.
+    pub fn paste_tags(&mut self, text: &str) -> DrawResult<bool> {
+        let Some((copied, tags)) = self.tag_clipboard.clone() else {
+            return Ok(false);
+        };
+        if copied.trim_end() != text.replace("\r\n", "\n").trim_end() {
+            return Ok(false);
+        }
+        let left = tags.iter().map(|tag| tag.position.x).min().unwrap_or(0);
+        let top = tags.iter().map(|tag| tag.position.y).min().unwrap_or(0);
+        let caret = self.with_state(|state| state.layer_to_document_position(state.get_caret().position()));
+        self.add_tag_copies("Paste tags", tags, caret - Position::new(left, top))?;
+        Ok(true)
+    }
+
+    /// Copies the selected tags one row further down and selects the copies.
+    pub fn duplicate_selected_tags(&mut self) -> DrawResult<bool> {
+        let tags = self.selected_tag_copies();
+        if tags.is_empty() {
+            return Ok(false);
+        }
+        self.add_tag_copies("Duplicate tags", tags, Position::new(0, 1))?;
+        Ok(true)
+    }
+
+    /// Selects the next tag in reading order, or the previous one when `backward`, and moves the
+    /// caret there. Returns false when there are no tags.
+    pub fn select_next_tag(&mut self, backward: bool) -> bool {
+        self.finish();
+        let mut order: Vec<(Position, usize)> =
+            self.with_state(|state| state.get_buffer().tags.iter().enumerate().map(|(index, tag)| (tag.position, index)).collect());
+        if order.is_empty() {
+            return false;
+        }
+        order.sort_by_key(|(position, index)| (position.y, position.x, *index));
+        let count = order.len();
+        let current = self
+            .selected_tags
+            .last()
+            .and_then(|selected| order.iter().position(|(_, index)| index == selected));
+        let next = match (current, backward) {
+            (Some(current), false) => (current + 1) % count,
+            (Some(current), true) => (current + count - 1) % count,
+            (None, false) => 0,
+            (None, true) => count - 1,
+        };
+        let (position, index) = order[next];
+        self.selected_tags = vec![index];
+        self.with_state(|state| {
+            state.set_current_tag(index);
+            state.set_caret_from_document_position(position);
+        });
+        true
+    }
 }
 
 #[cfg(test)]
@@ -1897,11 +2043,12 @@ mod tests {
     fn moved_and_copied_blocks_take_their_tags_along() {
         let mut document = Document::new(Size::new(30, 12));
         document.type_text("ABCD").unwrap();
-        document.with_state(|state| {
-            state.add_new_tag(tag(1, 0, "TG"))?;
-            state.add_new_tag(tag(3, 0, "OUT"))
-        })
-        .unwrap();
+        document
+            .with_state(|state| {
+                state.add_new_tag(tag(1, 0, "TG"))?;
+                state.add_new_tag(tag(3, 0, "OUT"))
+            })
+            .unwrap();
         let block = |document: &mut Document| {
             let mut selection = Selection::new(Position::new(0, 0));
             selection.lead = Position::new(2, 0);
@@ -1925,5 +2072,56 @@ mod tests {
         assert_eq!(positions(&document)[0], Position::new(6, 4), "a moved block moves it");
         document.undo().unwrap();
         assert_eq!(positions(&document)[0], Position::new(1, 0), "one undo puts block and tag back");
+    }
+
+    #[test]
+    fn tags_move_cycle_copy_and_duplicate_from_the_keyboard() {
+        let mut document = Document::new(Size::new(20, 10));
+        document.tool = Tool::Tag;
+        document
+            .with_state(|state| {
+                state.add_new_tag(tag(5, 3, "B"))?;
+                state.add_new_tag(tag(2, 1, "AAA"))?;
+                state.add_new_tag(tag(9, 3, "C"))
+            })
+            .unwrap();
+        let positions = |document: &Document| document.with_state(|state| state.get_buffer().tags.iter().map(|tag| tag.position).collect::<Vec<_>>());
+
+        assert!(document.select_next_tag(false));
+        assert_eq!(document.selected_tags, vec![1], "Tab starts at the first tag in reading order");
+        assert!(document.select_next_tag(false));
+        assert_eq!(document.selected_tags, vec![0]);
+        assert!(document.select_next_tag(true));
+        assert!(document.select_next_tag(true));
+        assert_eq!(document.selected_tags, vec![2], "Shift+Tab wraps around");
+        assert_eq!(document.with_state(|state| state.get_caret().position()), Position::new(9, 3));
+
+        document.selected_tags = vec![1, 2];
+        assert!(document.nudge_selected_tags(Position::new(1, 1)).unwrap());
+        assert_eq!(positions(&document), [Position::new(5, 3), Position::new(3, 2), Position::new(10, 4)]);
+        document.nudge_selected_tags(Position::new(-10, 0)).unwrap();
+        assert_eq!(positions(&document)[1], Position::new(0, 2), "tags stay on the canvas and keep their layout");
+        assert_eq!(positions(&document)[2], Position::new(7, 4));
+        document.undo().unwrap();
+        assert_eq!(positions(&document)[1], Position::new(3, 2), "a nudge is one undo step");
+
+        let text = document.copy_selected_tags().unwrap();
+        assert_eq!(text, "AAA C");
+        document.with_state(|state| state.set_caret_from_document_position(Position::new(15, 8)));
+        assert!(!document.paste_tags("something else").unwrap(), "other clipboard content pastes as usual");
+        assert!(document.paste_tags(&text).unwrap());
+        assert_eq!(
+            positions(&document)[3..],
+            [Position::new(15, 8), Position::new(19, 9)],
+            "pasted at the caret, kept on the canvas"
+        );
+        assert_eq!(document.selected_tags, vec![3, 4]);
+
+        document.selected_tags = vec![0];
+        assert!(document.duplicate_selected_tags().unwrap());
+        assert_eq!(positions(&document)[5], Position::new(5, 4));
+        assert_eq!(document.selected_tags, vec![5], "the copy is selected");
+        document.undo().unwrap();
+        assert_eq!(positions(&document).len(), 5, "duplicating is one undo step");
     }
 }
