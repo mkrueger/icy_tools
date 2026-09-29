@@ -123,6 +123,13 @@ The egui frontend currently includes:
   text or control sequences, the original stream is preserved verbatim and its
   commands are read-only; new drawing commands can be appended. External icon references
   are retained in the command list but cannot be previewed safely.
+  The RIP editor has the same animation bar as the IGS editor, sharing its code:
+  play, pause, step, stop, a position slider and a BPS rate (1200 by default) that
+  paces the commands by the time a modem needs to transmit them. The command list
+  follows the animation, marks the current command with a bar, dims commands not
+  drawn yet and runs the animation up to a double-clicked command; the eye button's
+  preview through the selection is the same position. Editing waits until the
+  animation stops.
   The Bézier, button and mouse region icons are adapted from Google's
   [Material Design Icons](https://github.com/google/material-design-icons)
   (`polyline`, `smart_button` and `ads_click`), licensed under
@@ -148,12 +155,46 @@ The egui frontend currently includes:
   selected entry. The property panel edits the parameters of drawing and attribute
   commands, applied without a confirmation. Every entry can also be edited as IGS
   source, where bytes outside printable ASCII are written as `\xNN` (`\r`, `\n`,
-  `\e` and `\\` are accepted too); loops, sound and other commands are edited
-  this way. Random (`r`, `R`) and loop (`x`, `y`) parameters are shown but only
-  changed in the source. Opening and saving keeps the file byte for byte; only
-  edited or new commands are rewritten, one `G#` command per line. Previews use a
+  `\e` and `\\` are accepted too); loops and other commands are edited
+  this way. Sound effect commands offer a named selection of all 20 Atari ST
+  effects (0–19) in the property panel. Random (`r`, `R`) and loop (`x`, `y`)
+  parameters are shown but only changed in the source. Opening and saving keeps
+  the file byte for byte; only edited or new commands are rewritten, one `G#`
+  command per line. Previews use a
   fixed seed for random parameters so they do not flicker, and run loops. Undo/redo,
   autosave and crash recovery work like in the other editors.
+  While the eye button previews through the selected entry, new shapes, templates
+  and pasted commands are inserted after it; attributes changed for a new shape are
+  restored after it, so later shapes look unchanged. Ctrl+C, Ctrl+X and Ctrl+V copy,
+  cut and paste entries as IGS source, and Ctrl+D (or the duplicate button)
+  duplicates one. The **+** button adds loops, pauses, sound effects, chip music,
+  clear screen, initialization, resolution, random range, draw-to, cursor, VT52 text
+  and other commands from templates, to be adjusted in the property panel or source.
+  The resolution box sets the first `R` command (or adds one); an `R` after drawing
+  commands is flagged. **Fill patterns…** draws one of the eight 16 × 16 user
+  patterns (`X 7`) with a tiled preview; applying adds the pattern and selects it
+  for fills, and a selected pattern command is edited in place. The copy area tool
+  drags out an area and places screen-to-screen copies (`G`) with a copy mode, which
+  move like shapes. Mouse zones (`X 4`) are drawn, moved and resized with their own
+  tool like RIP mouse regions, with the host string from the toolbar and the next
+  free zone number. The transport bar plays or pauses the drawing, steps backward
+  and forward through its IGS items, and stops to restore the full canvas. Its
+  position slider jumps to any item, while paused or during playback, without
+  replaying earlier sounds. The command list follows the animation: the current
+  item is selected, scrolled into view and marked with a bar, and items not drawn
+  yet are dimmed; double-clicking an entry runs the animation up to it. The eye
+  button's preview through the selection is the same position: Play continues
+  after the previewed entry, stepping and the slider move the selection, and the
+  eye turns a paused animation into an editable preview through its frame. Stop
+  ends both and shows the whole drawing. Playback
+  waits for IGS pauses, chip music timing and loop delays, draws loops with a delay
+  iteration by iteration as a terminal shows them (e.g. blit animations), and plays
+  sound effects.
+  A selectable BPS rate (1200 by default, or Max for no transmission delay)
+  approximates the time needed to transmit each item's source bytes, so drawings
+  without explicit pauses animate too. After pausing, Play resumes at the next
+  item; after reaching the end, Play starts again at the beginning. Sound commands
+  can also be played from the property panel with the sound table in effect there.
 - Lua animation editing, frame preview/playback, GIF and Asciicast export.
 - Existing Lua plugins, direct Lua scripts, MCP automation, and the headless
   collaboration server.

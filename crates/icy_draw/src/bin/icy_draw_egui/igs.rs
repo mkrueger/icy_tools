@@ -8,16 +8,20 @@ use icy_draw::{
 };
 use icy_engine::Screen;
 use icy_parser_core::{
-    DrawingMode, IgsCommand, IgsItem, IgsParameter, LineKind, LineMarkerStyle, PatternType, PenType, PolymarkerKind, TerminalResolution, TextEffects,
-    TextRotation,
+    BlitMode, BlitOperation, DrawingMode, IgsCommand, IgsItem, IgsParameter, LineKind, LineMarkerStyle, PatternType, PenType, PolymarkerKind,
+    TerminalResolution, TextEffects, TextRotation,
 };
 use std::path::Path;
 
+use super::playback::{Action, RowMark, Timeline, Transport};
 use super::widgets::{self, Icons};
 
 #[path = "igs_palette.rs"]
 mod palette;
 use palette::{PaletteDialog, PaletteResult};
+#[path = "igs_pattern.rs"]
+mod pattern;
+use pattern::{PatternDialog, PatternResult};
 #[path = "igs_properties.rs"]
 mod properties;
 #[path = "igs_select.rs"]
@@ -49,10 +53,12 @@ enum Tool {
     Polygon,
     FloodFill,
     Text,
+    CopyArea,
+    Zone,
 }
 
 impl Tool {
-    const ALL: [Self; 16] = [
+    const ALL: [Self; 18] = [
         Self::Select,
         Self::Marker,
         Self::Line,
@@ -69,6 +75,8 @@ impl Tool {
         Self::Polygon,
         Self::FloodFill,
         Self::Text,
+        Self::CopyArea,
+        Self::Zone,
     ];
 
     fn label(self) -> String {
@@ -89,6 +97,8 @@ impl Tool {
             Self::Polygon => fl!("igs-tool-polygon"),
             Self::FloodFill => fl!("igs-tool-flood-fill"),
             Self::Text => fl!("igs-tool-text"),
+            Self::CopyArea => fl!("igs-tool-copy-area"),
+            Self::Zone => fl!("igs-tool-zone"),
         }
     }
 
@@ -108,13 +118,15 @@ impl Tool {
             Self::Polygon => "rip_polygon_filled",
             Self::FloodFill => "fill",
             Self::Text => "text",
+            Self::CopyArea => "select",
+            Self::Zone => "rip_mouse",
         }
     }
 
     /// The pen the shape is drawn with.
     fn pen(self) -> Option<PenType> {
         Some(match self {
-            Self::Select => return None,
+            Self::Select | Self::CopyArea | Self::Zone => return None,
             Self::Marker => PenType::Polymarker,
             Self::Line | Self::PolyLine | Self::Arc | Self::EllipticalArc => PenType::Line,
             Self::Text => PenType::Text,
@@ -142,7 +154,7 @@ impl Tool {
     fn is_dragged(self) -> bool {
         !matches!(
             self,
-            Self::Select | Self::Marker | Self::FloodFill | Self::Text | Self::PolyLine | Self::Polygon
+            Self::Select | Self::Marker | Self::FloodFill | Self::Text | Self::PolyLine | Self::Polygon | Self::CopyArea | Self::Zone
         )
     }
 
@@ -154,7 +166,7 @@ impl Tool {
         let (dx, dy) = (x1 - x0, y1 - y0);
         let radius = (dx as f32).hypot(dy as f32).round() as i32;
         Some(match self {
-            Self::Select | Self::Text | Self::PolyLine | Self::Polygon => return None,
+            Self::Select | Self::Text | Self::PolyLine | Self::Polygon | Self::CopyArea | Self::Zone => return None,
             Self::Marker => IgsCommand::PolymarkerPlot { x: v(x1), y: v(y1) },
             Self::FloodFill => IgsCommand::FloodFill { x: v(x1), y: v(y1) },
             Self::Line => IgsCommand::Line {
@@ -248,8 +260,202 @@ fn shape_tool(command: &IgsCommand) -> Option<Tool> {
         IgsCommand::PolyFill { .. } => Tool::Polygon,
         IgsCommand::FloodFill { .. } => Tool::FloodFill,
         IgsCommand::WriteText { .. } => Tool::Text,
+        IgsCommand::GrabScreen {
+            operation: BlitOperation::ScreenToScreen { .. },
+            ..
+        } => Tool::CopyArea,
+        IgsCommand::DefineZone { zone_id, .. } if !(9997..=9999).contains(zone_id) => Tool::Zone,
         _ => return None,
     })
+}
+
+fn is_zone(command: &IgsCommand) -> bool {
+    shape_tool(command) == Some(Tool::Zone)
+}
+
+fn blit_mode_name(mode: BlitMode) -> String {
+    match mode {
+        BlitMode::Replace => fl!("igs-mode-replace"),
+        BlitMode::Transparent => fl!("igs-mode-transparent"),
+        BlitMode::Xor => fl!("igs-mode-xor"),
+        BlitMode::ReverseTransparent => fl!("igs-mode-reverse-transparent"),
+        BlitMode::And => fl!("igs-blit-and"),
+        BlitMode::NotS => fl!("igs-blit-invert"),
+        other => format!("{other:?}"),
+    }
+}
+
+fn sound_name(effect: usize) -> String {
+    icy_engine_gui::music::sound_effects::sound_name(effect).map_or_else(|| effect.to_string(), str::to_owned)
+}
+
+/// The GIST sound table of 20 effects, changed by `b>20`, restored by `b>22`, and how often
+/// the first five effects repeat (`b>23`).
+#[derive(Clone, Debug, PartialEq)]
+struct SoundTable {
+    effects: Vec<Vec<i16>>,
+    loops: u32,
+}
+
+impl SoundTable {
+    fn new() -> Self {
+        Self {
+            effects: (0..20)
+                .map(|index| icy_engine_gui::music::sound_effects::sound_data(index).map_or_else(|| vec![0; 56], |data| data.to_vec()))
+                .collect(),
+            loops: 1,
+        }
+    }
+
+    /// The table in effect before item `index`.
+    fn before(items: &[IgsItem], index: usize) -> Self {
+        let mut table = Self::new();
+        for command in items[..index.min(items.len())].iter().filter_map(IgsItem::command) {
+            table.apply(command);
+        }
+        table
+    }
+
+    fn apply(&mut self, command: &IgsCommand) {
+        match command {
+            IgsCommand::AlterSoundEffect {
+                sound_effect,
+                element_num,
+                negative_flag,
+                thousands,
+                hundreds,
+                ..
+            } => {
+                let value = i32::from((*thousands).min(32)) * 1000 + i32::from(*hundreds);
+                let value = if *negative_flag != 0 { -value } else { value };
+                if let Some(word) = self
+                    .effects
+                    .get_mut((*sound_effect as usize).min(19))
+                    .and_then(|effect| effect.get_mut(*element_num as usize))
+                {
+                    *word = value as i16;
+                }
+            }
+            IgsCommand::RestoreSoundEffect { sound_effect } => {
+                let index = (*sound_effect as usize).min(19);
+                self.effects[index] = Self::new().effects[index].clone();
+            }
+            IgsCommand::SetEffectLoops { count } => self.loops = *count,
+            _ => {}
+        }
+    }
+
+    /// What `command` plays with this table.
+    fn sounds(&self, command: &IgsCommand) -> Vec<Sound> {
+        match command {
+            IgsCommand::BellsAndWhistles { sound_effect } => {
+                let index = (*sound_effect as usize).min(19);
+                let repeats = if index <= 4 { self.loops.clamp(1, 16) } else { 1 };
+                (0..repeats).map(|_| Sound::Gist(self.effects[index].clone())).collect()
+            }
+            IgsCommand::AlterSoundEffect { play: true, sound_effect, .. } => {
+                let mut table = self.clone();
+                table.apply(command);
+                vec![Sound::Gist(table.effects[(*sound_effect as usize).min(19)].clone())]
+            }
+            IgsCommand::ChipMusic {
+                sound_effect,
+                voice,
+                volume,
+                pitch,
+                ..
+            } if *pitch > 0 => vec![Sound::Chip {
+                data: self.effects[(*sound_effect as usize).min(19)].clone(),
+                voice: *voice,
+                volume: *volume,
+                pitch: *pitch,
+            }],
+            IgsCommand::StopAllSound => vec![Sound::StopAll],
+            _ => Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum Sound {
+    Gist(Vec<i16>),
+    Chip { data: Vec<i16>, voice: u8, volume: u8, pitch: u8 },
+    StopAll,
+}
+
+/// The audio output, opened on the first sound.
+#[derive(Default)]
+struct SoundPlayer {
+    #[cfg(not(test))]
+    thread: Option<icy_engine_gui::music::SoundThread>,
+    #[cfg(test)]
+    played: Vec<Sound>,
+}
+
+impl SoundPlayer {
+    fn play(&mut self, sounds: Vec<Sound>) {
+        #[cfg(test)]
+        self.played.extend(sounds);
+        #[cfg(not(test))]
+        for sound in sounds {
+            let thread = self.thread.get_or_insert_with(icy_engine_gui::music::SoundThread::new);
+            let _ = match sound {
+                Sound::Gist(data) => thread.play_gist(data),
+                Sound::Chip { data, voice, volume, pitch } => thread.play_chip_music(data, voice, volume, pitch),
+                Sound::StopAll => thread.stop_snd_all(),
+            };
+        }
+    }
+
+    fn stop(&mut self) {
+        #[cfg(test)]
+        self.played.push(Sound::StopAll);
+        #[cfg(not(test))]
+        if let Some(thread) = &mut self.thread {
+            let _ = thread.stop_snd_all();
+        }
+    }
+}
+
+/// How many timed steps a terminal shows `command` in: a loop with a delay pauses after
+/// every iteration, everything else is drawn at once.
+fn steps(command: &IgsCommand) -> usize {
+    match command {
+        IgsCommand::Loop(data) if data.delay > 0 && data.step != 0 && !data.params.is_empty() => ((data.to - data.from).abs() / data.step.abs() + 1) as usize,
+        _ => 1,
+    }
+}
+
+/// How long the terminal waits after each step of `command`.
+fn delay_ms(command: &IgsCommand) -> u64 {
+    match command {
+        IgsCommand::Pause { pause_type } => pause_type.ms(),
+        IgsCommand::ChipMusic { timing, .. } => (*timing).max(0) as u64 * 5,
+        // The delay is in 1/200 seconds.
+        IgsCommand::Loop(data) if data.delay > 0 => data.delay as u64 * 5,
+        _ => 0,
+    }
+}
+
+/// The IGS items as a terminal receives and shows them.
+struct IgsTimeline<'a>(&'a IgsDocument);
+
+impl Timeline for IgsTimeline<'_> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn transmitted_bytes(&self, index: usize) -> usize {
+        self.0.item_source(index).map_or(0, |bytes| bytes.len())
+    }
+
+    fn steps(&self, index: usize) -> usize {
+        self.0.command(index).map_or(1, steps)
+    }
+
+    fn step_delay(&self, index: usize) -> f64 {
+        self.0.command(index).map_or(0, delay_ms) as f64 / 1000.0
+    }
 }
 
 /// Bytes as Latin-1 text, the way the Atari ST character set maps printable characters.
@@ -367,6 +573,11 @@ fn item_name(item: &IgsItem) -> String {
         IgsCommand::Loop(_) => fl!("igs-command-loop"),
         IgsCommand::Pause { .. } => fl!("igs-command-pause"),
         IgsCommand::LineDrawTo { .. } => fl!("igs-command-draw-to"),
+        IgsCommand::LoadFillPattern { .. } => fl!("igs-command-fill-pattern"),
+        IgsCommand::BellsAndWhistles { .. } | IgsCommand::AlterSoundEffect { .. } => fl!("igs-command-sound"),
+        IgsCommand::ChipMusic { .. } => fl!("igs-command-chip-music"),
+        IgsCommand::StopAllSound => fl!("igs-command-stop-sound"),
+        IgsCommand::DefineZone { .. } => fl!("igs-command-clear-zones"),
         // Other commands are named after their variant, without the parameters.
         other => {
             let debug = format!("{other:?}");
@@ -409,6 +620,24 @@ fn item_summary(item: &IgsItem) -> String {
         IgsCommand::SetResolution { resolution, .. } => resolution_name(*resolution),
         IgsCommand::Loop(data) => format!("{} → {} · {}", data.from, data.to, data.step),
         IgsCommand::Pause { pause_type } => format!("{} ms", pause_type.ms()),
+        IgsCommand::LoadFillPattern { pattern, .. } => fl!("igs-pattern-slot-summary", slot = pattern),
+        IgsCommand::BellsAndWhistles { sound_effect } | IgsCommand::AlterSoundEffect { sound_effect, .. } => sound_name(*sound_effect as usize),
+        IgsCommand::ChipMusic {
+            sound_effect, voice, pitch, ..
+        } => format!("{} · {voice} · {pitch}", sound_name(*sound_effect as usize)),
+        IgsCommand::DefineZone { zone_id, string, .. } if !(9997..=9999).contains(zone_id) => format!("{zone_id} · \"{}\"", latin1(string)),
+        IgsCommand::GrabScreen {
+            operation:
+                BlitOperation::ScreenToScreen {
+                    src_x1,
+                    src_y1,
+                    src_x2,
+                    src_y2,
+                    dest_x,
+                    dest_y,
+                },
+            ..
+        } => format!("{src_x1}, {src_y1} → {src_x2}, {src_y2} ⇒ {dest_x}, {dest_y}"),
         _ => describe(command).unwrap_or_default(),
     }
 }
@@ -426,6 +655,8 @@ fn item_icon(item: &IgsItem) -> Option<&'static str> {
         IgsCommand::TextEffects { .. } => "font",
         IgsCommand::Loop(_) => "repeat",
         IgsCommand::Pause { .. } => "pause",
+        IgsCommand::LoadFillPattern { .. } => "fill",
+        IgsCommand::BellsAndWhistles { .. } | IgsCommand::AlterSoundEffect { .. } | IgsCommand::ChipMusic { .. } | IgsCommand::StopAllSound => "play",
         IgsCommand::LineDrawTo { .. } => "line",
         _ => return None,
     })
@@ -438,6 +669,80 @@ fn item_swatch(item: &IgsItem, palette: &icy_engine::Palette, resolution: Termin
         IgsCommand::SetPenColor { red, green, blue, .. } => Some(Color32::from_rgb(red.min(&7) * 34, green.min(&7) * 34, blue.min(&7) * 34)),
         _ => None,
     }
+}
+
+/// Commands offered by the Add menu, as IGS source.
+fn templates() -> Vec<(String, &'static [u8])> {
+    vec![
+        (fl!("igs-template-loop"), b"G#&>10,100,10,0,O,3,x,100,x:"),
+        (fl!("igs-template-pause-seconds"), b"G#t>1:"),
+        (fl!("igs-template-pause-vsync"), b"G#q>30:"),
+        (fl!("igs-template-sound"), b"G#b>0:"),
+        (fl!("igs-template-chip-music"), b"G#n>0,0,15,40,50,0:"),
+        (fl!("igs-template-effect-loops"), b"G#b>23,2:"),
+        (fl!("igs-template-stop-sound"), b"G#b>21:"),
+        (fl!("igs-template-clear"), b"G#s>4:"),
+        (fl!("igs-template-initialize"), b"G#I>0:"),
+        (fl!("igs-template-resolution"), b"G#R>0,2:"),
+        (fl!("igs-template-random-range"), b"G#X>2,0,100:"),
+        (fl!("igs-template-draw-to-start"), b"G#X>10,0,0:"),
+        (fl!("igs-template-draw-to"), b"G#D>100,100:"),
+        (fl!("igs-template-clear-zones"), b"G#X>4,9999:"),
+        (fl!("igs-template-cursor-off"), b"G#k>0:"),
+        (fl!("igs-template-position-cursor"), b"G#p>0,0:"),
+        (fl!("igs-template-text-color"), b"G#c>1,3:"),
+        (fl!("igs-template-text"), b"Hello, Atari!"),
+    ]
+}
+
+/// The value of an attribute in `state`: the VDI default when it was never set, unless a
+/// loop may have changed it.
+fn known<T>(value: Option<T>, default: T, state: &IgsDrawState) -> Option<T> {
+    match value {
+        Some(value) => Some(value),
+        None if state.uncertain => None,
+        None => Some(default),
+    }
+}
+
+/// The command that brings back the attribute `changed` modifies, as it is in `state`.
+fn restore(changed: &IgsCommand, state: &IgsDrawState) -> Option<IgsCommand> {
+    // Pen 1 draws with the default foreground register in every resolution.
+    Some(match changed {
+        IgsCommand::ColorSet { pen, .. } => IgsCommand::ColorSet {
+            pen: *pen,
+            color: known(
+                match pen {
+                    PenType::Line => state.line_color,
+                    PenType::Fill => state.fill_color,
+                    PenType::Text => state.text_color,
+                    PenType::Polymarker => state.marker_color,
+                },
+                1,
+                state,
+            )?,
+        },
+        IgsCommand::SetLineOrMarkerStyle {
+            style: LineMarkerStyle::PolyMarkerSize(..),
+        } => IgsCommand::SetLineOrMarkerStyle {
+            style: known(state.marker, LineMarkerStyle::PolyMarkerSize(PolymarkerKind::Point, 1), state)?,
+        },
+        IgsCommand::SetLineOrMarkerStyle { .. } => IgsCommand::SetLineOrMarkerStyle {
+            style: known(state.line, LineMarkerStyle::LineThickness(LineKind::Solid, 1), state)?,
+        },
+        IgsCommand::AttributeForFills { .. } => {
+            let (pattern_type, border) = known(state.fill, (PatternType::Solid, false), state)?;
+            IgsCommand::AttributeForFills { pattern_type, border }
+        }
+        IgsCommand::TextEffects { .. } => {
+            let (effects, size, rotation) = known(state.text, (TextEffects::NORMAL, 9, TextRotation::Degrees0), state)?;
+            IgsCommand::TextEffects { effects, size, rotation }
+        }
+        IgsCommand::DrawingMode { .. } => IgsCommand::DrawingMode {
+            mode: known(state.drawing_mode, DrawingMode::Replace, state)?,
+        },
+        _ => return None,
+    })
 }
 
 /// Tool settings: the attributes new shapes are drawn with.
@@ -459,6 +764,9 @@ struct Attributes {
     text_rotation: TextRotation,
     start_angle: i32,
     end_angle: i32,
+    blit_mode: BlitMode,
+    /// The host string of new mouse zones.
+    zone_host: String,
 }
 
 impl Default for Attributes {
@@ -480,6 +788,8 @@ impl Default for Attributes {
             text_rotation: TextRotation::Degrees0,
             start_angle: 0,
             end_angle: 90,
+            blit_mode: BlitMode::Replace,
+            zone_host: String::new(),
         }
     }
 }
@@ -558,12 +868,16 @@ impl TextEdit {
     }
 }
 
-/// What the canvas shows besides the document.
+/// What the canvas shows: the document with one command replaced and `extra` inserted at
+/// `at`, cut after the item at `through`.
 #[derive(Clone, Debug, PartialEq)]
-enum PreviewRequest {
-    Through(Option<usize>),
-    With(Vec<IgsCommand>),
-    Replacing(usize, IgsCommand),
+struct PreviewRequest {
+    through: Option<usize>,
+    replace: Option<(usize, IgsCommand)>,
+    at: usize,
+    extra: Vec<IgsCommand>,
+    /// The steps of the last shown item drawn so far, e.g. iterations of a playing loop.
+    steps: Option<usize>,
 }
 
 pub struct IgsEditor {
@@ -578,6 +892,13 @@ pub struct IgsEditor {
     attributes: Attributes,
     icons: Icons,
     palette_dialog: Option<PaletteDialog>,
+    pattern_dialog: Option<PatternDialog>,
+    /// The area the copy tool copies, until the copy is placed.
+    copy_source: Option<(Point, Point)>,
+    transport: Transport,
+    /// The GIST sound table the running animation plays with.
+    sound_table: SoundTable,
+    sound: SoundPlayer,
     poly: Vec<Point>,
     text_edit: Option<TextEdit>,
     shape_drag: Option<ShapeDrag>,
@@ -617,6 +938,11 @@ impl IgsEditor {
             attributes: Attributes::default(),
             icons: Icons::default(),
             palette_dialog: None,
+            pattern_dialog: None,
+            copy_source: None,
+            transport: Transport::default(),
+            sound_table: SoundTable::new(),
+            sound: SoundPlayer::default(),
             poly: Vec::new(),
             text_edit: None,
             shape_drag: None,
@@ -669,9 +995,13 @@ impl IgsEditor {
     }
 
     pub fn undo(&mut self, redo: bool) {
-        // Both hold item indices that undo and redo may shift.
+        if self.animating() {
+            self.stop_playback();
+        }
+        // These hold item indices that undo and redo may shift.
         self.shape_drag = None;
         self.drag = None;
+        self.pattern_dialog = None;
         // Undo first drops an unfinished path or text.
         let pending = !self.poly.is_empty() || self.text_edit.take().is_some();
         self.poly.clear();
@@ -690,13 +1020,10 @@ impl IgsEditor {
 
     fn select_tool(&mut self, tool: Tool) {
         self.finish_pending();
+        self.copy_source = None;
         self.tool = tool;
         self.drag = None;
         self.shape_drag = None;
-    }
-
-    fn state_at_end(&self) -> IgsDrawState {
-        self.document.state_before(self.document.len())
     }
 
     /// The command and geometry of a shape, including a drag in progress.
@@ -705,6 +1032,10 @@ impl IgsEditor {
             Some(drag) if drag.index == index => drag.current.clone(),
             _ => self.document.command(index)?.clone(),
         };
+        // Mouse zones are only shown and picked with their tool, and only them.
+        if is_zone(&command) != (self.tool == Tool::Zone) {
+            return None;
+        }
         // Only text needs the attributes in effect, which takes a scan of the commands before it.
         let text_size = match command {
             IgsCommand::WriteText { .. } => self.document.state_before(index).text.map_or(9, |(_, size, _)| size),
@@ -796,10 +1127,27 @@ impl IgsEditor {
         }
     }
 
-    /// Attribute commands for `tool` followed by `shape`.
+    /// Where new commands go: after the selection while previewing through it, otherwise at
+    /// the end.
+    fn insertion_index(&self) -> usize {
+        let len = self.document.len();
+        match self.selected.filter(|_| self.preview_to_selection) {
+            Some(index) => (index + 1).min(len),
+            None => len,
+        }
+    }
+
+    /// Attribute commands for `tool` followed by `shape`. Inserted before other items, the
+    /// changed attributes are restored after it so that later items look unchanged.
     fn with_attributes(&self, tool: Tool, shape: IgsCommand) -> Vec<IgsCommand> {
-        let mut commands = self.attributes.commands(tool, &self.state_at_end());
+        let index = self.insertion_index();
+        let state = self.document.state_before(index);
+        let mut commands = self.attributes.commands(tool, &state);
+        let changed = commands.clone();
         commands.push(shape);
+        if index < self.document.len() {
+            commands.extend(changed.iter().filter_map(|command| restore(command, &state)));
+        }
         commands
     }
 
@@ -815,18 +1163,128 @@ impl IgsEditor {
         self.with_attributes(Tool::Text, edit.command())
     }
 
-    /// Appends commands as one undo step and selects the last one.
+    /// Inserts commands as one undo step and selects the shape among them, or the last one.
     fn add_commands(&mut self, commands: Vec<IgsCommand>) {
         if commands.is_empty() {
             return;
         }
         self.commit_properties();
-        let result = self.document.append_many(commands);
+        let index = self.insertion_index();
+        let state = self.document.state_before(index);
+        let unrestored = index < self.document.len()
+            && commands
+                .iter()
+                .any(|command| restore(command, &state).is_none() && restore(command, &IgsDrawState::default()).is_some());
+        let offset = commands.iter().rposition(|command| shape_tool(command).is_some()).unwrap_or(commands.len() - 1);
+        let result = self.document.insert_many(index, commands);
         if self.set_error(result) {
-            self.selected = self.document.len().checked_sub(1);
+            self.selected = Some(index + offset);
+            self.editing = None;
+            self.source = None;
+            if unrestored {
+                self.error = Some(fl!("igs-insert-after-loop-warning"));
+            }
+        }
+    }
+
+    /// Inserts IGS source, e.g. pasted text or a template, and selects the last inserted item.
+    fn insert_source(&mut self, source: &[u8]) {
+        self.finish_pending();
+        self.commit_properties();
+        let index = self.insertion_index();
+        match self.document.insert_source(index, source) {
+            Ok(count) => {
+                self.error = None;
+                self.selected = Some(index + count - 1);
+                self.editing = None;
+                self.source = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    /// The selected item as escaped IGS source, for the clipboard.
+    fn copy_selected(&self) -> Option<String> {
+        let index = self.selected.filter(|index| *index < self.document.len())?;
+        self.document.range_source(index..index + 1).ok().map(|bytes| properties::escape(&bytes))
+    }
+
+    fn paste(&mut self, text: &str) {
+        match properties::unescape(text) {
+            Some(bytes) => self.insert_source(&bytes),
+            None => self.error = Some(fl!("igs-editor-invalid-escape")),
+        }
+    }
+
+    pub fn duplicate_selected(&mut self) {
+        let Some(index) = self.selected.filter(|index| *index < self.document.len()) else {
+            return;
+        };
+        self.finish_pending();
+        self.commit_properties();
+        let result = self
+            .document
+            .range_source(index..index + 1)
+            .and_then(|bytes| self.document.insert_source(index + 1, &bytes));
+        match result {
+            Ok(count) => {
+                self.error = None;
+                self.selected = Some(index + count);
+                self.editing = None;
+                self.source = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    pub fn has_selection(&self) -> bool {
+        self.selected.is_some_and(|index| index < self.document.len())
+    }
+
+    pub fn delete_selection(&mut self) {
+        self.delete_selected();
+    }
+
+    /// Selects the resolution the drawing starts in: the first `R` command, or a new one.
+    fn set_resolution(&mut self, resolution: TerminalResolution) {
+        self.finish_pending();
+        self.commit_properties();
+        let first = self
+            .document
+            .items()
+            .iter()
+            .position(|item| matches!(item.command(), Some(IgsCommand::SetResolution { .. })));
+        let inserted = first.is_none();
+        let result = match first.and_then(|index| Some((index, self.document.command(index)?.clone()))) {
+            Some((index, IgsCommand::SetResolution { palette, .. })) => self.document.replace(index, IgsCommand::SetResolution { resolution, palette }),
+            _ => self.document.insert(
+                0,
+                IgsCommand::SetResolution {
+                    resolution,
+                    palette: icy_parser_core::PaletteMode::IgDefault,
+                },
+            ),
+        };
+        if self.set_error(result) {
+            if inserted {
+                self.selected = self.selected.map(|index| index + 1);
+                self.listed_selection = self.listed_selection.map(|index| index + 1);
+            }
             self.editing = None;
             self.source = None;
         }
+    }
+
+    /// The resolution the drawing starts in, the one the resolution box edits.
+    fn start_resolution(&self) -> TerminalResolution {
+        self.document
+            .items()
+            .iter()
+            .find_map(|item| match item.command() {
+                Some(IgsCommand::SetResolution { resolution, .. }) => Some(*resolution),
+                _ => None,
+            })
+            .unwrap_or(icy_draw::igs_document::DEFAULT_RESOLUTION)
     }
 
     fn add_shape(&mut self, from: Point, to: Point) {
@@ -882,7 +1340,10 @@ impl IgsEditor {
                 }
             }
         };
-        self.select_item(edit.index);
+        // New text is inserted after the selection while previewing through it.
+        if edit.index.is_some() || !self.preview_to_selection {
+            self.select_item(edit.index);
+        }
         self.text_edit = Some(edit);
     }
 
@@ -941,7 +1402,16 @@ impl IgsEditor {
     }
 
     fn cancel(&mut self) {
-        if !self.poly.is_empty() || self.text_edit.take().is_some() || self.drag.take().is_some() || self.shape_drag.take().is_some() {
+        if self.animating() {
+            self.stop_playback();
+            return;
+        }
+        if !self.poly.is_empty()
+            || self.text_edit.take().is_some()
+            || self.drag.take().is_some()
+            || self.shape_drag.take().is_some()
+            || self.copy_source.take().is_some()
+        {
             self.poly.clear();
         } else {
             self.select_item(None);
@@ -953,10 +1423,229 @@ impl IgsEditor {
         self.palette_dialog = Some(PaletteDialog::new(&self.palette, self.canvas.resolution));
     }
 
+    /// Edits the user fill pattern command at `target`, or a new one for the tool's pattern slot.
+    fn open_pattern_dialog(&mut self, target: Option<usize>) {
+        self.finish_pending();
+        self.commit_properties();
+        let dialog = match target.and_then(|index| Some((index, self.document.command(index)?.clone()))) {
+            Some((index, IgsCommand::LoadFillPattern { pattern, data })) => {
+                let mut rows = [0; 16];
+                for (row, word) in rows.iter_mut().zip(&data) {
+                    *row = *word;
+                }
+                PatternDialog::new(pattern, rows, Some(index))
+            }
+            _ => {
+                let slot = match self.attributes.pattern {
+                    PatternType::UserDefined(slot) => slot.min(7),
+                    _ => 0,
+                };
+                PatternDialog::new(slot, self.pattern_before(slot), None)
+            }
+        };
+        self.pattern_dialog = Some(dialog);
+    }
+
+    /// The user pattern of `slot` where new commands are inserted.
+    fn pattern_before(&self, slot: u8) -> [u16; 16] {
+        pattern::pattern_before(self.document.items()[..self.insertion_index()].iter().filter_map(IgsItem::command), slot)
+    }
+
+    fn apply_pattern(&mut self, dialog: PatternDialog) {
+        match dialog.target {
+            Some(index) if matches!(self.document.command(index), Some(IgsCommand::LoadFillPattern { .. })) => self.replace_command(index, dialog.command()),
+            Some(_) => {}
+            None => {
+                self.add_commands(vec![dialog.command()]);
+                self.attributes.pattern = PatternType::UserDefined(dialog.slot());
+            }
+        }
+    }
+
+    /// The copy of the selected area placed with its top left corner at `at`.
+    fn copy_command(&self, at: Point) -> Option<IgsCommand> {
+        let ((x0, y0), (x1, y1)) = self.copy_source?;
+        let (width, height) = (x1 - x0, y1 - y0);
+        Some(IgsCommand::GrabScreen {
+            operation: BlitOperation::ScreenToScreen {
+                src_x1: x0,
+                src_y1: y0,
+                src_x2: x1,
+                src_y2: y1,
+                dest_x: at.0.min(self.canvas.width - 1 - width).max(0),
+                dest_y: at.1.min(self.canvas.height - 1 - height).max(0),
+            },
+            mode: self.attributes.blit_mode,
+        })
+    }
+
+    /// The lowest zone number not used yet.
+    fn next_zone_id(&self) -> i32 {
+        let used: Vec<i32> = self
+            .document
+            .items()
+            .iter()
+            .filter_map(|item| match item.command() {
+                Some(IgsCommand::DefineZone { zone_id, .. }) => Some(*zone_id),
+                _ => None,
+            })
+            .collect();
+        (0..9997).find(|id| !used.contains(id)).unwrap_or(0)
+    }
+
+    fn zone_command(&self, from: Point, to: Point) -> IgsCommand {
+        let v = IgsParameter::Value;
+        let string = self.attributes.zone_host.bytes().filter(|byte| (0x20..0x7F).contains(byte)).collect::<Vec<_>>();
+        IgsCommand::DefineZone {
+            zone_id: self.next_zone_id(),
+            x1: v(from.0.min(to.0)),
+            y1: v(from.1.min(to.1)),
+            x2: v(from.0.max(to.0)),
+            y2: v(from.1.max(to.1)),
+            length: string.len() as u16,
+            string,
+        }
+    }
+
+    fn add_zone(&mut self, from: Point, to: Point) {
+        if (from.0 - to.0).abs() < 2 || (from.1 - to.1).abs() < 2 {
+            return;
+        }
+        if self.attributes.zone_host.trim().is_empty() {
+            self.error = Some(fl!("igs-zone-host-required"));
+            return;
+        }
+        let command = self.zone_command(from, to);
+        self.add_commands(vec![command]);
+    }
+
+    /// Plays a sound command with the sound table in effect before it.
+    fn play_sound(&mut self, index: usize) {
+        let Some(command) = self.document.command(index) else {
+            return;
+        };
+        let sounds = SoundTable::before(self.document.items(), index).sounds(command);
+        self.sound.play(sounds);
+    }
+
+    /// Whether the animation plays or is paused at a frame; editing waits until it stops.
+    fn animating(&self) -> bool {
+        self.transport.animating()
+    }
+
+    /// The item the canvas shows the drawing through: the animation frame, or the selection
+    /// while previewing through it.
+    fn frame(&self) -> Option<usize> {
+        self.transport.frame(self.selected.filter(|_| self.preview_to_selection), self.document.len())
+    }
+
+    /// Selects the animation frame whenever it moves, so the command list follows playback.
+    fn sync_selection(&mut self) {
+        let frame = self.frame();
+        if let Some(frame) = self.transport.follow(frame).filter(|frame| self.selected != Some(*frame)) {
+            self.selected = Some(frame);
+            self.editing = None;
+            self.source = None;
+        }
+    }
+
+    /// Turns a paused or playing animation into a preview through its frame, where the drawing
+    /// can be edited, or turns the preview off.
+    fn toggle_preview(&mut self) {
+        if self.animating() {
+            let frame = self.transport.end_for_preview(self.document.len());
+            self.sound.stop();
+            self.select_item(frame);
+            self.preview_to_selection = frame.is_some();
+        } else {
+            self.preview_to_selection = !self.preview_to_selection;
+        }
+    }
+
+    /// Applies a transport action, with the sounds of the items it reaches.
+    fn transport_action(&mut self, action: Action, now: f64) {
+        if action != Action::Stop {
+            self.finish_pending();
+            self.commit_properties();
+        }
+        let preview = self.selected.filter(|_| self.preview_to_selection);
+        let outcome = self.transport.apply(action, &IgsTimeline(&self.document), preview, now);
+        if outcome.silence {
+            self.sound.stop();
+        }
+        if outcome.stopped {
+            self.preview_to_selection = false;
+        }
+        if let Some(index) = outcome.select {
+            self.select_item(Some(index));
+        }
+        if let Some(index) = outcome.started {
+            self.sound_table = SoundTable::before(self.document.items(), index);
+            self.enter_item(index);
+        }
+        if let Some(command) = outcome.stepped.and_then(|index| Some((index, self.document.command(index)?))) {
+            let (index, command) = command;
+            self.sound.play(SoundTable::before(self.document.items(), index).sounds(command));
+        }
+        if let Some(index) = outcome.jumped {
+            self.sound_table = SoundTable::before(self.document.items(), index + 1);
+        }
+    }
+
+    /// Starts at the next item after the paused frame, or pauses at the current frame.
+    #[cfg(test)]
+    fn toggle_playback(&mut self, now: f64) {
+        self.transport_action(Action::PlayPause, now);
+    }
+
+    /// Ends the animation and the preview through the selection, showing the whole drawing.
+    fn stop_playback(&mut self) {
+        self.transport_action(Action::Stop, 0.0);
+    }
+
+    /// Seeks one item without replaying the preceding animation or its sounds.
+    #[cfg(test)]
+    fn step_playback(&mut self, forward: bool) {
+        self.transport_action(if forward { Action::Next } else { Action::Previous }, 0.0);
+    }
+
+    /// Jumps to `index`, e.g. from the position slider. Playback continues from there without
+    /// replaying earlier sounds; while paused, the frame is shown.
+    fn seek_playback(&mut self, index: usize, now: f64) {
+        self.transport_action(Action::Seek(index), now);
+    }
+
+    /// Plays the sound of an item the animation reached.
+    fn enter_item(&mut self, index: usize) {
+        if let Some(command) = self.document.command(index).cloned() {
+            self.sound.play(self.sound_table.sounds(&command));
+            self.sound_table.apply(&command);
+        }
+    }
+
+    /// Advances playback to the next item that waits, or ends it after the last item.
+    fn advance_playback(&mut self, context: &egui::Context) {
+        let now = context.input(|input| input.time);
+        let mut entered = Vec::new();
+        let wait = self.transport.advance(&IgsTimeline(&self.document), now, &mut |index| entered.push(index));
+        for index in entered {
+            self.enter_item(index);
+        }
+        if let Some(wait) = wait {
+            context.request_repaint_after(std::time::Duration::from_secs_f64(wait));
+        }
+    }
+
     /// The unfinished shape: a drag in progress, a path or new text.
     fn pending_commands(&self) -> Vec<IgsCommand> {
         if let Some(dialog) = &self.palette_dialog {
             return dialog.commands();
+        }
+        if let Some(dialog) = self.pattern_dialog.as_ref().filter(|dialog| dialog.target.is_none()) {
+            return vec![dialog.command()];
+        }
+        if self.tool == Tool::CopyArea {
+            return self.hover.and_then(|at| self.copy_command(at)).into_iter().collect();
         }
         if let Some(edit) = self.text_edit.as_ref().filter(|edit| edit.index.is_none() && !edit.text.is_empty()) {
             return self.text_commands(edit);
@@ -978,28 +1667,60 @@ impl IgsEditor {
     }
 
     fn preview_request(&self) -> PreviewRequest {
-        if self.preview_to_selection {
-            return PreviewRequest::Through(self.selected);
+        let len = self.document.len();
+        if let Some(index) = self.transport.frame(None, len) {
+            return PreviewRequest {
+                through: Some(index),
+                replace: None,
+                at: len,
+                extra: Vec::new(),
+                steps: self.transport.steps_shown(),
+            };
         }
-        if let Some(drag) = self.shape_drag.as_ref().filter(|drag| drag.current != drag.command) {
-            return PreviewRequest::Replacing(drag.index, drag.current.clone());
-        }
-        if let Some(edit) = &self.text_edit {
-            if let Some(index) = edit
+        let through = self.selected.filter(|_| self.preview_to_selection);
+        let pattern = self.pattern_dialog.as_ref().and_then(|dialog| Some((dialog.target?, dialog.command())));
+        let drag = self
+            .shape_drag
+            .as_ref()
+            .filter(|drag| drag.current != drag.command)
+            .map(|drag| (drag.index, drag.current.clone()));
+        let text = self.text_edit.as_ref().and_then(|edit| {
+            let index = edit
                 .index
-                .filter(|index| matches!(self.document.command(*index), Some(IgsCommand::WriteText { .. })))
-            {
-                return PreviewRequest::Replacing(index, edit.command());
-            }
-        }
-        if let Some((index, draft)) = self
+                .filter(|index| matches!(self.document.command(*index), Some(IgsCommand::WriteText { .. })))?;
+            Some((index, edit.command()))
+        });
+        let draft = self
             .editing
             .as_ref()
             .filter(|(index, draft)| self.document.command(*index).is_some_and(|command| command != draft))
-        {
-            return PreviewRequest::Replacing(*index, draft.clone());
+            .cloned();
+        PreviewRequest {
+            through,
+            replace: pattern.or(drag).or(text).or(draft),
+            at: self.insertion_index(),
+            extra: self.pending_commands(),
+            steps: None,
         }
-        PreviewRequest::With(self.pending_commands())
+    }
+
+    fn render(&self, request: &PreviewRequest) -> Result<icy_draw::igs_document::IgsPreview, icy_draw::igs_document::IgsDocumentError> {
+        let mut items = self.document.items().to_vec();
+        if let Some((index, command)) = &request.replace {
+            if let Some(IgsItem::Command(item)) = items.get_mut(*index) {
+                item.set_command(command.clone());
+            }
+        }
+        let at = request.at.min(items.len());
+        items.splice(at..at, request.extra.iter().cloned().map(IgsItem::from));
+        if let Some(through) = request.through {
+            let mut end = through + 1;
+            if at <= end {
+                end += request.extra.len();
+            }
+            items.truncate(end);
+        }
+        IgsDocument::render_steps(&items, request.steps.filter(|_| request.through.is_some()))
     }
 
     fn refresh_preview(&mut self, context: &egui::Context) {
@@ -1008,12 +1729,7 @@ impl IgsEditor {
         if self.shown.as_ref() == Some(&key) && self.texture.is_some() {
             return;
         }
-        let preview = match &key.1 {
-            PreviewRequest::Through(through) => self.document.preview_through(*through),
-            PreviewRequest::With(extra) if extra.is_empty() => self.document.preview(),
-            PreviewRequest::With(extra) => self.document.preview_with(self.document.len(), extra),
-            PreviewRequest::Replacing(index, command) => self.document.preview_replacing(*index, command),
-        };
+        let preview = self.render(&key.1);
         match preview {
             Ok(preview) => {
                 self.palette = preview.screen().palette().clone();
@@ -1063,7 +1779,7 @@ impl IgsEditor {
 }
 
 /// One line of the command list: number, icon, name and a short summary, never wrapped.
-fn command_row(ui: &mut egui::Ui, icons: &mut Icons, index: usize, item: &IgsItem, selected: bool, swatch: Option<Color32>) -> egui::Response {
+fn command_row(ui: &mut egui::Ui, icons: &mut Icons, index: usize, item: &IgsItem, selected: bool, mark: RowMark, swatch: Option<Color32>) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), COMMAND_ROW_HEIGHT), egui::Sense::click());
     let name = item_name(item);
     response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), selected, &name));
@@ -1077,6 +1793,7 @@ fn command_row(ui: &mut egui::Ui, icons: &mut Icons, index: usize, item: &IgsIte
     } else if response.hovered() {
         painter.rect_filled(rect.shrink2(egui::vec2(2.0, 1.0)), 4, visuals.widgets.hovered.weak_bg_fill);
     }
+    mark.paint_background(ui, rect, selected || response.hovered());
     let invalid = matches!(item, IgsItem::Text(text) if text.invalid);
     let text = if selected {
         visuals.selection.stroke.color
@@ -1087,7 +1804,12 @@ fn command_row(ui: &mut egui::Ui, icons: &mut Icons, index: usize, item: &IgsIte
     } else {
         visuals.text_color()
     };
-    let weak = if selected { text.gamma_multiply(0.7) } else { visuals.weak_text_color() };
+    let text = mark.text(text, selected);
+    let weak = if selected {
+        text.gamma_multiply(0.7)
+    } else {
+        mark.text(visuals.weak_text_color(), false)
+    };
     let center = rect.center().y;
     painter.text(
         egui::pos2(rect.left() + 34.0, center),
@@ -1140,6 +1862,14 @@ fn command_row(ui: &mut egui::Ui, icons: &mut Icons, index: usize, item: &IgsIte
 }
 
 impl IgsEditor {
+    fn transport(&mut self, ui: &mut egui::Ui) {
+        let frame = self.frame();
+        let now = ui.input(|input| input.time);
+        if let Some(action) = self.transport.ui(ui, &mut self.icons, frame, self.document.len(), &IgsTimeline(&self.document)) {
+            self.transport_action(action, now);
+        }
+    }
+
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
@@ -1184,6 +1914,23 @@ impl IgsEditor {
                 Tool::PolyLine | Tool::Polygon => {
                     ui.weak(fl!("igs-poly-hint"));
                 }
+                Tool::CopyArea => {
+                    properties::blit_mode(ui, "igs-tool-blit-mode", &mut attributes.blit_mode);
+                    ui.weak(if self.copy_source.is_some() {
+                        fl!("igs-copy-place-hint")
+                    } else {
+                        fl!("igs-copy-hint")
+                    });
+                }
+                Tool::Zone => {
+                    ui.add(
+                        icy_engine_gui::egui::appearance::text_edit(&mut attributes.zone_host)
+                            .hint_text(fl!("igs-zone-host"))
+                            .desired_width(180.0),
+                    )
+                    .on_hover_text(fl!("igs-zone-host-tooltip"));
+                    ui.weak(fl!("igs-zone-hint"));
+                }
                 Tool::Select => match self.selected_shape() {
                     Some(index) => {
                         let name = self.document.items().get(index).map(item_name).unwrap_or_default();
@@ -1218,7 +1965,21 @@ impl IgsEditor {
             .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::symmetric(6, 6)))
             .show(context, |ui| {
                 ui.add_enabled_ui(!blocked, |ui| {
-                    ui.weak(resolution_name(self.canvas.resolution));
+                    let start = self.start_resolution();
+                    let mut chosen = start;
+                    egui::ComboBox::from_id_salt("igs-resolution")
+                        .width(ui.available_width())
+                        .selected_text(resolution_name(chosen))
+                        .show_ui(ui, |ui| {
+                            for resolution in [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High] {
+                                ui.selectable_value(&mut chosen, resolution, resolution_name(resolution));
+                            }
+                        })
+                        .response
+                        .on_hover_text(fl!("igs-resolution-tooltip"));
+                    if chosen != start {
+                        self.set_resolution(chosen);
+                    }
                     let resolution = self.canvas.resolution;
                     for (id, label, pen) in [
                         ("line", fl!("igs-pen-line"), &mut self.attributes.line_color),
@@ -1241,6 +2002,13 @@ impl IgsEditor {
                     {
                         self.open_palette_dialog();
                     }
+                    if ui
+                        .add(egui::Button::new(fl!("igs-pattern-edit")).min_size(egui::vec2(ui.available_width(), 26.0)))
+                        .on_hover_text(fl!("igs-pattern-edit-tooltip"))
+                        .clicked()
+                    {
+                        self.open_pattern_dialog(None);
+                    }
                     ui.horizontal(|ui| {
                         ui.label(fl!("igs-drawing-mode"));
                     });
@@ -1260,7 +2028,7 @@ impl IgsEditor {
             });
     }
 
-    fn command_list(&mut self, context: &egui::Context, blocked: bool) {
+    fn command_list(&mut self, context: &egui::Context, blocked: bool, editing_blocked: bool) {
         egui::SidePanel::right("igs-commands")
             .default_width(300.0)
             .min_width(220.0)
@@ -1275,8 +2043,9 @@ impl IgsEditor {
                     ui.weak(count.to_string());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
-                        let selected = self.selected.filter(|index| *index < count);
+                        let selected = self.selected.filter(|index| *index < count && !editing_blocked);
                         let mut action = None;
+                        let mut template = None;
                         ui.add_enabled_ui(selected.is_some(), |ui| {
                             if self.icons.button_sized(ui, "delete", &fl!("igs-editor-delete"), false, 26.0).clicked() {
                                 action = Some(0);
@@ -1292,19 +2061,41 @@ impl IgsEditor {
                                 action = Some(-1);
                             }
                         });
+                        ui.add_enabled_ui(selected.is_some(), |ui| {
+                            if self.icons.button_sized(ui, "file_copy", &fl!("igs-editor-duplicate"), false, 26.0).clicked() {
+                                action = Some(2);
+                            }
+                        });
+                        let add = ui
+                            .add_enabled_ui(!editing_blocked, |ui| self.icons.button_sized(ui, "add", &fl!("igs-editor-add"), false, 26.0))
+                            .inner;
+                        egui::Popup::menu(&add).id(egui::Id::new("igs-add-command")).show(|ui| {
+                            ui.set_min_width(220.0);
+                            ui.weak(fl!("igs-editor-add-hint"));
+                            for (name, source) in templates() {
+                                if ui.button(name).clicked() {
+                                    template = Some(source);
+                                    ui.close();
+                                }
+                            }
+                        });
                         widgets::divider(ui);
-                        let through = self.preview_to_selection;
+                        let through = self.preview_to_selection && !self.animating();
                         if self
                             .icons
                             .button_sized(ui, "visibility", &fl!("igs-editor-preview-through"), through, 26.0)
                             .clicked()
                         {
-                            self.preview_to_selection = !through;
+                            self.toggle_preview();
                         }
                         match action {
                             Some(0) => self.delete_selected(),
+                            Some(2) => self.duplicate_selected(),
                             Some(delta) => self.move_selected(delta),
                             None => {}
+                        }
+                        if let Some(source) = template {
+                            self.insert_source(source);
                         }
                     });
                 });
@@ -1324,6 +2115,8 @@ impl IgsEditor {
                     }
                 }
                 let mut clicked = None;
+                let mut double_clicked = None;
+                let frame = self.frame();
                 ui.scope(|ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     scroll.show_rows(ui, COMMAND_ROW_HEIGHT, count, |ui, rows| {
@@ -1333,14 +2126,41 @@ impl IgsEditor {
                                 break;
                             };
                             let swatch = item_swatch(item, &self.palette, self.canvas.resolution);
-                            if command_row(ui, &mut self.icons, index, item, self.selected == Some(index), swatch).clicked() {
+                            let response = command_row(
+                                ui,
+                                &mut self.icons,
+                                index,
+                                item,
+                                self.selected == Some(index),
+                                RowMark::new(index, frame),
+                                swatch,
+                            );
+                            if response.double_clicked() {
+                                double_clicked = Some(index);
+                            } else if response.clicked() {
                                 clicked = Some(index);
                             }
                         }
                     });
                 });
-                if let Some(index) = clicked {
+                if let Some(index) = double_clicked {
+                    // Double-clicking runs the animation up to the item.
+                    self.seek_playback(index, ui.input(|input| input.time));
+                    self.sync_selection();
+                    self.select_item(Some(index));
+                } else if let Some(index) = clicked.filter(|_| editing_blocked) {
+                    self.select_item(Some(index));
+                } else if let Some(index) = clicked {
                     self.finish_text();
+                    // Mouse zones are edited with their own tool, other shapes with the select tool.
+                    let command = self.document.command(index);
+                    let zone = command.is_some_and(is_zone);
+                    let shape = command.is_some_and(|command| shape_tool(command).is_some());
+                    if zone && self.tool != Tool::Zone {
+                        self.select_tool(Tool::Zone);
+                    } else if !zone && shape && self.tool == Tool::Zone {
+                        self.select_tool(Tool::Select);
+                    }
                     self.select_item(Some(index));
                 }
                 self.listed_selection = self.selected;
@@ -1348,7 +2168,7 @@ impl IgsEditor {
                     self.editing = None;
                     self.source = None;
                 }
-                self.property_panel(ui);
+                ui.add_enabled_ui(!editing_blocked, |ui| self.property_panel(ui));
             });
     }
 
@@ -1370,6 +2190,29 @@ impl IgsEditor {
         });
         ui.add_space(4.0);
         let is_loop = matches!(item.command(), Some(IgsCommand::Loop(_)));
+        let mut open_pattern = false;
+        let mut play = false;
+        match item.command() {
+            Some(IgsCommand::LoadFillPattern { .. }) => {
+                open_pattern = ui
+                    .add(egui::Button::new(fl!("igs-pattern-edit")).min_size(egui::vec2(ui.available_width(), 28.0)))
+                    .clicked();
+            }
+            Some(command) if !SoundTable::new().sounds(command).is_empty() => {
+                play = ui
+                    .add(egui::Button::new(fl!("igs-sound-play")).min_size(egui::vec2(ui.available_width(), 28.0)))
+                    .clicked();
+            }
+            _ => {}
+        }
+        if matches!(item.command(), Some(IgsCommand::SetResolution { .. }))
+            && self.document.items()[..index]
+                .iter()
+                .filter_map(IgsItem::command)
+                .any(|command| shape_tool(command).is_some())
+        {
+            ui.colored_label(ui.visuals().warn_fg_color, fl!("igs-resolution-mid-warning"));
+        }
         let mut apply = None;
         let mut apply_source = None;
         let area = egui::ScrollArea::vertical()
@@ -1418,6 +2261,13 @@ impl IgsEditor {
                     });
                 typed
             });
+        if open_pattern {
+            self.open_pattern_dialog(Some(index));
+            return;
+        }
+        if play {
+            self.play_sound(index);
+        }
         if let Some(text) = apply_source {
             self.apply_source(index, &text);
             return;
@@ -1452,24 +2302,41 @@ impl IgsEditor {
 
 impl IgsEditor {
     pub fn show(&mut self, context: &egui::Context, blocked: bool) {
-        let blocked = blocked || self.palette_dialog.is_some();
+        self.advance_playback(context);
+        self.sync_selection();
+        let blocked = blocked || self.palette_dialog.is_some() || self.pattern_dialog.is_some();
+        let editing_blocked = blocked || self.animating();
         let panel_fill = context.style().visuals.panel_fill;
         egui::TopBottomPanel::top("igs-toolbar")
             .exact_height(TOOLBAR_HEIGHT)
             .frame(egui::Frame::new().fill(panel_fill))
             .show(context, |ui| {
-                if blocked {
+                if editing_blocked {
                     ui.disable();
                 }
                 self.toolbar(ui);
             });
-        self.sidebar(context, blocked);
-        self.command_list(context, blocked);
-        if !blocked {
-            if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
-                self.cancel();
-            }
+        egui::TopBottomPanel::top("igs-transport")
+            .exact_height(42.0)
+            .frame(egui::Frame::new().fill(panel_fill))
+            .show(context, |ui| {
+                if blocked {
+                    ui.disable();
+                }
+                self.transport(ui);
+            });
+        self.sync_selection();
+        self.sidebar(context, editing_blocked);
+        // The command list follows and seeks the animation; only its editing waits.
+        self.command_list(context, blocked, editing_blocked);
+        if !blocked && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            self.cancel();
+        }
+        if !editing_blocked {
             self.type_text(context);
+            if self.text_edit.is_none() && context.memory(|memory| memory.focused().is_none()) {
+                self.clipboard(context);
+            }
             // Text fields in the toolbar and command list keep their keys.
             if self.tool == Tool::Select && context.memory(|memory| memory.focused().is_none()) {
                 if self.selected.is_some()
@@ -1504,8 +2371,25 @@ impl IgsEditor {
             if let Some(error) = &self.error {
                 ui.colored_label(ui.visuals().error_fg_color, error);
             }
-            self.canvas(ui, blocked);
+            self.canvas(ui, editing_blocked);
         });
+        if let Some(dialog) = &mut self.pattern_dialog {
+            let document = &self.document;
+            let end = dialog.target.unwrap_or(document.len()).min(document.len());
+            let color = palette::pen_color(&self.palette, self.canvas.resolution, self.attributes.fill_color);
+            let result = dialog.show(context, color, |slot| {
+                pattern::pattern_before(document.items()[..end].iter().filter_map(IgsItem::command), slot)
+            });
+            match result {
+                PatternResult::Open => {}
+                PatternResult::Cancel => self.pattern_dialog = None,
+                PatternResult::Apply => {
+                    if let Some(dialog) = self.pattern_dialog.take() {
+                        self.apply_pattern(dialog);
+                    }
+                }
+            }
+        }
         if let Some(dialog) = &mut self.palette_dialog {
             match dialog.show(context) {
                 PaletteResult::Open => {}
@@ -1518,6 +2402,45 @@ impl IgsEditor {
                     }
                 }
             }
+        }
+    }
+
+    /// Copy, cut, paste and duplicate (Ctrl+D) of the selected item as IGS source.
+    fn clipboard(&mut self, context: &egui::Context) {
+        let (copy, cut, pasted, duplicate) = context.input_mut(|input| {
+            let mut copy = false;
+            let mut cut = false;
+            let mut pasted = None;
+            input.events.retain(|event| match event {
+                egui::Event::Copy => {
+                    copy = true;
+                    false
+                }
+                egui::Event::Cut => {
+                    cut = true;
+                    false
+                }
+                egui::Event::Paste(text) => {
+                    pasted = Some(text.clone());
+                    false
+                }
+                _ => true,
+            });
+            (copy, cut, pasted, input.consume_key(egui::Modifiers::COMMAND, egui::Key::D))
+        });
+        if copy || cut {
+            if let Some(text) = self.copy_selected() {
+                context.copy_text(text);
+                if cut {
+                    self.delete_selected();
+                }
+            }
+        }
+        if let Some(text) = pasted.filter(|text| !text.is_empty()) {
+            self.paste(&text);
+        }
+        if duplicate {
+            self.duplicate_selected();
         }
     }
 
@@ -1558,13 +2481,29 @@ impl IgsEditor {
             };
             let on_screen = move |point: Point| origin + egui::vec2((point.0 as f32 + 0.5) * scale.x, (point.1 as f32 + 0.5) * scale.y);
             self.hover = response.hover_pos().map(at);
-            if !blocked {
+            let editing = !self.animating();
+            if !blocked && editing {
                 self.canvas_input(ui, &response, &at, &on_screen, scale);
                 // The texture is uploaded at the end of the frame, so the changed shape shows now.
                 self.refresh_preview(ui.ctx());
             }
             let accent = ui.visuals().selection.stroke.color;
-            if self.tool == Tool::Select {
+            if editing && self.tool == Tool::Zone {
+                self.paint_zones(ui, &on_screen, scale);
+            }
+            if editing && self.tool == Tool::CopyArea {
+                let area = |(from, to): (Point, Point)| {
+                    egui::Rect::from_two_pos(on_screen((from.0.min(to.0), from.1.min(to.1))), on_screen((from.0.max(to.0), from.1.max(to.1))))
+                        .expand2(scale * 0.5)
+                };
+                for (rect, strong) in [(self.copy_source.map(area), true), (self.drag.map(area), false)] {
+                    if let Some(rect) = rect {
+                        ui.painter()
+                            .rect_stroke(rect, 0.0, Stroke::new(if strong { 1.5 } else { 1.0 }, accent), egui::StrokeKind::Middle);
+                    }
+                }
+            }
+            if editing && matches!(self.tool, Tool::Select | Tool::Zone) {
                 if let Some((command, geometry)) = self.selected_shape().and_then(|index| self.shape(index)) {
                     let points_only = select::points_only(&command);
                     if !points_only {
@@ -1589,7 +2528,7 @@ impl IgsEditor {
                     }
                 }
             }
-            if let Some(edit) = &self.text_edit {
+            if let Some(edit) = self.text_edit.as_ref().filter(|_| editing) {
                 let size = match edit.index {
                     Some(index) => self.document.state_before(index).text.map_or(9, |(_, size, _)| size),
                     None => self.attributes.text_size,
@@ -1613,6 +2552,35 @@ impl IgsEditor {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
             }
         });
+    }
+
+    /// Outlines every mouse zone with its host string, and the one being dragged out.
+    fn paint_zones(&self, ui: &egui::Ui, on_screen: &dyn Fn(Point) -> egui::Pos2, scale: egui::Vec2) {
+        let color = Color32::from_rgb(0x40, 0xC8, 0xFF);
+        let painter = ui.painter();
+        let area = |from: Point, to: Point| {
+            egui::Rect::from_two_pos(on_screen((from.0.min(to.0), from.1.min(to.1))), on_screen((from.0.max(to.0), from.1.max(to.1)))).expand2(scale * 0.5)
+        };
+        let selected = self.selected_shape();
+        for index in 0..self.document.len() {
+            let Some((IgsCommand::DefineZone { string, .. }, geometry)) = self.shape(index) else {
+                continue;
+            };
+            let (x0, y0, x1, y1) = select::bounds(&geometry);
+            let rect = area((x0, y0), (x1, y1));
+            let chosen = selected == Some(index);
+            painter.rect_filled(rect, 0.0, color.gamma_multiply(if chosen { 0.22 } else { 0.12 }));
+            painter.rect_stroke(rect, 0.0, Stroke::new(if chosen { 2.0 } else { 1.0 }, color), egui::StrokeKind::Inside);
+            let galley = painter.layout(latin1(&string), egui::FontId::proportional(11.0), Color32::WHITE, (rect.width() - 6.0).max(0.0));
+            let tag = egui::Rect::from_min_size(rect.min, galley.size() + egui::vec2(6.0, 2.0)).intersect(rect);
+            painter.rect_filled(tag, 0.0, color.gamma_multiply(0.85));
+            painter.with_clip_rect(tag).galley(tag.min + egui::vec2(3.0, 1.0), galley, Color32::WHITE);
+        }
+        if let Some((from, to)) = self.drag {
+            let rect = area(from, to);
+            painter.rect_filled(rect, 0.0, color.gamma_multiply(0.18));
+            painter.rect_stroke(rect, 0.0, Stroke::new(1.5, color), egui::StrokeKind::Inside);
+        }
     }
 
     fn select_input(
@@ -1657,6 +2625,10 @@ impl IgsEditor {
                 self.select_item(target.map(|(index, _)| index));
                 // A typed property value is kept; the drag starts from it.
                 self.commit_properties();
+                if target.is_none() && self.tool == Tool::Zone {
+                    let start = at(start);
+                    self.drag = Some((start, start));
+                }
                 if let Some((index, handle)) = target {
                     if let Some((command, geometry)) = self.shape(index) {
                         self.shape_drag = Some(ShapeDrag {
@@ -1685,6 +2657,14 @@ impl IgsEditor {
                 }
             }
         }
+        if let (Some((from, _)), Some(pointer)) = (self.drag, pointer) {
+            let to = at(pointer);
+            self.drag = Some((from, to));
+            if response.drag_stopped() {
+                self.drag = None;
+                self.add_zone(from, to);
+            }
+        }
         if response.clicked() {
             let index = pointer.and_then(|pointer| self.shape_at(scene(pointer), tolerance));
             self.select_item(index);
@@ -1702,6 +2682,39 @@ impl IgsEditor {
         }
     }
 
+    /// Drag out the area to copy, then click where copies go; right-click picks a new area.
+    fn copy_input(&mut self, ui: &egui::Ui, response: &egui::Response, at: &dyn Fn(egui::Pos2) -> Point) {
+        let pointer = response.interact_pointer_pos();
+        let origin = ui.input(|input| input.pointer.press_origin());
+        if response.secondary_clicked() {
+            self.copy_source = None;
+            return;
+        }
+        if self.copy_source.is_some() {
+            if response.clicked() {
+                if let Some(command) = pointer.map(at).and_then(|point| self.copy_command(point)) {
+                    self.add_commands(vec![command]);
+                }
+            }
+            return;
+        }
+        if response.drag_started_by(egui::PointerButton::Primary) {
+            if let Some(start) = origin.or(pointer).map(at) {
+                self.drag = Some((start, start));
+            }
+        }
+        if let (Some((from, _)), Some(pointer)) = (self.drag, pointer) {
+            let to = at(pointer);
+            self.drag = Some((from, to));
+            if response.drag_stopped() {
+                self.drag = None;
+                if (from.0 - to.0).abs() >= 1 && (from.1 - to.1).abs() >= 1 {
+                    self.copy_source = Some(((from.0.min(to.0), from.1.min(to.1)), (from.0.max(to.0), from.1.max(to.1))));
+                }
+            }
+        }
+    }
+
     fn canvas_input(
         &mut self,
         ui: &egui::Ui,
@@ -1712,8 +2725,12 @@ impl IgsEditor {
     ) {
         let pointer = response.interact_pointer_pos();
         let origin = ui.input(|input| input.pointer.press_origin());
-        if self.tool == Tool::Select {
+        if matches!(self.tool, Tool::Select | Tool::Zone) {
             self.select_input(ui, response, at, on_screen, scale);
+            return;
+        }
+        if self.tool == Tool::CopyArea {
+            self.copy_input(ui, response, at);
             return;
         }
         if self.tool == Tool::Text {
@@ -1773,6 +2790,7 @@ impl IgsEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use icy_parser_core::BaudEmulation;
 
     fn run(context: &egui::Context, editor: &mut IgsEditor, events: Vec<egui::Event>) {
         let _ = context.run(
@@ -1831,7 +2849,7 @@ mod tests {
 
     #[test]
     fn every_tool_adds_its_shape_with_attributes_as_one_undo_step() {
-        for tool in Tool::ALL.into_iter().filter(|tool| *tool != Tool::Select && *tool != Tool::Text) {
+        for tool in Tool::ALL.into_iter().filter(|tool| tool.pen().is_some() && *tool != Tool::Text) {
             let mut editor = IgsEditor::new(TerminalResolution::Low);
             let before = editor.document.len();
             editor.select_tool(tool);
@@ -2066,7 +3084,7 @@ mod tests {
             green: 0,
             blue: 0,
         }];
-        assert_eq!(editor.preview_request(), PreviewRequest::With(changed.clone()));
+        assert_eq!(editor.preview_request().extra, changed);
         editor.refresh_preview(&context);
         assert_eq!(palette::pen_color(&editor.palette, TerminalResolution::Medium, 1), Color32::from_rgb(238, 0, 0));
         let before = editor.document.len();
@@ -2174,6 +3192,515 @@ mod tests {
         assert!(editor.text_edit.is_none() && editor.shape_drag.is_none());
         editor.finish_pending();
         assert!(matches!(editor.document.command(0), Some(IgsCommand::WriteText { text, .. }) if text == b"B"));
+    }
+
+    fn run_at(context: &egui::Context, editor: &mut IgsEditor, time: f64) {
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                time: Some(time),
+                ..Default::default()
+            },
+            |context| editor.show(context, false),
+        );
+    }
+
+    #[test]
+    fn every_template_inserts_one_item_that_saves() {
+        for (name, source) in templates() {
+            let mut editor = IgsEditor::new(TerminalResolution::Low);
+            editor.insert_source(source);
+            assert!(editor.error.is_none(), "{name}: {:?}", editor.error);
+            let item = &editor.document.items()[editor.document.len() - 1];
+            assert_eq!(matches!(item, IgsItem::Text(_)), source.first() != Some(&b'G'), "{name}: {item:?}");
+            let bytes = editor.document.to_bytes().unwrap();
+            assert_eq!(IgsDocument::from_bytes(&bytes).unwrap().items().len(), editor.document.len(), "{name}");
+            let context = egui::Context::default();
+            editor.selected = Some(editor.document.len() - 1);
+            run(&context, &mut editor, vec![]);
+        }
+    }
+
+    #[test]
+    fn shapes_inserted_after_the_selection_restore_the_attributes() {
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.select_tool(Tool::Line);
+        editor.attributes.line_color = 1;
+        editor.add_shape((0, 0), (10, 10));
+        let first = editor.document.len() - 1;
+        editor.add_shape((10, 10), (20, 0));
+        let second = editor.document.len() - 1;
+        editor.preview_to_selection = true;
+        editor.selected = Some(first);
+        editor.attributes.line_color = 2;
+        editor.add_shape((30, 30), (40, 40));
+        assert_eq!(editor.selected, Some(first + 2));
+        assert_eq!(editor.document.command(first + 1), Some(&IgsCommand::ColorSet { pen: PenType::Line, color: 2 }));
+        assert_eq!(editor.document.command(first + 3), Some(&IgsCommand::ColorSet { pen: PenType::Line, color: 1 }));
+        let moved = second + 3;
+        assert!(matches!(editor.document.command(moved), Some(IgsCommand::Line { .. })));
+        assert_eq!(editor.document.state_before(moved).line_color, Some(1));
+        // The next shape goes after the new one and needs no attributes.
+        editor.add_shape((50, 50), (60, 60));
+        assert_eq!(editor.selected, Some(first + 3));
+    }
+
+    #[test]
+    fn items_are_copied_pasted_and_duplicated_as_source() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.select_tool(Tool::Rectangle);
+        editor.add_shape((10, 10), (50, 50));
+        let index = editor.document.len() - 1;
+        let copied = editor.copy_selected().unwrap();
+        assert_eq!(copied, "G#B>10,10,50,50,0:\n");
+        editor.select_tool(Tool::Select);
+        run(&context, &mut editor, vec![]);
+        run(&context, &mut editor, vec![egui::Event::Paste(copied.clone())]);
+        assert_eq!(editor.document.len(), index + 2);
+        assert_eq!(editor.document.command(index + 1), editor.document.command(index));
+        run(
+            &context,
+            &mut editor,
+            vec![egui::Event::Key {
+                key: egui::Key::D,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::COMMAND,
+            }],
+        );
+        assert_eq!(editor.document.len(), index + 3);
+        assert_eq!(editor.selected, Some(index + 2));
+        run(&context, &mut editor, vec![egui::Event::Cut]);
+        assert_eq!(editor.document.len(), index + 2);
+        editor.paste("\\q");
+        assert!(editor.error.is_some());
+    }
+
+    #[test]
+    fn user_fill_patterns_are_drawn_and_used_by_fills() {
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.open_pattern_dialog(None);
+        let mut dialog = editor.pattern_dialog.take().unwrap();
+        assert_eq!(dialog.slot(), 0);
+        for y in 0..16 {
+            dialog.toggle(0, y);
+        }
+        editor.apply_pattern(dialog);
+        assert!(matches!(editor.document.command(editor.document.len() - 1), Some(IgsCommand::LoadFillPattern { pattern: 0, data }) if data[3] == 0x8000));
+        assert_eq!(editor.attributes.pattern, PatternType::UserDefined(0));
+        editor.select_tool(Tool::FilledRectangle);
+        editor.attributes.fill_color = 1;
+        editor.add_shape((0, 0), (63, 31));
+        let preview = editor.document.preview().unwrap();
+        let register = palette::pens(TerminalResolution::Low)[1];
+        assert_eq!(preview.pixel_index(16, 5), Some(register));
+        assert_eq!(preview.pixel_index(17, 5), Some(0));
+
+        let index = editor
+            .document
+            .items()
+            .iter()
+            .position(|item| matches!(item.command(), Some(IgsCommand::LoadFillPattern { .. })))
+            .unwrap();
+        editor.open_pattern_dialog(Some(index));
+        let mut dialog = editor.pattern_dialog.take().unwrap();
+        dialog.toggle(1, 0);
+        editor.apply_pattern(dialog);
+        assert!(matches!(editor.document.command(index), Some(IgsCommand::LoadFillPattern { data, .. }) if data[0] == 0xC000));
+    }
+
+    #[test]
+    fn areas_are_copied_to_where_they_are_placed() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.select_tool(Tool::FilledRectangle);
+        editor.attributes.fill_color = 1;
+        editor.add_shape((10, 10), (30, 30));
+        editor.select_tool(Tool::CopyArea);
+        run(&context, &mut editor, vec![]);
+        drag(&context, &mut editor, (5, 5), (35, 35));
+        assert_eq!(editor.copy_source, Some(((5, 5), (35, 35))));
+        click(&context, &mut editor, (100, 100));
+        assert!(matches!(
+            editor.document.command(editor.document.len() - 1),
+            Some(IgsCommand::GrabScreen {
+                operation: BlitOperation::ScreenToScreen {
+                    src_x1: 5,
+                    dest_x: 100,
+                    dest_y: 100,
+                    ..
+                },
+                mode: BlitMode::Replace
+            })
+        ));
+        let preview = editor.document.preview().unwrap();
+        assert_eq!(preview.pixel_index(110, 110), preview.pixel_index(15, 15));
+        assert_ne!(preview.pixel_index(110, 110), Some(0));
+    }
+
+    #[test]
+    fn mouse_zones_are_numbered_and_only_picked_with_their_tool() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.select_tool(Tool::Zone);
+        run(&context, &mut editor, vec![]);
+        drag(&context, &mut editor, (10, 10), (60, 40));
+        assert!(editor.error.is_some(), "a zone needs a host string");
+        editor.attributes.zone_host = "MENU".into();
+        drag(&context, &mut editor, (10, 10), (60, 40));
+        drag(&context, &mut editor, (100, 10), (150, 40));
+        let zones: Vec<_> = commands(&editor)
+            .into_iter()
+            .filter_map(|command| match command {
+                IgsCommand::DefineZone { zone_id, string, length, .. } => Some((zone_id, string, length)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(zones, vec![(0, b"MENU".to_vec(), 4), (1, b"MENU".to_vec(), 4)]);
+        let index = editor.document.len() - 1;
+        assert!(editor.shape(index).is_some());
+        editor.select_tool(Tool::Select);
+        assert!(editor.shape(index).is_none());
+        let reopened = IgsDocument::from_bytes(&editor.document.to_bytes().unwrap()).unwrap();
+        assert_eq!(reopened.command(index), editor.document.command(index));
+    }
+
+    #[test]
+    fn the_resolution_control_edits_the_first_resolution_command() {
+        let mut editor = IgsEditor::new(TerminalResolution::Medium);
+        editor.set_resolution(TerminalResolution::Low);
+        assert_eq!(editor.document.resolution(), TerminalResolution::Low);
+        assert!(matches!(
+            editor.document.command(0),
+            Some(IgsCommand::SetResolution {
+                resolution: TerminalResolution::Low,
+                ..
+            })
+        ));
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#L>0,0,10,10:\r\n").unwrap());
+        editor.set_resolution(TerminalResolution::High);
+        assert!(matches!(
+            editor.document.command(0),
+            Some(IgsCommand::SetResolution {
+                resolution: TerminalResolution::High,
+                ..
+            })
+        ));
+        assert_eq!(editor.document.len(), 2);
+    }
+
+    #[test]
+    fn playback_waits_for_pauses_and_plays_sounds() {
+        let context = egui::Context::default();
+        let mut editor =
+            IgsEditor::from_document(IgsDocument::from_bytes(b"G#R>0,2:\r\nG#b>20,0,0,3,0,0,500:\r\nG#b>0:\r\nG#t>1:\r\nG#L>0,0,10,10:\r\n").unwrap());
+        editor.transport.speed = BaudEmulation::Off;
+        assert!(matches!(editor.document.command(1), Some(IgsCommand::AlterSoundEffect { play: false, .. })));
+        editor.toggle_playback(0.0);
+        run_at(&context, &mut editor, 0.0);
+        assert_eq!(editor.transport.run.as_ref().map(|playback| playback.index), Some(3), "stops at the pause");
+        assert_eq!(editor.preview_request().through, Some(3));
+        let Some(Sound::Gist(played)) = editor.sound.played.first() else {
+            panic!("expected a sound: {:?}", editor.sound.played)
+        };
+        assert_eq!(played[3], 500, "the sound table was changed before it played");
+        run_at(&context, &mut editor, 0.5);
+        assert_eq!(editor.transport.run.as_ref().map(|playback| playback.index), Some(3));
+        run_at(&context, &mut editor, 1.1);
+        assert!(editor.transport.run.is_none(), "playback ends after the last item");
+
+        editor.sound.played.clear();
+        editor.play_sound(2);
+        assert!(matches!(editor.sound.played.as_slice(), [Sound::Gist(data)] if data[3] == 500));
+    }
+
+    #[test]
+    fn animation_transport_respects_transmission_time_and_seeks() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#L>0,0,10,10:\r\nG#t>1:\r\nG#L>20,20,30,30:\r\n").unwrap());
+        editor.toggle_playback(0.0);
+        let first_delay = editor.document.item_source(1).unwrap().len() as f64 / 1200.0;
+        assert!((editor.transport.run.as_ref().unwrap().next_at - first_delay).abs() < 1e-9);
+        run_at(&context, &mut editor, first_delay / 2.0);
+        assert_eq!(editor.transport.run.as_ref().unwrap().index, 0);
+        run_at(&context, &mut editor, first_delay + 0.001);
+        let pause = editor.transport.run.as_ref().unwrap();
+        assert_eq!(pause.index, 1);
+        let third_delay = editor.document.item_source(2).unwrap().len() as f64 / 1200.0;
+        assert!((pause.next_at - first_delay - 1.0 - third_delay).abs() < 1e-9);
+
+        editor.toggle_playback(first_delay + 0.001);
+        assert_eq!(editor.preview_request().through, Some(1));
+        editor.step_playback(false);
+        assert_eq!(editor.preview_request().through, Some(0));
+        editor.step_playback(true);
+        assert_eq!(editor.preview_request().through, Some(1));
+        editor.toggle_playback(2.0);
+        assert_eq!(editor.transport.run.as_ref().unwrap().index, 2);
+        run_at(&context, &mut editor, 2.1);
+        assert!(editor.transport.run.is_none());
+        assert_eq!(editor.preview_request().through, Some(2));
+        editor.toggle_playback(3.0);
+        assert_eq!(editor.transport.run.as_ref().unwrap().index, 0);
+        editor.stop_playback();
+        assert_eq!(editor.preview_request().through, None);
+    }
+
+    fn lines(count: usize) -> IgsEditor {
+        let source: String = (0..count).map(|index| format!("G#L>{index},0,{index},50:\r\n")).collect();
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(source.as_bytes()).unwrap());
+        editor.transport.speed = BaudEmulation::Rate(300);
+        editor
+    }
+
+    #[test]
+    fn the_command_list_follows_and_scrolls_to_the_animation() {
+        let context = egui::Context::default();
+        let mut editor = lines(150);
+        run_at(&context, &mut editor, 0.0);
+        editor.toggle_playback(0.0);
+        run_at(&context, &mut editor, 0.0);
+        assert_eq!(editor.selected, Some(0));
+        editor.seek_playback(120, 0.0);
+        run_at(&context, &mut editor, 0.0);
+        run_at(&context, &mut editor, 0.0);
+        assert_eq!(editor.selected, Some(120));
+        assert!(editor.visible_rows.contains(&120), "{:?}", editor.visible_rows);
+        // Playing on selects the next item.
+        let next = editor.transport.run.as_ref().unwrap().next_at;
+        run_at(&context, &mut editor, next + 0.001);
+        assert_eq!(editor.selected, Some(121));
+        // A click selects without moving the paused animation.
+        editor.toggle_playback(next + 0.002);
+        editor.select_item(Some(5));
+        run_at(&context, &mut editor, next + 0.003);
+        assert_eq!((editor.selected, editor.frame()), (Some(5), Some(121)));
+    }
+
+    #[test]
+    fn double_clicking_a_row_runs_the_animation_to_it() {
+        let context = egui::Context::default();
+        let mut editor = lines(60);
+        let frame = |editor: &mut IgsEditor, time: f64, events: Vec<egui::Event>| {
+            context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    time: Some(time),
+                    events,
+                    ..Default::default()
+                },
+                |context| editor.show(context, false),
+            )
+        };
+        let output = frame(&mut editor, 0.0, vec![]);
+        let row = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == "7" => Some(text.pos + text.galley.size() / 2.0 + egui::vec2(60.0, 0.0)),
+                _ => None,
+            })
+            .expect("row 7 is listed");
+        for (time, pressed) in [(1.0, true), (1.05, false), (1.1, true), (1.15, false)] {
+            frame(
+                &mut editor,
+                time,
+                vec![egui::Event::PointerMoved(row), button_event(row, egui::PointerButton::Primary, pressed)],
+            );
+        }
+        frame(&mut editor, 1.2, vec![]);
+        assert_eq!(editor.transport.playhead, Some(6), "the animation shows the drawing through item 7");
+        assert_eq!(editor.selected, Some(6));
+        assert_eq!(editor.preview_request().through, Some(6));
+    }
+
+    #[test]
+    fn the_preview_through_the_selection_is_an_animation_position() {
+        let mut editor = lines(10);
+        editor.selected = Some(3);
+        editor.toggle_preview();
+        assert!(editor.preview_to_selection && !editor.animating());
+        assert_eq!(editor.frame(), Some(3));
+        // Stepping while previewing moves the selection and stays editable.
+        editor.step_playback(true);
+        assert_eq!((editor.selected, editor.frame(), editor.animating()), (Some(4), Some(4), false));
+        editor.seek_playback(7, 0.0);
+        assert_eq!((editor.selected, editor.animating()), (Some(7), false));
+        // Play continues after the previewed item.
+        editor.toggle_playback(0.0);
+        assert_eq!(editor.transport.run.as_ref().unwrap().index, 8);
+        // The eye turns the paused animation into an editable preview through its frame.
+        editor.toggle_playback(0.1);
+        assert_eq!(editor.transport.playhead, Some(8));
+        editor.toggle_preview();
+        assert!(!editor.animating() && editor.preview_to_selection);
+        assert_eq!((editor.selected, editor.frame()), (Some(8), Some(8)));
+        editor.stop_playback();
+        assert!(!editor.preview_to_selection);
+        assert_eq!(editor.frame(), None);
+    }
+
+    #[test]
+    fn delayed_loops_play_iteration_by_iteration() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#R>0,0:\r\nG#&>10,50,10,2,L,4,x,20,x,40:\r\nG#t>1:\r\n").unwrap());
+        editor.transport.speed = BaudEmulation::Off;
+        editor.toggle_playback(0.0);
+        run_at(&context, &mut editor, 0.0);
+        let request = editor.preview_request();
+        assert_eq!((request.through, request.steps), (Some(1), Some(1)), "the loop starts with one iteration");
+        let drawn = |editor: &IgsEditor| {
+            let preview = editor.render(&editor.preview_request()).unwrap();
+            [10, 20, 50].map(|x| preview.pixel_index(x, 30) != preview.pixel_index(5, 30))
+        };
+        assert_eq!(drawn(&editor), [true, false, false]);
+        run_at(&context, &mut editor, 0.011);
+        assert_eq!(editor.preview_request().steps, Some(2));
+        assert_eq!(drawn(&editor), [true, true, false]);
+        // After the last iteration's delay the next item follows.
+        run_at(&context, &mut editor, 0.051);
+        let request = editor.preview_request();
+        assert_eq!((request.through, request.steps), (Some(2), None));
+        assert_eq!(drawn(&editor), [true, true, true]);
+    }
+
+    #[test]
+    fn the_position_slider_seeks_while_paused_and_playing() {
+        let context = egui::Context::default();
+        let mut editor =
+            IgsEditor::from_document(IgsDocument::from_bytes(b"G#b>20,0,0,3,0,0,500:\r\nG#t>1:\r\nG#L>0,0,10,10:\r\nG#b>0:\r\nG#t>2:\r\n").unwrap());
+        editor.transport.speed = BaudEmulation::Off;
+        editor.seek_playback(2, 0.0);
+        assert!(editor.transport.run.is_none());
+        assert_eq!(editor.preview_request().through, Some(2));
+        editor.seek_playback(99, 0.0);
+        assert_eq!(editor.transport.playhead, Some(4));
+
+        editor.stop_playback();
+        editor.toggle_playback(10.0);
+        editor.sound.played.clear();
+        editor.seek_playback(3, 10.5);
+        let playback = editor.transport.run.as_ref().unwrap();
+        assert_eq!(playback.index, 3);
+        assert_eq!(playback.next_at, 10.5, "the sound command waits for nothing");
+        assert_eq!(editor.sound_table.effects[0][3], 500, "the sound table includes earlier changes");
+        assert_eq!(editor.sound.played, vec![Sound::StopAll], "seeking does not replay sounds");
+        run_at(&context, &mut editor, 10.6);
+        assert_eq!(editor.transport.run.as_ref().unwrap().index, 4, "playback continues after the seek");
+    }
+
+    #[test]
+    fn transmission_speed_applies_to_text_items_and_max_is_instant() {
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"Hello G#L>0,0,10,10:\r\nG#b>0:\r\n").unwrap());
+        editor.toggle_playback(0.0);
+        assert!(editor.document.command(0).is_none());
+        assert_eq!(editor.transport.run.as_ref().unwrap().index, 0);
+        assert!(editor.transport.run.as_ref().unwrap().next_at > 0.0);
+        editor.stop_playback();
+        editor.transport.speed = BaudEmulation::Off;
+        editor.toggle_playback(0.0);
+        let context = egui::Context::default();
+        run_at(&context, &mut editor, 0.0);
+        assert_eq!(editor.preview_request().through, Some(editor.document.len() - 1));
+    }
+
+    #[test]
+    fn sound_effect_property_is_saved_and_played() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#b>0:\r\n").unwrap());
+        editor.select_item(Some(0));
+        run(&context, &mut editor, vec![]);
+        let Some((_, IgsCommand::BellsAndWhistles { sound_effect })) = editor.editing.as_mut() else {
+            panic!("expected a sound effect draft");
+        };
+        *sound_effect = icy_parser_core::SoundEffect::Landing;
+        run(&context, &mut editor, vec![]);
+        let reopened = IgsDocument::from_bytes(&editor.document.to_bytes().unwrap()).unwrap();
+        assert!(matches!(
+            reopened.command(0),
+            Some(IgsCommand::BellsAndWhistles {
+                sound_effect: icy_parser_core::SoundEffect::Landing
+            })
+        ));
+        editor.play_sound(0);
+        assert!(matches!(editor.sound.played.as_slice(), [Sound::Gist(data)] if data == icy_engine_gui::music::sound_effects::sound_data(19).unwrap()));
+    }
+
+    #[test]
+    fn inserting_after_the_selection_previews_text_and_shapes_there() {
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#C>1,1:L>0,0,10,10:\r\nG#s>4:\r\n").unwrap());
+        editor.preview_to_selection = true;
+        editor.selected = Some(1);
+        editor.select_tool(Tool::Line);
+        editor.drag = Some(((0, 50), (100, 50)));
+        let request = editor.preview_request();
+        assert_eq!((request.through, request.at), (Some(1), 2));
+        assert!(request.extra.iter().any(|command| matches!(command, IgsCommand::Line { .. })));
+        // The screen clear after the selection is not shown, the line being drawn is.
+        let preview = editor.render(&request).unwrap();
+        assert_ne!(preview.pixel_index(50, 50), Some(0));
+        editor.drag = None;
+
+        editor.select_tool(Tool::Text);
+        editor.begin_text((20, 20));
+        editor.text_edit.as_mut().unwrap().text = b"Hi".to_vec();
+        editor.finish_text();
+        assert!(matches!(editor.document.command(editor.selected.unwrap()), Some(IgsCommand::WriteText { .. })));
+        assert!(editor.selected.unwrap() < editor.document.len() - 1, "the text is not at the end");
+        assert!(matches!(
+            editor.document.command(editor.document.len() - 1),
+            Some(IgsCommand::ScreenClear { .. })
+        ));
+    }
+
+    #[test]
+    fn unset_attributes_are_restored_to_the_defaults() {
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#L>0,0,10,10:\r\nG#L>0,10,10,0:\r\n").unwrap());
+        editor.preview_to_selection = true;
+        editor.selected = Some(0);
+        editor.select_tool(Tool::Line);
+        editor.attributes.line_color = 2;
+        editor.add_shape((20, 20), (30, 30));
+        assert!(editor.error.is_none());
+        let last = editor.document.len() - 1;
+        assert_eq!(editor.document.state_before(last).line_color, Some(1));
+
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#&>0,10,2,0,C,2,1,x:\r\nG#L>0,10,10,0:\r\n").unwrap());
+        editor.preview_to_selection = true;
+        editor.selected = Some(0);
+        editor.select_tool(Tool::Line);
+        editor.add_shape((20, 20), (30, 30));
+        assert!(editor.error.is_some(), "a loop may have changed the colors");
+    }
+
+    #[test]
+    fn resolution_changes_keep_the_selection_and_show_the_first_command() {
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#L>0,0,10,10:\r\nG#O>5,5,5:\r\n").unwrap());
+        editor.selected = Some(1);
+        editor.set_resolution(TerminalResolution::Low);
+        assert_eq!(editor.selected, Some(2));
+        assert!(matches!(editor.document.command(2), Some(IgsCommand::Circle { .. })));
+
+        let editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#R>0,2:\r\nG#L>0,0,10,10:\r\nG#R>2,0:\r\n").unwrap());
+        assert_eq!(editor.start_resolution(), TerminalResolution::Low);
+        assert_eq!(editor.document.resolution(), TerminalResolution::High);
+    }
+
+    #[test]
+    fn undo_closes_the_pattern_dialog_of_a_command() {
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.open_pattern_dialog(None);
+        let dialog = editor.pattern_dialog.take().unwrap();
+        editor.apply_pattern(dialog);
+        let index = editor.document.len() - 1;
+        editor.open_pattern_dialog(Some(index));
+        editor.undo(false);
+        assert!(editor.pattern_dialog.is_none());
+        let stale = PatternDialog::new(0, [0xFFFF; 16], Some(0));
+        editor.apply_pattern(stale);
+        assert!(matches!(editor.document.command(0), Some(IgsCommand::SetResolution { .. })));
     }
 
     #[test]

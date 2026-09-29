@@ -58,15 +58,15 @@ fn edited_fixture_commands_are_reencoded() {
         let mut items = parse_igs_stream(&bytes);
         let mut edited = 0;
         for item in &mut items {
-            if let IgsItem::Command(command) = item {
-                if let IgsCommand::Circle { x, y, radius } = command.command().clone() {
-                    command.set_command(IgsCommand::Circle {
-                        x,
-                        y,
-                        radius: IgsParameter::Value(radius.evaluate(&Default::default(), 0, 0) + 1),
-                    });
-                    edited += 1;
-                }
+            if let IgsItem::Command(command) = item
+                && let IgsCommand::Circle { x, y, radius } = command.command().clone()
+            {
+                command.set_command(IgsCommand::Circle {
+                    x,
+                    y,
+                    radius: IgsParameter::Value(radius.evaluate(&Default::default(), 0, 0) + 1),
+                });
+                edited += 1;
             }
         }
         let encoded = encode_igs_stream_checked(&items).unwrap_or_else(|error| panic!("{name}: {error}"));
@@ -85,15 +85,9 @@ fn chained_commands_get_a_prefix_when_moved() {
     let encoded = encode_igs_stream_checked(&items).unwrap();
     assert_eq!(encoded, b"G#L>1,2,3,4:C>1,2:");
 
-    items.insert(
-        1,
-        IgsItem::Text(IgsText {
-            bytes: b"hello".to_vec(),
-            invalid: false,
-        }),
-    );
+    items.insert(1, IgsItem::Text(IgsText::new(b"hello".to_vec())));
     let encoded = encode_igs_stream_checked(&items).unwrap();
-    assert_eq!(encoded, b"G#L>1,2,3,4:helloG#C>1,2:");
+    assert_eq!(encoded, b"G#L>1,2,3,4:\nhelloG#C>1,2:");
 }
 
 #[test]
@@ -114,6 +108,38 @@ fn text_bytes_are_written_exactly() {
     let bytes = encode_igs_command(&command).unwrap();
     assert_eq!(bytes, b"G#W>1,2,A\x9e\xe1@");
     assert_eq!(parse_igs_commands(&bytes), vec![command]);
+}
+
+#[test]
+fn text_after_a_chained_command_is_separated() {
+    let mut items = parse_igs_stream(b"G#C>1,2:L>1,2,3,4:");
+    items.insert(1, IgsItem::Text(IgsText::new(b"Hello".to_vec())));
+    let encoded = encode_igs_stream_checked(&items).unwrap();
+    assert_eq!(encoded, b"G#C>1,2:\nHelloG#L>1,2,3,4:");
+    let reparsed = parse_igs_stream(&encoded);
+    assert!(matches!(&reparsed[1], IgsItem::Text(text) if text.bytes == b"\nHello" && !text.invalid));
+
+    // Control bytes are kept too; parsed text that starts after a command stays as it was.
+    let mut items = parse_igs_stream(b"G#C>1,2:");
+    items.push(IgsItem::Text(IgsText::new(b"\x1bE".to_vec())));
+    assert_eq!(encode_igs_stream_checked(&items).unwrap(), b"G#C>1,2:\n\x1bE");
+    let parsed = b"G#C>1,2:\rHi";
+    let items = parse_igs_stream(parsed);
+    assert!(matches!(&items[1], IgsItem::Text(text) if text.chained));
+    assert_eq!(encode_igs_stream_checked(&items).unwrap(), parsed);
+}
+
+#[test]
+fn fill_patterns_are_written_without_a_terminator() {
+    let command = IgsCommand::LoadFillPattern {
+        pattern: 2,
+        data: (0..16).map(|row| 0x8001u16.rotate_left(row)).collect(),
+    };
+    let bytes = encode_igs_command(&command).unwrap();
+    assert!(bytes.ends_with(b"@"));
+    let items: Vec<IgsItem> = vec![command.clone().into(), line(0, 0, 1, 1).into()];
+    let encoded = encode_igs_stream_checked(&items).unwrap();
+    assert_eq!(commands(&parse_igs_stream(&encoded)), commands(&items));
 }
 
 #[test]

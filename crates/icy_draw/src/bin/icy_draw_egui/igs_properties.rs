@@ -4,8 +4,8 @@
 use eframe::egui;
 use icy_draw::fl;
 use icy_parser_core::{
-    ArrowEnd, DrawingMode, IgsCommand, IgsParameter, LineKind, LineMarkerStyle, PaletteMode, PatternType, PauseType, PenType, PolymarkerKind, ScreenClearMode,
-    TerminalResolution, TextEffects, TextRotation,
+    ArrowEnd, BlitMode, BlitOperation, DrawingMode, IgsCommand, IgsParameter, LineKind, LineMarkerStyle, PaletteMode, PatternType, PauseType, PenType,
+    PolymarkerKind, ScreenClearMode, SoundEffect, TerminalResolution, TextEffects, TextRotation,
 };
 
 use super::palette;
@@ -116,6 +116,19 @@ pub const MODES: [DrawingMode; 4] = [
     DrawingMode::ReverseTransparent,
 ];
 
+pub const BLIT_MODES: [BlitMode; 6] = [
+    BlitMode::Replace,
+    BlitMode::Transparent,
+    BlitMode::Xor,
+    BlitMode::ReverseTransparent,
+    BlitMode::And,
+    BlitMode::NotS,
+];
+
+pub fn blit_mode(ui: &mut egui::Ui, id: &str, value: &mut BlitMode) {
+    combo(ui, id, value, &BLIT_MODES, super::blit_mode_name);
+}
+
 pub fn line_kind(ui: &mut egui::Ui, id: &str, value: &mut LineKind) {
     combo(ui, id, value, &LINE_KINDS, super::line_kind_name);
 }
@@ -126,6 +139,20 @@ pub fn marker(ui: &mut egui::Ui, id: &str, value: &mut PolymarkerKind) {
 
 pub fn drawing_mode(ui: &mut egui::Ui, id: &str, value: &mut DrawingMode) {
     combo(ui, id, value, &MODES, super::drawing_mode_name);
+}
+
+fn sound_effect(ui: &mut egui::Ui, value: &mut SoundEffect) {
+    row(ui, &fl!("igs-template-sound"), |ui| {
+        let name = |effect: SoundEffect| format!("{} · {}", effect as u8, super::sound_name(effect as usize));
+        egui::ComboBox::from_id_salt("igs-sound-effect-property")
+            .selected_text(name(*value))
+            .show_ui(ui, |ui| {
+                for index in 0..20 {
+                    let effect = SoundEffect::try_from(index).expect("IGS sound effects are numbered 0 through 19");
+                    ui.selectable_value(value, effect, name(effect));
+                }
+            });
+    });
 }
 
 /// Fill kind and, for patterns and hatches, their number.
@@ -307,6 +334,46 @@ pub fn command(ui: &mut egui::Ui, command: &mut IgsCommand, palette: &icy_engine
                 }
             });
         }
+        IgsCommand::DefineZone {
+            zone_id,
+            x1,
+            y1,
+            x2,
+            y2,
+            length,
+            string,
+        } if !(9997..=9999).contains(zone_id) => {
+            number(ui, &fl!("igs-zone-id"), zone_id, 0..=9996);
+            for (name, value) in [("x1", x1), ("y1", y1), ("x2", x2), ("y2", y2)] {
+                parameter(ui, name, value);
+            }
+            row(ui, &fl!("igs-zone-host"), |ui| text(ui, string));
+            *length = string.len() as u16;
+        }
+        IgsCommand::GrabScreen {
+            operation:
+                BlitOperation::ScreenToScreen {
+                    src_x1,
+                    src_y1,
+                    src_x2,
+                    src_y2,
+                    dest_x,
+                    dest_y,
+                },
+            mode,
+        } => {
+            for (name, value) in [
+                ("source x1", src_x1),
+                ("source y1", src_y1),
+                ("source x2", src_x2),
+                ("source y2", src_y2),
+                ("x", dest_x),
+                ("y", dest_y),
+            ] {
+                number(ui, name, value, 0..=639);
+            }
+            row(ui, &fl!("igs-blit-mode"), |ui| blit_mode(ui, "igs-blit-property", mode));
+        }
         IgsCommand::WriteText { x, y, text: value } => {
             parameter(ui, "x", x);
             parameter(ui, "y", y);
@@ -415,6 +482,7 @@ pub fn command(ui: &mut egui::Ui, command: &mut IgsCommand, palette: &icy_engine
             PauseType::VSync(vsyncs) => number(ui, &fl!("igs-pause-vsyncs"), vsyncs, 0..=9999),
             PauseType::MilliSeconds(_) => return false,
         },
+        IgsCommand::BellsAndWhistles { sound_effect: value } => sound_effect(ui, value),
         _ => return false,
     }
     true
@@ -434,5 +502,21 @@ mod tests {
         assert!(unescape("\\x1").is_none());
         assert!(unescape("\\q").is_none());
         assert!(unescape("€").is_none());
+    }
+
+    #[test]
+    fn sound_effect_property_supports_every_igs_effect() {
+        let context = egui::Context::default();
+        let palette = icy_engine::Palette::default();
+        for index in 0..20 {
+            let effect = SoundEffect::try_from(index).unwrap();
+            let mut command = IgsCommand::BellsAndWhistles { sound_effect: effect };
+            let _ = context.run(egui::RawInput::default(), |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    assert!(super::command(ui, &mut command, &palette, TerminalResolution::Low));
+                });
+            });
+            assert_eq!(command.to_string(), format!("G#b>{index}:"));
+        }
     }
 }

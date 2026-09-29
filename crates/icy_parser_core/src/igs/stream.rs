@@ -75,6 +75,20 @@ pub struct IgsText {
     pub bytes: Vec<u8>,
     /// The parser reported an error for these bytes, or they form an unfinished command.
     pub invalid: bool,
+    /// The text was read directly after a command terminator, where control bytes end the
+    /// chain without output.
+    pub chained: bool,
+}
+
+impl IgsText {
+    /// New text, e.g. typed or pasted VT52 output.
+    pub fn new(bytes: Vec<u8>) -> Self {
+        Self {
+            bytes,
+            invalid: false,
+            chained: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -182,14 +196,14 @@ impl CommandSink for CommandCollector {
     }
 }
 
-fn push_text(items: &mut Vec<IgsItem>, bytes: Vec<u8>, invalid: bool) {
+fn push_text(items: &mut Vec<IgsItem>, bytes: Vec<u8>, invalid: bool, chained: bool) {
     if let Some(IgsItem::Text(text)) = items.last_mut()
         && text.invalid == invalid
     {
         text.bytes.extend(bytes);
         return;
     }
-    items.push(IgsItem::Text(IgsText { bytes, invalid }));
+    items.push(IgsItem::Text(IgsText { bytes, invalid, chained }));
 }
 
 fn is_line_break(bytes: &[u8]) -> bool {
@@ -240,14 +254,14 @@ pub fn parse_igs_stream(bytes: &[u8]) -> Vec<IgsItem> {
             item.trailing.extend(unit);
             continue;
         }
-        push_text(&mut items, unit, sink.error || !sink.commands.is_empty());
+        push_text(&mut items, unit, sink.error || !sink.commands.is_empty(), unit_state == IgsStreamState::Chained);
     }
     if !pending.is_empty() {
         match items.last_mut() {
             Some(IgsItem::Command(item)) if is_line_break(&pending) => item.trailing.extend(pending),
             _ => {
                 let invalid = !pending.iter().all(u8::is_ascii_whitespace);
-                push_text(&mut items, pending, invalid);
+                push_text(&mut items, pending, invalid, unit_state == IgsStreamState::Chained);
             }
         }
     }
@@ -261,6 +275,7 @@ pub fn parse_igs_stream(bytes: &[u8]) -> Vec<IgsItem> {
             vec![IgsItem::Text(IgsText {
                 bytes: bytes.to_vec(),
                 invalid: true,
+                chained: false,
             })]
         };
     }
@@ -360,6 +375,15 @@ pub fn write_igs_command(command: &IgsCommand) -> Vec<u8> {
             write_loop(&mut out, data);
             out
         }
+        // The parser ends a pattern after its 16th row, so it takes no terminating `:`.
+        IgsCommand::LoadFillPattern { pattern, data } if data.len() == 16 => {
+            let mut out = format!("G#X>7,{pattern},").into_bytes();
+            for row in data {
+                out.extend((0..16).map(|bit| if row & (0x8000 >> bit) != 0 { b'X' } else { b'-' }));
+                out.push(b'@');
+            }
+            out
+        }
         IgsCommand::SetTextColor { layer, color } => format!("G#c>{layer},{color}:").into_bytes(),
         IgsCommand::DeleteLine { count } => format!("G#d>{count}:").into_bytes(),
         IgsCommand::InsertLine { mode, count } => format!("G#i>{mode},{count}:").into_bytes(),
@@ -400,7 +424,14 @@ pub fn encode_igs_stream(items: &[IgsItem]) -> Result<Vec<u8>, IgsEncodeError> {
     for (index, item) in items.iter().enumerate() {
         let start = out.len();
         match item {
-            IgsItem::Text(text) => out.extend_from_slice(&text.bytes),
+            IgsItem::Text(text) => {
+                // Text moved directly after a command would be read as the next command, or lose
+                // a leading control byte. A line feed there ends the chain without output.
+                if !text.invalid && !text.chained && stream_state(&parser) == IgsStreamState::Chained {
+                    out.push(b'\n');
+                }
+                out.extend_from_slice(&text.bytes);
+            }
             IgsItem::Command(item) => {
                 let state = stream_state(&parser);
                 match &item.source {

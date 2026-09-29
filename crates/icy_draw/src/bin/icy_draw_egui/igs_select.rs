@@ -1,7 +1,7 @@
 //! Selecting and reshaping IGS shapes on the canvas: hit tests, handles and the geometry that
 //! handle drags change, independent of the UI.
 
-use icy_parser_core::{IgsCommand, IgsParameter, TerminalResolution};
+use icy_parser_core::{BlitOperation, IgsCommand, IgsParameter, TerminalResolution};
 
 pub type Point = (i32, i32);
 
@@ -181,6 +181,20 @@ pub fn geometry(command: &IgsCommand, canvas: &Canvas, text_size: u8) -> Option<
             rx: value(x_radius)?,
             ry: canvas.circle_y_radius(value(y_radius)?),
         },
+        IgsCommand::DefineZone { zone_id, x1, y1, x2, y2, .. } if !(9997..=9999).contains(zone_id) => rect(value(x1)?, value(y1)?, value(x2)?, value(y2)?),
+        // A copied area is placed by its destination; its size follows the source.
+        IgsCommand::GrabScreen {
+            operation:
+                BlitOperation::ScreenToScreen {
+                    src_x1,
+                    src_y1,
+                    src_x2,
+                    src_y2,
+                    dest_x,
+                    dest_y,
+                },
+            ..
+        } => rect(*dest_x, *dest_y, dest_x + (src_x2 - src_x1).abs(), dest_y + (src_y2 - src_y1).abs()),
         IgsCommand::WriteText { x, y, text } => {
             let (width, height, top) = text_extent(text_size, text.len().max(1));
             Geometry::Text {
@@ -211,6 +225,21 @@ pub fn apply(command: &IgsCommand, geometry: &Geometry, canvas: &Canvas) -> IgsC
         (IgsCommand::WriteText { x, y, .. }, Geometry::Text { anchor, .. }) => {
             set(x, anchor.0);
             set(y, anchor.1);
+        }
+        (IgsCommand::DefineZone { x1, y1, x2, y2, .. }, Geometry::Rect { x0, y0, x1: r, y1: b }) => {
+            set(x1, *x0);
+            set(y1, *y0);
+            set(x2, *r);
+            set(y2, *b);
+        }
+        (
+            IgsCommand::GrabScreen {
+                operation: BlitOperation::ScreenToScreen { dest_x, dest_y, .. },
+                ..
+            },
+            Geometry::Rect { x0, y0, .. },
+        ) => {
+            (*dest_x, *dest_y) = (*x0, *y0);
         }
         (IgsCommand::Line { x1, y1, x2, y2 }, Geometry::Points(points)) if points.len() == 2 => {
             set(x1, points[0].0);
@@ -273,6 +302,9 @@ pub fn points_only(command: &IgsCommand) -> bool {
 
 /// The handles of a shape, in canvas pixels.
 pub fn handles(command: &IgsCommand, geometry: &Geometry) -> Vec<(Handle, Point)> {
+    if matches!(command, IgsCommand::GrabScreen { .. }) {
+        return Vec::new();
+    }
     match geometry {
         Geometry::Points(points) if points_only(command) => points.iter().enumerate().map(|(index, point)| (Handle::Point(index), *point)).collect(),
         Geometry::Points(_) | Geometry::Text { .. } => Vec::new(),
@@ -555,6 +587,50 @@ mod tests {
         assert!(!hit(&command, &geometry, (100.0, 130.0), 1.0));
         let dragged = drag(&geometry, &canvas(), Handle::Radius, (140, 100), (150, 100));
         assert!(matches!(dragged, Geometry::Circle { radius: 50, .. }));
+    }
+
+    #[test]
+    fn copied_areas_move_by_their_destination_and_zones_resize() {
+        let copy = IgsCommand::GrabScreen {
+            operation: BlitOperation::ScreenToScreen {
+                src_x1: 10,
+                src_y1: 10,
+                src_x2: 40,
+                src_y2: 30,
+                dest_x: 100,
+                dest_y: 50,
+            },
+            mode: icy_parser_core::BlitMode::Replace,
+        };
+        let copied = geometry(&copy, &canvas(), 9).unwrap();
+        assert_eq!(bounds(&copied), (100, 50, 130, 70));
+        assert!(handles(&copy, &copied).is_empty());
+        let moved = apply(&copy, &translate(&copied, &canvas(), 5, 5), &canvas());
+        assert!(matches!(
+            moved,
+            IgsCommand::GrabScreen {
+                operation: BlitOperation::ScreenToScreen {
+                    dest_x: 105,
+                    dest_y: 55,
+                    src_x1: 10,
+                    ..
+                },
+                ..
+            }
+        ));
+
+        let zone = IgsCommand::DefineZone {
+            zone_id: 1,
+            x1: 10.into(),
+            y1: 10.into(),
+            x2: 50.into(),
+            y2: 30.into(),
+            length: 3,
+            string: b"MSG".to_vec(),
+        };
+        let area = geometry(&zone, &canvas(), 9).unwrap();
+        assert_eq!(handles(&zone, &area).len(), 8);
+        assert!(hit(&zone, &area, (20.0, 20.0), 1.0));
     }
 
     #[test]

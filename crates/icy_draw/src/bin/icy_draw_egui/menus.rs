@@ -385,6 +385,13 @@ impl DrawApp {
             if item(ui, &fl!("menu-redo"), Some(&REDO), editor.can_redo()) {
                 editor.undo(true);
             }
+            ui.separator();
+            if item(ui, &fl!("igs-editor-duplicate"), None, editor.has_selection()) {
+                editor.duplicate_selected();
+            }
+            if item(ui, &fl!("igs-editor-delete"), None, editor.has_selection()) {
+                editor.delete_selection();
+            }
             return;
         }
         let animation = self.animation.is_some();

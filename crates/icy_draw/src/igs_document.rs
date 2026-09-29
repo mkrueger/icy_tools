@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 
 use icy_engine::{AutoWrapMode, EditableScreen, GraphicsType, PaletteScreenBuffer, Screen, ScreenSink, Size};
 use icy_parser_core::{
-    encode_igs_stream, encode_igs_stream_checked, parse_igs_stream, CommandParser, DrawingMode, IgsCommand, IgsEncodeError, IgsItem, IgsParser, IgsText,
-    LineMarkerStyle, PaletteMode, PatternType, PenType, ScreenClearMode, TerminalResolution, TextEffects, TextRotation,
+    encode_igs_stream, encode_igs_stream_checked, parse_igs_stream, CommandParser, CommandSink, DeviceControlString, DrawingMode, ErrorLevel, IgsCommand,
+    IgsEncodeError, IgsItem, IgsParser, IgsText, InitializationType, LineMarkerStyle, OperatingSystemCommand, PaletteMode, ParseError, PatternType, PenType,
+    ScreenClearMode, TerminalCommand, TerminalResolution, TextEffects, TextRotation,
 };
 use thiserror::Error;
 
@@ -92,8 +93,76 @@ impl IgsPreview {
     }
 }
 
+/// Forwards output until `remaining` pauses have passed, then drops the rest.
+struct StepSink<'a, 'b> {
+    inner: &'a mut ScreenSink<'b>,
+    remaining: usize,
+}
+
+impl StepSink<'_, '_> {
+    fn open(&self) -> bool {
+        self.remaining > 0
+    }
+}
+
+impl CommandSink for StepSink<'_, '_> {
+    fn print(&mut self, text: &[u8]) {
+        if self.open() {
+            self.inner.print(text);
+        }
+    }
+
+    fn emit(&mut self, cmd: TerminalCommand) {
+        if self.open() {
+            self.inner.emit(cmd);
+        }
+    }
+
+    fn emit_igs(&mut self, cmd: IgsCommand) {
+        if !self.open() {
+            return;
+        }
+        if matches!(cmd, IgsCommand::Pause { .. }) {
+            self.remaining -= 1;
+        }
+        self.inner.emit_igs(cmd);
+    }
+
+    fn device_control(&mut self, dcs: DeviceControlString) {
+        if self.open() {
+            self.inner.device_control(dcs);
+        }
+    }
+
+    fn operating_system_command(&mut self, osc: OperatingSystemCommand) {
+        if self.open() {
+            self.inner.operating_system_command(osc);
+        }
+    }
+
+    fn aps(&mut self, data: &[u8]) {
+        if self.open() {
+            self.inner.aps(data);
+        }
+    }
+
+    fn report_error(&mut self, error: ParseError, level: ErrorLevel) {
+        self.inner.report_error(error, level);
+    }
+
+    fn begin_igs_xor_mode(&mut self) {
+        if self.open() {
+            self.inner.begin_igs_xor_mode();
+        }
+    }
+
+    fn end_igs_xor_mode(&mut self) {
+        self.inner.end_igs_xor_mode();
+    }
+}
+
 /// Drawing attributes in effect at a position of the command list.
-/// `None` means the value is unknown, e.g. after a loop or an initialization.
+/// `None` means the VDI default is in effect, or, if `uncertain`, that a loop may have changed it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct IgsDrawState {
     pub resolution: TerminalResolution,
@@ -106,6 +175,8 @@ pub struct IgsDrawState {
     pub marker: Option<LineMarkerStyle>,
     pub drawing_mode: Option<DrawingMode>,
     pub text: Option<(TextEffects, u8, TextRotation)>,
+    /// A loop ran since the attributes were last known.
+    pub uncertain: bool,
 }
 
 impl Default for IgsDrawState {
@@ -121,6 +192,7 @@ impl Default for IgsDrawState {
             marker: None,
             drawing_mode: None,
             text: None,
+            uncertain: false,
         }
     }
 }
@@ -160,11 +232,15 @@ impl IgsDrawState {
                 }
             }
             IgsCommand::TextEffects { effects, size, rotation } => self.text = Some((*effects, *size, *rotation)),
-            IgsCommand::SetResolution { resolution, .. } => {
-                self.resolution = *resolution;
+            // Changing the resolution keeps the attributes.
+            IgsCommand::SetResolution { resolution, .. } => self.resolution = *resolution,
+            IgsCommand::Initialize {
+                mode: InitializationType::DesktopPaletteAndAttributes | InitializationType::DesktopAttributesOnly,
+            } => self.forget_attributes(),
+            IgsCommand::Loop(_) => {
                 self.forget_attributes();
+                self.uncertain = true;
             }
-            IgsCommand::Initialize { .. } | IgsCommand::Loop(_) => self.forget_attributes(),
             _ => {}
         }
     }
@@ -327,10 +403,7 @@ impl IgsDocument {
         document.saved_items = parse_items(&document.baseline).unwrap_or_default();
         if document.saved_items == document.items {
             // A recovered document always differs from disk, otherwise it would not have been saved.
-            document.saved_items.push(IgsItem::Text(IgsText {
-                bytes: Vec::new(),
-                invalid: false,
-            }));
+            document.saved_items.push(IgsItem::Text(IgsText::new(Vec::new())));
         }
         Ok(document)
     }
@@ -362,7 +435,21 @@ impl IgsDocument {
     /// Replay items without changing the document. Random parameters use a fixed seed so
     /// previews do not flicker between frames.
     pub fn render(items: &[IgsItem]) -> IgsResult<IgsPreview> {
+        Self::render_steps(items, None)
+    }
+
+    /// Like [`Self::render`], but the last item only runs until its `steps`-th pause, e.g. the
+    /// first iterations of a loop with a delay, as a terminal shows them over time.
+    pub fn render_steps(items: &[IgsItem], steps: Option<usize>) -> IgsResult<IgsPreview> {
         let bytes = encode_igs_stream(items)?;
+        let split = match (steps, items.len().checked_sub(1)) {
+            (Some(_), Some(last)) => {
+                let prefix = encode_igs_stream(&items[..last])?;
+                // Items encode one after another, so the prefix bytes come first.
+                bytes.starts_with(&prefix).then_some(prefix.len())
+            }
+            _ => None,
+        };
         let mut screen = PaletteScreenBuffer::new(GraphicsType::IGS(DEFAULT_RESOLUTION));
         screen.terminal_state_mut().auto_wrap_mode = AutoWrapMode::AutoWrap;
         *screen.buffer_type_mut() = icy_engine::BufferType::Atascii;
@@ -374,7 +461,17 @@ impl IgsDocument {
             let mut parser = IgsParser::new();
             parser.run_loop = true;
             let mut sink = ScreenSink::new(&mut screen);
-            parser.parse(&bytes, &mut sink);
+            match (split, steps) {
+                (Some(split), Some(steps)) => {
+                    parser.parse(&bytes[..split], &mut sink);
+                    let mut limited = StepSink {
+                        inner: &mut sink,
+                        remaining: steps,
+                    };
+                    parser.parse(&bytes[split..], &mut limited);
+                }
+                _ => parser.parse(&bytes, &mut sink),
+            }
         }));
         rendered.map_err(|_| IgsDocumentError::ParserPanic)?;
         Ok(IgsPreview { screen })
@@ -429,12 +526,13 @@ impl IgsDocument {
         }
     }
 
-    /// Applies a candidate item list as one undo step if it can be written.
+    /// Applies a candidate item list as one undo step if it can be written and reads back as
+    /// the same commands, e.g. text inserted after a chained command could start a command.
     fn commit(&mut self, items: Vec<IgsItem>) -> IgsResult<()> {
         if items == self.items {
             return Ok(());
         }
-        encode_igs_stream(&items)?;
+        encode_igs_stream_checked(&items)?;
         self.undo.push(std::mem::replace(&mut self.items, items));
         self.redo.clear();
         self.revision = self.revision.wrapping_add(1);
@@ -463,6 +561,40 @@ impl IgsDocument {
         self.commit(items)
     }
 
+    /// The items `source` parses to, or an error if any part of it cannot be read.
+    pub fn parse_source(source: &[u8]) -> IgsResult<Vec<IgsItem>> {
+        let parsed = parse_items(source)?;
+        if parsed.is_empty() || parsed.iter().any(|item| matches!(item, IgsItem::Text(text) if text.invalid)) {
+            return Err(IgsDocumentError::InvalidSource);
+        }
+        Ok(parsed)
+    }
+
+    /// Inserts items as a single undo step.
+    pub fn insert_items(&mut self, index: usize, inserted: Vec<IgsItem>) -> IgsResult<()> {
+        if index > self.items.len() {
+            return Err(IgsDocumentError::InvalidIndex { index, len: self.items.len() });
+        }
+        let mut items = self.items.clone();
+        items.splice(index..index, inserted);
+        self.commit(items)
+    }
+
+    /// Inserts whatever `source` parses to, e.g. pasted IGS; returns the number of items.
+    pub fn insert_source(&mut self, index: usize, source: &[u8]) -> IgsResult<usize> {
+        let parsed = Self::parse_source(source)?;
+        let count = parsed.len();
+        self.insert_items(index, parsed)?;
+        Ok(count)
+    }
+
+    /// The bytes of `range` as a stream of its own, e.g. for the clipboard.
+    pub fn range_source(&self, range: std::ops::Range<usize>) -> IgsResult<Vec<u8>> {
+        let len = self.items.len();
+        let items = self.items.get(range.clone()).ok_or(IgsDocumentError::InvalidIndex { index: range.end, len })?;
+        Ok(encode_igs_stream(items)?)
+    }
+
     pub fn insert(&mut self, index: usize, command: IgsCommand) -> IgsResult<()> {
         self.insert_many(index, vec![command])
     }
@@ -484,10 +616,7 @@ impl IgsDocument {
     /// Returns the number of items that replaced it.
     pub fn replace_source(&mut self, index: usize, source: &[u8]) -> IgsResult<usize> {
         self.check_index(index)?;
-        let parsed = parse_items(source)?;
-        if parsed.is_empty() || parsed.iter().any(|item| matches!(item, IgsItem::Text(text) if text.invalid)) {
-            return Err(IgsDocumentError::InvalidSource);
-        }
+        let parsed = Self::parse_source(source)?;
         let count = parsed.len();
         let mut items = self.items.clone();
         // Keep the line breaks that separated the old item from the next one.
@@ -725,6 +854,33 @@ mod tests {
         assert!(document.replace_source(1, b"G#~:").is_err());
         assert!(document.undo());
         assert!(!document.is_dirty());
+    }
+
+    #[test]
+    fn pasted_source_is_inserted_and_must_keep_the_commands() {
+        let mut document = IgsDocument::from_bytes(b"G#C>1,2:L>1,2,3,4:").unwrap();
+        let copied = document.range_source(1..2).unwrap();
+        assert_eq!(copied, b"G#L>1,2,3,4:");
+        assert_eq!(document.insert_source(2, &copied).unwrap(), 1);
+        assert_eq!(document.command(2), document.command(1));
+        // Text after a chained command is separated so that it stays text.
+        assert_eq!(document.insert_source(1, b"Hello").unwrap(), 1);
+        assert_eq!(document.to_bytes().unwrap(), b"G#C>1,2:\nHelloG#L>1,2,3,4:L>1,2,3,4:");
+        assert!(document.insert_source(0, b"G#~:").is_err());
+        assert_eq!(document.len(), 4);
+    }
+
+    #[test]
+    fn delayed_loops_render_their_first_iterations() {
+        let document = IgsDocument::from_bytes(b"G#R>0,0:\r\nG#&>10,50,10,2,L,4,x,20,x,40:\r\n").unwrap();
+        let drawn = |steps| {
+            let preview = IgsDocument::render_steps(document.items(), steps).unwrap();
+            [10, 20, 50].map(|x| preview.pixel_index(x, 30) != preview.pixel_index(5, 30))
+        };
+        assert_eq!(drawn(Some(1)), [true, false, false]);
+        assert_eq!(drawn(Some(2)), [true, true, false]);
+        assert_eq!(drawn(None), [true, true, true]);
+        assert_eq!(drawn(Some(99)), [true, true, true]);
     }
 
     #[test]

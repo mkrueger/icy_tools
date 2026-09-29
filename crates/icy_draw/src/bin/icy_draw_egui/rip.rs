@@ -4,6 +4,7 @@ use icy_engine::Screen;
 use icy_parser_core::{FillStyle, LineStyle, RipCommand};
 use std::path::Path;
 
+use super::playback::{Action, RowMark, Timeline, Transport};
 use super::widgets::{self, Icons};
 
 #[path = "rip_button.rs"]
@@ -657,10 +658,25 @@ const COMMAND_ROW_HEIGHT: f32 = 24.0;
 const PROPERTY_LABEL_WIDTH: f32 = 84.0;
 
 /// One line of the command list: number, icon, name and a short summary, never wrapped.
+/// The RIP commands as a terminal receives them.
+struct RipTimeline<'a>(&'a RipDocument);
+
+impl Timeline for RipTimeline<'_> {
+    fn len(&self) -> usize {
+        self.0.commands().len()
+    }
+
+    fn transmitted_bytes(&self, index: usize) -> usize {
+        self.0.commands().get(index).map_or(0, |command| command.to_string().len())
+    }
+}
+
 struct CommandRow<'a> {
     index: usize,
     command: &'a RipCommand,
     selected: bool,
+    /// How the row relates to the animation frame.
+    mark: RowMark,
     /// Part of the selected button (its style or font).
     related: bool,
     preserved: bool,
@@ -688,6 +704,7 @@ impl CommandRow<'_> {
         if let Some(fill) = background {
             painter.rect_filled(rect.shrink2(egui::vec2(2.0, 1.0)), 4, fill);
         }
+        self.mark.paint_background(ui, rect, background.is_some());
         let text = if self.selected {
             visuals.selection.stroke.color
         } else if self.preserved {
@@ -695,7 +712,12 @@ impl CommandRow<'_> {
         } else {
             visuals.text_color()
         };
-        let weak = if self.selected { text.gamma_multiply(0.7) } else { visuals.weak_text_color() };
+        let text = self.mark.text(text, self.selected);
+        let weak = if self.selected {
+            text.gamma_multiply(0.7)
+        } else {
+            self.mark.text(visuals.weak_text_color(), false)
+        };
         let center = rect.center().y;
         painter.text(
             egui::pos2(rect.left() + 34.0, center),
@@ -1051,6 +1073,9 @@ pub struct RipEditor {
     editing_style: Option<(usize, FontState, u16)>,
     /// The restyled scene the preview currently shows for text being edited.
     shown_editable: Option<Vec<RipCommand>>,
+    transport: Transport,
+    /// The animation frame the preview shows.
+    shown_frame: Option<usize>,
     shape_drag: Option<ShapeDrag>,
     drag: Option<((u16, u16), (u16, u16))>,
     hover: Option<(u16, u16)>,
@@ -1111,6 +1136,8 @@ impl RipEditor {
             mouse_draft: None,
             editing_style: None,
             shown_editable: None,
+            transport: Transport::default(),
+            shown_frame: None,
             shape_drag: None,
             drag: None,
             hover: None,
@@ -1157,6 +1184,9 @@ impl RipEditor {
     }
 
     pub fn undo(&mut self, redo: bool) {
+        if self.transport.animating() {
+            self.transport_action(Action::Stop, 0.0);
+        }
         // Undo first drops an unfinished curve, path or text.
         if !redo && (self.bezier.take().is_some() || !self.poly.is_empty() || self.text_edit.take().is_some()) {
             self.poly.clear();
@@ -1587,7 +1617,16 @@ impl RipEditor {
     }
 
     fn refresh_preview(&mut self, context: &egui::Context) {
-        let pending = if self.preview_to_selection { Vec::new() } else { self.pending_commands() };
+        let animation = self.transport.frame(None, self.document.commands().len());
+        if animation != self.shown_frame {
+            self.shown_frame = animation;
+            self.preview_dirty = true;
+        }
+        let pending = if self.preview_to_selection || animation.is_some() {
+            Vec::new()
+        } else {
+            self.pending_commands()
+        };
         if pending != self.shown_pending {
             self.shown_pending = pending;
             self.preview_dirty = true;
@@ -1628,7 +1667,9 @@ impl RipEditor {
         if !self.preview_dirty {
             return;
         }
-        let preview = if self.preview_to_selection {
+        let preview = if animation.is_some() {
+            self.document.preview_through(animation)
+        } else if self.preview_to_selection {
             self.document.preview_through(self.selected)
         } else if let Some(editable) = &self.shown_editable {
             self.document.preview_editable(editable)
@@ -1688,6 +1729,10 @@ impl RipEditor {
     }
 
     fn cancel(&mut self) {
+        if self.transport.animating() {
+            self.transport_action(Action::Stop, 0.0);
+            return;
+        }
         if self.bezier.take().is_some()
             || !self.poly.is_empty()
             || self.text_edit.take().is_some()
@@ -2009,7 +2054,70 @@ impl RipEditor {
         }
     }
 
-    fn command_list(&mut self, context: &egui::Context, blocked: bool) {
+    /// The command the canvas shows the drawing through: the animation frame, or the selection
+    /// while previewing through it.
+    fn frame(&self) -> Option<usize> {
+        self.transport
+            .frame(self.selected.filter(|_| self.preview_to_selection), self.document.commands().len())
+    }
+
+    /// Selects the animation frame whenever it moves, so the command list follows playback.
+    fn sync_selection(&mut self) {
+        let frame = self.frame();
+        if let Some(frame) = self.transport.follow(frame).filter(|frame| self.selected != Some(*frame)) {
+            self.selected = Some(frame);
+            self.editing = None;
+        }
+    }
+
+    /// Turns a paused or playing animation into a preview through its frame, where the drawing
+    /// can be edited, or turns the preview off.
+    fn toggle_preview(&mut self) {
+        if self.transport.animating() {
+            let frame = self.transport.end_for_preview(self.document.commands().len());
+            self.select_shape(frame);
+            self.preview_to_selection = frame.is_some();
+        } else {
+            self.preview_to_selection = !self.preview_to_selection;
+        }
+        self.preview_dirty = true;
+    }
+
+    fn transport_action(&mut self, action: Action, now: f64) {
+        if action != Action::Stop {
+            self.finish_pending();
+            self.commit_properties();
+        }
+        let preview = self.selected.filter(|_| self.preview_to_selection);
+        let outcome = self.transport.apply(action, &RipTimeline(&self.document), preview, now);
+        if outcome.stopped {
+            self.preview_to_selection = false;
+        }
+        if let Some(index) = outcome.select {
+            self.select_shape(Some(index));
+        }
+        self.preview_dirty = true;
+    }
+
+    fn advance_playback(&mut self, context: &egui::Context) {
+        let now = context.input(|input| input.time);
+        if let Some(wait) = self.transport.advance(&RipTimeline(&self.document), now, &mut |_| {}) {
+            context.request_repaint_after(std::time::Duration::from_secs_f64(wait));
+        }
+    }
+
+    fn transport_bar(&mut self, ui: &mut egui::Ui) {
+        let frame = self.frame();
+        let now = ui.input(|input| input.time);
+        if let Some(action) = self
+            .transport
+            .ui(ui, &mut self.icons, frame, self.document.commands().len(), &RipTimeline(&self.document))
+        {
+            self.transport_action(action, now);
+        }
+    }
+
+    fn command_list(&mut self, context: &egui::Context, blocked: bool, editing_blocked: bool) {
         egui::SidePanel::right("rip-commands")
             .default_width(280.0)
             .min_width(220.0)
@@ -2025,7 +2133,7 @@ impl RipEditor {
                     ui.weak(count.to_string());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
-                        let editable = self.selected.is_some_and(|index| index >= preserved && index < count);
+                        let editable = !editing_blocked && self.selected.is_some_and(|index| index >= preserved && index < count);
                         let mut action = None;
                         ui.add_enabled_ui(editable, |ui| {
                             if self.icons.button_sized(ui, "delete", &fl!("rip-editor-delete"), false, 26.0).clicked() {
@@ -2043,14 +2151,13 @@ impl RipEditor {
                             }
                         });
                         widgets::divider(ui);
-                        let through = self.preview_to_selection;
+                        let through = self.preview_to_selection && !self.transport.animating();
                         if self
                             .icons
                             .button_sized(ui, "visibility", &fl!("rip-editor-preview-through"), through, 26.0)
                             .clicked()
                         {
-                            self.preview_to_selection = !through;
-                            self.preview_dirty = true;
+                            self.toggle_preview();
                         }
                         match action {
                             Some(0) => self.delete_selected_command(),
@@ -2078,6 +2185,8 @@ impl RipEditor {
                         scroll = scroll.vertical_scroll_offset((index as f32 * COMMAND_ROW_HEIGHT - list_height / 2.0).max(0.0));
                     }
                 }
+                let frame = self.frame();
+                let mut double_clicked = None;
                 ui.scope(|ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     scroll.show_rows(ui, COMMAND_ROW_HEIGHT, count, |ui, rows| {
@@ -2093,13 +2202,18 @@ impl RipEditor {
                                 index,
                                 command,
                                 selected: self.selected == Some(index),
+                                mark: RowMark::new(index, frame),
                                 related,
                                 preserved: index < preserved,
                             };
                             let mouse = is_mouse_region(command);
                             let shape = select::geometry(command, (0, 0)).is_some();
                             let response = row.show(ui, &mut self.icons, &self.palette);
-                            if response.clicked() {
+                            if response.double_clicked() {
+                                double_clicked = Some(index);
+                            } else if response.clicked() && editing_blocked {
+                                self.selected = Some(index);
+                            } else if response.clicked() {
                                 self.finish_text();
                                 // Mouse regions are edited with their own tool, shapes with the select tool.
                                 if mouse && self.tool != Tool::Mouse {
@@ -2115,7 +2229,17 @@ impl RipEditor {
                         }
                     });
                 });
+                if let Some(index) = double_clicked {
+                    // Double-clicking runs the animation up to the command.
+                    self.transport_action(Action::Seek(index), ui.input(|input| input.time));
+                    self.sync_selection();
+                    self.selected = Some(index);
+                }
                 self.listed_selection = self.selected;
+                // The command list follows and seeks the animation; only its editing waits.
+                if editing_blocked {
+                    ui.disable();
+                }
                 if self.selected != previous {
                     // An edit still in a focused field is kept when another command is chosen;
                     // restyling a text can add or remove commands before the new selection.
@@ -2312,23 +2436,36 @@ impl RipEditor {
     }
 
     pub fn show(&mut self, context: &egui::Context, blocked: bool) {
+        self.advance_playback(context);
+        self.sync_selection();
         let blocked = blocked || self.button_dialog.is_some() || self.palette_dialog.is_some();
+        let editing_blocked = blocked || self.transport.animating();
         let panel_fill = context.style().visuals.panel_fill;
         egui::TopBottomPanel::top("rip-toolbar")
             .exact_height(TOOLBAR_HEIGHT)
             .frame(egui::Frame::new().fill(panel_fill))
             .show(context, |ui| {
-                if blocked {
+                if editing_blocked {
                     ui.disable();
                 }
                 self.toolbar(ui);
             });
-        self.sidebar(context, blocked);
-        self.command_list(context, blocked);
-        if !blocked {
-            if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
-                self.cancel();
-            }
+        egui::TopBottomPanel::top("rip-transport")
+            .exact_height(42.0)
+            .frame(egui::Frame::new().fill(panel_fill))
+            .show(context, |ui| {
+                if blocked {
+                    ui.disable();
+                }
+                self.transport_bar(ui);
+            });
+        self.sync_selection();
+        self.sidebar(context, editing_blocked);
+        self.command_list(context, blocked, editing_blocked);
+        if !blocked && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            self.cancel();
+        }
+        if !editing_blocked {
             self.type_text(context);
             // Text fields in the toolbar and command list keep their keys.
             if matches!(self.tool, Tool::Select | Tool::Mouse) && context.memory(|memory| memory.focused().is_none()) {
@@ -2362,7 +2499,7 @@ impl RipEditor {
             if let Some(error) = &self.error {
                 ui.colored_label(ui.visuals().error_fg_color, error);
             }
-            self.canvas(ui, blocked);
+            self.canvas(ui, editing_blocked);
         });
         if let Some(dialog) = &mut self.button_dialog {
             match dialog.show(context, &self.palette) {
@@ -3587,6 +3724,90 @@ mod tests {
         during(editor);
         run(context, editor, vec![button_event(at(to), egui::PointerButton::Primary, false)]);
         run(context, editor, vec![]);
+    }
+
+    fn run_at(context: &egui::Context, editor: &mut RipEditor, time: f64, events: Vec<egui::Event>) -> egui::FullOutput {
+        context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                time: Some(time),
+                events,
+                ..Default::default()
+            },
+            |context| editor.show(context, false),
+        )
+    }
+
+    fn lines(count: u16) -> RipEditor {
+        let source: String = (0..count).map(|index| format!("!|L{}00{}1E\r\n", to_mega(index), to_mega(index))).collect();
+        RipEditor::from_document(RipDocument::from_bytes(source.as_bytes()).unwrap())
+    }
+
+    fn to_mega(value: u16) -> String {
+        const DIGITS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        [value / 36, value % 36].iter().map(|digit| DIGITS[*digit as usize] as char).collect()
+    }
+
+    #[test]
+    fn rip_animation_plays_by_transmission_time_and_follows_the_list() {
+        let context = egui::Context::default();
+        let mut editor = lines(150);
+        run_at(&context, &mut editor, 0.0, vec![]);
+        editor.transport_action(Action::PlayPause, 0.0);
+        run_at(&context, &mut editor, 0.0, vec![]);
+        assert_eq!((editor.transport.frame(None, 150), editor.selected), (Some(0), Some(0)));
+        assert_eq!(editor.shown_frame, Some(0), "the canvas shows the drawing through the frame");
+        // Each "|Lxxxxxxxx" takes 10 bytes at 1200 BPS.
+        run_at(&context, &mut editor, 0.0085, vec![]);
+        assert_eq!(editor.transport.frame(None, 150), Some(1));
+        assert_eq!(editor.shown_frame, Some(1));
+        assert_eq!(editor.selected, Some(1));
+        editor.transport_action(Action::Seek(120), 0.01);
+        run_at(&context, &mut editor, 0.01, vec![]);
+        run_at(&context, &mut editor, 0.01, vec![]);
+        assert_eq!(editor.selected, Some(120));
+        assert!(editor.visible_rows.contains(&120), "{:?}", editor.visible_rows);
+        editor.undo(false);
+        assert!(!editor.transport.animating(), "undo stops the animation");
+        run_at(&context, &mut editor, 0.02, vec![]);
+        assert_eq!(editor.shown_frame, None, "the whole drawing is shown again");
+    }
+
+    #[test]
+    fn rip_rows_are_double_clicked_to_run_the_animation_there() {
+        let context = egui::Context::default();
+        let mut editor = lines(40);
+        let output = run_at(&context, &mut editor, 0.0, vec![]);
+        let row = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == "7" => Some(text.pos + text.galley.size() / 2.0 + egui::vec2(60.0, 0.0)),
+                _ => None,
+            })
+            .expect("row 7 is listed");
+        for (time, pressed) in [(1.0, true), (1.05, false), (1.1, true), (1.15, false)] {
+            run_at(
+                &context,
+                &mut editor,
+                time,
+                vec![egui::Event::PointerMoved(row), button_event(row, egui::PointerButton::Primary, pressed)],
+            );
+        }
+        run_at(&context, &mut editor, 1.2, vec![]);
+        assert_eq!(editor.transport.playhead, Some(6));
+        assert_eq!(editor.selected, Some(6));
+        assert_eq!(editor.shown_frame, Some(6));
+        // The eye turns the paused animation into an editable preview through its frame.
+        editor.toggle_preview();
+        assert!(!editor.transport.animating() && editor.preview_to_selection);
+        assert_eq!(editor.selected, Some(6));
+        editor.transport_action(Action::Next, 1.3);
+        assert_eq!((editor.selected, editor.transport.animating()), (Some(7), false));
+        editor.transport_action(Action::PlayPause, 1.3);
+        assert_eq!(editor.transport.run.as_ref().unwrap().index, 8, "play continues after the preview");
+        editor.transport_action(Action::Stop, 1.3);
+        assert!(!editor.preview_to_selection && !editor.transport.animating());
     }
 
     #[test]
