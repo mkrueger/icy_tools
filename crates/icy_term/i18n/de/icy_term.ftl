@@ -893,6 +893,7 @@ egui-terminal-default = Terminalstandard
 egui-lf-expand = LF fügt Wagenrücklauf hinzu
 
 egui-mouse-reporting = Mausereignisse senden
+egui-mouse-reporting-tooltip = Mausereignisse an die BBS ausschalten, um Terminaltext auszuwählen und zu kopieren.
 
 egui-user-name = Benutzername
 

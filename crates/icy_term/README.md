@@ -222,6 +222,8 @@ selector on narrow windows. The font is distributed under the
 
 Shift+PageUp enters history, Shift+PageDown advances or returns
 to live output, and Escape leaves history. Shift bypasses host mouse reporting.
+Terminal Information also has a Mouse reporting checkbox: turn it off and Apply
+to select and copy text in BBSes without resetting the current screen.
 Ctrl/Cmd+Shift+F opens search; F11 toggles fullscreen. Copy/Cut with a selection
 copies locally, while Ctrl+C without a selection retains terminal semantics.
 Window resizing changes display scale, not negotiated terminal dimensions.

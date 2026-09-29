@@ -352,6 +352,7 @@ pub enum TerminalCommand {
     CancelTransfer,
     Resize(u16, u16),
     SetBaudEmulation(BaudEmulation),
+    SetMouseReporting(bool),
     SetTerminalProfile {
         profile: Box<crate::Address>,
         scrollback: usize,
@@ -881,6 +882,13 @@ impl TerminalThread {
             }
             TerminalCommand::SetBaudEmulation(bps) => {
                 self.baud_emulator.set_baud_rate(bps);
+            }
+            TerminalCommand::SetMouseReporting(enabled) => {
+                let mut screen = self.edit_screen.lock();
+                if let Some(screen) = screen.as_editable() {
+                    screen.terminal_state_mut().mouse_state.mouse_tracking_enabled = enabled;
+                    screen.mark_dirty();
+                }
             }
             TerminalCommand::SetTerminalProfile { profile, scrollback } => {
                 let font = match profile.font_name.as_deref().map(icy_engine::BitFont::from_sauce_name).transpose() {
@@ -2983,6 +2991,23 @@ mod tests {
         for chunk in chunks {
             terminal.process_data(chunk).await;
         }
+    }
+
+    #[tokio::test]
+    async fn mouse_reporting_toggle_preserves_live_screen_and_remote_mouse_mode() {
+        let (mut terminal, _, screen) = test_terminal();
+        terminal.process_data(b"Hello\x1b[?1003h").await;
+        let original_mode = screen.lock().terminal_state().mouse_state.mouse_mode;
+
+        terminal.handle_command(crate::TerminalCommand::SetMouseReporting(false)).await;
+        {
+            let screen = screen.lock();
+            assert_eq!(screen.terminal_state().mouse_state.mouse_mode, original_mode);
+            assert!(!screen.terminal_state().mouse_state.mouse_tracking_enabled);
+            assert_eq!(screen.char_at((0, 0).into()).ch, 'H');
+        }
+        terminal.handle_command(crate::TerminalCommand::SetMouseReporting(true)).await;
+        assert!(screen.lock().terminal_state().mouse_state.mouse_tracking_enabled);
     }
 
     #[derive(Clone, Copy)]

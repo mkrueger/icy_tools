@@ -912,6 +912,7 @@ egui-terminal-default = Terminal default
 egui-lf-expand = LF adds carriage return
 
 egui-mouse-reporting = Mouse reporting
+egui-mouse-reporting-tooltip = Disable mouse events sent to the BBS to select and copy terminal text.
 
 egui-user-name = User name
 

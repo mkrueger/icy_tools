@@ -12,7 +12,7 @@ type Group = (String, Vec<(String, String, String)>);
 pub struct Dialog {
     groups: Vec<Group>,
     profile: Address,
-    original: (TerminalEmulation, ScreenMode, MusicOption),
+    original: (TerminalEmulation, ScreenMode, MusicOption, bool),
     kitty_flags_description: String,
     pub closed: bool,
 }
@@ -26,6 +26,17 @@ fn yes_no(value: bool) -> String {
 }
 
 impl Dialog {
+    fn applied_command(&self, scrollback: usize) -> TerminalCommand {
+        if self.original.0 == self.profile.terminal_type && self.original.1 == self.profile.screen_mode && self.original.2 == self.profile.ansi_music {
+            TerminalCommand::SetMouseReporting(self.profile.mouse_reporting_enabled)
+        } else {
+            TerminalCommand::SetTerminalProfile {
+                profile: Box::new(self.profile.clone()),
+                scrollback,
+            }
+        }
+    }
+
     pub fn new(screen: &dyn Screen, mut profile: Address, terminal: TerminalEmulation, baud: BaudEmulation) -> Self {
         let state = screen.terminal_state();
         let caret = screen.caret();
@@ -162,7 +173,7 @@ impl Dialog {
         Self {
             groups,
             kitty_flags_description: kitty_flags_description(state.kitty_keyboard.flags()),
-            original: (profile.terminal_type, profile.screen_mode, profile.ansi_music),
+            original: (profile.terminal_type, profile.screen_mode, profile.ansi_music, profile.mouse_reporting_enabled),
             profile,
             closed: false,
         }
@@ -222,7 +233,18 @@ impl Dialog {
                         appearance::compact_group(ui, &tr!("settings-heading"), |ui| settings(ui, profile));
                     }
                 });
-                let changed = self.original != (self.profile.terminal_type, self.profile.screen_mode, self.profile.ansi_music);
+                if let Some((_, fields)) = self.groups.iter_mut().find(|(title, _)| *title == tr!("egui-info-input-protocols")) {
+                    if let Some((_, value, _)) = fields.iter_mut().find(|(label, _, _)| *label == tr!("egui-mouse-reporting")) {
+                        *value = yes_no(self.profile.mouse_reporting_enabled);
+                    }
+                }
+                let changed = self.original
+                    != (
+                        self.profile.terminal_type,
+                        self.profile.screen_mode,
+                        self.profile.ansi_music,
+                        self.profile.mouse_reporting_enabled,
+                    );
                 dialog.buttons([
                     appearance::DialogButton::secondary(tr!("terminal-menu-copy"), Info::Copy).leading(),
                     appearance::DialogButton::cancel(tr!("egui-close"), Info::Close),
@@ -248,10 +270,7 @@ impl Dialog {
             ),
             Some(Info::Apply) => {
                 self.closed = true;
-                return Some(TerminalCommand::SetTerminalProfile {
-                    profile: Box::new(self.profile.clone()),
-                    scrollback,
-                });
+                return Some(self.applied_command(scrollback));
             }
             Some(Info::Close) => self.closed = true,
             None => self.closed |= response.dismissed,
@@ -262,6 +281,10 @@ impl Dialog {
 
 fn settings(ui: &mut egui::Ui, profile: &mut Address) {
     ui.set_min_width(ui.available_width());
+    appearance::form_row(ui, &tr!("egui-mouse-reporting"), |ui| {
+        ui.checkbox(&mut profile.mouse_reporting_enabled, "")
+            .on_hover_text(tr!("egui-mouse-reporting-tooltip"));
+    });
     appearance::form_row(ui, &tr!("egui-terminal-emulation"), |ui| {
         let previous = profile.terminal_type;
         egui::ComboBox::from_id_salt("info-emulation")
@@ -385,5 +408,26 @@ fn kitty_flags_description(flags: u8) -> String {
         tr!("terminal-info-dialog-not-set")
     } else {
         active.join(" + ")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mouse_reporting_only_applies_without_resetting_the_terminal() {
+        let screen = icy_engine::TextScreen::default();
+        let mut dialog = Dialog::new(&screen, Address::default(), TerminalEmulation::Ansi, BaudEmulation::Off);
+        assert!(dialog.profile.mouse_reporting_enabled);
+        dialog.profile.mouse_reporting_enabled = false;
+        assert!(matches!(dialog.applied_command(500), TerminalCommand::SetMouseReporting(false)));
+
+        dialog.profile.screen_mode = ScreenMode::Vga(80, 50);
+        assert!(matches!(
+            dialog.applied_command(500),
+            TerminalCommand::SetTerminalProfile { profile, scrollback: 500 }
+                if !profile.mouse_reporting_enabled && profile.screen_mode == ScreenMode::Vga(80, 50)
+        ));
     }
 }
