@@ -2420,3 +2420,16 @@ fn start_page_connects_to_a_server() {
     click_text(&context, &mut app, size, "Connect to Server…");
     assert!(matches!(app.dialog, Some(Dialog::Connect)));
 }
+
+#[test]
+fn shared_dialog_labels_are_translated() {
+    // The shared crate's translations are embedded separately; if they were missing, every
+    // shared dialog button would read "No localization for id".
+    for label in [
+        icy_engine_gui::egui::appearance::labels::ok(),
+        icy_engine_gui::egui::appearance::labels::cancel(),
+        icy_engine_gui::egui::appearance::labels::close(),
+    ] {
+        assert!(!label.contains("No localization"), "{label}");
+    }
+}
