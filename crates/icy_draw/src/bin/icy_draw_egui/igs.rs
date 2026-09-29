@@ -34,6 +34,8 @@ const SIDEBAR_WIDTH: f32 = 148.0;
 const SIDEBAR_MAX_WIDTH: f32 = 320.0;
 const SIDEBAR_MARGIN: f32 = 6.0;
 const PEN_SWATCH: egui::Vec2 = egui::vec2(30.0, 24.0);
+/// The smallest width of a tool button in the sidebar.
+const TOOL_BUTTON: f32 = 38.0;
 /// Screen distance in points within which a handle is picked up.
 const HANDLE_RADIUS: f32 = 8.0;
 const COMMAND_ROW_HEIGHT: f32 = 24.0;
@@ -943,6 +945,14 @@ fn same_attribute(a: &IgsCommand, b: &IgsCommand) -> bool {
         | (IgsCommand::TextEffects { .. }, IgsCommand::TextEffects { .. }) => true,
         _ => false,
     }
+}
+
+/// The columns and square button size of the tool grid that fill `width`: as many columns of
+/// buttons about [`TOOL_BUTTON`] points wide as fit, stretched to the full width.
+fn tool_grid(width: f32, spacing: f32) -> (usize, f32) {
+    let columns = (((width + spacing) / (TOOL_BUTTON + spacing)).floor() as usize).max(3);
+    let size = ((width - spacing * (columns - 1) as f32) / columns as f32).floor();
+    (columns, size)
 }
 
 /// Parameters of new shapes that are not IGS state: arc angles, spray density, the copy mode
@@ -2257,16 +2267,20 @@ impl IgsEditor {
                         self.open_palette_dialog();
                     }
                     ui.separator();
-                    egui::Grid::new("igs-tools-grid").num_columns(3).show(ui, |ui| {
-                        for (index, tool) in Tool::ALL.into_iter().enumerate() {
-                            if self.icons.button_sized(ui, tool.icon(), &tool.label(), self.tool == tool, 38.0).clicked() {
-                                self.select_tool(tool);
+                    let (columns, size) = tool_grid(ui.available_width(), ui.spacing().item_spacing.x);
+                    egui::Grid::new("igs-tools-grid")
+                        .num_columns(columns)
+                        .spacing(egui::Vec2::splat(ui.spacing().item_spacing.x))
+                        .show(ui, |ui| {
+                            for (index, tool) in Tool::ALL.into_iter().enumerate() {
+                                if self.icons.button_sized(ui, tool.icon(), &tool.label(), self.tool == tool, size).clicked() {
+                                    self.select_tool(tool);
+                                }
+                                if index % columns == columns - 1 {
+                                    ui.end_row();
+                                }
                             }
-                            if index % 3 == 2 {
-                                ui.end_row();
-                            }
-                        }
-                    });
+                        });
                 });
             });
     }
@@ -2439,6 +2453,7 @@ impl IgsEditor {
         let is_loop = matches!(item.command(), Some(IgsCommand::Loop(_)));
         let mut open_pattern = false;
         let mut play = false;
+        let mut stop_sound = false;
         match item.command() {
             Some(IgsCommand::LoadFillPattern { .. }) => {
                 open_pattern = ui
@@ -2446,9 +2461,11 @@ impl IgsEditor {
                     .clicked();
             }
             Some(command) if !SoundTable::new().sounds(command).is_empty() => {
-                play = ui
-                    .add(egui::Button::new(fl!("igs-sound-play")).min_size(egui::vec2(ui.available_width(), 28.0)))
-                    .clicked();
+                ui.horizontal(|ui| {
+                    let size = egui::vec2((ui.available_width() - ui.spacing().item_spacing.x) / 2.0, 28.0);
+                    play = ui.add(egui::Button::new(fl!("igs-sound-play")).min_size(size)).clicked();
+                    stop_sound = ui.add(egui::Button::new(fl!("igs-sound-stop")).min_size(size)).clicked();
+                });
             }
             _ => {}
         }
@@ -2514,6 +2531,9 @@ impl IgsEditor {
         }
         if play {
             self.play_sound(index);
+        }
+        if stop_sound {
+            self.sound.stop();
         }
         if let Some(text) = apply_source {
             self.apply_source(index, &text);
@@ -4118,6 +4138,17 @@ mod tests {
         ));
         editor.undo(false);
         assert!(matches!(editor.document.command(index), Some(IgsCommand::Circle { radius: IgsParameter::Value(radius), .. }) if *radius != 12));
+    }
+
+    #[test]
+    fn the_tool_grid_fills_the_sidebar() {
+        for (width, spacing) in [(136.0, 8.0), (202.0, 8.0), (308.0, 6.0)] {
+            let (columns, size) = tool_grid(width, spacing);
+            let used = columns as f32 * size + (columns - 1) as f32 * spacing;
+            assert!(size >= TOOL_BUTTON && width - used < columns as f32, "{width}: {columns} × {size} uses {used}");
+        }
+        assert_eq!(tool_grid(136.0, 8.0).0, 3, "the narrowest sidebar keeps three columns");
+        assert_eq!(tool_grid(202.0, 8.0).0, 4, "a wider one adds columns rather than space");
     }
 
     #[test]
