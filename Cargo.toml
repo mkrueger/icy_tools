@@ -60,7 +60,7 @@ i18n-embed = { version = "0.16.0", features = [
 ] }
 i18n-embed-fl = "0.10.1"
 fluent-bundle = "0.16.0"
-rust-embed = "8.12.0"
+rust-embed = { version = "8.12.0", features = ["debug-embed"] }
 once_cell = "1.21.4"
 toml = "1.1.4"
 bstr = "1.13.0"
