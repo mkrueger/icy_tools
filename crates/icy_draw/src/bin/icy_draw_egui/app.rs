@@ -2002,7 +2002,8 @@ impl DrawApp {
                 );
             }
         }
-        if self.document.box_preview.is_empty() {
+        if self.document.preview_cells.is_empty() {
+            // Only a shape erasing with the right button has no cells: it shows where it erases.
             for point in &self.document.preview {
                 let rect = egui::Rect::from_min_size(
                     origin + egui::vec2(point.x as f32 * cell_size.x, point.y as f32 * cell_size.y) * info.display_scale,
@@ -2011,24 +2012,26 @@ impl DrawApp {
                 painter.rect_filled(rect, 0, Color32::from_rgba_unmultiplied(red, green, blue, 160));
             }
         } else {
-            // Box lines show the characters they will draw, joins included, in their colors.
-            let (font, palette) = self.document.with_state(|state| {
+            // The operation tried on a copy: its cells as they will look, drawn over the picture.
+            let character = egui::vec2(info.font_width, info.font_height * if info.scan_lines { 2.0 } else { 1.0 });
+            let (fonts, palette) = self.document.with_state(|state| {
                 let buffer = state.get_buffer();
-                let font_page = state.get_caret().attribute.font_page();
-                (buffer.font(font_page).cloned(), buffer.palette.clone())
+                let fonts: HashMap<u8, icy_engine::BitFont> = buffer.font_iter().map(|(slot, font)| (*slot, font.clone())).collect();
+                (fonts, buffer.palette.clone())
             });
-            let rgb = |index: u32| {
-                let (red, green, blue) = palette.rgb(index);
+            let rgb = |color: icy_engine::AttributeColor, index: u32| {
+                let (red, green, blue) = color.as_rgb().unwrap_or_else(|| palette.rgb(index));
                 Color32::from_rgb(red, green, blue)
             };
-            for (point, ch, attribute) in &self.document.box_preview {
+            for (point, ch) in &self.document.preview_cells {
                 let rect = egui::Rect::from_min_size(
-                    origin + egui::vec2(point.x as f32 * cell_size.x, point.y as f32 * cell_size.y) * info.display_scale,
-                    cell_size * info.display_scale,
+                    origin + egui::vec2(point.x as f32 * character.x, point.y as f32 * character.y) * info.display_scale,
+                    character * info.display_scale,
                 );
-                painter.rect_filled(rect, 0, rgb(attribute.background()));
-                if let Some(font) = &font {
-                    widgets::paint_glyph_on(&painter, font, *ch, rect, rgb(attribute.foreground()));
+                let attribute = ch.attribute;
+                painter.rect_filled(rect, 0, rgb(attribute.background_color(), attribute.background()));
+                if let Some(font) = fonts.get(&attribute.font_page()).or_else(|| fonts.get(&0)) {
+                    widgets::paint_glyph_on(&painter, font, ch.ch, rect, rgb(attribute.foreground_color(), attribute.foreground()));
                 }
             }
         }

@@ -141,9 +141,11 @@ pub struct Document {
     pub selected_tags: Vec<usize>,
     /// Where a tag tool drag along one row asks for a new tag, and its width.
     pub new_tag_request: Option<(Position, usize)>,
+    /// The points of the shape being dragged (half block or quarter block pixels when drawing those).
     pub preview: Vec<Position>,
-    /// The characters a box line drag will draw, with the joins, for the canvas to show as they will look.
-    pub box_preview: Vec<(Position, char, icy_engine::TextAttribute)>,
+    /// The cells the shape being dragged will change, as they will look, for the canvas to show
+    /// over the picture: the operation tried on a copy with all its parameters.
+    pub preview_cells: Vec<(Position, icy_engine::AttributedChar)>,
     pub metadata_dirty: bool,
     pub baseline: Option<Vec<u8>>,
     stroke: Option<Stroke>,
@@ -199,7 +201,7 @@ impl Document {
             selected_tags: Vec::new(),
             new_tag_request: None,
             preview: Vec::new(),
-            box_preview: Vec::new(),
+            preview_cells: Vec::new(),
             metadata_dirty: false,
             stroke: None,
             paste: None,
@@ -761,9 +763,17 @@ impl Document {
             }
         } else if let Some(style) = self.box_line.filter(|_| tool == Tool::Line) {
             self.preview = box_lines::box_path(start, position);
-            self.box_preview = if clear { Vec::new() } else { self.box_cells(start, position, style, button) };
+            self.preview_cells = if clear {
+                Vec::new()
+            } else {
+                self.box_cells(start, position, style, button)
+                    .into_iter()
+                    .map(|(point, ch, attribute)| (point, icy_engine::AttributedChar::new(ch, attribute)))
+                    .collect()
+            };
         } else if tool.is_shape_tool() {
             self.preview = shape_points(tool, start, position);
+            self.preview_cells = if clear { Vec::new() } else { self.shape_cells(&self.preview, brush, button) };
         } else if matches!(tool, Tool::Select | Tool::Click | Tool::Font) {
             let selection = if stroke.selection_drag == SelectionDrag::Create && start == position {
                 None
@@ -867,48 +877,94 @@ impl Document {
     }
 
     /// Sets (left button) or clears the quarter block pixel at `pixel`.
-    fn stamp_pixel(&self, pixel: Position, button: MouseButton) {
-        self.with_state(|state| {
-            let cell = crate::quarter_blocks::cell_of(pixel);
-            if state.is_something_selected() && !state.is_selected(cell) {
-                return;
-            }
-            let attribute = state.get_caret().attribute;
-            let Some(layer) = state.get_cur_layer() else {
-                return;
-            };
-            let local = cell - layer.offset();
-            if local.x < 0 || local.y < 0 || local.x >= layer.width() || local.y >= layer.height() {
-                return;
-            }
-            let code = crate::quarter_blocks::with_pixel(layer.char_at(local).ch, pixel, button != MouseButton::Right);
-            let _ = state.set_char_in_atomic(local, icy_engine::AttributedChar::new(code, attribute));
-        });
+    fn stamp_pixel(state: &mut EditState, pixel: Position, button: MouseButton) {
+        let cell = crate::quarter_blocks::cell_of(pixel);
+        if state.is_something_selected() && !state.is_selected(cell) {
+            return;
+        }
+        let attribute = state.get_caret().attribute;
+        let Some(layer) = state.get_cur_layer() else {
+            return;
+        };
+        let local = cell - layer.offset();
+        if local.x < 0 || local.y < 0 || local.x >= layer.width() || local.y >= layer.height() {
+            return;
+        }
+        let code = crate::quarter_blocks::with_pixel(layer.char_at(local).ch, pixel, button != MouseButton::Right);
+        let _ = state.set_char_in_atomic(local, icy_engine::AttributedChar::new(code, attribute));
     }
 
     fn stamp(&self, position: Position, brush: BrushSettings, button: MouseButton) {
         if !self.can_paint() {
             return;
         }
+        self.with_state(|state| self.stamp_into(state, position, brush, button));
+    }
+
+    /// Paints the brush at `position` into `state`, the document's or a copy for the preview.
+    fn stamp_into(&self, state: &mut EditState, position: Position, brush: BrushSettings, button: MouseButton) {
         if self.draws_pixels() {
-            self.stamp_pixel(position, button);
-            return;
-        }
-        self.with_state(|state| {
-            if brush.primary == BrushPrimaryMode::HalfBlock {
-                let size = brush.brush_size.max(1) as i32;
-                for row in 0..size {
-                    for column in 0..size {
-                        let point = position + Position::new(column - size / 2, row - size / 2);
-                        if point.y >= 0 {
-                            apply_stamp_at_doc_pos(state, brush, Position::new(point.x, point.y / 2), point.y % 2 == 0, button);
-                        }
+            Self::stamp_pixel(state, position, button);
+        } else if brush.primary == BrushPrimaryMode::HalfBlock {
+            let size = brush.brush_size.max(1) as i32;
+            for row in 0..size {
+                for column in 0..size {
+                    let point = position + Position::new(column - size / 2, row - size / 2);
+                    if point.y >= 0 {
+                        apply_stamp_at_doc_pos(state, brush, Position::new(point.x, point.y / 2), point.y % 2 == 0, button);
                     }
                 }
-            } else {
-                apply_stamp_at_doc_pos(state, brush, position, true, button);
             }
-        });
+        } else {
+            apply_stamp_at_doc_pos(state, brush, position, true, button);
+        }
+    }
+
+    /// The cells stamping the brush at `points` changes on the current layer, as they will look
+    /// (in document positions). The stamps go to a copy, so the document stays as it is.
+    pub fn shape_cells(&self, points: &[Position], brush: BrushSettings, button: MouseButton) -> Vec<(Position, icy_engine::AttributedChar)> {
+        if points.is_empty() || !self.can_paint() {
+            return Vec::new();
+        }
+        self.with_state(|state| {
+            let mut scratch = state.scratch_copy();
+            {
+                let _undo = scratch.begin_atomic_undo("Preview");
+                for &point in points {
+                    self.stamp_into(&mut scratch, point, brush, button);
+                }
+            }
+            let (Some(before), Some(after)) = (state.get_cur_layer(), scratch.get_cur_layer()) else {
+                return Vec::new();
+            };
+            // Only the cells the points can reach, with the brush around them, can change.
+            let (columns, rows) = if self.draws_pixels() {
+                (2, 2)
+            } else if brush.primary == BrushPrimaryMode::HalfBlock {
+                (1, 2)
+            } else {
+                (1, 1)
+            };
+            let reach = brush.brush_size.max(1) as i32;
+            let (mut min, mut max) = (Position::new(i32::MAX, i32::MAX), Position::new(i32::MIN, i32::MIN));
+            for point in points {
+                let cell = Position::new(point.x.div_euclid(columns), point.y.div_euclid(rows));
+                min = Position::new(min.x.min(cell.x - reach), min.y.min(cell.y - reach));
+                max = Position::new(max.x.max(cell.x + reach), max.y.max(cell.y + reach));
+            }
+            let offset = before.offset();
+            let mut cells = Vec::new();
+            for y in (min.y - offset.y).max(0)..=(max.y - offset.y).min(before.height() - 1) {
+                for x in (min.x - offset.x).max(0)..=(max.x - offset.x).min(before.width() - 1) {
+                    let local = Position::new(x, y);
+                    let changed = after.char_at(local);
+                    if changed != before.char_at(local) {
+                        cells.push((local + offset, changed));
+                    }
+                }
+            }
+            cells
+        })
     }
 
     pub fn finish(&mut self) {
@@ -943,7 +999,7 @@ impl Document {
             if stroke.tool.is_shape_tool() {
                 if let Some(style) = self.box_line.filter(|_| stroke.tool == Tool::Line && !stroke.clear) {
                     self.preview.clear();
-                    self.box_preview.clear();
+                    self.preview_cells.clear();
                     self.draw_box_line(stroke.start, stroke.last, style, stroke.button);
                 }
                 for point in std::mem::take(&mut self.preview) {
@@ -980,7 +1036,7 @@ impl Document {
             drop(stroke);
         }
         self.preview.clear();
-        self.box_preview.clear();
+        self.preview_cells.clear();
     }
 
     pub fn cancel(&mut self) {
@@ -991,7 +1047,7 @@ impl Document {
             });
         }
         self.preview.clear();
-        self.box_preview.clear();
+        self.preview_cells.clear();
     }
 
     pub fn undo(&mut self) -> DrawResult<()> {
@@ -1465,6 +1521,56 @@ mod tests {
     use super::*;
     use icy_engine::TextPane;
 
+    /// The cells of the layer that differ from `before`.
+    fn changed_cells(document: &Document, before: &icy_engine::Layer) -> Vec<(Position, icy_engine::AttributedChar)> {
+        document.with_state(|state| {
+            let layer = state.get_cur_layer().unwrap();
+            let mut cells = Vec::new();
+            for y in 0..layer.height() {
+                for x in 0..layer.width() {
+                    let position = Position::new(x, y);
+                    if layer.char_at(position) != before.char_at(position) {
+                        cells.push((position + layer.offset(), layer.char_at(position)));
+                    }
+                }
+            }
+            cells
+        })
+    }
+
+    #[test]
+    fn the_shape_preview_is_exactly_what_the_shape_draws() {
+        for (primary, character) in [
+            (BrushPrimaryMode::Char, '#'),
+            (BrushPrimaryMode::HalfBlock, ' '),
+            (BrushPrimaryMode::Colorize, ' '),
+        ] {
+            for tool in [Tool::RectangleOutline, Tool::RectangleFilled, Tool::EllipseOutline, Tool::Line] {
+                let mut document = Document::new(Size::new(30, 20));
+                document.type_text("some text under the shape").unwrap();
+                document.with_state(|state| {
+                    state.set_caret_foreground(12);
+                    state.set_caret_background(1);
+                });
+                document.brush.primary = primary;
+                document.brush.paint_char = character;
+                document.tool = tool;
+                let before = document.with_state(|state| state.get_cur_layer().unwrap().clone());
+                document.begin(Position::new(2, 0), MouseButton::Left);
+                document.update(Position::new(14, 9));
+                let mut preview = document.preview_cells.clone();
+                assert!(!preview.is_empty(), "{primary:?} {tool:?} shows a preview");
+                assert!(changed_cells(&document, &before).is_empty(), "the preview does not draw");
+                document.finish();
+                let mut drawn = changed_cells(&document, &before);
+                preview.sort_by_key(|(position, _)| (position.y, position.x));
+                drawn.sort_by_key(|(position, _)| (position.y, position.x));
+                assert_eq!(preview, drawn, "{primary:?} {tool:?}");
+                assert!(document.preview_cells.is_empty());
+            }
+        }
+    }
+
     #[test]
     fn paste_starts_at_the_upper_left_corner_of_the_selection() {
         let mut document = Document::new(Size::new(30, 20));
@@ -1837,14 +1943,14 @@ mod tests {
         doc.begin(Position::new(0, 1), MouseButton::Left);
         doc.update(Position::new(5, 1));
         let preview: String = doc
-            .box_preview
+            .preview_cells
             .iter()
-            .map(|(_, ch, _)| icy_engine::BufferType::CP437.convert_to_unicode(*ch))
+            .map(|(_, ch)| icy_engine::BufferType::CP437.convert_to_unicode(ch.ch))
             .collect();
         assert_eq!(preview, "───┼──", "the preview crosses the existing line");
         assert_eq!(row(&doc, 1), "   │    ", "the canvas only changes when the line is finished");
         doc.finish();
-        assert!(doc.box_preview.is_empty());
+        assert!(doc.preview_cells.is_empty());
         assert_eq!(row(&doc, 1), "───┼──  ");
 
         // The brush's Apply switches keep a cell's own colors, like for the other modes.

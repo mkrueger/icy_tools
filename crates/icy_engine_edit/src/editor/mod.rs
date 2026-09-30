@@ -402,6 +402,17 @@ impl EditState {
         edit_state
     }
 
+    /// A copy of the picture, caret, current layer and selection with an undo stack of its own,
+    /// to try an operation on without touching the document, e.g. for its preview.
+    pub fn scratch_copy(&self) -> Self {
+        let mut scratch = Self::from_buffer(self.screen.buffer.clone());
+        scratch.screen.caret = self.screen.caret.clone();
+        scratch.screen.current_layer = self.screen.current_layer;
+        scratch.selection_opt = self.selection_opt;
+        scratch.selection_mask = self.selection_mask.clone();
+        scratch
+    }
+
     pub fn set_buffer(&mut self, buffer: TextBuffer) {
         self.screen.buffer = buffer;
         self.set_mask_size();

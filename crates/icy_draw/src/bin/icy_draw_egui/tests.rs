@@ -2994,7 +2994,7 @@ fn gpu_box_lines_render() {
         );
         gpu.capture(&mut app, [1280, 820], 1.0, vec![egui::Event::PointerMoved(end)], "box-lines-drag-warmup");
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "box-lines-drag");
-        assert!(!app.document.box_preview.is_empty(), "the drag is still running");
+        assert!(!app.document.preview_cells.is_empty(), "the drag is still running");
     });
 }
 
