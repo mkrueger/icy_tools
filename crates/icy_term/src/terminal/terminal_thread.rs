@@ -1768,7 +1768,17 @@ impl TerminalThread {
                                 }
                             }
                         }
-                        tokio::time::sleep(Duration::from_millis(20)).await;
+                        // Pause so the UI can show each frame of a sixel animation. When the host has
+                        // already sent a newer sixel, the pause only puts the terminal further behind
+                        // the stream, so skip it and let the newest frame win.
+                        let newer_sixel_queued = self.connection.is_some()
+                            && self
+                                .command_queue
+                                .iter()
+                                .any(|queued| matches!(queued, QueuedCommand::DeviceControl(DeviceControlString::Sixel { .. })));
+                        if !newer_sixel_queued {
+                            tokio::time::sleep(Duration::from_millis(20)).await;
+                        }
                     }
                     Err(err) => {
                         if shared {
@@ -3159,6 +3169,43 @@ mod tests {
                 assert_eq!(screen.char_at(Position::new(17, row)).ch, marker, "screen row {row}, bytewise={bytewise}");
             }
         }
+    }
+
+    /// Full-screen style animation: every frame replaces the previous one, and only the last frame is red.
+    fn sixel_frames(count: usize) -> Vec<u8> {
+        let mut data = Vec::new();
+        for frame in 0..count {
+            let color = if frame + 1 == count { "100;0;0" } else { "0;0;100" };
+            data.extend_from_slice(format!("\x1b[1;1H\x1bPq#1;2;{color}#1!16~-!16~\x1b\\").as_bytes());
+        }
+        data
+    }
+
+    #[tokio::test]
+    async fn queued_sixel_frames_skip_the_display_pause() {
+        let (mut terminal, _, screen) = test_terminal();
+        let start = std::time::Instant::now();
+
+        terminal.process_data(&sixel_frames(20)).await;
+
+        // Pausing after each of the 20 frames would take at least 400 ms; only the newest frame pauses.
+        assert!(start.elapsed() < std::time::Duration::from_millis(200), "{:?}", start.elapsed());
+        let mut screen = screen.lock();
+        let text = screen.as_any_mut().downcast_mut::<TextScreen>().unwrap();
+        let sixels = &text.buffer.layers[0].sixels;
+        assert_eq!(sixels.len(), 1);
+        assert_eq!(&sixels[0].picture_data[..4], &[255, 0, 0, 255]);
+    }
+
+    #[tokio::test]
+    async fn sixel_frames_played_locally_keep_the_display_pause() {
+        let (mut terminal, _, _) = test_terminal();
+        terminal.connection = None;
+        let start = std::time::Instant::now();
+
+        terminal.process_data(&sixel_frames(3)).await;
+
+        assert!(start.elapsed() >= std::time::Duration::from_millis(60), "{:?}", start.elapsed());
     }
 
     #[test]
