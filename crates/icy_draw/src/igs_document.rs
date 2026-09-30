@@ -670,6 +670,19 @@ impl IgsDocument {
         Ok(count)
     }
 
+    /// Replaces the items of `range` with `commands` in one undo step, e.g. an edited tune.
+    pub fn replace_range(&mut self, range: std::ops::Range<usize>, commands: Vec<IgsCommand>) -> IgsResult<()> {
+        if range.start > range.end || range.end > self.items.len() {
+            return Err(IgsDocumentError::InvalidIndex {
+                index: range.end,
+                len: self.items.len(),
+            });
+        }
+        let mut items = self.items.clone();
+        items.splice(range, commands.into_iter().map(IgsItem::from));
+        self.commit(items)
+    }
+
     pub fn delete(&mut self, index: usize) -> IgsResult<IgsItem> {
         self.check_index(index)?;
         let mut items = self.items.clone();

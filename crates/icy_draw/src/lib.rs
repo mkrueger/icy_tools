@@ -6,6 +6,7 @@ pub mod files;
 pub mod fill;
 pub mod host;
 pub mod igs_document;
+pub mod igs_tune;
 pub mod mcp;
 #[path = "ui/editor/ansi/tools/paint.rs"]
 pub mod paint;

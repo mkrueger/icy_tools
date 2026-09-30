@@ -2561,6 +2561,46 @@ fn gpu_shade_ramp_controls_render() {
 }
 
 #[test]
+fn gpu_chip_tune_editor_renders() {
+    use icy_draw::igs_tune::{NoteEnd, Tune, TuneNote};
+    use_english();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        app.create(NewKind::Igs, Size::new(80, 25));
+        let note = |start, length, voice, pitch, end| TuneNote {
+            start,
+            length,
+            voice,
+            pitch,
+            effect: icy_parser_core::SoundEffect::Longbell,
+            volume: 15,
+            end,
+        };
+        let tune = Tune {
+            notes: vec![
+                note(0, 40, 0, 72, NoteEnd::Release),
+                note(40, 40, 0, 74, NoteEnd::Release),
+                note(80, 80, 0, 76, NoteEnd::Cut),
+                note(0, 160, 1, 60, NoteEnd::Hold),
+                note(160, 60, 2, 67, NoteEnd::Release),
+            ],
+        };
+        app.igs.as_mut().unwrap().open_tune_for_test(tune);
+        for _ in 0..3 {
+            gpu.capture(&mut app, [1280, 820], 1.0, vec![], "chip-tune-warmup");
+        }
+        let pixels = gpu.capture(&mut app, [1280, 820], 1.0, vec![], "chip-tune");
+        for color in crate::igs::tune::VOICE_COLORS {
+            assert!(
+                pixels.chunks(4).any(|pixel| pixel[..3] == [color.r(), color.g(), color.b()]),
+                "the notes of every voice are drawn in its color"
+            );
+        }
+    });
+}
+
+#[test]
 fn start_page_connects_to_a_server() {
     let context = egui::Context::default();
     appearance::apply(&context);

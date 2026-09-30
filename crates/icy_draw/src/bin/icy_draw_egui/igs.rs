@@ -9,7 +9,7 @@ use icy_draw::{
 use icy_engine::Screen;
 use icy_parser_core::{
     ArrowEnd, BlitMode, BlitOperation, DrawingMode, IgsCommand, IgsItem, IgsParameter, LineKind, LineMarkerStyle, PatternType, PenType, PolymarkerKind,
-    TerminalResolution, TextEffects, TextRotation,
+    StopType, TerminalResolution, TextEffects, TextRotation,
 };
 use std::path::Path;
 
@@ -30,6 +30,8 @@ use pattern::{PatternDialog, PatternResult};
 mod properties;
 #[path = "igs_select.rs"]
 mod select;
+#[path = "igs_tune.rs"]
+pub(crate) mod tune;
 use select::{Canvas, Geometry, Handle, Point};
 
 const TOOLBAR_HEIGHT: f32 = 44.0;
@@ -470,23 +472,57 @@ impl SoundTable {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-enum Sound {
+pub(super) enum Sound {
     Gist(Vec<i16>),
-    Chip { data: Vec<i16>, voice: u8, volume: u8, pitch: u8 },
+    Chip {
+        data: Vec<i16>,
+        voice: u8,
+        volume: u8,
+        pitch: u8,
+    },
+    /// A voice fades out with the release of its sound.
+    Release(u8),
+    /// A voice stops at once.
+    Cut(u8),
+    ReleaseAll,
     StopAll,
 }
 
-/// The audio output, opened on the first sound.
+impl Sound {
+    /// What the stop type of a chip music command does after its wait.
+    fn stop(stop: StopType, voice: u8) -> Option<Self> {
+        match stop {
+            StopType::NoEffect => None,
+            StopType::SndOff => Some(Self::Release(voice)),
+            StopType::StopSnd => Some(Self::Cut(voice)),
+            StopType::SndOffAll => Some(Self::ReleaseAll),
+            StopType::StopSndAll => Some(Self::StopAll),
+        }
+    }
+}
+
+/// The stop a chip music command applies, and after how many seconds: IG waits the timing,
+/// then stops.
+fn chip_stop(command: &IgsCommand) -> Option<(f64, Sound)> {
+    match command {
+        IgsCommand::ChipMusic { voice, timing, stop_type, .. } => Some((f64::from((*timing).max(0)) / 200.0, Sound::stop(*stop_type, *voice)?)),
+        _ => None,
+    }
+}
+
+/// The audio output, opened on the first sound, and the sounds due later.
 #[derive(Default)]
-struct SoundPlayer {
+pub(super) struct SoundPlayer {
     #[cfg(not(test))]
     thread: Option<icy_engine_gui::music::SoundThread>,
     #[cfg(test)]
-    played: Vec<Sound>,
+    pub(super) played: Vec<Sound>,
+    /// Sounds to play at a time of the egui clock, in the order they were scheduled.
+    scheduled: Vec<(f64, Sound)>,
 }
 
 impl SoundPlayer {
-    fn play(&mut self, sounds: Vec<Sound>) {
+    pub(super) fn play(&mut self, sounds: Vec<Sound>) {
         #[cfg(test)]
         self.played.extend(sounds);
         #[cfg(not(test))]
@@ -495,12 +531,31 @@ impl SoundPlayer {
             let _ = match sound {
                 Sound::Gist(data) => thread.play_gist(data),
                 Sound::Chip { data, voice, volume, pitch } => thread.play_chip_music(data, voice, volume, pitch),
+                Sound::Release(voice) => thread.snd_off(voice),
+                Sound::Cut(voice) => thread.stop_snd(voice),
+                Sound::ReleaseAll => thread.snd_off_all(),
                 Sound::StopAll => thread.stop_snd_all(),
             };
         }
     }
 
-    fn stop(&mut self) {
+    /// Plays `sound` once the egui clock reaches `at`.
+    pub(super) fn schedule(&mut self, at: f64, sound: Sound) {
+        self.scheduled.push((at, sound));
+    }
+
+    /// Plays the scheduled sounds that are due and returns when the next one is.
+    pub(super) fn update(&mut self, now: f64) -> Option<f64> {
+        // Stable by time, so sounds due together keep their order.
+        self.scheduled.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let due = self.scheduled.iter().take_while(|(at, _)| *at <= now).count();
+        let sounds: Vec<Sound> = self.scheduled.drain(..due).map(|(_, sound)| sound).collect();
+        self.play(sounds);
+        self.scheduled.first().map(|(at, _)| *at)
+    }
+
+    pub(super) fn stop(&mut self) {
+        self.scheduled.clear();
         #[cfg(test)]
         self.played.push(Sound::StopAll);
         #[cfg(not(test))]
@@ -1159,6 +1214,7 @@ pub struct IgsEditor {
     attributes: Attributes,
     icons: Icons,
     palette_dialog: Option<PaletteDialog>,
+    tune_dialog: Option<tune::TuneDialog>,
     pattern_dialog: Option<PatternDialog>,
     /// The area the copy tool copies, until the copy is placed.
     copy_source: Option<(Point, Point)>,
@@ -1209,6 +1265,7 @@ impl IgsEditor {
             attributes: Attributes::default(),
             icons: Icons::default(),
             palette_dialog: None,
+            tune_dialog: None,
             pattern_dialog: None,
             copy_source: None,
             transport: Transport::default(),
@@ -1276,6 +1333,9 @@ impl IgsEditor {
         self.shape_drag = None;
         self.drag = None;
         self.pattern_dialog = None;
+        if self.tune_dialog.take().is_some() {
+            self.sound.stop();
+        }
         // Undo first drops an unfinished path or text.
         let pending = !self.poly.is_empty() || self.text_edit.take().is_some();
         self.poly.clear();
@@ -1774,6 +1834,54 @@ impl IgsEditor {
         self.pattern_dialog = Some(dialog);
     }
 
+    /// Opens the chip tune editor on the run of `n` commands around `index`, or on a new tune
+    /// inserted where new commands go.
+    fn open_tune_dialog(&mut self, index: Option<usize>) {
+        self.finish_pending();
+        self.commit_properties();
+        let items = self.document.items();
+        let is_note = |index: usize| matches!(items.get(index).and_then(IgsItem::command), Some(IgsCommand::ChipMusic { .. }));
+        let target = index.filter(|&index| is_note(index)).map(|index| {
+            let start = (0..=index).rev().take_while(|&index| is_note(index)).last().unwrap_or(index);
+            let end = (index..items.len()).take_while(|&index| is_note(index)).last().unwrap_or(index) + 1;
+            start..end
+        });
+        let tune = target
+            .clone()
+            .map(|range| icy_draw::igs_tune::Tune::from_commands(items[range].iter().filter_map(IgsItem::command)))
+            .unwrap_or_default();
+        let at = target.as_ref().map_or_else(|| self.insertion_index(), |range| range.start);
+        self.tune_dialog = Some(tune::TuneDialog::new(tune, target, SoundTable::before(items, at)));
+    }
+
+    /// Opens the tune editor on `tune`, for screenshots.
+    #[cfg(test)]
+    pub(crate) fn open_tune_for_test(&mut self, tune: icy_draw::igs_tune::Tune) {
+        self.open_tune_dialog(None);
+        if let Some(dialog) = &mut self.tune_dialog {
+            dialog.tune = tune;
+        }
+    }
+
+    /// Writes the tune as `n` commands in place of the ones it was read from, or where new
+    /// commands go.
+    fn apply_tune(&mut self, dialog: tune::TuneDialog) {
+        let commands = dialog.tune.to_commands();
+        match dialog.target {
+            Some(range) if range.end <= self.document.len() => {
+                let count = commands.len();
+                let result = self.document.replace_range(range.clone(), commands);
+                if self.set_error(result) {
+                    self.selected = (count > 0).then_some(range.start);
+                    self.editing = None;
+                    self.source = None;
+                }
+            }
+            Some(_) => {}
+            None => self.add_commands(commands),
+        }
+    }
+
     /// Draws the user pattern of `slot` for a new pattern command.
     fn open_user_pattern(&mut self, slot: u8) {
         self.finish_pending();
@@ -1857,13 +1965,17 @@ impl IgsEditor {
         self.add_commands(vec![command]);
     }
 
-    /// Plays a sound command with the sound table in effect before it.
-    fn play_sound(&mut self, index: usize) {
+    /// Plays a sound command with the sound table in effect before it, and its stop after
+    /// its wait.
+    fn play_sound(&mut self, index: usize, now: f64) {
         let Some(command) = self.document.command(index) else {
             return;
         };
         let sounds = SoundTable::before(self.document.items(), index).sounds(command);
         self.sound.play(sounds);
+        if let Some((delay, stop)) = chip_stop(command) {
+            self.sound.schedule(now + delay, stop);
+        }
     }
 
     /// Whether the animation plays or is paused at a frame; editing waits until it stops.
@@ -1919,7 +2031,7 @@ impl IgsEditor {
         }
         if let Some(index) = outcome.started {
             self.sound_table = SoundTable::before(self.document.items(), index);
-            self.enter_item(index);
+            self.enter_item(index, now);
         }
         if let Some(command) = outcome.stepped.and_then(|index| Some((index, self.document.command(index)?))) {
             let (index, command) = command;
@@ -1953,11 +2065,15 @@ impl IgsEditor {
         self.transport_action(Action::Seek(index), now);
     }
 
-    /// Plays the sound of an item the animation reached.
-    fn enter_item(&mut self, index: usize) {
+    /// Plays the sound of an item the animation reached, and the stop of chip music after
+    /// its wait, as a terminal does.
+    fn enter_item(&mut self, index: usize, now: f64) {
         if let Some(command) = self.document.command(index).cloned() {
             self.sound.play(self.sound_table.sounds(&command));
             self.sound_table.apply(&command);
+            if let Some((delay, stop)) = chip_stop(&command) {
+                self.sound.schedule(now + delay, stop);
+            }
         }
     }
 
@@ -1967,7 +2083,7 @@ impl IgsEditor {
         let mut entered = Vec::new();
         let wait = self.transport.advance(&IgsTimeline(&self.document), now, &mut |index| entered.push(index));
         for index in entered {
-            self.enter_item(index);
+            self.enter_item(index, now);
         }
         if let Some(wait) = wait {
             context.request_repaint_after(std::time::Duration::from_secs_f64(wait));
@@ -2464,6 +2580,7 @@ impl IgsEditor {
                         let selected = self.selected.filter(|index| *index < count && !editing_blocked);
                         let mut action = None;
                         let mut template = None;
+                        let mut open_tune = false;
                         ui.add_enabled_ui(selected.is_some(), |ui| {
                             if self.icons.button_sized(ui, "delete", &fl!("igs-editor-delete"), false, 26.0).clicked() {
                                 action = Some(0);
@@ -2500,6 +2617,11 @@ impl IgsEditor {
                                     }
                                 });
                             }
+                            ui.separator();
+                            if ui.button(fl!("igs-tune-open")).on_hover_text(fl!("igs-tune-open-tooltip")).clicked() {
+                                open_tune = true;
+                                ui.close();
+                            }
                         });
                         widgets::divider(ui);
                         let through = self.preview_to_selection && !self.animating();
@@ -2518,6 +2640,9 @@ impl IgsEditor {
                         }
                         if let Some(source) = template {
                             self.insert_source(source);
+                        }
+                        if open_tune {
+                            self.open_tune_dialog(None);
                         }
                     });
                 });
@@ -2613,6 +2738,7 @@ impl IgsEditor {
         ui.add_space(4.0);
         let is_loop = matches!(item.command(), Some(IgsCommand::Loop(_)));
         let mut open_pattern = false;
+        let mut open_tune = false;
         let mut play = false;
         let mut stop_sound = false;
         match item.command() {
@@ -2621,12 +2747,18 @@ impl IgsEditor {
                     .add(egui::Button::new(fl!("igs-pattern-edit")).min_size(egui::vec2(ui.available_width(), 28.0)))
                     .clicked();
             }
-            Some(command) if !SoundTable::new().sounds(command).is_empty() => {
+            Some(command) if !SoundTable::new().sounds(command).is_empty() || matches!(command, IgsCommand::ChipMusic { .. }) => {
                 ui.horizontal(|ui| {
                     let size = egui::vec2((ui.available_width() - ui.spacing().item_spacing.x) / 2.0, 28.0);
                     play = ui.add(egui::Button::new(fl!("igs-sound-play")).min_size(size)).clicked();
                     stop_sound = ui.add(egui::Button::new(fl!("igs-sound-stop")).min_size(size)).clicked();
                 });
+                if matches!(command, IgsCommand::ChipMusic { .. }) {
+                    open_tune = ui
+                        .add(egui::Button::new(fl!("igs-tune-edit")).min_size(egui::vec2(ui.available_width(), 28.0)))
+                        .on_hover_text(fl!("igs-tune-edit-tooltip"))
+                        .clicked();
+                }
             }
             _ => {}
         }
@@ -2690,8 +2822,12 @@ impl IgsEditor {
             self.open_pattern_dialog(Some(index));
             return;
         }
+        if open_tune {
+            self.open_tune_dialog(Some(index));
+            return;
+        }
         if play {
-            self.play_sound(index);
+            self.play_sound(index, ui.input(|input| input.time));
         }
         if stop_sound {
             self.sound.stop();
@@ -2731,8 +2867,12 @@ impl IgsEditor {
 impl IgsEditor {
     pub fn show(&mut self, context: &egui::Context, blocked: bool) {
         self.advance_playback(context);
+        let now = context.input(|input| input.time);
+        if let Some(next) = self.sound.update(now) {
+            context.request_repaint_after(std::time::Duration::from_secs_f64((next - now).max(0.0)));
+        }
         self.sync_selection();
-        let blocked = blocked || self.palette_dialog.is_some() || self.pattern_dialog.is_some();
+        let blocked = blocked || self.palette_dialog.is_some() || self.pattern_dialog.is_some() || self.tune_dialog.is_some();
         let editing_blocked = blocked || self.animating();
         let panel_fill = context.style().visuals.panel_fill;
         egui::TopBottomPanel::top("igs-toolbar")
@@ -2826,6 +2966,17 @@ impl IgsEditor {
                 PatternResult::Apply => {
                     if let Some(dialog) = self.pattern_dialog.take() {
                         self.apply_pattern(dialog);
+                    }
+                }
+            }
+        }
+        if let Some(dialog) = &mut self.tune_dialog {
+            match dialog.show(context, &mut self.sound) {
+                tune::TuneResult::Open => {}
+                tune::TuneResult::Cancel => self.tune_dialog = None,
+                tune::TuneResult::Apply => {
+                    if let Some(dialog) = self.tune_dialog.take() {
+                        self.apply_tune(dialog);
                     }
                 }
             }
@@ -4113,7 +4264,7 @@ mod tests {
         assert!(editor.transport.run.is_none(), "playback ends after the last item");
 
         editor.sound.played.clear();
-        editor.play_sound(2);
+        editor.play_sound(2, 0.0);
         assert!(matches!(editor.sound.played.as_slice(), [Sound::Gist(data)] if data[3] == 500));
     }
 
@@ -4325,7 +4476,7 @@ mod tests {
                 sound_effect: icy_parser_core::SoundEffect::Landing
             })
         ));
-        editor.play_sound(0);
+        editor.play_sound(0, 0.0);
         assert!(matches!(editor.sound.played.as_slice(), [Sound::Gist(data)] if data == icy_engine_gui::music::sound_effects::sound_data(19).unwrap()));
     }
 
@@ -4756,6 +4907,205 @@ mod tests {
         frame(&mut editor, vec![button_event(label, egui::PointerButton::Primary, false)]);
         frame(&mut editor, vec![]);
         assert_eq!(commands(&editor).last(), Some(&IgsCommand::HollowSet { enabled: true }));
+    }
+
+    #[test]
+    fn chip_notes_stop_after_their_wait_like_in_a_terminal() {
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(b"G#n>8,1,15,60,40,1:\r\nG#n>8,2,15,64,0,4:\r\n").unwrap());
+        editor.play_sound(0, 1.0);
+        assert!(matches!(editor.sound.played.as_slice(), [Sound::Chip { voice: 1, pitch: 60, .. }]));
+        assert_eq!(editor.sound.update(1.1), Some(1.2), "the release waits the note's timing");
+        assert_eq!(editor.sound.played.len(), 1);
+        assert_eq!(editor.sound.update(1.2), None);
+        assert_eq!(editor.sound.played.last(), Some(&Sound::Release(1)));
+
+        editor.play_sound(1, 2.0);
+        editor.sound.update(2.0);
+        assert_eq!(editor.sound.played.last(), Some(&Sound::StopAll), "a stop without wait comes right away");
+        editor.play_sound(0, 3.0);
+        editor.sound.stop();
+        editor.sound.update(9.0);
+        assert_eq!(editor.sound.played.last(), Some(&Sound::StopAll), "stopping drops the pending release");
+    }
+
+    #[test]
+    fn the_tune_editor_records_keys_with_voices_playing_along() {
+        use icy_draw::igs_tune::{NoteEnd, Tune};
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.open_tune_dialog(None);
+        let mut dialog = editor.tune_dialog.take().unwrap();
+        let player = &mut editor.sound;
+
+        // Practice mode plays the note but keeps nothing.
+        dialog.press_key(egui::Key::Z, 0.0, player);
+        dialog.release_key(egui::Key::Z, 0.1, player);
+        assert!(dialog.tune.notes.is_empty());
+        assert!(matches!(player.played.as_slice(), [Sound::Chip { pitch: 48, voice: 0, .. }, Sound::Release(0)]));
+
+        // Recording keeps what is played while the clock runs, snapped to 50 ms steps, and
+        // the second voice plays a major third above.
+        dialog.chord[1] = Some(4);
+        dialog.toggle_record(1.0, player);
+        dialog.press_key(egui::Key::Z, 1.0, player);
+        dialog.release_key(egui::Key::Z, 1.5, player);
+        dialog.press_key(egui::Key::Q, 1.6, player);
+        dialog.release_key(egui::Key::Q, 1.72, player);
+        dialog.stop(2.0, player);
+        let notes: Vec<(u32, u32, u8, u8)> = dialog.tune.notes.iter().map(|note| (note.start, note.length, note.voice, note.pitch)).collect();
+        assert_eq!(notes, vec![(0, 100, 0, 48), (0, 100, 1, 52), (120, 20, 0, 60), (120, 20, 1, 64)]);
+        assert!(dialog.tune.notes.iter().all(|note| note.end == NoteEnd::Release));
+        assert!(!dialog.recording);
+
+        // Applying writes n commands where new commands go, which read back as the tune.
+        let tune = dialog.tune.clone();
+        editor.apply_tune(dialog);
+        assert_eq!(Tune::from_commands(&commands(&editor)), tune);
+        let written = commands(&editor)
+            .iter()
+            .filter(|command| matches!(command, IgsCommand::ChipMusic { .. }))
+            .count();
+        assert_eq!(written, tune.to_commands().len());
+    }
+
+    #[test]
+    fn the_tune_editor_edits_a_run_of_notes_in_place() {
+        use icy_draw::igs_tune::Tune;
+        let source = b"G#C>1,2:\r\nG#n>8,0,15,60,40,1:\r\nG#n>8,0,15,62,40,1:\r\nG#n>8,0,15,64,40,1:\r\nG#L>0,0,10,10:\r\n";
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(source).unwrap());
+        editor.open_tune_dialog(Some(2));
+        let mut dialog = editor.tune_dialog.take().unwrap();
+        assert_eq!(dialog.target, Some(1..4), "the whole run of notes around the chosen one");
+        assert_eq!(dialog.tune.notes.len(), 3);
+
+        // A note added at the end, then playback schedules every note and its release.
+        dialog.add_note(120, 67, &mut editor.sound, 0.0);
+        assert_eq!(dialog.selected_note().map(|note| note.pitch), Some(67));
+        editor.sound.stop();
+        editor.sound.played.clear();
+        dialog.play(10.0, &mut editor.sound);
+        editor.sound.update(100.0);
+        let chips = editor.sound.played.iter().filter(|sound| matches!(sound, Sound::Chip { .. })).count();
+        let releases = editor.sound.played.iter().filter(|sound| matches!(sound, Sound::Release(0))).count();
+        assert_eq!((chips, releases), (4, 4));
+        dialog.stop(100.0, &mut editor.sound);
+
+        let tune = dialog.tune.clone();
+        editor.apply_tune(dialog);
+        assert_eq!(editor.document.len(), 5 + 1, "the run is replaced, the rest kept");
+        assert!(matches!(editor.document.command(0), Some(IgsCommand::ColorSet { .. })));
+        assert!(matches!(editor.document.command(5), Some(IgsCommand::Line { .. })));
+        assert_eq!(Tune::from_commands(&commands(&editor)), tune);
+        editor.undo(false);
+        assert_eq!(editor.document.len(), 5, "one undo step brings the old notes back");
+    }
+
+    #[test]
+    fn the_tune_editor_takes_note_keys_from_keyboard_events() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.open_tune_dialog(None);
+        let key = |key: egui::Key, pressed: bool| egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        // The note is taken from where the key is: X on a German keyboard, where it reads Y.
+        let x_on_qwertz = |pressed: bool| egui::Event::Key {
+            key: egui::Key::Y,
+            physical_key: Some(egui::Key::X),
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let frame = |editor: &mut IgsEditor, time: f64, events: Vec<egui::Event>| {
+            let _ = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events,
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |context| editor.show(context, false),
+            );
+        };
+        frame(&mut editor, 0.0, vec![]);
+        frame(&mut editor, 0.1, vec![key(egui::Key::F1, true), key(egui::Key::F1, false)]);
+        assert!(editor.tune_dialog.as_ref().is_some_and(|dialog| dialog.recording));
+        frame(&mut editor, 0.2, vec![key(egui::Key::PageUp, true), x_on_qwertz(true)]);
+        frame(&mut editor, 0.4, vec![x_on_qwertz(false)]);
+        frame(&mut editor, 0.5, vec![key(egui::Key::Space, true)]);
+        let dialog = editor.tune_dialog.as_ref().unwrap();
+        assert!(!dialog.recording, "space stops");
+        let notes: Vec<(u8, u32)> = dialog.tune.notes.iter().map(|note| (note.pitch, note.length)).collect();
+        assert_eq!(notes, vec![(62, 40)], "D an octave up, held for 200 ms");
+    }
+
+    #[test]
+    fn the_piano_roll_adds_moves_and_deletes_notes_with_the_pointer() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.open_tune_dialog(None);
+        let mut time = 0.0;
+        let mut frame = |editor: &mut IgsEditor, events: Vec<egui::Event>| {
+            time += 0.05;
+            context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events,
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |context| editor.show(context, false),
+            )
+        };
+        // The dialog finds its place in the first frames.
+        let output = (0..3).fold(frame(&mut editor, vec![]), |_, _| frame(&mut editor, vec![]));
+        let second = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == "1s" => Some(text.pos),
+                _ => None,
+            })
+            .expect("the time ruler marks the seconds");
+        // One second is 200 pixels at the start zoom; a point below the ruler in the grid.
+        let at = |seconds: f32, rows: f32| egui::pos2(second.x - 3.0 + (seconds - 1.0) * 200.0, second.y + 60.0 + rows * 11.0);
+        let press = |pos: egui::Pos2, button: egui::PointerButton, pressed: bool| egui::Event::PointerButton {
+            pos,
+            button,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let click = |frame: &mut dyn FnMut(&mut IgsEditor, Vec<egui::Event>) -> egui::FullOutput, editor: &mut IgsEditor, pos, button| {
+            frame(editor, vec![egui::Event::PointerMoved(pos), press(pos, button, true)]);
+            frame(editor, vec![press(pos, button, false)]);
+            frame(editor, vec![]);
+        };
+        click(&mut frame, &mut editor, at(0.5, 0.0), egui::PointerButton::Primary);
+        let notes = |editor: &IgsEditor| editor.tune_dialog.as_ref().unwrap().tune.notes.clone();
+        let added = notes(&editor);
+        assert_eq!(added.len(), 1, "a click adds a note");
+        assert_eq!(added[0].start, 100, "at half a second");
+        assert_eq!(added[0].length, 40, "with the note length");
+
+        // Dragging it two rows down and a quarter second later moves it.
+        let (from, to) = (at(0.55, 0.0), at(0.8, 2.0));
+        frame(
+            &mut editor,
+            vec![egui::Event::PointerMoved(from), press(from, egui::PointerButton::Primary, true)],
+        );
+        frame(&mut editor, vec![egui::Event::PointerMoved(from.lerp(to, 0.5))]);
+        frame(&mut editor, vec![egui::Event::PointerMoved(to)]);
+        frame(&mut editor, vec![press(to, egui::PointerButton::Primary, false)]);
+        frame(&mut editor, vec![]);
+        let moved = notes(&editor);
+        assert_eq!(moved.len(), 1);
+        assert_eq!((moved[0].start, moved[0].pitch), (150, added[0].pitch - 2));
+
+        click(&mut frame, &mut editor, at(0.8, 2.0), egui::PointerButton::Secondary);
+        assert!(notes(&editor).is_empty(), "a right-click deletes it");
     }
 
     #[test]
