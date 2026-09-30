@@ -2066,7 +2066,9 @@ impl DrawApp {
             self.canvas_focus = true;
             response.request_focus();
             if let Some(position) = pointer.interact_pos().and_then(|point| self.position(point)) {
-                if self.document.tool == Tool::Pipette {
+                if self.document.tool == Tool::Pipette && self.atascii.is_some() {
+                    self.pipette_atascii(position);
+                } else if self.document.tool == Tool::Pipette {
                     let modifiers = ui.input(|input| input.modifiers);
                     self.document.begin_with_modifiers(
                         position,

@@ -17,7 +17,7 @@ use icy_engine_gui::egui::appearance::PRIMARY;
 use super::{chrome, widgets, DrawApp, FileAction};
 
 /// The tools that make sense on a character screen without per-character colors.
-const TOOLS: [&[ToolPair]; 2] = [
+const TOOLS: [&[ToolPair]; 3] = [
     &[ToolPair::single(Tool::Click), ToolPair::single(Tool::Select)],
     &[
         ToolPair::single(Tool::Pencil),
@@ -26,6 +26,7 @@ const TOOLS: [&[ToolPair]; 2] = [
         ToolPair::new(Tool::EllipseOutline, Tool::EllipseFilled),
         ToolPair::single(Tool::Fill),
     ],
+    &[ToolPair::single(Tool::Pipette)],
 ];
 
 /// Characters on the function keys, a set per purpose: lines, blocks, diagonals and symbols.
@@ -64,6 +65,9 @@ pub struct AtasciiEditor {
     pub background: (u8, u8),
     /// The luminance of the text, which has the background's hue.
     pub text_luminance: u8,
+    /// The tool of the last frame, and the one the pipette returns to.
+    last_tool: Tool,
+    before_pipette: Tool,
 }
 
 impl Default for AtasciiEditor {
@@ -74,6 +78,8 @@ impl Default for AtasciiEditor {
             fkey_set: 0,
             background: (9, 4),
             text_luminance: 10,
+            last_tool: Tool::Click,
+            before_pipette: Tool::Pencil,
         }
     }
 }
@@ -119,13 +125,7 @@ pub fn atascii_mode_name(mode: AtasciiMode) -> String {
 impl DrawApp {
     /// Edits the document, an ATASCII screen, with the ATASCII editor.
     pub(super) fn start_atascii(&mut self) {
-        let mut editor = AtasciiEditor::default();
-        let (background, text) = self.document.with_state(|state| {
-            let palette = &state.get_buffer().palette;
-            (palette.rgb(0), palette.rgb(7))
-        });
-        editor.background = nearest_atari_color(background);
-        editor.text_luminance = nearest_atari_color(text).1;
+        let editor = AtasciiEditor::default();
         self.document.inverse = false;
         self.document.brush.primary = BrushPrimaryMode::Char;
         self.document.brush.paint_char = char::from(editor.brush);
@@ -134,6 +134,57 @@ impl DrawApp {
         self.document.box_line = None;
         self.document.tool = Tool::Click;
         self.atascii = Some(editor);
+        self.read_atascii_colors();
+    }
+
+    /// Takes the Atari colors nearest to the screen's.
+    fn read_atascii_colors(&mut self) {
+        let (background, text) = self.document.with_state(|state| {
+            let palette = &state.get_buffer().palette;
+            (palette.rgb(0), palette.rgb(7))
+        });
+        if let Some(editor) = &mut self.atascii {
+            editor.background = nearest_atari_color(background);
+            editor.text_luminance = nearest_atari_color(text).1;
+        }
+    }
+
+    /// Switches the screen to the Atari's 40 columns or the XEP80's 80 columns, with the
+    /// mode's font and colors, in one undo step. Characters beyond a narrower screen are lost.
+    pub(super) fn set_atascii_mode(&mut self, mode: AtasciiMode) {
+        if self.document.profile() == ScreenProfile::Atascii(mode) {
+            return;
+        }
+        self.document.finish();
+        let font = Self::atascii_builtin_fonts(mode).remove(0);
+        let palette = icy_engine::Palette::from_slice(match mode {
+            AtasciiMode::Antic => &icy_engine::ATARI_DEFAULT_PALETTE,
+            AtasciiMode::Xep80 => &icy_engine::ATARI_XEP80_PALETTE,
+        });
+        let result = self.document.with_state(|state| {
+            let _undo = state.begin_atomic_undo(fl!("atascii-screen-mode"));
+            let height = state.get_buffer().height();
+            state.resize_buffer(true, icy_engine::Size::new(mode.columns(), height))?;
+            state.set_font_dimensions(font.size())?;
+            state.set_font_in_slot(0, font)?;
+            state.switch_to_palette(palette)
+        });
+        self.result(result.map_err(|error| error.to_string()));
+        self.read_atascii_colors();
+    }
+
+    /// Makes the character at `position` on the screen the brush and returns to the tool before
+    /// the pipette.
+    pub(super) fn pipette_atascii(&mut self, position: icy_engine::Position) {
+        let code = self.document.with_state(|state| state.get_buffer().char_at(position).ch as u32);
+        let Some(editor) = &mut self.atascii else {
+            return;
+        };
+        let code = u8::try_from(code).unwrap_or(b' ');
+        editor.brush = code;
+        self.document.brush.paint_char = char::from(code);
+        self.document.inverse = code >= 0x80;
+        self.document.tool = editor.before_pipette;
     }
 
     /// Makes `code` the brush; the text tool types it as well.
@@ -163,6 +214,12 @@ impl DrawApp {
 
     /// The panels of the ATASCII editor around the canvas.
     pub(super) fn atascii_panels(&mut self, context: &egui::Context, blocked: bool) {
+        if let Some(editor) = &mut self.atascii {
+            if self.document.tool == Tool::Pipette && editor.last_tool != Tool::Pipette {
+                editor.before_pipette = editor.last_tool;
+            }
+            editor.last_tool = self.document.tool;
+        }
         let panel_fill = context.style().visuals.panel_fill;
         egui::TopBottomPanel::top("toolbar")
             .exact_height(chrome::TOOLBAR_HEIGHT)
@@ -419,6 +476,16 @@ impl DrawApp {
                 .on_hover_text(fl!("atascii-inverse-tooltip"));
             widgets::divider(ui);
             ui.label(egui::RichText::new(chrome::tool_label(self.document.tool)).strong());
+            if self.document.tool == Tool::Pipette {
+                if let Some((position, _)) = self.pipette_hover {
+                    let code = self.document.with_state(|state| state.get_buffer().char_at(position).ch as u32);
+                    let code = u8::try_from(code).unwrap_or(b' ');
+                    self.atascii_glyph(ui, code, egui::Vec2::splat(26.0), false);
+                    ui.monospace(format!("#{code:02X}"));
+                } else {
+                    ui.weak(fl!("atascii-pipette-hint"));
+                }
+            }
             let tool = self.document.tool;
             if (tool == Tool::Pencil || tool.is_shape_tool()) && !(tool == Tool::Line && self.document.box_line.is_some()) {
                 ui.toggle_value(&mut self.document.quarter_blocks, fl!("atascii-pixels"))
@@ -694,6 +761,51 @@ mod tests {
             layers + 1,
             "the paste became a layer"
         );
+    }
+
+    #[test]
+    fn the_screen_mode_switches_in_one_undo_step() {
+        let (_, mut app) = atascii_app();
+        app.document.type_text("HI").unwrap();
+        app.set_atascii_mode(AtasciiMode::Xep80);
+        let screen = |app: &DrawApp| {
+            app.document.with_state(|state| {
+                let buffer = state.get_buffer();
+                (
+                    ScreenProfile::of(buffer),
+                    buffer.font(0).unwrap().name().to_string(),
+                    buffer.font_dimensions(),
+                    buffer.char_at(Position::new(1, 0)).ch,
+                )
+            })
+        };
+        let (profile, font, cell, ch) = screen(&app);
+        assert_eq!(profile, ScreenProfile::Atascii(AtasciiMode::Xep80));
+        assert_eq!((font.as_str(), cell), (icy_engine::ATARI_XEP80.name(), icy_engine::ATARI_XEP80.size()));
+        assert_eq!(ch, 'I', "the picture stays");
+        assert_eq!(app.atascii.as_ref().unwrap().background, (0, 0), "the XEP80 is black");
+        app.undo(false);
+        let (profile, font, cell, _) = screen(&app);
+        assert_eq!(profile, ScreenProfile::Atascii(AtasciiMode::Antic));
+        assert_eq!((font.as_str(), cell), (icy_engine::ATARI.name(), Size::new(8, 8)));
+    }
+
+    #[test]
+    fn the_pipette_picks_a_character_and_returns_to_the_tool() {
+        let (context, mut app) = atascii_app();
+        let size = egui::vec2(1280.0, 820.0);
+        app.document.inverse = true;
+        app.document.type_text("A").unwrap();
+        app.document.tool = Tool::Line;
+        super::super::tests::frame(&context, &mut app, size, vec![]);
+        app.document.tool = Tool::Pipette;
+        super::super::tests::frame(&context, &mut app, size, vec![]);
+        app.document.inverse = false;
+        app.pipette_atascii(Position::new(0, 0));
+        assert_eq!(app.atascii.as_ref().unwrap().brush, 0xC1);
+        assert_eq!(app.document.brush.paint_char as u32, 0xC1);
+        assert!(app.document.inverse, "an inverse character turns inverse on");
+        assert_eq!(app.document.tool, Tool::Line);
     }
 
     #[test]

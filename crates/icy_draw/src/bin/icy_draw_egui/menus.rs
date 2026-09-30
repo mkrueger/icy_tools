@@ -681,7 +681,17 @@ impl DrawApp {
     }
 
     fn document_menu(&mut self, ui: &mut egui::Ui) {
-        if item(ui, &fl!("menu-file-settings"), None, self.charfont.is_none()) {
+        if self.atascii.is_some() {
+            let current = self.document.profile();
+            ui.menu_button(fl!("atascii-screen-mode"), |ui| {
+                for mode in icy_draw::screen_profile::AtasciiMode::ALL {
+                    let mut active = current == icy_draw::screen_profile::ScreenProfile::Atascii(mode);
+                    if check_item(ui, &super::atascii::atascii_mode_name(mode), None, &mut active) {
+                        self.set_atascii_mode(mode);
+                    }
+                }
+            });
+        } else if item(ui, &fl!("menu-file-settings"), None, self.charfont.is_none()) {
             self.open_file_settings();
         }
         ui.separator();
