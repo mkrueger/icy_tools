@@ -25,6 +25,7 @@ mod xbinary;
 pub(crate) use ansi::{load_ansi, save_ansi};
 pub(crate) use artworx::{load_artworx, save_artworx};
 pub(crate) use ascii::{load_ascii, save_ascii};
+pub use atascii::atascii_buffer;
 pub(crate) use atascii::{load_atascii, save_atascii};
 pub(crate) use avatar::{load_avatar, save_avatar};
 pub(crate) use bin::{load_bin, save_bin};

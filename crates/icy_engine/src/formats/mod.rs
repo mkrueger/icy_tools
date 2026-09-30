@@ -1,4 +1,5 @@
 pub(crate) mod io;
+pub use io::atascii_buffer;
 
 mod bitfont_format;
 pub use bitfont_format::*;
@@ -239,12 +240,11 @@ pub fn apply_sauce_to_buffer_without_resize(buf: &mut TextBuffer, sauce: &SauceR
 pub fn load_with_parser(result: &mut TextScreen, interpreter: &mut dyn CommandParser, data: &[u8], _skip_errors: bool, min_height: i32) -> Result<()> {
     use crate::ScreenSink;
 
-    // Stop at EOF marker (Ctrl-Z)
-    let data = if let Some(pos) = data.iter().position(|&b| b == 0x1A) {
-        &data[..pos]
-    } else {
-        data
-    };
+    // Stop at EOF marker (Ctrl-Z), which ATASCII prints as a line drawing character.
+    let eof = (result.buffer.buffer_type != crate::BufferType::Atascii)
+        .then(|| data.iter().position(|&b| b == 0x1A))
+        .flatten();
+    let data = if let Some(pos) = eof { &data[..pos] } else { data };
 
     let mut sink = ScreenSink::new(result);
     interpreter.parse(data, &mut sink);

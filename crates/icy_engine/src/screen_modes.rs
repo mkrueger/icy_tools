@@ -279,7 +279,8 @@ impl ScreenMode {
                 } else {
                     screen.set_font(0, ATARI_XEP80.clone());
                     screen.set_font(1, ATARI_XEP80_INT.clone());
-                    screen.set_font_dimensions(Size::new(8, 8)); // XEP80 also uses 8x8 fonts
+                    // The XEP80's characters are 7 × 10 pixels.
+                    screen.set_font_dimensions(ATARI_XEP80.size());
                     *screen.palette_mut() = Palette::from_slice(&ATARI_XEP80_PALETTE);
                 }
                 *screen.buffer_type_mut() = BufferType::Atascii;
