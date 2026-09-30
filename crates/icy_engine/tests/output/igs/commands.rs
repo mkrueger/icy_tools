@@ -53,6 +53,57 @@ fn rounded_and_arrow_ends_extend_and_point_the_line() {
 }
 
 #[test]
+fn arrows_on_both_ends_are_the_same_size() {
+    // VDI rounds its fixed point math symmetrically, so a head pointing left is as long and
+    // wide as one pointing right, also with medium resolution's tall pixels.
+    for (resolution, source) in [
+        (TerminalResolution::Low, &b"G#s>4:T>2,1,50:L>40,82,200,82:"[..]),
+        (TerminalResolution::Medium, &b"G#s>4:T>2,1,50:L>99,82,360,82:"[..]),
+        (TerminalResolution::Low, &b"G#s>4:T>2,1,9:T>2,1,50:L>40,82,200,82:"[..]),
+        (TerminalResolution::Low, &b"G#s>4:T>2,1,50:L>100,40,100,160:"[..]),
+    ] {
+        let screen = run(resolution, source);
+        let vertical = source.ends_with(b"L>100,40,100,160:");
+        let (start, end) = if vertical {
+            (40, 160)
+        } else if resolution == TerminalResolution::Medium {
+            (99, 360)
+        } else {
+            (40, 200)
+        };
+        let head = |from_tip: i32, across: i32, at_start: bool| {
+            let along = if at_start { start + from_tip } else { end - from_tip };
+            if vertical {
+                pixel(&*screen, 100 + across, along) != 0
+            } else {
+                pixel(&*screen, along, 82 + across) != 0
+            }
+        };
+        // How far the head reaches along the line and across it; the fill of its edges may
+        // differ by a pixel, as VDI's polygon fill does.
+        let extent = |at_start: bool| {
+            let pixels: Vec<(i32, i32)> = (0..30)
+                .flat_map(|from_tip| (-12..=12).map(move |across| (from_tip, across)))
+                .filter(|&(t, a)| a != 0 && head(t, a, at_start))
+                .collect();
+            (
+                pixels.iter().map(|&(t, _)| t).max(),
+                pixels.iter().map(|&(_, a)| a).max(),
+                pixels.iter().map(|&(_, a)| a).min(),
+            )
+        };
+        assert!(head(0, 0, true) && head(0, 0, false), "{resolution:?}: both tips are drawn");
+        assert!(extent(true).1.is_some(), "{resolution:?}: the start head is wider than the line");
+        assert_eq!(
+            extent(true),
+            extent(false),
+            "{resolution:?} {}: both heads are the same size",
+            String::from_utf8_lossy(source)
+        );
+    }
+}
+
+#[test]
 fn spray_paint_stays_in_its_area_and_rotates_colors() {
     let screen = run(TerminalResolution::Low, b"G#s>4:X>0,50,60,40,20,300:");
     let res = screen.resolution();

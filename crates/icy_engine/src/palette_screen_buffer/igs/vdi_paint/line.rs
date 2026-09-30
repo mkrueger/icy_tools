@@ -5,9 +5,13 @@ use icy_parser_core::{ArrowEnd, LineKind, PatternType, TerminalResolution};
 use super::VdiPaint;
 use crate::EditableScreen;
 
-/// `a * b / c`, rounded the way VDI's `mult_div` rounds.
+/// `a * b / c`, rounded half away from zero the way VDI's `SMUL_DIV` rounds, so negative
+/// directions come out as the mirror image of positive ones.
 fn mult_div(a: i32, b: i32, c: i32) -> i32 {
-    (a * b * 2 / c + 1) / 2
+    let product = i64::from(a) * i64::from(b);
+    let divisor = i64::from(c);
+    let rounded = (2 * product.abs() / divisor.abs() + 1) / 2;
+    (rounded * (product.signum() * divisor.signum())) as i32
 }
 
 /// The offsets of a wide line's pen: `offsets[k]` is the half width of row `k` above and below
