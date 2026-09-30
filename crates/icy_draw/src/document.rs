@@ -162,6 +162,16 @@ impl Document {
         Self::from_state(EditState::from_buffer(buffer))
     }
 
+    /// An empty ATASCII document in the Atari screen `mode`.
+    pub fn new_atascii(mode: crate::screen_profile::AtasciiMode) -> Self {
+        Self::from_state(EditState::from_buffer(crate::screen_profile::atascii_buffer(mode)))
+    }
+
+    /// What the document's screen can hold.
+    pub fn profile(&self) -> crate::screen_profile::ScreenProfile {
+        self.with_state(|state| crate::screen_profile::ScreenProfile::of(state.get_buffer()))
+    }
+
     pub fn from_state(state: EditState) -> Self {
         Self {
             screen: Arc::new(Mutex::new(Box::new(state))),
@@ -188,7 +198,8 @@ impl Document {
     pub fn load(path: &Path) -> DrawResult<Self> {
         let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
         let format = FileFormat::from_path(path).ok_or_else(|| format!("Unknown file format: {}", path.display()))?;
-        let loaded = format.from_bytes(&bytes, None).map_err(|error| error.to_string())?;
+        let load_data = crate::screen_profile::atascii_columns(path).map(|columns| icy_engine::LoadData::new(None, Some(columns)));
+        let loaded = format.from_bytes(&bytes, load_data).map_err(|error| error.to_string())?;
         let mut state = EditState::from_buffer(loaded.screen.buffer);
         if let Some(sauce) = loaded.sauce_opt {
             state.set_sauce_meta(sauce.metadata());

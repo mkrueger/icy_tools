@@ -420,6 +420,53 @@ fn native_and_ansi_exports_preserve_sauce_without_clearing_dirty_state() {
 }
 
 #[test]
+fn atascii_documents_keep_their_screen_through_saving_and_exporting() {
+    use icy_draw::screen_profile::{AtasciiMode, ScreenProfile};
+    use_english();
+    let directory = tempfile::tempdir().unwrap();
+    for mode in AtasciiMode::ALL {
+        let mut app = DrawApp::new();
+        app.new_atascii_mode = mode;
+        app.create(NewKind::Atascii, Size::new(80, 25));
+        assert_eq!(app.document.profile(), ScreenProfile::Atascii(mode));
+        let font = |document: &Document| document.with_state(|state| state.get_buffer().font(0).unwrap().name().to_string());
+        app.document.type_text("HI").unwrap();
+
+        let native = directory.path().join(format!("{}.icy", mode.extension()));
+        app.document.save(&native, false).unwrap();
+        let reopened = Document::load(&native).unwrap();
+        assert_eq!(reopened.profile(), ScreenProfile::Atascii(mode), "the .icy file keeps the screen");
+        assert_eq!(font(&reopened), font(&app.document));
+
+        app.settings.last_export_directory = None;
+        app.settings.export_settings = Default::default();
+        let request = app.export_dialog().request().unwrap();
+        assert_eq!(request.format, FileFormat::Atascii, "ATASCII is preselected");
+        assert_eq!(request.path.extension().unwrap(), mode.extension());
+        app.export(&request).unwrap();
+        let exported = Document::load(&request.path).unwrap();
+        assert_eq!(exported.profile(), ScreenProfile::Atascii(mode), "{:?} loads with its columns", request.path);
+        assert_eq!(exported.with_state(|state| state.get_buffer().char_at(Position::new(1, 0)).ch), 'I');
+    }
+}
+
+#[test]
+fn atascii_canvas_keeps_the_width_of_its_screen() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::vec2(1280.0, 820.0);
+    let mut app = DrawApp::new();
+    app.create(NewKind::Atascii, Size::new(80, 25));
+    app.new_size = [100, 60];
+    app.dialog = Some(Dialog::Resize);
+    frame(&context, &mut app, size, vec![]);
+    frame(&context, &mut app, size, vec![key_event(Key::Enter, egui::Modifiers::NONE)]);
+    assert!(app.dialog.is_none());
+    assert_eq!(app.document.with_state(|state| state.get_buffer().size()), Size::new(40, 60));
+}
+
+#[test]
 fn responsive_canvas_keeps_usable_bounds() {
     for size in [egui::vec2(1280.0, 820.0), egui::vec2(440.0, 700.0), egui::vec2(440.0, 300.0)] {
         let context = egui::Context::default();

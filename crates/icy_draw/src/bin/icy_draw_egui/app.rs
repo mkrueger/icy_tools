@@ -1,5 +1,5 @@
 use eframe::egui::{self, Color32, Key};
-use icy_draw::{box_lines::BoxStyle, brush::BrushPrimaryMode, document::Document, fl, selection_drag::SelectionDrag, Settings};
+use icy_draw::{box_lines::BoxStyle, brush::BrushPrimaryMode, document::Document, fl, screen_profile::AtasciiMode, selection_drag::SelectionDrag, Settings};
 use icy_engine::{AddType, FileFormat, Position, Selection, Size, TextPane};
 use icy_engine_edit::tools::Tool;
 use icy_engine_edit::UndoState;
@@ -179,6 +179,7 @@ fn filter_match_ranges(name: &str, filter: &str) -> Vec<std::ops::Range<usize>> 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum NewKind {
     Ansi,
+    Atascii,
     Rip,
     Igs,
     Animation,
@@ -187,8 +188,9 @@ pub enum NewKind {
 }
 
 impl NewKind {
-    pub const ALL: [NewKind; 8] = [
+    pub const ALL: [NewKind; 9] = [
         NewKind::Ansi,
+        NewKind::Atascii,
         NewKind::Rip,
         NewKind::Igs,
         NewKind::Animation,
@@ -202,6 +204,7 @@ impl NewKind {
         use icy_engine_edit::charset::TdfFontType;
         match self {
             NewKind::Ansi => fl!("new-file-editor-ansi"),
+            NewKind::Atascii => fl!("new-file-editor-atascii"),
             NewKind::Rip => fl!("rip-editor-title"),
             NewKind::Igs => fl!("igs-editor-title"),
             NewKind::Animation => fl!("new-file-editor-animation"),
@@ -216,6 +219,7 @@ impl NewKind {
         use icy_engine_edit::charset::TdfFontType;
         match self {
             NewKind::Ansi => fl!("new-kind-ansi-description"),
+            NewKind::Atascii => fl!("new-kind-atascii-description"),
             NewKind::Rip => fl!("rip-editor-description"),
             NewKind::Igs => fl!("igs-editor-description"),
             NewKind::Animation => fl!("new-kind-animation-description"),
@@ -230,6 +234,7 @@ impl NewKind {
         use icy_engine_edit::charset::TdfFontType;
         match self {
             NewKind::Ansi => "pencil",
+            NewKind::Atascii => "text",
             NewKind::Rip => "rectangle_outline",
             NewKind::Igs => "ellipse_filled",
             NewKind::Animation => "play",
@@ -285,6 +290,7 @@ pub struct DrawApp {
     igs: Option<super::igs::IgsEditor>,
     /// Resolution of IGS drawings created from the New dialog.
     new_igs_resolution: icy_parser_core::TerminalResolution,
+    pub(super) new_atascii_mode: AtasciiMode,
     /// The text and ICY data copied last, to paste with attributes without a system clipboard.
     clipboard: Option<(String, Vec<u8>)>,
     font_selector: font_select::FontSelector,
@@ -373,6 +379,7 @@ impl DrawApp {
             rip: None,
             igs: None,
             new_igs_resolution: icy_draw::igs_document::DEFAULT_RESOLUTION,
+            new_atascii_mode: AtasciiMode::default(),
             clipboard: None,
             font_selector: Default::default(),
             font_slots_open: false,
@@ -428,6 +435,7 @@ impl DrawApp {
                 document.with_state(|state| template.apply(state.get_buffer_mut()));
                 self.replace(document);
             }
+            NewKind::Atascii => self.replace(Document::new_atascii(self.new_atascii_mode)),
             NewKind::Rip => {
                 self.replace(Document::new(Size::new(80, 25)));
                 self.rip = Some(super::rip::RipEditor::new());
@@ -758,9 +766,14 @@ impl DrawApp {
         let name = source
             .and_then(Path::file_stem)
             .map_or_else(|| fl!("unsaved-title"), |name| name.to_string_lossy().into_owned());
-        ExportDialog::new(formats, directory, &name)
+        let dialog = ExportDialog::new(formats, directory, &name)
             .with_settings(&self.settings.export_settings)
-            .with_sauce(Some(sauce))
+            .with_sauce(Some(sauce));
+        // Documents of a home computer's screen export to its own format first.
+        match self.document.profile().native_format() {
+            Some((format, extension)) => dialog.with_format(format).with_extension(format, extension),
+            None => dialog,
+        }
     }
 
     pub(super) fn export(&mut self, request: &ExportRequest) -> Result<(), String> {
@@ -1633,6 +1646,11 @@ impl DrawApp {
         } else {
             fl!("new-file-size-section")
         };
+        // Home computer screens have the width of their text mode.
+        let fixed_width = if resize { self.document.profile().fixed_width() } else { None };
+        if let Some(width) = fixed_width {
+            self.new_size[0] = width;
+        }
         appearance::group(ui, &title, |ui| {
             if !resize && self.new_kind == NewKind::Ansi {
                 appearance::combo_row(ui, &fl!("file-settings-format"), self.new_template.title(), |ui| {
@@ -1643,22 +1661,32 @@ impl DrawApp {
                 });
                 ui.add(egui::Label::new(egui::RichText::new(self.new_template.description()).weak()).wrap());
             }
-            let presets = welcome::size_presets();
+            let presets = if fixed_width.is_some() {
+                Vec::new()
+            } else {
+                welcome::size_presets().to_vec()
+            };
             let preset = presets
                 .iter()
                 .find(|(columns, rows, _)| [*columns, *rows] == self.new_size)
                 .map_or_else(|| fl!("new-file-custom-size"), |(columns, rows, name)| format!("{columns} × {rows}  ·  {name}"));
-            appearance::combo_row(ui, &fl!("new-file-preset"), preset, |ui| {
-                for (columns, rows, name) in &presets {
-                    ui.selectable_value(&mut self.new_size, [*columns, *rows], format!("{columns} × {rows}  ·  {name}"));
-                }
-            });
+            if !presets.is_empty() {
+                appearance::combo_row(ui, &fl!("new-file-preset"), preset, |ui| {
+                    for (columns, rows, name) in &presets {
+                        ui.selectable_value(&mut self.new_size, [*columns, *rows], format!("{columns} × {rows}  ·  {name}"));
+                    }
+                });
+            }
             appearance::form_row(ui, &fl!("new-file-width"), |ui| {
-                ui.add(
+                let width = ui.add_enabled(
+                    fixed_width.is_none(),
                     egui::DragValue::new(&mut self.new_size[0])
                         .range(1..=1000)
                         .suffix(format!(" {}", fl!("unit-characters"))),
                 );
+                if fixed_width.is_some() {
+                    width.on_disabled_hover_text(fl!("canvas-fixed-width"));
+                }
             });
             appearance::form_row(ui, &fl!("new-file-height"), |ui| {
                 ui.add(
@@ -1685,6 +1713,21 @@ impl DrawApp {
                 };
                 ui.radio_value(&mut self.new_igs_resolution, resolution, name);
             }
+        });
+    }
+
+    /// The screen of a new ATASCII document.
+    fn new_atascii_group(&mut self, ui: &mut egui::Ui) {
+        appearance::group(ui, &fl!("atascii-new-mode"), |ui| {
+            for mode in AtasciiMode::ALL {
+                let size = mode.screen_size();
+                let name = match mode {
+                    AtasciiMode::Antic => fl!("atascii-mode-antic", columns = size.width, rows = size.height),
+                    AtasciiMode::Xep80 => fl!("atascii-mode-xep80", columns = size.width, rows = size.height),
+                };
+                ui.radio_value(&mut self.new_atascii_mode, mode, name);
+            }
+            ui.add(egui::Label::new(egui::RichText::new(fl!("atascii-new-hint")).weak()).wrap());
         });
     }
 
@@ -3353,6 +3396,8 @@ impl DrawApp {
                                         self.new_size_group(&mut columns[1], false, current);
                                     } else if self.new_kind == NewKind::Igs {
                                         self.new_igs_group(&mut columns[1]);
+                                    } else if self.new_kind == NewKind::Atascii {
+                                        self.new_atascii_group(&mut columns[1]);
                                     }
                                 });
                             } else {
@@ -3361,6 +3406,8 @@ impl DrawApp {
                                     self.new_size_group(ui, false, current);
                                 } else if self.new_kind == NewKind::Igs {
                                     self.new_igs_group(ui);
+                                } else if self.new_kind == NewKind::Atascii {
+                                    self.new_atascii_group(ui);
                                 }
                             }
                         });
@@ -3371,8 +3418,11 @@ impl DrawApp {
                     });
                 match response.action {
                     Some(Action::Confirm) => {
-                        let size = Size::new(self.new_size[0], self.new_size[1]);
+                        let mut size = Size::new(self.new_size[0], self.new_size[1]);
                         if resize {
+                            if let Some(width) = self.document.profile().fixed_width() {
+                                size.width = width;
+                            }
                             self.edit(|state| state.resize_buffer(true, size));
                         } else {
                             self.create(self.new_kind, size);

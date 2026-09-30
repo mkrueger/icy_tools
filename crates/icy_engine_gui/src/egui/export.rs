@@ -84,6 +84,8 @@ pub struct ExportDialog {
     /// The existing file the user was asked about; a second click overwrites it.
     confirmed: Option<PathBuf>,
     error: Option<String>,
+    /// A format written with another of its extensions, such as XEP80 ATASCII as .xep.
+    extension: Option<(FileFormat, &'static str)>,
 }
 
 impl ExportDialog {
@@ -109,6 +111,7 @@ impl ExportDialog {
             settings: ExportSettings::default(),
             confirmed: None,
             error: None,
+            extension: None,
         };
         dialog.file_name = dialog.stem(name);
         if dialog.file_name.is_empty() {
@@ -138,6 +141,20 @@ impl ExportDialog {
             self.format = format;
         }
         self
+    }
+
+    /// Writes `format` with `extension` instead of its primary one.
+    pub fn with_extension(mut self, format: FileFormat, extension: &'static str) -> Self {
+        self.extension = Some((format, extension));
+        self
+    }
+
+    /// The extension of the chosen format's files.
+    fn extension(&self) -> &str {
+        match self.extension {
+            Some((format, extension)) if format == self.format => extension,
+            _ => self.format.primary_extension(),
+        }
     }
 
     /// The SAUCE record to store; without one the SAUCE option is hidden.
@@ -170,7 +187,7 @@ impl ExportDialog {
 
     /// The file that gets written; a typed format extension is not doubled.
     pub fn target(&self) -> PathBuf {
-        Path::new(&self.directory).join(format!("{}.{}", self.stem(&self.file_name), self.format.primary_extension()))
+        Path::new(&self.directory).join(format!("{}.{}", self.stem(&self.file_name), self.extension()))
     }
 
     /// Shows a failed export in the dialog.
@@ -294,7 +311,7 @@ impl ExportDialog {
             });
             appearance::form_row(ui, &fl!(LANGUAGE_LOADER, "export-file-name"), |ui| {
                 trailing_row(ui, |ui| {
-                    ui.label(egui::RichText::new(format!(".{}", self.format.primary_extension())).weak());
+                    ui.label(egui::RichText::new(format!(".{}", self.extension())).weak());
                     ui.add(appearance::text_edit(&mut self.file_name).desired_width(f32::INFINITY));
                 });
             });
@@ -477,6 +494,16 @@ mod tests {
         assert!(dialog.request().is_err());
         dialog.file_name = "  ".into();
         assert!(dialog.request().is_err());
+    }
+
+    #[test]
+    fn a_format_can_be_written_with_another_of_its_extensions() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut dialog =
+            ExportDialog::new(vec![FileFormat::Atascii, FileFormat::IcyDraw], directory.path(), "art.xep").with_extension(FileFormat::Atascii, "xep");
+        assert_eq!(dialog.target(), directory.path().join("art.xep"));
+        dialog.format = FileFormat::IcyDraw;
+        assert_eq!(dialog.target(), directory.path().join("art.icy"), "other formats keep their extension");
     }
 
     #[test]

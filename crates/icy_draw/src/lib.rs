@@ -15,6 +15,7 @@ pub mod palette_files;
 pub mod plugins;
 pub mod recovery;
 pub mod rip_document;
+pub mod screen_profile;
 #[path = "ui/editor/ansi/selection_drag.rs"]
 pub mod selection_drag;
 #[path = "ui/settings/mod.rs"]
