@@ -4,9 +4,15 @@
 
 use eframe::egui::{self, Color32};
 use icy_draw::fl;
+use icy_engine_gui::egui::appearance;
 use icy_parser_core::BaudEmulation;
 
 use super::widgets::{self, Icons};
+
+const SCRUBBER_HEIGHT: f32 = 22.0;
+const CONTROL_BAR_HEIGHT: f32 = 54.0;
+/// The height of the player under the canvas.
+pub const PLAYER_HEIGHT: f32 = SCRUBBER_HEIGHT + CONTROL_BAR_HEIGHT + 6.0 + 12.0;
 
 /// The items of a command stream as a terminal receives them.
 pub trait Timeline {
@@ -291,65 +297,118 @@ impl Transport {
         frame
     }
 
-    /// The transport bar: previous, play or pause, next, stop, a position slider, the item
-    /// number and the BPS rate. `frame` is the item shown, `stoppable` whether Stop applies.
+    /// The player under the canvas, like the animation editor's: a slider over the commands
+    /// and a bar with the position, first, previous, play or pause, next, last and stop, and
+    /// the BPS rate. `frame` is the item shown.
     pub fn ui(&mut self, ui: &mut egui::Ui, icons: &mut Icons, frame: Option<usize>, len: usize, timeline: &dyn Timeline) -> Option<Action> {
         let mut action = None;
         let playing = self.playing();
-        ui.horizontal_centered(|ui| {
-            ui.add_space(8.0);
-            ui.label(icy_engine_gui::egui::appearance::bold(ui, fl!("playback-animation")));
-            widgets::divider(ui);
-            ui.add_enabled_ui(len > 0 && frame.is_some_and(|index| index > 0), |ui| {
-                if icons.button_sized(ui, "skip_previous", &fl!("playback-previous"), false, 30.0).clicked() {
-                    action = Some(Action::Previous);
-                }
-            });
-            ui.add_enabled_ui(len > 0, |ui| {
-                if icons
-                    .button_sized(ui, if playing { "pause" } else { "play" }, &fl!("playback-play-pause"), playing, 34.0)
-                    .clicked()
-                {
-                    action = Some(Action::PlayPause);
-                }
-            });
-            ui.add_enabled_ui(len > 0 && frame.is_none_or(|index| index + 1 < len), |ui| {
-                if icons.button_sized(ui, "skip_next", &fl!("playback-next"), false, 30.0).clicked() {
-                    action = Some(Action::Next);
-                }
-            });
-            ui.add_enabled_ui(frame.is_some(), |ui| {
-                if ui.button(fl!("playback-stop")).clicked() {
-                    action = Some(Action::Stop);
-                }
-            });
-            if len > 0 {
-                // Without a frame the whole drawing is shown, so the slider sits at the end.
-                let mut position = frame.map_or(len, |index| index + 1);
-                let slider = ui.scope(|ui| {
-                    ui.spacing_mut().slider_width = 240.0;
-                    ui.add(egui::Slider::new(&mut position, 1..=len).show_value(false))
-                        .on_hover_text(fl!("playback-seek"))
-                });
-                if slider.inner.changed() {
-                    action = Some(Action::Seek(position - 1));
-                }
-            }
-            ui.label(fl!("playback-position", current = frame.map_or(0, |index| index + 1), total = len));
-            widgets::divider(ui);
-            ui.label(fl!("playback-speed"));
-            let previous = self.speed;
-            egui::ComboBox::from_id_salt("command-playback-speed")
-                .selected_text(speed_name(self.speed))
-                .show_ui(ui, |ui| {
-                    for speed in BaudEmulation::OPTIONS {
-                        ui.selectable_value(&mut self.speed, speed, speed_name(speed));
+        let full = ui.available_rect_before_wrap().shrink2(egui::vec2(8.0, 6.0));
+        let scrubber = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), SCRUBBER_HEIGHT));
+        let bar = egui::Rect::from_min_size(egui::pos2(full.left(), scrubber.bottom() + 6.0), egui::vec2(full.width(), CONTROL_BAR_HEIGHT));
+
+        // Without a frame the whole drawing is shown, so the slider sits at the end.
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(scrubber.shrink2(egui::vec2(4.0, 0.0)))
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            |ui| {
+                ui.add_enabled_ui(len > 1, |ui| {
+                    let mut position = frame.map_or(len, |index| index + 1).max(1) as f32;
+                    let slider = appearance::slider(ui, &mut position, 1.0..=len.max(2) as f32, ui.available_width()).on_hover_text(fl!("playback-seek"));
+                    if slider.changed() {
+                        action = Some(Action::Seek((position.round() as usize).clamp(1, len) - 1));
                     }
                 });
-            if previous != self.speed {
-                self.speed_changed(timeline, previous, ui.input(|input| input.time));
-            }
-        });
+            },
+        );
+
+        let visuals = ui.visuals().clone();
+        ui.painter().rect(
+            bar,
+            8,
+            visuals.faint_bg_color,
+            visuals.widgets.noninteractive.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
+        let inner = bar.shrink2(egui::vec2(12.0, 0.0));
+        ui.scope_builder(
+            egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::left_to_right(egui::Align::Center)),
+            |ui| {
+                ui.label(icy_engine_gui::egui::appearance::bold(ui, fl!("playback-animation")));
+                ui.monospace(fl!("playback-position", current = frame.map_or(0, |index| index + 1), total = len));
+            },
+        );
+        // first, previous, play, next, last, stop; with wider gaps around play and before stop.
+        let group = 5.0 * widgets::TRANSPORT_BUTTON + widgets::PLAY_BUTTON + 4.0 * 5.0 + 4.0 * 2.0 + 12.0;
+        let buttons = egui::Rect::from_center_size(bar.center(), egui::vec2(group, bar.height()));
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(buttons)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                let (ready, at_start, at_end) = (len > 0, frame.is_some_and(|index| index == 0), frame.is_none_or(|index| index + 1 >= len));
+                if widgets::transport_button(icons, ui, "first_page", &fl!("playback-first"), ready && !at_start, false).clicked() {
+                    action = Some(Action::Seek(0));
+                }
+                if widgets::transport_button(
+                    icons,
+                    ui,
+                    "skip_previous",
+                    &fl!("playback-previous"),
+                    ready && frame.is_some_and(|index| index > 0),
+                    false,
+                )
+                .clicked()
+                {
+                    action = Some(Action::Previous);
+                }
+                ui.add_space(4.0);
+                if widgets::play_button(icons, ui, playing, ready, &fl!("playback-play-pause")).clicked() {
+                    action = Some(Action::PlayPause);
+                }
+                ui.add_space(4.0);
+                if widgets::transport_button(icons, ui, "skip_next", &fl!("playback-next"), ready && !at_end, false).clicked() {
+                    action = Some(Action::Next);
+                }
+                if widgets::transport_button(
+                    icons,
+                    ui,
+                    "last_page",
+                    &fl!("playback-last"),
+                    ready && frame.is_some_and(|index| index + 1 < len),
+                    false,
+                )
+                .clicked()
+                {
+                    action = Some(Action::Seek(len - 1));
+                }
+                ui.add_space(12.0);
+                if widgets::transport_button(icons, ui, "stop", &fl!("playback-stop-tooltip"), frame.is_some(), false).clicked() {
+                    action = Some(Action::Stop);
+                }
+            },
+        );
+        ui.scope_builder(
+            egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::right_to_left(egui::Align::Center)),
+            |ui| {
+                let previous = self.speed;
+                egui::ComboBox::from_id_salt("command-playback-speed")
+                    .selected_text(speed_name(self.speed))
+                    .show_ui(ui, |ui| {
+                        for speed in BaudEmulation::OPTIONS {
+                            ui.selectable_value(&mut self.speed, speed, speed_name(speed));
+                        }
+                    })
+                    .response
+                    .on_hover_text(fl!("playback-speed"));
+                if previous != self.speed {
+                    self.speed_changed(timeline, previous, ui.input(|input| input.time));
+                }
+            },
+        );
+        ui.advance_cursor_after_rect(full);
         action
     }
 }

@@ -2601,6 +2601,38 @@ fn gpu_chip_tune_editor_renders() {
 }
 
 #[test]
+fn gpu_command_editors_show_the_player_under_the_canvas() {
+    use_english();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let directory = tempfile::tempdir().unwrap();
+        let rip = directory.path().join("drawing.rip");
+        std::fs::write(&rip, b"!|c04|L0A0A1E1E\r\n").unwrap();
+        for kind in [NewKind::Igs, NewKind::Rip] {
+            let mut app = DrawApp::new();
+            if kind == NewKind::Rip {
+                app.open(rip.clone());
+            } else {
+                app.create(kind, Size::new(80, 25));
+            }
+            let name = format!("player-{}", if kind == NewKind::Igs { "igs" } else { "rip" });
+            for _ in 0..3 {
+                gpu.capture(&mut app, [1280, 820], 1.0, vec![], &format!("{name}-warmup"));
+            }
+            let pixels = gpu.capture(&mut app, [1280, 820], 1.0, vec![], &name);
+            let green = pixels
+                .chunks(4)
+                .enumerate()
+                .filter(|(_, pixel)| pixel[..3] == [widgets::PLAY.r(), widgets::PLAY.g(), widgets::PLAY.b()])
+                .map(|(index, _)| index / 1280)
+                .collect::<Vec<_>>();
+            assert!(!green.is_empty(), "{name}: the round play button is drawn");
+            assert!(green.iter().all(|&row| row > 620), "{name}: the player is under the canvas, not at the top");
+        }
+    });
+}
+
+#[test]
 fn start_page_connects_to_a_server() {
     let context = egui::Context::default();
     appearance::apply(&context);

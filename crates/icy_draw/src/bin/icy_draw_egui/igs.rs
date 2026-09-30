@@ -2884,15 +2884,6 @@ impl IgsEditor {
                 }
                 self.toolbar(ui);
             });
-        egui::TopBottomPanel::top("igs-transport")
-            .exact_height(42.0)
-            .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
-                if blocked {
-                    ui.disable();
-                }
-                self.transport(ui);
-            });
         self.sync_selection();
         self.sidebar(context, editing_blocked);
         // The command list follows and seeks the animation; only its editing waits.
@@ -2941,6 +2932,16 @@ impl IgsEditor {
                 self.finish_poly();
             }
         }
+        // The player sits under the canvas, between the side panels.
+        egui::TopBottomPanel::bottom("igs-transport")
+            .exact_height(super::playback::PLAYER_HEIGHT)
+            .frame(egui::Frame::new().fill(panel_fill))
+            .show(context, |ui| {
+                if blocked {
+                    ui.disable();
+                }
+                self.transport(ui);
+            });
         egui::CentralPanel::default().show(context, |ui| {
             if let Some(error) = &self.error {
                 ui.colored_label(ui.visuals().error_fg_color, error);

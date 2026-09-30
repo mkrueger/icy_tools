@@ -2456,15 +2456,6 @@ impl RipEditor {
                 }
                 self.toolbar(ui);
             });
-        egui::TopBottomPanel::top("rip-transport")
-            .exact_height(42.0)
-            .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
-                if blocked {
-                    ui.disable();
-                }
-                self.transport_bar(ui);
-            });
         self.sync_selection();
         self.sidebar(context, editing_blocked);
         self.command_list(context, blocked, editing_blocked);
@@ -2501,6 +2492,16 @@ impl RipEditor {
                 self.finish_pending();
             }
         }
+        // The player sits under the canvas, between the side panels.
+        egui::TopBottomPanel::bottom("rip-transport")
+            .exact_height(super::playback::PLAYER_HEIGHT)
+            .frame(egui::Frame::new().fill(panel_fill))
+            .show(context, |ui| {
+                if blocked {
+                    ui.disable();
+                }
+                self.transport_bar(ui);
+            });
         egui::CentralPanel::default().show(context, |ui| {
             if let Some(error) = &self.error {
                 ui.colored_label(ui.visuals().error_fg_color, error);

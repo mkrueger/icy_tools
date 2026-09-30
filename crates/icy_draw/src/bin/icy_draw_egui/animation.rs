@@ -4,13 +4,13 @@
 pub use super::animation_export::ExportFormat;
 use super::{
     animation_export::{export_frames, ExportProgress},
-    widgets::Icons,
+    widgets::{self, Icons},
 };
-use eframe::egui::{self, Color32, Stroke, StrokeKind};
+use eframe::egui::{self, Color32, StrokeKind};
 use icy_draw::fl;
 use icy_engine_gui::{
     egui::{
-        appearance::{self, labels, DialogButton, DialogSize, PRIMARY},
+        appearance::{self, labels, DialogButton, DialogSize},
         dialog::DANGER,
         screen::ScreenView,
     },
@@ -29,12 +29,9 @@ use std::{
 };
 
 const SPEEDS: [f32; 5] = [0.25, 0.5, 1.0, 2.0, 4.0];
-const TRANSPORT_BUTTON: f32 = 30.0;
-const PLAY_BUTTON: f32 = 40.0;
 const SCRUBBER_HEIGHT: f32 = 22.0;
 const CONTROL_BAR_HEIGHT: f32 = 54.0;
 const STATUS_HEIGHT: f32 = 24.0;
-const PLAY: Color32 = Color32::from_rgb(46, 160, 67);
 
 struct ExportJob {
     result: Receiver<Result<(), String>>,
@@ -687,7 +684,7 @@ impl AnimationEditor {
         let ready = count > 0;
         let last = count.saturating_sub(1);
         // first, previous, play, next, last, restart, loop; with wider gaps around play and before restart.
-        let group = 6.0 * TRANSPORT_BUTTON + PLAY_BUTTON + 4.0 * 7.0 + 4.0 * 2.0 + 12.0;
+        let group = 6.0 * widgets::TRANSPORT_BUTTON + widgets::PLAY_BUTTON + 4.0 * 7.0 + 4.0 * 2.0 + 12.0;
         let speed_width = 76.0;
         let left = (rect.center().x - group / 2.0)
             .min(rect.right() - 12.0 - speed_width - 12.0 - group)
@@ -703,10 +700,10 @@ impl AnimationEditor {
                     editor.frame = frame;
                     editor.playing = false;
                 };
-                if transport_button(&mut self.icons, ui, "first_page", &fl!("animation-first-frame"), ready && self.frame > 0, false).clicked() {
+                if widgets::transport_button(&mut self.icons, ui, "first_page", &fl!("animation-first-frame"), ready && self.frame > 0, false).clicked() {
                     stop(self, 0);
                 }
-                if transport_button(
+                if widgets::transport_button(
                     &mut self.icons,
                     ui,
                     "skip_previous",
@@ -719,7 +716,7 @@ impl AnimationEditor {
                     stop(self, self.frame.saturating_sub(1));
                 }
                 ui.add_space(4.0);
-                if play_button(&mut self.icons, ui, self.playing, ready).clicked() {
+                if widgets::play_button(&mut self.icons, ui, self.playing, ready, &fl!("animation-play-pause")).clicked() {
                     if !self.playing && self.frame >= last && !self.looping {
                         self.frame = 0;
                     }
@@ -727,7 +724,7 @@ impl AnimationEditor {
                     self.tick = Instant::now();
                 }
                 ui.add_space(4.0);
-                if transport_button(
+                if widgets::transport_button(
                     &mut self.icons,
                     ui,
                     "skip_next",
@@ -739,7 +736,7 @@ impl AnimationEditor {
                 {
                     stop(self, (self.frame + 1).min(last));
                 }
-                if transport_button(
+                if widgets::transport_button(
                     &mut self.icons,
                     ui,
                     "last_page",
@@ -752,13 +749,13 @@ impl AnimationEditor {
                     stop(self, last);
                 }
                 ui.add_space(12.0);
-                if transport_button(&mut self.icons, ui, "replay", &fl!("animation-restart"), ready, false).clicked() {
+                if widgets::transport_button(&mut self.icons, ui, "replay", &fl!("animation-restart"), ready, false).clicked() {
                     self.frame = 0;
                     self.playing = true;
                     self.tick = Instant::now();
                 }
                 let tooltip = format!("{}\n{}", fl!("animation-loop"), fl!("animation-loop-tooltip"));
-                if transport_button(&mut self.icons, ui, "repeat", &tooltip, ready, self.looping).clicked() {
+                if widgets::transport_button(&mut self.icons, ui, "repeat", &tooltip, ready, self.looping).clicked() {
                     self.looping = !self.looping;
                 }
             },
@@ -931,75 +928,6 @@ fn overlay_label(painter: &egui::Painter, anchor: egui::Pos2, align: egui::Align
     let rect = egui::Rect::from_min_size(egui::pos2(left, anchor.y), size);
     painter.rect_filled(rect, 4, Color32::from_black_alpha(128));
     painter.galley(rect.min + egui::vec2(10.0, 4.0), galley, Color32::WHITE);
-}
-
-/// Framed square transport button, filled with the accent color while `active`.
-fn transport_button(icons: &mut Icons, ui: &mut egui::Ui, icon: &str, tooltip: &str, enabled: bool, active: bool) -> egui::Response {
-    let image = icons.image(ui, icon, 18.0);
-    let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
-    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(TRANSPORT_BUTTON), sense);
-    let visuals = ui.visuals();
-    let (fill, stroke, tint) = if active && enabled {
-        (PRIMARY, PRIMARY, Color32::WHITE)
-    } else if !enabled {
-        (
-            visuals.widgets.inactive.weak_bg_fill.gamma_multiply(0.5),
-            visuals.widgets.noninteractive.bg_stroke.color,
-            visuals.weak_text_color().gamma_multiply(0.5),
-        )
-    } else if response.is_pointer_button_down_on() {
-        (
-            visuals.widgets.active.weak_bg_fill,
-            visuals.widgets.active.bg_stroke.color,
-            visuals.text_color(),
-        )
-    } else if response.hovered() {
-        (
-            visuals.widgets.hovered.weak_bg_fill,
-            visuals.widgets.hovered.bg_stroke.color,
-            visuals.text_color(),
-        )
-    } else {
-        (
-            visuals.widgets.inactive.weak_bg_fill,
-            visuals.widgets.noninteractive.bg_stroke.color,
-            visuals.text_color(),
-        )
-    };
-    ui.painter().rect(rect, 6, fill, Stroke::new(1.0, stroke), StrokeKind::Inside);
-    image
-        .tint(tint)
-        .paint_at(ui, egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(18.0)));
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, active, tooltip));
-    response.on_hover_text(tooltip)
-}
-
-/// Round play/pause button: green to start playback, red while playing.
-fn play_button(icons: &mut Icons, ui: &mut egui::Ui, playing: bool, enabled: bool) -> egui::Response {
-    let image = icons.image(ui, if playing { "pause" } else { "play" }, 22.0);
-    let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
-    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(PLAY_BUTTON), sense);
-    let base = if !enabled {
-        ui.visuals().widgets.inactive.weak_bg_fill
-    } else if playing {
-        DANGER
-    } else {
-        PLAY
-    };
-    let fill = if enabled && response.hovered() { base.gamma_multiply(1.15) } else { base };
-    let painter = ui.painter();
-    painter.circle_filled(rect.center() + egui::vec2(0.0, 2.0), PLAY_BUTTON / 2.0, Color32::from_black_alpha(60));
-    painter.circle_filled(rect.center(), PLAY_BUTTON / 2.0, fill);
-    let tint = if enabled { Color32::WHITE } else { ui.visuals().weak_text_color() };
-    // The play triangle looks centred when nudged right a little.
-    let offset = if playing { 0.0 } else { 1.5 };
-    image.tint(tint).paint_at(
-        ui,
-        egui::Rect::from_center_size(rect.center() + egui::vec2(offset, 0.0), egui::Vec2::splat(22.0)),
-    );
-    let label = fl!("animation-play-pause");
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, playing, &label));
-    response.on_hover_text(fl!("animation-play-pause"))
 }
 
 /// Solarized accents, which read well on both the dark and the light editor background.

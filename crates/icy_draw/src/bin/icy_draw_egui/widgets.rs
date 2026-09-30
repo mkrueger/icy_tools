@@ -1,6 +1,6 @@
-use eframe::egui::{self, Color32, Response};
+use eframe::egui::{self, Color32, Response, Stroke, StrokeKind};
 use icy_draw::fl;
-use icy_engine_gui::egui::appearance::PRIMARY;
+use icy_engine_gui::egui::{appearance::PRIMARY, dialog::DANGER};
 use std::collections::HashMap;
 
 #[derive(rust_embed::RustEmbed)]
@@ -519,4 +519,78 @@ pub fn paint_glyph_on(painter: &egui::Painter, font: &icy_engine::BitFont, code:
     let code = (code as u32).min(255);
     let uv = egui::Rect::from_min_size(egui::pos2((code % 16) as f32 / 16.0, (code / 16) as f32 / 16.0), egui::Vec2::splat(1.0 / 16.0));
     painter.image(atlas.texture.id(), target, uv, color);
+}
+
+/// The size of the square buttons of the transport bars.
+pub const TRANSPORT_BUTTON: f32 = 30.0;
+/// The size of the round play button between them.
+pub const PLAY_BUTTON: f32 = 40.0;
+pub const PLAY: Color32 = Color32::from_rgb(46, 160, 67);
+
+/// Framed square transport button, filled with the accent color while `active`.
+pub fn transport_button(icons: &mut Icons, ui: &mut egui::Ui, icon: &str, tooltip: &str, enabled: bool, active: bool) -> egui::Response {
+    let image = icons.image(ui, icon, 18.0);
+    let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(TRANSPORT_BUTTON), sense);
+    let visuals = ui.visuals();
+    let (fill, stroke, tint) = if active && enabled {
+        (PRIMARY, PRIMARY, Color32::WHITE)
+    } else if !enabled {
+        (
+            visuals.widgets.inactive.weak_bg_fill.gamma_multiply(0.5),
+            visuals.widgets.noninteractive.bg_stroke.color,
+            visuals.weak_text_color().gamma_multiply(0.5),
+        )
+    } else if response.is_pointer_button_down_on() {
+        (
+            visuals.widgets.active.weak_bg_fill,
+            visuals.widgets.active.bg_stroke.color,
+            visuals.text_color(),
+        )
+    } else if response.hovered() {
+        (
+            visuals.widgets.hovered.weak_bg_fill,
+            visuals.widgets.hovered.bg_stroke.color,
+            visuals.text_color(),
+        )
+    } else {
+        (
+            visuals.widgets.inactive.weak_bg_fill,
+            visuals.widgets.noninteractive.bg_stroke.color,
+            visuals.text_color(),
+        )
+    };
+    ui.painter().rect(rect, 6, fill, Stroke::new(1.0, stroke), StrokeKind::Inside);
+    image
+        .tint(tint)
+        .paint_at(ui, egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(18.0)));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, active, tooltip));
+    response.on_hover_text(tooltip)
+}
+
+/// Round play/pause button: green to start playback, red while playing.
+pub fn play_button(icons: &mut Icons, ui: &mut egui::Ui, playing: bool, enabled: bool, label: &str) -> egui::Response {
+    let image = icons.image(ui, if playing { "pause" } else { "play" }, 22.0);
+    let sense = if enabled { egui::Sense::click() } else { egui::Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(PLAY_BUTTON), sense);
+    let base = if !enabled {
+        ui.visuals().widgets.inactive.weak_bg_fill
+    } else if playing {
+        DANGER
+    } else {
+        PLAY
+    };
+    let fill = if enabled && response.hovered() { base.gamma_multiply(1.15) } else { base };
+    let painter = ui.painter();
+    painter.circle_filled(rect.center() + egui::vec2(0.0, 2.0), PLAY_BUTTON / 2.0, Color32::from_black_alpha(60));
+    painter.circle_filled(rect.center(), PLAY_BUTTON / 2.0, fill);
+    let tint = if enabled { Color32::WHITE } else { ui.visuals().weak_text_color() };
+    // The play triangle looks centred when nudged right a little.
+    let offset = if playing { 0.0 } else { 1.5 };
+    image.tint(tint).paint_at(
+        ui,
+        egui::Rect::from_center_size(rect.center() + egui::vec2(offset, 0.0), egui::Vec2::splat(22.0)),
+    );
+    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, playing, label));
+    response.on_hover_text(label)
 }
