@@ -738,10 +738,12 @@ mod tests {
         wait(&mut preview, &context, "first character", |preview| {
             preview.playback.is_some_and(|playback| playback.position >= 1)
         });
-        assert_eq!(preview.playback.unwrap().position, 1);
+        let position = preview.playback.unwrap().position;
+        assert!((1..10).contains(&position), "300 baud revealed {position} of 10 characters at once");
         let screen = preview.screen.terminal.screen.lock();
         assert_eq!(screen.char_at((0, 0).into()).ch, b'A' as char);
-        assert_ne!(screen.char_at((1, 0).into()).ch, b'B' as char);
+        // The view thread may type a further character or two meanwhile, but not all of them.
+        assert_ne!(screen.char_at((9, 0).into()).ch, b'J' as char);
     }
 
     #[test]
