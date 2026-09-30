@@ -1,5 +1,8 @@
 use codepages::tables::{CP437_TO_UNICODE, UNICODE_TO_CP437};
-use icy_parser_core::{ATARI_TO_UNICODE, PETSCII_TO_UNICODE, UNICODE_TO_ATARI, UNICODE_TO_PETSCII, UNICODE_TO_VIEWDATA, VIEWDATA_TO_UNICODE};
+use icy_parser_core::{
+    ATARI_ST_TO_UNICODE, ATARI_TO_UNICODE, PETSCII_TO_UNICODE, UNICODE_TO_ATARI, UNICODE_TO_ATARI_ST, UNICODE_TO_PETSCII, UNICODE_TO_VIEWDATA,
+    VIEWDATA_TO_UNICODE,
+};
 
 use crate::Color;
 
@@ -10,6 +13,8 @@ pub enum BufferType {
     Petscii,
     Atascii,
     Viewdata,
+    /// The Atari ST's character set, used by its VT52 screen.
+    AtariSt,
 }
 
 impl BufferType {
@@ -38,6 +43,7 @@ impl BufferType {
             2 => BufferType::Petscii,
             3 => BufferType::Atascii,
             4 => BufferType::Viewdata,
+            5 => BufferType::AtariSt,
             _ => BufferType::Unicode,
         }
     }
@@ -49,6 +55,7 @@ impl BufferType {
             BufferType::Petscii => 2,
             BufferType::Atascii => 3,
             BufferType::Viewdata => 4,
+            BufferType::AtariSt => 5,
         }
     }
 
@@ -69,8 +76,8 @@ impl BufferType {
                 Color::new(0x09, 0x51, 0x83), // ANTIC blue foreground
                 Color::new(0xFF, 0xFF, 0xFF), // White background
             ),
-            // Viewdata uses black on white like Videotex/Mode7
-            BufferType::Viewdata => (
+            // Viewdata uses black on white like Videotex/Mode7, as does the Atari ST's desktop
+            BufferType::Viewdata | BufferType::AtariSt => (
                 Color::new(0x00, 0x00, 0x00), // Black foreground
                 Color::new(0xFF, 0xFF, 0xFF), // White background
             ),
@@ -101,6 +108,8 @@ impl BufferType {
                     _ => ch,
                 }
             }
+
+            BufferType::AtariSt => ATARI_ST_TO_UNICODE.get(ch as usize).copied().unwrap_or(ch),
 
             BufferType::Viewdata if ch as u32 == 0xA6 => '¦',
             BufferType::Viewdata if ch == '|' => '|',
@@ -139,6 +148,8 @@ impl BufferType {
                 }
             }
 
+            BufferType::AtariSt => UNICODE_TO_ATARI_ST.get(&ch).copied().unwrap_or(ch),
+
             BufferType::Viewdata => {
                 if ch == ' ' {
                     return ' ';
@@ -173,6 +184,8 @@ impl BufferType {
                 UNICODE_TO_ATARI.get(&ch).copied()
             }
 
+            BufferType::AtariSt => UNICODE_TO_ATARI_ST.get(&ch).copied(),
+
             BufferType::Viewdata => {
                 if ch == ' ' {
                     return Some(' ');
@@ -186,6 +199,15 @@ impl BufferType {
 #[cfg(test)]
 mod tests {
     use super::BufferType;
+
+    #[test]
+    fn atari_st_characters_convert_both_ways() {
+        for (code, unicode) in [(0x41, 'A'), (0x84, 'ä'), (0x9E, 'ß'), (0xE0, 'α'), (0xBD, '©')] {
+            assert_eq!(BufferType::AtariSt.convert_to_unicode(char::from(code)), unicode);
+            assert_eq!(BufferType::AtariSt.convert_from_unicode(unicode) as u32, u32::from(code));
+        }
+        assert_eq!(BufferType::from_byte(BufferType::AtariSt.to_byte()), BufferType::AtariSt);
+    }
 
     #[test]
     fn viewdata_distinguishes_broken_vertical_and_pipe() {

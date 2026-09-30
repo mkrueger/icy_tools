@@ -1,5 +1,5 @@
 pub(crate) mod io;
-pub use io::atascii_buffer;
+pub use io::{atari_st_buffer, atari_st_columns, atari_st_font, atari_st_resolution, atari_st_text_color, atascii_buffer};
 
 mod bitfont_format;
 pub use bitfont_format::*;

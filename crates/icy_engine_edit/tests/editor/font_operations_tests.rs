@@ -169,3 +169,22 @@ fn font_dimensions_undo_and_redo() {
     state.undo().unwrap();
     assert_eq!(state.get_buffer().font_dimensions(), original);
 }
+
+#[test]
+fn palette_and_layers_switch_in_one_undo_step() {
+    let mut state = EditState::from_buffer(TextBuffer::create((4, 1)));
+    let mut attribute = icy_engine::TextAttribute::default();
+    attribute.set_foreground(12);
+    state.get_buffer_mut().layers[0].set_char((0, 0), AttributedChar::new('A', attribute));
+    let mut layers = state.get_buffer().layers.clone();
+    attribute.set_foreground(3);
+    layers[0].set_char((0, 0), AttributedChar::new('A', attribute));
+    let palette = icy_engine::Palette::from_slice(&icy_engine::DOS_DEFAULT_PALETTE[..4]);
+    state.switch_to_palette_with_layers(palette, layers).unwrap();
+    let foreground = |state: &EditState| state.get_buffer().layers[0].char_at((0, 0).into()).attribute.foreground();
+    assert_eq!((foreground(&state), state.get_buffer().palette.len()), (3, 4));
+    state.undo().unwrap();
+    assert_eq!((foreground(&state), state.get_buffer().palette.len()), (12, 16));
+    state.redo().unwrap();
+    assert_eq!((foreground(&state), state.get_buffer().palette.len()), (3, 4));
+}

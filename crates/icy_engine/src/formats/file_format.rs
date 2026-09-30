@@ -209,6 +209,7 @@ impl FileFormat {
         FileFormat::CtrlA,
         FileFormat::Renegade,
         FileFormat::Atascii,
+        FileFormat::Vt52,
         FileFormat::ViewData,
         FileFormat::IcyDraw,
         FileFormat::IceDraw,
@@ -227,6 +228,7 @@ impl FileFormat {
         FileFormat::CtrlA,
         FileFormat::Renegade,
         FileFormat::Atascii,
+        FileFormat::Vt52,
         FileFormat::ViewData,
         FileFormat::IcyDraw,
         FileFormat::IceDraw,
@@ -874,6 +876,7 @@ impl FileFormat {
                 | Self::CtrlA
                 | Self::Renegade
                 | Self::Atascii
+                | Self::Vt52
                 | Self::Petscii
                 | Self::Bin
                 | Self::XBin
@@ -897,6 +900,7 @@ impl FileFormat {
             | FileFormat::CtrlA
             | FileFormat::Renegade
             | FileFormat::Atascii
+            | FileFormat::Vt52
             | FileFormat::Petscii
             | FileFormat::Bin
             | FileFormat::XBin
@@ -942,6 +946,7 @@ impl FileFormat {
                 BufferType::Petscii,
                 BufferType::Atascii,
                 BufferType::Viewdata,
+                BufferType::AtariSt,
             ],
 
             // PETSCII only
@@ -953,8 +958,11 @@ impl FileFormat {
             // Viewdata/Mode7 only
             FileFormat::ViewData | FileFormat::Mode7 => &[BufferType::Viewdata],
 
+            // VT52 text is written in the Atari ST's character set
+            FileFormat::Vt52 => &[BufferType::AtariSt],
+
             // Graphics formats - treat as CP437 compatible
-            FileFormat::Rip | FileFormat::SkyPix | FileFormat::Vt52 | FileFormat::Igs => &[BufferType::CP437, BufferType::Unicode],
+            FileFormat::Rip | FileFormat::SkyPix | FileFormat::Igs => &[BufferType::CP437, BufferType::Unicode],
 
             // Image formats - support all buffer types (they render pixels)
             FileFormat::Image(_) => &[
@@ -963,6 +971,7 @@ impl FileFormat {
                 BufferType::Petscii,
                 BufferType::Atascii,
                 BufferType::Viewdata,
+                BufferType::AtariSt,
             ],
 
             // BitFont formats don't contain text buffer content
@@ -1228,6 +1237,7 @@ impl FileFormat {
             FileFormat::CtrlA => io::load_ctrla(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
             FileFormat::Renegade => io::load_renegade(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
             FileFormat::Atascii => io::load_atascii(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
+            FileFormat::Vt52 => io::load_vt52(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
             FileFormat::Petscii => io::load_seq(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
             FileFormat::Bin => io::load_bin(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
             FileFormat::XBin => io::load_xbin(stripped_data, load_data.as_ref(), sauce_opt.as_ref()),
@@ -1314,6 +1324,7 @@ impl FileFormat {
             FileFormat::CtrlA => io::save_ctrla(&buffer, options),
             FileFormat::Renegade => io::save_renegade(&buffer, options),
             FileFormat::Atascii => io::save_atascii(&buffer, options),
+            FileFormat::Vt52 => io::save_vt52(&buffer, options),
             FileFormat::Petscii => io::save_seq(&buffer, options),
             FileFormat::Bin => io::save_bin(&buffer, options),
             FileFormat::XBin => io::save_xbin(&buffer, options),

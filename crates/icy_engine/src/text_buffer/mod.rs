@@ -1015,6 +1015,8 @@ impl TextBuffer {
         match self.buffer_type {
             BufferType::Petscii => 1.2,
             BufferType::Atascii => 1.25,
+            // 320 × 200 and 640 × 400 pixels on a 4:3 monitor; medium resolution fonts come doubled.
+            BufferType::AtariSt => 1.2,
             _ => {
                 let mut res = if self.use_letter_spacing { 1.35 } else { 1.2 };
                 if let Some(font) = self.font(0) {

@@ -581,6 +581,18 @@ impl EditState {
         })
     }
 
+    /// Replaces the palette and the layers, whose colors were mapped to it, in one undo step.
+    pub fn switch_to_palette_with_layers(&mut self, pal: Palette, layers: Vec<Layer>) -> Result<()> {
+        let old_palette = self.get_buffer().palette.clone();
+        let old_layers = self.get_buffer().layers.clone();
+        self.push_undo_action(EditorUndoOp::SwitchPalette {
+            old_palette,
+            old_layers,
+            new_palette: pal,
+            new_layers: layers,
+        })
+    }
+
     /// Update SAUCE metadata with undo support
     /// Returns Ok(()) without creating an undo action if there are no changes.
     pub fn update_sauce_data(&mut self, sauce: crate::SauceMetaData) -> Result<()> {
