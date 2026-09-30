@@ -4,7 +4,7 @@
 //! screen has one font and two colors, and inverse video is the upper half of the character
 //! set, so there are no per-character colors or font slots to offer.
 
-use eframe::egui::{self, Color32, Key};
+use eframe::egui::{self, Color32};
 use icy_draw::{
     brush::BrushPrimaryMode,
     fl,
@@ -14,7 +14,11 @@ use icy_engine::TextPane;
 use icy_engine_edit::tools::{Tool, ToolPair};
 use icy_engine_gui::egui::appearance::PRIMARY;
 
-use super::{chrome, widgets, DrawApp, FileAction};
+use super::{
+    chrome,
+    retro::{PipetteReturn, FKEYS},
+    widgets, DrawApp, FileAction,
+};
 
 /// The tools that make sense on a character screen without per-character colors.
 const TOOLS: [&[ToolPair]; 3] = [
@@ -38,24 +42,6 @@ pub const FKEY_SETS: [[u8; 12]; 4] = [
     [0x1C, 0x1D, 0x1E, 0x1F, 0x7E, 0x7F, 0x7D, 0x1B, 0x9B, 0xFD, 0xFE, 0xFF],
 ];
 
-const FKEYS: [Key; 12] = [
-    Key::F1,
-    Key::F2,
-    Key::F3,
-    Key::F4,
-    Key::F5,
-    Key::F6,
-    Key::F7,
-    Key::F8,
-    Key::F9,
-    Key::F10,
-    Key::F11,
-    Key::F12,
-];
-
-/// The largest cell of the character grid.
-const GLYPH_CELL: f32 = 20.0;
-
 /// What the ATASCII editor remembers beside the document.
 pub struct AtasciiEditor {
     /// The character the drawing tools paint, inverse from 128.
@@ -65,9 +51,7 @@ pub struct AtasciiEditor {
     pub background: (u8, u8),
     /// The luminance of the text, which has the background's hue.
     pub text_luminance: u8,
-    /// The tool of the last frame, and the one the pipette returns to.
-    last_tool: Tool,
-    before_pipette: Tool,
+    pipette: PipetteReturn,
 }
 
 impl Default for AtasciiEditor {
@@ -78,8 +62,7 @@ impl Default for AtasciiEditor {
             fkey_set: 0,
             background: (9, 4),
             text_luminance: 10,
-            last_tool: Tool::Click,
-            before_pipette: Tool::Pencil,
+            pipette: PipetteReturn::default(),
         }
     }
 }
@@ -184,7 +167,7 @@ impl DrawApp {
         editor.brush = code;
         self.document.brush.paint_char = char::from(code);
         self.document.inverse = code >= 0x80;
-        self.document.tool = editor.before_pipette;
+        self.document.tool = editor.pipette.tool();
     }
 
     /// Makes `code` the brush; the text tool types it as well.
@@ -215,10 +198,7 @@ impl DrawApp {
     /// The panels of the ATASCII editor around the canvas.
     pub(super) fn atascii_panels(&mut self, context: &egui::Context, blocked: bool) {
         if let Some(editor) = &mut self.atascii {
-            if self.document.tool == Tool::Pipette && editor.last_tool != Tool::Pipette {
-                editor.before_pipette = editor.last_tool;
-            }
-            editor.last_tool = self.document.tool;
+            editor.pipette.track(self.document.tool);
         }
         let panel_fill = context.style().visuals.panel_fill;
         egui::TopBottomPanel::top("toolbar")
@@ -239,27 +219,7 @@ impl DrawApp {
                 }
                 self.atascii_status_bar(ui);
             });
-        egui::SidePanel::left("sidebar")
-            .exact_width(chrome::SIDEBAR_WIDTH)
-            .frame(egui::Frame::new().fill(panel_fill))
-            .resizable(false)
-            .show(context, |ui| {
-                if blocked || self.document.paste_active() {
-                    ui.disable();
-                }
-                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                    ui.add_space(6.0);
-                    ui.spacing_mut().item_spacing.y = 2.0;
-                    for (index, group) in TOOLS.iter().enumerate() {
-                        if index > 0 {
-                            chrome::rail_divider(ui);
-                        }
-                        for &pair in *group {
-                            self.tool_button(ui, pair);
-                        }
-                    }
-                });
-            });
+        self.screen_tool_rail(context, &TOOLS, blocked);
         if context.content_rect().width() >= 850.0 {
             egui::SidePanel::right("panel")
                 .exact_width(chrome::PANEL_WIDTH)
@@ -427,90 +387,16 @@ impl DrawApp {
         })
     }
 
-    /// Paints `code` as the screen shows it into `rect`, scaled by whole pixels.
-    fn paint_atascii_glyph(&self, painter: &egui::Painter, rect: egui::Rect, code: u8) {
-        let font = self.document.with_state(|state| state.get_buffer().font(0).cloned());
-        let (foreground, background) = self.atascii_colors();
-        painter.rect_filled(rect, 2, background);
-        if let Some(font) = &font {
-            let glyph = font.size();
-            let scale = (rect.width() / glyph.width as f32).min(rect.height() / glyph.height as f32).floor().max(1.0);
-            let target = egui::Rect::from_center_size(rect.center(), egui::vec2(glyph.width as f32 * scale, glyph.height as f32 * scale));
-            widgets::paint_glyph_on(painter, font, char::from(code), target, foreground);
-        }
-    }
-
     /// A character as the screen shows it.
     fn atascii_glyph(&self, ui: &mut egui::Ui, code: u8, size: egui::Vec2) -> egui::Response {
-        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-        self.paint_atascii_glyph(ui.painter(), rect, code);
-        response
+        self.screen_glyph(ui, code, size, self.atascii_colors())
     }
 
-    /// A function key of the toolbar: its character over the key name, like the ANSI editor's.
-    fn atascii_fkey(&self, ui: &mut egui::Ui, code: u8, index: usize) -> egui::Response {
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(30.0, 40.0), egui::Sense::click());
-        if ui.is_enabled() && response.hovered() {
-            ui.painter().rect_filled(rect, 5, ui.visuals().widgets.hovered.weak_bg_fill);
-        }
-        let glyph = egui::Rect::from_center_size(rect.center_top() + egui::vec2(0.0, 13.0), egui::Vec2::splat(24.0));
-        self.paint_atascii_glyph(ui.painter(), glyph, code);
-        let label = format!("F{}", index + 1);
-        ui.painter().text(
-            rect.center_bottom() - egui::vec2(0.0, 1.0),
-            egui::Align2::CENTER_BOTTOM,
-            &label,
-            egui::FontId::proportional(10.0),
-            ui.visuals().weak_text_color(),
-        );
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &label));
-        response.on_hover_text(format!("{label} · #{code:02X}"))
-    }
-
-    /// The 128 characters of the current video mode, 16 per row; the brush is framed.
+    /// The 128 characters of the current video mode; the brush is framed.
     fn atascii_character_map(&self, ui: &mut egui::Ui, brush: u8) -> Option<u8> {
-        let glyph = self.document.with_state(|state| state.get_buffer().font(0).map(icy_engine::BitFont::size));
-        let glyph = glyph.unwrap_or(icy_engine::Size::new(8, 8));
         let page = if self.document.inverse { 0x80 } else { 0 };
-        // Two pixels between the characters, which are scaled by whole pixels.
-        let pitch = (ui.available_width() / 16.0).floor().min(GLYPH_CELL);
-        let scale = ((pitch - 2.0) / glyph.width as f32).floor().max(1.0);
-        let cell = egui::vec2(pitch, glyph.height as f32 * scale + 2.0);
-        let (area, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), cell.y * 8.0), egui::Sense::click());
-        let origin = egui::pos2(area.center().x - pitch * 8.0, area.top());
-        let cell_rect = |index: u8| {
-            let (column, row) = (f32::from(index % 16), f32::from(index / 16));
-            egui::Rect::from_min_size(origin + egui::vec2(column * cell.x, row * cell.y), cell).shrink(1.0)
-        };
-        let painter = ui.painter();
-        for index in 0..128u8 {
-            self.paint_atascii_glyph(painter, cell_rect(index), page | index);
-        }
-        let hovered = response.hover_pos().and_then(|point| {
-            let offset = point - origin;
-            let (column, row) = ((offset.x / cell.x).floor(), (offset.y / cell.y).floor());
-            ((0.0..16.0).contains(&column) && (0.0..8.0).contains(&row)).then(|| row as u8 * 16 + column as u8)
-        });
-        if let Some(index) = hovered {
-            painter.rect_stroke(
-                cell_rect(index),
-                2,
-                egui::Stroke::new(1.0, Color32::from_white_alpha(160)),
-                egui::StrokeKind::Outside,
-            );
-        }
-        if brush & 0x80 == page {
-            // A dark and a white ring, visible on any screen color.
-            let rect = cell_rect(brush & 0x7F).expand(1.0);
-            painter.rect_stroke(rect, 3, egui::Stroke::new(3.0, Color32::from_black_alpha(200)), egui::StrokeKind::Outside);
-            painter.rect_stroke(rect, 3, egui::Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Inside);
-        }
-        let code = hovered.map(|index| page | index);
-        let response = match code {
-            Some(code) => response.on_hover_text(format!("#{code:02X}")),
-            None => response,
-        };
-        response.clicked().then_some(code).flatten()
+        let codes: Vec<u8> = (0..128u8).map(|index| page | index).collect();
+        self.character_map(ui, &codes, Some(brush), self.atascii_colors())
     }
 
     fn atascii_toolbar(&mut self, ui: &mut egui::Ui) {
@@ -562,20 +448,7 @@ impl DrawApp {
                 }
             }
             widgets::divider(ui);
-            ui.spacing_mut().item_spacing.x = 2.0;
-            if self.icons.button(ui, "navigate_prev", &fl!("atascii-fkeys-previous"), false).clicked() {
-                step = -1;
-            }
-            for (index, &code) in FKEY_SETS[set].iter().enumerate() {
-                if self.atascii_fkey(ui, code, index).clicked() {
-                    picked = Some(code);
-                }
-            }
-            if self.icons.button(ui, "navigate_next", &fl!("atascii-fkeys-next"), false).clicked() {
-                step = 1;
-            }
-            ui.add_space(4.0);
-            ui.weak(fl!("atascii-fkeys-set", set = (set + 1), count = FKEY_SETS.len()));
+            (picked, step) = self.screen_fkey_bar(ui, &FKEY_SETS[set], (set, FKEY_SETS.len()), self.atascii_colors());
         });
         if step != 0 {
             if let Some(editor) = &mut self.atascii {
@@ -875,7 +748,12 @@ mod tests {
         assert_eq!([code_at(&app, 0), code_at(&app, 1)], [0x41, 0xC1]);
 
         super::super::tests::frame(&context, &mut app, size, vec![]);
-        super::super::tests::frame(&context, &mut app, size, vec![super::super::tests::key_event(Key::F2, egui::Modifiers::NONE)]);
+        super::super::tests::frame(
+            &context,
+            &mut app,
+            size,
+            vec![super::super::tests::key_event(egui::Key::F2, egui::Modifiers::NONE)],
+        );
         assert_eq!(code_at(&app, 2), u32::from(FKEY_SETS[0][1]), "F2 types the set's character, not a CP437 one");
         assert_eq!(app.atascii.as_ref().unwrap().brush, FKEY_SETS[0][1]);
 

@@ -172,6 +172,14 @@ impl Document {
         Self::from_state(EditState::from_buffer(crate::screen_profile::atascii_buffer(mode)))
     }
 
+    /// An empty VT52 document: the Atari ST's text screen in `resolution`, typing in its text color.
+    pub fn new_atari_st(resolution: icy_engine::TerminalResolution) -> Self {
+        let mut state = EditState::from_buffer(crate::screen_profile::atari_st_buffer(resolution));
+        state.set_caret_foreground(icy_engine::atari_st_text_color(resolution));
+        state.set_caret_background(0);
+        Self::from_state(state)
+    }
+
     /// What the document's screen can hold.
     pub fn profile(&self) -> crate::screen_profile::ScreenProfile {
         self.with_state(|state| crate::screen_profile::ScreenProfile::of(state.get_buffer()))

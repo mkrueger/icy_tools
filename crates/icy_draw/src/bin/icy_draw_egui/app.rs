@@ -35,12 +35,16 @@ mod mcp;
 mod menus;
 #[path = "recovery.rs"]
 mod recovery;
+#[path = "retro.rs"]
+mod retro;
 #[path = "settings_dialog.rs"]
 mod settings_dialog;
 #[path = "shade.rs"]
 mod shade;
 #[path = "tag_picker.rs"]
 mod tag_picker;
+#[path = "vt52.rs"]
+mod vt52;
 #[path = "welcome.rs"]
 mod welcome;
 
@@ -184,6 +188,7 @@ fn filter_match_ranges(name: &str, filter: &str) -> Vec<std::ops::Range<usize>> 
 pub enum NewKind {
     Ansi,
     Atascii,
+    Vt52,
     Rip,
     Igs,
     Animation,
@@ -192,9 +197,10 @@ pub enum NewKind {
 }
 
 impl NewKind {
-    pub const ALL: [NewKind; 9] = [
+    pub const ALL: [NewKind; 10] = [
         NewKind::Ansi,
         NewKind::Atascii,
+        NewKind::Vt52,
         NewKind::Rip,
         NewKind::Igs,
         NewKind::Animation,
@@ -209,6 +215,7 @@ impl NewKind {
         match self {
             NewKind::Ansi => fl!("new-file-editor-ansi"),
             NewKind::Atascii => fl!("new-file-editor-atascii"),
+            NewKind::Vt52 => fl!("new-file-editor-vt52"),
             NewKind::Rip => fl!("rip-editor-title"),
             NewKind::Igs => fl!("igs-editor-title"),
             NewKind::Animation => fl!("new-file-editor-animation"),
@@ -224,6 +231,7 @@ impl NewKind {
         match self {
             NewKind::Ansi => fl!("new-kind-ansi-description"),
             NewKind::Atascii => fl!("new-kind-atascii-description"),
+            NewKind::Vt52 => fl!("new-kind-vt52-description"),
             NewKind::Rip => fl!("rip-editor-description"),
             NewKind::Igs => fl!("igs-editor-description"),
             NewKind::Animation => fl!("new-kind-animation-description"),
@@ -239,6 +247,7 @@ impl NewKind {
         match self {
             NewKind::Ansi => "pencil",
             NewKind::Atascii => "text",
+            NewKind::Vt52 => "cursor",
             NewKind::Rip => "rectangle_outline",
             NewKind::Igs => "ellipse_filled",
             NewKind::Animation => "play",
@@ -294,6 +303,9 @@ pub struct DrawApp {
     igs: Option<super::igs::IgsEditor>,
     /// The ATASCII editor's state while the document is an ATASCII screen.
     pub(super) atascii: Option<atascii::AtasciiEditor>,
+    /// The VT52 editor's state while the document is an Atari ST text screen.
+    pub(super) vt52: Option<vt52::Vt52Editor>,
+    pub(super) new_vt52_resolution: icy_parser_core::TerminalResolution,
     /// Resolution of IGS drawings created from the New dialog.
     new_igs_resolution: icy_parser_core::TerminalResolution,
     pub(super) new_atascii_mode: AtasciiMode,
@@ -385,6 +397,8 @@ impl DrawApp {
             rip: None,
             igs: None,
             atascii: None,
+            vt52: None,
+            new_vt52_resolution: icy_parser_core::TerminalResolution::Medium,
             new_igs_resolution: icy_draw::igs_document::DEFAULT_RESOLUTION,
             new_atascii_mode: AtasciiMode::default(),
             clipboard: None,
@@ -443,6 +457,7 @@ impl DrawApp {
                 self.replace(document);
             }
             NewKind::Atascii => self.replace(Document::new_atascii(self.new_atascii_mode)),
+            NewKind::Vt52 => self.replace(Document::new_atari_st(self.new_vt52_resolution)),
             NewKind::Rip => {
                 self.replace(Document::new(Size::new(80, 25)));
                 self.rip = Some(super::rip::RipEditor::new());
@@ -490,8 +505,11 @@ impl DrawApp {
         self.view = ScreenView::from_shared(self.document.screen.clone());
         self.canvas_focus = true;
         self.atascii = None;
-        if matches!(self.document.profile(), icy_draw::screen_profile::ScreenProfile::Atascii(_)) {
-            self.start_atascii();
+        self.vt52 = None;
+        match self.document.profile() {
+            icy_draw::screen_profile::ScreenProfile::Atascii(_) => self.start_atascii(),
+            icy_draw::screen_profile::ScreenProfile::AtariSt(_) => self.start_vt52(),
+            _ => {}
         }
     }
 
@@ -1751,6 +1769,17 @@ impl DrawApp {
         });
     }
 
+    /// The resolution of a new VT52 document.
+    fn new_vt52_group(&mut self, ui: &mut egui::Ui) {
+        appearance::group(ui, &fl!("vt52-new-resolution"), |ui| {
+            for resolution in vt52::RESOLUTIONS {
+                let name = format!("{} · {}", vt52::resolution_name(resolution), vt52::resolution_detail(resolution));
+                ui.radio_value(&mut self.new_vt52_resolution, resolution, name);
+            }
+            ui.add(egui::Label::new(egui::RichText::new(fl!("vt52-new-hint")).weak()).wrap());
+        });
+    }
+
     /// Leaves the bitmap font editor; a font of its own returns to the start screen.
     fn close_font_editor(&mut self) {
         let standalone = self.font_editor.take().is_some_and(|editor| !editor.apply_target);
@@ -2068,6 +2097,8 @@ impl DrawApp {
             if let Some(position) = pointer.interact_pos().and_then(|point| self.position(point)) {
                 if self.document.tool == Tool::Pipette && self.atascii.is_some() {
                     self.pipette_atascii(position);
+                } else if self.document.tool == Tool::Pipette && self.vt52.is_some() {
+                    self.pipette_vt52(position);
                 } else if self.document.tool == Tool::Pipette {
                     let modifiers = ui.input(|input| input.modifiers);
                     self.document.begin_with_modifiers(
@@ -3434,6 +3465,8 @@ impl DrawApp {
                                         self.new_igs_group(&mut columns[1]);
                                     } else if self.new_kind == NewKind::Atascii {
                                         self.new_atascii_group(&mut columns[1]);
+                                    } else if self.new_kind == NewKind::Vt52 {
+                                        self.new_vt52_group(&mut columns[1]);
                                     }
                                 });
                             } else {
@@ -3444,6 +3477,8 @@ impl DrawApp {
                                     self.new_igs_group(ui);
                                 } else if self.new_kind == NewKind::Atascii {
                                     self.new_atascii_group(ui);
+                                } else if self.new_kind == NewKind::Vt52 {
+                                    self.new_vt52_group(ui);
                                 }
                             }
                         });
@@ -3825,6 +3860,8 @@ impl DrawApp {
         let panel_fill = context.style().visuals.panel_fill;
         if self.atascii.is_some() {
             self.atascii_panels(context, blocked);
+        } else if self.vt52.is_some() {
+            self.vt52_panels(context, blocked);
         } else {
             self.ansi_panels(context, blocked);
         }
@@ -3886,6 +3923,9 @@ impl DrawApp {
         if !blocked && !self.layer_properties_open() {
             if self.atascii.is_some() {
                 self.atascii_keys(context);
+                self.keys(context);
+            } else if self.vt52.is_some() {
+                self.vt52_keys(context);
                 self.keys(context);
             } else {
                 self.keys(context);

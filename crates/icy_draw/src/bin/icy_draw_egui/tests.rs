@@ -1817,7 +1817,7 @@ fn insert_image_accepts_all_writable_art_formats() {
     source.ice_mode = icy_engine::IceMode::Ice;
     source.layers[0].set_char((0, 0), AttributedChar::new('A', Default::default()));
     for format in FileFormat::ALL.iter().filter(|format| format.supports_load() && format.supports_save()) {
-        let bytes = if matches!(format, FileFormat::Petscii | FileFormat::Atascii) {
+        let bytes = if matches!(format, FileFormat::Petscii | FileFormat::Atascii | FileFormat::Vt52) {
             b"HELLO".to_vec()
         } else {
             format

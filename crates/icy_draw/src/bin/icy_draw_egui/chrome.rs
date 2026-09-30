@@ -588,7 +588,7 @@ impl DrawApp {
     }
 
     /// Palette grid: left click sets the foreground, right click the background.
-    fn palette_grid(&mut self, ui: &mut egui::Ui, width: f32) {
+    pub(super) fn palette_grid(&mut self, ui: &mut egui::Ui, width: f32) {
         let (palette, foreground, background) = self.document.with_state(|state| {
             let attribute = state.get_caret().attribute;
             (state.get_buffer().palette.clone(), attribute.foreground(), attribute.background())
