@@ -1393,6 +1393,7 @@ fn reading_marks_messages_and_next_unread_walks_the_conferences() {
     assert_eq!(mail.folder, app::Folder::Conference(2), "next unread continues in the next conference");
     frame(&context, &mut mail, size, vec![key(egui::Key::C, egui::Modifiers::SHIFT)]);
     assert_eq!(mail.counts.conferences.get(&2).copied().unwrap_or(0), 0);
+    mail.marks.flush();
     let package = mail.reader.package.clone().unwrap();
     let state = icy_mail::state::ReadState::open_in(mail.path.as_ref().unwrap(), &package, dir.path()).unwrap();
     assert_eq!(state.indices(&package), std::collections::HashSet::from([0, 2, 3]));
@@ -1531,6 +1532,7 @@ fn welcome_page_opens_and_forgets_recent_packets() {
     assert!(mail.reader.package.is_some());
     mail.set_starred(&context, 2, true);
     settle(&context, &mut mail, size);
+    mail.marks.flush();
 
     let mut fresh = app::MailApp::with_storage(&context, dir.path().to_path_buf());
     fresh.recent.as_mut().unwrap().add(&dir.path().join("GONE.QWK")).unwrap();
@@ -2509,12 +2511,37 @@ fn stars_keep_messages_for_later_and_survive_reopening() {
     frame(&context, &mut mail, size, vec![key(egui::Key::S, egui::Modifiers::NONE)]);
     assert!(!mail.reader.is_starred(carol));
     assert_eq!(mail.reader.messages.len(), 2, "an unstarred message stays until the folder is reopened");
+    mail.marks.flush();
 
     let mut reopened = app::MailApp::with_storage(&context, dir.path().to_path_buf());
     reopened.open(dir.path().join("TEST.QWK"), &context);
     wait(&mut reopened, &context);
     assert!(reopened.reader.is_starred(first) && !reopened.reader.is_starred(carol));
     assert_eq!(reopened.counts.starred, 1);
+}
+
+#[test]
+fn failed_background_mark_saves_are_reported() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let path = mail.read_state.as_ref().unwrap().snapshot().unwrap().path().to_path_buf();
+    mail.marks.flush();
+    let _ = std::fs::remove_file(&path);
+    // A directory in the file's place makes the atomic rename fail.
+    std::fs::create_dir(&path).unwrap();
+    let read = mail.reader.is_read(1);
+    mail.set_read(&context, &[1], !read);
+    assert_eq!(mail.reader.is_read(1), !read, "the change is kept although saving fails");
+    mail.marks.flush();
+    mail.poll(&context);
+    let notice = mail.notice.as_ref().expect("the failure is reported");
+    assert_eq!(notice.kind, app::NoticeKind::Warning);
+    assert!(notice.text.contains("read marks"), "{}", notice.text);
+    mail.set_starred(&context, 2, true);
+    mail.marks.flush();
+    mail.poll(&context);
+    assert!(mail.notice.as_ref().unwrap().text.contains("star"), "{}", mail.notice.as_ref().unwrap().text);
 }
 
 #[test]

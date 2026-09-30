@@ -22,6 +22,7 @@ use super::{
     address_dialog::AddressDialog,
     composer::Composer,
     loading::{BodySource, Event, Loader},
+    mark_writer::{MarkKind, MarkWriter},
     modern_view::{Document, Item},
     settings::SettingsDialog,
     tagline_dialog::TaglineDialog,
@@ -110,6 +111,7 @@ pub struct MailApp {
     pub error: Option<String>,
     pub drafts: Option<DraftStore>,
     pub read_state: Option<ReadState>,
+    pub marks: MarkWriter,
     pub recent: Option<RecentPackets>,
     /// Keeps drafts, read marks and the recent list here instead of the user's data directory.
     pub storage: Option<PathBuf>,
@@ -221,6 +223,7 @@ impl MailApp {
             error: None,
             drafts: None,
             read_state: None,
+            marks: MarkWriter::new(),
             recent,
             storage,
             folder: Folder::All,
@@ -306,6 +309,10 @@ impl MailApp {
     }
 
     pub fn poll(&mut self, context: &egui::Context) {
+        let failed: Vec<_> = self.marks.errors().collect();
+        for (kind, error) in failed {
+            self.mark_save_failed(context, kind, error);
+        }
         if let Some(receiver) = &self.version_check {
             match receiver.try_recv() {
                 Ok(latest) => {
@@ -449,6 +456,8 @@ impl MailApp {
                 return;
             }
         };
+        // A reload must see the marks still queued for this packet.
+        self.marks.flush();
         let read_state = match &self.storage {
             Some(directory) => ReadState::open_in(&path, &package, directory),
             None => ReadState::open(&path, &package),
@@ -733,12 +742,8 @@ impl MailApp {
         };
         let infos: Vec<_> = indices.iter().filter_map(|index| package.infos.get(*index)).collect();
         if let Some(state) = &mut self.read_state {
-            if let Err(error) = state.set(infos.iter().copied(), read) {
-                self.notify(
-                    context,
-                    NoticeKind::Warning,
-                    fl!(LANGUAGE_LOADER, "notice-read-marks-failed", error = error.to_string()),
-                );
+            if state.mark(infos.iter().copied(), read) {
+                self.save_marks(context, MarkKind::Read);
             }
         }
         let user = self.user_name();
@@ -762,6 +767,29 @@ impl MailApp {
         }
     }
 
+    /// Queues the packet's read marks and stars for saving; the in-memory state keeps the change
+    /// when saving fails, so the list does not flip back while the warning is shown.
+    fn save_marks(&mut self, context: &egui::Context, kind: MarkKind) {
+        let Some(state) = &self.read_state else {
+            return;
+        };
+        let result = state
+            .snapshot()
+            .map_err(|error| error.to_string())
+            .and_then(|snapshot| self.marks.save(snapshot, kind, context));
+        if let Err(error) = result {
+            self.mark_save_failed(context, kind, error);
+        }
+    }
+
+    fn mark_save_failed(&mut self, context: &egui::Context, kind: MarkKind, error: String) {
+        let text = match kind {
+            MarkKind::Read => fl!(LANGUAGE_LOADER, "notice-read-marks-failed", error = error),
+            MarkKind::Star => fl!(LANGUAGE_LOADER, "notice-stars-failed", error = error),
+        };
+        self.notify(context, NoticeKind::Warning, text);
+    }
+
     pub fn toggle_read(&mut self, context: &egui::Context) {
         if let Some(index) = self.reader.selected_message.filter(|_| self.message_selected()) {
             let read = !self.reader.is_read(index);
@@ -779,12 +807,8 @@ impl MailApp {
             return;
         };
         if let Some(state) = &mut self.read_state {
-            if let Err(error) = state.set_starred(&info, starred) {
-                self.notify(
-                    context,
-                    NoticeKind::Warning,
-                    fl!(LANGUAGE_LOADER, "notice-stars-failed", error = error.to_string()),
-                );
+            if state.star(&info, starred) {
+                self.save_marks(context, MarkKind::Star);
             }
         }
         if self.reader.set_starred(index, starred) {

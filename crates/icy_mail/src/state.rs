@@ -99,12 +99,21 @@ impl ReadState {
 
     /// Stars or unstars the message and saves the change. Returns whether anything changed.
     pub fn set_starred(&mut self, info: &MessageInfo, starred: bool) -> crate::Res<bool> {
-        let key = (info.conference, info.number);
-        let changed = if starred { self.starred.insert(key) } else { self.starred.remove(&key) };
+        let changed = self.star(info, starred);
         if changed {
             self.save()?;
         }
         Ok(changed)
+    }
+
+    /// Stars or unstars the message without saving. Returns whether anything changed.
+    pub fn star(&mut self, info: &MessageInfo, starred: bool) -> bool {
+        let key = (info.conference, info.number);
+        if starred {
+            self.starred.insert(key)
+        } else {
+            self.starred.remove(&key)
+        }
     }
 
     /// Package indices of the read messages.
@@ -120,18 +129,29 @@ impl ReadState {
     /// The in-memory state keeps the change when saving fails, so the list does not flip back while
     /// the caller reports the error.
     pub fn set<'a>(&mut self, infos: impl IntoIterator<Item = &'a MessageInfo>, read: bool) -> crate::Res<bool> {
-        let mut changed = false;
-        for info in infos {
-            let key = (info.conference, info.number);
-            changed |= if read { self.read.insert(key) } else { self.read.remove(&key) };
-        }
+        let changed = self.mark(infos, read);
         if changed {
             self.save()?;
         }
         Ok(changed)
     }
 
+    /// Marks the messages read or unread without saving. Returns whether anything changed.
+    pub fn mark<'a>(&mut self, infos: impl IntoIterator<Item = &'a MessageInfo>, read: bool) -> bool {
+        let mut changed = false;
+        for info in infos {
+            let key = (info.conference, info.number);
+            changed |= if read { self.read.insert(key) } else { self.read.remove(&key) };
+        }
+        changed
+    }
+
     fn save(&self) -> crate::Res<()> {
+        self.snapshot()?.write()
+    }
+
+    /// The current marks ready to be written, e.g. on another thread.
+    pub fn snapshot(&self) -> crate::Res<ReadStateSnapshot> {
         let mut ranges: Vec<(u16, u32, u32)> = Vec::new();
         for &(conference, number) in &self.read {
             match ranges.last_mut() {
@@ -145,8 +165,28 @@ impl ReadState {
             ranges,
             starred: self.starred.iter().copied().collect(),
         })?;
+        Ok(ReadStateSnapshot {
+            path: self.path.clone(),
+            content,
+        })
+    }
+}
+
+/// Serialized read marks and stars of one packet.
+#[derive(Clone, Debug)]
+pub struct ReadStateSnapshot {
+    path: PathBuf,
+    content: String,
+}
+
+impl ReadStateSnapshot {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn write(&self) -> crate::Res<()> {
         atomic_write(&self.path, |file| {
-            file.write_all(content.as_bytes())?;
+            file.write_all(self.content.as_bytes())?;
             Ok(())
         })?;
         Ok(())
