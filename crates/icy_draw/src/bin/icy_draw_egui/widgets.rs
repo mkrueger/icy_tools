@@ -594,3 +594,12 @@ pub fn play_button(icons: &mut Icons, ui: &mut egui::Ui, playing: bool, enabled:
     response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, playing, label));
     response.on_hover_text(label)
 }
+
+/// Marks the corners placed so far of a polyline or polygon being drawn.
+pub fn paint_vertices(ui: &egui::Ui, points: impl IntoIterator<Item = egui::Pos2>, accent: Color32) {
+    for point in points {
+        let handle = egui::Rect::from_center_size(point, egui::Vec2::splat(7.0));
+        ui.painter().rect_filled(handle, 1.0, Color32::WHITE);
+        ui.painter().rect_stroke(handle, 1.0, Stroke::new(1.5, accent), egui::StrokeKind::Middle);
+    }
+}

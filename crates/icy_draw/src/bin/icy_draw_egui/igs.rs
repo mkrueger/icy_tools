@@ -2113,6 +2113,10 @@ impl IgsEditor {
             if points.len() >= minimum {
                 return vec![poly_command(self.tool, &points)];
             }
+            // Until a polygon has three corners, its first edge shows as a line.
+            if points.len() >= 2 {
+                return vec![poly_command(Tool::PolyLine, &points)];
+            }
         }
         match self.drag {
             Some((from, to)) if self.tool.is_dragged() && from != to => self.shape_commands(from, to),
@@ -3085,6 +3089,9 @@ impl IgsEditor {
                 self.refresh_preview(ui.ctx());
             }
             let accent = ui.visuals().selection.stroke.color;
+            if editing && self.tool.is_poly() {
+                widgets::paint_vertices(ui, self.poly.iter().map(|&point| on_screen(point)), accent);
+            }
             if editing && !blocked && self.tool == Tool::Marker && self.drag.is_none() {
                 self.paint_marker_preview(ui, &on_screen, scale);
             }
@@ -5108,6 +5115,41 @@ mod tests {
 
         click(&mut frame, &mut editor, at(0.8, 2.0), egui::PointerButton::Secondary);
         assert!(notes(&editor).is_empty(), "a right-click deletes it");
+    }
+
+    #[test]
+    fn polygon_corners_show_from_the_first_click() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.select_tool(Tool::Polygon);
+        run(&context, &mut editor, vec![]);
+        click(&context, &mut editor, (50, 50));
+        let output = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                events: vec![egui::Event::PointerMoved(screen(&editor, (100, 60)))],
+                ..Default::default()
+            },
+            |context| editor.show(context, false),
+        );
+        let corner = screen(&editor, (50, 50));
+        assert!(
+            output.shapes.iter().any(
+                |shape| matches!(&shape.shape, egui::Shape::Rect(handle) if handle.rect.size() == egui::Vec2::splat(7.0) && handle.rect.center() == corner)
+            ),
+            "the first corner is marked"
+        );
+        let v = IgsParameter::Value;
+        assert_eq!(
+            editor.pending_commands(),
+            vec![IgsCommand::PolyLine {
+                points: vec![v(50), v(50), v(100), v(60)]
+            }],
+            "until it has three corners the polygon shows its first edge"
+        );
+        click(&context, &mut editor, (100, 60));
+        editor.hover = Some((80, 100));
+        assert!(matches!(editor.pending_commands().as_slice(), [IgsCommand::PolyFill { points }] if points.len() == 6));
     }
 
     #[test]

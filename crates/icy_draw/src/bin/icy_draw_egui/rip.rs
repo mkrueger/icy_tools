@@ -1609,6 +1609,12 @@ impl RipEditor {
             if points.len() >= minimum {
                 return self.poly_commands(&points);
             }
+            // Until a polygon has three corners, its first edge shows as a line.
+            if points.len() >= 2 {
+                let mut commands = self.state_commands(Tool::PolyLine);
+                commands.push(poly_command(Tool::PolyLine, &points));
+                return commands;
+            }
         }
         match self.drag {
             Some((from, to)) if self.tool.is_dragged() => self.shape_commands(from, to).unwrap_or_default(),
@@ -2568,6 +2574,9 @@ impl RipEditor {
             if self.tool == Tool::Mouse {
                 self.paint_mouse_regions(ui, &on_screen, scale);
             }
+            if self.tool.is_poly() {
+                widgets::paint_vertices(ui, self.poly.iter().map(|&point| on_screen(point)), ui.visuals().selection.stroke.color);
+            }
             if matches!(self.tool, Tool::Select | Tool::Mouse) {
                 if let Some((command, geometry)) = self.selected_shape().and_then(|index| self.shape(index)) {
                     let to_screen = |point: select::Point| on_screen((point.0.clamp(0, 1295) as u16, point.1.clamp(0, 1295) as u16));
@@ -3437,6 +3446,20 @@ mod tests {
             run(&context, editor, vec![button_event(pos, egui::PointerButton::Primary, false)]);
         };
         click(&mut editor, (30, 30));
+        // From the first corner on, the placed corners and the edge to the pointer show.
+        let output = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                events: vec![egui::Event::PointerMoved(at((120, 30)))],
+                ..Default::default()
+            },
+            |context| editor.show(context, false),
+        );
+        assert!(
+            output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Rect(handle) if handle.rect.size() == egui::Vec2::splat(7.0) && handle.rect.center() == at((30, 30)))),
+            "the first corner is marked"
+        );
+        assert!(matches!(editor.shown_pending.last(), Some(RipCommand::PolyLine { points }) if points == &[30, 30, 120, 30]));
         click(&mut editor, (120, 30));
         click(&mut editor, (100, 100));
         run(&context, &mut editor, vec![egui::Event::PointerMoved(at((40, 110)))]);
