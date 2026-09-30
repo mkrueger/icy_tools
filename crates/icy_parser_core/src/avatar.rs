@@ -374,11 +374,11 @@ impl CommandParser for AvatarParser {
                 },
 
                 AvatarState::ReadColor => {
+                    // FSC-0025: the attribute becomes <attr> & 0x7F, which also ends ^V^B blinking.
+                    self.blink_on = false;
                     let attr = byte & 0x7F;
                     emit_dos_color_as_sgr(sink, attr);
-                    if self.blink_on {
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(crate::Blink::Slow)));
-                    }
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(crate::Blink::Off)));
                     self.reset();
                     i += 1;
                     printable_start = i;
@@ -485,11 +485,10 @@ impl CommandParser for AvatarParser {
                     printable_start = i;
                 }
                 AvatarState::ReadClearAreaAttr => {
+                    self.blink_on = false;
                     let attr = byte & 0x7F;
                     emit_dos_color_as_sgr(sink, attr);
-                    if self.blink_on {
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(crate::Blink::Slow)));
-                    }
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(crate::Blink::Off)));
                     self.state = AvatarState::ReadClearAreaLines { attr };
                     i += 1;
                     printable_start = i;
@@ -511,14 +510,11 @@ impl CommandParser for AvatarParser {
                 AvatarState::ReadInitAreaAttr => {
                     let attr = byte;
                     let masked = attr & 0x7F;
-                    // FSC‑0037: wenn Bit 7 gesetzt, Blink an
-                    if attr & 0x80 != 0 {
-                        self.blink_on = true;
-                    }
+                    // FSC‑0037: bit 7 of the attribute turns blinking on or off.
+                    self.blink_on = attr & 0x80 != 0;
                     emit_dos_color_as_sgr(sink, masked);
-                    if self.blink_on {
-                        sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(crate::Blink::Slow)));
-                    }
+                    let blink = if self.blink_on { crate::Blink::Slow } else { crate::Blink::Off };
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(blink)));
                     self.state = AvatarState::ReadInitAreaChar { attr };
                     i += 1;
                     printable_start = i;

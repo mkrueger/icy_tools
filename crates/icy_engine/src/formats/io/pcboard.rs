@@ -36,7 +36,7 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
             for tag in &buf.tags {
                 if tag.is_enabled && tag.tag_placement == TagPlacement::InText && tag.position.y == pos.y && tag.position.x == pos.x {
                     if first_char || tag.attribute != last_attr {
-                        result.extend_from_slice(format!("@X{:02X}", tag.attribute.as_u8(crate::IceMode::Blink)).as_bytes());
+                        result.extend_from_slice(format!("@X{:02X}", tag.attribute.as_u8(buf.ice_mode)).as_bytes());
                         last_attr = tag.attribute;
                     }
 
@@ -53,7 +53,7 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
             let ch = buf.char_at(pos);
 
             if first_char || ch.attribute != last_attr {
-                result.extend_from_slice(format!("@X{:02X}", ch.attribute.as_u8(crate::IceMode::Blink)).as_bytes());
+                result.extend_from_slice(format!("@X{:02X}", ch.attribute.as_u8(buf.ice_mode)).as_bytes());
                 last_attr = ch.attribute;
             }
 
@@ -95,7 +95,7 @@ pub(crate) fn save_pcboard(buf: &TextBuffer, options: &SaveOptions) -> Result<Ve
             end_tags += 1;
 
             if first_char || tag.attribute != last_attr {
-                result.extend_from_slice(format!("@X{:02X}", tag.attribute.as_u8(crate::IceMode::Blink)).as_bytes());
+                result.extend_from_slice(format!("@X{:02X}", tag.attribute.as_u8(buf.ice_mode)).as_bytes());
                 last_attr = tag.attribute;
             }
 

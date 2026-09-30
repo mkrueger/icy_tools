@@ -114,8 +114,8 @@ fn test_set_color() {
     // \x16 = ^V, \x01 = ^A, 0x07 = white on black (fg=7, bg=0)
     parser.parse(b"\x16\x01\x07", &mut sink);
 
-    // Should emit 2 SGR commands: foreground white + background black
-    assert_eq!(sink.commands.len(), 2);
+    // Should emit 3 SGR commands: foreground white + background black + blink off
+    assert_eq!(sink.commands.len(), 3);
     assert_eq!(
         sink.commands[0],
         OwnedCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(7)))
@@ -124,6 +124,25 @@ fn test_set_color() {
         sink.commands[1],
         OwnedCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(0)))
     );
+    assert_eq!(
+        sink.commands[2],
+        OwnedCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(icy_parser_core::Blink::Off))
+    );
+}
+
+#[test]
+fn test_set_color_ends_blinking() {
+    let mut parser = AvatarParser::new();
+    let mut sink = CollectSink::new();
+
+    // FSC-0025: ^V^A sets the attribute to <attr> & 0x7F, so blinking from ^V^B ends.
+    parser.parse(b"\x16\x02\x16\x01\x07", &mut sink);
+
+    assert_eq!(
+        sink.commands.last(),
+        Some(&OwnedCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(icy_parser_core::Blink::Off)))
+    );
+    assert!(!sink.commands[1..].contains(&OwnedCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(icy_parser_core::Blink::Slow))));
 }
 
 #[test]
@@ -193,8 +212,8 @@ fn test_mixed_content() {
     // 0x0F = bright white on black (fg=15, bg=0)
     parser.parse(b"Hello\x16\x01\x0F World\x19!\x05 End", &mut sink);
 
-    // Should be: Printable + 2 SGR (fg+bg) + Printable + Repeat + Printable = 6 commands
-    assert_eq!(sink.commands.len(), 6);
+    // Should be: Printable + 3 SGR (fg+bg+blink off) + Printable + Repeat + Printable = 7 commands
+    assert_eq!(sink.commands.len(), 7);
     assert_eq!(sink.commands[0], OwnedCommand::Printable(b"Hello".to_vec()));
     assert_eq!(
         sink.commands[1],
@@ -204,9 +223,13 @@ fn test_mixed_content() {
         sink.commands[2],
         OwnedCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(0)))
     );
-    assert_eq!(sink.commands[3], OwnedCommand::Printable(b" World".to_vec()));
-    assert_eq!(sink.commands[4], OwnedCommand::Printable(b"!!!!!".to_vec()));
-    assert_eq!(sink.commands[5], OwnedCommand::Printable(b" End".to_vec()));
+    assert_eq!(
+        sink.commands[3],
+        OwnedCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(icy_parser_core::Blink::Off))
+    );
+    assert_eq!(sink.commands[4], OwnedCommand::Printable(b" World".to_vec()));
+    assert_eq!(sink.commands[5], OwnedCommand::Printable(b"!!!!!".to_vec()));
+    assert_eq!(sink.commands[6], OwnedCommand::Printable(b" End".to_vec()));
 }
 
 #[test]

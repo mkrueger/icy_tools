@@ -17,13 +17,14 @@ pub(crate) fn save_renegade(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         while pos.x < line_length {
             let ch = buf.char_at(pos);
             if ch.attribute != last_attr {
-                let last_fore = last_attr.foreground();
-                let last_back = last_attr.background();
-                if ch.attribute.foreground() != last_fore {
-                    result.extend(format!("|{:02}", ch.attribute.foreground()).as_bytes());
+                // Encode like a DOS attribute, so blinking becomes |24-|31 in blink mode.
+                let last = last_attr.as_u8(buf.ice_mode);
+                let attribute = ch.attribute.as_u8(buf.ice_mode);
+                if attribute & 0x0F != last & 0x0F {
+                    result.extend(format!("|{:02}", attribute & 0x0F).as_bytes());
                 }
-                if ch.attribute.background() != last_back {
-                    result.extend(format!("|{:02}", 16 + ch.attribute.background()).as_bytes());
+                if attribute >> 4 != last >> 4 {
+                    result.extend(format!("|{:02}", 16 + (attribute >> 4)).as_bytes());
                 }
                 last_attr = ch.attribute;
             }

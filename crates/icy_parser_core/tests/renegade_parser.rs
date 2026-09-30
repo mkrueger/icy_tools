@@ -93,12 +93,23 @@ fn test_renegade_invalid_codes() {
     let mut parser = RenegadeParser::new();
     let mut sink = TestSink::new();
 
-    // |24 and above are invalid (only 0-23 valid)
-    parser.parse(b"|24Test", &mut sink);
+    // |32 and above are invalid (only 0-31 valid)
+    parser.parse(b"|32Test", &mut sink);
 
     assert_eq!(sink.commands.len(), 2);
-    assert_eq!(sink.commands[0], "Text: \"|24\"");
+    assert_eq!(sink.commands[0], "Text: \"|32\"");
     assert_eq!(sink.commands[1], "Text: \"Test\"");
+}
+
+#[test]
+fn test_renegade_high_backgrounds() {
+    let mut parser = RenegadeParser::new();
+    let mut sink = TestSink::new();
+
+    // |24-|31 are the backgrounds with bit 7 set (blink, or bright with iCE colors)
+    parser.parse(b"|24|31", &mut sink);
+
+    assert_eq!(sink.commands, vec!["BG: 8", "BG: 15"]);
 }
 
 #[test]

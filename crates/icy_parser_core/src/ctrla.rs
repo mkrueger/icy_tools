@@ -94,8 +94,8 @@ impl CommandParser for CtrlAParser {
                     // End of file marker
                     b'Z' => { /* EOF - do nothing */ }
 
-                    // Color codes
-                    ch if (b'K'..=b'Z').contains(&ch) || ch.is_ascii_digit() => {
+                    // Color codes (and cursor right for 128-255)
+                    ch if FG_CODES.contains(&ch) || ch.is_ascii_digit() || ch >= 128 => {
                         if let Some(fg) = Self::find_color_index(FG_CODES, ch) {
                             let color = fg + if self.is_bold { 8 } else { 0 };
                             sink.emit(TerminalCommand::CsiSelectGraphicRendition(crate::SgrAttribute::Foreground(crate::Color::Base(

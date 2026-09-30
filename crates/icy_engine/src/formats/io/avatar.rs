@@ -51,16 +51,29 @@ pub(crate) fn save_avatar(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec
             let mut repeat_count = 1;
             let mut ch = buf.char_at(pos);
 
-            while pos.x + 3 < buf.width() && ch == buf.char_at(pos + Position::new(1, 0)) {
+            while repeat_count < 255 && pos.x + 3 < buf.width() && ch == buf.char_at(pos + Position::new(1, 0)) {
                 repeat_count += 1;
                 pos.x += 1;
                 ch = buf.char_at(pos);
             }
+            // A count of 0x1A (Ctrl-Z) would end the file for readers that stop at EOF.
+            if repeat_count == 0x1A {
+                repeat_count -= 1;
+                pos.x -= 1;
+            }
 
             if first_char || ch.attribute != last_attr {
-                result.push(22);
-                result.push(1);
-                result.push(ch.attribute.as_u8(buf.ice_mode));
+                // ^V^A takes the attribute & 0x7F; blinking is only turned on with ^V^B.
+                let attribute = ch.attribute.as_u8(buf.ice_mode);
+                let mut color = attribute & 0x7F;
+                // 0x1A is Ctrl-Z (EOF); readers ignore bit 7 here, so setting it keeps the color.
+                if color == 0x1A {
+                    color |= 0x80;
+                }
+                result.extend_from_slice(&[avatar_constants::COMMAND, avatar_constants::SET_COLOR, color]);
+                if attribute & 0x80 != 0 {
+                    result.extend_from_slice(&[avatar_constants::COMMAND, avatar_constants::BLINK_ON]);
+                }
                 last_attr = ch.attribute;
             }
             first_char = false;

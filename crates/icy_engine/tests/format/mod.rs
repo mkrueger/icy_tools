@@ -1,6 +1,7 @@
 mod ansi;
 mod ansi2;
 mod artworx;
+mod attribute_round_trip;
 
 mod avatar;
 

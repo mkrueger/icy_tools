@@ -3,6 +3,7 @@
 //! Uses pipe codes for colors: |XX where XX is a two-digit number:
 //! - 00-15: Foreground colors (0=black, 1=blue, ..., 15=white)
 //! - 16-23: Background colors (16=black bg, 17=blue bg, ..., 23=white bg)
+//! - 24-31: Background colors with bit 7 set (blink, or high intensity with iCE colors)
 
 use crate::{CommandParser, CommandSink, TerminalCommand, ansi::AnsiParser};
 
@@ -74,8 +75,8 @@ impl CommandParser for RenegadeParser {
                             sink.emit(TerminalCommand::CsiSelectGraphicRendition(crate::SgrAttribute::Foreground(crate::Color::Base(
                                 color_code,
                             ))));
-                        } else if color_code < 24 {
-                            // Background color (16-23 maps to 0-7)
+                        } else if color_code < 32 {
+                            // Background color: 16-23 map to 0-7, 24-31 to 8-15 (bit 7: blink or iCE)
                             sink.emit(TerminalCommand::CsiSelectGraphicRendition(crate::SgrAttribute::Background(crate::Color::Base(
                                 color_code - 16,
                             ))));
