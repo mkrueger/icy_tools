@@ -10,6 +10,16 @@ pub fn test_ice() {
     test_tundra(&mut buffer);
 }
 
+#[test]
+pub fn test_black_foreground_before_first_color_change() {
+    // The loader starts from TextAttribute::default() (light gray on black),
+    // so the writer must too, or a black foreground here is never written.
+    let mut buffer = TextBuffer::new((80, 25));
+    buffer.ice_mode = IceMode::Ice;
+    buffer.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::from_u8(0b0001_0000, IceMode::Ice)));
+    test_tundra(&mut buffer);
+}
+
 fn test_tundra(buffer: &mut TextBuffer) -> TextBuffer {
     let xb = FileFormat::TundraDraw;
     let mut opt = SaveOptions::default();
