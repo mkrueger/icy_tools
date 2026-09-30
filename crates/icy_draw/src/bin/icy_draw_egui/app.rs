@@ -183,6 +183,9 @@ fn filter_match_ranges(name: &str, filter: &str) -> Vec<std::ops::Range<usize>> 
     lower_name.match_indices(&filter).map(|(start, value)| start..start + value.len()).collect()
 }
 
+/// How opaque the preview of a shape being dragged is drawn over the picture.
+const PREVIEW_OPACITY: f32 = 0.7;
+
 /// Document kinds offered by the New dialog and the start screen.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum NewKind {
@@ -2012,7 +2015,8 @@ impl DrawApp {
                 painter.rect_filled(rect, 0, Color32::from_rgba_unmultiplied(red, green, blue, 160));
             }
         } else {
-            // The operation tried on a copy: its cells as they will look, drawn over the picture.
+            // The operation tried on a copy: its cells as they will look, drawn over the picture
+            // translucent, so what they cover stays visible.
             let character = egui::vec2(info.font_width, info.font_height * if info.scan_lines { 2.0 } else { 1.0 });
             let (fonts, palette) = self.document.with_state(|state| {
                 let buffer = state.get_buffer();
@@ -2021,7 +2025,7 @@ impl DrawApp {
             });
             let rgb = |color: icy_engine::AttributeColor, index: u32| {
                 let (red, green, blue) = color.as_rgb().unwrap_or_else(|| palette.rgb(index));
-                Color32::from_rgb(red, green, blue)
+                Color32::from_rgb(red, green, blue).gamma_multiply(PREVIEW_OPACITY)
             };
             for (point, ch) in &self.document.preview_cells {
                 let rect = egui::Rect::from_min_size(
