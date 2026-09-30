@@ -1180,33 +1180,38 @@ impl DrawApp {
         }
     }
 
+    /// Anchoring, a new layer, stamping, rotating, flipping and cancelling of a floating paste.
+    pub(super) fn paste_options(&mut self, ui: &mut egui::Ui) {
+        use icy_draw::document::PasteAction;
+        for (icon, label, action) in [
+            ("anchor", fl!("paste-tool-anchor"), PasteAction::Anchor),
+            ("add_layer", fl!("paste-tool-keep"), PasteAction::Keep),
+            ("file_copy", fl!("paste-tool-stamp"), PasteAction::Stamp),
+            ("replay", fl!("paste-tool-rotate"), PasteAction::Rotate),
+            ("flip_tool", format!("{} (X)", fl!("paste-tool-flip-x")), PasteAction::FlipX),
+            ("swap", format!("{} (Y)", fl!("paste-tool-flip-y")), PasteAction::FlipY),
+            ("invisible", fl!("paste-tool-transparent"), PasteAction::Transparent),
+            ("delete", fl!("paste-tool-cancel"), PasteAction::Cancel),
+        ] {
+            if action == PasteAction::Keep && self.charfont.is_some() {
+                continue;
+            }
+            if action == PasteAction::Cancel {
+                widgets::divider(ui);
+            }
+            let selected = action == PasteAction::Transparent && self.document.paste_transparent();
+            if self.icons.button(ui, icon, &label, selected).clicked() {
+                let result = self.document.paste_action(action);
+                self.result(result);
+                self.canvas_focus = true;
+            }
+        }
+    }
+
     fn tool_options(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
         ui.spacing_mut().item_spacing.x = 4.0;
         if self.document.paste_active() {
-            use icy_draw::document::PasteAction;
-            for (icon, label, action) in [
-                ("anchor", fl!("paste-tool-anchor"), PasteAction::Anchor),
-                ("add_layer", fl!("paste-tool-keep"), PasteAction::Keep),
-                ("file_copy", fl!("paste-tool-stamp"), PasteAction::Stamp),
-                ("replay", fl!("paste-tool-rotate"), PasteAction::Rotate),
-                ("flip_tool", format!("{} (X)", fl!("paste-tool-flip-x")), PasteAction::FlipX),
-                ("swap", format!("{} (Y)", fl!("paste-tool-flip-y")), PasteAction::FlipY),
-                ("invisible", fl!("paste-tool-transparent"), PasteAction::Transparent),
-                ("delete", fl!("paste-tool-cancel"), PasteAction::Cancel),
-            ] {
-                if action == PasteAction::Keep && self.charfont.is_some() {
-                    continue;
-                }
-                if action == PasteAction::Cancel {
-                    widgets::divider(ui);
-                }
-                let selected = action == PasteAction::Transparent && self.document.paste_transparent();
-                if self.icons.button(ui, icon, &label, selected).clicked() {
-                    let result = self.document.paste_action(action);
-                    self.result(result);
-                    self.canvas_focus = true;
-                }
-            }
+            self.paste_options(ui);
             return;
         }
         if self.document.outline_font && self.document.tool == Tool::Click {

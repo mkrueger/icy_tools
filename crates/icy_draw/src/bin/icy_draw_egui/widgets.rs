@@ -11,6 +11,12 @@ struct Assets;
 pub struct Icons(HashMap<String, egui::TextureHandle>);
 
 impl Icons {
+    /// Whether the icon `name` was drawn at some point.
+    #[cfg(test)]
+    pub fn loaded(&self, name: &str) -> bool {
+        self.0.contains_key(name)
+    }
+
     pub fn button(&mut self, ui: &mut egui::Ui, name: &str, label: &str, selected: bool) -> Response {
         self.button_sized(ui, name, label, selected, 30.0)
     }

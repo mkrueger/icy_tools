@@ -398,6 +398,16 @@ impl DrawApp {
         let Some((brush, set)) = self.atascii.as_ref().map(|editor| (editor.brush, editor.fkey_set)) else {
             return;
         };
+        if self.document.paste_active() {
+            ui.horizontal_centered(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new(fl!("menu-paste")).strong());
+                widgets::divider(ui);
+                self.paste_options(ui);
+            });
+            return;
+        }
         let mut picked = None;
         let mut step = 0i32;
         ui.horizontal_centered(|ui| {
@@ -656,6 +666,34 @@ mod tests {
         assert_eq!(code_at(&app, 0), 0x0C, "the right button clears a pixel");
         app.document.tool = Tool::Fill;
         assert!(!app.document.draws_pixels(), "fill works on characters");
+    }
+
+    #[test]
+    fn a_floating_paste_offers_its_actions() {
+        let (context, mut app) = atascii_app();
+        let size = egui::vec2(1280.0, 820.0);
+        app.document.type_text("HI").unwrap();
+        app.select_all();
+        let layers = app.document.with_state(|state| state.get_buffer().layers.len());
+        let data = icy_engine_gui::prepare_clipboard_data(&**app.document.screen.lock()).unwrap();
+        app.paste_content(icy_engine_gui::system_clipboard::PasteContent::Icy {
+            text: data.text.clone(),
+            data: data.icy_data.unwrap(),
+        });
+        assert!(app.document.paste_active());
+        assert!(!app.icons.loaded("anchor"));
+        super::super::tests::frame(&context, &mut app, size, vec![]);
+        for icon in ["anchor", "add_layer", "file_copy", "delete"] {
+            assert!(app.icons.loaded(icon), "the toolbar offers {icon}");
+        }
+        let result = app.document.paste_action(icy_draw::document::PasteAction::Keep);
+        app.result(result);
+        assert!(!app.document.paste_active());
+        assert_eq!(
+            app.document.with_state(|state| state.get_buffer().layers.len()),
+            layers + 1,
+            "the paste became a layer"
+        );
     }
 
     #[test]
