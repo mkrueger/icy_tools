@@ -4293,10 +4293,10 @@ mod tests {
         editor.toggle_playback(2.0);
         assert_eq!(editor.transport.run.as_ref().unwrap().index, 2);
         run_at(&context, &mut editor, 2.1);
-        assert!(editor.transport.run.is_none());
-        assert_eq!(editor.preview_request().through, Some(2));
+        assert!(!editor.animating(), "played to the end, the drawing can be edited again");
+        assert_eq!(editor.preview_request().through, None, "the whole drawing shows");
         editor.toggle_playback(3.0);
-        assert_eq!(editor.transport.run.as_ref().unwrap().index, 0);
+        assert_eq!(editor.transport.run.as_ref().unwrap().index, 0, "playing again starts over");
         editor.stop_playback();
         assert_eq!(editor.preview_request().through, None);
     }
@@ -4456,7 +4456,8 @@ mod tests {
         editor.toggle_playback(0.0);
         let context = egui::Context::default();
         run_at(&context, &mut editor, 0.0);
-        assert_eq!(editor.preview_request().through, Some(editor.document.len() - 1));
+        assert!(!editor.animating(), "at max speed it plays through at once and stops");
+        assert_eq!(editor.preview_request().through, None);
     }
 
     #[test]

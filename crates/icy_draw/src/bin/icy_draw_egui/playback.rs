@@ -249,7 +249,7 @@ impl Transport {
     }
 
     /// Advances to `now`, calling `entered` for every item reached; returns how long until the
-    /// next change, or `None` once the animation ended at the last item.
+    /// next change, or `None` once the animation played its last item and stopped.
     pub fn advance(&mut self, timeline: &dyn Timeline, now: f64, entered: &mut dyn FnMut(usize)) -> Option<f64> {
         let mut run = self.run.take()?;
         while now >= run.next_at {
@@ -260,7 +260,8 @@ impl Transport {
                 continue;
             }
             if run.index + 1 >= timeline.len() {
-                self.playhead = Some(run.index);
+                // Played to the end: the whole drawing shows and can be edited again.
+                self.stop();
                 return None;
             }
             run = self.enter(timeline, run.index + 1, due);
@@ -519,7 +520,8 @@ mod tests {
         transport.advance(&items, 0.36, &mut |index| entered.push(index));
         assert_eq!(transport.run.as_ref().unwrap().index, 1);
         assert_eq!(transport.advance(&items, 0.46, &mut |index| entered.push(index)), None);
-        assert_eq!((entered, transport.playhead, transport.run.is_none()), (vec![1, 2], Some(2), true));
+        assert_eq!(entered, vec![1, 2]);
+        assert!(!transport.animating(), "played to the end, the animation stops so the drawing can be edited");
     }
 
     #[test]
