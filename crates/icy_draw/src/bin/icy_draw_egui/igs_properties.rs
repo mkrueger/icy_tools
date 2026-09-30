@@ -107,17 +107,56 @@ pub const MODES: [DrawingMode; 4] = [
     DrawingMode::ReverseTransparent,
 ];
 
-pub const BLIT_MODES: [BlitMode; 6] = [
-    BlitMode::Replace,
-    BlitMode::Transparent,
-    BlitMode::Xor,
-    BlitMode::ReverseTransparent,
+/// The BitBlit logic operations in IG's order, `G#G` mode 0 to 15.
+pub const BLIT_MODES: [BlitMode; 16] = [
+    BlitMode::Clear,
     BlitMode::And,
+    BlitMode::AndNot,
+    BlitMode::Replace,
+    BlitMode::Erase,
+    BlitMode::Unchanged,
+    BlitMode::Xor,
+    BlitMode::Transparent,
+    BlitMode::NotOr,
+    BlitMode::NotXor,
+    BlitMode::NotD,
+    BlitMode::OrNot,
     BlitMode::NotS,
+    BlitMode::ReverseTransparent,
+    BlitMode::NotAnd,
+    BlitMode::Fill,
 ];
 
+/// The copy mode, listed with IG's mode numbers and its logic operation on hover.
 pub fn blit_mode(ui: &mut egui::Ui, id: &str, value: &mut BlitMode) {
-    combo(ui, id, value, &BLIT_MODES, super::blit_mode_name);
+    egui::ComboBox::from_id_salt(id).selected_text(super::blit_mode_name(*value)).show_ui(ui, |ui| {
+        for mode in BLIT_MODES {
+            ui.selectable_value(value, mode, format!("{} · {}", mode as u8, super::blit_mode_name(mode)))
+                .on_hover_text(blit_logic(mode));
+        }
+    });
+}
+
+/// The logic operation of `mode` on source S and destination D, as the IG documentation writes it.
+pub fn blit_logic(mode: BlitMode) -> &'static str {
+    match mode {
+        BlitMode::Clear => "0",
+        BlitMode::And => "S AND D",
+        BlitMode::AndNot => "S AND (NOT D)",
+        BlitMode::Replace => "S",
+        BlitMode::Erase => "(NOT S) AND D",
+        BlitMode::Unchanged => "D",
+        BlitMode::Xor => "S XOR D",
+        BlitMode::Transparent => "S OR D",
+        BlitMode::NotOr => "NOT (S OR D)",
+        BlitMode::NotXor => "NOT (S XOR D)",
+        BlitMode::NotD => "NOT D",
+        BlitMode::OrNot => "S OR (NOT D)",
+        BlitMode::NotS => "NOT S",
+        BlitMode::ReverseTransparent => "(NOT S) OR D",
+        BlitMode::NotAnd => "NOT (S AND D)",
+        BlitMode::Fill => "1",
+    }
 }
 
 pub fn line_kind(ui: &mut egui::Ui, id: &str, value: &mut LineKind) {

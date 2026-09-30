@@ -311,7 +311,16 @@ fn blit_mode_name(mode: BlitMode) -> String {
         BlitMode::ReverseTransparent => fl!("igs-mode-reverse-transparent"),
         BlitMode::And => fl!("igs-blit-and"),
         BlitMode::NotS => fl!("igs-blit-invert"),
-        other => format!("{other:?}"),
+        BlitMode::Clear => fl!("igs-blit-clear"),
+        BlitMode::AndNot => fl!("igs-blit-and-not"),
+        BlitMode::Erase => fl!("igs-blit-erase"),
+        BlitMode::Unchanged => fl!("igs-blit-unchanged"),
+        BlitMode::NotOr => fl!("igs-blit-nor"),
+        BlitMode::NotXor => fl!("igs-blit-xnor"),
+        BlitMode::NotD => fl!("igs-blit-invert-destination"),
+        BlitMode::OrNot => fl!("igs-blit-or-not"),
+        BlitMode::NotAnd => fl!("igs-blit-nand"),
+        BlitMode::Fill => fl!("igs-blit-fill"),
     }
 }
 
@@ -3748,6 +3757,36 @@ mod tests {
         let preview = editor.document.preview().unwrap();
         assert_eq!(preview.pixel_index(110, 110), preview.pixel_index(15, 15));
         assert_ne!(preview.pixel_index(110, 110), Some(0));
+    }
+
+    #[test]
+    fn every_ig_blit_mode_can_be_chosen_for_copies() {
+        for (number, mode) in properties::BLIT_MODES.into_iter().enumerate() {
+            assert_eq!(mode as usize, number, "the modes are listed in IG's order");
+        }
+        let names: std::collections::HashSet<String> = properties::BLIT_MODES.into_iter().map(blit_mode_name).collect();
+        assert_eq!(names.len(), 16, "every mode has its own name");
+        let logic: std::collections::HashSet<&str> = properties::BLIT_MODES.into_iter().map(properties::blit_logic).collect();
+        assert_eq!(logic.len(), 16);
+
+        // Erase copies the source as a hole: a filled square erased onto itself becomes background.
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        editor.select_tool(Tool::FilledRectangle);
+        editor.add_shape((10, 10), (30, 30));
+        editor.select_tool(Tool::CopyArea);
+        editor.attributes.blit_mode = BlitMode::Erase;
+        run(&context, &mut editor, vec![]);
+        drag(&context, &mut editor, (10, 10), (30, 30));
+        click(&context, &mut editor, (10, 10));
+        let last = editor.document.len() - 1;
+        assert!(matches!(
+            editor.document.command(last),
+            Some(IgsCommand::GrabScreen { mode: BlitMode::Erase, .. })
+        ));
+        assert!(String::from_utf8(editor.document.item_source(last).unwrap()).unwrap().starts_with("G#G>0,4,"));
+        let preview = editor.document.preview().unwrap();
+        assert_eq!(preview.pixel_index(20, 20), preview.pixel_index(200, 150), "the square is erased");
     }
 
     #[test]
