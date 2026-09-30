@@ -28,12 +28,12 @@ icy_engine_scripting = { path = "crates/icy_engine_scripting" }
 icy_sauce = { git = "https://github.com/mkrueger/icy_sauce" }
 
 #icy_sauce = { path = "../icy_sauce" }
-icy_sixel = "0.6.0"
+icy_sixel = "0.7.0"
 icy_net = { git = "https://github.com/mkrueger/icy_board", rev = "b42698f0afa6b4347af45aca7718d6d10b90c8af" }
 #icy_net = { path = "../icy_board/crates/icy_net" }
 #unarc-rs = { path ="../unarc-rs" }
-unarc-rs = { git = "https://github.com/mkrueger/unarc-rs" }
-retrofont = { git = "https://github.com/mkrueger/retrofont" }
+unarc-rs = {  version = "0.7.0", default-features = false }
+retrofont = { git = "https://github.com/mkrueger/retrofont", default-features = false, features = ["pure-rust", "convert"] }
 #retrofont = { path ="../retrofont/crates/retrofont" }
 
 icy_engine_gui = { path = "crates/icy_engine_gui" }
@@ -46,7 +46,7 @@ codepages = { git = "https://github.com/mkrueger/icy_board" }
 zip = "8.6.0"
 lazy_static = "1.5.0"
 semver = "1.0.28"
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 clap = { version = "4.6.6", features = ["derive"] }
 log = "0.4.34"
 flexi_logger = "0.31.10"
@@ -65,14 +65,14 @@ toml = "1.1.4"
 bstr = "1.13.0"
 fastrand = "2.5.0"
 base64 = "0.23.1"
-opus = "0.3.1"
+opus = "0.4.0"
 symphonia = { version = "0.5.5", default-features = false, features = ["ogg"] }
-rmcp = "3.1.4"
+rmcp = "3.5.0"
 serde_json = "1.0.151"
 image = "0.25.10"
 clipboard-rs = { version = "0.3.5", features = ["wayland"] }
 jxl-oxide = { version = "0.12.6", features = ["image"] }
-bitflags = "2.13.1"
+bitflags = "2.13.2"
 rfd = "0.17.2"
 open = "5.4.1"
 bytemuck = "1.25.2"
@@ -110,7 +110,7 @@ ab_glyph = "0.2"
 #icy_ui = { path = "../icy_ui/crates/icy_ui" }
 icy_ui = { git = "https://github.com/mkrueger/icy_ui", branch = "master" }
 
-versions = "7.0.0"
+versions = "8.0.1"
 parking_lot = "0.12.5"
 clap-i18n-richformatter = { git = "https://github.com/eatradish/clap-i18n-richformatter" }
 
