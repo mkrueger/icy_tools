@@ -7,8 +7,8 @@
 
 use std::{env, fs::File, io::BufWriter, path::PathBuf};
 
+use icy_engine::TerminalEmulation;
 use icy_engine::{Rectangle, ScreenMode, ScreenSink};
-use icy_net::telnet::TerminalEmulation;
 
 fn main() {
     let mut positional = Vec::new();

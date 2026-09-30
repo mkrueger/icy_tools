@@ -1,5 +1,5 @@
 use icy_engine::ScreenMode;
-use icy_net::telnet::TerminalEmulation;
+use icy_engine::TerminalEmulation;
 use std::{
     fs::{self},
     path::Path,

@@ -88,6 +88,8 @@ pub use gif_encoder::{encode_animated_gif, encode_animated_gif_with_progress, en
 
 // Re-export parsers from icy_parser_core
 pub use icy_parser_core::{IgsParser, MusicOption, SkypixParser};
+// The same type as icy_net::telnet::TerminalEmulation, without icy_net's networking dependencies.
+pub use icy_terminal_emulation::TerminalEmulation;
 
 // Create a parsers module that re-exports from icy_parser_core
 pub mod parsers {

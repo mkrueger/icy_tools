@@ -8,7 +8,7 @@ use std::{
     path::Path,
 };
 
-use icy_net::telnet::TerminalEmulation;
+use crate::TerminalEmulation;
 use icy_parser_core::{CommandParser, MusicOption};
 use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 

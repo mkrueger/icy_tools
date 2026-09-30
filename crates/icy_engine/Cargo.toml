@@ -25,7 +25,7 @@ byteorder = "1"
 bstr = { workspace = true }
 codepages = { workspace = true }
 rayon = { workspace = true }
-icy_net = { workspace = true }
+icy_terminal_emulation = { workspace = true }
 parking_lot = { workspace = true }
 retrofont = { workspace = true }
 

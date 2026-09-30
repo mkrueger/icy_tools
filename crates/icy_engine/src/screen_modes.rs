@@ -1,11 +1,11 @@
 use std::fmt::{self, Display};
 
+use crate::TerminalEmulation;
 use crate::{
     amiga_screen_buffer, fonts::ansi::font_height_for_lines, seq_prepare, AutoWrapMode, BitFont, BufferType, EditableScreen, GraphicsType, Palette,
     PaletteScreenBuffer, Size, TerminalResolution, TextScreen, ATARI, ATARI_DEFAULT_PALETTE, ATARI_XEP80, ATARI_XEP80_INT, ATARI_XEP80_PALETTE,
     C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, CP437, SKYPIX_PALETTE, VIEWDATA, VIEWDATA_PALETTE,
 };
-use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::{CaretShape, CommandParser, MusicOption};
 use serde::{
     de::{self, Visitor},
@@ -321,7 +321,7 @@ impl ScreenMode {
     /// # Example
     /// ```no_run
     /// use icy_engine::{ScreenMode, CreationOptions, MusicOption};
-    /// use icy_net::telnet::TerminalEmulation;
+    /// use icy_engine::TerminalEmulation;
     ///
     /// let mode = ScreenMode::Vga(80, 25);
     /// let options = Some(CreationOptions { ansi_music: MusicOption::Both });

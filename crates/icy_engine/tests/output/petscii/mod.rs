@@ -1,5 +1,5 @@
+use icy_engine::TerminalEmulation;
 use icy_engine::{formats::FileFormat, ScreenMode};
-use icy_net::telnet::TerminalEmulation;
 use std::fs::{self};
 
 #[test]

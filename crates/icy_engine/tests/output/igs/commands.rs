@@ -1,7 +1,7 @@
 //! IGS commands checked pixel by pixel against how VDI and IG draw them.
 
+use icy_engine::TerminalEmulation;
 use icy_engine::{Color, EditableScreen, ScreenMode, ScreenSink, TerminalResolution};
-use icy_net::telnet::TerminalEmulation;
 
 fn run(resolution: TerminalResolution, source: &[u8]) -> Box<dyn EditableScreen> {
     let (mut screen, mut parser) = ScreenMode::AtariST(resolution, true).create_screen(TerminalEmulation::AtariST, None);

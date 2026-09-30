@@ -319,7 +319,7 @@ fn test_80x43_bottom_line_scrolls_without_corruption() {
 
 #[test]
 fn test_mode7_screen_starts_with_visible_cursor() {
-    let (screen, _) = icy_engine::ScreenMode::Mode7.create_screen(icy_net::telnet::TerminalEmulation::Mode7, None);
+    let (screen, _) = icy_engine::ScreenMode::Mode7.create_screen(icy_engine::TerminalEmulation::Mode7, None);
 
     assert!(screen.caret().visible);
     assert_eq!(screen.size(), Size::new(40, 25));

@@ -1,5 +1,5 @@
+use icy_engine::TerminalEmulation;
 use icy_engine::{PaletteScreenBuffer, Screen, ScreenMode, ScreenSink};
-use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::RipCommand;
 
 fn parse_rip_commands(commands: Vec<RipCommand>) -> Box<dyn icy_engine::EditableScreen> {
