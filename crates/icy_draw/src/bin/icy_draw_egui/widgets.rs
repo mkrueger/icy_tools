@@ -17,18 +17,23 @@ impl Icons {
 
     /// Frameless icon button: transparent until hovered, filled with the accent colour when selected.
     pub fn button_sized(&mut self, ui: &mut egui::Ui, name: &str, label: &str, selected: bool, size: f32) -> Response {
+        self.paint_button(ui, name, label, selected, false, egui::Vec2::splat(size))
+    }
+
+    /// Like [`Self::button_sized`], but wider than high so a row of them fills its width.
+    pub fn button_rect(&mut self, ui: &mut egui::Ui, name: &str, label: &str, selected: bool, size: egui::Vec2) -> Response {
         self.paint_button(ui, name, label, selected, false, size)
     }
 
     /// Icon button drawn with a muted tint unless hovered, for secondary per-row toggles.
     pub fn subtle_button(&mut self, ui: &mut egui::Ui, name: &str, label: &str, muted: bool, size: f32) -> Response {
-        self.paint_button(ui, name, label, false, muted, size)
+        self.paint_button(ui, name, label, false, muted, egui::Vec2::splat(size))
     }
 
-    fn paint_button(&mut self, ui: &mut egui::Ui, name: &str, label: &str, selected: bool, muted: bool, size: f32) -> Response {
-        let icon = (size * 0.56).round();
+    fn paint_button(&mut self, ui: &mut egui::Ui, name: &str, label: &str, selected: bool, muted: bool, size: egui::Vec2) -> Response {
+        let icon = (size.min_elem() * 0.56).round();
         let image = self.image(ui, name, icon);
-        let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(size), egui::Sense::click());
+        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
         let enabled = ui.is_enabled();
         let visuals = ui.visuals();
         let fill = if selected {

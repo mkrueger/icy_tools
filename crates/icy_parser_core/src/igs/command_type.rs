@@ -1,7 +1,7 @@
 use crate::{
     ArrowEnd, AskQuery, BlitMode, BlitOperation, CommandSink, CursorMode, Direction, DrawingMode, GraphicsScalingMode, IgsCommand, IgsParameter,
-    InitializationType, LineKind, LineMarkerStyle, USER_LINE_PATTERNS, MousePointerType, PaletteMode, PatternType, PauseType, PenType, PolymarkerKind, RandomRangeType,
-    ScreenClearMode, SoundEffect, StopType, TerminalResolution, TextColorLayer, TextEffects, TextRotation,
+    InitializationType, LineKind, LineMarkerStyle, MousePointerType, PaletteMode, PatternType, PauseType, PenType, PolymarkerKind, RandomRangeType,
+    ScreenClearMode, SoundEffect, StopType, TerminalResolution, TextColorLayer, TextEffects, TextRotation, USER_LINE_PATTERNS,
 };
 
 #[repr(u8)]

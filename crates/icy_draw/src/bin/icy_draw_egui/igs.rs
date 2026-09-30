@@ -35,13 +35,20 @@ pub(crate) mod tune;
 use select::{Canvas, Geometry, Handle, Point};
 
 const TOOLBAR_HEIGHT: f32 = 44.0;
-/// The tool sidebar fits three 38 point tool buttons; longer labels widen it up to the maximum.
-const SIDEBAR_WIDTH: f32 = 148.0;
+/// The tool sidebar fits five 30 point tool buttons; longer labels widen it up to the maximum.
+const SIDEBAR_WIDTH: f32 = 178.0;
 const SIDEBAR_MAX_WIDTH: f32 = 320.0;
 const SIDEBAR_MARGIN: f32 = 10.0;
-const PEN_SWATCH: egui::Vec2 = egui::vec2(30.0, 24.0);
+/// A pen swatch in front of the control it colors, as high as the controls.
+const PEN_SWATCH: egui::Vec2 = egui::vec2(28.0, 26.0);
+/// The height of a property row (label, pen and control) in the sidebar.
+const PROPERTY_ROW: f32 = 26.0;
+/// The narrowest line, fill and marker control next to a pen.
+const MIN_PICKER: f32 = 96.0;
 /// The smallest width of a tool button in the sidebar.
-const TOOL_BUTTON: f32 = 38.0;
+const TOOL_BUTTON: f32 = 30.0;
+const TOOL_HEIGHT: f32 = 30.0;
+const TOOL_SPACING: f32 = 2.0;
 /// Screen distance in points within which a handle is picked up.
 const HANDLE_RADIUS: f32 = 8.0;
 /// How opaque the marker preview under the pointer is.
@@ -81,8 +88,8 @@ const TOOL_GROUPS: [&[Tool]; 4] = [
     &[Tool::Rectangle, Tool::RoundedRectangle, Tool::FilledRectangle, Tool::Circle, Tool::Ellipse],
     &[Tool::Arc, Tool::EllipticalArc, Tool::PieSlice, Tool::EllipticalPieSlice],
 ];
-/// The largest tool button; wider sidebars get more space between them, not bigger buttons.
-const MAX_TOOL_BUTTON: f32 = 36.0;
+/// The most tools in a group, the columns of the tool grid when they fit.
+const TOOL_COLUMNS: usize = 5;
 
 impl Tool {
     #[cfg(test)]
@@ -1224,19 +1231,32 @@ fn same_attribute(a: &IgsCommand, b: &IgsCommand) -> bool {
 }
 
 /// A small heading over a group of sidebar controls, with `trailing` controls on its right.
-fn section(ui: &mut egui::Ui, title: &str, trailing: impl FnOnce(&mut egui::Ui)) {
-    ui.add_space(4.0);
+/// A row of the sidebar: `label` in a column `label_width` wide, then the controls.
+fn property_row(ui: &mut egui::Ui, label_width: f32, label: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(title).size(11.5).strong().color(ui.visuals().weak_text_color()));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), trailing);
+        ui.allocate_ui_with_layout(egui::vec2(label_width, PROPERTY_ROW), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.set_min_size(egui::vec2(label_width, PROPERTY_ROW));
+            ui.add(egui::Label::new(egui::RichText::new(label).color(ui.visuals().weak_text_color())).truncate());
+        });
+        add_contents(ui);
     });
-    ui.add_space(1.0);
 }
 
-/// The columns and square button size of the tool grid that fill `width`: as many columns of
-/// buttons about [`TOOL_BUTTON`] points wide as fit, stretched to the full width.
+/// The labels in front of the sidebar's property rows.
+fn property_labels() -> [String; 5] {
+    [
+        fl!("igs-pen-line"),
+        fl!("igs-pen-fill"),
+        fl!("igs-pen-marker-short"),
+        fl!("igs-pen-text"),
+        fl!("igs-drawing-mode"),
+    ]
+}
+
+/// The columns and width of the tool buttons that fill `width`: a column per tool of the longest
+/// group if they fit at least [`TOOL_BUTTON`] points wide, stretched to the full width.
 fn tool_grid(width: f32, spacing: f32) -> (usize, f32) {
-    let columns = (((width + spacing) / (TOOL_BUTTON + spacing)).floor() as usize).max(3);
+    let columns = (((width + spacing) / (TOOL_BUTTON + spacing)).floor() as usize).clamp(3, TOOL_COLUMNS);
     let size = ((width - spacing * (columns - 1) as f32) / columns as f32).floor();
     (columns, size)
 }
@@ -2541,28 +2561,35 @@ impl IgsEditor {
         });
     }
 
-    /// The sidebar width that fits its labels in the current language: at least the three tool
+    /// The sidebar width that fits its labels in the current language: at least the tool
     /// buttons, at most [`SIDEBAR_MAX_WIDTH`], beyond which labels are truncated.
     fn sidebar_width(context: &egui::Context) -> f32 {
         let style = context.style();
         let spacing = &style.spacing;
+        let gap = spacing.item_spacing.x;
         let text = |text: String, text_style: egui::TextStyle| {
             let font = text_style.resolve(&style);
             context.fonts_mut(|fonts| fonts.layout_no_wrap(text, font, Color32::WHITE).size().x)
         };
         let button = |label: String| text(label, egui::TextStyle::Button) + 2.0 * spacing.button_padding.x;
         let combo = |label: String| button(label) + spacing.icon_spacing + spacing.icon_width;
-        // The pens heading shares its row with the palette button.
-        let pens = text(fl!("igs-section-pens"), egui::TextStyle::Body) + spacing.item_spacing.x + button(fl!("igs-palette-short"));
+        let label = property_labels()
+            .map(|label| text(label, egui::TextStyle::Body))
+            .into_iter()
+            .fold(0.0, f32::max);
+        // Everything but the resolution starts after the label column, most after a pen as well.
+        let indent = label + gap;
+        let after_pen = indent + PEN_SWATCH.x + gap;
         let widths = [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High]
             .map(|resolution| combo(resolution_name(resolution)))
             .into_iter()
-            .chain(properties::MODES.map(|mode| combo(drawing_mode_name(mode))))
+            .chain(properties::MODES.map(|mode| indent + combo(drawing_mode_name(mode))))
             .chain([
-                pens,
-                text(fl!("igs-hollows"), egui::TextStyle::Body) + spacing.icon_width + spacing.icon_spacing,
-            ])
-            .chain([fl!("igs-drawing-mode"), fl!("igs-section-fill"), fl!("igs-marker"), fl!("igs-line-type")].map(|label| text(label, egui::TextStyle::Body)));
+                after_pen + MIN_PICKER,
+                after_pen + button(fl!("igs-palette-short")),
+                indent + text(fl!("igs-hollows"), egui::TextStyle::Body) + spacing.icon_width + spacing.icon_spacing,
+                text(fl!("igs-resolution"), egui::TextStyle::Body),
+            ]);
         let content = widths.fold(0.0, f32::max);
         (content + 2.0 * SIDEBAR_MARGIN).ceil().clamp(SIDEBAR_WIDTH, SIDEBAR_MAX_WIDTH)
     }
@@ -2583,96 +2610,133 @@ impl IgsEditor {
     }
 
     fn sidebar_content(&mut self, ui: &mut egui::Ui) {
-        let spacing = ui.spacing().item_spacing.x;
-        let (columns, size) = tool_grid(ui.available_width(), spacing);
-        let size = size.min(MAX_TOOL_BUTTON);
-        ui.add_space(2.0);
-        for (group, tools) in TOOL_GROUPS.iter().enumerate() {
-            if group > 0 {
-                ui.add_space(3.0);
-            }
+        let (columns, width) = tool_grid(ui.available_width(), TOOL_SPACING);
+        let item_spacing = ui.spacing().item_spacing;
+        ui.spacing_mut().item_spacing.y = TOOL_SPACING;
+        for tools in TOOL_GROUPS {
             for row in tools.chunks(columns) {
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = spacing;
+                    ui.spacing_mut().item_spacing.x = TOOL_SPACING;
                     for &tool in row {
-                        if self.icons.button_sized(ui, tool.icon(), &tool.label(), self.tool == tool, size).clicked() {
+                        if self
+                            .icons
+                            .button_rect(ui, tool.icon(), &tool.label(), self.tool == tool, egui::vec2(width, TOOL_HEIGHT))
+                            .clicked()
+                        {
                             self.select_tool(tool);
                         }
                     }
                 });
             }
         }
-
-        ui.add_space(4.0);
+        ui.spacing_mut().item_spacing = item_spacing;
         ui.separator();
+        // Long translations and large text truncate rather than widen the sidebar.
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+
         let resolution = self.canvas.resolution;
+        let gap = ui.spacing().item_spacing.x;
+        let font = egui::TextStyle::Body.resolve(ui.style());
+        let label_width = property_labels()
+            .map(|label| ui.fonts_mut(|fonts| fonts.layout_no_wrap(label, font.clone(), Color32::WHITE).size().x))
+            .into_iter()
+            .fold(0.0, f32::max)
+            .ceil()
+            .min(ui.available_width() - PEN_SWATCH.x - MIN_PICKER - 2.0 * gap)
+            .max(0.0);
         // The pens (C), fill (A) and drawing mode (M) where new commands go; changing one adds
-        // its command there.
+        // its command there. Each pen sits in front of the control it colors.
         let mut wanted = self.attribute_draft.unwrap_or_else(|| self.current());
-        let mut open_palette = false;
-        section(ui, &fl!("igs-section-pens"), |ui| {
-            open_palette = ui
-                .small_button(fl!("igs-palette-short"))
-                .on_hover_text(fl!("igs-palette-edit-tooltip"))
-                .clicked();
-        });
-        ui.columns(4, |columns| {
-            for (column, (id, label, pen)) in columns.iter_mut().zip([
-                ("line", fl!("igs-pen-line"), PenType::Line),
-                ("fill", fl!("igs-pen-fill"), PenType::Fill),
-                ("text", fl!("igs-pen-text"), PenType::Text),
-                ("marker", fl!("igs-pen-marker-short"), PenType::Polymarker),
-            ]) {
-                column.vertical_centered_justified(|ui| {
-                    // Out-of-range pens from a file are shown clamped but only change when picked.
-                    let shown = wanted.pen(pen).min(palette::pen_count(resolution) - 1);
-                    let mut picked = shown;
-                    palette::pen_picker(ui, id, &self.palette, resolution, &mut picked, egui::vec2(ui.available_width(), PEN_SWATCH.y));
-                    ui.add(egui::Label::new(egui::RichText::new(label).small().weak()).truncate());
-                    if picked != shown {
-                        *wanted.pen_mut(pen) = picked;
-                    }
-                });
+        let pen = |ui: &mut egui::Ui, palette: &icy_engine::Palette, id: &str, wanted: &mut Current, kind: PenType| {
+            // Out-of-range pens from a file are shown clamped but only change when picked.
+            let shown = wanted.pen(kind).min(palette::pen_count(resolution) - 1);
+            let mut picked = shown;
+            palette::pen_picker(ui, id, palette, resolution, &mut picked, PEN_SWATCH);
+            if picked != shown {
+                *wanted.pen_mut(kind) = picked;
+            }
+        };
+        let user = self.user_patterns();
+        property_row(ui, label_width, &fl!("igs-pen-line"), |ui| {
+            pen(ui, &self.palette, "line", &mut wanted, PenType::Line);
+            let colors = self.fill_colors(wanted.line_color);
+            if let Some(style) = line::picker(ui, "igs-sidebar-line", wanted.line_style(), &user, colors, ui.available_width()) {
+                wanted.set_line_style(style);
             }
         });
+        let mut change = None;
+        property_row(ui, label_width, &fl!("igs-pen-fill"), |ui| {
+            pen(ui, &self.palette, "fill", &mut wanted, PenType::Fill);
+            let colors = self.fill_colors(wanted.fill_color);
+            change = Some(pattern::picker(
+                ui,
+                "igs-sidebar-pattern",
+                wanted.pattern,
+                wanted.border,
+                &user,
+                colors,
+                ui.available_width(),
+            ));
+        });
+        if let Some(change) = change {
+            self.apply_picker(&mut wanted, change);
+        }
+        ui.horizontal(|ui| {
+            ui.add_space(label_width);
+            let mut hollows = wanted.hollows();
+            if ui
+                .checkbox(&mut hollows, fl!("igs-hollows"))
+                .on_hover_text(fl!("igs-hollows-tooltip"))
+                .changed()
+            {
+                wanted.set_hollows(hollows);
+            }
+        });
+        let mut change = None;
+        property_row(ui, label_width, &fl!("igs-pen-marker-short"), |ui| {
+            pen(ui, &self.palette, "marker", &mut wanted, PenType::Polymarker);
+            let colors = self.fill_colors(wanted.marker_color);
+            change = Some(marker::picker(
+                ui,
+                "igs-sidebar-marker",
+                wanted.marker,
+                wanted.marker_size,
+                colors,
+                ui.available_width(),
+            ));
+        });
+        if let Some(change) = change {
+            Self::apply_marker(&mut wanted, change);
+        }
+        let mut open_palette = false;
+        property_row(ui, label_width, &fl!("igs-pen-text"), |ui| {
+            pen(ui, &self.palette, "text", &mut wanted, PenType::Text);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                open_palette = ui
+                    .add(egui::Button::new(fl!("igs-palette-short")).truncate())
+                    .on_hover_text(fl!("igs-palette-edit-tooltip"))
+                    .clicked();
+            });
+        });
+        property_row(ui, label_width, &fl!("igs-drawing-mode"), |ui| {
+            egui::ComboBox::from_id_salt("igs-tool-mode")
+                .width(ui.available_width())
+                .truncate()
+                .selected_text(drawing_mode_name(wanted.drawing_mode))
+                .show_ui(ui, |ui| {
+                    for mode in properties::MODES {
+                        ui.selectable_value(&mut wanted.drawing_mode, mode, drawing_mode_name(mode));
+                    }
+                });
+        });
+        self.draft_attributes(wanted);
         if open_palette {
             self.open_palette_dialog();
         }
 
-        let user = self.user_patterns();
-        section(ui, &fl!("igs-line-type"), |_| {});
-        let colors = self.fill_colors(wanted.line_color);
-        if let Some(style) = line::picker(ui, "igs-sidebar-line", wanted.line_style(), &user, colors, ui.available_width()) {
-            wanted.set_line_style(style);
-        }
-        section(ui, &fl!("igs-section-fill"), |_| {});
-        let colors = self.fill_colors(wanted.fill_color);
-        let change = pattern::picker(ui, "igs-sidebar-pattern", wanted.pattern, wanted.border, &user, colors, ui.available_width());
-        self.apply_picker(&mut wanted, change);
-        let mut hollows = wanted.hollows();
-        if ui
-            .checkbox(&mut hollows, fl!("igs-hollows"))
-            .on_hover_text(fl!("igs-hollows-tooltip"))
-            .changed()
-        {
-            wanted.set_hollows(hollows);
-        }
-        section(ui, &fl!("igs-marker"), |_| {});
-        let colors = self.fill_colors(wanted.marker_color);
-        let change = marker::picker(ui, "igs-sidebar-marker", wanted.marker, wanted.marker_size, colors, ui.available_width());
-        Self::apply_marker(&mut wanted, change);
-        section(ui, &fl!("igs-drawing-mode"), |_| {});
-        egui::ComboBox::from_id_salt("igs-tool-mode")
-            .width(ui.available_width())
-            .selected_text(drawing_mode_name(wanted.drawing_mode))
-            .show_ui(ui, |ui| {
-                for mode in properties::MODES {
-                    ui.selectable_value(&mut wanted.drawing_mode, mode, drawing_mode_name(mode));
-                }
-            });
-        self.draft_attributes(wanted);
-
-        section(ui, &fl!("igs-resolution"), |_| {});
+        ui.separator();
+        // The resolution names are long, so the label goes above.
+        ui.label(egui::RichText::new(fl!("igs-resolution")).color(ui.visuals().weak_text_color()));
         let start = self.start_resolution();
         let mut chosen = start;
         egui::ComboBox::from_id_salt("igs-resolution")
@@ -4968,9 +5032,19 @@ mod tests {
         };
 
         let output = frame(&mut editor, vec![]);
-        let label = find(&output, &fl!("igs-line-type")).expect("the sidebar shows the line type");
-        // The picker sits right below its label.
-        click(&mut editor, egui::pos2(label.left() + 20.0, label.bottom() + 16.0));
+        // The toolbar may name the line tool as well; the sidebar's row is further down.
+        let label = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == fl!("igs-pen-line") => Some(egui::Rect::from_min_size(text.pos, text.galley.size())),
+                _ => None,
+            })
+            .max_by(|a, b| a.top().total_cmp(&b.top()))
+            .expect("the sidebar shows the line row");
+        // The picker fills the rest of its row, after the pen.
+        let sidebar = egui::containers::panel::PanelState::load(&context, egui::Id::new("igs-tools")).unwrap().rect;
+        click(&mut editor, egui::pos2(sidebar.right() - SIDEBAR_MARGIN - 30.0, label.center().y));
         // A popup grows over frames to what its content asks for.
         let output = (0..4).fold(frame(&mut editor, vec![]), |_, _| frame(&mut editor, vec![]));
         let dotted = find(&output, &fl!("igs-line-dotted")).expect("the picker lists the line types");
@@ -5445,13 +5519,19 @@ mod tests {
 
     #[test]
     fn the_tool_grid_fills_the_sidebar() {
-        for (width, spacing) in [(136.0, 8.0), (202.0, 8.0), (308.0, 6.0)] {
-            let (columns, size) = tool_grid(width, spacing);
-            let used = columns as f32 * size + (columns - 1) as f32 * spacing;
+        for width in [158.0, 202.0, 308.0] {
+            let (columns, size) = tool_grid(width, TOOL_SPACING);
+            let used = columns as f32 * size + (columns - 1) as f32 * TOOL_SPACING;
             assert!(size >= TOOL_BUTTON && width - used < columns as f32, "{width}: {columns} × {size} uses {used}");
+            assert_eq!(columns, TOOL_COLUMNS, "{width}: a group per row");
         }
-        assert_eq!(tool_grid(136.0, 8.0).0, 3, "the narrowest sidebar keeps three columns");
-        assert_eq!(tool_grid(202.0, 8.0).0, 4, "a wider one adds columns rather than space");
+        assert_eq!(tool_grid(100.0, TOOL_SPACING).0, 3, "a narrow sidebar keeps three columns");
+        let width = SIDEBAR_WIDTH - 2.0 * SIDEBAR_MARGIN;
+        assert_eq!(
+            tool_grid(width, TOOL_SPACING).0,
+            TOOL_COLUMNS,
+            "the narrowest sidebar fits every group in a row"
+        );
     }
 
     #[test]
