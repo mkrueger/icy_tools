@@ -173,6 +173,17 @@ impl Tool {
         )
     }
 
+    /// How holding Shift constrains the end point of the shape.
+    fn constraint(self) -> Option<Constraint> {
+        match self {
+            Self::Line | Self::PolyLine | Self::Polygon => Some(Constraint::Angle),
+            Self::Rectangle | Self::RoundedRectangle | Self::FilledRectangle | Self::Ellipse | Self::EllipticalArc | Self::EllipticalPieSlice => {
+                Some(Constraint::Square)
+            }
+            _ => None,
+        }
+    }
+
     /// The shape command from `from` to `to`, without the attribute commands before it.
     fn command(self, canvas: &Canvas, from: Point, to: Point, attributes: &Attributes) -> Option<IgsCommand> {
         let (start_angle, end_angle) = (attributes.start_angle, attributes.end_angle);
@@ -255,6 +266,47 @@ impl Tool {
             },
         })
     }
+}
+
+/// What holding Shift does to the end of a shape, measured on screen so that medium
+/// resolution's tall pixels still give 45° lines and round circles.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Constraint {
+    /// Lines in steps of 45°.
+    Angle,
+    /// Squares and circles.
+    Square,
+}
+
+/// How much taller than wide a pixel of `resolution` is shown.
+fn pixel_aspect(resolution: TerminalResolution) -> f32 {
+    if resolution == TerminalResolution::Medium {
+        2.0
+    } else {
+        1.0
+    }
+}
+
+/// `to` moved so the shape from `from` follows `constraint`, kept on the canvas.
+fn constrain(constraint: Constraint, canvas: &Canvas, from: Point, to: Point) -> Point {
+    let aspect = pixel_aspect(canvas.resolution);
+    let (dx, dy) = ((to.0 - from.0) as f32, (to.1 - from.1) as f32 * aspect);
+    let (x, y) = match constraint {
+        Constraint::Angle => {
+            let step = std::f32::consts::FRAC_PI_4;
+            let angle = (dy.atan2(dx) / step).round() * step;
+            let length = dx.hypot(dy);
+            (angle.cos() * length, angle.sin() * length)
+        }
+        Constraint::Square => {
+            let side = dx.abs().max(dy.abs());
+            (side.copysign(dx), side.copysign(dy))
+        }
+    };
+    (
+        (from.0 + x.round() as i32).clamp(0, canvas.width - 1),
+        (from.1 + (y / aspect).round() as i32).clamp(0, canvas.height - 1),
+    )
 }
 
 fn poly_command(tool: Tool, points: &[Point]) -> IgsCommand {
@@ -2153,7 +2205,7 @@ impl IgsEditor {
                     });
                 }
                 Tool::PolyLine | Tool::Polygon => {
-                    ui.weak(fl!("igs-poly-hint"));
+                    ui.weak(format!("{} · {}", fl!("igs-poly-hint"), fl!("igs-shift-angle-hint")));
                 }
                 Tool::CopyArea => {
                     properties::blit_mode(ui, "igs-tool-blit-mode", &mut attributes.blit_mode);
@@ -2184,7 +2236,15 @@ impl IgsEditor {
                         ui.weak(fl!("igs-select-hint"));
                     }
                 },
-                _ => {}
+                tool => match tool.constraint() {
+                    Some(Constraint::Angle) => {
+                        ui.weak(fl!("igs-shift-angle-hint"));
+                    }
+                    Some(Constraint::Square) => {
+                        ui.weak(fl!("igs-shift-square-hint"));
+                    }
+                    None => {}
+                },
             }
             self.draft_attributes(wanted);
             let edited = match self.tool {
@@ -2752,7 +2812,7 @@ impl IgsEditor {
     /// Canvas pixels per screen point, horizontally and vertically. Medium resolution pixels
     /// are twice as tall as wide, like on an Atari ST monitor.
     fn scale(&self, available: egui::Vec2) -> egui::Vec2 {
-        let aspect = if self.canvas.resolution == TerminalResolution::Medium { 2.0 } else { 1.0 };
+        let aspect = pixel_aspect(self.canvas.resolution);
         let (width, height) = (self.canvas.width as f32, self.canvas.height as f32 * aspect);
         let scale = (available.x / width).min(available.y / height).max(0.5);
         egui::vec2(scale, scale * aspect)
@@ -2786,6 +2846,11 @@ impl IgsEditor {
             };
             let on_screen = move |point: Point| origin + egui::vec2((point.0 as f32 + 0.5) * scale.x, (point.1 as f32 + 0.5) * scale.y);
             self.hover = response.hover_pos().map(at);
+            // The next polygon edge follows Shift like the click that ends it.
+            if let (Some(hover), Some(last), true) = (self.hover, self.poly.last().copied(), self.tool.is_poly()) {
+                let shift = ui.input(|input| input.modifiers.shift);
+                self.hover = Some(self.constrained(shift, last, hover));
+            }
             let editing = !self.animating();
             if !blocked && editing {
                 self.canvas_input(ui, &response, &at, &on_screen, scale);
@@ -3048,6 +3113,7 @@ impl IgsEditor {
     ) {
         let pointer = response.interact_pointer_pos();
         let origin = ui.input(|input| input.pointer.press_origin());
+        let shift = ui.input(|input| input.modifiers.shift);
         if matches!(self.tool, Tool::Select | Tool::Zone) {
             self.select_input(ui, response, at, on_screen, scale);
             return;
@@ -3074,6 +3140,7 @@ impl IgsEditor {
                 self.finish_poly();
             } else if response.clicked() || response.double_clicked() {
                 if let Some(point) = pointer.map(at) {
+                    let point = self.poly.last().map_or(point, |last| self.constrained(shift, *last, point));
                     if self.poly.last().copied() != Some(point) {
                         self.poly.push(point);
                         if self.poly.len() == MAX_POINTS {
@@ -3098,7 +3165,7 @@ impl IgsEditor {
             }
         }
         if let (Some((from, _)), Some(pointer)) = (self.drag, pointer) {
-            let to = at(pointer);
+            let to = self.constrained(shift, from, at(pointer));
             self.drag = Some((from, to));
             if response.drag_stopped() {
                 self.drag = None;
@@ -3106,6 +3173,14 @@ impl IgsEditor {
             }
         } else if self.drag.is_some() && ui.input(|input| input.pointer.any_released()) {
             self.drag = None;
+        }
+    }
+
+    /// `to` constrained from `from` by the tool while Shift is held.
+    fn constrained(&self, shift: bool, from: Point, to: Point) -> Point {
+        match self.tool.constraint() {
+            Some(constraint) if shift => constrain(constraint, &self.canvas, from, to),
+            _ => to,
         }
     }
 }
@@ -3757,6 +3832,108 @@ mod tests {
         let preview = editor.document.preview().unwrap();
         assert_eq!(preview.pixel_index(110, 110), preview.pixel_index(15, 15));
         assert_ne!(preview.pixel_index(110, 110), Some(0));
+    }
+
+    #[test]
+    fn shift_constrains_lines_to_45_degrees_and_boxes_to_squares() {
+        let low = Canvas::new(TerminalResolution::Low);
+        assert_eq!(constrain(Constraint::Angle, &low, (100, 100), (150, 110)), (151, 100), "horizontal");
+        assert_eq!(constrain(Constraint::Angle, &low, (100, 100), (104, 60)), (100, 60), "vertical");
+        assert_eq!(constrain(Constraint::Angle, &low, (100, 100), (140, 135)), (138, 138), "diagonal");
+        assert_eq!(constrain(Constraint::Angle, &low, (100, 100), (60, 64)), (62, 62), "diagonal the other way");
+        assert_eq!(constrain(Constraint::Square, &low, (10, 10), (40, 20)), (40, 40));
+        assert_eq!(constrain(Constraint::Square, &low, (50, 50), (20, 45)), (20, 20));
+        assert_eq!(constrain(Constraint::Square, &low, (300, 10), (310, 60)), (319, 60), "kept on the canvas");
+
+        // Medium resolution pixels are twice as tall, so 45° and squares use half the rows.
+        let medium = Canvas::new(TerminalResolution::Medium);
+        assert_eq!(constrain(Constraint::Angle, &medium, (100, 100), (138, 121)), (140, 120));
+        assert_eq!(constrain(Constraint::Square, &medium, (10, 10), (50, 15)), (50, 30));
+    }
+
+    #[test]
+    fn holding_shift_constrains_drawn_shapes() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        run(&context, &mut editor, vec![]);
+        let shifted = |editor: &mut IgsEditor, events: Vec<egui::Event>| {
+            let _ = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events,
+                    modifiers: egui::Modifiers::SHIFT,
+                    ..Default::default()
+                },
+                |context| editor.show(context, false),
+            );
+        };
+        let shifted_drag = |editor: &mut IgsEditor, from: Point, to: Point| {
+            let (start, end) = (screen(editor, from), screen(editor, to));
+            let press = |pos, pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::SHIFT,
+            };
+            shifted(editor, vec![egui::Event::PointerMoved(start), press(start, true)]);
+            shifted(editor, vec![egui::Event::PointerMoved(start.lerp(end, 0.5))]);
+            shifted(editor, vec![egui::Event::PointerMoved(end)]);
+            shifted(editor, vec![press(end, false)]);
+            shifted(editor, vec![]);
+        };
+
+        editor.select_tool(Tool::Line);
+        shifted_drag(&mut editor, (100, 100), (150, 106));
+        let v = IgsParameter::Value;
+        assert_eq!(
+            commands(&editor).last(),
+            Some(&IgsCommand::Line {
+                x1: v(100),
+                y1: v(100),
+                x2: v(150),
+                y2: v(100)
+            })
+        );
+
+        editor.select_tool(Tool::Rectangle);
+        shifted_drag(&mut editor, (20, 20), (60, 40));
+        assert_eq!(
+            commands(&editor).last(),
+            Some(&IgsCommand::Box {
+                x1: v(20),
+                y1: v(20),
+                x2: v(60),
+                y2: v(60),
+                rounded: false
+            })
+        );
+
+        editor.select_tool(Tool::PolyLine);
+        click(&context, &mut editor, (200, 50));
+        let pos = screen(&editor, (240, 88));
+        let press = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::SHIFT,
+        };
+        shifted(&mut editor, vec![egui::Event::PointerMoved(pos), press(true)]);
+        shifted(&mut editor, vec![press(false)]);
+        assert_eq!(editor.poly, vec![(200, 50), (239, 89)], "the vertex snaps to 45° from the last one");
+
+        // Without Shift nothing is constrained.
+        editor.finish_poly();
+        editor.select_tool(Tool::Line);
+        drag(&context, &mut editor, (100, 150), (150, 156));
+        assert_eq!(
+            commands(&editor).last(),
+            Some(&IgsCommand::Line {
+                x1: v(100),
+                y1: v(150),
+                x2: v(150),
+                y2: v(156)
+            })
+        );
     }
 
     #[test]
