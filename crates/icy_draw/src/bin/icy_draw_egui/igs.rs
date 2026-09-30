@@ -941,6 +941,20 @@ impl Current {
         }
     }
 
+    /// The fill, its border and the drawing mode, which IG's H sets together.
+    fn fills(&self) -> (PatternType, bool, DrawingMode) {
+        (self.pattern, self.border, self.drawing_mode)
+    }
+
+    /// Whether filled shapes are drawn as outlines, as IG's `H 1` sets it.
+    fn hollows(&self) -> bool {
+        self.fills() == hollow_fills(true)
+    }
+
+    fn set_hollows(&mut self, on: bool) {
+        (self.pattern, self.border, self.drawing_mode) = hollow_fills(on);
+    }
+
     /// The third value of `T 2,kind,n`: IG only draws solid lines wide, and user defined lines
     /// take the number of their line pattern.
     fn line_value(&self) -> u8 {
@@ -993,7 +1007,16 @@ impl Current {
                 commands.push(IgsCommand::ColorSet { pen, color: wanted.pen(pen) });
             }
         }
-        if (self.pattern, self.border) != (wanted.pattern, wanted.border) {
+        // IG's H sets the fill, its border and the drawing mode at once, so it takes the
+        // place of A and M where it changes more than one of them.
+        let hollow = [true, false].into_iter().find(|&on| {
+            let (pattern, border, mode) = hollow_fills(on);
+            let changed = [self.pattern != pattern, self.border != border, self.drawing_mode != mode];
+            wanted.fills() == hollow_fills(on) && changed.into_iter().filter(|&changed| changed).count() > 1
+        });
+        if let Some(enabled) = hollow {
+            commands.push(IgsCommand::HollowSet { enabled });
+        } else if (self.pattern, self.border) != (wanted.pattern, wanted.border) {
             commands.push(IgsCommand::AttributeForFills {
                 pattern_type: wanted.pattern,
                 border: wanted.border,
@@ -1015,7 +1038,7 @@ impl Current {
                 style: LineMarkerStyle::PolyMarkerSize(wanted.marker, wanted.marker_size),
             });
         }
-        if self.drawing_mode != wanted.drawing_mode {
+        if self.drawing_mode != wanted.drawing_mode && hollow.is_none() {
             commands.push(IgsCommand::DrawingMode { mode: wanted.drawing_mode });
         }
         if (self.text_effects, self.text_size, self.text_rotation) != (wanted.text_effects, wanted.text_size, wanted.text_rotation) {
@@ -1029,6 +1052,15 @@ impl Current {
     }
 }
 
+/// The fill, border and drawing mode IG's `H 1` (hollow outlines) and `H 0` set.
+fn hollow_fills(on: bool) -> (PatternType, bool, DrawingMode) {
+    if on {
+        (PatternType::Hollow, true, DrawingMode::Transparent)
+    } else {
+        (PatternType::Solid, false, DrawingMode::Replace)
+    }
+}
+
 /// Whether `a` and `b` set the same attribute, so the later one makes the earlier redundant.
 fn same_attribute(a: &IgsCommand, b: &IgsCommand) -> bool {
     match (a, b) {
@@ -1038,6 +1070,7 @@ fn same_attribute(a: &IgsCommand, b: &IgsCommand) -> bool {
         }
         (IgsCommand::AttributeForFills { .. }, IgsCommand::AttributeForFills { .. })
         | (IgsCommand::DrawingMode { .. }, IgsCommand::DrawingMode { .. })
+        | (IgsCommand::HollowSet { .. }, IgsCommand::HollowSet { .. })
         | (IgsCommand::TextEffects { .. }, IgsCommand::TextEffects { .. }) => true,
         _ => false,
     }
@@ -2371,6 +2404,14 @@ impl IgsEditor {
                     let colors = self.fill_colors(wanted.fill_color);
                     let change = pattern::picker(ui, "igs-sidebar-pattern", wanted.pattern, wanted.border, &user, colors, ui.available_width());
                     self.apply_picker(&mut wanted, change);
+                    let mut hollows = wanted.hollows();
+                    if ui
+                        .checkbox(&mut hollows, fl!("igs-hollows"))
+                        .on_hover_text(fl!("igs-hollows-tooltip"))
+                        .changed()
+                    {
+                        wanted.set_hollows(hollows);
+                    }
                     ui.add(egui::Label::new(fl!("igs-marker")).truncate());
                     let colors = self.fill_colors(wanted.marker_color);
                     let change = marker::picker(ui, "igs-sidebar-marker", wanted.marker, wanted.marker_size, colors, ui.available_width());
@@ -4653,6 +4694,68 @@ mod tests {
                 style: LineMarkerStyle::LineThickness(LineKind::Dotted, 1)
             })
         );
+    }
+
+    #[test]
+    fn the_hollows_switch_writes_igs_h_command() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        let before = editor.document.len();
+        set(&mut editor, |wanted| wanted.set_hollows(true));
+        assert_eq!(
+            commands(&editor)[before..],
+            [IgsCommand::HollowSet { enabled: true }],
+            "one H instead of a fill and a drawing mode command"
+        );
+        assert!(editor.current().hollows());
+
+        // Filled shapes are drawn as outlines: a circle instead of a disk.
+        editor.select_tool(Tool::Circle);
+        editor.add_shape((100, 100), (130, 100));
+        let preview = editor.document.preview().unwrap();
+        let background = preview.pixel_index(5, 5);
+        assert_eq!(preview.pixel_index(100, 100), background, "the inside stays empty");
+        assert_ne!(preview.pixel_index(130, 100), background, "the outline is drawn");
+
+        // H 0 comes back as one command; changing the pattern alone stays an A.
+        let before = editor.document.len();
+        set(&mut editor, |wanted| wanted.set_hollows(false));
+        assert_eq!(commands(&editor)[before..], [IgsCommand::HollowSet { enabled: false }]);
+        let before = editor.document.len();
+        set(&mut editor, |wanted| wanted.pattern = PatternType::Hollow);
+        assert!(matches!(commands(&editor)[before..], [IgsCommand::AttributeForFills { .. }]));
+        assert!(
+            !editor.current().hollows(),
+            "a hollow fill without border and transparency is not IG's hollow mode"
+        );
+
+        // The switch in the sidebar sets it too.
+        let frame = |editor: &mut IgsEditor, events: Vec<egui::Event>| {
+            context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events,
+                    ..Default::default()
+                },
+                |context| editor.show(context, false),
+            )
+        };
+        let output = frame(&mut editor, vec![]);
+        let label = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == fl!("igs-hollows") => Some(text.pos + text.galley.size() / 2.0),
+                _ => None,
+            })
+            .expect("the sidebar has the hollows switch");
+        frame(
+            &mut editor,
+            vec![egui::Event::PointerMoved(label), button_event(label, egui::PointerButton::Primary, true)],
+        );
+        frame(&mut editor, vec![button_event(label, egui::PointerButton::Primary, false)]);
+        frame(&mut editor, vec![]);
+        assert_eq!(commands(&editor).last(), Some(&IgsCommand::HollowSet { enabled: true }));
     }
 
     #[test]
