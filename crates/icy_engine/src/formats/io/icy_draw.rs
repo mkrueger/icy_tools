@@ -2,7 +2,6 @@ use std::fmt::Alignment;
 use std::io::Cursor;
 
 use icy_sauce::{CharacterFormat, SauceRecord};
-use zstd::stream::encode_all as zstd_encode_all;
 
 use crate::{BitFont, Color, Layer, LayerProperties, Position, Result, Sixel, Size, TextAttribute, TextBuffer, TextPane, TextScreen};
 
@@ -157,7 +156,7 @@ fn write_icyd_record<W: std::io::Write>(writer: &mut png::Writer<W>, keyword: &s
 fn write_compressed_chunk<W: std::io::Write>(writer: &mut png::Writer<W>, keyword: &str, compression: u8, data: &[u8]) -> std::result::Result<(), IcedError> {
     let compressed = match compression {
         constants::compression::NONE => data.to_vec(),
-        constants::compression::ZSTD => zstd_encode_all(Cursor::new(data), 3).map_err(|e| IcedError::CompressionFailed(format!("zstd: {e}")))?,
+        constants::compression::ZSTD => ruzstd::encoding::compress_to_vec(data, ruzstd::encoding::CompressionLevel::Fastest),
         other => return Err(IcedError::UnsupportedCompression(other)),
     };
 
@@ -219,7 +218,7 @@ fn decode_png_to_rgba(png_data: &[u8]) -> std::result::Result<(i32, i32, Vec<u8>
 fn zstd_decode_all_limited(bytes: &[u8], limit: usize, context: &str) -> std::result::Result<Vec<u8>, IcedError> {
     use std::io::Read;
 
-    let mut decoder = zstd::stream::read::Decoder::new(Cursor::new(bytes)).map_err(|e| IcedError::DecompressionFailed(format!("init for '{context}': {e}")))?;
+    let mut decoder = ruzstd::decoding::StreamingDecoder::new(bytes).map_err(|e| IcedError::DecompressionFailed(format!("init for '{context}': {e}")))?;
 
     let mut out: Vec<u8> = Vec::new();
     let mut buf = [0u8; 8 * 1024];

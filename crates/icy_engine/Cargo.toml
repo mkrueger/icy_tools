@@ -38,11 +38,10 @@ unicode-segmentation = "1.13.3"
 unicode-width = "0.2.2"
 unarc-rs = { workspace = true }
 
-zip = { workspace = true }
 libyaff = { workspace = true }
 
-# Faster compression options (used by ICY v1 chunk compression)
-zstd = "0.13"
+# ICY v1 chunk compression; pure Rust so icy_engine also builds for wasm32.
+ruzstd = "0.9"
 
 # Image export support
 image = { workspace = true }
@@ -58,6 +57,8 @@ rgb = "0.8.53"
 fastrand.workspace = true
 
 [dev-dependencies]
+# Checks that files written by the C zstd library still load.
+zstd = "0.13"
 walkdir = { workspace = true }
 pretty_assertions = "1.4.1"
 env_logger = "0.11"

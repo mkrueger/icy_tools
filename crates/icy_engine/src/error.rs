@@ -140,9 +140,6 @@ pub enum EngineError {
     #[error("Image processing error: {0}")]
     Image(#[from] image::ImageError),
 
-    #[error("ZIP error: {0}")]
-    Zip(#[from] zip::result::ZipError),
-
     #[error("PNG encoding error: {0}")]
     PngEncoding(#[from] png::EncodingError),
 
