@@ -656,12 +656,7 @@ pub fn command(ui: &mut egui::Ui, command: &mut IgsCommand, palette: &icy_engine
                     CursorMode::DestructiveBackspace,
                     CursorMode::NonDestructiveBackspace,
                 ],
-                |mode| match mode {
-                    CursorMode::Off => fl!("igs-cursor-off"),
-                    CursorMode::On => fl!("igs-cursor-on"),
-                    CursorMode::DestructiveBackspace => fl!("igs-cursor-destructive"),
-                    CursorMode::NonDestructiveBackspace => fl!("igs-cursor-non-destructive"),
-                },
+                cursor_mode_name,
             );
         }),
         IgsCommand::InverseVideo { enabled } => {
@@ -710,6 +705,15 @@ pub fn command(ui: &mut egui::Ui, command: &mut IgsCommand, palette: &icy_engine
         _ => return false,
     }
     true
+}
+
+pub fn cursor_mode_name(mode: CursorMode) -> String {
+    match mode {
+        CursorMode::Off => fl!("igs-cursor-off"),
+        CursorMode::On => fl!("igs-cursor-on"),
+        CursorMode::DestructiveBackspace => fl!("igs-cursor-destructive"),
+        CursorMode::NonDestructiveBackspace => fl!("igs-cursor-non-destructive"),
+    }
 }
 
 #[cfg(test)]

@@ -2633,6 +2633,20 @@ fn gpu_command_editors_show_the_player_under_the_canvas() {
 }
 
 #[test]
+fn gpu_igs_editor_with_a_drawing_renders() {
+    use_english();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        app.open(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../icy_parser_core/benches/igs_data/KM-1FED.IG"));
+        for _ in 0..3 {
+            gpu.capture(&mut app, [1280, 820], 1.0, vec![], "igs-drawing-warmup");
+        }
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "igs-drawing");
+    });
+}
+
+#[test]
 fn start_page_connects_to_a_server() {
     let context = egui::Context::default();
     appearance::apply(&context);

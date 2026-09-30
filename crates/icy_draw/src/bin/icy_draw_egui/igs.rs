@@ -8,8 +8,8 @@ use icy_draw::{
 };
 use icy_engine::Screen;
 use icy_parser_core::{
-    ArrowEnd, BlitMode, BlitOperation, DrawingMode, IgsCommand, IgsItem, IgsParameter, LineKind, LineMarkerStyle, PatternType, PenType, PolymarkerKind,
-    StopType, TerminalResolution, TextEffects, TextRotation,
+    ArrowEnd, BlitMode, BlitOperation, DrawingMode, GraphicsScalingMode, IgsCommand, IgsItem, IgsParameter, InitializationType, LineKind, LineMarkerStyle,
+    PatternType, PenType, PolymarkerKind, StopType, TerminalResolution, TextEffects, TextRotation,
 };
 use std::path::Path;
 
@@ -38,7 +38,7 @@ const TOOLBAR_HEIGHT: f32 = 44.0;
 /// The tool sidebar fits three 38 point tool buttons; longer labels widen it up to the maximum.
 const SIDEBAR_WIDTH: f32 = 148.0;
 const SIDEBAR_MAX_WIDTH: f32 = 320.0;
-const SIDEBAR_MARGIN: f32 = 6.0;
+const SIDEBAR_MARGIN: f32 = 10.0;
 const PEN_SWATCH: egui::Vec2 = egui::vec2(30.0, 24.0);
 /// The smallest width of a tool button in the sidebar.
 const TOOL_BUTTON: f32 = 38.0;
@@ -73,7 +73,19 @@ enum Tool {
     Zone,
 }
 
+/// The tools in the sidebar, a row per group: selecting and the rest, points and lines,
+/// areas, and arcs.
+const TOOL_GROUPS: [&[Tool]; 4] = [
+    &[Tool::Select, Tool::CopyArea, Tool::Zone, Tool::Text, Tool::FloodFill],
+    &[Tool::Marker, Tool::Spray, Tool::Line, Tool::PolyLine, Tool::Polygon],
+    &[Tool::Rectangle, Tool::RoundedRectangle, Tool::FilledRectangle, Tool::Circle, Tool::Ellipse],
+    &[Tool::Arc, Tool::EllipticalArc, Tool::PieSlice, Tool::EllipticalPieSlice],
+];
+/// The largest tool button; wider sidebars get more space between them, not bigger buttons.
+const MAX_TOOL_BUTTON: f32 = 36.0;
+
 impl Tool {
+    #[cfg(test)]
     const ALL: [Self; 19] = [
         Self::Select,
         Self::Marker,
@@ -126,9 +138,11 @@ impl Tool {
             Self::Marker => "polymarker",
             Self::Line => "line",
             Self::PolyLine => "rip_polyline",
-            Self::Rectangle | Self::RoundedRectangle => "rectangle_outline",
+            Self::Rectangle => "box_outline",
+            Self::RoundedRectangle => "rounded_box_outline",
             Self::FilledRectangle => "rectangle_filled",
-            Self::Circle | Self::Ellipse => "ellipse_filled",
+            Self::Circle => "circle_filled",
+            Self::Ellipse => "ellipse_filled",
             Self::Arc => "rip_arc",
             Self::EllipticalArc => "rip_oval_arc",
             Self::PieSlice => "rip_pie",
@@ -741,12 +755,61 @@ fn item_name(item: &IgsItem) -> String {
         IgsCommand::Cursor { .. } => fl!("igs-cursor"),
         IgsCommand::InverseVideo { .. } => fl!("igs-inverse-video"),
         IgsCommand::SetTextColor { .. } => fl!("igs-template-text-color"),
-        IgsCommand::LoadBitblitMemory { .. } => fl!("igs-command-blit-memory"),
-        // Other commands are named after their variant, without the parameters.
-        other => {
-            let debug = format!("{other:?}");
-            debug.split([' ', '{', '(']).next().unwrap_or_default().to_owned()
-        }
+        IgsCommand::LoadBitblitMemory { .. } | IgsCommand::GrabScreen { .. } => fl!("igs-command-blit-memory"),
+        IgsCommand::Initialize { .. } => fl!("igs-command-initialize"),
+        IgsCommand::GraphicScaling { .. } => fl!("igs-command-scaling"),
+        IgsCommand::RestoreSoundEffect { .. } => fl!("igs-command-restore-sound"),
+        IgsCommand::SetEffectLoops { .. } => fl!("igs-template-effect-loops"),
+        IgsCommand::Noise { .. } => fl!("igs-command-sound-buffer"),
+        IgsCommand::LoadMidiBuffer { .. } => fl!("igs-command-midi-buffer"),
+        IgsCommand::AskIG { .. } => fl!("igs-command-ask"),
+        IgsCommand::SetRandomRange { .. } => fl!("igs-template-random-range"),
+        IgsCommand::RightMouseMacro { .. } => fl!("igs-command-right-mouse"),
+        IgsCommand::LeftMouseButton { .. } => fl!("igs-command-left-mouse"),
+        IgsCommand::FlowControl { .. } => fl!("igs-command-flow-control"),
+        IgsCommand::SetDrawtoBegin { .. } => fl!("igs-template-draw-to-start"),
+        IgsCommand::DeleteLine { .. } => fl!("igs-command-delete-lines"),
+        IgsCommand::InsertLine { .. } => fl!("igs-command-insert-lines"),
+        IgsCommand::ClearLine { .. } => fl!("igs-command-clear-line"),
+        IgsCommand::CursorMotion { .. } => fl!("igs-command-move-cursor"),
+        IgsCommand::PositionCursor { .. } => fl!("igs-template-position-cursor"),
+        IgsCommand::RememberCursor { .. } => fl!("igs-command-remember-cursor"),
+        IgsCommand::LineWrap { .. } => fl!("igs-command-line-wrap"),
+        // Shapes are named after their tool above; these are the ones drawn another way.
+        IgsCommand::Box { .. }
+        | IgsCommand::Line { .. }
+        | IgsCommand::Circle { .. }
+        | IgsCommand::Ellipse { .. }
+        | IgsCommand::Arc { .. }
+        | IgsCommand::PolyLine { .. }
+        | IgsCommand::PolyFill { .. }
+        | IgsCommand::FloodFill { .. }
+        | IgsCommand::PolymarkerPlot { .. }
+        | IgsCommand::WriteText { .. }
+        | IgsCommand::EllipticalArc { .. }
+        | IgsCommand::RoundedRectangles { .. }
+        | IgsCommand::PieSlice { .. }
+        | IgsCommand::EllipticalPieSlice { .. }
+        | IgsCommand::FilledRectangle { .. } => shape_tool(command).map(Tool::label).unwrap_or_default(),
+    }
+}
+
+fn initialization_name(mode: InitializationType) -> String {
+    match mode {
+        InitializationType::DesktopPaletteAndAttributes => fl!("igs-init-palette-attributes"),
+        InitializationType::DesktopPaletteOnly => fl!("igs-init-palette"),
+        InitializationType::DesktopAttributesOnly => fl!("igs-init-attributes"),
+        InitializationType::IgDefaultPalette => fl!("igs-init-ig-palette"),
+        InitializationType::VdiDefaultPalette => fl!("igs-init-vdi-palette"),
+        InitializationType::DesktopResolutionAndClipping => fl!("igs-init-resolution"),
+    }
+}
+
+fn on_off(on: bool) -> String {
+    if on {
+        fl!("igs-on")
+    } else {
+        fl!("igs-off")
     }
 }
 
@@ -771,15 +834,30 @@ fn item_summary(item: &IgsItem) -> String {
             LineMarkerStyle::LineThickness(kind, thickness) => format!("{} · {thickness} px", line_kind_name(*kind)),
             LineMarkerStyle::LineEndpoints(kind, ..) => line_kind_name(*kind),
         },
-        IgsCommand::SetPenColor { pen, red, green, blue } => format!("{pen} → {red} {green} {blue}"),
-        IgsCommand::DrawingMode { mode } => drawing_mode_name(*mode),
-        IgsCommand::HollowSet { enabled } => {
-            if *enabled {
-                fl!("igs-on")
-            } else {
-                fl!("igs-off")
-            }
+        IgsCommand::SetPenColor { pen, red, green, blue } => fl!("igs-pen-color-summary", pen = pen, red = red, green = green, blue = blue),
+        IgsCommand::Initialize { mode } => initialization_name(*mode),
+        IgsCommand::GraphicScaling { mode } => match mode {
+            GraphicsScalingMode::Normal => fl!("igs-off"),
+            GraphicsScalingMode::Virtual10000 => fl!("igs-scaling-virtual"),
+            GraphicsScalingMode::MonochromeAspect => fl!("igs-scaling-monochrome"),
+        },
+        IgsCommand::Cursor { mode } => properties::cursor_mode_name(*mode),
+        IgsCommand::LineWrap { enabled } => on_off(*enabled),
+        IgsCommand::InverseVideo { enabled } => on_off(*enabled),
+        IgsCommand::RestoreSoundEffect { sound_effect } => sound_name(*sound_effect as usize),
+        IgsCommand::SetEffectLoops { count } => format!("{count}×"),
+        IgsCommand::DeleteLine { count } | IgsCommand::InsertLine { count, .. } => format!("{count}×"),
+        IgsCommand::CursorMotion { direction, count } => {
+            let arrow = match direction {
+                icy_parser_core::Direction::Up => "↑",
+                icy_parser_core::Direction::Down => "↓",
+                icy_parser_core::Direction::Left => "←",
+                icy_parser_core::Direction::Right => "→",
+            };
+            format!("{arrow} {count}")
         }
+        IgsCommand::DrawingMode { mode } => drawing_mode_name(*mode),
+        IgsCommand::HollowSet { enabled } => on_off(*enabled),
         IgsCommand::TextEffects { size, .. } => fl!("igs-text-size-summary", size = size),
         IgsCommand::SetResolution { resolution, .. } => resolution_name(*resolution),
         IgsCommand::Loop(data) => format!("{} → {} · {}", data.from, data.to, data.step),
@@ -821,12 +899,15 @@ fn item_summary(item: &IgsItem) -> String {
     }
 }
 
-fn item_icon(item: &IgsItem) -> Option<&'static str> {
-    let command = item.command()?;
+/// The icon of an item; every row has one, so names line up.
+fn item_icon(item: &IgsItem) -> &'static str {
+    let Some(command) = item.command() else {
+        return "text";
+    };
     if let Some(tool) = shape_tool(command) {
-        return Some(tool.icon());
+        return tool.icon();
     }
-    Some(match command {
+    match command {
         IgsCommand::ColorSet { .. } => "paint_brush",
         IgsCommand::AttributeForFills { .. } | IgsCommand::HollowSet { .. } => "fill",
         IgsCommand::SetLineOrMarkerStyle { .. } => "line",
@@ -840,9 +921,20 @@ fn item_icon(item: &IgsItem) -> Option<&'static str> {
         IgsCommand::SprayPaint { .. } => "spray",
         IgsCommand::RotateColorRegisters { .. } => "repeat",
         IgsCommand::SetColorRegister { .. } | IgsCommand::LoadColorPalette { .. } => "dropper",
-        IgsCommand::InputCommand { .. } => "rip_mouse",
-        _ => return None,
-    })
+        IgsCommand::InputCommand { .. } | IgsCommand::DefineZone { .. } | IgsCommand::RightMouseMacro { .. } | IgsCommand::LeftMouseButton { .. } => {
+            "rip_mouse"
+        }
+        IgsCommand::Initialize { .. } => "replay",
+        IgsCommand::SetResolution { .. } | IgsCommand::GraphicScaling { .. } => "measure",
+        IgsCommand::ScreenClear { .. } => "eraser",
+        IgsCommand::GrabScreen { .. } | IgsCommand::LoadBitblitMemory { .. } => "select",
+        IgsCommand::RestoreSoundEffect { .. } | IgsCommand::SetEffectLoops { .. } | IgsCommand::Noise { .. } | IgsCommand::LoadMidiBuffer { .. } => "play",
+        IgsCommand::SetRandomRange { .. } => "swap",
+        IgsCommand::SetDrawtoBegin { .. } => "line",
+        IgsCommand::AskIG { .. } | IgsCommand::FlowControl { .. } => "navigate_next",
+        // VT52 text and its cursor.
+        _ => "text",
+    }
 }
 
 /// The color a state command sets, shown as a swatch in the list.
@@ -1131,6 +1223,16 @@ fn same_attribute(a: &IgsCommand, b: &IgsCommand) -> bool {
     }
 }
 
+/// A small heading over a group of sidebar controls, with `trailing` controls on its right.
+fn section(ui: &mut egui::Ui, title: &str, trailing: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(title).size(11.5).strong().color(ui.visuals().weak_text_color()));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), trailing);
+    });
+    ui.add_space(1.0);
+}
+
 /// The columns and square button size of the tool grid that fill `width`: as many columns of
 /// buttons about [`TOOL_BUTTON`] points wide as fit, stretched to the full width.
 fn tool_grid(width: f32, spacing: f32) -> (usize, f32) {
@@ -1234,7 +1336,10 @@ pub struct IgsEditor {
     /// The selection the command list last showed and the rows it had in view, so a selection
     /// made on the canvas scrolls into view.
     listed_selection: Option<usize>,
+    /// The rows of the command list in view, as positions in the filtered list.
     visible_rows: std::ops::Range<usize>,
+    /// Text the command list is filtered by, matched against names and summaries.
+    command_filter: String,
     error: Option<String>,
     /// Attribute changes from the tool controls not added as commands yet.
     attribute_draft: Option<Current>,
@@ -1282,6 +1387,7 @@ impl IgsEditor {
             shown: None,
             listed_selection: None,
             visible_rows: 0..0,
+            command_filter: String::new(),
             error: None,
             attribute_draft: None,
             pattern_request: None,
@@ -2277,19 +2383,16 @@ fn command_row(ui: &mut egui::Ui, icons: &mut Icons, index: usize, item: &IgsIte
         weak,
     );
     let mut x = rect.left() + 42.0;
-    if let Some(icon) = item_icon(item) {
-        icons
-            .image(ui, icon, 14.0)
-            .tint(text)
-            .paint_at(ui, egui::Rect::from_center_size(egui::pos2(x + 7.0, center), egui::Vec2::splat(14.0)));
-    }
-    x += 22.0;
+    // A color the item sets stands in for its icon, so every name starts in the same column.
+    let cell = egui::Rect::from_center_size(egui::pos2(x + 7.0, center), egui::Vec2::splat(14.0));
     if let Some(color) = swatch {
-        let swatch = egui::Rect::from_min_size(egui::pos2(x, center - 6.0), egui::Vec2::splat(12.0));
+        let swatch = cell.shrink(1.0);
         painter.rect_filled(swatch, 2, color);
         painter.rect_stroke(swatch, 2, Stroke::new(1.0, weak), egui::StrokeKind::Inside);
-        x += 18.0;
+    } else {
+        icons.image(ui, item_icon(item), 14.0).tint(text).paint_at(ui, cell);
     }
+    x += 22.0;
     let font = egui::TextStyle::Body.resolve(ui.style());
     let mut job = egui::text::LayoutJob::default();
     job.append(
@@ -2449,17 +2552,17 @@ impl IgsEditor {
         };
         let button = |label: String| text(label, egui::TextStyle::Button) + 2.0 * spacing.button_padding.x;
         let combo = |label: String| button(label) + spacing.icon_spacing + spacing.icon_width;
-        let pen = |label: String| text(label, egui::TextStyle::Body) + spacing.item_spacing.x + PEN_SWATCH.x;
+        // The pens heading shares its row with the palette button.
+        let pens = text(fl!("igs-section-pens"), egui::TextStyle::Body) + spacing.item_spacing.x + button(fl!("igs-palette-short"));
         let widths = [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High]
             .map(|resolution| combo(resolution_name(resolution)))
             .into_iter()
             .chain(properties::MODES.map(|mode| combo(drawing_mode_name(mode))))
-            .chain([fl!("igs-pen-line"), fl!("igs-pen-fill"), fl!("igs-pen-text"), fl!("igs-pen-marker")].map(pen))
-            .chain([fl!("igs-palette-edit")].map(button))
-            .chain(
-                [fl!("igs-drawing-mode"), fl!("igs-fill-pattern-label"), fl!("igs-marker"), fl!("igs-line-type")]
-                    .map(|label| text(label, egui::TextStyle::Body)),
-            );
+            .chain([
+                pens,
+                text(fl!("igs-hollows"), egui::TextStyle::Body) + spacing.icon_width + spacing.icon_spacing,
+            ])
+            .chain([fl!("igs-drawing-mode"), fl!("igs-section-fill"), fl!("igs-marker"), fl!("igs-line-type")].map(|label| text(label, egui::TextStyle::Body)));
         let content = widths.fold(0.0, f32::max);
         (content + 2.0 * SIDEBAR_MARGIN).ceil().clamp(SIDEBAR_WIDTH, SIDEBAR_MAX_WIDTH)
     }
@@ -2474,96 +2577,118 @@ impl IgsEditor {
             .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::same(SIDEBAR_MARGIN as i8)))
             .show(context, |ui| {
                 ui.add_enabled_ui(!blocked, |ui| {
-                    let start = self.start_resolution();
-                    let mut chosen = start;
-                    egui::ComboBox::from_id_salt("igs-resolution")
-                        .width(ui.available_width())
-                        .truncate()
-                        .selected_text(resolution_name(chosen))
-                        .show_ui(ui, |ui| {
-                            for resolution in [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High] {
-                                ui.selectable_value(&mut chosen, resolution, resolution_name(resolution));
-                            }
-                        })
-                        .response
-                        .on_hover_text(fl!("igs-resolution-tooltip"));
-                    if chosen != start {
-                        self.set_resolution(chosen);
-                    }
-                    let resolution = self.canvas.resolution;
-                    // The pens (C), fill (A) and drawing mode (M) where new commands go; changing
-                    // one adds its command there.
-                    let mut wanted = self.attribute_draft.unwrap_or_else(|| self.current());
-                    for (id, label, pen) in [
-                        ("line", fl!("igs-pen-line"), PenType::Line),
-                        ("fill", fl!("igs-pen-fill"), PenType::Fill),
-                        ("text", fl!("igs-pen-text"), PenType::Text),
-                        ("marker", fl!("igs-pen-marker"), PenType::Polymarker),
-                    ] {
-                        // Out-of-range pens from a file are shown clamped but only change when picked.
-                        let shown = wanted.pen(pen).min(palette::pen_count(resolution) - 1);
-                        let mut picked = shown;
-                        let row = egui::vec2(ui.available_width(), PEN_SWATCH.y);
-                        ui.allocate_ui_with_layout(row, egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            palette::pen_picker(ui, id, &self.palette, resolution, &mut picked, PEN_SWATCH);
-                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                ui.add(egui::Label::new(label).truncate());
-                            });
-                        });
-                        if picked != shown {
-                            *wanted.pen_mut(pen) = picked;
-                        }
-                    }
-                    let user = self.user_patterns();
-                    ui.add(egui::Label::new(fl!("igs-line-type")).truncate());
-                    let colors = self.fill_colors(wanted.line_color);
-                    if let Some(style) = line::picker(ui, "igs-sidebar-line", wanted.line_style(), &user, colors, ui.available_width()) {
-                        wanted.set_line_style(style);
-                    }
-                    ui.add(egui::Label::new(fl!("igs-fill-pattern-label")).truncate());
-                    let colors = self.fill_colors(wanted.fill_color);
-                    let change = pattern::picker(ui, "igs-sidebar-pattern", wanted.pattern, wanted.border, &user, colors, ui.available_width());
-                    self.apply_picker(&mut wanted, change);
-                    let mut hollows = wanted.hollows();
-                    if ui
-                        .checkbox(&mut hollows, fl!("igs-hollows"))
-                        .on_hover_text(fl!("igs-hollows-tooltip"))
-                        .changed()
-                    {
-                        wanted.set_hollows(hollows);
-                    }
-                    ui.add(egui::Label::new(fl!("igs-marker")).truncate());
-                    let colors = self.fill_colors(wanted.marker_color);
-                    let change = marker::picker(ui, "igs-sidebar-marker", wanted.marker, wanted.marker_size, colors, ui.available_width());
-                    Self::apply_marker(&mut wanted, change);
-                    ui.add(egui::Label::new(fl!("igs-drawing-mode")).truncate());
-                    properties::drawing_mode(ui, "igs-tool-mode", &mut wanted.drawing_mode);
-                    self.draft_attributes(wanted);
-                    let full = egui::vec2(ui.available_width(), 26.0);
-                    if ui
-                        .add(egui::Button::new(fl!("igs-palette-edit")).truncate().min_size(full))
-                        .on_hover_text(fl!("igs-palette-edit-tooltip"))
-                        .clicked()
-                    {
-                        self.open_palette_dialog();
-                    }
-                    ui.separator();
-                    let (columns, size) = tool_grid(ui.available_width(), ui.spacing().item_spacing.x);
-                    egui::Grid::new("igs-tools-grid")
-                        .num_columns(columns)
-                        .spacing(egui::Vec2::splat(ui.spacing().item_spacing.x))
-                        .show(ui, |ui| {
-                            for (index, tool) in Tool::ALL.into_iter().enumerate() {
-                                if self.icons.button_sized(ui, tool.icon(), &tool.label(), self.tool == tool, size).clicked() {
-                                    self.select_tool(tool);
-                                }
-                                if index % columns == columns - 1 {
-                                    ui.end_row();
-                                }
-                            }
-                        });
+                    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.sidebar_content(ui));
                 });
             });
+    }
+
+    fn sidebar_content(&mut self, ui: &mut egui::Ui) {
+        let spacing = ui.spacing().item_spacing.x;
+        let (columns, size) = tool_grid(ui.available_width(), spacing);
+        let size = size.min(MAX_TOOL_BUTTON);
+        ui.add_space(2.0);
+        for (group, tools) in TOOL_GROUPS.iter().enumerate() {
+            if group > 0 {
+                ui.add_space(3.0);
+            }
+            for row in tools.chunks(columns) {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = spacing;
+                    for &tool in row {
+                        if self.icons.button_sized(ui, tool.icon(), &tool.label(), self.tool == tool, size).clicked() {
+                            self.select_tool(tool);
+                        }
+                    }
+                });
+            }
+        }
+
+        ui.add_space(4.0);
+        ui.separator();
+        let resolution = self.canvas.resolution;
+        // The pens (C), fill (A) and drawing mode (M) where new commands go; changing one adds
+        // its command there.
+        let mut wanted = self.attribute_draft.unwrap_or_else(|| self.current());
+        let mut open_palette = false;
+        section(ui, &fl!("igs-section-pens"), |ui| {
+            open_palette = ui
+                .small_button(fl!("igs-palette-short"))
+                .on_hover_text(fl!("igs-palette-edit-tooltip"))
+                .clicked();
+        });
+        ui.columns(4, |columns| {
+            for (column, (id, label, pen)) in columns.iter_mut().zip([
+                ("line", fl!("igs-pen-line"), PenType::Line),
+                ("fill", fl!("igs-pen-fill"), PenType::Fill),
+                ("text", fl!("igs-pen-text"), PenType::Text),
+                ("marker", fl!("igs-pen-marker-short"), PenType::Polymarker),
+            ]) {
+                column.vertical_centered_justified(|ui| {
+                    // Out-of-range pens from a file are shown clamped but only change when picked.
+                    let shown = wanted.pen(pen).min(palette::pen_count(resolution) - 1);
+                    let mut picked = shown;
+                    palette::pen_picker(ui, id, &self.palette, resolution, &mut picked, egui::vec2(ui.available_width(), PEN_SWATCH.y));
+                    ui.add(egui::Label::new(egui::RichText::new(label).small().weak()).truncate());
+                    if picked != shown {
+                        *wanted.pen_mut(pen) = picked;
+                    }
+                });
+            }
+        });
+        if open_palette {
+            self.open_palette_dialog();
+        }
+
+        let user = self.user_patterns();
+        section(ui, &fl!("igs-line-type"), |_| {});
+        let colors = self.fill_colors(wanted.line_color);
+        if let Some(style) = line::picker(ui, "igs-sidebar-line", wanted.line_style(), &user, colors, ui.available_width()) {
+            wanted.set_line_style(style);
+        }
+        section(ui, &fl!("igs-section-fill"), |_| {});
+        let colors = self.fill_colors(wanted.fill_color);
+        let change = pattern::picker(ui, "igs-sidebar-pattern", wanted.pattern, wanted.border, &user, colors, ui.available_width());
+        self.apply_picker(&mut wanted, change);
+        let mut hollows = wanted.hollows();
+        if ui
+            .checkbox(&mut hollows, fl!("igs-hollows"))
+            .on_hover_text(fl!("igs-hollows-tooltip"))
+            .changed()
+        {
+            wanted.set_hollows(hollows);
+        }
+        section(ui, &fl!("igs-marker"), |_| {});
+        let colors = self.fill_colors(wanted.marker_color);
+        let change = marker::picker(ui, "igs-sidebar-marker", wanted.marker, wanted.marker_size, colors, ui.available_width());
+        Self::apply_marker(&mut wanted, change);
+        section(ui, &fl!("igs-drawing-mode"), |_| {});
+        egui::ComboBox::from_id_salt("igs-tool-mode")
+            .width(ui.available_width())
+            .selected_text(drawing_mode_name(wanted.drawing_mode))
+            .show_ui(ui, |ui| {
+                for mode in properties::MODES {
+                    ui.selectable_value(&mut wanted.drawing_mode, mode, drawing_mode_name(mode));
+                }
+            });
+        self.draft_attributes(wanted);
+
+        section(ui, &fl!("igs-resolution"), |_| {});
+        let start = self.start_resolution();
+        let mut chosen = start;
+        egui::ComboBox::from_id_salt("igs-resolution")
+            .width(ui.available_width())
+            .truncate()
+            .selected_text(resolution_name(chosen))
+            .show_ui(ui, |ui| {
+                for resolution in [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High] {
+                    ui.selectable_value(&mut chosen, resolution, resolution_name(resolution));
+                }
+            })
+            .response
+            .on_hover_text(fl!("igs-resolution-tooltip"));
+        if chosen != start {
+            self.set_resolution(chosen);
+        }
     }
 
     fn command_list(&mut self, context: &egui::Context, blocked: bool, editing_blocked: bool) {
@@ -2575,10 +2700,24 @@ impl IgsEditor {
                     ui.disable();
                 }
                 let count = self.document.len();
+                // The items the filter keeps, or all of them.
+                let filter = self.command_filter.trim().to_lowercase();
+                let rows: Option<Vec<usize>> = (!filter.is_empty()).then(|| {
+                    self.document
+                        .items()
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, item)| format!("{} {}", item_name(item), item_summary(item)).to_lowercase().contains(&filter))
+                        .map(|(index, _)| index)
+                        .collect()
+                });
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.label(icy_engine_gui::egui::appearance::bold(ui, fl!("igs-editor-commands")));
-                    ui.weak(count.to_string());
+                    ui.weak(match &rows {
+                        Some(rows) => format!("{} / {count}", rows.len()),
+                        None => count.to_string(),
+                    });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
                         let selected = self.selected.filter(|index| *index < count && !editing_blocked);
@@ -2650,19 +2789,29 @@ impl IgsEditor {
                         }
                     });
                 });
+                ui.add(
+                    icy_engine_gui::egui::appearance::text_edit(&mut self.command_filter)
+                        .hint_text(fl!("igs-editor-filter"))
+                        .desired_width(ui.available_width()),
+                );
                 ui.separator();
 
                 let previous = self.selected;
                 let count = self.document.len();
-                let list_height = (ui.available_height() - 280.0).max(120.0);
+                let shown = rows.as_ref().map_or(count, Vec::len);
+                let index_at = |position: usize| rows.as_ref().map_or(position, |rows| rows[position]);
+                let position_of = |index: usize| rows.as_ref().map_or(Some(index), |rows| rows.iter().position(|&row| row == index));
+                // The selected item's properties go below the list; without one the list fills the panel.
+                let reserved = if self.selected.is_some_and(|index| index < count) { 280.0 } else { 8.0 };
+                let list_height = (ui.available_height() - reserved).max(120.0);
                 let mut scroll = egui::ScrollArea::vertical()
                     .id_salt("igs-command-list")
                     .auto_shrink([false, false])
                     .max_height(list_height);
                 // A shape picked on the canvas is scrolled into view in the list.
                 if self.selected != self.listed_selection {
-                    if let Some(index) = self.selected.filter(|index| !self.visible_rows.contains(index)) {
-                        scroll = scroll.vertical_scroll_offset((index as f32 * COMMAND_ROW_HEIGHT - list_height / 2.0).max(0.0));
+                    if let Some(position) = self.selected.and_then(position_of).filter(|position| !self.visible_rows.contains(position)) {
+                        scroll = scroll.vertical_scroll_offset((position as f32 * COMMAND_ROW_HEIGHT - list_height / 2.0).max(0.0));
                     }
                 }
                 let mut clicked = None;
@@ -2670,9 +2819,9 @@ impl IgsEditor {
                 let frame = self.frame();
                 ui.scope(|ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
-                    scroll.show_rows(ui, COMMAND_ROW_HEIGHT, count, |ui, rows| {
-                        self.visible_rows = rows.clone();
-                        for index in rows {
+                    scroll.show_rows(ui, COMMAND_ROW_HEIGHT, shown, |ui, positions| {
+                        self.visible_rows = positions.clone();
+                        for index in positions.map(index_at) {
                             let Some(item) = self.document.items().get(index) else {
                                 break;
                             };
@@ -2733,9 +2882,7 @@ impl IgsEditor {
         ui.separator();
         let item = &self.document.items()[index];
         ui.horizontal(|ui| {
-            if let Some(icon) = item_icon(item) {
-                ui.add(self.icons.image(ui, icon, 16.0));
-            }
+            ui.add(self.icons.image(ui, item_icon(item), 16.0));
             ui.label(icy_engine_gui::egui::appearance::bold(ui, item_name(item)));
             ui.weak(format!("#{}", index + 1));
         });
@@ -5150,6 +5297,81 @@ mod tests {
         click(&context, &mut editor, (100, 60));
         editor.hover = Some((80, 100));
         assert!(matches!(editor.pending_commands().as_slice(), [IgsCommand::PolyFill { points }] if points.len() == 6));
+    }
+
+    #[test]
+    fn the_sidebar_offers_every_tool_once() {
+        let grouped: Vec<Tool> = TOOL_GROUPS.iter().flat_map(|group| group.iter().copied()).collect();
+        assert_eq!(grouped.len(), Tool::ALL.len());
+        for tool in Tool::ALL {
+            assert_eq!(grouped.iter().filter(|&&candidate| candidate == tool).count(), 1, "{tool:?}");
+        }
+        let icons: std::collections::HashSet<&str> = Tool::ALL.into_iter().map(Tool::icon).collect();
+        assert_eq!(icons.len(), Tool::ALL.len(), "every tool has its own icon");
+    }
+
+    #[test]
+    fn every_command_has_a_translated_name_and_readable_summary() {
+        let document = IgsDocument::from_bytes(b"G#I>0:\r\nG#S>15,7,7,6:\r\nG#g>1:\r\nG#k>0:\r\nG#w>1:\r\n").unwrap();
+        let names: Vec<String> = document.items().iter().map(item_name).collect();
+        assert_eq!(
+            names,
+            vec![
+                fl!("igs-command-initialize"),
+                fl!("igs-command-pen-color"),
+                fl!("igs-command-scaling"),
+                fl!("igs-cursor"),
+                fl!("igs-command-line-wrap")
+            ]
+        );
+        assert_eq!(item_summary(&document.items()[0]), fl!("igs-init-palette-attributes"));
+        assert!(
+            item_summary(&document.items()[1]).contains("R7 G7 B6"),
+            "{}",
+            item_summary(&document.items()[1])
+        );
+        assert_eq!(item_summary(&document.items()[3]), fl!("igs-cursor-off"));
+
+        // No command of a real drawing shows an internal name like `GraphicScaling`.
+        let bytes = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../icy_parser_core/benches/igs_data/KM-1FED.IG")).unwrap();
+        let drawing = IgsDocument::from_bytes(&bytes).unwrap();
+        for item in drawing.items() {
+            let name = item_name(item);
+            // BitBlit is IG's own word.
+            let chars: Vec<char> = name.replace("BitBlit", "Bitblit").chars().collect();
+            let internal = chars.windows(2).any(|pair| pair[0].is_lowercase() && pair[1].is_uppercase());
+            assert!(!name.is_empty() && !internal, "{name}");
+        }
+    }
+
+    #[test]
+    fn the_command_list_filters_by_name_and_summary() {
+        let context = egui::Context::default();
+        let bytes = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../icy_parser_core/benches/igs_data/KM-1FED.IG")).unwrap();
+        let mut editor = IgsEditor::from_document(IgsDocument::from_bytes(&bytes).unwrap());
+        let count = editor.document.len();
+        let pen_colors = editor
+            .document
+            .items()
+            .iter()
+            .filter(|item| matches!(item.command(), Some(IgsCommand::SetPenColor { .. })))
+            .count();
+        editor.command_filter = fl!("igs-command-pen-color").to_uppercase();
+        let output = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                ..Default::default()
+            },
+            |context| editor.show(context, false),
+        );
+        let header = format!("{pen_colors} / {count}");
+        assert!(
+            output
+                .shapes
+                .iter()
+                .any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text() == header)),
+            "the header counts the matching commands: {header}"
+        );
     }
 
     #[test]
