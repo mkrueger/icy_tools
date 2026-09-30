@@ -109,7 +109,7 @@ pub(super) fn color_sample(ui: &mut egui::Ui, label: &str, (red, green, blue): (
 }
 
 /// Cache key built on the engine's buffer version, like the original layer view.
-fn signature(buffer: &TextBuffer) -> u64 {
+pub(super) fn signature(buffer: &TextBuffer) -> u64 {
     let mut hash = buffer.version();
     for value in [
         buffer.width() as u64,
@@ -407,7 +407,7 @@ impl DrawApp {
         });
     }
 
-    fn tool_button(&mut self, ui: &mut egui::Ui, pair: ToolPair) {
+    pub(super) fn tool_button(&mut self, ui: &mut egui::Ui, pair: ToolPair) {
         let selected = pair.contains(self.document.tool);
         let tool = if selected { self.document.tool } else { pair.primary };
         let label = format!("{} – {}", tool_label(tool), tool_hint(tool));
@@ -863,7 +863,7 @@ impl DrawApp {
         egui::vec2(size.width as f32 * cell.x, size.height as f32 * cell.y)
     }
 
-    fn layers(&mut self, ui: &mut egui::Ui, signature: u64) {
+    pub(super) fn layers(&mut self, ui: &mut egui::Ui, signature: u64) {
         let current = self.document.with_state(|state| state.get_current_layer().unwrap_or(0));
         let rows = self.document.with_state(|state| {
             state
@@ -1230,6 +1230,41 @@ impl DrawApp {
     }
 
     /// Status bar: document facts on the left, clickable document settings on the right.
+    /// The zoom of the canvas, with a menu of zoom steps and modes.
+    pub(super) fn zoom_status_button(&mut self, ui: &mut egui::Ui) {
+        let zoom = widgets::status_button(
+            ui,
+            &format!("{:.0}%", self.view.zoom * 100.0),
+            &format!(
+                "{}: {}",
+                fl!("menu-zoom"),
+                super::menus::zoom_label(self.settings.monitor_settings.scaling_mode)
+            ),
+        );
+        egui::Popup::menu(&zoom).show(|ui| {
+            if ui.button(fl!("menu-zoom_in")).clicked() {
+                self.zoom_step(1);
+            }
+            if ui.button(fl!("menu-zoom_out")).clicked() {
+                self.zoom_step(-1);
+            }
+            ui.separator();
+            for (label, mode) in [
+                (fl!("menu-zoom-fit_window"), icy_engine_gui::ScalingMode::Auto),
+                (fl!("menu-zoom-fit_width"), icy_engine_gui::ScalingMode::FitWidth),
+                ("50%".to_owned(), icy_engine_gui::ScalingMode::Manual(0.5)),
+                ("100%".to_owned(), icy_engine_gui::ScalingMode::Manual(1.0)),
+                ("200%".to_owned(), icy_engine_gui::ScalingMode::Manual(2.0)),
+                ("400%".to_owned(), icy_engine_gui::ScalingMode::Manual(4.0)),
+            ] {
+                if ui.selectable_label(self.settings.monitor_settings.scaling_mode == mode, label).clicked() {
+                    self.settings.monitor_settings.scaling_mode = mode;
+                    ui.close();
+                }
+            }
+        });
+    }
+
     pub(super) fn status_bar(&mut self, ui: &mut egui::Ui) {
         let (size, caret, selection, ice, spacing, aspect, font) = self.document.with_state(|state| {
             let buffer = state.get_buffer();
@@ -1278,37 +1313,7 @@ impl DrawApp {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 ui.add_space(6.0);
-                let zoom = widgets::status_button(
-                    ui,
-                    &format!("{:.0}%", self.view.zoom * 100.0),
-                    &format!(
-                        "{}: {}",
-                        fl!("menu-zoom"),
-                        super::menus::zoom_label(self.settings.monitor_settings.scaling_mode)
-                    ),
-                );
-                egui::Popup::menu(&zoom).show(|ui| {
-                    if ui.button(fl!("menu-zoom_in")).clicked() {
-                        self.zoom_step(1);
-                    }
-                    if ui.button(fl!("menu-zoom_out")).clicked() {
-                        self.zoom_step(-1);
-                    }
-                    ui.separator();
-                    for (label, mode) in [
-                        (fl!("menu-zoom-fit_window"), icy_engine_gui::ScalingMode::Auto),
-                        (fl!("menu-zoom-fit_width"), icy_engine_gui::ScalingMode::FitWidth),
-                        ("50%".to_owned(), icy_engine_gui::ScalingMode::Manual(0.5)),
-                        ("100%".to_owned(), icy_engine_gui::ScalingMode::Manual(1.0)),
-                        ("200%".to_owned(), icy_engine_gui::ScalingMode::Manual(2.0)),
-                        ("400%".to_owned(), icy_engine_gui::ScalingMode::Manual(4.0)),
-                    ] {
-                        if ui.selectable_label(self.settings.monitor_settings.scaling_mode == mode, label).clicked() {
-                            self.settings.monitor_settings.scaling_mode = mode;
-                            ui.close();
-                        }
-                    }
-                });
+                self.zoom_status_button(ui);
                 status_separator(ui);
                 let shorten = |font: &str, limit: usize| {
                     if font.chars().count() > limit {
@@ -1449,7 +1454,7 @@ fn tool_hint(tool: Tool) -> String {
 const TOOL_GROUPS: [usize; 3] = [2, 7, 10];
 
 /// Padded sidebar section followed by a full-width separator line.
-fn section(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+pub(super) fn section(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new()
         .inner_margin(egui::Margin {
             left: SECTION_MARGIN,
@@ -1465,7 +1470,7 @@ fn section(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     ui.painter().hline(ui.max_rect().x_range(), y, ui.visuals().widgets.noninteractive.bg_stroke);
 }
 
-fn rail_divider(ui: &mut egui::Ui) {
+pub(super) fn rail_divider(ui: &mut egui::Ui) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 9.0), egui::Sense::hover());
     ui.painter().hline(
         egui::Rangef::new(rect.center().x - 12.0, rect.center().x + 12.0),
@@ -1474,7 +1479,7 @@ fn rail_divider(ui: &mut egui::Ui) {
     );
 }
 
-fn status_separator(ui: &mut egui::Ui) {
+pub(super) fn status_separator(ui: &mut egui::Ui) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(9.0, 14.0), egui::Sense::hover());
     ui.painter()
         .vline(rect.center().x, rect.y_range(), ui.visuals().widgets.noninteractive.bg_stroke);

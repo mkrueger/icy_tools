@@ -16,7 +16,7 @@ pub(super) fn use_english() {
     });
 }
 
-fn frame(context: &egui::Context, app: &mut DrawApp, size: egui::Vec2, events: Vec<egui::Event>) -> egui::FullOutput {
+pub(super) fn frame(context: &egui::Context, app: &mut DrawApp, size: egui::Vec2, events: Vec<egui::Event>) -> egui::FullOutput {
     let time = context.input(|input| input.time) + 0.05;
     let modifiers = events
         .iter()
@@ -885,7 +885,7 @@ fn fkey_strip_has_labels_and_types_from_label_and_glyph() {
     }
 }
 
-fn key_event(key: Key, modifiers: egui::Modifiers) -> egui::Event {
+pub(super) fn key_event(key: Key, modifiers: egui::Modifiers) -> egui::Event {
     egui::Event::Key {
         key,
         physical_key: None,

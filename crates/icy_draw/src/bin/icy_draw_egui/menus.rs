@@ -307,10 +307,15 @@ impl DrawApp {
                 }
                 if self.animation.is_none() && self.font_editor.is_none() && self.rip.is_none() && self.igs.is_none() && !self.show_start {
                     ui.menu_button(menu_title(fl!("menu-selection")), |ui| self.selection_menu(ui));
-                    ui.menu_button(menu_title(fl!("menu-colors")), |ui| self.colors_menu(ui));
+                    // ATASCII screens have no per-character colors for the color menu and plugins to set.
+                    if self.atascii.is_none() {
+                        ui.menu_button(menu_title(fl!("menu-colors")), |ui| self.colors_menu(ui));
+                    }
                     ui.menu_button(menu_title(fl!("menu-document")), |ui| self.document_menu(ui));
                     ui.menu_button(menu_title(fl!("menu-view")), |ui| self.view_menu(ui, context));
-                    ui.menu_button(menu_title(fl!("menu-plugins")), |ui| self.extensions_menu(ui));
+                    if self.atascii.is_none() {
+                        ui.menu_button(menu_title(fl!("menu-plugins")), |ui| self.extensions_menu(ui));
+                    }
                 }
                 ui.menu_button(menu_title(fl!("menu-help")), |ui| {
                     if item(ui, &fl!("menu-discuss"), None, true) {

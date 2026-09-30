@@ -19,6 +19,8 @@ use std::{
 };
 
 use super::widgets::{self, Icons};
+#[path = "atascii.rs"]
+mod atascii;
 #[path = "chrome.rs"]
 mod chrome;
 #[path = "collab.rs"]
@@ -288,6 +290,8 @@ pub struct DrawApp {
     animation: Option<super::animation::AnimationEditor>,
     rip: Option<super::rip::RipEditor>,
     igs: Option<super::igs::IgsEditor>,
+    /// The ATASCII editor's state while the document is an ATASCII screen.
+    pub(super) atascii: Option<atascii::AtasciiEditor>,
     /// Resolution of IGS drawings created from the New dialog.
     new_igs_resolution: icy_parser_core::TerminalResolution,
     pub(super) new_atascii_mode: AtasciiMode,
@@ -378,6 +382,7 @@ impl DrawApp {
             animation: None,
             rip: None,
             igs: None,
+            atascii: None,
             new_igs_resolution: icy_draw::igs_document::DEFAULT_RESOLUTION,
             new_atascii_mode: AtasciiMode::default(),
             clipboard: None,
@@ -482,6 +487,10 @@ impl DrawApp {
         self.reference_image = None;
         self.view = ScreenView::from_shared(self.document.screen.clone());
         self.canvas_focus = true;
+        self.atascii = None;
+        if matches!(self.document.profile(), icy_draw::screen_profile::ScreenProfile::Atascii(_)) {
+            self.start_atascii();
+        }
     }
 
     pub fn open(&mut self, path: PathBuf) {
@@ -3491,6 +3500,55 @@ impl DrawApp {
         self.autosave(context);
     }
 
+    /// The panels of the ANSI editor around the canvas.
+    fn ansi_panels(&mut self, context: &egui::Context, blocked: bool) {
+        let panel_fill = context.style().visuals.panel_fill;
+        egui::TopBottomPanel::top("toolbar")
+            .exact_height(chrome::TOOLBAR_HEIGHT)
+            .frame(egui::Frame::new().fill(panel_fill))
+            .show(context, |ui| {
+                if blocked {
+                    ui.disable();
+                }
+                self.toolbar(ui, context);
+            });
+        let sidebar = self.show_inspector && context.content_rect().width() >= 850.0;
+        if !sidebar {
+            self.charfont_bar(context);
+        }
+        egui::TopBottomPanel::bottom("status")
+            .exact_height(chrome::STATUS_HEIGHT)
+            .frame(egui::Frame::new().fill(panel_fill))
+            .show(context, |ui| {
+                if blocked {
+                    ui.disable();
+                }
+                self.status_bar(ui);
+            });
+        egui::SidePanel::left("sidebar")
+            .exact_width(chrome::SIDEBAR_WIDTH)
+            .frame(egui::Frame::new().fill(panel_fill))
+            .resizable(false)
+            .show(context, |ui| {
+                if blocked || self.document.paste_active() {
+                    ui.disable();
+                }
+                self.sidebar(ui);
+            });
+        if sidebar {
+            egui::SidePanel::right("panel")
+                .exact_width(chrome::PANEL_WIDTH)
+                .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin { top: 4, ..Default::default() }))
+                .resizable(false)
+                .show(context, |ui| {
+                    if blocked || self.document.paste_active() {
+                        ui.disable();
+                    }
+                    self.panel(ui);
+                });
+        }
+    }
+
     fn show_ui(&mut self, context: &egui::Context) {
         // Ctrl+Plus/Minus zoom the canvas instead of the whole user interface.
         context.options_mut(|options| options.zoom_with_keyboard = false);
@@ -3737,49 +3795,10 @@ impl DrawApp {
             return;
         }
         let panel_fill = context.style().visuals.panel_fill;
-        egui::TopBottomPanel::top("toolbar")
-            .exact_height(chrome::TOOLBAR_HEIGHT)
-            .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
-                if blocked {
-                    ui.disable();
-                }
-                self.toolbar(ui, context);
-            });
-        let sidebar = self.show_inspector && context.content_rect().width() >= 850.0;
-        if !sidebar {
-            self.charfont_bar(context);
-        }
-        egui::TopBottomPanel::bottom("status")
-            .exact_height(chrome::STATUS_HEIGHT)
-            .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
-                if blocked {
-                    ui.disable();
-                }
-                self.status_bar(ui);
-            });
-        egui::SidePanel::left("sidebar")
-            .exact_width(chrome::SIDEBAR_WIDTH)
-            .frame(egui::Frame::new().fill(panel_fill))
-            .resizable(false)
-            .show(context, |ui| {
-                if blocked || self.document.paste_active() {
-                    ui.disable();
-                }
-                self.sidebar(ui);
-            });
-        if sidebar {
-            egui::SidePanel::right("panel")
-                .exact_width(chrome::PANEL_WIDTH)
-                .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin { top: 4, ..Default::default() }))
-                .resizable(false)
-                .show(context, |ui| {
-                    if blocked || self.document.paste_active() {
-                        ui.disable();
-                    }
-                    self.panel(ui);
-                });
+        if self.atascii.is_some() {
+            self.atascii_panels(context, blocked);
+        } else {
+            self.ansi_panels(context, blocked);
         }
         let well = if context.style().visuals.dark_mode {
             Color32::from_gray(22)
@@ -3837,8 +3856,13 @@ impl DrawApp {
             ui.advance_cursor_after_rect(full);
         });
         if !blocked && !self.layer_properties_open() {
-            self.keys(context);
-            self.attribute_picker(context);
+            if self.atascii.is_some() {
+                self.atascii_keys(context);
+                self.keys(context);
+            } else {
+                self.keys(context);
+                self.attribute_picker(context);
+            }
         }
         self.sync_collaboration();
         self.font_slots_window(context, blocked || self.dialog.is_some());

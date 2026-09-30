@@ -153,6 +153,8 @@ pub struct Document {
     art_line: Option<(Position, i32)>,
     /// Tags copied in the tag tool and the clipboard text put there for them.
     tag_clipboard: Option<(String, Vec<icy_engine::Tag>)>,
+    /// Whether text is typed in inverse video, on screens that keep it in the character (ATASCII).
+    pub inverse: bool,
 }
 
 impl Document {
@@ -192,6 +194,7 @@ impl Document {
             paste: None,
             art_line: None,
             tag_clipboard: None,
+            inverse: false,
         }
     }
 
@@ -995,13 +998,32 @@ impl Document {
                             }
                             upper
                         } else {
-                            state.get_buffer().buffer_type.convert_from_unicode(character)
+                            let buffer_type = state.get_buffer().buffer_type;
+                            let encoded = buffer_type.convert_from_unicode(character);
+                            if self.inverse && buffer_type == icy_engine::BufferType::Atascii {
+                                char::from((encoded as u32 as u8) | 0x80)
+                            } else {
+                                encoded
+                            }
                         };
                         state.type_key(encoded)?;
                     }
                 }
             }
             Ok::<(), icy_engine::EngineError>(())
+        })
+        .map_err(|error| error.to_string())
+    }
+
+    /// Types the character with the code `code` of the document's character set, as it is.
+    pub fn type_code(&mut self, code: char) -> DrawResult<()> {
+        self.finish();
+        if !self.can_paint() {
+            return Ok(());
+        }
+        self.with_state(|state| {
+            let _undo = state.begin_atomic_undo("Type text");
+            state.type_key(code)
         })
         .map_err(|error| error.to_string())
     }
