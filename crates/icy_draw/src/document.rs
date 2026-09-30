@@ -155,6 +155,9 @@ pub struct Document {
     tag_clipboard: Option<(String, Vec<icy_engine::Tag>)>,
     /// Whether text is typed in inverse video, on screens that keep it in the character (ATASCII).
     pub inverse: bool,
+    /// Whether the pencil and shapes draw 2 × 2 pixels per character with quarter blocks
+    /// (ATASCII); positions are then in pixels.
+    pub quarter_blocks: bool,
 }
 
 impl Document {
@@ -195,6 +198,7 @@ impl Document {
             art_line: None,
             tag_clipboard: None,
             inverse: false,
+            quarter_blocks: false,
         }
     }
 
@@ -803,7 +807,7 @@ impl Document {
             let cells = box_lines::box_line(start, end, style, |point| {
                 inside(point)
                     .then(|| layer.char_at(point - offset).ch)
-                    .and_then(|ch| box_lines::arms_of(buffer_type.convert_to_unicode(ch)))
+                    .and_then(|ch| box_lines::arms_in(buffer_type, ch))
             });
             let mut caret = state.get_caret().attribute;
             if button == MouseButton::Right {
@@ -825,7 +829,7 @@ impl Document {
                     if !brush.colorize_bg {
                         attribute.set_background(own.background());
                     }
-                    (point, ch, attribute)
+                    (point, box_lines::code_for(buffer_type, ch), attribute)
                 })
                 .collect()
         })
@@ -841,16 +845,45 @@ impl Document {
             let Some(offset) = state.get_cur_layer().map(|layer| layer.offset()) else {
                 return;
             };
-            let buffer_type = state.get_buffer().buffer_type;
             for (point, ch, attribute) in cells {
-                let character = icy_engine::AttributedChar::new(buffer_type.convert_from_unicode(ch), attribute);
+                let character = icy_engine::AttributedChar::new(ch, attribute);
                 let _ = state.set_char_in_atomic(point - offset, character);
             }
         });
     }
 
+    /// Whether positions of the current tool are quarter block pixels rather than characters.
+    pub fn draws_pixels(&self) -> bool {
+        self.quarter_blocks && self.tool == Tool::Pencil
+            || self.quarter_blocks && self.tool.is_shape_tool() && !(self.tool == Tool::Line && self.box_line.is_some())
+    }
+
+    /// Sets (left button) or clears the quarter block pixel at `pixel`.
+    fn stamp_pixel(&self, pixel: Position, button: MouseButton) {
+        self.with_state(|state| {
+            let cell = crate::quarter_blocks::cell_of(pixel);
+            if state.is_something_selected() && !state.is_selected(cell) {
+                return;
+            }
+            let attribute = state.get_caret().attribute;
+            let Some(layer) = state.get_cur_layer() else {
+                return;
+            };
+            let local = cell - layer.offset();
+            if local.x < 0 || local.y < 0 || local.x >= layer.width() || local.y >= layer.height() {
+                return;
+            }
+            let code = crate::quarter_blocks::with_pixel(layer.char_at(local).ch, pixel, button != MouseButton::Right);
+            let _ = state.set_char_in_atomic(local, icy_engine::AttributedChar::new(code, attribute));
+        });
+    }
+
     fn stamp(&self, position: Position, brush: BrushSettings, button: MouseButton) {
         if !self.can_paint() {
+            return;
+        }
+        if self.draws_pixels() {
+            self.stamp_pixel(position, button);
             return;
         }
         self.with_state(|state| {
@@ -912,7 +945,9 @@ impl Document {
                         }
                         self.with_state(|state| {
                             use icy_engine::TextPane;
-                            let point = if stroke.brush.primary == BrushPrimaryMode::HalfBlock {
+                            let point = if self.quarter_blocks && stroke.tool.is_shape_tool() {
+                                crate::quarter_blocks::cell_of(point)
+                            } else if stroke.brush.primary == BrushPrimaryMode::HalfBlock {
                                 Position::new(point.x, point.y / 2)
                             } else {
                                 point
@@ -1793,7 +1828,11 @@ mod tests {
         doc.box_line = Some(BoxStyle::Single);
         doc.begin(Position::new(0, 1), MouseButton::Left);
         doc.update(Position::new(5, 1));
-        let preview: String = doc.box_preview.iter().map(|(_, ch, _)| *ch).collect();
+        let preview: String = doc
+            .box_preview
+            .iter()
+            .map(|(_, ch, _)| icy_engine::BufferType::CP437.convert_to_unicode(*ch))
+            .collect();
         assert_eq!(preview, "───┼──", "the preview crosses the existing line");
         assert_eq!(row(&doc, 1), "   │    ", "the canvas only changes when the line is finished");
         doc.finish();

@@ -92,6 +92,8 @@ enum FileAction {
     ImportPalette,
     ExportPalette,
     LoadFont,
+    /// A font for the ATASCII screen.
+    LoadAtasciiFont,
     ImportTaglist,
 }
 
@@ -641,6 +643,10 @@ impl DrawApp {
                     .pick_file(),
                 FileAction::LoadFont => dialog
                     .add_filter(fl!("set-font-filter-fonts"), font_select::FONT_EXTENSIONS)
+                    .add_filter(fl!("set-font-filter-all"), &["*"])
+                    .pick_file(),
+                FileAction::LoadAtasciiFont => dialog
+                    .add_filter(fl!("atascii-font-filter"), &["fnt", "fon", "set", "psf", "yaff"])
                     .add_filter(fl!("set-font-filter-all"), &["*"])
                     .pick_file(),
                 FileAction::ExportPalette => icy_draw::palette_files::EXPORT_FILTERS
@@ -1776,6 +1782,17 @@ impl DrawApp {
             .map_or_else(|| fl!("unsaved-title"), |name| name.to_string_lossy().into_owned())
     }
 
+    /// Pointer positions per character: two rows for half blocks, 2 × 2 for quarter block pixels.
+    fn sub_cells(&self) -> (i32, i32) {
+        if self.document.draws_pixels() {
+            (2, 2)
+        } else if self.half_blocks() {
+            (1, 2)
+        } else {
+            (1, 1)
+        }
+    }
+
     fn half_blocks(&self) -> bool {
         self.document.brush.primary == BrushPrimaryMode::HalfBlock
             && (self.document.tool == Tool::Pencil || self.document.tool == Tool::Fill || self.document.tool.is_shape_tool())
@@ -1809,13 +1826,15 @@ impl DrawApp {
         let info = self.view.terminal.render_info.read();
         let (horizontal, vertical) = info.screen_to_terminal_pixels(point.x, point.y)?;
         let vertical = if info.scan_lines { vertical / 2.0 } else { vertical };
-        let height = info.font_height / if self.half_blocks() { 2.0 } else { 1.0 };
+        let (columns, rows) = self.sub_cells();
+        let width = info.font_width / columns as f32;
+        let height = info.font_height / rows as f32;
         let position = Position::new(
-            ((horizontal + self.view.terminal.scroll_x()) / info.font_width.max(1.0)).floor() as i32,
+            ((horizontal + self.view.terminal.scroll_x()) / width.max(1.0)).floor() as i32,
             ((vertical + self.view.terminal.scroll_y()) / height.max(1.0)).floor() as i32,
         );
         let size = self.document.with_state(|state| state.get_buffer().size());
-        (position.x >= 0 && position.x < size.width && position.y >= 0 && position.y < size.height * if self.half_blocks() { 2 } else { 1 }).then_some(position)
+        (position.x >= 0 && position.x < size.width * columns && position.y >= 0 && position.y < size.height * rows).then_some(position)
     }
 
     fn canvas(&mut self, ui: &mut egui::Ui, blocked: bool) {
@@ -1919,9 +1938,10 @@ impl DrawApp {
         self.field_focused_last_frame = field_focused;
         let info = self.view.terminal.render_info.read().clone();
         let (red, green, blue) = self.document.preview_color();
+        let (columns, rows) = self.sub_cells();
         let cell_size = egui::vec2(
-            info.font_width,
-            info.font_height * if info.scan_lines { 2.0 } else { 1.0 } / if self.half_blocks() { 2.0 } else { 1.0 },
+            info.font_width / columns as f32,
+            info.font_height * if info.scan_lines { 2.0 } else { 1.0 } / rows as f32,
         );
         let origin = egui::pos2(info.bounds_x + info.viewport_x, info.bounds_y + info.viewport_y)
             - egui::vec2(
@@ -1958,10 +1978,10 @@ impl DrawApp {
             }
         } else {
             // Box lines show the characters they will draw, joins included, in their colors.
-            let (font, buffer_type, palette) = self.document.with_state(|state| {
+            let (font, palette) = self.document.with_state(|state| {
                 let buffer = state.get_buffer();
                 let font_page = state.get_caret().attribute.font_page();
-                (buffer.font(font_page).cloned(), buffer.buffer_type, buffer.palette.clone())
+                (buffer.font(font_page).cloned(), buffer.palette.clone())
             });
             let rgb = |index: u32| {
                 let (red, green, blue) = palette.rgb(index);
@@ -1974,7 +1994,7 @@ impl DrawApp {
                 );
                 painter.rect_filled(rect, 0, rgb(attribute.background()));
                 if let Some(font) = &font {
-                    widgets::paint_glyph_on(&painter, font, buffer_type.convert_from_unicode(*ch), rect, rgb(attribute.foreground()));
+                    widgets::paint_glyph_on(&painter, font, *ch, rect, rgb(attribute.foreground()));
                 }
             }
         }
@@ -3641,6 +3661,7 @@ impl DrawApp {
                         self.reference_draft.visible = true;
                     }
                     FileAction::ImportPalette => self.palette_editor.import(&path),
+                    FileAction::LoadAtasciiFont => self.load_atascii_font(&path),
                     FileAction::LoadFont => {
                         if let Some(font) = self.font_selector.load(&path) {
                             self.apply_font(font);

@@ -1,3 +1,4 @@
+pub mod atari_font;
 pub mod box_lines;
 pub mod brush;
 pub mod charfont;
@@ -13,6 +14,7 @@ pub mod paint;
 pub mod palette_files;
 #[path = "util/plugins.rs"]
 pub mod plugins;
+pub mod quarter_blocks;
 pub mod recovery;
 pub mod rip_document;
 pub mod screen_profile;

@@ -14,7 +14,7 @@ use icy_engine::TextPane;
 use icy_engine_edit::tools::{Tool, ToolPair};
 use icy_engine_gui::egui::appearance::PRIMARY;
 
-use super::{chrome, widgets, DrawApp};
+use super::{chrome, widgets, DrawApp, FileAction};
 
 /// The tools that make sense on a character screen without per-character colors.
 const TOOLS: [&[ToolPair]; 2] = [
@@ -304,6 +304,60 @@ impl DrawApp {
         }
     }
 
+    /// The fonts the screen has built in.
+    fn atascii_builtin_fonts(mode: AtasciiMode) -> Vec<icy_engine::BitFont> {
+        match mode {
+            AtasciiMode::Antic => vec![icy_engine::ATARI.clone()],
+            AtasciiMode::Xep80 => vec![icy_engine::ATARI_XEP80.clone(), icy_engine::ATARI_XEP80_INT.clone()],
+        }
+    }
+
+    fn set_atascii_font(&mut self, font: icy_engine::BitFont) {
+        self.edit(|state| state.set_font_in_slot(0, font));
+    }
+
+    /// Loads an Atari font file for the screen.
+    pub(super) fn load_atascii_font(&mut self, path: &std::path::Path) {
+        let name = path.file_stem().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+        match std::fs::read(path)
+            .map_err(|error| error.to_string())
+            .and_then(|data| icy_draw::atari_font::load(&name, &data))
+        {
+            Ok(font) => self.set_atascii_font(font),
+            Err(error) => self.dialog = Some(super::Dialog::Error(error)),
+        }
+    }
+
+    fn atascii_font_row(&mut self, ui: &mut egui::Ui, mode: AtasciiMode, font: &str) {
+        let mut chosen = None;
+        let mut load = false;
+        ui.horizontal(|ui| {
+            ui.label(fl!("atascii-font"));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let response = ui.add(egui::Button::new(font).truncate().min_size(egui::vec2(64.0, 22.0)));
+                egui::Popup::menu(&response).show(|ui| {
+                    for builtin in Self::atascii_builtin_fonts(mode) {
+                        if ui.selectable_label(builtin.name() == font, builtin.name()).clicked() {
+                            chosen = Some(builtin);
+                        }
+                    }
+                    // The XEP80 has its own 7 × 10 characters; Atari fonts are 8 × 8.
+                    if mode == AtasciiMode::Antic {
+                        ui.separator();
+                        load = ui.button(fl!("atascii-font-load")).on_hover_text(fl!("atascii-font-load-tooltip")).clicked();
+                    }
+                });
+            });
+        });
+        if let Some(font) = chosen {
+            self.set_atascii_font(font);
+        }
+        if load {
+            let context = ui.ctx().clone();
+            self.choose(&context, FileAction::LoadAtasciiFont);
+        }
+    }
+
     /// The screen's text and background colors.
     fn atascii_colors(&self) -> (Color32, Color32) {
         self.document.with_state(|state| {
@@ -355,6 +409,21 @@ impl DrawApp {
                 .on_hover_text(fl!("atascii-inverse-tooltip"));
             widgets::divider(ui);
             ui.label(egui::RichText::new(chrome::tool_label(self.document.tool)).strong());
+            let tool = self.document.tool;
+            if (tool == Tool::Pencil || tool.is_shape_tool()) && !(tool == Tool::Line && self.document.box_line.is_some()) {
+                ui.toggle_value(&mut self.document.quarter_blocks, fl!("atascii-pixels"))
+                    .on_hover_text(fl!("atascii-pixels-tooltip"));
+            }
+            if self.document.tool == Tool::Line {
+                let mut outline = self.document.box_line.is_some();
+                if ui
+                    .toggle_value(&mut outline, fl!("line-style-outline"))
+                    .on_hover_text(fl!("line-style-outline-tooltip"))
+                    .changed()
+                {
+                    self.document.box_line = outline.then_some(icy_draw::box_lines::BoxStyle::Single);
+                }
+            }
             widgets::divider(ui);
             if ui.small_button("‹").on_hover_text(fl!("atascii-fkeys-previous")).clicked() {
                 step = -1;
@@ -430,7 +499,9 @@ impl DrawApp {
                     ui.weak(atascii_mode_name(mode));
                 }
             });
-            ui.label(egui::RichText::new(font).weak());
+            if let ScreenProfile::Atascii(mode) = profile {
+                self.atascii_font_row(ui, mode, &font);
+            }
             // The XEP80 shows white on black; only the built-in screen has colors.
             if profile == ScreenProfile::Atascii(AtasciiMode::Antic) {
                 self.atascii_screen_colors(ui);
@@ -528,6 +599,63 @@ mod tests {
         assert_eq!(palette(&app), (atari_color(3, 2), atari_color(3, 12)), "the text has the background's hue");
         app.undo(false);
         assert_eq!(palette(&app), before);
+    }
+
+    #[test]
+    fn outline_lines_join_with_atascii_line_characters() {
+        let (_, mut app) = atascii_app();
+        app.document.tool = Tool::Line;
+        app.document.box_line = Some(icy_draw::box_lines::BoxStyle::Single);
+        let mut line = |from: (i32, i32), to: (i32, i32)| {
+            app.document.begin(Position::new(from.0, from.1), icy_engine::MouseButton::Left);
+            app.document.update(Position::new(to.0, to.1));
+            app.document.finish();
+        };
+        line((0, 1), (4, 1));
+        line((2, 0), (2, 2));
+        let codes: Vec<u32> = (0..5)
+            .map(|x| app.document.with_state(|state| state.get_buffer().char_at(Position::new(x, 1)).ch as u32))
+            .collect();
+        assert_eq!(codes, [0x12, 0x12, 0x13, 0x12, 0x12], "the lines cross with ATASCII's ┼");
+        let column: Vec<u32> = [0, 2]
+            .iter()
+            .map(|&y| app.document.with_state(|state| state.get_buffer().char_at(Position::new(2, y)).ch as u32))
+            .collect();
+        assert_eq!(column, [0x7C, 0x7C], "vertical lines are the bar");
+    }
+
+    #[test]
+    fn atari_font_files_replace_the_screen_font_in_one_undo_step() {
+        let (_, mut app) = atascii_app();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("Graphics.fnt");
+        std::fs::write(&path, vec![0x18u8; 1024]).unwrap();
+        app.load_atascii_font(&path);
+        let font = |app: &DrawApp| app.document.with_state(|state| state.get_buffer().font(0).unwrap().name().to_string());
+        assert_eq!(font(&app), "Graphics");
+        app.undo(false);
+        assert_eq!(font(&app), icy_engine::ATARI.name());
+        std::fs::write(&path, vec![0u8; 100]).unwrap();
+        app.load_atascii_font(&path);
+        assert!(matches!(app.dialog, Some(super::super::Dialog::Error(_))), "an unknown file is reported");
+    }
+
+    #[test]
+    fn the_pencil_draws_quarter_block_pixels() {
+        let (_, mut app) = atascii_app();
+        app.document.tool = Tool::Pencil;
+        app.document.quarter_blocks = true;
+        assert!(app.document.draws_pixels());
+        for pixel in [(0, 0), (1, 0), (3, 1)] {
+            app.document.begin(Position::new(pixel.0, pixel.1), icy_engine::MouseButton::Left);
+            app.document.finish();
+        }
+        assert_eq!([code_at(&app, 0), code_at(&app, 1)], [0x95, 0x09], "▀ and ▗");
+        app.document.begin(Position::new(1, 0), icy_engine::MouseButton::Right);
+        app.document.finish();
+        assert_eq!(code_at(&app, 0), 0x0C, "the right button clears a pixel");
+        app.document.tool = Tool::Fill;
+        assert!(!app.document.draws_pixels(), "fill works on characters");
     }
 
     #[test]

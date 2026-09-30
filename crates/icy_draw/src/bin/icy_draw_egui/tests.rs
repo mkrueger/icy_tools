@@ -1005,6 +1005,92 @@ fn text_tool_keeps_canvas_focus_after_arrow_keys() {
     });
 }
 
+/// Picking a color or F-key set in the chrome must leave the keyboard on the canvas.
+#[test]
+fn canvas_keeps_keyboard_after_toolbar_and_palette_clicks() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    context.style_mut(|style| style.animation_time = 0.0);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    app.document.tool = Tool::Click;
+    for _ in 0..2 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    let canvas = app.canvas_rect.center();
+    for pressed in [true, false] {
+        frame(&context, &mut app, size, pointer(canvas, pressed));
+    }
+    let output = frame(&context, &mut app, size, vec![]);
+    let set_label = output
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.text().starts_with("Set ") => Some(text.pos + egui::vec2(0.0, text.galley.size().y / 2.0)),
+            _ => None,
+        })
+        .expect("F-key set label");
+    let (red, green, blue) = app.document.with_state(|state| state.get_buffer().palette.rgb(4));
+    let swatch = output
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if rect.fill == Color32::from_rgb(red, green, blue) && rect.rect.left() < app.canvas_rect.left() => {
+                Some(rect.rect.center())
+            }
+            _ => None,
+        })
+        .expect("sidebar palette swatch");
+    let next_set = set_label - egui::vec2(16.0, 0.0);
+    let first_set = app.settings.fkeys.current_set;
+    let toolbar_swatch = output
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if rect.rect.size() == egui::Vec2::splat(24.0) && rect.rect.top() < app.canvas_rect.top() => Some(rect.rect.center()),
+            _ => None,
+        })
+        .expect("toolbar color switcher");
+
+    for (name, targets) in [
+        ("palette swatch", vec![swatch]),
+        ("next F-key set", vec![next_set]),
+        ("toolbar palette popup", vec![toolbar_swatch, egui::Pos2::ZERO]),
+    ] {
+        for mut target in targets {
+            if target == egui::Pos2::ZERO {
+                let output = frame(&context, &mut app, size, vec![]);
+                let (red, green, blue) = app.document.with_state(|state| state.get_buffer().palette.rgb(2));
+                target = output
+                    .shapes
+                    .iter()
+                    .filter_map(|shape| match &shape.shape {
+                        egui::Shape::Rect(rect) if rect.fill == Color32::from_rgb(red, green, blue) => Some(rect.rect.center()),
+                        _ => None,
+                    })
+                    .find(|point| point.x > app.canvas_rect.left())
+                    .expect("popup palette swatch");
+            }
+            for pressed in [true, false] {
+                frame(&context, &mut app, size, pointer(target, pressed));
+            }
+            frame(&context, &mut app, size, vec![]);
+        }
+        app.document.with_state(|state| state.set_caret_position((2, 2).into()));
+        frame(&context, &mut app, size, vec![egui::Event::Text("A".into())]);
+        frame(&context, &mut app, size, vec![key_event(Key::ArrowDown, egui::Modifiers::NONE)]);
+        frame(&context, &mut app, size, vec![key_event(Key::ArrowLeft, egui::Modifiers::NONE)]);
+        frame(&context, &mut app, size, vec![egui::Event::Text("B".into())]);
+        app.document.with_state(|state| {
+            assert_eq!(state.get_buffer().char_at((2, 2).into()).ch, 'A', "typing after clicking the {name}");
+            assert_eq!(state.get_buffer().char_at((2, 3).into()).ch, 'B', "arrow keys after clicking the {name}");
+        });
+    }
+    assert_eq!(app.document.with_state(|state| state.get_caret().attribute.foreground()), 2);
+    assert_ne!(app.settings.fkeys.current_set, first_set);
+}
+
 #[test]
 fn text_tool_yields_to_focused_text_fields() {
     let context = egui::Context::default();
@@ -2909,5 +2995,44 @@ fn gpu_box_lines_render() {
         gpu.capture(&mut app, [1280, 820], 1.0, vec![egui::Event::PointerMoved(end)], "box-lines-drag-warmup");
         gpu.capture(&mut app, [1280, 820], 1.0, vec![], "box-lines-drag");
         assert!(!app.document.box_preview.is_empty(), "the drag is still running");
+    });
+}
+
+#[test]
+fn gpu_atascii_pixels_follow_the_pointer() {
+    use_english();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        app.create(NewKind::Atascii, Size::new(80, 25));
+        app.document.tool = Tool::Pencil;
+        app.document.quarter_blocks = true;
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "atascii-pixels-warmup");
+        let info = app.view.terminal.render_info.read().clone();
+        // The centre of pixel (x, y), two per character in each direction.
+        let pixel = |x: f32, y: f32| {
+            egui::pos2(
+                info.bounds_x + info.viewport_x + info.font_width * info.display_scale * (x + 0.5) / 2.0,
+                info.bounds_y + info.viewport_y + info.font_height * info.display_scale * (y + 0.5) / 2.0,
+            )
+        };
+        let press = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        // A click on the lower right pixel of character (3, 2).
+        let target = pixel(7.0, 5.0);
+        gpu.capture(
+            &mut app,
+            [1280, 820],
+            1.0,
+            vec![egui::Event::PointerMoved(target), press(target, true)],
+            "atascii-pixels-warmup",
+        );
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![press(target, false)], "atascii-pixels");
+        let code = app.document.with_state(|state| state.get_buffer().char_at(Position::new(3, 2)).ch as u32);
+        assert_eq!(code, 0x09, "the lower right quarter block ▗");
     });
 }

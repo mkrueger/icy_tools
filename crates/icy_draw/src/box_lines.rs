@@ -2,7 +2,7 @@
 //! characters, and where it meets lines already on the canvas the matching junction is chosen,
 //! like TheDraw's line drawing.
 
-use icy_engine::Position;
+use icy_engine::{BufferType, Position};
 
 /// How the line looks.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -92,6 +92,31 @@ const BOX_CHARS: [(char, Arms); 40] = [
 /// The arms of a box-drawing character (as Unicode), `None` for any other character.
 pub fn arms_of(ch: char) -> Option<Arms> {
     BOX_CHARS.iter().find(|(candidate, _)| *candidate == ch).map(|(_, arms)| *arms)
+}
+
+/// The arms of the character `code` of `buffer_type`'s character set. ATASCII draws vertical
+/// lines with its bar, which Unicode does not count as a box-drawing character.
+pub fn arms_in(buffer_type: BufferType, code: char) -> Option<Arms> {
+    match buffer_type.convert_to_unicode(code) {
+        '|' if buffer_type == BufferType::Atascii => arms_of('│'),
+        unicode => arms_of(unicode),
+    }
+}
+
+/// The code of the box-drawing character `ch` (from [`char_for`]) in `buffer_type`'s character set.
+pub fn code_for(buffer_type: BufferType, ch: char) -> char {
+    match ch {
+        '│' if buffer_type == BufferType::Atascii => buffer_type.convert_from_unicode('|'),
+        _ => buffer_type.convert_from_unicode(ch),
+    }
+}
+
+/// The styles `buffer_type` has the characters for: ATASCII only has single lines.
+pub fn styles_for(buffer_type: BufferType) -> &'static [BoxStyle] {
+    match buffer_type {
+        BufferType::Atascii => &[BoxStyle::Single],
+        _ => &BoxStyle::ALL,
+    }
 }
 
 /// The box-drawing character for a set of arms. CP437 draws both horizontal arms of a cell with
