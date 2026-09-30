@@ -817,8 +817,9 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::SetFontDimensions { old_size, new_size } => {
-                std::mem::swap(old_size, new_size);
+                // Redo left the previous size in `new_size`.
                 edit_state.get_buffer_mut().set_font_dimensions(*new_size);
+                std::mem::swap(old_size, new_size);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }

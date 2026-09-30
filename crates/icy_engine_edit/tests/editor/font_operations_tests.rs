@@ -154,3 +154,18 @@ fn replacing_current_font_undoes_to_the_correct_slot_font() {
     state.redo().unwrap();
     assert_eq!(state.get_buffer().font(42), Some(&replacement));
 }
+
+#[test]
+fn font_dimensions_undo_and_redo() {
+    let mut state = EditState::from_buffer(TextBuffer::create((10, 5)));
+    let original = state.get_buffer().font_dimensions();
+    let changed = icy_engine::Size::new(7, 10);
+    state.set_font_dimensions(changed).unwrap();
+    assert_eq!(state.get_buffer().font_dimensions(), changed);
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().font_dimensions(), original);
+    state.redo().unwrap();
+    assert_eq!(state.get_buffer().font_dimensions(), changed);
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().font_dimensions(), original);
+}
