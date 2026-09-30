@@ -1,6 +1,6 @@
 use crate::{
     ArrowEnd, AskQuery, BlitMode, BlitOperation, CommandSink, CursorMode, Direction, DrawingMode, GraphicsScalingMode, IgsCommand, IgsParameter,
-    InitializationType, LineKind, LineMarkerStyle, MousePointerType, PaletteMode, PatternType, PauseType, PenType, PolymarkerKind, RandomRangeType,
+    InitializationType, LineKind, LineMarkerStyle, USER_LINE_PATTERNS, MousePointerType, PaletteMode, PatternType, PauseType, PenType, PolymarkerKind, RandomRangeType,
     ScreenClearMode, SoundEffect, StopType, TerminalResolution, TextColorLayer, TextEffects, TextRotation,
 };
 
@@ -755,8 +755,13 @@ impl IgsCommandType {
 
                     // Parse p3 based on C code logic
                     if p3 > 0 && p3 < 42 {
-                        // Thickness mode: force non-solid lines to thickness 1
-                        let thickness = if line_kind > 1 { 1 } else { p3 as u8 };
+                        // Thickness mode: only solid lines are wide; user defined lines take
+                        // the number of their line pattern instead.
+                        let thickness = match kind {
+                            LineKind::Solid => p3 as u8,
+                            LineKind::UserDefined => (p3 as u8).min(USER_LINE_PATTERNS),
+                            _ => 1,
+                        };
                         LineMarkerStyle::LineThickness(kind, thickness)
                     } else {
                         // Endpoint mode

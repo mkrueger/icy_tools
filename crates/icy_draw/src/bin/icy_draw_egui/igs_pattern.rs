@@ -43,9 +43,19 @@ pub fn pattern_before<'a>(commands: impl Iterator<Item = &'a IgsCommand>, slot: 
 }
 
 /// The user patterns of all eight slots in effect before the end of `commands`, as fills read
-/// them.
+/// them. Slots never loaded hold the single empty row the VDI starts with, so user defined
+/// lines keep their default pattern as when drawn.
 pub fn user_patterns<'a>(commands: impl Iterator<Item = &'a IgsCommand> + Clone) -> [Vec<u16>; 8] {
-    std::array::from_fn(|slot| pattern_before(commands.clone(), slot as u8).to_vec())
+    std::array::from_fn(|slot| {
+        let loaded = commands
+            .clone()
+            .any(|command| matches!(command, IgsCommand::LoadFillPattern { pattern, .. } if usize::from(*pattern) == slot));
+        if loaded {
+            pattern_before(commands.clone(), slot as u8).to_vec()
+        } else {
+            vec![0]
+        }
+    })
 }
 
 /// Paints `pattern` tiled into `rect`, in `color` on `background`, the way it fills.

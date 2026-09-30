@@ -153,48 +153,55 @@ pub fn picker(ui: &mut egui::Ui, id: &str, kind: PolymarkerKind, size: u8, color
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(6.0, 4.0);
-            for candidate in KINDS {
-                let row = ui
-                    .horizontal(|ui| {
-                        let (swatch, _) = ui.allocate_exact_size(SWATCH, egui::Sense::hover());
-                        paint(ui.painter(), swatch, candidate, 1, colors.0, colors.1);
-                        if candidate == kind {
-                            let accent = ui.visuals().selection.stroke.color;
-                            ui.painter()
-                                .rect_stroke(swatch.expand(2.0), 3.0, Stroke::new(2.0, accent), egui::StrokeKind::Inside);
-                        }
-                        ui.selectable_label(candidate == kind, super::marker_name(candidate))
-                    })
-                    .inner;
-                if row.clicked() {
-                    change.kind = Some(candidate);
-                }
-            }
-            ui.separator();
             let mut picked = size.clamp(1, MAX_SIZE);
-            ui.horizontal(|ui| {
-                ui.label(fl!("igs-size"));
-                if ui
-                    .add_enabled(picked > 1, egui::Button::new("−"))
-                    .on_hover_text(fl!("igs-marker-size-down"))
-                    .clicked()
-                {
-                    picked -= 1;
-                }
-                ui.add(egui::DragValue::new(&mut picked).range(1..=MAX_SIZE));
-                if ui
-                    .add_enabled(picked < MAX_SIZE, egui::Button::new("+"))
-                    .on_hover_text(fl!("igs-marker-size-up"))
-                    .clicked()
-                {
-                    picked += 1;
-                }
-            });
+            // Fixed widths only: separators and previews would stretch the popup to the window.
+            let list = ui
+                .vertical(|ui| {
+                    for candidate in KINDS {
+                        let row = ui
+                            .horizontal(|ui| {
+                                let (swatch, _) = ui.allocate_exact_size(SWATCH, egui::Sense::hover());
+                                paint(ui.painter(), swatch, candidate, 1, colors.0, colors.1);
+                                if candidate == kind {
+                                    let accent = ui.visuals().selection.stroke.color;
+                                    ui.painter()
+                                        .rect_stroke(swatch.expand(2.0), 3.0, Stroke::new(2.0, accent), egui::StrokeKind::Inside);
+                                }
+                                ui.selectable_label(candidate == kind, super::marker_name(candidate))
+                            })
+                            .inner;
+                        if row.clicked() {
+                            change.kind = Some(candidate);
+                        }
+                    }
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.label(fl!("igs-size"));
+                        if ui
+                            .add_enabled(picked > 1, egui::Button::new("−"))
+                            .on_hover_text(fl!("igs-marker-size-down"))
+                            .clicked()
+                        {
+                            picked -= 1;
+                        }
+                        ui.add(egui::DragValue::new(&mut picked).range(1..=MAX_SIZE));
+                        if ui
+                            .add_enabled(picked < MAX_SIZE, egui::Button::new("+"))
+                            .on_hover_text(fl!("igs-marker-size-up"))
+                            .clicked()
+                        {
+                            picked += 1;
+                        }
+                    });
+                })
+                .response
+                .rect
+                .width();
             if picked != size {
                 change.size = Some(picked);
             }
             let shown = change.kind.unwrap_or(kind);
-            let (preview, _) = ui.allocate_exact_size(egui::vec2(ui.available_width().max(140.0), 60.0), egui::Sense::hover());
+            let (preview, _) = ui.allocate_exact_size(egui::vec2(list.max(140.0), 60.0), egui::Sense::hover());
             paint(ui.painter(), preview, shown, picked, colors.0, colors.1);
             if shown == PolymarkerKind::Point {
                 ui.weak(fl!("igs-marker-point-size"));

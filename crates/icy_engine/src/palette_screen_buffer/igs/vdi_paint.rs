@@ -80,7 +80,7 @@ impl VdiPaint {
             polymarker_size: 1,
             line_thickness: 1,
             line_ends: (ArrowEnd::Square, ArrowEnd::Square),
-            line_user_mask: 0b1010_1010_1010_1010,
+            line_user_mask: icy_parser_core::DEFAULT_USER_LINE_MASK,
             spray_rotation: None,
             rotation_palette: None,
 
@@ -152,7 +152,7 @@ impl VdiPaint {
 
         // Reset other attributes
         self.fill_draw_border = false;
-        self.line_user_mask = 0b1010_1010_1010_1010;
+        self.line_user_mask = icy_parser_core::DEFAULT_USER_LINE_MASK;
     }
 
     pub fn set_pixel(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, color: u8) {
@@ -224,6 +224,11 @@ impl VdiPaint {
 
         // Apply drawing mode via set_pixel_with_mode
         self.set_pixel_with_mode(buf, x, y, color, mask);
+    }
+
+    /// Draws user defined lines with line pattern `number` of the user patterns.
+    pub fn set_user_line_pattern(&mut self, number: u8) {
+        self.line_user_mask = icy_parser_core::user_line_mask(&self.user_patterns, number);
     }
 
     pub fn set_fill_pattern(&mut self, pattern_type: PatternType) {

@@ -16,6 +16,8 @@ use std::path::Path;
 use super::playback::{Action, RowMark, Timeline, Transport};
 use super::widgets::{self, Icons};
 
+#[path = "igs_line.rs"]
+mod line;
 #[path = "igs_marker.rs"]
 mod marker;
 #[path = "igs_palette.rs"]
@@ -893,6 +895,8 @@ struct Current {
     border: bool,
     line_kind: LineKind,
     line_thickness: u8,
+    /// The user line pattern user defined lines are drawn with.
+    line_pattern: u8,
     line_ends: (ArrowEnd, ArrowEnd),
     marker: PolymarkerKind,
     marker_size: u8,
@@ -905,9 +909,11 @@ struct Current {
 impl Current {
     fn new(state: &IgsDrawState) -> Self {
         // Pen 1 draws with the default foreground register in every resolution.
-        let (line_kind, line_thickness) = match state.line {
-            Some(LineMarkerStyle::LineThickness(kind, width)) => (kind, width),
-            _ => (LineKind::Solid, 1),
+        // The value of a user defined line is its line pattern, not a width.
+        let (line_kind, line_thickness, line_pattern) = match state.line {
+            Some(LineMarkerStyle::LineThickness(LineKind::UserDefined, pattern)) => (LineKind::UserDefined, 1, pattern.max(1)),
+            Some(LineMarkerStyle::LineThickness(kind, width)) => (kind, width, 1),
+            _ => (LineKind::Solid, 1, 1),
         };
         let (marker, marker_size) = match state.marker {
             Some(LineMarkerStyle::PolyMarkerSize(kind, size)) => (kind, size),
@@ -924,6 +930,7 @@ impl Current {
             border,
             line_kind,
             line_thickness,
+            line_pattern,
             line_ends: state.line_ends.unwrap_or((ArrowEnd::Square, ArrowEnd::Square)),
             marker,
             marker_size,
@@ -932,6 +939,32 @@ impl Current {
             text_size,
             text_rotation,
         }
+    }
+
+    /// The third value of `T 2,kind,n`: IG only draws solid lines wide, and user defined lines
+    /// take the number of their line pattern.
+    fn line_value(&self) -> u8 {
+        match self.line_kind {
+            LineKind::Solid => self.line_thickness,
+            LineKind::UserDefined => self.line_pattern,
+            _ => 1,
+        }
+    }
+
+    fn line_style(&self) -> line::LineStyle {
+        line::LineStyle {
+            kind: self.line_kind,
+            width: self.line_thickness,
+            pattern: self.line_pattern,
+            ends: self.line_ends,
+        }
+    }
+
+    fn set_line_style(&mut self, style: line::LineStyle) {
+        self.line_kind = style.kind;
+        self.line_thickness = style.width;
+        self.line_pattern = style.pattern;
+        self.line_ends = style.ends;
     }
 
     fn pen(&self, pen: PenType) -> u8 {
@@ -966,11 +999,9 @@ impl Current {
                 border: wanted.border,
             });
         }
-        if (self.line_kind, self.line_thickness) != (wanted.line_kind, wanted.line_thickness) {
-            // IG only draws solid lines wide.
-            let width = if wanted.line_kind == LineKind::Solid { wanted.line_thickness } else { 1 };
+        if (self.line_kind, self.line_value()) != (wanted.line_kind, wanted.line_value()) {
             commands.push(IgsCommand::SetLineOrMarkerStyle {
-                style: LineMarkerStyle::LineThickness(wanted.line_kind, width),
+                style: LineMarkerStyle::LineThickness(wanted.line_kind, wanted.line_value()),
             });
         }
         if self.line_ends != wanted.line_ends {
@@ -2154,15 +2185,10 @@ impl IgsEditor {
             // The drawing attributes are those where new commands go; changing one adds a command.
             let mut wanted = self.attribute_draft.unwrap_or_else(|| self.current());
             if self.tool.uses_line_style() {
-                properties::line_kind(ui, "igs-tool-line-kind", &mut wanted.line_kind);
-                ui.add_enabled(
-                    wanted.line_kind == LineKind::Solid,
-                    egui::DragValue::new(&mut wanted.line_thickness).range(1..=41).suffix(" px"),
-                )
-                .on_hover_text(fl!("igs-thickness"));
-                let (start, end) = &mut wanted.line_ends;
-                properties::line_end(ui, "igs-tool-line-start", start).on_hover_text(fl!("igs-end-start"));
-                properties::line_end(ui, "igs-tool-line-end", end).on_hover_text(fl!("igs-end-end"));
+                let colors = self.fill_colors(wanted.line_color);
+                if let Some(style) = line::picker(ui, "igs-tool-line", wanted.line_style(), &self.user_patterns(), colors, 140.0) {
+                    wanted.set_line_style(style);
+                }
             }
             if self.tool.uses_fill() {
                 let user = self.user_patterns();
@@ -2277,7 +2303,10 @@ impl IgsEditor {
             .chain(properties::MODES.map(|mode| combo(drawing_mode_name(mode))))
             .chain([fl!("igs-pen-line"), fl!("igs-pen-fill"), fl!("igs-pen-text"), fl!("igs-pen-marker")].map(pen))
             .chain([fl!("igs-palette-edit")].map(button))
-            .chain([fl!("igs-drawing-mode"), fl!("igs-fill-pattern-label"), fl!("igs-marker")].map(|label| text(label, egui::TextStyle::Body)));
+            .chain(
+                [fl!("igs-drawing-mode"), fl!("igs-fill-pattern-label"), fl!("igs-marker"), fl!("igs-line-type")]
+                    .map(|label| text(label, egui::TextStyle::Body)),
+            );
         let content = widths.fold(0.0, f32::max);
         (content + 2.0 * SIDEBAR_MARGIN).ceil().clamp(SIDEBAR_WIDTH, SIDEBAR_MAX_WIDTH)
     }
@@ -2332,8 +2361,13 @@ impl IgsEditor {
                             *wanted.pen_mut(pen) = picked;
                         }
                     }
-                    ui.add(egui::Label::new(fl!("igs-fill-pattern-label")).truncate());
                     let user = self.user_patterns();
+                    ui.add(egui::Label::new(fl!("igs-line-type")).truncate());
+                    let colors = self.fill_colors(wanted.line_color);
+                    if let Some(style) = line::picker(ui, "igs-sidebar-line", wanted.line_style(), &user, colors, ui.available_width()) {
+                        wanted.set_line_style(style);
+                    }
+                    ui.add(egui::Label::new(fl!("igs-fill-pattern-label")).truncate());
                     let colors = self.fill_colors(wanted.fill_color);
                     let change = pattern::picker(ui, "igs-sidebar-pattern", wanted.pattern, wanted.border, &user, colors, ui.available_width());
                     self.apply_picker(&mut wanted, change);
@@ -4353,8 +4387,19 @@ mod tests {
 
         let output = frame(&mut editor, vec![]);
         let swatch = find(&output, "× 1").expect("the sidebar shows the current polymarker and its size");
-        let output = click(&mut editor, swatch);
+        click(&mut editor, swatch);
+        // A popup grows over frames to what its content asks for.
+        let output = (0..4).fold(frame(&mut editor, vec![]), |_, _| frame(&mut editor, vec![]));
         let star = find(&output, &fl!("igs-marker-star")).expect("the picker lists the marker types");
+        let preview = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect) if rect.rect.height() == 60.0 && rect.rect.top() > star.y => Some(rect.rect.width()),
+                _ => None,
+            })
+            .fold(0.0, f32::max);
+        assert!(preview > 0.0 && preview < 400.0, "the popup is only as wide as its list, not {preview}");
         click(&mut editor, star);
         assert_eq!(
             commands(&editor).last(),
@@ -4452,6 +4497,162 @@ mod tests {
         );
         assert_eq!(count(&output), 0, "other tools show no marker preview");
         assert_eq!(editor.document.len(), before, "hovering adds nothing");
+    }
+
+    #[test]
+    fn user_defined_lines_take_their_pattern_from_the_user_patterns() {
+        // T 2,7,n keeps n as the line pattern: rows 1-16 of pattern 6, 17-32 of pattern 7.
+        let mut rows6 = vec![0u16; 16];
+        rows6[2] = 0xF0F0;
+        let mut rows7 = vec![0u16; 16];
+        rows7[0] = 0xCCCC;
+        let mut document = IgsDocument::new(TerminalResolution::Low);
+        document
+            .append_many(vec![
+                IgsCommand::LoadFillPattern { pattern: 6, data: rows6 },
+                IgsCommand::LoadFillPattern { pattern: 7, data: rows7 },
+            ])
+            .unwrap();
+        let reloaded = IgsDocument::from_bytes(b"G#T>2,7,20:\r\nG#T>2,3,5:\r\n").unwrap();
+        assert_eq!(
+            reloaded.command(0),
+            Some(&IgsCommand::SetLineOrMarkerStyle {
+                style: LineMarkerStyle::LineThickness(LineKind::UserDefined, 20)
+            })
+        );
+        assert_eq!(
+            reloaded.command(1),
+            Some(&IgsCommand::SetLineOrMarkerStyle {
+                style: LineMarkerStyle::LineThickness(LineKind::Dotted, 1)
+            }),
+            "other dashed lines stay one pixel wide"
+        );
+
+        let v = IgsParameter::Value;
+        for (number, mask) in [(3, 0xF0F0u16), (17, 0xCCCC)] {
+            let preview = document
+                .preview_with(
+                    document.len(),
+                    &[
+                        IgsCommand::SetLineOrMarkerStyle {
+                            style: LineMarkerStyle::LineThickness(LineKind::UserDefined, number),
+                        },
+                        IgsCommand::Line {
+                            x1: v(0),
+                            y1: v(50),
+                            x2: v(31),
+                            y2: v(50),
+                        },
+                    ],
+                )
+                .unwrap();
+            let background = preview.pixel_index(0, 100);
+            let drawn: Vec<bool> = (0..32).map(|x| preview.pixel_index(x, 50) != background).collect();
+            let expected: Vec<bool> = (0..32).map(|x| mask.rotate_left(x as u32 + 1) & 1 != 0).collect();
+            assert_eq!(drawn, expected, "line pattern {number}");
+        }
+    }
+
+    #[test]
+    fn the_line_type_picker_writes_width_pattern_and_ends() {
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        let mut style = editor.current().line_style();
+        style.kind = LineKind::UserDefined;
+        style.pattern = 12;
+        style.width = 9;
+        set(&mut editor, |wanted| wanted.set_line_style(style));
+        assert_eq!(
+            commands(&editor).last(),
+            Some(&IgsCommand::SetLineOrMarkerStyle {
+                style: LineMarkerStyle::LineThickness(LineKind::UserDefined, 12)
+            }),
+            "user defined lines write their pattern, not a width"
+        );
+        let current = editor.current();
+        assert_eq!((current.line_kind, current.line_pattern), (LineKind::UserDefined, 12));
+
+        style.kind = LineKind::Solid;
+        style.ends = (ArrowEnd::Arrow, ArrowEnd::Rounded);
+        set(&mut editor, |wanted| wanted.set_line_style(style));
+        let added = commands(&editor);
+        assert_eq!(
+            &added[added.len() - 2..],
+            &[
+                IgsCommand::SetLineOrMarkerStyle {
+                    style: LineMarkerStyle::LineThickness(LineKind::Solid, 9)
+                },
+                IgsCommand::SetLineOrMarkerStyle {
+                    style: LineMarkerStyle::LineEndpoints(LineKind::Solid, ArrowEnd::Arrow, ArrowEnd::Rounded)
+                }
+            ]
+        );
+        let current = editor.current().line_style();
+        assert_eq!((current.kind, current.width, current.ends), (style.kind, style.width, style.ends));
+    }
+
+    #[test]
+    fn the_sidebar_line_type_picker_sets_the_line_type() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        let frame = |editor: &mut IgsEditor, events: Vec<egui::Event>| {
+            context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events,
+                    ..Default::default()
+                },
+                |context| editor.show(context, false),
+            )
+        };
+        let find = |output: &egui::FullOutput, label: &str| {
+            output.shapes.iter().find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == label => Some(egui::Rect::from_min_size(text.pos, text.galley.size())),
+                _ => None,
+            })
+        };
+        let click = |editor: &mut IgsEditor, pos: egui::Pos2| {
+            frame(
+                editor,
+                vec![egui::Event::PointerMoved(pos), button_event(pos, egui::PointerButton::Primary, true)],
+            );
+            frame(editor, vec![button_event(pos, egui::PointerButton::Primary, false)]);
+            frame(editor, vec![])
+        };
+
+        let output = frame(&mut editor, vec![]);
+        let label = find(&output, &fl!("igs-line-type")).expect("the sidebar shows the line type");
+        // The picker sits right below its label.
+        click(&mut editor, egui::pos2(label.left() + 20.0, label.bottom() + 16.0));
+        // A popup grows over frames to what its content asks for.
+        let output = (0..4).fold(frame(&mut editor, vec![]), |_, _| frame(&mut editor, vec![]));
+        let dotted = find(&output, &fl!("igs-line-dotted")).expect("the picker lists the line types");
+        let arrows = find(&output, &format!("{} · {}", fl!("igs-end-arrow"), fl!("igs-end-arrow"))).expect("and the line ends");
+        assert!(
+            arrows.left() > dotted.right() && arrows.left() - dotted.left() < 400.0,
+            "the ends are listed next to the types: {dotted:?} {arrows:?}"
+        );
+        let popup = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                // The preview below the columns is as wide as the popup's content.
+                egui::Shape::Rect(rect) if rect.rect.height() == 48.0 && rect.rect.top() > dotted.bottom() => Some(rect.rect.width()),
+                _ => None,
+            })
+            .fold(0.0, f32::max);
+        assert!(popup > 0.0 && popup < 700.0, "the popup is only as wide as its columns, not {popup}");
+        assert_eq!(
+            icy_parser_core::user_line_mask(&editor.user_patterns(), 1),
+            icy_parser_core::DEFAULT_USER_LINE_MASK,
+            "without loaded patterns user lines show the default pattern they are drawn with"
+        );
+        click(&mut editor, dotted.center());
+        assert_eq!(
+            commands(&editor).last(),
+            Some(&IgsCommand::SetLineOrMarkerStyle {
+                style: LineMarkerStyle::LineThickness(LineKind::Dotted, 1)
+            })
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@ use eframe::egui;
 use icy_draw::fl;
 use icy_parser_core::{
     ArrowEnd, BlitMode, BlitOperation, CursorMode, DrawingMode, IgsCommand, IgsParameter, LineKind, LineMarkerStyle, PaletteMode, PatternType, PauseType,
-    PenType, PolymarkerKind, ScreenClearMode, SoundEffect, StopType, TerminalResolution, TextColorLayer, TextEffects, TextRotation,
+    PenType, PolymarkerKind, ScreenClearMode, SoundEffect, StopType, TerminalResolution, TextColorLayer, TextEffects, TextRotation, USER_LINE_PATTERNS,
 };
 
 use super::palette;
@@ -91,15 +91,6 @@ fn combo<T: PartialEq + Copy>(ui: &mut egui::Ui, id: &str, value: &mut T, option
     });
 }
 
-pub const LINE_KINDS: [LineKind; 6] = [
-    LineKind::Solid,
-    LineKind::LongDash,
-    LineKind::Dotted,
-    LineKind::DashDot,
-    LineKind::Dashed,
-    LineKind::DashDotDot,
-];
-
 pub const MODES: [DrawingMode; 4] = [
     DrawingMode::Replace,
     DrawingMode::Transparent,
@@ -160,7 +151,7 @@ pub fn blit_logic(mode: BlitMode) -> &'static str {
 }
 
 pub fn line_kind(ui: &mut egui::Ui, id: &str, value: &mut LineKind) {
-    combo(ui, id, value, &LINE_KINDS, super::line_kind_name);
+    combo(ui, id, value, &super::line::KINDS, super::line_kind_name);
 }
 
 pub fn marker(ui: &mut egui::Ui, id: &str, value: &mut PolymarkerKind) {
@@ -171,7 +162,7 @@ pub fn drawing_mode(ui: &mut egui::Ui, id: &str, value: &mut DrawingMode) {
     combo(ui, id, value, &MODES, super::drawing_mode_name);
 }
 
-fn line_end_name(end: ArrowEnd) -> String {
+pub fn line_end_name(end: ArrowEnd) -> String {
     match end {
         ArrowEnd::Square => fl!("igs-end-square"),
         ArrowEnd::Arrow => fl!("igs-end-arrow"),
@@ -496,7 +487,10 @@ pub fn command(ui: &mut egui::Ui, command: &mut IgsCommand, palette: &icy_engine
             }
             LineMarkerStyle::LineThickness(kind, thickness) => {
                 row(ui, &fl!("igs-line"), |ui| line_kind(ui, "igs-line-property", kind));
-                number(ui, &fl!("igs-thickness"), thickness, 1..=41);
+                match kind {
+                    LineKind::UserDefined => number(ui, &fl!("igs-line-pattern"), thickness, 1..=USER_LINE_PATTERNS),
+                    _ => number(ui, &fl!("igs-thickness"), thickness, 1..=41),
+                }
             }
             LineMarkerStyle::LineEndpoints(kind, left, right) => {
                 row(ui, &fl!("igs-line"), |ui| line_kind(ui, "igs-line-property", kind));

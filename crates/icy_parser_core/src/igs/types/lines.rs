@@ -35,6 +35,23 @@ impl LineKind {
     }
 }
 
+/// The highest user defined line pattern number of `T 2,7,n`.
+pub const USER_LINE_PATTERNS: u8 = 32;
+/// The line pattern used while the user patterns hold no line pattern.
+pub const DEFAULT_USER_LINE_MASK: u16 = 0xAAAA;
+
+/// The mask of user defined line pattern `number` (1 to 32): IG takes the lines from the rows
+/// of the user fill patterns 6 (1-16) and 7 (17-32) that `X 7` loads.
+pub fn user_line_mask(user_patterns: &[Vec<u16>; 8], number: u8) -> u16 {
+    let index = usize::from(number.clamp(1, USER_LINE_PATTERNS) - 1);
+    let pattern = &user_patterns[6 + index / 16];
+    // A slot never loaded holds no rows to take a line from.
+    if pattern.len() < 16 {
+        return DEFAULT_USER_LINE_MASK;
+    }
+    pattern[index % 16]
+}
+
 impl TryFrom<i32> for LineKind {
     type Error = String;
 
@@ -77,7 +94,8 @@ pub enum LineMarkerStyle {
     PolyMarkerSize(PolymarkerKind, u8),
 
     /// Line with thickness
-    /// Thickness range: 1-41 (only for solid lines, others forced to 1)
+    /// Thickness range: 1-41 (only for solid lines, others forced to 1); for
+    /// [`LineKind::UserDefined`] the value is the line pattern number 1-32 instead.
     LineThickness(LineKind, u8),
 
     /// Line with endpoint decorations

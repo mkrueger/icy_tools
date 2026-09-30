@@ -1,7 +1,7 @@
 use super::{vdi_paint::VdiPaint, TerminalResolutionExt};
 use crate::bgi::{ButtonStyle2, MouseField};
 use crate::{AutoWrapMode, EditableScreen, GraphicsType, ATARI_ST_HIGH_PALETTE, ATARI_ST_MEDIUM_PALETTE, IGS_DESKTOP_PALETTE, IGS_PALETTE};
-use icy_parser_core::{DrawingMode, IgsCommand, LineMarkerStyle, PatternType, PenType};
+use icy_parser_core::{DrawingMode, IgsCommand, LineKind, LineMarkerStyle, PatternType, PenType};
 
 static IGS_LOW_COLOR_MAP: [u8; 16] = [0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13];
 // For Medium (4 colors) and High (2 colors), use direct mapping - palette changes via SetPenColor
@@ -159,8 +159,13 @@ fn run_igs_command(buf: &mut dyn EditableScreen, paint: &mut VdiPaint, cmd: IgsC
                 }
                 LineMarkerStyle::LineThickness(lk, thickness) => {
                     paint.line_kind = lk;
-                    paint.line_thickness = thickness as i32;
-                    // Thickness mode: no special endpoint handling needed
+                    if lk == LineKind::UserDefined {
+                        // The value picks the user line pattern, taken as the patterns are now.
+                        paint.set_user_line_pattern(thickness);
+                        paint.line_thickness = 1;
+                    } else {
+                        paint.line_thickness = thickness as i32;
+                    }
                 }
                 LineMarkerStyle::LineEndpoints(lk, left, right) => {
                     paint.line_kind = lk;
