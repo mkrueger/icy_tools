@@ -100,7 +100,21 @@ impl TextPane for TextScreen {
 
 impl Screen for TextScreen {
     fn render_snapshot(&self) -> Option<Box<dyn Screen>> {
-        Some(Box::new(self.clone()))
+        // Rendering never reads the scrollback. It keeps a rendered pixel strip per line, so a full
+        // scrollback is tens of megabytes, and copying it every frame would hold the screen lock
+        // long enough to stall the terminal thread.
+        Some(Box::new(Self {
+            caret: self.caret.clone(),
+            buffer: self.buffer.clone(),
+            current_layer: self.current_layer,
+            selection_opt: self.selection_opt,
+            mouse_fields: self.mouse_fields.clone(),
+            saved_caret_pos: self.saved_caret_pos,
+            saved_caret_state: self.saved_caret_state.clone(),
+            scan_lines: self.scan_lines,
+            scrollback_buffer: ScrollbackBuffer::new(),
+            unicode: self.unicode.clone(),
+        }))
     }
 
     fn buffer_type(&self) -> crate::BufferType {
