@@ -427,28 +427,90 @@ impl DrawApp {
         })
     }
 
-    /// A character as the screen shows it.
-    fn atascii_glyph(&self, ui: &mut egui::Ui, code: u8, size: egui::Vec2, selected: bool) -> egui::Response {
-        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    /// Paints `code` as the screen shows it into `rect`, scaled by whole pixels.
+    fn paint_atascii_glyph(&self, painter: &egui::Painter, rect: egui::Rect, code: u8) {
         let font = self.document.with_state(|state| state.get_buffer().font(0).cloned());
         let (foreground, background) = self.atascii_colors();
-        let painter = ui.painter();
-        painter.rect_filled(rect.shrink(0.5), 2, background);
+        painter.rect_filled(rect, 2, background);
         if let Some(font) = &font {
             let glyph = font.size();
-            let scale = ((rect.width() - 2.0) / glyph.width as f32)
-                .min((rect.height() - 2.0) / glyph.height as f32)
-                .floor()
-                .max(1.0);
+            let scale = (rect.width() / glyph.width as f32).min(rect.height() / glyph.height as f32).floor().max(1.0);
             let target = egui::Rect::from_center_size(rect.center(), egui::vec2(glyph.width as f32 * scale, glyph.height as f32 * scale));
             widgets::paint_glyph_on(painter, font, char::from(code), target, foreground);
         }
-        if selected {
-            painter.rect_stroke(rect.expand(1.0), 3, egui::Stroke::new(2.0, PRIMARY), egui::StrokeKind::Outside);
-        } else if response.hovered() {
-            painter.rect_stroke(rect, 2, ui.visuals().widgets.hovered.fg_stroke, egui::StrokeKind::Inside);
-        }
+    }
+
+    /// A character as the screen shows it.
+    fn atascii_glyph(&self, ui: &mut egui::Ui, code: u8, size: egui::Vec2) -> egui::Response {
+        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+        self.paint_atascii_glyph(ui.painter(), rect, code);
         response
+    }
+
+    /// A function key of the toolbar: its character over the key name, like the ANSI editor's.
+    fn atascii_fkey(&self, ui: &mut egui::Ui, code: u8, index: usize) -> egui::Response {
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(30.0, 40.0), egui::Sense::click());
+        if ui.is_enabled() && response.hovered() {
+            ui.painter().rect_filled(rect, 5, ui.visuals().widgets.hovered.weak_bg_fill);
+        }
+        let glyph = egui::Rect::from_center_size(rect.center_top() + egui::vec2(0.0, 13.0), egui::Vec2::splat(24.0));
+        self.paint_atascii_glyph(ui.painter(), glyph, code);
+        let label = format!("F{}", index + 1);
+        ui.painter().text(
+            rect.center_bottom() - egui::vec2(0.0, 1.0),
+            egui::Align2::CENTER_BOTTOM,
+            &label,
+            egui::FontId::proportional(10.0),
+            ui.visuals().weak_text_color(),
+        );
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &label));
+        response.on_hover_text(format!("{label} · #{code:02X}"))
+    }
+
+    /// The 128 characters of the current video mode, 16 per row; the brush is framed.
+    fn atascii_character_map(&self, ui: &mut egui::Ui, brush: u8) -> Option<u8> {
+        let glyph = self.document.with_state(|state| state.get_buffer().font(0).map(icy_engine::BitFont::size));
+        let glyph = glyph.unwrap_or(icy_engine::Size::new(8, 8));
+        let page = if self.document.inverse { 0x80 } else { 0 };
+        // Two pixels between the characters, which are scaled by whole pixels.
+        let pitch = (ui.available_width() / 16.0).floor().min(GLYPH_CELL);
+        let scale = ((pitch - 2.0) / glyph.width as f32).floor().max(1.0);
+        let cell = egui::vec2(pitch, glyph.height as f32 * scale + 2.0);
+        let (area, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), cell.y * 8.0), egui::Sense::click());
+        let origin = egui::pos2(area.center().x - pitch * 8.0, area.top());
+        let cell_rect = |index: u8| {
+            let (column, row) = (f32::from(index % 16), f32::from(index / 16));
+            egui::Rect::from_min_size(origin + egui::vec2(column * cell.x, row * cell.y), cell).shrink(1.0)
+        };
+        let painter = ui.painter();
+        for index in 0..128u8 {
+            self.paint_atascii_glyph(painter, cell_rect(index), page | index);
+        }
+        let hovered = response.hover_pos().and_then(|point| {
+            let offset = point - origin;
+            let (column, row) = ((offset.x / cell.x).floor(), (offset.y / cell.y).floor());
+            ((0.0..16.0).contains(&column) && (0.0..8.0).contains(&row)).then(|| row as u8 * 16 + column as u8)
+        });
+        if let Some(index) = hovered {
+            painter.rect_stroke(
+                cell_rect(index),
+                2,
+                egui::Stroke::new(1.0, Color32::from_white_alpha(160)),
+                egui::StrokeKind::Outside,
+            );
+        }
+        if brush & 0x80 == page {
+            // A dark and a white ring, visible on any screen color.
+            let rect = cell_rect(brush & 0x7F).expand(1.0);
+            painter.rect_stroke(rect, 3, egui::Stroke::new(3.0, Color32::from_black_alpha(200)), egui::StrokeKind::Outside);
+            painter.rect_stroke(rect, 3, egui::Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Inside);
+        }
+        let code = hovered.map(|index| page | index);
+        let response = match code {
+            Some(code) => response.on_hover_text(format!("#{code:02X}")),
+            None => response,
+        };
+        response.clicked().then_some(code).flatten()
     }
 
     fn atascii_toolbar(&mut self, ui: &mut egui::Ui) {
@@ -470,17 +532,15 @@ impl DrawApp {
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             ui.add_space(8.0);
-            self.atascii_glyph(ui, brush, egui::Vec2::splat(30.0), false)
+            self.atascii_glyph(ui, brush, egui::Vec2::splat(30.0))
                 .on_hover_text(fl!("atascii-brush-tooltip", code = format!("{brush:02X}")));
-            ui.toggle_value(&mut self.document.inverse, fl!("atascii-inverse"))
-                .on_hover_text(fl!("atascii-inverse-tooltip"));
             widgets::divider(ui);
             ui.label(egui::RichText::new(chrome::tool_label(self.document.tool)).strong());
             if self.document.tool == Tool::Pipette {
                 if let Some((position, _)) = self.pipette_hover {
                     let code = self.document.with_state(|state| state.get_buffer().char_at(position).ch as u32);
                     let code = u8::try_from(code).unwrap_or(b' ');
-                    self.atascii_glyph(ui, code, egui::Vec2::splat(26.0), false);
+                    self.atascii_glyph(ui, code, egui::Vec2::splat(26.0));
                     ui.monospace(format!("#{code:02X}"));
                 } else {
                     ui.weak(fl!("atascii-pipette-hint"));
@@ -502,23 +562,20 @@ impl DrawApp {
                 }
             }
             widgets::divider(ui);
-            if ui.small_button("‹").on_hover_text(fl!("atascii-fkeys-previous")).clicked() {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            if self.icons.button(ui, "navigate_prev", &fl!("atascii-fkeys-previous"), false).clicked() {
                 step = -1;
             }
             for (index, &code) in FKEY_SETS[set].iter().enumerate() {
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    let response = self.atascii_glyph(ui, code, egui::vec2(24.0, 22.0), false);
-                    if response.on_hover_text(format!("F{} · #{code:02X}", index + 1)).clicked() {
-                        picked = Some(code);
-                    }
-                    ui.label(egui::RichText::new(format!("F{}", index + 1)).size(9.0).weak());
-                });
+                if self.atascii_fkey(ui, code, index).clicked() {
+                    picked = Some(code);
+                }
             }
-            if ui.small_button("›").on_hover_text(fl!("atascii-fkeys-next")).clicked() {
+            if self.icons.button(ui, "navigate_next", &fl!("atascii-fkeys-next"), false).clicked() {
                 step = 1;
             }
-            ui.label(egui::RichText::new(fl!("atascii-fkeys-set", set = (set + 1), count = FKEY_SETS.len())).weak());
+            ui.add_space(4.0);
+            ui.weak(fl!("atascii-fkeys-set", set = (set + 1), count = FKEY_SETS.len()));
         });
         if step != 0 {
             if let Some(editor) = &mut self.atascii {
@@ -536,29 +593,18 @@ impl DrawApp {
         };
         let mut picked = None;
         chrome::section(ui, |ui| {
-            widgets::section_header(ui, &fl!("atascii-characters"), |ui| {
-                ui.toggle_value(&mut self.document.inverse, fl!("atascii-inverse"))
-                    .on_hover_text(fl!("atascii-inverse-tooltip"));
-            });
-            // The grid shows the characters typed in the current video mode.
-            let page = if self.document.inverse { 0x80 } else { 0 };
-            // Glyphs are scaled by whole pixels and leave the cell's edge as the gap between them.
-            let cell = (ui.available_width() / 16.0).floor().min(GLYPH_CELL);
-            ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
-            for row in 0..8u8 {
-                ui.horizontal(|ui| {
-                    for column in 0..16u8 {
-                        let code = page | (row * 16 + column);
-                        if self
-                            .atascii_glyph(ui, code, egui::Vec2::splat(cell), code == brush)
-                            .on_hover_text(format!("#{code:02X}"))
-                            .clicked()
-                        {
-                            picked = Some(code);
-                        }
-                    }
-                });
+            widgets::section_header(ui, &fl!("atascii-characters"), |_| {});
+            // The map shows the characters typed in the current video mode.
+            let mut inverse = self.document.inverse;
+            let options = [
+                (false, fl!("atascii-normal"), fl!("atascii-normal-tooltip")),
+                (true, fl!("atascii-inverse"), fl!("atascii-inverse-tooltip")),
+            ];
+            if widgets::segmented(ui, &mut inverse, &options) {
+                self.document.inverse = inverse;
             }
+            ui.add_space(4.0);
+            picked = self.atascii_character_map(ui, brush);
         });
         if let Some(code) = picked {
             self.pick_atascii(code);
@@ -571,17 +617,28 @@ impl DrawApp {
                     buffer.font(0).map(|font| font.name().to_string()).unwrap_or_default(),
                 )
             });
-            widgets::section_header(ui, &fl!("atascii-screen"), |ui| {
-                if let ScreenProfile::Atascii(mode) = profile {
-                    ui.weak(atascii_mode_name(mode));
-                }
+            widgets::section_header(ui, &fl!("atascii-screen"), |_| {});
+            let ScreenProfile::Atascii(current) = profile else {
+                return;
+            };
+            let mut mode = current;
+            let options = AtasciiMode::ALL.map(|mode| {
+                let tooltip = match mode {
+                    AtasciiMode::Antic => fl!("atascii-mode-antic-tooltip"),
+                    AtasciiMode::Xep80 => fl!("atascii-mode-xep80-tooltip"),
+                };
+                (mode, atascii_mode_name(mode), tooltip)
             });
-            if let ScreenProfile::Atascii(mode) = profile {
-                self.atascii_font_row(ui, mode, &font);
+            if widgets::segmented(ui, &mut mode, &options) {
+                self.set_atascii_mode(mode);
             }
+            ui.add_space(4.0);
+            self.atascii_font_row(ui, mode, &font);
             // The XEP80 shows white on black; only the built-in screen has colors.
-            if profile == ScreenProfile::Atascii(AtasciiMode::Antic) {
+            if mode == AtasciiMode::Antic {
                 self.atascii_screen_colors(ui);
+            } else {
+                ui.label(egui::RichText::new(fl!("atascii-xep80-colors")).small().weak());
             }
         });
         let signature = self.document.with_state(|state| chrome::signature(state.get_buffer()));
