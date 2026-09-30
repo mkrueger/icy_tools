@@ -100,15 +100,6 @@ pub const LINE_KINDS: [LineKind; 6] = [
     LineKind::DashDotDot,
 ];
 
-pub const MARKERS: [PolymarkerKind; 6] = [
-    PolymarkerKind::Point,
-    PolymarkerKind::Plus,
-    PolymarkerKind::Star,
-    PolymarkerKind::Square,
-    PolymarkerKind::DiagonalCross,
-    PolymarkerKind::Diamond,
-];
-
 pub const MODES: [DrawingMode; 4] = [
     DrawingMode::Replace,
     DrawingMode::Transparent,
@@ -134,7 +125,7 @@ pub fn line_kind(ui: &mut egui::Ui, id: &str, value: &mut LineKind) {
 }
 
 pub fn marker(ui: &mut egui::Ui, id: &str, value: &mut PolymarkerKind) {
-    combo(ui, id, value, &MARKERS, super::marker_name);
+    combo(ui, id, value, &super::marker::KINDS, super::marker_name);
 }
 
 pub fn drawing_mode(ui: &mut egui::Ui, id: &str, value: &mut DrawingMode) {

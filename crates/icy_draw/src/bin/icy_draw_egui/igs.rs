@@ -16,6 +16,8 @@ use std::path::Path;
 use super::playback::{Action, RowMark, Timeline, Transport};
 use super::widgets::{self, Icons};
 
+#[path = "igs_marker.rs"]
+mod marker;
 #[path = "igs_palette.rs"]
 mod palette;
 use palette::{PaletteDialog, PaletteResult};
@@ -38,6 +40,8 @@ const PEN_SWATCH: egui::Vec2 = egui::vec2(30.0, 24.0);
 const TOOL_BUTTON: f32 = 38.0;
 /// Screen distance in points within which a handle is picked up.
 const HANDLE_RADIUS: f32 = 8.0;
+/// How opaque the marker preview under the pointer is.
+const MARKER_PREVIEW_OPACITY: f32 = 0.55;
 const COMMAND_ROW_HEIGHT: f32 = 24.0;
 /// VDI polylines and polygons take at most 128 points.
 const MAX_POINTS: usize = 128;
@@ -115,7 +119,7 @@ impl Tool {
     fn icon(self) -> &'static str {
         match self {
             Self::Select => "cursor",
-            Self::Marker => "add",
+            Self::Marker => "polymarker",
             Self::Line => "line",
             Self::PolyLine => "rip_polyline",
             Self::Rectangle | Self::RoundedRectangle => "rectangle_outline",
@@ -1353,6 +1357,15 @@ impl IgsEditor {
         }
     }
 
+    fn apply_marker(wanted: &mut Current, change: marker::MarkerChange) {
+        if let Some(kind) = change.kind {
+            wanted.marker = kind;
+        }
+        if let Some(size) = change.size {
+            wanted.marker_size = size;
+        }
+    }
+
     fn shape_commands(&self, from: Point, to: Point) -> Vec<IgsCommand> {
         self.tool.command(&self.canvas, from, to, &self.attributes).into_iter().collect()
     }
@@ -2100,9 +2113,9 @@ impl IgsEditor {
                 }
             }
             if matches!(self.tool, Tool::Marker | Tool::Spray) {
-                properties::marker(ui, "igs-tool-marker", &mut wanted.marker);
-                ui.add(egui::DragValue::new(&mut wanted.marker_size).range(1..=8))
-                    .on_hover_text(fl!("igs-size"));
+                let colors = self.fill_colors(wanted.marker_color);
+                let change = marker::picker(ui, "igs-tool-marker", wanted.marker, wanted.marker_size, colors, 110.0);
+                Self::apply_marker(&mut wanted, change);
             }
             let attributes = &mut self.attributes;
             if self.tool == Tool::Spray {
@@ -2195,7 +2208,7 @@ impl IgsEditor {
             .chain(properties::MODES.map(|mode| combo(drawing_mode_name(mode))))
             .chain([fl!("igs-pen-line"), fl!("igs-pen-fill"), fl!("igs-pen-text"), fl!("igs-pen-marker")].map(pen))
             .chain([fl!("igs-palette-edit")].map(button))
-            .chain([fl!("igs-drawing-mode"), fl!("igs-fill-pattern-label")].map(|label| text(label, egui::TextStyle::Body)));
+            .chain([fl!("igs-drawing-mode"), fl!("igs-fill-pattern-label"), fl!("igs-marker")].map(|label| text(label, egui::TextStyle::Body)));
         let content = widths.fold(0.0, f32::max);
         (content + 2.0 * SIDEBAR_MARGIN).ceil().clamp(SIDEBAR_WIDTH, SIDEBAR_MAX_WIDTH)
     }
@@ -2255,6 +2268,10 @@ impl IgsEditor {
                     let colors = self.fill_colors(wanted.fill_color);
                     let change = pattern::picker(ui, "igs-sidebar-pattern", wanted.pattern, wanted.border, &user, colors, ui.available_width());
                     self.apply_picker(&mut wanted, change);
+                    ui.add(egui::Label::new(fl!("igs-marker")).truncate());
+                    let colors = self.fill_colors(wanted.marker_color);
+                    let change = marker::picker(ui, "igs-sidebar-marker", wanted.marker, wanted.marker_size, colors, ui.available_width());
+                    Self::apply_marker(&mut wanted, change);
                     ui.add(egui::Label::new(fl!("igs-drawing-mode")).truncate());
                     properties::drawing_mode(ui, "igs-tool-mode", &mut wanted.drawing_mode);
                     self.draft_attributes(wanted);
@@ -2767,6 +2784,9 @@ impl IgsEditor {
                 self.refresh_preview(ui.ctx());
             }
             let accent = ui.visuals().selection.stroke.color;
+            if editing && !blocked && self.tool == Tool::Marker && self.drag.is_none() {
+                self.paint_marker_preview(ui, &on_screen, scale);
+            }
             if editing && self.tool == Tool::Zone {
                 self.paint_zones(ui, &on_screen, scale);
             }
@@ -2831,6 +2851,21 @@ impl IgsEditor {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
             }
         });
+    }
+
+    /// A see-through preview of the marker the next click plots at the pointer.
+    fn paint_marker_preview(&self, ui: &egui::Ui, on_screen: &dyn Fn(Point) -> egui::Pos2, scale: egui::Vec2) {
+        let Some((x, y)) = self.hover else {
+            return;
+        };
+        let current = self.current();
+        let color = palette::pen_color(&self.palette, self.canvas.resolution, current.marker_color).gamma_multiply(MARKER_PREVIEW_OPACITY);
+        let (width, height) = (self.canvas.width, self.canvas.height);
+        for (px, py) in marker::pixels(current.marker, current.marker_size, x, y) {
+            if (0..width).contains(&px) && (0..height).contains(&py) {
+                ui.painter().rect_filled(egui::Rect::from_center_size(on_screen((px, py)), scale), 0.0, color);
+            }
+        }
     }
 
     /// Outlines every mouse zone with its host string, and the one being dragged out.
@@ -4069,6 +4104,138 @@ mod tests {
             .iter(),
         );
         assert_eq!(PatternType::UserDefined(2).fill_pattern(&user)[0], 0xAAAA);
+    }
+
+    #[test]
+    fn the_sidebar_polymarker_picker_sets_the_marker_type_and_size() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        let frame = |editor: &mut IgsEditor, events: Vec<egui::Event>| {
+            context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events,
+                    ..Default::default()
+                },
+                |context| editor.show(context, false),
+            )
+        };
+        let find = |output: &egui::FullOutput, label: &str| {
+            output.shapes.iter().find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == label => Some(text.pos + text.galley.size() / 2.0),
+                _ => None,
+            })
+        };
+        let click = |editor: &mut IgsEditor, pos: egui::Pos2| {
+            frame(
+                editor,
+                vec![egui::Event::PointerMoved(pos), button_event(pos, egui::PointerButton::Primary, true)],
+            );
+            frame(editor, vec![button_event(pos, egui::PointerButton::Primary, false)]);
+            frame(editor, vec![])
+        };
+
+        let output = frame(&mut editor, vec![]);
+        let swatch = find(&output, "× 1").expect("the sidebar shows the current polymarker and its size");
+        let output = click(&mut editor, swatch);
+        let star = find(&output, &fl!("igs-marker-star")).expect("the picker lists the marker types");
+        click(&mut editor, star);
+        assert_eq!(
+            commands(&editor).last(),
+            Some(&IgsCommand::SetLineOrMarkerStyle {
+                style: LineMarkerStyle::PolyMarkerSize(PolymarkerKind::Star, 1)
+            })
+        );
+
+        let mut wanted = editor.current();
+        IgsEditor::apply_marker(
+            &mut wanted,
+            marker::MarkerChange {
+                size: Some(4),
+                ..Default::default()
+            },
+        );
+        editor.set_attributes(wanted);
+        assert_eq!(
+            commands(&editor).last(),
+            Some(&IgsCommand::SetLineOrMarkerStyle {
+                style: LineMarkerStyle::PolyMarkerSize(PolymarkerKind::Star, 4)
+            })
+        );
+        assert_eq!(Tool::Marker.icon(), "polymarker");
+    }
+
+    #[test]
+    fn the_marker_preview_sets_the_pixels_the_plotted_marker_does() {
+        let document = IgsDocument::new(TerminalResolution::Low);
+        let blank = document.preview().unwrap();
+        for kind in marker::KINDS {
+            for size in 1..=marker::MAX_SIZE {
+                let plotted = document
+                    .preview_with(
+                        document.len(),
+                        &[
+                            IgsCommand::SetLineOrMarkerStyle {
+                                style: LineMarkerStyle::PolyMarkerSize(kind, size),
+                            },
+                            IgsCommand::PolymarkerPlot {
+                                x: IgsParameter::Value(160),
+                                y: IgsParameter::Value(100),
+                            },
+                        ],
+                    )
+                    .unwrap();
+                let mut drawn: Vec<(i32, i32)> = (0..plotted.height())
+                    .flat_map(|y| (0..plotted.width()).map(move |x| (x, y)))
+                    .filter(|&(x, y)| plotted.pixel_index(x, y) != blank.pixel_index(x, y))
+                    .map(|(x, y)| (x as i32, y as i32))
+                    .collect();
+                drawn.sort_unstable();
+                assert_eq!(marker::pixels(kind, size, 160, 100), drawn, "{kind:?} size {size}");
+            }
+        }
+    }
+
+    #[test]
+    fn hovering_with_the_marker_tool_previews_the_marker() {
+        let context = egui::Context::default();
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        set(&mut editor, |wanted| {
+            wanted.marker = PolymarkerKind::Star;
+            wanted.marker_size = 2;
+        });
+        editor.select_tool(Tool::Marker);
+        run(&context, &mut editor, vec![]);
+        let preview = palette::pen_color(&editor.palette, editor.canvas.resolution, editor.current().marker_color).gamma_multiply(MARKER_PREVIEW_OPACITY);
+        let count = |output: &egui::FullOutput| {
+            output
+                .shapes
+                .iter()
+                .filter(|shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.fill == preview))
+                .count()
+        };
+        let pos = screen(&editor, (100, 80));
+        let output = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                events: vec![egui::Event::PointerMoved(pos)],
+                ..Default::default()
+            },
+            |context| editor.show(context, false),
+        );
+        assert_eq!(count(&output), marker::pixels(PolymarkerKind::Star, 2, 100, 80).len());
+        let before = editor.document.len();
+        editor.select_tool(Tool::Line);
+        let output = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                events: vec![egui::Event::PointerMoved(pos)],
+                ..Default::default()
+            },
+            |context| editor.show(context, false),
+        );
+        assert_eq!(count(&output), 0, "other tools show no marker preview");
+        assert_eq!(editor.document.len(), before, "hovering adds nothing");
     }
 
     #[test]
