@@ -1336,6 +1336,7 @@ impl TerminalThread {
     }
 
     async fn disconnect(&mut self) {
+        let was_connected = self.connection.is_some();
         if let Some(mut conn) = self.connection.take() {
             // For modem connections, send hangup command before closing
             if conn.get_connection_type() == ConnectionType::Modem {
@@ -1352,7 +1353,10 @@ impl TerminalThread {
                 editable.caret_default_colors();
             }
         }
-        self.process_data(b"\r\nNO CARRIER\r\n").await;
+        // Only a connection that was open reports its end; shutting down after a hangup must not repeat it.
+        if was_connected {
+            self.process_data(b"\r\nNO CARRIER\r\n").await;
+        }
 
         self.baud_emulator = BaudEmulator::new();
         self.connection_time = None;

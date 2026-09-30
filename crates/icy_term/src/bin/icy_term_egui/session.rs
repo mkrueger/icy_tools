@@ -696,6 +696,34 @@ mod tests {
     }
 
     #[test]
+    fn a_remote_hangup_shows_no_carrier_once() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let config = connection_config(&format!("raw://{}", listener.local_addr().unwrap()), false).unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.write_all(b"Goodbye\r\n").unwrap();
+        });
+        let screen: Arc<Mutex<Box<dyn Screen>>> = Arc::new(Mutex::new(Box::new(TextScreen::default())));
+        let session = Session::start(screen.clone(), config, egui::Context::default());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !matches!(
+            session.events.recv_timeout(deadline.saturating_duration_since(Instant::now())).unwrap(),
+            TerminalEvent::Disconnected(_)
+        ) {}
+        server.join().unwrap();
+        // The frontend drops the session on a hangup, which shuts the worker down.
+        drop(session);
+        std::thread::sleep(Duration::from_millis(300));
+        let text: String = {
+            let screen = screen.lock();
+            (0..10)
+                .map(|y| (0..20).map(|x| screen.char_at(Position::new(x, y)).ch).collect::<String>() + "\n")
+                .collect()
+        };
+        assert_eq!(text.matches("NO CARRIER").count(), 1, "{text}");
+    }
+
+    #[test]
     fn shutdown_interrupts_a_stalled_connection_attempt() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let mut config = connection_config(&format!("raw://{}", listener.local_addr().unwrap()), false).unwrap();
