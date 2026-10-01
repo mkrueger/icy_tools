@@ -90,6 +90,7 @@ impl ScreenProfile {
     /// How many fonts a document may use at once.
     pub fn font_slots(self) -> Option<usize> {
         match self {
+            Self::Petscii(machine, _) if machine.charset_per_character() => Some(2),
             Self::Atascii(_) | Self::AtariSt(_) | Self::Petscii(..) => Some(1),
             _ => None,
         }
@@ -176,7 +177,9 @@ mod tests {
             for case in [PetsciiCase::Upper, PetsciiCase::Lower] {
                 let buffer = petscii_buffer(machine, case);
                 let profile = ScreenProfile::of(&buffer);
-                assert_eq!(profile, ScreenProfile::Petscii(machine, case));
+                // The VDC has both sets, upper case first.
+                let expected = if machine.charset_per_character() { PetsciiCase::Upper } else { case };
+                assert_eq!(profile, ScreenProfile::Petscii(machine, expected));
                 assert!(profile.inverse_in_character() && profile.per_character_colors());
                 assert_eq!(profile.native_format(), Some((FileFormat::Petscii, "seq")));
                 assert_eq!(icy_engine::petscii_background(&buffer), machine.start_colors().1);

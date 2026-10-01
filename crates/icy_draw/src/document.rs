@@ -191,6 +191,10 @@ impl Document {
         let (text, screen) = machine.start_colors();
         state.set_caret_foreground(text);
         state.set_caret_background(screen);
+        if machine.charset_per_character() && case == icy_engine::PetsciiCase::Lower {
+            // The VDC keeps both sets; new characters use the lower case one.
+            state.set_caret_font_page(1);
+        }
         Self::from_state(state)
     }
 
@@ -1140,7 +1144,10 @@ impl Document {
                             upper
                         } else if state.get_buffer().buffer_type == icy_engine::BufferType::Petscii {
                             // Letters depend on the screen's character set; reverse is the upper half.
-                            let (_, case) = icy_engine::petscii_charset(state.get_buffer());
+                            let (machine, mut case) = icy_engine::petscii_charset(state.get_buffer());
+                            if machine.charset_per_character() && state.get_caret().attribute.font_page() == 1 {
+                                case = icy_engine::PetsciiCase::Lower;
+                            }
                             let Some(code) = icy_engine::petscii_screen_code(character, case) else {
                                 continue;
                             };

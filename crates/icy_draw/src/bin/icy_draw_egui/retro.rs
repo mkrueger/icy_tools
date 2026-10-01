@@ -61,7 +61,11 @@ impl PipetteReturn {
 impl DrawApp {
     /// Paints `code` in the document's font into `rect`, scaled by whole pixels.
     pub(super) fn paint_screen_glyph(&self, painter: &egui::Painter, rect: egui::Rect, code: u8, (foreground, background): GlyphColors) {
-        let font = self.document.with_state(|state| state.get_buffer().font(0).cloned());
+        // The caret's character set: the VDC types in one of two.
+        let font = self.document.with_state(|state| {
+            let buffer = state.get_buffer();
+            buffer.font(state.get_caret().attribute.font_page()).or_else(|| buffer.font(0)).cloned()
+        });
         painter.rect_filled(rect, 2, background);
         if let Some(font) = &font {
             let glyph = font.size();

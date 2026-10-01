@@ -35,7 +35,12 @@ const FKEY_SETS: [[u8; 12]; 4] = [
     [0x63, 0x64, 0x65, 0x67, 0x77, 0x6F, 0x74, 0x6A, 0x79, 0x7A, 0x4F, 0x50],
 ];
 
-pub const MACHINES: [PetsciiMachine; 5] = PetsciiMachine::ALL;
+pub const MACHINES: [PetsciiMachine; 7] = PetsciiMachine::ALL;
+
+/// Whether the machine draws in its monitor's single color.
+fn monochrome(machine: PetsciiMachine) -> bool {
+    matches!(machine, PetsciiMachine::Pet | PetsciiMachine::Pet80)
+}
 pub const CASES: [PetsciiCase; 2] = [PetsciiCase::Upper, PetsciiCase::Lower];
 
 /// The side of a color swatch.
@@ -91,6 +96,8 @@ pub fn machine_name(machine: PetsciiMachine) -> String {
         PetsciiMachine::Vic20 => "VIC-20".to_owned(),
         PetsciiMachine::Pet => "PET".to_owned(),
         PetsciiMachine::C16 => "C16".to_owned(),
+        PetsciiMachine::Pet80 => "PET 80".to_owned(),
+        PetsciiMachine::C128Vdc => "C128 VDC".to_owned(),
     }
 }
 
@@ -135,12 +142,24 @@ pub struct PetmateScreen {
     pub width: i64,
     pub height: i64,
     pub charset: String,
+    /// Petmate's 40 or 80 column mode, set for PETs.
+    pub columns: Option<i64>,
 }
 
 impl PetmateScreen {
+    /// Whether the screen is 80 columns: PETs say so, older C128 screens are just as wide.
+    fn eighty_columns(&self) -> bool {
+        self.columns.map_or(self.width >= 80, |columns| columns == 80)
+    }
+
     /// The machine and character set of the screen, `None` for those this editor lacks.
     pub fn charset(&self) -> Option<(PetsciiMachine, PetsciiCase)> {
+        let wide = self.eighty_columns();
         match self.charset.as_str() {
+            "petGfx" if wide => Some((PetsciiMachine::Pet80, PetsciiCase::Upper)),
+            "petBiz" if wide => Some((PetsciiMachine::Pet80, PetsciiCase::Lower)),
+            "c128Upper" if wide => Some((PetsciiMachine::C128Vdc, PetsciiCase::Upper)),
+            "c128Lower" if wide => Some((PetsciiMachine::C128Vdc, PetsciiCase::Lower)),
             "upper" | "dirart" | "cbaseUpper" => Some((PetsciiMachine::C64, PetsciiCase::Upper)),
             "lower" | "cbaseLower" => Some((PetsciiMachine::C64, PetsciiCase::Lower)),
             "c128Upper" => Some((PetsciiMachine::C128, PetsciiCase::Upper)),
@@ -151,9 +170,14 @@ impl PetmateScreen {
             "petBiz" => Some((PetsciiMachine::Pet, PetsciiCase::Lower)),
             "c16Upper" => Some((PetsciiMachine::C16, PetsciiCase::Upper)),
             "c16Lower" => Some((PetsciiMachine::C16, PetsciiCase::Lower)),
+            "c128vdc" => Some((PetsciiMachine::C128Vdc, PetsciiCase::Upper)),
             _ => None,
         }
     }
+}
+
+fn machine_is_vdc(screen: &PetmateScreen) -> bool {
+    screen.charset().is_some_and(|(machine, _)| machine == PetsciiMachine::C128Vdc)
 }
 
 /// The workspace at `path` and the screens in it.
@@ -180,6 +204,7 @@ pub fn petmate_screens(path: &std::path::Path) -> Result<Vec<PetmateScreen>, Str
             width: screen.get("width").and_then(serde_json::Value::as_i64).unwrap_or(40),
             height: screen.get("height").and_then(serde_json::Value::as_i64).unwrap_or(25),
             charset: screen.get("charset").and_then(serde_json::Value::as_str).unwrap_or("upper").to_owned(),
+            columns: screen.get("columnMode").and_then(serde_json::Value::as_i64),
         })
         .collect())
 }
@@ -192,10 +217,14 @@ pub fn load_petmate(path: &std::path::Path, index: usize) -> Result<Document, St
     let charset = screen.get("charset").and_then(serde_json::Value::as_str).unwrap_or("upper");
     let listed = PetmateScreen {
         name: String::new(),
-        width: 0,
+        width: number("width").unwrap_or(40),
         height: 0,
         charset: charset.to_owned(),
+        columns: number("columnMode"),
     };
+    // C128 screens 80 columns wide from before Petmate had the VDC: one set for the whole
+    // screen, colors already numbered like the VDC's (as Petmate migrates them).
+    let legacy_vdc = matches!(charset, "c128Upper" | "c128Lower") && machine_is_vdc(&listed);
     let (machine, case) = listed.charset().ok_or_else(|| fl!("petmate-unsupported-charset", charset = charset))?;
     let width = number("width").unwrap_or(40).clamp(1, 1000) as i32;
     let height = number("height").unwrap_or(25).clamp(1, 1000) as i32;
@@ -209,11 +238,30 @@ pub fn load_petmate(path: &std::path::Path, index: usize) -> Result<Document, St
     for (y, row) in rows.iter().take(height as usize).enumerate() {
         for (x, cell) in row.as_array().into_iter().flatten().take(width as usize).enumerate() {
             let code = cell.get("code").and_then(serde_json::Value::as_u64).unwrap_or(0x20);
-            let transparent = cell.get("transparent").and_then(serde_json::Value::as_bool).unwrap_or(false) || code > 0xFF;
+            // Transparent cells: a flag, or code 256 (512 on the VDC, whose codes 256-511 are the
+            // alternate set).
+            let vdc = machine.charset_per_character() && !legacy_vdc;
+            let transparent = cell.get("transparent").and_then(serde_json::Value::as_bool).unwrap_or(false) || code >= if vdc { 512 } else { 256 };
+            let alternate = vdc && (256..512).contains(&code);
             let color = color_of(cell.get("color").and_then(serde_json::Value::as_u64).unwrap_or(u64::from(text)));
-            let mut ch = icy_engine::AttributedChar::new(if transparent { ' ' } else { char::from(code as u8) }, icy_engine::TextAttribute::default());
+            let mut code = if transparent { b' ' } else { code as u8 };
+            let mut ch = icy_engine::AttributedChar::new(' ', icy_engine::TextAttribute::default());
             ch.attribute.set_foreground(color);
             ch.attribute.set_background(background);
+            if legacy_vdc {
+                ch.attribute.set_font_page(u8::from(case == PetsciiCase::Lower));
+            } else if machine.charset_per_character() {
+                // The VDC's attribute byte: alternate set, reverse, underline, flashing, color.
+                let attribute = cell.get("attr").and_then(serde_json::Value::as_u64).unwrap_or(u64::from(color));
+                ch.attribute.set_foreground((attribute & 0x0F) as u32);
+                ch.attribute.set_is_blinking(attribute & 0x10 != 0);
+                ch.attribute.set_is_underlined(attribute & 0x20 != 0);
+                if attribute & 0x40 != 0 {
+                    code ^= 0x80;
+                }
+                ch.attribute.set_font_page(u8::from(alternate || attribute & 0x80 != 0));
+            }
+            ch.ch = char::from(code);
             buffer.layers[0].set_char((x as i32, y as i32), ch);
         }
     }
@@ -316,9 +364,23 @@ impl DrawApp {
         self.document.with_state(|state| {
             let background = icy_engine::petscii_background(state.get_buffer());
             state.set_caret_background(background);
-            state.set_caret_font_page(0);
+            if !icy_engine::petscii_charset(state.get_buffer()).0.charset_per_character() {
+                state.set_caret_font_page(0);
+            }
         });
         self.petscii = Some(editor);
+    }
+
+    /// The set new characters are typed in: the screen's, or on the VDC the caret's.
+    fn petscii_typed_case(&self) -> PetsciiCase {
+        self.document.with_state(|state| {
+            let (machine, case) = icy_engine::petscii_charset(state.get_buffer());
+            if machine.charset_per_character() && state.get_caret().attribute.font_page() == 1 {
+                PetsciiCase::Lower
+            } else {
+                case
+            }
+        })
     }
 
     fn petscii_charset(&self) -> (PetsciiMachine, PetsciiCase) {
@@ -364,6 +426,15 @@ impl DrawApp {
         if cell.is_visible() {
             let result = self.document.set_caret_foreground(cell.attribute.foreground());
             self.result(result);
+            if self.petscii_charset().0.charset_per_character() {
+                self.document.with_state(|state| {
+                    let mut attribute = state.get_caret().attribute;
+                    attribute.set_font_page(cell.attribute.font_page());
+                    attribute.set_is_blinking(cell.attribute.is_blinking());
+                    attribute.set_is_underlined(cell.attribute.is_underlined());
+                    state.set_caret_attribute(attribute);
+                });
+            }
         }
     }
 
@@ -397,7 +468,13 @@ impl DrawApp {
         self.document.finish();
         let font = icy_engine::petscii_font(machine, case);
         if current == machine {
-            self.edit(|state| state.set_font_in_slot(0, font));
+            if machine.charset_per_character() {
+                // The VDC picks the set per character: new characters use the chosen one.
+                self.document
+                    .with_state(|state| state.set_caret_font_page(u8::from(case == PetsciiCase::Lower)));
+            } else {
+                self.edit(|state| state.set_font_in_slot(0, font));
+            }
             return;
         }
         // Another machine: its width, character set and colors in one undo step; the colors
@@ -418,16 +495,20 @@ impl DrawApp {
             let _undo = state.begin_atomic_undo(fl!("petscii-machine"));
             let height = state.get_buffer().height();
             state.resize_buffer(true, icy_engine::Size::new(machine.screen_size().width, height))?;
-            state.set_font_in_slot(0, font)?;
-            let old = state.get_buffer().palette.clone();
-            let text = |index: u32| {
-                if machine == PetsciiMachine::Pet {
-                    1
-                } else {
-                    nearest(&old, index, text_colors)
+            if machine.charset_per_character() {
+                state.set_font_in_slot(0, icy_engine::petscii_font(machine, PetsciiCase::Upper))?;
+                state.set_font_in_slot(1, icy_engine::petscii_font(machine, PetsciiCase::Lower))?;
+            } else {
+                if current.charset_per_character() {
+                    state.remove_font(1)?;
                 }
-            };
-            let screen = |index: u32| if machine == PetsciiMachine::Pet { 0 } else { nearest(&old, index, u32::MAX) };
+                state.set_font_in_slot(0, font)?;
+            }
+            state.set_font_dimensions(icy_engine::petscii_font(machine, case).size())?;
+            let old = state.get_buffer().palette.clone();
+            let text = |index: u32| if monochrome(machine) { 1 } else { nearest(&old, index, text_colors) };
+            let screen = |index: u32| if monochrome(machine) { 0 } else { nearest(&old, index, u32::MAX) };
+            let attributes = machine.charset_per_character();
             let mut layers = state.get_buffer().layers.clone();
             for layer in &mut layers {
                 for line in &mut layer.lines {
@@ -435,6 +516,11 @@ impl DrawApp {
                         let (foreground, background) = (text(ch.attribute.foreground()), screen(ch.attribute.background()));
                         ch.attribute.set_foreground(foreground);
                         ch.attribute.set_background(background);
+                        if !attributes {
+                            // Blinking and underlining are the VDC's.
+                            ch.attribute.set_is_blinking(false);
+                            ch.attribute.set_is_underlined(false);
+                        }
                     }
                 }
             }
@@ -442,6 +528,7 @@ impl DrawApp {
             state.switch_to_palette_with_layers(palette.clone(), layers)?;
             state.set_caret_foreground(text(caret.foreground()));
             state.set_caret_background(screen(caret.background()));
+            state.set_caret_font_page(if attributes { u8::from(case == PetsciiCase::Lower) } else { 0 });
             Ok::<(), icy_engine::EngineError>(())
         });
         self.result(result.map_err(|error| error.to_string()));
@@ -457,7 +544,7 @@ impl DrawApp {
     /// The colors of the machine: the PET's monitor, or the palette for text and screen.
     fn petscii_colors_section(&mut self, ui: &mut egui::Ui) {
         let (machine, _) = self.petscii_charset();
-        if machine == PetsciiMachine::Pet {
+        if monochrome(machine) {
             widgets::section_header(ui, &fl!("petscii-monitor"), |_| {});
             let current = self.document.with_state(|state| state.get_buffer().palette.rgb(1));
             let mut phosphor = icy_engine::PET_PHOSPHORS.iter().position(|&color| color == current).unwrap_or(0);
@@ -700,15 +787,52 @@ impl DrawApp {
         }
         chrome::section(ui, |ui| {
             widgets::section_header(ui, &fl!("atascii-screen"), |_| {});
-            let (current_machine, current_case) = self.petscii_charset();
+            let (current_machine, screen_case) = self.petscii_charset();
+            let per_character = current_machine.charset_per_character();
+            let current_case = if per_character { self.petscii_typed_case() } else { screen_case };
             let (mut machine, mut case) = (current_machine, current_case);
-            let machines = MACHINES.map(|machine| (machine, machine_name(machine), machine_name(machine)));
-            widgets::segmented(ui, &mut machine, &machines);
+            ui.horizontal(|ui| {
+                ui.label(fl!("petscii-machine"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    egui::ComboBox::from_id_salt("petscii-machine")
+                        .selected_text(machine_name(machine))
+                        .show_ui(ui, |ui| {
+                            for candidate in MACHINES {
+                                ui.selectable_value(&mut machine, candidate, machine_name(candidate));
+                            }
+                        });
+                });
+            });
             ui.add_space(4.0);
-            let cases = CASES.map(|case| (case, case_name(case), fl!("petscii-case-tooltip")));
+            let tooltip = if per_character {
+                fl!("petscii-case-vdc-tooltip")
+            } else {
+                fl!("petscii-case-tooltip")
+            };
+            let cases = CASES.map(|case| (case, case_name(case), tooltip.clone()));
             widgets::segmented(ui, &mut case, &cases);
             if (machine, case) != (current_machine, current_case) {
                 self.set_petscii_charset(machine, case);
+            }
+            if per_character {
+                ui.add_space(4.0);
+                let mut attribute = self.document.with_state(|state| state.get_caret().attribute);
+                let (mut blink, mut underline) = (attribute.is_blinking(), attribute.is_underlined());
+                ui.horizontal(|ui| {
+                    let blink_changed = ui
+                        .toggle_value(&mut blink, fl!("petscii-blink"))
+                        .on_hover_text(fl!("petscii-blink-tooltip"))
+                        .changed();
+                    let underline_changed = ui
+                        .toggle_value(&mut underline, fl!("petscii-underline"))
+                        .on_hover_text(fl!("petscii-underline-tooltip"))
+                        .changed();
+                    if blink_changed || underline_changed {
+                        attribute.set_is_blinking(blink);
+                        attribute.set_is_underlined(underline);
+                        self.document.with_state(|state| state.set_caret_attribute(attribute));
+                    }
+                });
             }
         });
         let signature = self.document.with_state(|state| chrome::signature(state.get_buffer()));
@@ -926,7 +1050,7 @@ mod tests {
             &workspace,
             format!(
                 r#"{{"version":4,"framebufs":[{},{},{}]}}"#,
-                screen("vdc", "c128vdc", 1),
+                screen("custom", "customFont1", 1),
                 screen("one", "upper", 2),
                 screen("two", "lower", 3)
             ),
@@ -938,14 +1062,14 @@ mod tests {
         };
         assert_eq!(
             pick.screens.iter().map(|screen| screen.name.as_str()).collect::<Vec<_>>(),
-            ["vdc", "one", "two"]
+            ["custom", "one", "two"]
         );
         assert_eq!(pick.selected, 1, "the first screen this editor can open is picked");
         app.dialog = None;
         app.open_petmate_screen(&workspace, 2);
         assert_eq!(app.document.profile(), ScreenProfile::Petscii(PetsciiMachine::C64, PetsciiCase::Lower));
         assert_eq!(cell(&app, 0, 0).0, 3);
-        assert!(load_petmate(&workspace, 0).is_err(), "VDC screens are refused");
+        assert!(load_petmate(&workspace, 0).is_err(), "screens in custom character sets are refused");
     }
 
     #[test]
@@ -1017,6 +1141,109 @@ mod tests {
         assert_eq!(colors(&vic20, 1), (2, 1));
         assert_eq!(colors(&c16, 0), (82, 113), "luminance 5, hue 2 on white");
         assert_eq!(colors(&c16, 1), (70, 113), "flashing (bit 7) is dropped");
+    }
+
+    #[test]
+    fn the_vdc_picks_the_character_set_and_attributes_per_character() {
+        let (_, mut app) = petscii_app(PetsciiMachine::C128Vdc, PetsciiCase::Upper);
+        assert_eq!(
+            app.document
+                .with_state(|state| (state.get_buffer().size(), state.get_buffer().font_dimensions())),
+            (Size::new(80, 25), Size::new(8, 16))
+        );
+        app.document.type_text("A").unwrap();
+        app.set_petscii_charset(PetsciiMachine::C128Vdc, PetsciiCase::Lower);
+        app.document.with_state(|state| {
+            let mut attribute = state.get_caret().attribute;
+            attribute.set_is_underlined(true);
+            state.set_caret_attribute(attribute);
+        });
+        app.document.type_text("A").unwrap();
+        let attributes = |app: &DrawApp, x: i32| {
+            app.document.with_state(|state| {
+                let ch = state.get_buffer().char_at(Position::new(x, 0));
+                (ch.ch as u32, ch.attribute.font_page(), ch.attribute.is_underlined())
+            })
+        };
+        assert_eq!(attributes(&app, 0), (1, 0, false), "upper case A");
+        assert_eq!(attributes(&app, 1), (65, 1, true), "A in the lower case set, underlined");
+        assert_eq!(
+            app.document.profile(),
+            ScreenProfile::Petscii(PetsciiMachine::C128Vdc, PetsciiCase::Upper),
+            "the screen keeps both sets"
+        );
+
+        app.set_petscii_charset(PetsciiMachine::C64, PetsciiCase::Upper);
+        assert_eq!(app.document.with_state(|state| state.get_buffer().font_count()), 1);
+        assert_eq!(attributes(&app, 1).1, 0, "one set for the whole screen");
+        assert!(!attributes(&app, 1).2, "no underlining on the C64");
+        app.undo(false);
+        assert_eq!(attributes(&app, 1), (65, 1, true));
+        assert_eq!(app.document.with_state(|state| state.get_buffer().font_count()), 2);
+    }
+
+    #[test]
+    fn the_pet_80_has_80_columns_of_half_width_pixels() {
+        let (_, app) = petscii_app(PetsciiMachine::Pet80, PetsciiCase::Lower);
+        assert_eq!(app.document.profile(), ScreenProfile::Petscii(PetsciiMachine::Pet80, PetsciiCase::Lower));
+        assert_eq!(
+            app.document
+                .with_state(|state| (state.get_buffer().size(), state.get_buffer().font_dimensions())),
+            (Size::new(80, 25), Size::new(8, 16))
+        );
+    }
+
+    #[test]
+    fn petmate_80_column_pet_and_older_c128_screens_open_as_such() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path().join("wide.petmate");
+        std::fs::write(
+            &workspace,
+            r#"{"version":4,"framebufs":[
+                {"width":80,"height":1,"columnMode":80,"backgroundColor":0,"borderColor":0,"charset":"petBiz","framebuf":[[{"code":1,"color":1}]]},
+                {"width":80,"height":1,"backgroundColor":0,"borderColor":0,"charset":"c128Lower","framebuf":[[{"code":1,"color":2}]]}
+            ]}"#,
+        )
+        .unwrap();
+        let pet = load_petmate(&workspace, 0).unwrap();
+        assert_eq!(pet.profile(), ScreenProfile::Petscii(PetsciiMachine::Pet80, PetsciiCase::Lower));
+        let c128 = load_petmate(&workspace, 1).unwrap();
+        assert!(matches!(c128.profile(), ScreenProfile::Petscii(PetsciiMachine::C128Vdc, _)));
+        let ch = c128.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)));
+        assert_eq!(
+            (ch.attribute.foreground(), ch.attribute.font_page()),
+            (2, 1),
+            "the color as Petmate keeps it, in the lower case set"
+        );
+    }
+
+    #[test]
+    fn petmate_vdc_screens_keep_their_attributes() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path().join("vdc.petmate");
+        std::fs::write(
+            &workspace,
+            r#"{"version":4,"framebufs":[{"width":3,"height":1,"backgroundColor":0,"borderColor":0,"charset":"c128vdc","framebuf":[[
+                {"code":1,"color":8,"attr":248},{"code":257,"color":15,"attr":15},{"code":512,"color":15,"attr":15}
+            ]]}]}"#,
+        )
+        .unwrap();
+        let document = load_petmate(&workspace, 0).unwrap();
+        let cell = |x: i32| {
+            document.with_state(|state| {
+                let ch = state.get_buffer().char_at(Position::new(x, 0));
+                (
+                    ch.ch as u32,
+                    ch.attribute.foreground(),
+                    ch.attribute.font_page(),
+                    ch.attribute.is_blinking(),
+                    ch.attribute.is_underlined(),
+                )
+            })
+        };
+        assert_eq!(cell(0), (0x81, 8, 1, true, true), "reverse, alternate set, underline and flashing");
+        assert_eq!(cell(1), (1, 15, 1, false, false), "code 257 is the alternate set's code 1");
+        assert_eq!(cell(2).0, 0x20, "512 is transparent");
     }
 
     #[test]
