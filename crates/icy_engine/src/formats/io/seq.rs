@@ -1,7 +1,7 @@
 use super::super::{apply_sauce_to_buffer, LoadData, SaveOptions};
 use crate::{
-    AttributedChar, BitFont, EditableScreen, Palette, Position, Result, Size, TextBuffer, TextPane, TextScreen, C128_LOWER, C64_DEFAULT_PALETTE, C64_SHIFTED,
-    C64_UNSHIFTED,
+    AttributedChar, BitFont, EditableScreen, Palette, Position, Result, Size, TextBuffer, TextPane, TextScreen, C128_LOWER, C16_LOWER, C16_UPPER,
+    C64_DEFAULT_PALETTE, C64_SHIFTED, C64_UNSHIFTED, PET_LOWER, PET_UPPER, VIC20_LOWER, VIC20_UPPER,
 };
 
 /// The Commodore machines whose 40 column text screen can be edited.
@@ -9,6 +9,121 @@ use crate::{
 pub enum PetsciiMachine {
     C64,
     C128,
+    Vic20,
+    Pet,
+    C16,
+}
+
+impl PetsciiMachine {
+    pub const ALL: [Self; 5] = [Self::C64, Self::C128, Self::Vic20, Self::Pet, Self::C16];
+
+    /// The text screen in characters.
+    pub fn screen_size(self) -> Size {
+        match self {
+            Self::Vic20 => Size::new(22, 23),
+            _ => Size::new(40, 25),
+        }
+    }
+
+    /// The colors, by the machine's color numbers: the C16's are luminance × 16 + hue.
+    pub fn palette(self) -> Palette {
+        match self {
+            Self::C64 | Self::C128 => Palette::from_slice(&C64_DEFAULT_PALETTE),
+            Self::Vic20 => Palette::from_slice(&VIC20_PALETTE),
+            Self::Pet => Palette::from_slice(&PET_PALETTE),
+            Self::C16 => ted_palette(),
+        }
+    }
+
+    /// How many of the colors characters can have: the VIC-20 has eight text colors, and the PET
+    /// draws in its monitor's single color.
+    pub fn text_colors(self) -> u32 {
+        match self {
+            Self::C64 | Self::C128 => 16,
+            Self::Vic20 => 8,
+            Self::Pet => 2,
+            Self::C16 => 128,
+        }
+    }
+
+    /// The text and screen color the machine starts with.
+    pub fn start_colors(self) -> (u32, u32) {
+        match self {
+            Self::C64 | Self::C128 => (14, 6),
+            Self::Vic20 => (6, 1),
+            Self::Pet => (1, 0),
+            // Black on white, luminance 7.
+            Self::C16 => (0, 0x71),
+        }
+    }
+
+    /// Whether SEQ text sets colors: the PET has none.
+    pub fn has_color_codes(self) -> bool {
+        self != Self::Pet
+    }
+}
+
+/// The VIC-20's colors (PAL), as Petmate shows them.
+const VIC20_PALETTE: [crate::Color; 16] = [
+    rgb(0x00, 0x00, 0x00),
+    rgb(0xff, 0xff, 0xff),
+    rgb(0xae, 0x26, 0x27),
+    rgb(0x6d, 0xef, 0xfe),
+    rgb(0xb1, 0x40, 0xfe),
+    rgb(0x5d, 0xe1, 0x39),
+    rgb(0x33, 0x31, 0xfd),
+    rgb(0xda, 0xd7, 0x29),
+    rgb(0xc2, 0x57, 0x14),
+    rgb(0xe4, 0xb1, 0x75),
+    rgb(0xe1, 0x93, 0x94),
+    rgb(0xa6, 0xf6, 0xfc),
+    rgb(0xdd, 0xa0, 0xfe),
+    rgb(0x98, 0xe3, 0x93),
+    rgb(0x87, 0x8f, 0xfe),
+    rgb(0xe3, 0xde, 0x87),
+];
+
+/// The PET's black screen and green phosphor.
+const PET_PALETTE: [crate::Color; 2] = [rgb(0x00, 0x00, 0x00), rgb(0x41, 0xff, 0x00)];
+
+/// The monitors a PET came with, for its text color.
+pub const PET_PHOSPHORS: [(u8, u8, u8); 3] = [(0x41, 0xff, 0x00), (0xff, 0xff, 0xff), (0xff, 0xa8, 0x00)];
+
+const fn rgb(r: u8, g: u8, b: u8) -> crate::Color {
+    crate::Color { name: None, r, g, b }
+}
+
+/// The TED's (C16, Plus/4) PAL colors by hue and luminance, as Petmate shows them.
+const TED_HUES: [[u32; 8]; 16] = [
+    [0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000, 0x000000],
+    [0x202020, 0x404040, 0x606060, 0x808080, 0x9f9f9f, 0xbfbfbf, 0xdfdfdf, 0xffffff],
+    [0x651517, 0x722224, 0x7c2c2e, 0x8b3b3d, 0xad5d5f, 0xd18183, 0xe79799, 0xffcdcf],
+    [0x004643, 0x045350, 0x0c5d5a, 0x1b6c69, 0x3d8e8b, 0x61b2af, 0x77c8c5, 0xadf2f0],
+    [0x5b0a6a, 0x681777, 0x722181, 0x813090, 0xa352b2, 0xc776d6, 0xdd8cec, 0xfcc2ff],
+    [0x005101, 0x085e09, 0x126813, 0x217722, 0x439944, 0x67bd68, 0x7dd37e, 0xb3f7b4],
+    [0x202190, 0x2d2e9d, 0x3738a7, 0x4647b6, 0x6869d8, 0x8c8df5, 0xa2a3ff, 0xd8d9ff],
+    [0x3a3a00, 0x474700, 0x515100, 0x606000, 0x828212, 0xa6a636, 0xbcbc4c, 0xecec82],
+    [0x592300, 0x663000, 0x703a05, 0x804912, 0xa16b34, 0xc58f58, 0xdba56e, 0xfbdba4],
+    [0x4c2f00, 0x593c00, 0x634600, 0x725503, 0x94771e, 0xb89b42, 0xceb158, 0xf5e68e],
+    [0x1e4800, 0x2b5500, 0x355f00, 0x446e00, 0x669012, 0x8ab436, 0xa0ca4c, 0xd6f382],
+    [0x661031, 0x731d3e, 0x7d2748, 0x8c3657, 0xae5879, 0xd27c9d, 0xe892b3, 0xffc8e7],
+    [0x004b2d, 0x04583a, 0x0b6244, 0x1a7153, 0x3c9375, 0x60b799, 0x76cdaf, 0xacf4e5],
+    [0x0b2f7e, 0x183c8b, 0x224695, 0x3155a4, 0x5377c6, 0x779bea, 0x8db1f6, 0xc3e6ff],
+    [0x2d1995, 0x3a26a2, 0x4430ac, 0x533fbb, 0x7561dd, 0x9985f7, 0xaf9bff, 0xe5d1ff],
+    [0x0e4e00, 0x1b5b00, 0x256500, 0x347404, 0x569620, 0x7aba44, 0x90d05a, 0xc6f690],
+];
+
+/// The TED's 128 colors, numbered luminance × 16 + hue like its color registers.
+fn ted_palette() -> Palette {
+    let colors: Vec<crate::Color> = (0..8)
+        .flat_map(|luminance| {
+            (0..16).map(move |hue| {
+                let value = TED_HUES[hue][luminance];
+                rgb((value >> 16) as u8, (value >> 8) as u8, value as u8)
+            })
+        })
+        .collect();
+    Palette::from_slice(&colors)
 }
 
 /// The two character sets: upper case with graphics (the machine starts with it) or lower and
@@ -27,6 +142,12 @@ pub fn petscii_font(machine: PetsciiMachine, case: PetsciiCase) -> BitFont {
         (PetsciiMachine::C64, PetsciiCase::Lower) => (C64_UNSHIFTED.clone(), "C64 PETSCII lower"),
         (PetsciiMachine::C128, PetsciiCase::Upper) => (C64_SHIFTED.clone(), "C128 PETSCII upper"),
         (PetsciiMachine::C128, PetsciiCase::Lower) => (C128_LOWER.clone(), "C128 PETSCII lower"),
+        (PetsciiMachine::Vic20, PetsciiCase::Upper) => (VIC20_UPPER.clone(), "VIC-20 PETSCII upper"),
+        (PetsciiMachine::Vic20, PetsciiCase::Lower) => (VIC20_LOWER.clone(), "VIC-20 PETSCII lower"),
+        (PetsciiMachine::Pet, PetsciiCase::Upper) => (PET_UPPER.clone(), "PET PETSCII upper"),
+        (PetsciiMachine::Pet, PetsciiCase::Lower) => (PET_LOWER.clone(), "PET PETSCII lower"),
+        (PetsciiMachine::C16, PetsciiCase::Upper) => (C16_UPPER.clone(), "C16 PETSCII upper"),
+        (PetsciiMachine::C16, PetsciiCase::Lower) => (C16_LOWER.clone(), "C16 PETSCII lower"),
     };
     font.set_name(name);
     font
@@ -37,6 +158,12 @@ pub fn petscii_charset(buffer: &TextBuffer) -> (PetsciiMachine, PetsciiCase) {
     let name = buffer.font(0).map(|font| font.name().to_ascii_lowercase()).unwrap_or_default();
     let machine = if name.starts_with("c128") {
         PetsciiMachine::C128
+    } else if name.starts_with("vic-20") {
+        PetsciiMachine::Vic20
+    } else if name.starts_with("pet") {
+        PetsciiMachine::Pet
+    } else if name.starts_with("c16") {
+        PetsciiMachine::C16
     } else {
         PetsciiMachine::C64
     };
@@ -63,7 +190,7 @@ pub fn petscii_buffer(machine: PetsciiMachine, case: PetsciiCase, size: Size, fo
     buffer.clear_font_table();
     buffer.set_font(0, petscii_font(machine, case));
     buffer.set_font_dimensions(Size::new(8, 8));
-    buffer.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
+    buffer.palette = machine.palette();
     buffer.buffer_type = crate::BufferType::Petscii;
     buffer.terminal_state.is_terminal_buffer = false;
     let mut blank = AttributedChar::new(' ', crate::TextAttribute::default());
@@ -103,11 +230,12 @@ const REVERSE_OFF: u8 = 0x92;
 const RETURN: u8 = 0x0D;
 const CURSOR_LEFT: u8 = 0x9D;
 const INSERT: u8 = 0x94;
-const COLUMNS: i32 = 40;
 
 /// The text color and reverse mode the SEQ so far leaves the C64 in.
 #[derive(Default)]
 struct SeqWriter {
+    /// Whether the machine has colors to set.
+    colors: bool,
     color: Option<usize>,
     reverse: bool,
 }
@@ -115,7 +243,7 @@ struct SeqWriter {
 impl SeqWriter {
     /// Prints the screen code `code` in the color `foreground`, switching color and reverse mode.
     fn print(&mut self, result: &mut Vec<u8>, (code, foreground): (u8, usize)) {
-        if self.color != Some(foreground) {
+        if self.colors && self.color != Some(foreground) {
             result.push(COLOR_CODES[foreground]);
             self.color = Some(foreground);
         }
@@ -147,13 +275,15 @@ pub(crate) fn save_seq(buf: &TextBuffer, _options: &SaveOptions) -> Result<Vec<u
             expected: "Petscii".to_string(),
         });
     }
-    if buf.width() > COLUMNS {
+    let (machine, case) = petscii_charset(buf);
+    let screen = machine.screen_size();
+    let columns = screen.width;
+    if buf.width() > columns {
         return Err(crate::EngineError::Generic(format!(
-            "SEQ screens are {COLUMNS} columns wide, not {}",
+            "SEQ screens are {columns} columns wide, not {}",
             buf.width()
         )));
     }
-    let (_, case) = petscii_charset(buf);
     let mut result = vec![0x93, if case == PetsciiCase::Lower { 0x0E } else { 0x8E }];
     let cell = |x: i32, y: i32| {
         let ch = buf.char_at(Position::new(x, y));
@@ -162,19 +292,22 @@ pub(crate) fn save_seq(buf: &TextBuffer, _options: &SaveOptions) -> Result<Vec<u
     };
     let row_length = |y: i32| (0..buf.width()).rposition(|x| cell(x, y).0 != b' ').map_or(0, |last| last as i32 + 1);
     let height = (0..buf.height()).rposition(|y| row_length(y) > 0).map_or(0, |last| last as i32 + 1);
-    let mut writer = SeqWriter::default();
+    let mut writer = SeqWriter {
+        colors: machine.has_color_codes(),
+        ..SeqWriter::default()
+    };
     for y in 0..height {
         let length = row_length(y);
-        let full = buf.width() == COLUMNS && length == COLUMNS;
-        if full && y == 24 {
+        let full = buf.width() == columns && length == columns;
+        if full && y == screen.height - 1 {
             // Printing into the lower right corner scrolls the screen: print the last character
             // one column early, then insert a space in front of it for the one before.
-            for x in 0..COLUMNS - 2 {
+            for x in 0..columns - 2 {
                 writer.print(&mut result, cell(x, y));
             }
-            writer.print(&mut result, cell(COLUMNS - 1, y));
+            writer.print(&mut result, cell(columns - 1, y));
             result.extend([CURSOR_LEFT, INSERT]);
-            writer.print(&mut result, cell(COLUMNS - 2, y));
+            writer.print(&mut result, cell(columns - 2, y));
             break;
         }
         for x in 0..length {
@@ -320,5 +453,47 @@ mod tests {
         let loaded = FileFormat::Petscii.from_bytes(b"\x0eHELLO\x8eX", None).unwrap().screen.buffer;
         assert_eq!(petscii_charset(&loaded).1, PetsciiCase::Lower, "most characters were printed in lower case");
         assert_eq!(loaded.font_count(), 1);
+    }
+}
+
+#[cfg(test)]
+mod machine_tests {
+    use super::*;
+    use crate::FileFormat;
+
+    #[test]
+    fn every_machine_has_its_screen_font_and_colors() {
+        for machine in PetsciiMachine::ALL {
+            for case in [PetsciiCase::Upper, PetsciiCase::Lower] {
+                let (foreground, background) = machine.start_colors();
+                let buffer = petscii_buffer(machine, case, machine.screen_size(), foreground, background);
+                assert_eq!(petscii_charset(&buffer), (machine, case));
+                assert!(
+                    foreground < machine.text_colors() && (background as usize) < buffer.palette.len(),
+                    "{machine:?}"
+                );
+            }
+        }
+        assert_eq!(PetsciiMachine::C16.palette().len(), 128);
+        assert_eq!(PetsciiMachine::C16.palette().rgb(0x71), (0xff, 0xff, 0xff), "luminance 7 white");
+        assert_eq!(PetsciiMachine::Vic20.screen_size(), Size::new(22, 23));
+    }
+
+    #[test]
+    fn vic20_rows_wrap_at_22_columns_and_the_pet_has_no_colors() {
+        let mut buffer = petscii_buffer(PetsciiMachine::Vic20, PetsciiCase::Upper, Size::new(22, 23), 2, 1);
+        for x in 0..22 {
+            buffer.layers[0].set_char((x, 0), AttributedChar::new('\u{1}', crate::TextAttribute::default()));
+            buffer.layers[0].set_char((x, 22), AttributedChar::new('\u{2}', crate::TextAttribute::default()));
+        }
+        let bytes = FileFormat::Petscii.to_bytes(&buffer, &SaveOptions::default()).unwrap();
+        let returns = bytes.iter().filter(|&&byte| byte == RETURN).count();
+        assert_eq!(returns, 21, "the full first row wraps by itself, the 21 empty ones end with RETURN");
+        assert!(bytes.ends_with(&[CURSOR_LEFT, INSERT, print_code(2)]), "the lower right corner of row 23");
+
+        let mut buffer = petscii_buffer(PetsciiMachine::Pet, PetsciiCase::Upper, Size::new(40, 25), 1, 0);
+        buffer.layers[0].set_char((0, 0), AttributedChar::new('\u{1}', crate::TextAttribute::default()));
+        let bytes = FileFormat::Petscii.to_bytes(&buffer, &SaveOptions::default()).unwrap();
+        assert_eq!(bytes, [0x93, 0x8E, print_code(1)]);
     }
 }
