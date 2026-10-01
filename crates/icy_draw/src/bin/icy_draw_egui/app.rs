@@ -2651,6 +2651,33 @@ impl DrawApp {
         format!("{}:{name}", TextArtFontKind::ALL[kind.index()].1)
     }
 
+    fn is_text_art_favorite(&self, index: usize) -> bool {
+        self.text_font_info
+            .get(index)
+            .is_some_and(|(name, kind)| self.settings.text_art_font_favorites.contains(&Self::text_art_font_id(name, *kind)))
+    }
+
+    /// Unfavorites all variants of a favorite group, otherwise favorites the `shown` variant.
+    fn toggle_text_art_group_favorite(&mut self, group: &[usize], shown: usize) {
+        let ids: Vec<String> = group
+            .iter()
+            .filter(|&&variant| self.is_text_art_favorite(variant))
+            .map(|&variant| {
+                let (name, kind) = &self.text_font_info[variant];
+                Self::text_art_font_id(name, *kind)
+            })
+            .collect();
+        if ids.is_empty() {
+            let (name, kind) = &self.text_font_info[shown];
+            self.toggle_text_art_favorite(&Self::text_art_font_id(name, *kind));
+            return;
+        }
+        self.settings.text_art_font_favorites.retain(|favorite| !ids.contains(favorite));
+        if self.persist_settings {
+            self.settings.store_persistent();
+        }
+    }
+
     fn toggle_text_art_favorite(&mut self, id: &str) {
         if let Some(position) = self.settings.text_art_font_favorites.iter().position(|favorite| favorite == id) {
             self.settings.text_art_font_favorites.remove(position);
@@ -2721,10 +2748,7 @@ impl DrawApp {
         let size_filter_active = self.text_font_size_filter.iter().any(|value| *value != 0);
         for index in 0..self.text_font_info.len() {
             let (name, kind) = &self.text_font_info[index];
-            let favorite = self.settings.text_art_font_favorites.contains(&Self::text_art_font_id(name, *kind));
-            let visible = self.text_font_types[kind.index()]
-                && (!self.text_font_favorites_only || favorite)
-                && (filter.is_empty() || name.to_lowercase().contains(&filter));
+            let visible = self.text_font_types[kind.index()] && (filter.is_empty() || name.to_lowercase().contains(&filter));
             if !visible {
                 continue;
             }
@@ -2742,10 +2766,15 @@ impl DrawApp {
             fonts.push(index);
         }
         // Color sets of one font (`Acidscape1C`, `Acidscape1G`, …) share a row with a chip per variant.
-        let groups = icy_draw::font_variants::variant_groups(fonts.iter().map(|&index| {
+        // A group is a favorite when one of its variants is.
+        let mut groups = icy_draw::font_variants::variant_groups(fonts.iter().map(|&index| {
             let (name, kind) = &self.text_font_info[index];
             (index, name.as_str(), (*kind, self.text_art_font_metrics(index)))
         }));
+        if self.text_font_favorites_only {
+            groups.retain(|group| group.iter().any(|&index| self.is_text_art_favorite(index)));
+        }
+        let font_count: usize = groups.iter().map(Vec::len).sum();
 
         let mut apply = false;
         let mut double_clicked = false;
@@ -2772,7 +2801,7 @@ impl DrawApp {
                             self.text_font_favorites_only = !self.text_font_favorites_only;
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.weak(fl!("tdf-font-selector-font_count", count = fonts.len()));
+                            ui.weak(fl!("tdf-font-selector-font_count", count = font_count));
                         });
                     });
                     ui.horizontal(|ui| {
@@ -2825,10 +2854,10 @@ impl DrawApp {
                             let index = if group.contains(&self.text_font_pending) {
                                 self.text_font_pending
                             } else {
-                                group[0]
+                                group.iter().copied().find(|&variant| self.is_text_art_favorite(variant)).unwrap_or(group[0])
                             };
                             let (name, kind) = self.text_font_info[index].clone();
-                            let favorite = self.settings.text_art_font_favorites.contains(&Self::text_art_font_id(&name, kind));
+                            let favorite = group.iter().any(|&variant| self.is_text_art_favorite(variant));
                             let (width, height) = self.text_art_font_metrics(index).unwrap_or_default();
                             let selected = self.text_font_pending == index;
                             let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height - 4.0), egui::Sense::click());
@@ -2963,7 +2992,7 @@ impl DrawApp {
                                 );
                             }
                             if star.clicked() {
-                                self.toggle_text_art_favorite(&Self::text_art_font_id(&name, kind));
+                                self.toggle_text_art_group_favorite(group, index);
                             } else if let Some((variant, double)) = variant_clicked {
                                 self.text_font_pending = variant;
                                 double_clicked |= double;

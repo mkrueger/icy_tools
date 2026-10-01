@@ -897,6 +897,46 @@ fn text_art_font_dialog_groups_color_variants_into_one_row() {
 }
 
 #[test]
+fn favorite_variant_makes_its_whole_group_a_favorite() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    let font = |name: &str| retrofont::Font::Tdf(Box::new(retrofont::tdf::TdfFont::new(name, icy_engine_edit::charset::TdfFontType::Color, 1)));
+    app.text_fonts = Some(icy_draw::text_art_fonts::TextArtFontLibrary::with_fonts(vec![
+        font("Acidscape1C"),
+        font("Acidscape1G"),
+        font("Acidscape1R"),
+        font("Blade"),
+    ]));
+    app.settings.text_art_font_favorites = vec!["Color:Acidscape1G".to_owned()];
+    app.text_font_favorites_only = true;
+    app.text_font_pending = 3;
+    app.dialog = Some(Dialog::TextArtFontSelect);
+    frame(&context, &mut app, size, vec![]);
+    let output = frame(&context, &mut app, size, vec![]);
+    let texts: Vec<(String, egui::Pos2)> = output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) => Some((text.galley.text().to_owned(), text.pos + text.galley.size() / 2.0)),
+            _ => None,
+        })
+        .collect();
+    let shown = |name: &str| texts.iter().any(|(text, _)| text == name);
+    assert!(shown("Acidscape1G"), "the favorite variant is shown for its group");
+    assert!(!shown("Blade"));
+    for label in ["C", "G", "R", "★"] {
+        assert!(shown(label), "missing {label}");
+    }
+
+    let star = texts.iter().find(|(text, _)| text == "★").unwrap().1;
+    frame(&context, &mut app, size, pointer(star, true));
+    frame(&context, &mut app, size, pointer(star, false));
+    assert!(app.settings.text_art_font_favorites.is_empty(), "the star unfavorites the whole group");
+}
+
+#[test]
 fn text_art_font_dialog_scrolls_the_current_font_into_the_middle() {
     let context = egui::Context::default();
     appearance::apply(&context);
