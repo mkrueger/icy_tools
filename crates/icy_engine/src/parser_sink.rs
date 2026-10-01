@@ -783,6 +783,12 @@ impl CommandSink for ScreenSink<'_> {
                 }
                 state.wrap_pending = false;
             }
+            TerminalCommand::CsiSetPhysicalKeyReports(enabled) => {
+                self.screen.terminal_state_mut().physical_key_reports = enabled;
+            }
+            TerminalCommand::CsiSetSuppressTranslatedKeys(enabled) => {
+                self.screen.terminal_state_mut().suppress_translated_keys = enabled;
+            }
 
             // Tab operations
             TerminalCommand::CsiClearTabulation => {

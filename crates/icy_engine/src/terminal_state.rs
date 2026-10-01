@@ -168,6 +168,10 @@ pub struct TerminalState {
     pub(crate) active_hyperlink: Option<(String, Position)>,
     pub mouse_state: MouseState,
     pub kitty_keyboard: KittyKeyboardState,
+    /// CTerm `CSI = 1 h`: report physical key presses and releases as `CSI = Pk K` / `CSI = Pk k`.
+    pub physical_key_reports: bool,
+    /// CTerm `CSI = 2 h`: don't send the usual translated key input.
+    pub suppress_translated_keys: bool,
     /// DECSDM reset draws sixels at the current text cursor.
     pub sixel_at_cursor: bool,
     /// DEC mode 1070 reset shares color registers between images.
@@ -261,6 +265,8 @@ impl TerminalState {
             wrap_pending: false,
             mouse_state: MouseState::default(),
             kitty_keyboard: KittyKeyboardState::default(),
+            physical_key_reports: false,
+            suppress_translated_keys: false,
             sixel_at_cursor: true,
             sixel_shared_palette: false,
             sixel_decoder: icy_sixel::SixelDecoder::new(),
@@ -546,6 +552,8 @@ impl TerminalState {
         self.viewdata = icy_parser_core::ViewdataState::default();
         self.vd_last_row = 0;
         self.kitty_keyboard.reset();
+        self.physical_key_reports = false;
+        self.suppress_translated_keys = false;
         self.sixel_at_cursor = true;
         self.sixel_shared_palette = false;
         self.sixel_decoder.reset_palette();
