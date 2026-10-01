@@ -236,6 +236,24 @@ fn test_last_column_flag_modes() {
 }
 
 #[test]
+fn test_physical_key_report_modes() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"[=1h[=2h[=2l[=1l", &mut sink);
+
+    assert_eq!(
+        sink.cmds,
+        vec![
+            TerminalCommand::CsiSetPhysicalKeyReports(true),
+            TerminalCommand::CsiSetSuppressTranslatedKeys(true),
+            TerminalCommand::CsiSetSuppressTranslatedKeys(false),
+            TerminalCommand::CsiSetPhysicalKeyReports(false),
+        ]
+    );
+}
+
+#[test]
 fn test_character_operations() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();

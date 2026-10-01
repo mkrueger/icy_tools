@@ -1334,6 +1334,8 @@ impl CommandParser for AnsiParser {
                     b'h' | b'l' => {
                         let enabled = byte == b'h';
                         match self.params.first().copied() {
+                            Some(1) => sink.emit(TerminalCommand::CsiSetPhysicalKeyReports(enabled)),
+                            Some(2) => sink.emit(TerminalCommand::CsiSetSuppressTranslatedKeys(enabled)),
                             Some(4) => sink.emit(TerminalCommand::CsiSetLastColumnFlag { enabled, forced: false }),
                             Some(5) if enabled => sink.emit(TerminalCommand::CsiSetLastColumnFlag { enabled: true, forced: true }),
                             _ => {}
