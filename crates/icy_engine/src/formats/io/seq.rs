@@ -61,13 +61,35 @@ impl PetsciiMachine {
     /// The text and screen color the machine starts with.
     pub fn start_colors(self) -> (u32, u32) {
         match self {
-            Self::C64 | Self::C128 => (14, 6),
+            Self::C64 => (14, 6),
+            // Light green on dark gray.
+            Self::C128 => (13, 11),
             Self::Vic20 => (6, 1),
             Self::Pet | Self::Pet80 => (1, 0),
             // White on black.
             Self::C128Vdc => (15, 0),
             // Black on white, luminance 7.
             Self::C16 => (0, 0x71),
+        }
+    }
+
+    /// The border color the machine starts with; the PETs and the VDC have no border.
+    pub fn start_border(self) -> Option<u32> {
+        match self {
+            Self::C64 => Some(14),
+            Self::C128 => Some(13),
+            Self::Vic20 => Some(3),
+            // Pink, luminance 6.
+            Self::C16 => Some(0x6B),
+            Self::Pet | Self::Pet80 | Self::C128Vdc => None,
+        }
+    }
+
+    /// The colors the border can have: the VIC-20's are its eight text colors.
+    pub fn border_colors(self) -> u32 {
+        match self {
+            Self::Vic20 => 8,
+            _ => self.palette().len() as u32,
         }
     }
 

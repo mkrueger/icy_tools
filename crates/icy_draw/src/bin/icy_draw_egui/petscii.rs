@@ -268,7 +268,11 @@ pub fn load_petmate(path: &std::path::Path, index: usize) -> Result<Document, St
     let mut state = icy_engine_edit::EditState::from_buffer(buffer);
     state.set_caret_foreground(text);
     state.set_caret_background(background);
-    Ok(Document::from_state(state))
+    let mut document = Document::from_state(state);
+    if machine.start_border().is_some() {
+        document.border = number("borderColor").map(|border| color_of(border as u64).min(machine.border_colors() - 1));
+    }
+    Ok(document)
 }
 
 impl DrawApp {
@@ -385,6 +389,15 @@ impl DrawApp {
 
     fn petscii_charset(&self) -> (PetsciiMachine, PetsciiCase) {
         self.document.with_state(|state| icy_engine::petscii_charset(state.get_buffer()))
+    }
+
+    /// The border shown around a PETSCII screen: the one chosen, or the one the machine starts
+    /// with. The PETs and the VDC have none.
+    pub(super) fn petscii_border(&self) -> Option<u32> {
+        self.petscii.as_ref()?;
+        let (machine, _) = self.petscii_charset();
+        let start = machine.start_border()?;
+        Some(self.document.border.map_or(start, |border| border.min(machine.border_colors() - 1)))
     }
 
     /// The text color on the screen color, in which characters are shown.
@@ -529,9 +542,97 @@ impl DrawApp {
             state.set_caret_foreground(text(caret.foreground()));
             state.set_caret_background(screen(caret.background()));
             state.set_caret_font_page(if attributes { u8::from(case == PetsciiCase::Lower) } else { 0 });
-            Ok::<(), icy_engine::EngineError>(())
+            Ok::<_, icy_engine::EngineError>(old)
         });
-        self.result(result.map_err(|error| error.to_string()));
+        // A chosen border keeps its color as near as the machine has it.
+        if let (Ok(old), Some(border)) = (&result, self.document.border) {
+            self.document.border = machine.start_border().map(|_| nearest(old, border, machine.border_colors()));
+        }
+        self.result(result.map(|_| ()).map_err(|error| error.to_string()));
+    }
+
+    /// Swatches of the first `count` colors; returns the clicked one.
+    fn color_swatches(&self, ui: &mut egui::Ui, count: u32, current: u32) -> Option<u32> {
+        let palette = self.document.with_state(|state| state.get_buffer().palette.clone());
+        let columns = if count > 16 { 16 } else { 8 };
+        let mut picked = None;
+        ui.spacing_mut().item_spacing = egui::Vec2::splat(2.0);
+        for row in 0..count.div_ceil(columns) {
+            ui.horizontal(|ui| {
+                for index in (row * columns..((row + 1) * columns).min(count)).filter(|&index| (index as usize) < palette.len()) {
+                    let (red, green, blue) = palette.rgb(index);
+                    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(18.0), egui::Sense::click());
+                    ui.painter().rect_filled(rect, 3, egui::Color32::from_rgb(red, green, blue));
+                    if index == current {
+                        ui.painter()
+                            .rect_stroke(rect, 3, egui::Stroke::new(2.0, egui::Color32::WHITE), egui::StrokeKind::Inside);
+                    } else if response.hovered() {
+                        ui.painter()
+                            .rect_stroke(rect, 3, ui.visuals().widgets.hovered.fg_stroke, egui::StrokeKind::Inside);
+                    }
+                    if response.on_hover_text(index.to_string()).clicked() {
+                        picked = Some(index);
+                    }
+                }
+            });
+        }
+        picked
+    }
+
+    /// The border and the screen color like on Petmate: the screen inside its border; clicking
+    /// either picks its color.
+    fn border_and_screen(&mut self, ui: &mut egui::Ui, machine: PetsciiMachine) {
+        let border = self.petscii_border().unwrap_or(0);
+        let (background, palette) = self.document.with_state(|state| {
+            let buffer = state.get_buffer();
+            (icy_engine::petscii_background(buffer), buffer.palette.clone())
+        });
+        let color = |index: u32| {
+            let (red, green, blue) = palette.rgb(index);
+            egui::Color32::from_rgb(red, green, blue)
+        };
+        let mut picked_border = None;
+        let mut picked_background = None;
+        ui.horizontal(|ui| {
+            let (outer, _) = ui.allocate_exact_size(egui::vec2(64.0, 46.0), egui::Sense::hover());
+            let inner = outer.shrink2(egui::vec2(12.0, 10.0));
+            let border_response = ui.interact(outer, ui.id().with("petscii-border"), egui::Sense::click());
+            let screen_response = ui.interact(inner, ui.id().with("petscii-screen"), egui::Sense::click());
+            let painter = ui.painter();
+            painter.rect_filled(outer, 4, color(border));
+            painter.rect_filled(inner, 2, color(background));
+            let edge = ui.visuals().widgets.noninteractive.bg_stroke;
+            painter.rect_stroke(outer, 4, edge, egui::StrokeKind::Inside);
+            if screen_response.hovered() {
+                painter.rect_stroke(inner, 2, egui::Stroke::new(2.0, egui::Color32::WHITE), egui::StrokeKind::Inside);
+            } else if border_response.hovered() {
+                painter.rect_stroke(outer, 4, egui::Stroke::new(2.0, egui::Color32::WHITE), egui::StrokeKind::Inside);
+            }
+            let border_response = border_response.on_hover_text(fl!("petscii-border-tooltip"));
+            let screen_response = screen_response.on_hover_text(fl!("petscii-screen-tooltip"));
+            egui::Popup::menu(&border_response).show(|ui| {
+                picked_border = self.color_swatches(ui, machine.border_colors(), border);
+                if picked_border.is_some() {
+                    ui.close();
+                }
+            });
+            egui::Popup::menu(&screen_response).show(|ui| {
+                picked_background = self.color_swatches(ui, palette.len() as u32, background);
+                if picked_background.is_some() {
+                    ui.close();
+                }
+            });
+            ui.vertical(|ui| {
+                ui.label(fl!("petscii-border", color = border));
+                ui.label(fl!("petscii-screen", color = background));
+            });
+        });
+        if let Some(border) = picked_border {
+            self.document.border = Some(border);
+        }
+        if let Some(background) = picked_background {
+            self.set_petscii_background(background);
+        }
     }
 
     /// The color of a PET monitor's phosphor, which draws all text.
@@ -557,6 +658,10 @@ impl DrawApp {
             return;
         }
         widgets::section_header(ui, &fl!("vt52-colors"), |_| {});
+        if machine.start_border().is_some() {
+            self.border_and_screen(ui, machine);
+            ui.add_space(6.0);
+        }
         // The grid's right click sets the caret background; here it colors the screen.
         let (foreground, background) = self.document.with_state(|state| {
             let attribute = state.get_caret().attribute;
@@ -1186,6 +1291,22 @@ mod tests {
     }
 
     #[test]
+    fn the_border_follows_the_machine_and_stays_out_of_the_file() {
+        let (_, mut app) = petscii_app(PetsciiMachine::C64, PetsciiCase::Upper);
+        assert_eq!(app.petscii_border(), Some(14), "light blue, as the C64 starts");
+        app.document.border = Some(2);
+        assert_eq!(app.petscii_border(), Some(2));
+        app.set_petscii_charset(PetsciiMachine::Vic20, PetsciiCase::Upper);
+        assert_eq!(app.petscii_border(), Some(2), "red stays red, one of the VIC-20's eight border colors");
+        app.set_petscii_charset(PetsciiMachine::Pet, PetsciiCase::Upper);
+        assert_eq!(app.petscii_border(), None, "the PET has no border");
+        app.set_petscii_charset(PetsciiMachine::C128, PetsciiCase::Upper);
+        assert_eq!(app.petscii_border(), Some(13), "the C128 starts with light green");
+        app.replace(Document::new(icy_engine::Size::new(80, 25)));
+        assert_eq!(app.petscii_border(), None, "only PETSCII screens have one");
+    }
+
+    #[test]
     fn the_pet_monitor_color_is_one_undo_step() {
         let (_, mut app) = petscii_app(PetsciiMachine::Pet, PetsciiCase::Upper);
         let phosphor = |app: &DrawApp| app.document.with_state(|state| state.get_buffer().palette.rgb(1));
@@ -1218,6 +1339,8 @@ mod tests {
             })
         };
         assert_eq!(colors(&vic20, 1), (2, 1));
+        assert_eq!(vic20.border, Some(3));
+        assert_eq!(c16.border, Some(0));
         assert_eq!(colors(&c16, 0), (82, 113), "luminance 5, hue 2 on white");
         assert_eq!(colors(&c16, 1), (70, 113), "flashing (bit 7) is dropped");
     }

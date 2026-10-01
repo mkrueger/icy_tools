@@ -187,6 +187,24 @@ fn filter_match_ranges(name: &str, filter: &str) -> Vec<std::ops::Range<usize>> 
     lower_name.match_indices(&filter).map(|(start, value)| start..start + value.len()).collect()
 }
 
+/// The border around a 320 × 200 screen, as VICE shows it: 32 pixels left and right, 35 above
+/// and 37 below. The screen takes up the canvas divided by this.
+const BORDER_SCALE: egui::Vec2 = egui::vec2(384.0 / 320.0, 272.0 / 200.0);
+
+/// Paints the border around `screen`, in the proportions of [`BORDER_SCALE`].
+fn paint_border(painter: &egui::Painter, screen: egui::Rect, color: Color32) {
+    let (horizontal, top, bottom) = (screen.width() * 32.0 / 320.0, screen.height() * 35.0 / 200.0, screen.height() * 37.0 / 200.0);
+    let outer = egui::Rect::from_min_max(screen.min - egui::vec2(horizontal, top), screen.max + egui::vec2(horizontal, bottom));
+    for rect in [
+        egui::Rect::from_min_max(outer.min, egui::pos2(outer.max.x, screen.min.y)),
+        egui::Rect::from_min_max(egui::pos2(outer.min.x, screen.max.y), outer.max),
+        egui::Rect::from_min_max(egui::pos2(outer.min.x, screen.min.y), egui::pos2(screen.min.x, screen.max.y)),
+        egui::Rect::from_min_max(egui::pos2(screen.max.x, screen.min.y), egui::pos2(outer.max.x, screen.max.y)),
+    ] {
+        painter.rect_filled(rect, 0, color);
+    }
+}
+
 /// How opaque the preview of a shape being dragged is drawn over the picture.
 const PREVIEW_OPACITY: f32 = 0.7;
 
@@ -1922,7 +1940,22 @@ impl DrawApp {
             self.settings.monitor_settings.scaling_mode = mode;
         }
         self.view.markers = Some(self.editor_markers());
-        let mut response = self.view.show(ui, &self.settings.monitor_settings);
+        let border = self.petscii_border().map(|index| {
+            let (red, green, blue) = self.document.with_state(|state| state.get_buffer().palette.rgb(index));
+            Color32::from_rgb(red, green, blue)
+        });
+        let outer = ui.available_rect_before_wrap();
+        let mut response = if border.is_some() {
+            // The screen keeps room for its border, as wide as on the machine.
+            let inner = egui::Rect::from_center_size(outer.center(), egui::vec2(outer.width() / BORDER_SCALE.x, outer.height() / BORDER_SCALE.y));
+            let response = ui
+                .scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| self.view.show(ui, &self.settings.monitor_settings))
+                .inner;
+            ui.advance_cursor_after_rect(outer);
+            response
+        } else {
+            self.view.show(ui, &self.settings.monitor_settings)
+        };
         self.canvas_rect = response.rect;
         if !blocked {
             ui.memory_mut(|memory| {
@@ -2023,6 +2056,17 @@ impl DrawApp {
                 self.view.terminal.scroll_x(),
                 self.view.terminal.scroll_y() * if info.scan_lines { 2.0 } else { 1.0 },
             ) * info.display_scale;
+        if let Some(color) = border {
+            let size = self.document.with_state(|state| state.get_buffer().size());
+            let screen = egui::Rect::from_min_size(
+                origin,
+                egui::vec2(
+                    size.width as f32 * info.font_width,
+                    size.height as f32 * info.font_height * if info.scan_lines { 2.0 } else { 1.0 },
+                ) * info.display_scale,
+            );
+            paint_border(&ui.painter().with_clip_rect(outer), screen, color);
+        }
         let painter = ui.painter().with_clip_rect(response.rect);
         if self.show_grid && cell_size.x * info.display_scale >= 8.0 {
             let step = cell_size * info.display_scale;

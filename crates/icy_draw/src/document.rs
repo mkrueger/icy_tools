@@ -168,6 +168,9 @@ pub struct Document {
     /// Whether the pencil and shapes make characters reverse (left button) or normal (right
     /// button), on screens that keep reverse in the character (ATASCII, PETSCII).
     pub reverse_pen: bool,
+    /// The border color chosen for a PETSCII screen; it is only shown around the canvas, not
+    /// saved. Unset, the machine's own is shown.
+    pub border: Option<u32>,
 }
 
 impl Document {
@@ -229,6 +232,7 @@ impl Document {
             art_line: None,
             tag_clipboard: None,
             inverse: false,
+            border: None,
             quarter_blocks: false,
             reverse_pen: false,
         }
