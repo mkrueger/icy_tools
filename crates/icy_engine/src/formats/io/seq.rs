@@ -12,17 +12,28 @@ pub enum PetsciiMachine {
     Vic20,
     Pet,
     C16,
+    /// The 80 column PETs (8032).
+    Pet80,
+    /// The C128's 80 column screen (VDC): the character set and blinking and underlining are
+    /// chosen per character.
+    C128Vdc,
 }
 
 impl PetsciiMachine {
-    pub const ALL: [Self; 5] = [Self::C64, Self::C128, Self::Vic20, Self::Pet, Self::C16];
+    pub const ALL: [Self; 7] = [Self::C64, Self::C128, Self::C128Vdc, Self::Vic20, Self::Pet, Self::Pet80, Self::C16];
 
     /// The text screen in characters.
     pub fn screen_size(self) -> Size {
         match self {
             Self::Vic20 => Size::new(22, 23),
+            Self::Pet80 | Self::C128Vdc => Size::new(80, 25),
             _ => Size::new(40, 25),
         }
+    }
+
+    /// Whether every character picks its character set, like the VDC's alternate set attribute.
+    pub fn charset_per_character(self) -> bool {
+        self == Self::C128Vdc
     }
 
     /// The colors, by the machine's color numbers: the C16's are luminance × 16 + hue.
@@ -30,8 +41,9 @@ impl PetsciiMachine {
         match self {
             Self::C64 | Self::C128 => Palette::from_slice(&C64_DEFAULT_PALETTE),
             Self::Vic20 => Palette::from_slice(&VIC20_PALETTE),
-            Self::Pet => Palette::from_slice(&PET_PALETTE),
+            Self::Pet | Self::Pet80 => Palette::from_slice(&PET_PALETTE),
             Self::C16 => ted_palette(),
+            Self::C128Vdc => Palette::from_slice(&VDC_PALETTE),
         }
     }
 
@@ -39,9 +51,9 @@ impl PetsciiMachine {
     /// draws in its monitor's single color.
     pub fn text_colors(self) -> u32 {
         match self {
-            Self::C64 | Self::C128 => 16,
+            Self::C64 | Self::C128 | Self::C128Vdc => 16,
             Self::Vic20 => 8,
-            Self::Pet => 2,
+            Self::Pet | Self::Pet80 => 2,
             Self::C16 => 128,
         }
     }
@@ -51,7 +63,9 @@ impl PetsciiMachine {
         match self {
             Self::C64 | Self::C128 => (14, 6),
             Self::Vic20 => (6, 1),
-            Self::Pet => (1, 0),
+            Self::Pet | Self::Pet80 => (1, 0),
+            // White on black.
+            Self::C128Vdc => (15, 0),
             // Black on white, luminance 7.
             Self::C16 => (0, 0x71),
         }
@@ -59,8 +73,42 @@ impl PetsciiMachine {
 
     /// Whether SEQ text sets colors: the PET has none.
     pub fn has_color_codes(self) -> bool {
-        self != Self::Pet
+        !matches!(self, Self::Pet | Self::Pet80)
     }
+}
+
+/// The VDC's RGBI colors.
+const VDC_PALETTE: [crate::Color; 16] = [
+    rgb(0x00, 0x00, 0x00),
+    rgb(0x55, 0x55, 0x55),
+    rgb(0x00, 0x00, 0xAA),
+    rgb(0x55, 0x55, 0xFF),
+    rgb(0x00, 0xAA, 0x00),
+    rgb(0x55, 0xFF, 0x55),
+    rgb(0x00, 0xAA, 0xAA),
+    rgb(0x55, 0xFF, 0xFF),
+    rgb(0xAA, 0x00, 0x00),
+    rgb(0xFF, 0x55, 0x55),
+    rgb(0xAA, 0x00, 0xAA),
+    rgb(0xFF, 0x55, 0xFF),
+    rgb(0xAA, 0x55, 0x00),
+    rgb(0xFF, 0xFF, 0x55),
+    rgb(0xAA, 0xAA, 0xAA),
+    rgb(0xFF, 0xFF, 0xFF),
+];
+
+/// The VDC color the C128 shows for each C64 color code in 80 columns.
+pub const VDC_COLORS_OF_C64: [u8; 16] = [0, 15, 8, 7, 11, 4, 2, 13, 10, 12, 9, 1, 6, 5, 3, 14];
+
+/// `font` with every row twice, for screens whose pixels are twice as high as wide (80 columns).
+fn doubled_rows(font: &BitFont, name: &str) -> BitFont {
+    let mut bytes = Vec::with_capacity(256 * 16);
+    for code in 0..256u32 {
+        for row in &font.glyph(char::from_u32(code).unwrap_or(' ')).data[..8] {
+            bytes.extend([*row, *row]);
+        }
+    }
+    BitFont::create_8(name, 8, 16, &bytes)
 }
 
 /// The VIC-20's colors (PAL), as Petmate shows them.
@@ -148,6 +196,10 @@ pub fn petscii_font(machine: PetsciiMachine, case: PetsciiCase) -> BitFont {
         (PetsciiMachine::Pet, PetsciiCase::Lower) => (PET_LOWER.clone(), "PET PETSCII lower"),
         (PetsciiMachine::C16, PetsciiCase::Upper) => (C16_UPPER.clone(), "C16 PETSCII upper"),
         (PetsciiMachine::C16, PetsciiCase::Lower) => (C16_LOWER.clone(), "C16 PETSCII lower"),
+        (PetsciiMachine::Pet80, PetsciiCase::Upper) => return doubled_rows(&PET_UPPER, "PET 80 PETSCII upper"),
+        (PetsciiMachine::Pet80, PetsciiCase::Lower) => return doubled_rows(&PET_LOWER, "PET 80 PETSCII lower"),
+        (PetsciiMachine::C128Vdc, PetsciiCase::Upper) => return doubled_rows(&C64_SHIFTED, "C128 VDC PETSCII upper"),
+        (PetsciiMachine::C128Vdc, PetsciiCase::Lower) => return doubled_rows(&C128_LOWER, "C128 VDC PETSCII lower"),
     };
     font.set_name(name);
     font
@@ -156,8 +208,12 @@ pub fn petscii_font(machine: PetsciiMachine, case: PetsciiCase) -> BitFont {
 /// The machine and character set of a PETSCII screen, from the name of its font.
 pub fn petscii_charset(buffer: &TextBuffer) -> (PetsciiMachine, PetsciiCase) {
     let name = buffer.font(0).map(|font| font.name().to_ascii_lowercase()).unwrap_or_default();
-    let machine = if name.starts_with("c128") {
+    let machine = if name.starts_with("c128 vdc") {
+        PetsciiMachine::C128Vdc
+    } else if name.starts_with("c128") {
         PetsciiMachine::C128
+    } else if name.starts_with("pet 80") {
+        PetsciiMachine::Pet80
     } else if name.starts_with("vic-20") {
         PetsciiMachine::Vic20
     } else if name.starts_with("pet") {
@@ -188,8 +244,14 @@ pub fn petscii_background(buffer: &TextBuffer) -> u32 {
 pub fn petscii_buffer(machine: PetsciiMachine, case: PetsciiCase, size: Size, foreground: u32, background: u32) -> TextBuffer {
     let mut buffer = TextBuffer::new(size);
     buffer.clear_font_table();
-    buffer.set_font(0, petscii_font(machine, case));
-    buffer.set_font_dimensions(Size::new(8, 8));
+    let font = petscii_font(machine, case);
+    buffer.set_font_dimensions(font.size());
+    buffer.set_font(0, font);
+    if machine.charset_per_character() {
+        // Characters with the alternate set attribute use the lower case set.
+        buffer.set_font(0, petscii_font(machine, PetsciiCase::Upper));
+        buffer.set_font(1, petscii_font(machine, PetsciiCase::Lower));
+    }
     buffer.palette = machine.palette();
     buffer.buffer_type = crate::BufferType::Petscii;
     buffer.terminal_state.is_terminal_buffer = false;
@@ -231,27 +293,57 @@ const RETURN: u8 = 0x0D;
 const CURSOR_LEFT: u8 = 0x9D;
 const INSERT: u8 = 0x94;
 
-/// The text color and reverse mode the SEQ so far leaves the C64 in.
+/// A character to write: its screen code, the C64 color code of its color, and the C128's
+/// per character attributes.
+#[derive(Clone, Copy, Default)]
+struct SeqCell {
+    code: u8,
+    color: usize,
+    lower: bool,
+    underline: bool,
+    blink: bool,
+}
+
+/// The text color and modes the SEQ so far leaves the machine in.
 #[derive(Default)]
 struct SeqWriter {
     /// Whether the machine has colors to set.
     colors: bool,
+    /// Whether the character set, underline and flashing are chosen per character (C128 VDC).
+    attributes: bool,
     color: Option<usize>,
     reverse: bool,
+    lower: bool,
+    underline: bool,
+    blink: bool,
 }
 
 impl SeqWriter {
-    /// Prints the screen code `code` in the color `foreground`, switching color and reverse mode.
-    fn print(&mut self, result: &mut Vec<u8>, (code, foreground): (u8, usize)) {
-        if self.colors && self.color != Some(foreground) {
-            result.push(COLOR_CODES[foreground]);
-            self.color = Some(foreground);
+    /// Prints `cell`, switching color, reverse and the VDC's attributes where they change.
+    fn print(&mut self, result: &mut Vec<u8>, cell: SeqCell) {
+        if self.colors && self.color != Some(cell.color) {
+            result.push(COLOR_CODES[cell.color]);
+            self.color = Some(cell.color);
         }
-        if (code >= 0x80) != self.reverse {
-            self.reverse = code >= 0x80;
+        if self.attributes {
+            if cell.lower != self.lower {
+                self.lower = cell.lower;
+                result.push(if cell.lower { 0x0E } else { 0x8E });
+            }
+            if cell.underline != self.underline {
+                self.underline = cell.underline;
+                result.push(if cell.underline { 0x02 } else { 0x82 });
+            }
+            if cell.blink != self.blink {
+                self.blink = cell.blink;
+                result.push(if cell.blink { 0x0F } else { 0x8F });
+            }
+        }
+        if (cell.code >= 0x80) != self.reverse {
+            self.reverse = cell.code >= 0x80;
             result.push(if self.reverse { REVERSE_ON } else { REVERSE_OFF });
         }
-        result.push(print_code(code));
+        result.push(print_code(cell.code));
     }
 }
 
@@ -285,15 +377,31 @@ pub(crate) fn save_seq(buf: &TextBuffer, _options: &SaveOptions) -> Result<Vec<u
         )));
     }
     let mut result = vec![0x93, if case == PetsciiCase::Lower { 0x0E } else { 0x8E }];
+    let vdc = machine == PetsciiMachine::C128Vdc;
     let cell = |x: i32, y: i32| {
         let ch = buf.char_at(Position::new(x, y));
         let code = if ch.is_visible() { u8::try_from(ch.ch as u32).unwrap_or(b' ') } else { b' ' };
-        (code, (ch.attribute.foreground() & 0x0F) as usize)
+        let foreground = ch.attribute.foreground() & 0x0F;
+        // In 80 columns the C128 shows each C64 color code as a VDC color.
+        let color = if vdc {
+            VDC_COLORS_OF_C64.iter().position(|&vdc| u32::from(vdc) == foreground).unwrap_or(1)
+        } else {
+            foreground as usize
+        };
+        SeqCell {
+            code,
+            color,
+            lower: vdc && ch.attribute.font_page() == 1,
+            underline: vdc && ch.attribute.is_underlined(),
+            blink: vdc && ch.attribute.is_blinking(),
+        }
     };
-    let row_length = |y: i32| (0..buf.width()).rposition(|x| cell(x, y).0 != b' ').map_or(0, |last| last as i32 + 1);
+    let row_length = |y: i32| (0..buf.width()).rposition(|x| cell(x, y).code != b' ').map_or(0, |last| last as i32 + 1);
     let height = (0..buf.height()).rposition(|y| row_length(y) > 0).map_or(0, |last| last as i32 + 1);
     let mut writer = SeqWriter {
         colors: machine.has_color_codes(),
+        attributes: vdc,
+        lower: case == PetsciiCase::Lower,
         ..SeqWriter::default()
     };
     for y in 0..height {
@@ -467,7 +575,9 @@ mod machine_tests {
             for case in [PetsciiCase::Upper, PetsciiCase::Lower] {
                 let (foreground, background) = machine.start_colors();
                 let buffer = petscii_buffer(machine, case, machine.screen_size(), foreground, background);
-                assert_eq!(petscii_charset(&buffer), (machine, case));
+                // The VDC has both sets, upper case first.
+                let expected = if machine.charset_per_character() { PetsciiCase::Upper } else { case };
+                assert_eq!(petscii_charset(&buffer), (machine, expected));
                 assert!(
                     foreground < machine.text_colors() && (background as usize) < buffer.palette.len(),
                     "{machine:?}"
@@ -477,6 +587,28 @@ mod machine_tests {
         assert_eq!(PetsciiMachine::C16.palette().len(), 128);
         assert_eq!(PetsciiMachine::C16.palette().rgb(0x71), (0xff, 0xff, 0xff), "luminance 7 white");
         assert_eq!(PetsciiMachine::Vic20.screen_size(), Size::new(22, 23));
+        for machine in [PetsciiMachine::Pet80, PetsciiMachine::C128Vdc] {
+            let font = petscii_font(machine, PetsciiCase::Upper);
+            assert_eq!(font.size(), Size::new(8, 16), "80 column pixels are twice as high as wide");
+            assert_eq!(machine.screen_size(), Size::new(80, 25));
+        }
+    }
+
+    #[test]
+    fn vdc_seq_translates_colors_and_writes_attributes_per_character() {
+        let mut buffer = petscii_buffer(PetsciiMachine::C128Vdc, PetsciiCase::Upper, Size::new(80, 25), 15, 0);
+        let mut red = crate::TextAttribute::default();
+        red.set_foreground(8);
+        buffer.layers[0].set_char((0, 0), AttributedChar::new('\u{1}', red));
+        let mut lower = red;
+        lower.set_font_page(1);
+        lower.set_is_underlined(true);
+        lower.set_is_blinking(true);
+        buffer.layers[0].set_char((1, 0), AttributedChar::new('\u{1}', lower));
+        buffer.layers[0].set_char((2, 0), AttributedChar::new('\u{1}', red));
+        let bytes = FileFormat::Petscii.to_bytes(&buffer, &SaveOptions::default()).unwrap();
+        // VDC red is the C64's red color code; then lower case, underline and flashing on and off.
+        assert_eq!(bytes, [0x93, 0x8E, 0x1C, 0x41, 0x0E, 0x02, 0x0F, 0x41, 0x8E, 0x82, 0x8F, 0x41]);
     }
 
     #[test]

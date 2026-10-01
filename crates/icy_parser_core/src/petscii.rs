@@ -100,7 +100,8 @@ impl PetsciiParser {
 
         let desc = match byte {
             0x02 => "Enable underline",
-            0x03 => "Disable underline",
+            0x03 | 0x82 => "Disable underline",
+            0x8F => "Flashing off",
             0x05 => "Set foreground WHITE",
             0x07 => "Bell (BEEP)",
             0x08 => "Capital shift OFF",
@@ -224,7 +225,8 @@ impl CommandParser for PetsciiParser {
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Underline(crate::Underline::Single)));
                     start = i + 1;
                 }
-                0x03 => {
+                // 0x82 is the C128's code for underline off.
+                0x03 | 0x82 => {
                     if start < i {
                         for &b in &input[start..i] {
                             self.emit_char(sink, b);
@@ -232,6 +234,16 @@ impl CommandParser for PetsciiParser {
                     }
                     self.underline_mode = false;
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Underline(crate::Underline::Off)));
+                    start = i + 1;
+                }
+                // Flashing off (C128 80 columns).
+                0x8F => {
+                    if start < i {
+                        for &b in &input[start..i] {
+                            self.emit_char(sink, b);
+                        }
+                    }
+                    sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(crate::Blink::Off)));
                     start = i + 1;
                 }
 
