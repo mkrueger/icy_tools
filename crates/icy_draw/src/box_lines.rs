@@ -94,9 +94,33 @@ pub fn arms_of(ch: char) -> Option<Arms> {
     BOX_CHARS.iter().find(|(candidate, _)| *candidate == ch).map(|(_, arms)| *arms)
 }
 
+/// The line characters of PETSCII's screen codes; 0x43 and 0x42 repeat ─ and │.
+const PETSCII_LINES: [(u8, char); 13] = [
+    (0x40, '─'),
+    (0x5D, '│'),
+    (0x70, '┌'),
+    (0x6E, '┐'),
+    (0x6D, '└'),
+    (0x7D, '┘'),
+    (0x6B, '├'),
+    (0x73, '┤'),
+    (0x72, '┬'),
+    (0x71, '┴'),
+    (0x5B, '┼'),
+    (0x43, '─'),
+    (0x42, '│'),
+];
+
 /// The arms of the character `code` of `buffer_type`'s character set. ATASCII draws vertical
-/// lines with its bar, which Unicode does not count as a box-drawing character.
+/// lines with its bar, which Unicode does not count as a box-drawing character; PETSCII stores
+/// screen codes.
 pub fn arms_in(buffer_type: BufferType, code: char) -> Option<Arms> {
+    if buffer_type == BufferType::Petscii {
+        return PETSCII_LINES
+            .iter()
+            .find(|(line, _)| u32::from(*line) == code as u32)
+            .and_then(|(_, ch)| arms_of(*ch));
+    }
     match buffer_type.convert_to_unicode(code) {
         '|' if buffer_type == BufferType::Atascii => arms_of('│'),
         unicode => arms_of(unicode),
@@ -105,16 +129,19 @@ pub fn arms_in(buffer_type: BufferType, code: char) -> Option<Arms> {
 
 /// The code of the box-drawing character `ch` (from [`char_for`]) in `buffer_type`'s character set.
 pub fn code_for(buffer_type: BufferType, ch: char) -> char {
+    if buffer_type == BufferType::Petscii {
+        return PETSCII_LINES.iter().find(|(_, line)| *line == ch).map_or(' ', |(code, _)| char::from(*code));
+    }
     match ch {
         '│' if buffer_type == BufferType::Atascii => buffer_type.convert_from_unicode('|'),
         _ => buffer_type.convert_from_unicode(ch),
     }
 }
 
-/// The styles `buffer_type` has the characters for: ATASCII only has single lines.
+/// The styles `buffer_type` has the characters for: ATASCII and PETSCII only have single lines.
 pub fn styles_for(buffer_type: BufferType) -> &'static [BoxStyle] {
     match buffer_type {
-        BufferType::Atascii => &[BoxStyle::Single],
+        BufferType::Atascii | BufferType::Petscii => &[BoxStyle::Single],
         _ => &BoxStyle::ALL,
     }
 }

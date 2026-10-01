@@ -1,43 +1,80 @@
-//! Drawing with 2 × 2 pixels per character, using ATASCII's quarter blocks and their inverse.
+//! Drawing with 2 × 2 pixels per character, using a character set's quarter blocks.
 //!
-//! Fourteen of the sixteen combinations exist; the two diagonal pairs do not, so a pixel that
-//! would make one keeps only the pixels of its own row.
+//! The characters are found in the font: those whose four quarters are each either set or
+//! empty. ATASCII has fourteen of the sixteen combinations (its inverse characters included);
+//! the two diagonal pairs are missing, so a pixel that would make one keeps only the pixels
+//! of its own row. PETSCII has all sixteen.
 
-use icy_engine::Position;
+use icy_engine::{BitFont, Position};
 
 const UPPER_LEFT: u8 = 1;
 const UPPER_RIGHT: u8 = 2;
 const LOWER_LEFT: u8 = 4;
 const LOWER_RIGHT: u8 = 8;
 
-/// ATASCII codes and the pixels they set; codes from 128 are inverse.
-const BLOCKS: [(u8, u8); 14] = [
-    (0x20, 0),
-    (0x0C, UPPER_LEFT),
-    (0x0B, UPPER_RIGHT),
-    (0x95, UPPER_LEFT | UPPER_RIGHT),
-    (0x0F, LOWER_LEFT),
-    (0x19, UPPER_LEFT | LOWER_LEFT),
-    (0x89, UPPER_LEFT | UPPER_RIGHT | LOWER_LEFT),
-    (0x09, LOWER_RIGHT),
-    (0x99, UPPER_RIGHT | LOWER_RIGHT),
-    (0x8F, UPPER_LEFT | UPPER_RIGHT | LOWER_RIGHT),
-    (0x15, LOWER_LEFT | LOWER_RIGHT),
-    (0x8B, UPPER_LEFT | LOWER_LEFT | LOWER_RIGHT),
-    (0x8C, UPPER_RIGHT | LOWER_LEFT | LOWER_RIGHT),
-    (0xA0, UPPER_LEFT | UPPER_RIGHT | LOWER_LEFT | LOWER_RIGHT),
-];
-
-/// The pixels a character sets, `None` for characters that are not quarter blocks.
-pub fn pixels_of(code: char) -> Option<u8> {
-    BLOCKS
-        .iter()
-        .find(|(candidate, _)| u32::from(*candidate) == code as u32)
-        .map(|(_, pixels)| *pixels)
+/// The quarter block characters of a font, by the pixels they set.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuarterBlocks {
+    codes: [Option<char>; 16],
 }
 
-fn code_for(pixels: u8) -> Option<char> {
-    BLOCKS.iter().find(|(_, candidate)| *candidate == pixels).map(|(code, _)| char::from(*code))
+impl QuarterBlocks {
+    /// The quarter blocks of `font`, `None` when its characters cannot be split into quarters or
+    /// it lacks an empty or full one.
+    pub fn of(font: &BitFont) -> Option<Self> {
+        let size = font.size();
+        let (width, height) = (size.width as usize, size.height as usize);
+        if width % 2 != 0 || height % 2 != 0 || width == 0 {
+            return None;
+        }
+        let mut codes = [None; 16];
+        // The space first, then the normal characters before the inverse ones.
+        for code in std::iter::once(0x20).chain(0..256u32) {
+            let ch = char::from_u32(code)?;
+            let rows = font.glyph(ch).to_bitmap_pixels();
+            let quarter = |left: usize, top: usize| {
+                let pixels = rows
+                    .iter()
+                    .skip(top)
+                    .take(height / 2)
+                    .flat_map(|row| row.iter().skip(left).take(width / 2).copied());
+                let lit = pixels.clone().filter(|&on| on).count();
+                match lit {
+                    0 => Some(false),
+                    n if n == width * height / 4 => Some(true),
+                    _ => None,
+                }
+            };
+            let quarters = [quarter(0, 0), quarter(width / 2, 0), quarter(0, height / 2), quarter(width / 2, height / 2)];
+            if quarters.iter().any(Option::is_none) {
+                continue;
+            }
+            let pixels = quarters
+                .iter()
+                .enumerate()
+                .fold(0u8, |mask, (bit, set)| mask | (u8::from(set == &Some(true)) << bit));
+            codes[pixels as usize].get_or_insert(ch);
+        }
+        (codes[0].is_some() && codes[15].is_some()).then_some(Self { codes })
+    }
+
+    /// The pixels a character sets, `None` for characters that are not quarter blocks.
+    pub fn pixels_of(&self, code: char) -> Option<u8> {
+        self.codes.iter().position(|candidate| *candidate == Some(code)).map(|pixels| pixels as u8)
+    }
+
+    /// The character `code` with the pixel at `pixel` set or cleared. Other characters count as empty.
+    pub fn with_pixel(&self, code: char, pixel: Position, set: bool) -> char {
+        let bit = bit(pixel);
+        let pixels = self.pixels_of(code).unwrap_or(0);
+        let pixels = if set { pixels | bit } else { pixels & !bit };
+        let row = if bit & (UPPER_LEFT | UPPER_RIGHT) != 0 {
+            UPPER_LEFT | UPPER_RIGHT
+        } else {
+            LOWER_LEFT | LOWER_RIGHT
+        };
+        self.codes[pixels as usize].or(self.codes[(pixels & row) as usize]).unwrap_or(' ')
+    }
 }
 
 /// The pixel of a character at the pixel position `pixel` (in pixels, two per character).
@@ -50,52 +87,49 @@ pub fn cell_of(pixel: Position) -> Position {
     Position::new(pixel.x.div_euclid(2), pixel.y.div_euclid(2))
 }
 
-/// The character `code` with the pixel at `pixel` set or cleared. Other characters count as empty.
-pub fn with_pixel(code: char, pixel: Position, set: bool) -> char {
-    let bit = bit(pixel);
-    let pixels = pixels_of(code).unwrap_or(0);
-    let pixels = if set { pixels | bit } else { pixels & !bit };
-    let row = if bit & (UPPER_LEFT | UPPER_RIGHT) != 0 {
-        UPPER_LEFT | UPPER_RIGHT
-    } else {
-        LOWER_LEFT | LOWER_RIGHT
-    };
-    code_for(pixels).or_else(|| code_for(pixels & row)).unwrap_or(' ')
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn pixels_build_up_to_a_full_block_and_back() {
+    fn atascii_pixels_build_up_to_a_full_block_and_back() {
+        let blocks = QuarterBlocks::of(&icy_engine::ATARI).unwrap();
         let mut code = ' ';
         for pixel in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-            code = with_pixel(code, Position::new(pixel.0, pixel.1), true);
+            code = blocks.with_pixel(code, Position::new(pixel.0, pixel.1), true);
         }
         assert_eq!(code as u32, 0xA0);
-        code = with_pixel(code, Position::new(1, 1), false);
+        code = blocks.with_pixel(code, Position::new(1, 1), false);
         assert_eq!(code as u32, 0x89, "all but the lower right is the inverse ▗");
         for pixel in [(0, 0), (1, 0), (0, 1)] {
-            code = with_pixel(code, Position::new(pixel.0, pixel.1), false);
+            code = blocks.with_pixel(code, Position::new(pixel.0, pixel.1), false);
         }
         assert_eq!(code, ' ');
     }
 
     #[test]
-    fn diagonals_keep_the_row_of_the_new_pixel() {
-        let upper_left = with_pixel(' ', Position::new(0, 0), true);
-        assert_eq!(with_pixel(upper_left, Position::new(1, 1), true) as u32, 0x09, "only the lower right");
-        let three = char::from(0x89u8);
-        assert_eq!(with_pixel(three, Position::new(0, 0), false) as u32, 0x0B, "the upper right stays");
+    fn atascii_diagonals_keep_the_row_of_the_new_pixel() {
+        let blocks = QuarterBlocks::of(&icy_engine::ATARI).unwrap();
+        let upper_left = blocks.with_pixel(' ', Position::new(0, 0), true);
+        assert_eq!(blocks.with_pixel(upper_left, Position::new(1, 1), true) as u32, 0x09, "only the lower right");
+        for pixels in 0..16u8 {
+            let diagonal = pixels == UPPER_LEFT | LOWER_RIGHT || pixels == UPPER_RIGHT | LOWER_LEFT;
+            assert_eq!(blocks.codes[pixels as usize].is_some(), !diagonal, "{pixels:04b}");
+        }
+        assert_eq!(cell_of(Position::new(5, 3)), Position::new(2, 1));
     }
 
     #[test]
-    fn every_combination_but_the_diagonals_has_a_character() {
-        for pixels in 0..16u8 {
-            let diagonal = pixels == UPPER_LEFT | LOWER_RIGHT || pixels == UPPER_RIGHT | LOWER_LEFT;
-            assert_eq!(code_for(pixels).is_some(), !diagonal, "{pixels:04b}");
-        }
-        assert_eq!(cell_of(Position::new(5, 3)), Position::new(2, 1));
+    fn petscii_has_every_combination_with_the_diagonals() {
+        let font = icy_engine::petscii_font(icy_engine::PetsciiMachine::C64, icy_engine::PetsciiCase::Upper);
+        let blocks = QuarterBlocks::of(&font).unwrap();
+        assert!(blocks.codes.iter().all(Option::is_some));
+        // The C64's quarter blocks, as Petmate's chunky lines use them.
+        assert_eq!(blocks.codes[UPPER_LEFT as usize], Some('\u{7E}'));
+        assert_eq!(blocks.codes[(UPPER_LEFT | LOWER_RIGHT) as usize], Some('\u{7F}'));
+        assert_eq!(blocks.codes[15], Some('\u{A0}'));
+        let diagonal = blocks.with_pixel(blocks.with_pixel(' ', Position::new(0, 0), true), Position::new(1, 1), true);
+        assert_eq!(diagonal as u32, 0x7F);
+        assert!(QuarterBlocks::of(&icy_engine::ATARI_XEP80).is_none(), "7 × 10 characters have no quarters");
     }
 }

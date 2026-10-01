@@ -52,6 +52,8 @@ mod welcome;
 
 enum Dialog {
     New,
+    /// The screens of a Petmate workspace to open one of.
+    PetmateScreens(Box<petscii::PetmatePick>),
     Resize,
     Close,
     Characters,
@@ -554,10 +556,7 @@ impl DrawApp {
 
     fn load_document(&mut self, path: PathBuf) {
         if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("petmate")) {
-            match petscii::load_petmate(&path) {
-                Ok(document) => self.replace(document),
-                Err(error) => self.dialog = Some(Dialog::Error(error)),
-            }
+            self.open_petmate(path);
             return;
         }
         if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("rip")) {
@@ -2954,6 +2953,13 @@ impl DrawApp {
             Dialog::ReferenceImage => keep = !self.reference_image_dialog(context),
             Dialog::Connect => keep = !self.connect_dialog(context),
             Dialog::Recovery => keep = self.recovery_dialog(context),
+            Dialog::PetmateScreens(pick) => {
+                let mut pick = pick.clone();
+                keep = false;
+                if self.petmate_dialog(context, &mut pick) {
+                    self.dialog = Some(Dialog::PetmateScreens(pick));
+                }
+            }
             Dialog::ShadeRamps(draft) => {
                 let mut draft = draft.clone();
                 keep = self.shade_ramps_dialog(context, &mut draft);

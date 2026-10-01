@@ -110,6 +110,8 @@ impl DrawApp {
     pub(super) fn start_atascii(&mut self) {
         let editor = AtasciiEditor::default();
         self.document.inverse = false;
+        self.document.reverse_pen = false;
+        self.document.quarter_blocks = false;
         self.document.brush.primary = BrushPrimaryMode::Char;
         self.document.brush.paint_char = char::from(editor.brush);
         self.document.brush.colorize_fg = true;
@@ -434,8 +436,15 @@ impl DrawApp {
             }
             let tool = self.document.tool;
             if (tool == Tool::Pencil || tool.is_shape_tool()) && !(tool == Tool::Line && self.document.box_line.is_some()) {
-                ui.toggle_value(&mut self.document.quarter_blocks, fl!("atascii-pixels"))
-                    .on_hover_text(fl!("atascii-pixels-tooltip"));
+                let has_quarters = self
+                    .document
+                    .with_state(|state| state.get_buffer().font(0).and_then(icy_draw::quarter_blocks::QuarterBlocks::of).is_some());
+                if has_quarters && !self.document.reverse_pen {
+                    ui.toggle_value(&mut self.document.quarter_blocks, fl!("atascii-pixels"))
+                        .on_hover_text(fl!("atascii-pixels-tooltip"));
+                }
+                ui.toggle_value(&mut self.document.reverse_pen, fl!("atascii-inverse-pen"))
+                    .on_hover_text(fl!("atascii-inverse-pen-tooltip"));
             }
             if self.document.tool == Tool::Line {
                 let mut outline = self.document.box_line.is_some();
@@ -736,6 +745,21 @@ mod tests {
         assert_eq!(app.document.brush.paint_char as u32, 0xC1);
         assert!(app.document.inverse, "an inverse character turns inverse on");
         assert_eq!(app.document.tool, Tool::Line);
+    }
+
+    #[test]
+    fn the_invert_pen_makes_characters_inverse_and_back() {
+        let (_, mut app) = atascii_app();
+        app.document.type_text("AB").unwrap();
+        app.document.tool = Tool::Pencil;
+        app.document.reverse_pen = true;
+        app.document.begin(Position::new(0, 0), icy_engine::MouseButton::Left);
+        app.document.update(Position::new(1, 0));
+        app.document.finish();
+        assert_eq!([code_at(&app, 0), code_at(&app, 1)], [0xC1, 0xC2]);
+        app.document.begin(Position::new(0, 0), icy_engine::MouseButton::Right);
+        app.document.finish();
+        assert_eq!(code_at(&app, 0), 0x41);
     }
 
     #[test]

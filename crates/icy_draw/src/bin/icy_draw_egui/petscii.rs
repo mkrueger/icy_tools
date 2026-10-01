@@ -41,6 +41,49 @@ pub const CASES: [PetsciiCase; 2] = [PetsciiCase::Upper, PetsciiCase::Lower];
 /// The side of a color swatch.
 const SWATCH: f32 = 30.0;
 
+/// Petmate's block characters (rectangles, L shapes, checkers), from which fading picks; 76, 79
+/// and 80 are letters in the lower case set.
+const BLOCKS: [u8; 25] = [
+    76, 79, 80, 97, 98, 99, 100, 101, 102, 103, 104, 106, 108, 111, 116, 117, 118, 119, 120, 121, 122, 123, 124, 126, 127,
+];
+
+/// What the pencil and shapes do with the cells they touch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PaintMode {
+    Char,
+    Color,
+    Reverse,
+    Fade,
+}
+
+/// The block characters of `font` from empty to full, one per number of set pixels, at most
+/// sixteen, for fading like Petmate: the left button darkens, the right one lightens.
+pub fn fade_ramp(font: &icy_engine::BitFont, case: PetsciiCase) -> icy_draw::brush::CharRamp {
+    let weight = |code: u8| font.glyph(char::from(code)).to_bitmap_pixels().iter().flatten().filter(|&&on| on).count();
+    let mut by_weight: std::collections::BTreeMap<usize, u8> = std::collections::BTreeMap::new();
+    let letters = |code: u8| case == PetsciiCase::Lower && (65..=90).contains(&code);
+    for code in BLOCKS
+        .iter()
+        .copied()
+        .filter(|&code| !letters(code))
+        .flat_map(|code| [code, code | 0x80])
+        .chain([0xA0])
+    {
+        let weight = weight(code);
+        if weight > 0 {
+            by_weight.entry(weight).or_insert(code);
+        }
+    }
+    let codes: Vec<u8> = by_weight.into_values().collect();
+    let max = icy_draw::brush::MAX_RAMP_LEN;
+    let picked: Vec<char> = if codes.len() <= max {
+        codes.iter().map(|&code| char::from(code)).collect()
+    } else {
+        (0..max).map(|step| char::from(codes[step * (codes.len() - 1) / (max - 1)])).collect()
+    };
+    icy_draw::brush::CharRamp::new(&picked)
+}
+
 pub fn machine_name(machine: PetsciiMachine) -> String {
     match machine {
         PetsciiMachine::C64 => "C64".to_owned(),
@@ -53,6 +96,14 @@ pub fn case_name(case: PetsciiCase) -> String {
         PetsciiCase::Upper => fl!("petscii-case-upper"),
         PetsciiCase::Lower => fl!("petscii-case-lower"),
     }
+}
+
+/// A workspace's screens and the one picked to open.
+#[derive(Clone, Debug)]
+pub struct PetmatePick {
+    pub path: std::path::PathBuf,
+    pub screens: Vec<PetmateScreen>,
+    pub selected: usize,
 }
 
 /// What the PETSCII editor remembers beside the document.
@@ -74,23 +125,69 @@ impl Default for PetsciiEditor {
     }
 }
 
-/// Loads the first screen of a Petmate workspace (.petmate) as a PETSCII document.
-pub fn load_petmate(path: &std::path::Path) -> Result<Document, String> {
+/// A screen of a Petmate workspace, as the import lists it.
+#[derive(Clone, Debug)]
+pub struct PetmateScreen {
+    pub name: String,
+    pub width: i64,
+    pub height: i64,
+    pub charset: String,
+}
+
+impl PetmateScreen {
+    /// The machine and character set of the screen, `None` for those this editor lacks.
+    pub fn charset(&self) -> Option<(PetsciiMachine, PetsciiCase)> {
+        match self.charset.as_str() {
+            "upper" | "dirart" | "cbaseUpper" => Some((PetsciiMachine::C64, PetsciiCase::Upper)),
+            "lower" | "cbaseLower" => Some((PetsciiMachine::C64, PetsciiCase::Lower)),
+            "c128Upper" => Some((PetsciiMachine::C128, PetsciiCase::Upper)),
+            "c128Lower" => Some((PetsciiMachine::C128, PetsciiCase::Lower)),
+            _ => None,
+        }
+    }
+}
+
+/// The workspace at `path` and the screens in it.
+fn petmate_workspace(path: &std::path::Path) -> Result<Vec<serde_json::Value>, String> {
     let text = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
     let workspace: serde_json::Value = serde_json::from_str(&text).map_err(|error| error.to_string())?;
-    let screen = workspace
-        .get("framebufs")
-        .and_then(|screens| screens.get(0))
-        .ok_or_else(|| fl!("petmate-no-screen"))?;
+    let screens = workspace.get("framebufs").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
+    if screens.is_empty() {
+        return Err(fl!("petmate-no-screen"));
+    }
+    Ok(screens)
+}
+
+/// The screens of the Petmate workspace at `path`.
+pub fn petmate_screens(path: &std::path::Path) -> Result<Vec<PetmateScreen>, String> {
+    Ok(petmate_workspace(path)?
+        .iter()
+        .enumerate()
+        .map(|(index, screen)| PetmateScreen {
+            name: screen
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .map_or_else(|| fl!("petmate-screen", number = (index + 1)), str::to_owned),
+            width: screen.get("width").and_then(serde_json::Value::as_i64).unwrap_or(40),
+            height: screen.get("height").and_then(serde_json::Value::as_i64).unwrap_or(25),
+            charset: screen.get("charset").and_then(serde_json::Value::as_str).unwrap_or("upper").to_owned(),
+        })
+        .collect())
+}
+
+/// Loads screen `index` of a Petmate workspace (.petmate) as a PETSCII document.
+pub fn load_petmate(path: &std::path::Path, index: usize) -> Result<Document, String> {
+    let screens = petmate_workspace(path)?;
+    let screen = screens.get(index).ok_or_else(|| fl!("petmate-no-screen"))?;
     let number = |key: &str| screen.get(key).and_then(serde_json::Value::as_i64);
     let charset = screen.get("charset").and_then(serde_json::Value::as_str).unwrap_or("upper");
-    let (machine, case) = match charset {
-        "upper" | "dirart" | "cbaseUpper" => (PetsciiMachine::C64, PetsciiCase::Upper),
-        "lower" | "cbaseLower" => (PetsciiMachine::C64, PetsciiCase::Lower),
-        "c128Upper" => (PetsciiMachine::C128, PetsciiCase::Upper),
-        "c128Lower" => (PetsciiMachine::C128, PetsciiCase::Lower),
-        other => return Err(fl!("petmate-unsupported-charset", charset = other)),
+    let listed = PetmateScreen {
+        name: String::new(),
+        width: 0,
+        height: 0,
+        charset: charset.to_owned(),
     };
+    let (machine, case) = listed.charset().ok_or_else(|| fl!("petmate-unsupported-charset", charset = charset))?;
     let width = number("width").unwrap_or(40).clamp(1, 1000) as i32;
     let height = number("height").unwrap_or(25).clamp(1, 1000) as i32;
     let background = (number("backgroundColor").unwrap_or(0) & 0x0F) as u32;
@@ -114,11 +211,88 @@ pub fn load_petmate(path: &std::path::Path) -> Result<Document, String> {
 }
 
 impl DrawApp {
+    /// Opens a Petmate workspace: its only screen, or the one picked from its screens.
+    pub(super) fn open_petmate(&mut self, path: std::path::PathBuf) {
+        match petmate_screens(&path) {
+            Ok(screens) if screens.len() > 1 => {
+                let selected = screens.iter().position(|screen| screen.charset().is_some()).unwrap_or(0);
+                self.dialog = Some(super::Dialog::PetmateScreens(Box::new(PetmatePick { path, screens, selected })));
+            }
+            Ok(_) => self.open_petmate_screen(&path, 0),
+            Err(error) => self.dialog = Some(super::Dialog::Error(error)),
+        }
+    }
+
+    fn open_petmate_screen(&mut self, path: &std::path::Path, index: usize) {
+        match load_petmate(path, index) {
+            Ok(document) => self.replace(document),
+            Err(error) => self.dialog = Some(super::Dialog::Error(error)),
+        }
+    }
+
+    /// The list of a workspace's screens to open one of. Returns whether the dialog stays open.
+    pub(super) fn petmate_dialog(&mut self, context: &egui::Context, pick: &mut PetmatePick) -> bool {
+        #[derive(Clone, Copy)]
+        enum Action {
+            Cancel,
+            Open,
+        }
+        let title = pick.path.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+        let response = icy_engine_gui::egui::appearance::Dialog::new("petmate-screens")
+            .title(title)
+            .subtitle(fl!("petmate-pick-screen", count = pick.screens.len()))
+            .size(icy_engine_gui::egui::appearance::DialogSize::Medium)
+            .confirm_on_enter(true)
+            .show(context, |dialog| {
+                let mut open_now = false;
+                dialog.content(|ui| {
+                    egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                        for (index, screen) in pick.screens.iter().enumerate() {
+                            let supported = screen.charset().is_some();
+                            let label = format!("{}. {}  ·  {} × {}  ·  {}", index + 1, screen.name, screen.width, screen.height, screen.charset);
+                            let row = egui::Button::selectable(pick.selected == index, label).min_size(egui::vec2(ui.available_width(), 26.0));
+                            let response = ui.add_enabled(supported, row);
+                            if !supported {
+                                response
+                                    .clone()
+                                    .on_disabled_hover_text(fl!("petmate-unsupported-charset", charset = screen.charset.as_str()));
+                            }
+                            if response.clicked() {
+                                pick.selected = index;
+                            }
+                            if response.double_clicked() {
+                                pick.selected = index;
+                                open_now = true;
+                            }
+                        }
+                    });
+                });
+                if open_now {
+                    dialog.finish(Action::Open);
+                }
+                let open = pick.screens.get(pick.selected).is_some_and(|screen| screen.charset().is_some());
+                dialog.buttons([
+                    icy_engine_gui::egui::appearance::DialogButton::cancel(icy_engine_gui::egui::appearance::labels::cancel(), Action::Cancel),
+                    icy_engine_gui::egui::appearance::DialogButton::primary(fl!("petmate-open"), Action::Open).enabled(open),
+                ]);
+            });
+        match response.action {
+            Some(Action::Open) => {
+                let (path, index) = (pick.path.clone(), pick.selected);
+                self.open_petmate_screen(&path, index);
+                false
+            }
+            Some(Action::Cancel) => false,
+            None => !response.dismissed,
+        }
+    }
+
     /// Edits the document, a PETSCII screen, with the PETSCII editor.
     pub(super) fn start_petscii(&mut self) {
         let editor = PetsciiEditor::default();
         self.document.inverse = false;
         self.document.quarter_blocks = false;
+        self.document.reverse_pen = false;
         self.document.brush.primary = BrushPrimaryMode::Char;
         self.document.brush.paint_char = char::from(editor.brush);
         self.document.brush.colorize_fg = true;
@@ -298,7 +472,7 @@ impl DrawApp {
                     ui.weak(fl!("vt52-pipette-hint"));
                 }
             }
-            if tool == Tool::Pencil || tool == Tool::Fill || tool.is_shape_tool() {
+            if tool == Tool::Fill {
                 let mut mode = self.document.brush.primary;
                 let options = [
                     (BrushPrimaryMode::Char, fl!("vt52-brush-char"), fl!("vt52-brush-char-tooltip")),
@@ -306,6 +480,18 @@ impl DrawApp {
                 ];
                 if widgets::segmented(ui, &mut mode, &options) {
                     self.document.brush.primary = mode;
+                }
+            } else if (tool == Tool::Pencil || tool.is_shape_tool()) && !(tool == Tool::Line && self.document.box_line.is_some()) {
+                self.petscii_paint_options(ui);
+            }
+            if tool == Tool::Line {
+                let mut outline = self.document.box_line.is_some();
+                if ui
+                    .toggle_value(&mut outline, fl!("line-style-outline"))
+                    .on_hover_text(fl!("line-style-outline-tooltip"))
+                    .changed()
+                {
+                    self.document.box_line = outline.then_some(icy_draw::box_lines::BoxStyle::Single);
                 }
             }
             widgets::divider(ui);
@@ -318,6 +504,58 @@ impl DrawApp {
         }
         if let Some(code) = picked {
             self.pick_petscii(code);
+        }
+    }
+
+    fn petscii_paint_mode(&self) -> PaintMode {
+        if self.document.reverse_pen {
+            PaintMode::Reverse
+        } else {
+            match self.document.brush.primary {
+                BrushPrimaryMode::Colorize => PaintMode::Color,
+                BrushPrimaryMode::Shading => PaintMode::Fade,
+                _ => PaintMode::Char,
+            }
+        }
+    }
+
+    fn apply_petscii_paint_mode(&mut self, mode: PaintMode) {
+        self.document.reverse_pen = mode == PaintMode::Reverse;
+        self.document.brush.primary = match mode {
+            PaintMode::Color => BrushPrimaryMode::Colorize,
+            PaintMode::Fade => BrushPrimaryMode::Shading,
+            PaintMode::Char | PaintMode::Reverse => BrushPrimaryMode::Char,
+        };
+        if mode == PaintMode::Fade {
+            let (font, case) = self.document.with_state(|state| {
+                let buffer = state.get_buffer();
+                (buffer.font(0).cloned(), icy_engine::petscii_charset(buffer).1)
+            });
+            if let Some(font) = font {
+                self.document.brush.shade_chars = fade_ramp(&font, case);
+                self.document.brush.shade_colors = icy_draw::brush::ColorRamp::default();
+            }
+        }
+    }
+
+    /// The modes of the pencil and shapes, and drawing in quarter block pixels.
+    fn petscii_paint_options(&mut self, ui: &mut egui::Ui) {
+        let mut mode = self.petscii_paint_mode();
+        let options = [
+            (PaintMode::Char, fl!("vt52-brush-char"), fl!("vt52-brush-char-tooltip")),
+            (PaintMode::Color, fl!("vt52-brush-color"), fl!("petscii-brush-color-tooltip")),
+            (PaintMode::Reverse, fl!("petscii-reverse"), fl!("petscii-reverse-pen-tooltip")),
+            (PaintMode::Fade, fl!("petscii-fade"), fl!("petscii-fade-tooltip")),
+        ];
+        if widgets::segmented(ui, &mut mode, &options) {
+            self.apply_petscii_paint_mode(mode);
+        }
+        let has_quarters = self
+            .document
+            .with_state(|state| state.get_buffer().font(0).and_then(icy_draw::quarter_blocks::QuarterBlocks::of).is_some());
+        if mode == PaintMode::Char && has_quarters {
+            ui.toggle_value(&mut self.document.quarter_blocks, fl!("atascii-pixels"))
+                .on_hover_text(fl!("atascii-pixels-tooltip"));
         }
     }
 
@@ -500,6 +738,109 @@ mod tests {
         assert!(app.document.inverse);
         assert_eq!(app.document.with_state(|state| state.get_caret().attribute.foreground()), 2);
         assert_eq!(app.document.tool, Tool::Line);
+    }
+
+    fn stroke(app: &mut DrawApp, from: (i32, i32), to: (i32, i32), button: icy_engine::MouseButton) {
+        app.document.begin(Position::new(from.0, from.1), button);
+        app.document.update(Position::new(to.0, to.1));
+        app.document.finish();
+    }
+
+    #[test]
+    fn chunky_pixels_use_the_c64_quarter_blocks_with_diagonals() {
+        let (_, mut app) = petscii_app(PetsciiMachine::C64, PetsciiCase::Upper);
+        app.document.tool = Tool::Pencil;
+        app.document.quarter_blocks = true;
+        stroke(&mut app, (0, 0), (0, 0), icy_engine::MouseButton::Left);
+        stroke(&mut app, (1, 1), (1, 1), icy_engine::MouseButton::Left);
+        assert_eq!(cell(&app, 0, 0).0, 0x7F, "the upper left and lower right quarter");
+        app.document.tool = Tool::Line;
+        stroke(&mut app, (0, 4), (7, 4), icy_engine::MouseButton::Left);
+        assert_eq!((0..4).map(|x| cell(&app, x, 2).0).collect::<Vec<_>>(), [0xE2; 4], "a line of upper halves");
+    }
+
+    #[test]
+    fn outline_lines_join_with_the_c64_line_characters() {
+        let (_, mut app) = petscii_app(PetsciiMachine::C64, PetsciiCase::Upper);
+        app.document.tool = Tool::Line;
+        app.document.box_line = Some(icy_draw::box_lines::BoxStyle::Single);
+        stroke(&mut app, (0, 1), (4, 1), icy_engine::MouseButton::Left);
+        stroke(&mut app, (2, 0), (2, 3), icy_engine::MouseButton::Left);
+        stroke(&mut app, (0, 3), (2, 3), icy_engine::MouseButton::Left);
+        assert_eq!((0..5).map(|x| cell(&app, x, 1).0).collect::<Vec<_>>(), [0x40, 0x40, 0x5B, 0x40, 0x40]);
+        assert_eq!([cell(&app, 2, 0).0, cell(&app, 2, 2).0, cell(&app, 2, 3).0], [0x5D, 0x5D, 0x7D], "│ │ ┘");
+    }
+
+    #[test]
+    fn the_reverse_pen_turns_characters_reverse_and_back() {
+        let (_, mut app) = petscii_app(PetsciiMachine::C64, PetsciiCase::Upper);
+        app.document.type_text("HELLO").unwrap();
+        app.document.with_state(|state| state.set_caret_foreground(2));
+        app.document.tool = Tool::Pencil;
+        app.document.reverse_pen = true;
+        stroke(&mut app, (0, 0), (2, 0), icy_engine::MouseButton::Left);
+        assert_eq!((0..4).map(|x| cell(&app, x, 0).0).collect::<Vec<_>>(), [0x88, 0x85, 0x8C, 0x0C]);
+        assert_eq!(cell(&app, 0, 0).1, 14, "the colors stay");
+        stroke(&mut app, (1, 0), (1, 0), icy_engine::MouseButton::Right);
+        assert_eq!(cell(&app, 1, 0).0, 0x05);
+    }
+
+    #[test]
+    fn fading_steps_through_denser_blocks() {
+        let font = icy_engine::petscii_font(PetsciiMachine::C64, PetsciiCase::Upper);
+        let ramp = fade_ramp(&font, PetsciiCase::Upper);
+        let weight = |ch: char| font.glyph(ch).to_bitmap_pixels().iter().flatten().filter(|&&on| on).count();
+        let weights: Vec<usize> = ramp.as_slice().iter().map(|&ch| weight(ch)).collect();
+        assert!(weights.windows(2).all(|pair| pair[0] < pair[1]), "{weights:?}");
+        assert_eq!(*weights.last().unwrap(), 64, "it ends with the full block");
+        assert!(ramp.len() <= icy_draw::brush::MAX_RAMP_LEN && ramp.len() >= 8);
+
+        let (_, mut app) = petscii_app(PetsciiMachine::C64, PetsciiCase::Upper);
+        app.document.tool = Tool::Pencil;
+        app.apply_petscii_paint_mode(PaintMode::Fade);
+        let first = app.document.brush.shade_chars.as_slice()[0] as u32;
+        stroke(&mut app, (0, 0), (0, 0), icy_engine::MouseButton::Left);
+        stroke(&mut app, (0, 0), (0, 0), icy_engine::MouseButton::Left);
+        let second = app.document.brush.shade_chars.as_slice()[1] as u32;
+        assert_eq!(cell(&app, 0, 0).0, second, "two strokes darken twice");
+        stroke(&mut app, (0, 0), (0, 0), icy_engine::MouseButton::Right);
+        assert_eq!(cell(&app, 0, 0).0, first, "the right button lightens");
+    }
+
+    #[test]
+    fn workspaces_with_several_screens_ask_which_one_to_open() {
+        let (_, mut app) = petscii_app(PetsciiMachine::C64, PetsciiCase::Upper);
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path().join("frames.petmate");
+        let screen = |name: &str, charset: &str, code: u8| {
+            format!(
+                r#"{{"name":"{name}","width":2,"height":1,"backgroundColor":0,"borderColor":0,"charset":"{charset}","framebuf":[[{{"code":{code},"color":1}},{{"code":32,"color":1}}]]}}"#
+            )
+        };
+        std::fs::write(
+            &workspace,
+            format!(
+                r#"{{"version":4,"framebufs":[{},{},{}]}}"#,
+                screen("vdc", "c128vdc", 1),
+                screen("one", "upper", 2),
+                screen("two", "lower", 3)
+            ),
+        )
+        .unwrap();
+        app.load_path(workspace.clone());
+        let Some(super::super::Dialog::PetmateScreens(pick)) = &app.dialog else {
+            panic!("the screens are listed");
+        };
+        assert_eq!(
+            pick.screens.iter().map(|screen| screen.name.as_str()).collect::<Vec<_>>(),
+            ["vdc", "one", "two"]
+        );
+        assert_eq!(pick.selected, 1, "the first screen this editor can open is picked");
+        app.dialog = None;
+        app.open_petmate_screen(&workspace, 2);
+        assert_eq!(app.document.profile(), ScreenProfile::Petscii(PetsciiMachine::C64, PetsciiCase::Lower));
+        assert_eq!(cell(&app, 0, 0).0, 3);
+        assert!(load_petmate(&workspace, 0).is_err(), "VDC screens are refused");
     }
 
     #[test]

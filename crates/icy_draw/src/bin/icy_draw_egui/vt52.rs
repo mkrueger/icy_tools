@@ -96,6 +96,7 @@ impl DrawApp {
         let editor = Vt52Editor::default();
         self.document.inverse = false;
         self.document.quarter_blocks = false;
+        self.document.reverse_pen = false;
         self.document.brush.primary = BrushPrimaryMode::Char;
         self.document.brush.paint_char = char::from(editor.brush);
         self.document.brush.colorize_fg = true;

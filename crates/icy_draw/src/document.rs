@@ -158,8 +158,11 @@ pub struct Document {
     /// Whether text is typed in inverse video, on screens that keep it in the character (ATASCII).
     pub inverse: bool,
     /// Whether the pencil and shapes draw 2 × 2 pixels per character with quarter blocks
-    /// (ATASCII); positions are then in pixels.
+    /// (ATASCII, PETSCII); positions are then in pixels.
     pub quarter_blocks: bool,
+    /// Whether the pencil and shapes make characters reverse (left button) or normal (right
+    /// button), on screens that keep reverse in the character (ATASCII, PETSCII).
+    pub reverse_pen: bool,
 }
 
 impl Document {
@@ -217,6 +220,7 @@ impl Document {
             tag_clipboard: None,
             inverse: false,
             quarter_blocks: false,
+            reverse_pen: false,
         }
     }
 
@@ -880,8 +884,32 @@ impl Document {
 
     /// Whether positions of the current tool are quarter block pixels rather than characters.
     pub fn draws_pixels(&self) -> bool {
-        self.quarter_blocks && self.tool == Tool::Pencil
-            || self.quarter_blocks && self.tool.is_shape_tool() && !(self.tool == Tool::Line && self.box_line.is_some())
+        self.quarter_blocks
+            && !self.reverse_pen
+            && (self.tool == Tool::Pencil || self.tool.is_shape_tool() && !(self.tool == Tool::Line && self.box_line.is_some()))
+    }
+
+    /// Makes the character at `position` reverse or normal, keeping its colors.
+    fn stamp_reverse(state: &mut EditState, position: Position, reverse: bool) {
+        if state.is_something_selected() && !state.is_selected(position) {
+            return;
+        }
+        let Some(layer) = state.get_cur_layer() else {
+            return;
+        };
+        let local = position - layer.offset();
+        if local.x < 0 || local.y < 0 || local.x >= layer.width() || local.y >= layer.height() {
+            return;
+        }
+        let mut ch = layer.char_at(local);
+        let Ok(code) = u8::try_from(ch.ch as u32) else {
+            return;
+        };
+        let changed = if reverse { code | 0x80 } else { code & 0x7F };
+        if ch.is_visible() && changed != code {
+            ch.ch = char::from(changed);
+            let _ = state.set_char_in_atomic(local, ch);
+        }
     }
 
     /// Sets (left button) or clears the quarter block pixel at `pixel`.
@@ -898,7 +926,10 @@ impl Document {
         if local.x < 0 || local.y < 0 || local.x >= layer.width() || local.y >= layer.height() {
             return;
         }
-        let code = crate::quarter_blocks::with_pixel(layer.char_at(local).ch, pixel, button != MouseButton::Right);
+        let Some(blocks) = state.get_buffer().font(0).and_then(crate::quarter_blocks::QuarterBlocks::of) else {
+            return;
+        };
+        let code = blocks.with_pixel(layer.char_at(local).ch, pixel, button != MouseButton::Right);
         let _ = state.set_char_in_atomic(local, icy_engine::AttributedChar::new(code, attribute));
     }
 
@@ -911,7 +942,9 @@ impl Document {
 
     /// Paints the brush at `position` into `state`, the document's or a copy for the preview.
     fn stamp_into(&self, state: &mut EditState, position: Position, brush: BrushSettings, button: MouseButton) {
-        if self.draws_pixels() {
+        if self.reverse_pen {
+            Self::stamp_reverse(state, position, button != MouseButton::Right);
+        } else if self.draws_pixels() {
             Self::stamp_pixel(state, position, button);
         } else if brush.primary == BrushPrimaryMode::HalfBlock {
             let size = brush.brush_size.max(1) as i32;
