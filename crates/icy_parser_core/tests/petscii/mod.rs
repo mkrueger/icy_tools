@@ -37,6 +37,9 @@ impl CommandSink for TestSink {
             TerminalCommand::CsiEraseInDisplay(mode) => {
                 self.commands.push(format!("EraseInDisplay: {:?}", mode));
             }
+            TerminalCommand::CsiInsertCharacter(n) => {
+                self.commands.push(format!("InsertChar: {}", n));
+            }
             TerminalCommand::CsiEraseInLine(mode) => {
                 self.commands.push(format!("EraseInLine: {:?}", mode));
             }
@@ -224,18 +227,6 @@ fn test_petscii_underline() {
 }
 
 #[test]
-fn test_petscii_insert_char() {
-    let mut parser = PetsciiParser::new();
-    let mut sink = TestSink::new();
-
-    // Insert character (0x94) - now outputs a space
-    parser.parse(b"\x94", &mut sink);
-
-    assert_eq!(sink.commands.len(), 1);
-    assert_eq!(sink.commands[0], "Text: \" \""); // Space character
-}
-
-#[test]
 fn test_petscii_carriage_return() {
     let mut parser = PetsciiParser::new();
     let mut sink = TestSink::new();
@@ -313,7 +304,6 @@ fn test_petscii_shift_emits_font_selection() {
 }
 
 #[test]
-#[ignore = "Insert character (0x94) should map to CSI ICH like the legacy BufferParser"]
 fn test_petscii_insert_char_should_issue_ich() {
     let mut parser = PetsciiParser::new();
     let mut sink = TestSink::new();

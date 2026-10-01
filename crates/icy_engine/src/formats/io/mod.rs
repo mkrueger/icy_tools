@@ -37,6 +37,7 @@ pub(crate) use pcboard::{load_pcboard, save_pcboard};
 pub(crate) use renegade::{load_renegade, save_renegade};
 pub(crate) use rexpaint::load_rexpaint;
 pub(crate) use seq::{load_seq, save_seq};
+pub use seq::{petscii_background, petscii_buffer, petscii_charset, petscii_font, petscii_screen_code, PetsciiCase, PetsciiMachine};
 pub(crate) use tundra::{load_tundra, save_tundra};
 pub use vt52::{atari_st_buffer, atari_st_columns, atari_st_font, atari_st_resolution, atari_st_text_color};
 pub(crate) use vt52::{load_vt52, save_vt52};

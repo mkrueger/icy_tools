@@ -22,7 +22,9 @@ use super::Size;
 
 // Re-export key items from submodules
 pub use ansi::{font_height_for_lines, get_ansi_font, ANSI_SLOT_COUNT, ANSI_SLOT_FONTS, CP437, DEFAULT_FONT_NAME};
-pub use legacy::{ATARI, ATARI_XEP80, ATARI_XEP80_INT, C64_SHIFTED, C64_UNSHIFTED, VIEWDATA};
+pub use legacy::{
+    ATARI, ATARI_XEP80, ATARI_XEP80_INT, C128_LOWER, C16_LOWER, C16_UPPER, C64_SHIFTED, C64_UNSHIFTED, PET_LOWER, PET_UPPER, VIC20_LOWER, VIC20_UPPER, VIEWDATA,
+};
 pub use sauce::{get_sauce_font_names, load_sauce_font, SAUCE_FONT_MAP};
 // Re-export byte data with short names for screen_modes compatibility
 pub use skypix::get_amiga_font_by_name;

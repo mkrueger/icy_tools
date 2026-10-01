@@ -594,14 +594,15 @@ impl CommandParser for PetsciiParser {
                     start = i + 1;
                 }
 
-                // Insert character
+                // Insert: shifts the rest of the line right and puts a space under the cursor,
+                // which stays where it is.
                 0x94 => {
                     if start < i {
                         for &b in &input[start..i] {
                             self.emit_char(sink, b);
                         }
                     }
-                    sink.print(b" ");
+                    sink.emit(TerminalCommand::CsiInsertCharacter(1));
                     start = i + 1;
                 }
 
