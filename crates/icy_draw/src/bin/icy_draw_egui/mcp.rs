@@ -61,7 +61,7 @@ impl DrawApp {
     pub(super) fn mcp_command(&mut self, command: McpCommand) {
         let unavailable = if self.picker {
             Some("A native file dialog is open")
-        } else if self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() || self.igs.is_some() {
+        } else if self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() || self.igs.is_some() || self.skypix.is_some() {
             Some("Not in ANSI editor mode")
         } else if self.dialog.is_some() || self.layer_properties_open() || self.document.paste_active() {
             Some("Close the editor dialog before using ANSI automation")
@@ -123,6 +123,11 @@ impl DrawApp {
                     status.ansi = None;
                     status.file = editor.path().map(|path| path.display().to_string());
                 }
+                if let Some(editor) = &self.skypix {
+                    status.editor = "skypix".into();
+                    status.ansi = None;
+                    status.file = editor.path().map(|path| path.display().to_string());
+                }
                 respond(&response, status);
             }
             McpCommand::NewDocument { doc_type, response } => {
@@ -163,6 +168,10 @@ impl DrawApp {
                             self.create(super::NewKind::Igs, Size::new(80, 25));
                             Ok(())
                         }
+                        "skypix" => {
+                            self.create(super::NewKind::Skypix, Size::new(80, 25));
+                            Ok(())
+                        }
                         _ => Err("Unknown editor type".into()),
                     }
                 };
@@ -190,6 +199,12 @@ impl DrawApp {
             McpCommand::Save(response) => {
                 let result = if busy {
                     Err("Close the current dialog first".into())
+                } else if let Some(editor) = &mut self.skypix {
+                    editor
+                        .path()
+                        .map(Path::to_path_buf)
+                        .ok_or("No file path set".into())
+                        .and_then(|path| editor.save(&path, false))
                 } else if let Some(editor) = &mut self.font_editor {
                     editor.path.clone().ok_or("No file path set".into()).and_then(|path| editor.save(&path, false))
                 } else if let Some(editor) = &mut self.animation {
@@ -311,6 +326,70 @@ mod tests {
     fn response<T>() -> (icy_draw::mcp::SenderType<T>, tokio::sync::oneshot::Receiver<T>) {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         (Arc::new(parking_lot::Mutex::new(Some(sender))), receiver)
+    }
+
+    #[test]
+    fn skypix_status_lifecycle_and_undo_reject_ansi_mutations() {
+        let mut app = DrawApp::new();
+        let (response, mut result) = response();
+        app.mcp_command(McpCommand::NewDocument {
+            doc_type: "skypix".into(),
+            response,
+        });
+        result.try_recv().unwrap().unwrap();
+        assert!(app.skypix.is_some());
+        let (response, mut result) = self::response();
+        app.mcp_command(McpCommand::GetStatus(response));
+        let status = result.try_recv().unwrap();
+        assert_eq!(status.editor, "skypix");
+        assert!(status.ansi.is_none());
+        assert!(status.file.is_none());
+        assert!(!status.dirty);
+
+        let (response, mut result) = self::response();
+        app.mcp_command(McpCommand::AnsiRunScript {
+            script: "buf:set_char(0, 0, 'A')".into(),
+            undo_description: None,
+            response,
+        });
+        assert!(result.try_recv().unwrap().is_err());
+        assert!(!app.document.modified());
+        app.skypix
+            .as_mut()
+            .unwrap()
+            .document
+            .append(vec![icy_draw::skypix_document::SkypixItem::command(icy_parser_core::SkypixCommand::SetPixel {
+                x: 10,
+                y: 20,
+            })])
+            .unwrap();
+        let (response, mut result) = self::response();
+        app.mcp_command(McpCommand::NewDocument {
+            doc_type: "ansi".into(),
+            response,
+        });
+        assert!(result.try_recv().unwrap().is_err());
+        assert!(app.skypix.is_some());
+        let (response, mut result) = self::response();
+        app.mcp_command(McpCommand::Undo(response));
+        result.try_recv().unwrap().unwrap();
+        assert!(!app.modified());
+        let (response, mut result) = self::response();
+        app.mcp_command(McpCommand::Redo(response));
+        result.try_recv().unwrap().unwrap();
+        assert!(app.modified());
+
+        let directory = tempfile::Builder::new().prefix("skypix-mcp-").tempdir_in(".").unwrap();
+        let path = directory.path().join("drawing.skypix");
+        app.save_path(&egui::Context::default(), path.clone(), false);
+        let (response, mut result) = self::response();
+        app.mcp_command(McpCommand::Save(response));
+        result.try_recv().unwrap().unwrap();
+        let (response, mut result) = self::response();
+        app.mcp_command(McpCommand::GetStatus(response));
+        let status = result.try_recv().unwrap();
+        assert_eq!(status.file.as_deref(), Some(path.to_str().unwrap()));
+        assert!(!status.dirty);
     }
 
     #[test]

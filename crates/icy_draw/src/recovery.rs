@@ -48,6 +48,8 @@ pub enum RecoveryKind {
     Rip,
     /// An IGS command drawing; the payload is the `.ig` stream.
     Igs,
+    /// A SkyPix command drawing; the payload is the `.skypix` stream.
+    Skypix,
 }
 
 /// Size and checksum of the file on disk the document was loaded from or last saved to.

@@ -289,6 +289,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn skypix_is_offered_on_the_start_screen_and_new_dialog() {
+        let groups = NewKind::groups();
+        assert!(groups[1].1.contains(&NewKind::Skypix));
+        assert_eq!(
+            groups
+                .iter()
+                .flat_map(|(_, kinds)| kinds.iter())
+                .filter(|&&kind| kind == NewKind::Skypix)
+                .count(),
+            1
+        );
+        assert_eq!(NewKind::Skypix.name(), fl!("skypix-editor-title"));
+        assert_eq!(NewKind::Skypix.description(), fl!("skypix-editor-description"));
+        assert_eq!(NewKind::Skypix.icon(), "paint_brush");
+        assert!(!NewKind::Skypix.has_size());
+    }
+
+    #[test]
     fn logo_shows_the_current_version_without_blinking() {
         let buffer = logo_buffer().unwrap();
         let rows: Vec<String> = (0..buffer.height())

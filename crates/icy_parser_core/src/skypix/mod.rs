@@ -52,7 +52,11 @@ impl CommandBuilder {
 
     fn push_param(&mut self) {
         if self.has_param {
-            let value = if self.is_negative { -self.current_param } else { self.current_param };
+            let value = if self.is_negative {
+                self.current_param.wrapping_neg()
+            } else {
+                self.current_param
+            };
             self.params.push(value);
             self.current_param = 0;
             self.has_param = false;
@@ -102,6 +106,24 @@ impl SkypixParser {
             false
         } else {
             true
+        }
+    }
+
+    fn ansi_cursor_param(&self, sink: &mut dyn CommandSink, index: usize) -> Option<u16> {
+        let value = self.builder.params.get(index).copied().unwrap_or(1).max(1);
+        match u16::try_from(value) {
+            Ok(value) => Some(value),
+            Err(_) => {
+                sink.report_error(
+                    crate::ParseError::InvalidParameter {
+                        command: "CursorPosition",
+                        value: value.to_string(),
+                        expected: Some("1..65535".to_string()),
+                    },
+                    crate::ErrorLevel::Error,
+                );
+                None
+            }
         }
     }
 
@@ -408,8 +430,12 @@ impl SkypixParser {
             }
             b'H' | b'f' => {
                 // Cursor Position
-                let row = self.builder.params.first().copied().unwrap_or(1).max(1) as u16;
-                let col = self.builder.params.get(1).copied().unwrap_or(1).max(1) as u16;
+                let Some(row) = self.ansi_cursor_param(sink, 0) else {
+                    return;
+                };
+                let Some(col) = self.ansi_cursor_param(sink, 1) else {
+                    return;
+                };
                 sink.emit(TerminalCommand::CsiCursorPosition(row - 1, col - 1));
             }
             b'J' => {
@@ -511,8 +537,10 @@ impl SkypixParser {
             }
             b'G' => {
                 // CHA - Cursor Horizontal Absolute: Move cursor to column n
-                let n = self.builder.params.first().copied().unwrap_or(1).max(1);
-                sink.emit(TerminalCommand::CsiCursorHorizontalAbsolute(n as u16 - 1));
+                let Some(column) = self.ansi_cursor_param(sink, 0) else {
+                    return;
+                };
+                sink.emit(TerminalCommand::CsiCursorHorizontalAbsolute(column - 1));
             }
             b'L' => {
                 // IL - Insert Line: Insert n blank lines at cursor position

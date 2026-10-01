@@ -101,6 +101,9 @@ impl DrawApp {
         if let Some(editor) = &self.igs {
             return editor.recovery_snapshot();
         }
+        if let Some(editor) = &self.skypix {
+            return editor.recovery_snapshot();
+        }
         if let Some(font) = &self.charfont {
             return font.recovery_snapshot(&self.document);
         }
@@ -134,6 +137,11 @@ impl DrawApp {
                 let editor = super::super::igs::IgsEditor::from_recovery(snapshot)?;
                 self.replace(Document::new(Size::new(80, 25)));
                 self.igs = Some(editor);
+            }
+            RecoveryKind::Skypix => {
+                let editor = super::super::skypix::SkypixEditor::from_recovery(snapshot)?;
+                self.replace(Document::new(Size::new(80, 25)));
+                self.skypix = Some(editor);
             }
         }
         Ok(())
@@ -341,6 +349,7 @@ fn offer_row(ui: &mut egui::Ui, offer: &mut Offer, index: usize, free: bool, res
                             RecoveryKind::Animation => fl!("recovery-kind-animation"),
                             RecoveryKind::Rip => fl!("rip-editor-title"),
                             RecoveryKind::Igs => fl!("igs-editor-title"),
+                            RecoveryKind::Skypix => fl!("skypix-editor-title"),
                         };
                         let time = chrono::DateTime::from_timestamp(header.saved_at as i64, 0)
                             .map(|time| time.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())

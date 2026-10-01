@@ -2516,6 +2516,284 @@ fn igs_new_open_and_save_use_their_own_editor() {
 }
 
 #[test]
+fn skypix_new_open_save_and_save_as_use_the_graphical_document() {
+    use_english();
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.create(NewKind::Skypix, Size::new(80, 25));
+    assert!(app.skypix.is_some());
+    assert!(!app.show_start);
+    assert!(!app.modified());
+    assert_eq!(app.document_name(), fl!("unsaved-title"));
+
+    let directory = tempfile::Builder::new().prefix("skypix-app-").tempdir_in(".").unwrap();
+    let path = directory.path().join("drawing.skypix");
+    // Retain ordinary text, protocol commands, and an unknown command byte-for-byte.
+    let bytes = b"SkyPix\r\n\x1b[9;3! \x1b[1;10;20!\x1b[99;123!\r\n";
+    std::fs::write(&path, bytes).unwrap();
+    app.open(path.clone());
+    assert!(app.skypix.is_some());
+    assert_eq!(app.document_name(), "drawing.skypix");
+    assert!(!app.modified());
+    app.save(&context, false);
+    assert!(!app.picker);
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+
+    let copy = directory.path().join("copy.skypix");
+    app.save_path(&context, copy.clone(), false);
+    assert_eq!(std::fs::read(&copy).unwrap(), bytes);
+    assert_eq!(app.skypix.as_ref().unwrap().path(), Some(copy.as_path()));
+    assert_eq!(app.document_name(), "copy.skypix");
+    assert!(!app.modified());
+
+    for extension in FileFormat::SkyPix.all_extensions() {
+        let name = format!("legacy.{}", extension.to_uppercase());
+        let legacy = directory.path().join(&name);
+        std::fs::write(&legacy, bytes).unwrap();
+        app.open(legacy);
+        assert!(app.skypix.is_some(), "all engine SkyPix extensions must open the graphical editor");
+        assert_eq!(app.document_name(), name);
+    }
+}
+
+#[test]
+fn skypix_ansi_fixtures_are_detected_without_renaming_and_save_losslessly() {
+    let context = egui::Context::default();
+    let directory = tempfile::Builder::new().prefix("skypix-ansi-").tempdir_in(".").unwrap();
+    for fixture in ["tests/output/skypix/files/basic/line_test.ans", "tests/output/skypix/files/art/camera.ans"] {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../icy_engine").join(fixture);
+        let bytes = std::fs::read(&source).unwrap();
+        let mut app = DrawApp::new();
+        app.open(source.clone());
+        assert!(app.skypix.is_some(), "SkyPix commands in {} were not detected", source.display());
+        assert!(app.dialog.is_none());
+        assert!(!app.modified());
+        assert_eq!(app.skypix.as_ref().unwrap().path(), Some(source.as_path()));
+        let copy = directory.path().join(source.file_name().unwrap()).with_extension("skypix");
+        app.save_path(&context, copy.clone(), false);
+        assert_eq!(std::fs::read(copy).unwrap(), bytes);
+    }
+}
+
+#[test]
+fn ordinary_ansi_and_unknown_csi_commands_do_not_open_the_skypix_editor() {
+    let directory = tempfile::Builder::new().prefix("ansi-not-skypix-").tempdir_in(".").unwrap();
+    for (name, bytes) in [
+        ("ordinary.ans", b"\x1b[31mANSI!\x1b[0m\r\n\x1b[!p".as_slice()),
+        ("unknown.ans", b"\x1b[777;123!not a known SkyPix command".as_slice()),
+        ("invalid-arity.ans", b"\x1b[99;123!malformed EndSkypix command".as_slice()),
+        ("unknown-and-soft-reset.ans", b"\x1b[777;123!not a known SkyPix command\x1b[!p".as_slice()),
+    ] {
+        let path = directory.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        let mut app = DrawApp::new();
+        app.open(path);
+        assert!(app.skypix.is_none(), "{name} should stay in the ANSI editor");
+        assert!(app.dialog.is_none());
+        assert!(app.document.path.is_some());
+    }
+}
+
+#[test]
+fn skypix_edits_undo_redo_and_close_confirmation_stay_in_the_graphical_editor() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.create(NewKind::Skypix, Size::new(80, 25));
+    app.skypix
+        .as_mut()
+        .unwrap()
+        .document
+        .append(vec![icy_draw::skypix_document::SkypixItem::command(icy_parser_core::SkypixCommand::SetPixel {
+            x: 10,
+            y: 20,
+        })])
+        .unwrap();
+    assert!(app.modified());
+    assert!(!app.document.modified());
+    assert!(app.skypix.as_ref().unwrap().can_undo());
+    app.undo(false);
+    assert!(!app.modified());
+    assert!(app.skypix.as_ref().unwrap().can_redo());
+    app.undo(true);
+    assert!(app.modified());
+
+    let mut input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+        ..Default::default()
+    };
+    input
+        .viewports
+        .get_mut(&egui::ViewportId::ROOT)
+        .unwrap()
+        .events
+        .push(egui::ViewportEvent::Close);
+    let output = context.run(input, |context| app.show(context));
+    assert!(output.viewport_output[&egui::ViewportId::ROOT]
+        .commands
+        .contains(&egui::ViewportCommand::CancelClose));
+    assert!(output.viewport_output[&egui::ViewportId::ROOT]
+        .commands
+        .contains(&egui::ViewportCommand::Title(format!("*{} — Icy Draw", fl!("unsaved-title")))));
+    assert!(matches!(app.dialog, Some(Dialog::Close)));
+    app.dialog = None;
+    app.request_new();
+    assert!(matches!(app.dialog, Some(Dialog::Close)));
+    assert!(app.skypix.is_some());
+    app.dialog = None;
+    let missing = PathBuf::from("missing-skypix-app-file.skypix");
+    app.open(missing.clone());
+    assert!(matches!(app.dialog, Some(Dialog::Close)));
+    assert_eq!(app.pending.as_ref(), Some(&missing));
+
+    app.pending = None;
+    app.dialog = None;
+    app.quitting = true;
+    app.continue_after_save = true;
+    let directory = tempfile::Builder::new().prefix("skypix-close-").tempdir_in(".").unwrap();
+    let path = directory.path().join("saved.skypix");
+    app.save_path(&context, path.clone(), false);
+    assert!(path.exists());
+    assert!(!app.modified());
+    assert!(app.allow_close);
+    assert!(!app.continue_after_save);
+}
+
+#[test]
+fn skypix_replacement_is_mutually_exclusive_with_other_editors() {
+    let mut app = DrawApp::new();
+    for kind in [
+        NewKind::Rip,
+        NewKind::Igs,
+        NewKind::Animation,
+        NewKind::BitmapFont,
+        NewKind::TheDraw,
+        NewKind::Ansi,
+    ] {
+        app.create(kind, Size::new(80, 25));
+        assert!(app.skypix.is_none());
+        app.create(NewKind::Skypix, Size::new(80, 25));
+        assert!(app.skypix.is_some());
+        assert!(app.rip.is_none() && app.igs.is_none() && app.animation.is_none() && app.font_editor.is_none() && app.charfont.is_none());
+        app.create(kind, Size::new(80, 25));
+        assert!(app.skypix.is_none());
+    }
+}
+
+#[test]
+fn skypix_rejects_ansi_exports_and_canvas_shortcuts() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.create(NewKind::Skypix, Size::new(80, 25));
+    app.canvas_focus = false;
+    assert!(!app.command_key(&context, Key::E, egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT)));
+    assert!(!app.command_key(&context, Key::G, egui::Modifiers::COMMAND));
+    assert!(!app.command_key(&context, Key::E, egui::Modifiers::COMMAND));
+    assert!(!app.alt_key(&context, Key::X, egui::Modifiers::ALT));
+    assert!(app.dialog.is_none());
+    assert!(!app.document.modified());
+    let zoom = app.skypix.as_ref().unwrap().zoom();
+    app.zoom_step(1);
+    assert!(app.skypix.as_ref().unwrap().zoom() > zoom);
+    app.command_key(&context, Key::Num0, egui::Modifiers::COMMAND);
+    assert_eq!(app.skypix.as_ref().unwrap().zoom(), 1.0);
+}
+
+#[test]
+fn skypix_failed_open_and_overwrite_preserve_the_active_drawing() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.create(NewKind::Skypix, Size::new(80, 25));
+    app.open(PathBuf::from("missing-skypix-app-file.skypix"));
+    assert!(matches!(app.dialog, Some(Dialog::Error(_))));
+    assert!(app.skypix.is_some());
+    app.dialog = None;
+
+    let directory = tempfile::Builder::new().prefix("skypix-overwrite-").tempdir_in(".").unwrap();
+    let path = directory.path().join("existing.skypix");
+    std::fs::write(&path, b"Keep this drawing").unwrap();
+    app.save_path(&context, path.clone(), false);
+    assert!(matches!(app.dialog, Some(Dialog::Error(_))));
+    assert_eq!(std::fs::read(&path).unwrap(), b"Keep this drawing");
+    assert!(app.skypix.as_ref().unwrap().path().is_none());
+    app.dialog = None;
+    app.save_path(&context, path.clone(), true);
+    assert!(app.dialog.is_none());
+    assert_eq!(app.skypix.as_ref().unwrap().path(), Some(path.as_path()));
+    assert!(!app.modified());
+}
+
+#[test]
+fn skypix_save_picker_adds_native_extension_and_confirms_overwrite() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.create(NewKind::Skypix, Size::new(80, 25));
+    let directory = tempfile::Builder::new().prefix("skypix-picker-").tempdir_in(".").unwrap();
+    let base = directory.path().join("drawing");
+    let path = base.with_extension("skypix");
+    app.sender
+        .send(Picked {
+            action: FileAction::SaveSkypix,
+            path: Some(base.clone()),
+        })
+        .unwrap();
+    frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+    assert!(path.exists());
+    assert!(!base.exists());
+    assert_eq!(app.skypix.as_ref().unwrap().path(), Some(path.as_path()));
+    app.sender
+        .send(Picked {
+            action: FileAction::SaveSkypix,
+            path: Some(base),
+        })
+        .unwrap();
+    frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+    assert!(matches!(&app.dialog, Some(Dialog::Overwrite(overwrite)) if *overwrite == path));
+}
+
+#[test]
+fn skypix_autosave_restores_the_graphical_document_and_clears_after_save() {
+    let context = egui::Context::default();
+    let directory = tempfile::Builder::new().prefix("skypix-recovery-").tempdir_in(".").unwrap();
+    let store = directory.path().join("recovery");
+    let path = directory.path().join("drawing.skypix");
+    let mut app = recovering_app(&store);
+    app.create(NewKind::Skypix, Size::new(80, 25));
+    app.save_path(&context, path.clone(), false);
+    app.skypix
+        .as_mut()
+        .unwrap()
+        .document
+        .append(vec![icy_draw::skypix_document::SkypixItem::command(icy_parser_core::SkypixCommand::SetPixel {
+            x: 10,
+            y: 20,
+        })])
+        .unwrap();
+    app.autosave(&context);
+    flush_recovery(&app);
+    assert_eq!(recovery_files(&store).len(), 1);
+    drop(app);
+
+    let mut restored = recovering_app(&store);
+    restored.offer_recovery();
+    assert_eq!(restored.offers.len(), 1);
+    assert_eq!(
+        restored.offers[0].orphan.header.as_ref().unwrap().kind,
+        icy_draw::recovery::RecoveryKind::Skypix
+    );
+    assert_eq!(restored.offers[0].disk, recovery::DiskState::Unchanged);
+    restored.restore_offer(0);
+    assert!(restored.skypix.is_some());
+    assert!(restored.rip.is_none() && restored.igs.is_none());
+    assert!(restored.modified());
+    assert_eq!(restored.skypix.as_ref().unwrap().path(), Some(path.as_path()));
+    restored.save_path(&context, path, false);
+    assert!(!restored.modified());
+    restored.autosave(&context);
+    flush_recovery(&restored);
+    assert!(recovery_files(&store).is_empty());
+}
+
+#[test]
 fn tdf_font_selector_shows_type_icons_without_changing_names_in_both_layouts() {
     use_english();
     let context = egui::Context::default();
@@ -2821,7 +3099,7 @@ fn new_document_groups_cover_all_editors_in_the_same_order() {
     app.show_start = true;
     let groups = NewKind::groups();
     assert!(groups[0].1 == [NewKind::Ansi, NewKind::Animation, NewKind::Rip]);
-    assert!(groups[1].1 == [NewKind::Atascii, NewKind::Vt52, NewKind::Igs, NewKind::Petscii]);
+    assert!(groups[1].1 == [NewKind::Atascii, NewKind::Vt52, NewKind::Igs, NewKind::Petscii, NewKind::Skypix]);
     assert!(groups[2].1 == [NewKind::BitmapFont, NewKind::TheDraw]);
     let welcome = frame(&context, &mut app, size, vec![]);
     for (title, kinds) in &groups {

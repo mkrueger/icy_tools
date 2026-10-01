@@ -83,7 +83,7 @@ impl IcyDrawMcpHandler {
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
-    #[tool(description = "Create a new document. Types: 'ansi', 'animation', 'bitfont', 'charfont', 'rip', 'igs'")]
+    #[tool(description = "Create a new document. Types: 'ansi', 'animation', 'bitfont', 'charfont', 'rip', 'igs', 'skypix'")]
     async fn new_document(&self, params: Parameters<NewDocumentRequest>) -> Result<CallToolResult, McpError> {
         let (response_tx, response_rx) = oneshot::channel();
         self.command_tx

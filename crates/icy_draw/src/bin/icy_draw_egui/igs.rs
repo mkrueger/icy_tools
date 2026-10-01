@@ -13,6 +13,7 @@ use icy_parser_core::{
 };
 use std::path::Path;
 
+use super::command_list::{CommandRow, SwatchLayout, Tone, ROW_HEIGHT as COMMAND_ROW_HEIGHT};
 use super::playback::{Action, RowMark, Timeline, Transport};
 use super::widgets::{self, Icons};
 
@@ -53,7 +54,6 @@ const TOOL_SPACING: f32 = 2.0;
 const HANDLE_RADIUS: f32 = 8.0;
 /// How opaque the marker preview under the pointer is.
 const MARKER_PREVIEW_OPACITY: f32 = 0.55;
-const COMMAND_ROW_HEIGHT: f32 = 24.0;
 /// VDI polylines and polygons take at most 128 points.
 const MAX_POINTS: usize = 128;
 
@@ -2364,82 +2364,25 @@ impl IgsEditor {
 
 /// One line of the command list: number, icon, name and a short summary, never wrapped.
 fn command_row(ui: &mut egui::Ui, icons: &mut Icons, index: usize, item: &IgsItem, selected: bool, mark: RowMark, swatch: Option<Color32>) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), COMMAND_ROW_HEIGHT), egui::Sense::click());
     let name = item_name(item);
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), selected, &name));
-    if !ui.is_rect_visible(rect) {
-        return response;
-    }
-    let visuals = ui.visuals().clone();
-    let painter = ui.painter_at(rect);
-    if selected {
-        painter.rect_filled(rect.shrink2(egui::vec2(2.0, 1.0)), 4, visuals.selection.bg_fill);
-    } else if response.hovered() {
-        painter.rect_filled(rect.shrink2(egui::vec2(2.0, 1.0)), 4, visuals.widgets.hovered.weak_bg_fill);
-    }
-    mark.paint_background(ui, rect, selected || response.hovered());
-    let invalid = matches!(item, IgsItem::Text(text) if text.invalid);
-    let text = if selected {
-        visuals.selection.stroke.color
-    } else if invalid {
-        visuals.warn_fg_color
-    } else if matches!(item, IgsItem::Text(_)) {
-        visuals.weak_text_color()
-    } else {
-        visuals.text_color()
-    };
-    let text = mark.text(text, selected);
-    let weak = if selected {
-        text.gamma_multiply(0.7)
-    } else {
-        mark.text(visuals.weak_text_color(), false)
-    };
-    let center = rect.center().y;
-    painter.text(
-        egui::pos2(rect.left() + 34.0, center),
-        egui::Align2::RIGHT_CENTER,
-        (index + 1).to_string(),
-        egui::FontId::monospace(11.0),
-        weak,
-    );
-    let mut x = rect.left() + 42.0;
-    // A color the item sets stands in for its icon, so every name starts in the same column.
-    let cell = egui::Rect::from_center_size(egui::pos2(x + 7.0, center), egui::Vec2::splat(14.0));
-    if let Some(color) = swatch {
-        let swatch = cell.shrink(1.0);
-        painter.rect_filled(swatch, 2, color);
-        painter.rect_stroke(swatch, 2, Stroke::new(1.0, weak), egui::StrokeKind::Inside);
-    } else {
-        icons.image(ui, item_icon(item), 14.0).tint(text).paint_at(ui, cell);
-    }
-    x += 22.0;
-    let font = egui::TextStyle::Body.resolve(ui.style());
-    let mut job = egui::text::LayoutJob::default();
-    job.append(
-        &name,
-        0.0,
-        egui::TextFormat {
-            font_id: font.clone(),
-            color: text,
-            ..Default::default()
-        },
-    );
     let summary = item_summary(item);
-    if !summary.is_empty() {
-        job.append(
-            &summary,
-            8.0,
-            egui::TextFormat {
-                font_id: font,
-                color: weak,
-                ..Default::default()
-            },
-        );
+    CommandRow {
+        index,
+        name: &name,
+        summary: &summary,
+        icon: Some(item_icon(item)),
+        swatch,
+        swatch_layout: SwatchLayout::ReplaceIcon,
+        selected,
+        related: false,
+        tone: match item {
+            IgsItem::Text(text) if text.invalid => Tone::Warning,
+            IgsItem::Text(_) => Tone::Muted,
+            _ => Tone::Normal,
+        },
+        mark,
     }
-    job.wrap = egui::text::TextWrapping::truncate_at_width((rect.right() - 6.0 - x).max(0.0));
-    let galley = painter.layout_job(job);
-    painter.galley(egui::pos2(x, center - galley.size().y / 2.0), galley, text);
-    response
+    .show(ui, icons)
 }
 
 impl IgsEditor {

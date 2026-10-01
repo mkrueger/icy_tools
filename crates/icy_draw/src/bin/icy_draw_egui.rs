@@ -3,6 +3,8 @@ use eframe::{egui, egui_wgpu};
 use icy_engine_gui::{egui::appearance, TerminalShaderRenderer};
 use std::path::PathBuf;
 
+const DEFAULT_LOG_FILTER: &str = "warn,wgpu_hal=error,wgpu_core=error";
+
 #[path = "icy_draw_egui/animation.rs"]
 mod animation;
 #[path = "icy_draw_egui/animation_export.rs"]
@@ -11,6 +13,8 @@ mod animation_export;
 mod app;
 #[path = "icy_draw_egui/attribute_picker.rs"]
 mod attribute_picker;
+#[path = "icy_draw_egui/command_list.rs"]
+mod command_list;
 #[path = "icy_draw_egui/export.rs"]
 mod export;
 #[path = "icy_draw_egui/font.rs"]
@@ -25,6 +29,8 @@ mod palette;
 mod playback;
 #[path = "icy_draw_egui/rip.rs"]
 mod rip;
+#[path = "icy_draw_egui/skypix.rs"]
+mod skypix;
 #[path = "icy_draw_egui/widgets.rs"]
 mod widgets;
 
@@ -48,7 +54,7 @@ enum Command {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let _ = flexi_logger::Logger::try_with_str("warn").and_then(|logger| logger.start());
+    let _logger = flexi_logger::Logger::try_with_env_or_str(DEFAULT_LOG_FILTER)?.start()?;
     if let Some(Command::Host(host)) = args.command {
         return host.run();
     }
@@ -93,4 +99,23 @@ fn main() -> anyhow::Result<()> {
         }),
     )
     .map_err(|error| anyhow::anyhow!("{error}"))
+}
+
+#[cfg(test)]
+mod logging_tests {
+    #[test]
+    fn default_filter_keeps_errors_and_application_warnings() {
+        let spec = flexi_logger::LogSpecification::parse(super::DEFAULT_LOG_FILTER).unwrap();
+        for module in [
+            "wgpu_hal::vulkan::instance",
+            "wgpu_hal::gles::egl",
+            "wgpu_hal::gles::adapter",
+            "wgpu_core",
+        ] {
+            assert!(!spec.enabled(log::Level::Warn, module));
+            assert!(spec.enabled(log::Level::Error, module));
+        }
+        assert!(spec.enabled(log::Level::Warn, "icy_draw"));
+        assert!(!spec.enabled(log::Level::Info, "icy_draw"));
+    }
 }

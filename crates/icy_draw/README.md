@@ -30,6 +30,72 @@ cargo run -p icy_draw -- --mcp-port 8080
 cargo run -p icy_draw -- host --bind 127.0.0.1 --port 8000 art.icy
 ```
 
+### SkyPix art editor
+
+Both `icy_draw` and its `icy_draw_egui` alias offer **SkyPix** under **Home computers**
+on the start screen and in **New**, alongside the other home-computer formats.
+Open `.skypix` drawings or the engine's legacy `.spx` files.
+Existing `.ans` files containing recognized SkyPix commands are automatically
+opened in the SkyPix editor without renaming; ordinary ANSI stays in the ANSI
+editor. New drawings default to `.skypix` when saving. SkyPix is a separate graphics
+document, not an ANSI character-cell canvas. Its own drawing tools and command
+controls edit the graphics stream; the shared menus provide save/save-as,
+undo/redo, manual zoom, and confirmation before replacing or closing unsaved
+art. Unsaved SkyPix drawings also participate in crash recovery.
+
+The graphics toolbox provides selection, pixels, lines, outlined and filled
+rectangles, outlined and filled ellipses, area fill, text, brush capture, and
+brush stamping. Pen/background colors, 8/16-color display mode, font selection,
+and palette controls emit SkyPix commands. The command list uses the same compact
+row component as RIP and IGS: number, icon or color swatch, name, and a short
+summary. It supports filtering, editing supported properties, reordering,
+duplicating, deleting, and previewing through a selected item (also by
+double-clicking its row). Canvas selections scroll into view in the list.
+Lines show their start and end coordinates; in the selection tool, their endpoint
+handles can be dragged without moving subsequent pen-relative lines. Endpoint
+dragging previews the updated line and handles live; releasing the pointer commits
+one undo step, and Escape discards the preview. Selection
+frames are not shown while drawing, and lines use endpoint handles instead of a
+bounding rectangle. Fit-to-canvas, actual-size/manual zoom, and the aspect toggle
+are available in the SkyPix toolbar. The Amiga pixel-aspect setting doubles the
+displayed pixel height consistently for the image, pointer input, and handles.
+
+Import preserves original command bytes, text, unknown commands, and malformed
+sequences. Opening and saving an unchanged drawing is byte-for-byte lossless;
+edited commands are encoded as SkyPix commands while untouched items retain
+their original spelling. The preview uses the engine's SkyPix renderer.
+Interactive gadgets, controller replies, external brush/file transfers, audio
+samples, and timed delays are preserved but not executed by the preview;
+preview warnings identify skipped commands. Unavailable fonts use the default
+font in the preview without rewriting the imported font command.
+
+ANSI layer, selection, color, plugin, and export operations are not available
+for an active SkyPix document. MCP supports the `skypix` document type and the
+shared status, load, save, undo, and redo operations, but rejects ANSI mutation
+commands in SkyPix mode; there is no SkyPix-specific drawing automation API.
+
+```sh
+cargo run -p icy_draw -- drawing.skypix
+```
+
+### Graphics startup logging
+
+Both `icy_draw` and `icy_draw_egui` suppress wgpu backend-probing warnings by
+default, while retaining GPU errors and application warnings. On Linux/Wayland,
+probing can report missing optional Vulkan extensions or validation layers,
+unusable Vulkan drivers, and EGL fallback warnings even when rendering works.
+This logging filter does not change backend selection or disable validation.
+
+To re-enable graphics warnings for troubleshooting:
+
+```sh
+RUST_LOG=warn cargo run -p icy_draw
+```
+
+For more detailed graphics diagnostics, use
+`RUST_LOG=warn,wgpu_hal=debug,wgpu_core=debug`. If rendering fails, investigate
+the graphics driver and selected backend rather than just suppressing logs.
+
 ### Windows graphics troubleshooting
 
 If startup reports `vkCreateInstance: Found no drivers!`, the Vulkan loader

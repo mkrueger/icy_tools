@@ -305,7 +305,13 @@ impl DrawApp {
                 if !self.show_start {
                     ui.menu_button(menu_title(fl!("menu-edit")), |ui| self.edit_menu(ui, context));
                 }
-                if self.animation.is_none() && self.font_editor.is_none() && self.rip.is_none() && self.igs.is_none() && !self.show_start {
+                if self.animation.is_none()
+                    && self.font_editor.is_none()
+                    && self.rip.is_none()
+                    && self.igs.is_none()
+                    && self.skypix.is_none()
+                    && !self.show_start
+                {
                     ui.menu_button(menu_title(fl!("menu-selection")), |ui| self.selection_menu(ui));
                     // ATASCII screens have no per-character colors for the color menu and plugins to set.
                     if self.atascii.is_none() && self.vt52.is_none() && self.petscii.is_none() {
@@ -316,7 +322,7 @@ impl DrawApp {
                     if self.atascii.is_none() && self.vt52.is_none() && self.petscii.is_none() {
                         ui.menu_button(menu_title(fl!("menu-plugins")), |ui| self.extensions_menu(ui));
                     }
-                } else if self.rip.is_some() && !self.show_start {
+                } else if (self.rip.is_some() || self.skypix.is_some()) && !self.show_start {
                     ui.menu_button(menu_title(fl!("menu-view")), |ui| self.zoom_menu(ui));
                 }
                 ui.menu_button(menu_title(fl!("menu-help")), |ui| {
@@ -377,7 +383,12 @@ impl DrawApp {
             if item(ui, &fl!("menu-export"), Some(&EXPORT), true) {
                 editor.open_export_dialog();
             }
-        } else if self.font_editor.is_none() && self.rip.is_none() && self.igs.is_none() && item(ui, &fl!("menu-export"), Some(&EXPORT), true) {
+        } else if self.font_editor.is_none()
+            && self.rip.is_none()
+            && self.igs.is_none()
+            && self.skypix.is_none()
+            && item(ui, &fl!("menu-export"), Some(&EXPORT), true)
+        {
             self.dialog = Some(Dialog::Export);
         }
         ui.separator();
@@ -385,7 +396,7 @@ impl DrawApp {
             if item(ui, &fl!("menu-disconnect"), None, true) {
                 self.disconnect_collaboration();
             }
-        } else if item(ui, &fl!("menu-connect-to-server"), None, true) {
+        } else if item(ui, &fl!("menu-connect-to-server"), None, self.skypix.is_none()) {
             self.open_connect_dialog();
         }
         ui.separator();
@@ -402,6 +413,15 @@ impl DrawApp {
     }
 
     fn edit_menu(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        if let Some(editor) = &mut self.skypix {
+            if item(ui, &fl!("menu-undo"), Some(&UNDO), editor.can_undo()) {
+                editor.undo(false);
+            }
+            if item(ui, &fl!("menu-redo"), Some(&REDO), editor.can_redo()) {
+                editor.undo(true);
+            }
+            return;
+        }
         if self.font_editor.is_some() {
             self.font_edit_menu(ui);
             return;
@@ -752,7 +772,10 @@ impl DrawApp {
     }
 
     fn zoom_menu(&mut self, ui: &mut egui::Ui) {
-        let current = self.settings.monitor_settings.scaling_mode;
+        let current = self
+            .skypix
+            .as_ref()
+            .map_or(self.settings.monitor_settings.scaling_mode, |editor| ScalingMode::Manual(editor.zoom()));
         ui.menu_button(format!("{} ({})", fl!("menu-zoom"), zoom_label(current)), |ui| {
             if item(ui, &fl!("menu-zoom_in"), Some(&ZOOM_IN), true) {
                 self.zoom_step(1);
@@ -761,10 +784,12 @@ impl DrawApp {
                 self.zoom_step(-1);
             }
             ui.separator();
-            for (mode, shortcut) in [(ScalingMode::Auto, Some(&ZOOM_FIT)), (ScalingMode::FitWidth, None)] {
-                let mut active = current == mode;
-                if check_item(ui, &zoom_label(mode), shortcut, &mut active) {
-                    self.settings.monitor_settings.scaling_mode = mode;
+            if self.skypix.is_none() {
+                for (mode, shortcut) in [(ScalingMode::Auto, Some(&ZOOM_FIT)), (ScalingMode::FitWidth, None)] {
+                    let mut active = current == mode;
+                    if check_item(ui, &zoom_label(mode), shortcut, &mut active) {
+                        self.settings.monitor_settings.scaling_mode = mode;
+                    }
                 }
             }
             ui.separator();
@@ -772,7 +797,11 @@ impl DrawApp {
                 let mut active = current == ScalingMode::Manual(zoom);
                 let shortcut = (zoom == 1.0).then_some(&ZOOM_ACTUAL);
                 if check_item(ui, label, shortcut, &mut active) {
-                    self.settings.monitor_settings.scaling_mode = ScalingMode::Manual(zoom);
+                    if let Some(editor) = &mut self.skypix {
+                        editor.set_zoom(zoom);
+                    } else {
+                        self.settings.monitor_settings.scaling_mode = ScalingMode::Manual(zoom);
+                    }
                 }
             }
         });
@@ -966,7 +995,10 @@ impl DrawApp {
 
     /// Moves to the next larger (`direction > 0`) or smaller manual zoom level.
     pub(super) fn zoom_step(&mut self, direction: i32) {
-        let zoom = self.rip.as_ref().map_or(self.view.zoom, |editor| editor.zoom());
+        let zoom = self
+            .skypix
+            .as_ref()
+            .map_or_else(|| self.rip.as_ref().map_or(self.view.zoom, |editor| editor.zoom()), |editor| editor.zoom());
         let next = if direction > 0 {
             ZOOM_STEPS
                 .iter()
@@ -976,7 +1008,11 @@ impl DrawApp {
         } else {
             ZOOM_STEPS.iter().rev().copied().find(|step| *step < zoom - 0.01).unwrap_or(ZOOM_STEPS[0])
         };
-        self.settings.monitor_settings.scaling_mode = ScalingMode::Manual(next);
+        if let Some(editor) = &mut self.skypix {
+            editor.set_zoom(next);
+        } else {
+            self.settings.monitor_settings.scaling_mode = ScalingMode::Manual(next);
+        }
     }
 
     fn font_edit_menu(&mut self, ui: &mut egui::Ui) {
@@ -1021,8 +1057,8 @@ impl DrawApp {
     pub(super) fn command_key(&mut self, context: &egui::Context, key: Key, modifiers: Modifiers) -> bool {
         let shift = modifiers.shift;
         // Canvas commands only apply to the ANSI editor.
-        let animation = self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() || self.igs.is_some();
-        let zoomable = !animation || self.rip.is_some();
+        let animation = self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() || self.igs.is_some() || self.skypix.is_some();
+        let zoomable = !animation || self.rip.is_some() || self.skypix.is_some();
         match key {
             Key::N if shift => self.new_window(),
             Key::Q if !shift => context.send_viewport_cmd(egui::ViewportCommand::Close),
@@ -1030,8 +1066,9 @@ impl DrawApp {
             Key::E if shift && !animation => self.dialog = Some(Dialog::Export),
             Key::Plus | Key::Equals if zoomable => self.zoom_step(1),
             Key::Minus if zoomable => self.zoom_step(-1),
+            Key::Num0 if !shift && self.skypix.is_some() => self.skypix.as_mut().unwrap().set_zoom(1.0),
             Key::Num0 if !shift && zoomable => self.settings.monitor_settings.scaling_mode = ScalingMode::Manual(1.0),
-            Key::Num9 if !shift && zoomable => self.settings.monitor_settings.scaling_mode = ScalingMode::Auto,
+            Key::Num9 if !shift && zoomable && self.skypix.is_none() => self.settings.monitor_settings.scaling_mode = ScalingMode::Auto,
             _ if !shift && !animation && self.canvas_focus && key != Key::Num0 && digit(key).is_some() => {
                 self.color_operation(ColorOp::ToggleForeground(digit(key).unwrap()));
             }
@@ -1086,7 +1123,7 @@ impl DrawApp {
         }
         #[cfg(target_os = "macos")]
         let _ = context;
-        if self.animation.is_some() || self.rip.is_some() || self.igs.is_some() || self.document.paste_active() {
+        if self.animation.is_some() || self.rip.is_some() || self.igs.is_some() || self.skypix.is_some() || self.document.paste_active() {
             return false;
         }
         if let Some(operation) = AreaOp::ALL.into_iter().find(|operation| {

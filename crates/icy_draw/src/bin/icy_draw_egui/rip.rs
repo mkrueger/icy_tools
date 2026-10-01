@@ -5,6 +5,7 @@ use icy_engine_gui::ScalingMode;
 use icy_parser_core::{FillStyle, LineStyle, RipCommand};
 use std::path::Path;
 
+use super::command_list::{CommandRow as GraphicsCommandRow, SwatchLayout, Tone, ROW_HEIGHT as COMMAND_ROW_HEIGHT};
 use super::playback::{Action, RowMark, Timeline, Transport};
 use super::widgets::{self, Icons};
 
@@ -683,7 +684,6 @@ fn command_swatch(command: &RipCommand) -> Option<u16> {
     }
 }
 
-const COMMAND_ROW_HEIGHT: f32 = 24.0;
 const PROPERTY_LABEL_WIDTH: f32 = 84.0;
 
 /// One line of the command list: number, icon, name and a short summary, never wrapped.
@@ -713,89 +713,21 @@ struct CommandRow<'a> {
 
 impl CommandRow<'_> {
     fn show(self, ui: &mut egui::Ui, icons: &mut Icons, palette: &icy_engine::Palette) -> egui::Response {
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), COMMAND_ROW_HEIGHT), egui::Sense::click());
         let name = command_name(self.command);
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), self.selected, &name));
-        if !ui.is_rect_visible(rect) {
-            return response;
-        }
-        let visuals = ui.visuals().clone();
-        let painter = ui.painter_at(rect);
-        let background = if self.selected {
-            Some(visuals.selection.bg_fill)
-        } else if self.related {
-            Some(visuals.selection.bg_fill.gamma_multiply(0.4))
-        } else if response.hovered() {
-            Some(visuals.widgets.hovered.weak_bg_fill)
-        } else {
-            None
-        };
-        if let Some(fill) = background {
-            painter.rect_filled(rect.shrink2(egui::vec2(2.0, 1.0)), 4, fill);
-        }
-        self.mark.paint_background(ui, rect, background.is_some());
-        let text = if self.selected {
-            visuals.selection.stroke.color
-        } else if self.preserved {
-            visuals.weak_text_color()
-        } else {
-            visuals.text_color()
-        };
-        let text = self.mark.text(text, self.selected);
-        let weak = if self.selected {
-            text.gamma_multiply(0.7)
-        } else {
-            self.mark.text(visuals.weak_text_color(), false)
-        };
-        let center = rect.center().y;
-        painter.text(
-            egui::pos2(rect.left() + 34.0, center),
-            egui::Align2::RIGHT_CENTER,
-            (self.index + 1).to_string(),
-            egui::FontId::monospace(11.0),
-            weak,
-        );
-        let mut x = rect.left() + 42.0;
-        if let Some(icon) = command_icon(self.command) {
-            icons
-                .image(ui, icon, 14.0)
-                .tint(text)
-                .paint_at(ui, egui::Rect::from_center_size(egui::pos2(x + 7.0, center), egui::Vec2::splat(14.0)));
-        }
-        x += 22.0;
-        if let Some(color) = command_swatch(self.command) {
-            let swatch = egui::Rect::from_min_size(egui::pos2(x, center - 6.0), egui::Vec2::splat(12.0));
-            painter.rect_filled(swatch, 2, button::color32(palette, color));
-            painter.rect_stroke(swatch, 2, Stroke::new(1.0, weak), egui::StrokeKind::Inside);
-            x += 18.0;
-        }
-        let font = egui::TextStyle::Body.resolve(ui.style());
-        let mut job = egui::text::LayoutJob::default();
-        job.append(
-            &name,
-            0.0,
-            egui::TextFormat {
-                font_id: font.clone(),
-                color: text,
-                ..Default::default()
-            },
-        );
         let summary = command_summary(self.command);
-        if !summary.is_empty() {
-            job.append(
-                &summary,
-                8.0,
-                egui::TextFormat {
-                    font_id: font,
-                    color: weak,
-                    ..Default::default()
-                },
-            );
+        GraphicsCommandRow {
+            index: self.index,
+            name: &name,
+            summary: &summary,
+            icon: command_icon(self.command),
+            swatch: command_swatch(self.command).map(|color| button::color32(palette, color)),
+            swatch_layout: SwatchLayout::AfterIcon,
+            selected: self.selected,
+            related: self.related,
+            tone: if self.preserved { Tone::Muted } else { Tone::Normal },
+            mark: self.mark,
         }
-        job.wrap = egui::text::TextWrapping::truncate_at_width((rect.right() - 6.0 - x).max(0.0));
-        let galley = painter.layout_job(job);
-        painter.galley(egui::pos2(x, center - galley.size().y / 2.0), galley, text);
-        response
+        .show(ui, icons)
     }
 }
 

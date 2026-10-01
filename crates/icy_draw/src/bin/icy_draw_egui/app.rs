@@ -94,6 +94,7 @@ enum FileAction {
     SaveAnimation,
     SaveRip,
     SaveIgs,
+    SaveSkypix,
     ExportAnimation(super::animation::ExportFormat),
     InsertImage,
     ReferenceImage,
@@ -226,6 +227,7 @@ pub enum NewKind {
     Petscii,
     Rip,
     Igs,
+    Skypix,
     Animation,
     BitmapFont,
     TheDraw,
@@ -235,7 +237,7 @@ impl NewKind {
     pub fn groups() -> [(String, &'static [NewKind]); 3] {
         [
             (fl!("new-group-ansi"), &[Self::Ansi, Self::Animation, Self::Rip]),
-            (fl!("new-group-retro"), &[Self::Atascii, Self::Vt52, Self::Igs, Self::Petscii]),
+            (fl!("new-group-retro"), &[Self::Atascii, Self::Vt52, Self::Igs, Self::Petscii, Self::Skypix]),
             (fl!("new-group-fonts"), &[Self::BitmapFont, Self::TheDraw]),
         ]
     }
@@ -248,6 +250,7 @@ impl NewKind {
             NewKind::Petscii => fl!("new-file-editor-petscii"),
             NewKind::Rip => fl!("rip-editor-title"),
             NewKind::Igs => fl!("igs-editor-title"),
+            NewKind::Skypix => fl!("skypix-editor-title"),
             NewKind::Animation => fl!("new-file-editor-animation"),
             NewKind::BitmapFont => fl!("new-file-template-bit_font-title"),
             NewKind::TheDraw => fl!("new-file-editor-tdf"),
@@ -262,6 +265,7 @@ impl NewKind {
             NewKind::Petscii => fl!("new-kind-petscii-description"),
             NewKind::Rip => fl!("rip-editor-description"),
             NewKind::Igs => fl!("igs-editor-description"),
+            NewKind::Skypix => fl!("skypix-editor-description"),
             NewKind::Animation => fl!("new-kind-animation-description"),
             NewKind::BitmapFont => fl!("new-kind-bitfont-description"),
             NewKind::TheDraw => fl!("new-kind-tdf-description"),
@@ -276,6 +280,7 @@ impl NewKind {
             NewKind::Petscii => "spray",
             NewKind::Rip => "rectangle_outline",
             NewKind::Igs => "ellipse_filled",
+            NewKind::Skypix => "paint_brush",
             NewKind::Animation => "play",
             NewKind::BitmapFont => "font",
             NewKind::TheDraw => "paint_brush",
@@ -326,6 +331,7 @@ pub struct DrawApp {
     animation: Option<super::animation::AnimationEditor>,
     rip: Option<super::rip::RipEditor>,
     igs: Option<super::igs::IgsEditor>,
+    skypix: Option<super::skypix::SkypixEditor>,
     /// The ATASCII editor's state while the document is an ATASCII screen.
     pub(super) atascii: Option<atascii::AtasciiEditor>,
     /// The VT52 editor's state while the document is an Atari ST text screen.
@@ -425,6 +431,7 @@ impl DrawApp {
             animation: None,
             rip: None,
             igs: None,
+            skypix: None,
             atascii: None,
             vt52: None,
             new_vt52_resolution: icy_parser_core::TerminalResolution::Medium,
@@ -498,6 +505,10 @@ impl DrawApp {
                 self.replace(Document::new(Size::new(80, 25)));
                 self.igs = Some(super::igs::IgsEditor::new(self.new_igs_resolution));
             }
+            NewKind::Skypix => {
+                self.replace(Document::new(Size::new(80, 25)));
+                self.skypix = Some(super::skypix::SkypixEditor::new());
+            }
             NewKind::Animation => {
                 self.replace(Document::new(Size::new(80, 25)));
                 self.animation = Some(super::animation::AnimationEditor::new());
@@ -529,6 +540,7 @@ impl DrawApp {
         self.animation = None;
         self.rip = None;
         self.igs = None;
+        self.skypix = None;
         self.font_editor = None;
         self.document = document;
         self.chrome = chrome::Chrome::default();
@@ -569,6 +581,37 @@ impl DrawApp {
     }
 
     fn load_document(&mut self, path: PathBuf) {
+        let format = FileFormat::from_path(&path);
+        let skypix_in_ansi = if path.extension().is_some_and(|extension| {
+            FileFormat::Ansi
+                .all_extensions()
+                .iter()
+                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+        }) {
+            match std::fs::read(&path) {
+                Ok(bytes) => icy_draw::skypix_document::contains_skypix_commands(&bytes),
+                Err(error) => {
+                    self.dialog = Some(Dialog::Error(error.to_string()));
+                    return;
+                }
+            }
+        } else {
+            false
+        };
+        if skypix_in_ansi
+            || path
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("skypix") || format == Some(FileFormat::SkyPix))
+        {
+            match super::skypix::SkypixEditor::load(&path) {
+                Ok(editor) => {
+                    self.replace(Document::new(Size::new(80, 25)));
+                    self.skypix = Some(editor);
+                }
+                Err(error) => self.dialog = Some(Dialog::Error(error)),
+            }
+            return;
+        }
         if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("petmate")) {
             self.open_petmate(path);
             return;
@@ -644,7 +687,11 @@ impl DrawApp {
         self.picker = true;
         let sender = self.sender.clone();
         let context = context.clone();
-        let initial = self.document.path.clone();
+        let initial = self
+            .skypix
+            .as_ref()
+            .and_then(|editor| editor.path().map(Path::to_path_buf))
+            .or_else(|| self.document.path.clone());
         std::thread::spawn(move || {
             let mut dialog = rfd::FileDialog::new();
             if let Some(path) = initial {
@@ -678,6 +725,10 @@ impl DrawApp {
                 FileAction::SaveIgs => dialog
                     .add_filter(fl!("igs-editor-title"), &["ig"])
                     .set_file_name(format!("{untitled}.ig"))
+                    .save_file(),
+                FileAction::SaveSkypix => dialog
+                    .add_filter(fl!("skypix-editor-title"), &["skypix"])
+                    .set_file_name(format!("{untitled}.skypix"))
                     .save_file(),
                 FileAction::ExportAnimation(format) => dialog
                     .add_filter(format.name(), &[format.extension()])
@@ -719,6 +770,14 @@ impl DrawApp {
     }
 
     fn save(&mut self, context: &egui::Context, save_as: bool) {
+        if let Some(editor) = &self.skypix {
+            if let Some(path) = editor.path().filter(|_| !save_as).map(Path::to_path_buf) {
+                self.save_path(context, path, false);
+            } else {
+                self.choose(context, FileAction::SaveSkypix);
+            }
+            return;
+        }
         if let Some(editor) = &self.rip {
             if let Some(path) = editor.path().filter(|_| !save_as).map(Path::to_path_buf) {
                 self.save_path(context, path, false);
@@ -774,7 +833,9 @@ impl DrawApp {
     }
 
     fn save_path(&mut self, context: &egui::Context, path: PathBuf, overwrite: bool) {
-        let result = if let Some(editor) = &mut self.rip {
+        let result = if let Some(editor) = &mut self.skypix {
+            editor.save(&path, overwrite)
+        } else if let Some(editor) = &mut self.rip {
             editor.save(&path, overwrite)
         } else if let Some(editor) = &mut self.igs {
             editor.save(&path, overwrite)
@@ -1000,11 +1061,16 @@ impl DrawApp {
         self.document.modified()
             || self.rip.as_ref().is_some_and(|editor| editor.modified())
             || self.igs.as_ref().is_some_and(|editor| editor.modified())
+            || self.skypix.as_ref().is_some_and(|editor| editor.modified())
             || self.charfont.as_ref().is_some_and(|font| font.modified())
             || self.animation.as_ref().is_some_and(|editor| editor.modified())
     }
 
     fn undo(&mut self, redo: bool) {
+        if let Some(editor) = &mut self.skypix {
+            editor.undo(redo);
+            return;
+        }
         if let Some(editor) = &mut self.rip {
             editor.undo(redo);
             return;
@@ -1945,6 +2011,12 @@ impl DrawApp {
 
     /// File name of the active document, or the localized "Untitled".
     fn document_name(&self) -> String {
+        if let Some(editor) = &self.skypix {
+            return editor
+                .path()
+                .and_then(|path| path.file_name())
+                .map_or_else(|| fl!("unsaved-title"), |name| name.to_string_lossy().into_owned());
+        }
         if let Some(path) = self.igs.as_ref().map(|editor| editor.path()) {
             return path
                 .and_then(|path| path.file_name())
@@ -2659,8 +2731,8 @@ impl DrawApp {
                     Key::O if !modifiers.shift && !modifiers.alt => self.choose(context, FileAction::Open),
                     Key::N if !modifiers.shift && !modifiers.alt => self.request_new(),
                     Key::S if !modifiers.alt => self.save(context, modifiers.shift),
-                    Key::Z if self.canvas_focus => self.undo(modifiers.shift),
-                    Key::Y if self.canvas_focus => self.undo(true),
+                    Key::Z if self.canvas_focus || (self.skypix.is_some() && !context.wants_keyboard_input()) => self.undo(modifiers.shift),
+                    Key::Y if self.canvas_focus || (self.skypix.is_some() && !context.wants_keyboard_input()) => self.undo(true),
                     Key::A if self.canvas_focus && !self.document.paste_active() => self.select_all(),
                     _ if !self.document.paste_active() && self.command_key(context, key, modifiers) => {}
                     _ if self.canvas_focus => {
@@ -3988,6 +4060,16 @@ impl DrawApp {
                             self.save_path(context, path, false);
                         }
                     }
+                    FileAction::SaveSkypix => {
+                        if path.extension().is_none() {
+                            path.set_extension("skypix");
+                        }
+                        if path.exists() {
+                            self.dialog = Some(Dialog::Overwrite(path));
+                        } else {
+                            self.save_path(context, path, false);
+                        }
+                    }
                     FileAction::ExportAnimation(format) => {
                         if path.extension().is_none() {
                             path.set_extension(format.extension());
@@ -4086,6 +4168,16 @@ impl DrawApp {
                 Some(super::font::Action::Close) => self.close_font_editor(),
                 None => {}
             }
+            if !blocked {
+                self.keys(context);
+            }
+            self.dialogs(context);
+            return;
+        }
+        if let Some(editor) = &mut self.skypix {
+            editor.show(context, blocked);
+            self.canvas_rect = editor.canvas_rect();
+            self.canvas_focus = false;
             if !blocked {
                 self.keys(context);
             }
