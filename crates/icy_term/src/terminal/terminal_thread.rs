@@ -1768,15 +1768,10 @@ impl TerminalThread {
                                 }
                             }
                         }
-                        // Pause so the UI can show each frame of a sixel animation. When the host has
-                        // already sent a newer sixel, the pause only puts the terminal further behind
-                        // the stream, so skip it and let the newest frame win.
-                        let newer_sixel_queued = self.connection.is_some()
-                            && self
-                                .command_queue
-                                .iter()
-                                .any(|queued| matches!(queued, QueuedCommand::DeviceControl(DeviceControlString::Sixel { .. })));
-                        if !newer_sixel_queued {
+                        // Pause so the UI can show each frame of a sixel animation played back
+                        // locally. On a live connection the host paces its frames; pausing there
+                        // only puts the terminal behind the stream (and holds up typed keys).
+                        if self.connection.is_none() {
                             tokio::time::sleep(Duration::from_millis(20)).await;
                         }
                     }
@@ -3182,13 +3177,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn queued_sixel_frames_skip_the_display_pause() {
+    async fn sixel_frames_from_a_connection_skip_the_display_pause() {
         let (mut terminal, _, screen) = test_terminal();
+        let frames = sixel_frames(20);
         let start = std::time::Instant::now();
 
-        terminal.process_data(&sixel_frames(20)).await;
+        // Both all at once and one frame per read, the way a host pacing its frames delivers them.
+        terminal.process_data(&frames).await;
+        for frame in frames.split_inclusive(|byte| *byte == b'\\') {
+            terminal.process_data(frame).await;
+        }
 
-        // Pausing after each of the 20 frames would take at least 400 ms; only the newest frame pauses.
+        // Pausing after each of the 40 frames would take at least 800 ms.
         assert!(start.elapsed() < std::time::Duration::from_millis(200), "{:?}", start.elapsed());
         let mut screen = screen.lock();
         let text = screen.as_any_mut().downcast_mut::<TextScreen>().unwrap();
