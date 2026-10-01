@@ -188,8 +188,9 @@ impl Document {
     /// An empty PETSCII document of `machine` in the character set `case`.
     pub fn new_petscii(machine: icy_engine::PetsciiMachine, case: icy_engine::PetsciiCase) -> Self {
         let mut state = EditState::from_buffer(crate::screen_profile::petscii_buffer(machine, case));
-        state.set_caret_foreground(crate::screen_profile::PETSCII_TEXT);
-        state.set_caret_background(crate::screen_profile::PETSCII_BACKGROUND);
+        let (text, screen) = machine.start_colors();
+        state.set_caret_foreground(text);
+        state.set_caret_background(screen);
         Self::from_state(state)
     }
 

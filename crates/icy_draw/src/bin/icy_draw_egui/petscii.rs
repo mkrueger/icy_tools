@@ -35,7 +35,7 @@ const FKEY_SETS: [[u8; 12]; 4] = [
     [0x63, 0x64, 0x65, 0x67, 0x77, 0x6F, 0x74, 0x6A, 0x79, 0x7A, 0x4F, 0x50],
 ];
 
-pub const MACHINES: [PetsciiMachine; 2] = [PetsciiMachine::C64, PetsciiMachine::C128];
+pub const MACHINES: [PetsciiMachine; 5] = PetsciiMachine::ALL;
 pub const CASES: [PetsciiCase; 2] = [PetsciiCase::Upper, PetsciiCase::Lower];
 
 /// The side of a color swatch.
@@ -88,6 +88,9 @@ pub fn machine_name(machine: PetsciiMachine) -> String {
     match machine {
         PetsciiMachine::C64 => "C64".to_owned(),
         PetsciiMachine::C128 => "C128".to_owned(),
+        PetsciiMachine::Vic20 => "VIC-20".to_owned(),
+        PetsciiMachine::Pet => "PET".to_owned(),
+        PetsciiMachine::C16 => "C16".to_owned(),
     }
 }
 
@@ -142,6 +145,12 @@ impl PetmateScreen {
             "lower" | "cbaseLower" => Some((PetsciiMachine::C64, PetsciiCase::Lower)),
             "c128Upper" => Some((PetsciiMachine::C128, PetsciiCase::Upper)),
             "c128Lower" => Some((PetsciiMachine::C128, PetsciiCase::Lower)),
+            "vic20Upper" => Some((PetsciiMachine::Vic20, PetsciiCase::Upper)),
+            "vic20Lower" => Some((PetsciiMachine::Vic20, PetsciiCase::Lower)),
+            "petGfx" => Some((PetsciiMachine::Pet, PetsciiCase::Upper)),
+            "petBiz" => Some((PetsciiMachine::Pet, PetsciiCase::Lower)),
+            "c16Upper" => Some((PetsciiMachine::C16, PetsciiCase::Upper)),
+            "c16Lower" => Some((PetsciiMachine::C16, PetsciiCase::Lower)),
             _ => None,
         }
     }
@@ -190,14 +199,18 @@ pub fn load_petmate(path: &std::path::Path, index: usize) -> Result<Document, St
     let (machine, case) = listed.charset().ok_or_else(|| fl!("petmate-unsupported-charset", charset = charset))?;
     let width = number("width").unwrap_or(40).clamp(1, 1000) as i32;
     let height = number("height").unwrap_or(25).clamp(1, 1000) as i32;
-    let background = (number("backgroundColor").unwrap_or(0) & 0x0F) as u32;
-    let mut buffer = icy_engine::petscii_buffer(machine, case, icy_engine::Size::new(width, height), 14, background);
+    // The C16's colors are luminance × 16 + hue; bit 7 is flashing, which is not kept.
+    let colors = machine.palette().len() as u64;
+    let color_of = |value: u64| (if colors > 16 { value & 0x7F } else { value & 0x0F }).min(colors - 1) as u32;
+    let background = color_of(number("backgroundColor").unwrap_or(0) as u64);
+    let text = machine.start_colors().0;
+    let mut buffer = icy_engine::petscii_buffer(machine, case, icy_engine::Size::new(width, height), text, background);
     let rows = screen.get("framebuf").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
     for (y, row) in rows.iter().take(height as usize).enumerate() {
         for (x, cell) in row.as_array().into_iter().flatten().take(width as usize).enumerate() {
             let code = cell.get("code").and_then(serde_json::Value::as_u64).unwrap_or(0x20);
             let transparent = cell.get("transparent").and_then(serde_json::Value::as_bool).unwrap_or(false) || code > 0xFF;
-            let color = (cell.get("color").and_then(serde_json::Value::as_u64).unwrap_or(14) & 0x0F) as u32;
+            let color = color_of(cell.get("color").and_then(serde_json::Value::as_u64).unwrap_or(u64::from(text)));
             let mut ch = icy_engine::AttributedChar::new(if transparent { ' ' } else { char::from(code as u8) }, icy_engine::TextAttribute::default());
             ch.attribute.set_foreground(color);
             ch.attribute.set_background(background);
@@ -205,7 +218,7 @@ pub fn load_petmate(path: &std::path::Path, index: usize) -> Result<Document, St
         }
     }
     let mut state = icy_engine_edit::EditState::from_buffer(buffer);
-    state.set_caret_foreground(14);
+    state.set_caret_foreground(text);
     state.set_caret_background(background);
     Ok(Document::from_state(state))
 }
@@ -377,12 +390,112 @@ impl DrawApp {
     /// Shows the screen with the character set of `machine` in `case`, like switching it on the
     /// machine: the characters stay, their look changes.
     pub(super) fn set_petscii_charset(&mut self, machine: PetsciiMachine, case: PetsciiCase) {
-        if self.petscii_charset() == (machine, case) {
+        let (current, current_case) = self.petscii_charset();
+        if (current, current_case) == (machine, case) {
             return;
         }
         self.document.finish();
         let font = icy_engine::petscii_font(machine, case);
-        self.edit(|state| state.set_font_in_slot(0, font));
+        if current == machine {
+            self.edit(|state| state.set_font_in_slot(0, font));
+            return;
+        }
+        // Another machine: its width, character set and colors in one undo step; the colors
+        // become the nearest the machine has for text and for the screen.
+        let palette = machine.palette();
+        let text_colors = machine.text_colors();
+        let nearest = |old: &icy_engine::Palette, index: u32, limit: u32| {
+            let (red, green, blue) = old.rgb(index);
+            (0..limit.min(palette.len() as u32))
+                .min_by_key(|&candidate| {
+                    let (r, g, b) = palette.rgb(candidate);
+                    let delta = |a: u8, b: u8| (i32::from(a) - i32::from(b)).pow(2);
+                    delta(r, red) + delta(g, green) + delta(b, blue)
+                })
+                .unwrap_or(0)
+        };
+        let result = self.document.with_state(|state| {
+            let _undo = state.begin_atomic_undo(fl!("petscii-machine"));
+            let height = state.get_buffer().height();
+            state.resize_buffer(true, icy_engine::Size::new(machine.screen_size().width, height))?;
+            state.set_font_in_slot(0, font)?;
+            let old = state.get_buffer().palette.clone();
+            let text = |index: u32| {
+                if machine == PetsciiMachine::Pet {
+                    1
+                } else {
+                    nearest(&old, index, text_colors)
+                }
+            };
+            let screen = |index: u32| if machine == PetsciiMachine::Pet { 0 } else { nearest(&old, index, u32::MAX) };
+            let mut layers = state.get_buffer().layers.clone();
+            for layer in &mut layers {
+                for line in &mut layer.lines {
+                    for ch in line.chars.iter_mut().filter(|ch| ch.is_visible()) {
+                        let (foreground, background) = (text(ch.attribute.foreground()), screen(ch.attribute.background()));
+                        ch.attribute.set_foreground(foreground);
+                        ch.attribute.set_background(background);
+                    }
+                }
+            }
+            let caret = state.get_caret().attribute;
+            state.switch_to_palette_with_layers(palette.clone(), layers)?;
+            state.set_caret_foreground(text(caret.foreground()));
+            state.set_caret_background(screen(caret.background()));
+            Ok::<(), icy_engine::EngineError>(())
+        });
+        self.result(result.map_err(|error| error.to_string()));
+    }
+
+    /// The color of a PET monitor's phosphor, which draws all text.
+    fn set_pet_phosphor(&mut self, (red, green, blue): (u8, u8, u8)) {
+        let mut palette = self.document.with_state(|state| state.get_buffer().palette.clone());
+        palette.set_color(1, icy_engine::Color::new(red, green, blue));
+        self.edit(|state| state.switch_to_palette(palette));
+    }
+
+    /// The colors of the machine: the PET's monitor, or the palette for text and screen.
+    fn petscii_colors_section(&mut self, ui: &mut egui::Ui) {
+        let (machine, _) = self.petscii_charset();
+        if machine == PetsciiMachine::Pet {
+            widgets::section_header(ui, &fl!("petscii-monitor"), |_| {});
+            let current = self.document.with_state(|state| state.get_buffer().palette.rgb(1));
+            let mut phosphor = icy_engine::PET_PHOSPHORS.iter().position(|&color| color == current).unwrap_or(0);
+            let names = [fl!("petscii-monitor-green"), fl!("petscii-monitor-white"), fl!("petscii-monitor-amber")];
+            let options: Vec<(usize, String, String)> = names.into_iter().enumerate().map(|(index, name)| (index, name.clone(), name)).collect();
+            if widgets::segmented(ui, &mut phosphor, &options) {
+                self.set_pet_phosphor(icy_engine::PET_PHOSPHORS[phosphor]);
+            }
+            ui.label(egui::RichText::new(fl!("petscii-monitor-hint")).small().weak());
+            return;
+        }
+        widgets::section_header(ui, &fl!("vt52-colors"), |_| {});
+        // The grid's right click sets the caret background; here it colors the screen.
+        let (foreground, background) = self.document.with_state(|state| {
+            let attribute = state.get_caret().attribute;
+            (attribute.foreground(), attribute.background())
+        });
+        let count = self.document.with_state(|state| state.get_buffer().palette.len());
+        let width = if count > 16 { ui.available_width() } else { 8.0 * SWATCH };
+        self.palette_grid(ui, width);
+        let (picked, screen) = self.document.with_state(|state| {
+            let attribute = state.get_caret().attribute;
+            (attribute.foreground(), attribute.background())
+        });
+        if picked != foreground && picked >= machine.text_colors() {
+            // The VIC-20's characters have the first eight colors only.
+            let result = self.document.set_caret_foreground(foreground);
+            self.result(result);
+        }
+        if screen != background {
+            self.set_petscii_background(screen);
+        }
+        let hint = match machine {
+            PetsciiMachine::Vic20 => fl!("petscii-colors-hint-vic20"),
+            PetsciiMachine::C16 => fl!("petscii-colors-hint-c16"),
+            _ => fl!("petscii-colors-hint"),
+        };
+        ui.label(egui::RichText::new(hint).small().weak());
     }
 
     /// Function keys of the PETSCII editor pick from its character sets instead of the CP437 ones.
@@ -564,15 +677,7 @@ impl DrawApp {
             return;
         };
         chrome::section(ui, |ui| {
-            widgets::section_header(ui, &fl!("vt52-colors"), |_| {});
-            // The grid's right click sets the caret background; here it colors the screen.
-            let before = self.document.with_state(|state| state.get_caret().attribute.background());
-            self.palette_grid(ui, 8.0 * SWATCH);
-            let after = self.document.with_state(|state| state.get_caret().attribute.background());
-            if after != before {
-                self.set_petscii_background(after);
-            }
-            ui.label(egui::RichText::new(fl!("petscii-colors-hint")).small().weak());
+            self.petscii_colors_section(ui);
         });
         let mut picked = None;
         chrome::section(ui, |ui| {
@@ -841,6 +946,77 @@ mod tests {
         assert_eq!(app.document.profile(), ScreenProfile::Petscii(PetsciiMachine::C64, PetsciiCase::Lower));
         assert_eq!(cell(&app, 0, 0).0, 3);
         assert!(load_petmate(&workspace, 0).is_err(), "VDC screens are refused");
+    }
+
+    #[test]
+    fn every_machine_starts_with_its_screen_and_colors() {
+        for (machine, size, colors) in [
+            (PetsciiMachine::C64, Size::new(40, 25), (14, 6)),
+            (PetsciiMachine::Vic20, Size::new(22, 23), (6, 1)),
+            (PetsciiMachine::Pet, Size::new(40, 25), (1, 0)),
+            (PetsciiMachine::C16, Size::new(40, 25), (0, 0x71)),
+        ] {
+            let (_, mut app) = petscii_app(machine, PetsciiCase::Upper);
+            assert_eq!(app.document.with_state(|state| state.get_buffer().size()), size, "{machine:?}");
+            app.document.type_text("A").unwrap();
+            assert_eq!((cell(&app, 0, 0).1, cell(&app, 0, 0).2), colors, "{machine:?}");
+        }
+    }
+
+    #[test]
+    fn switching_the_machine_maps_size_and_colors_in_one_undo_step() {
+        let (_, mut app) = petscii_app(PetsciiMachine::C64, PetsciiCase::Upper);
+        app.document.with_state(|state| state.set_caret_foreground(13));
+        app.document.type_text("AB").unwrap();
+        app.set_petscii_charset(PetsciiMachine::Vic20, PetsciiCase::Lower);
+        assert_eq!(app.document.profile(), ScreenProfile::Petscii(PetsciiMachine::Vic20, PetsciiCase::Lower));
+        assert_eq!(app.document.with_state(|state| state.get_buffer().width()), 22);
+        let (code, text, _) = cell(&app, 0, 0);
+        assert_eq!(code, 1, "the screen codes stay");
+        assert!(text < 8, "light green becomes one of the VIC-20's eight text colors, not {text}");
+        app.set_petscii_charset(PetsciiMachine::Pet, PetsciiCase::Upper);
+        assert_eq!((cell(&app, 1, 0).1, cell(&app, 1, 0).2), (1, 0), "the PET draws in its phosphor on black");
+        app.undo(false);
+        app.undo(false);
+        assert_eq!(app.document.profile(), ScreenProfile::Petscii(PetsciiMachine::C64, PetsciiCase::Upper));
+        assert_eq!((cell(&app, 0, 0).1, app.document.with_state(|state| state.get_buffer().width())), (13, 40));
+    }
+
+    #[test]
+    fn the_pet_monitor_color_is_one_undo_step() {
+        let (_, mut app) = petscii_app(PetsciiMachine::Pet, PetsciiCase::Upper);
+        let phosphor = |app: &DrawApp| app.document.with_state(|state| state.get_buffer().palette.rgb(1));
+        app.set_pet_phosphor(icy_engine::PET_PHOSPHORS[2]);
+        assert_eq!(phosphor(&app), icy_engine::PET_PHOSPHORS[2]);
+        app.undo(false);
+        assert_eq!(phosphor(&app), icy_engine::PET_PHOSPHORS[0]);
+    }
+
+    #[test]
+    fn petmate_screens_of_the_vic20_and_c16_open_with_their_colors() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path().join("machines.petmate");
+        std::fs::write(
+            &workspace,
+            r#"{"version":4,"framebufs":[
+                {"width":2,"height":1,"backgroundColor":1,"borderColor":3,"charset":"vic20Upper","framebuf":[[{"code":1,"color":6},{"code":160,"color":2}]]},
+                {"width":2,"height":1,"backgroundColor":113,"borderColor":0,"charset":"c16Lower","framebuf":[[{"code":1,"color":82},{"code":2,"color":198}]]}
+            ]}"#,
+        )
+        .unwrap();
+        let vic20 = load_petmate(&workspace, 0).unwrap();
+        assert_eq!(vic20.profile(), ScreenProfile::Petscii(PetsciiMachine::Vic20, PetsciiCase::Upper));
+        let c16 = load_petmate(&workspace, 1).unwrap();
+        assert_eq!(c16.profile(), ScreenProfile::Petscii(PetsciiMachine::C16, PetsciiCase::Lower));
+        let colors = |document: &Document, x: i32| {
+            document.with_state(|state| {
+                let ch = state.get_buffer().char_at(Position::new(x, 0));
+                (ch.attribute.foreground(), ch.attribute.background())
+            })
+        };
+        assert_eq!(colors(&vic20, 1), (2, 1));
+        assert_eq!(colors(&c16, 0), (82, 113), "luminance 5, hue 2 on white");
+        assert_eq!(colors(&c16, 1), (70, 113), "flashing (bit 7) is dropped");
     }
 
     #[test]

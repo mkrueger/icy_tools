@@ -100,7 +100,7 @@ impl ScreenProfile {
         match self {
             Self::Atascii(mode) => Some(mode.columns()),
             Self::AtariSt(resolution) => Some(icy_engine::atari_st_columns(resolution)),
-            Self::Petscii(..) => Some(40),
+            Self::Petscii(machine, _) => Some(machine.screen_size().width),
             _ => None,
         }
     }
@@ -127,14 +127,11 @@ pub fn atari_st_buffer(resolution: TerminalResolution) -> TextBuffer {
     icy_engine::atari_st_buffer(resolution, 25)
 }
 
-/// An empty PETSCII screen, 40 × 25, in the colors the machines start with: light blue on blue.
+/// An empty PETSCII screen of the machine's size, in the colors the machine starts with.
 pub fn petscii_buffer(machine: PetsciiMachine, case: PetsciiCase) -> TextBuffer {
-    icy_engine::petscii_buffer(machine, case, Size::new(40, 25), PETSCII_TEXT, PETSCII_BACKGROUND)
+    let (text, screen) = machine.start_colors();
+    icy_engine::petscii_buffer(machine, case, machine.screen_size(), text, screen)
 }
-
-/// The text and screen color of a new PETSCII screen: light blue on blue.
-pub const PETSCII_TEXT: u32 = 14;
-pub const PETSCII_BACKGROUND: u32 = 6;
 
 /// The columns an ATASCII file at `path` is loaded with: 80 for XEP80 text (.xep).
 pub fn atascii_columns(path: &std::path::Path) -> Option<usize> {
@@ -175,14 +172,15 @@ mod tests {
 
     #[test]
     fn petscii_documents_know_their_machine_and_character_set() {
-        for machine in [PetsciiMachine::C64, PetsciiMachine::C128] {
+        for machine in PetsciiMachine::ALL {
             for case in [PetsciiCase::Upper, PetsciiCase::Lower] {
                 let buffer = petscii_buffer(machine, case);
                 let profile = ScreenProfile::of(&buffer);
                 assert_eq!(profile, ScreenProfile::Petscii(machine, case));
                 assert!(profile.inverse_in_character() && profile.per_character_colors());
                 assert_eq!(profile.native_format(), Some((FileFormat::Petscii, "seq")));
-                assert_eq!(icy_engine::petscii_background(&buffer), PETSCII_BACKGROUND);
+                assert_eq!(icy_engine::petscii_background(&buffer), machine.start_colors().1);
+                assert_eq!(profile.fixed_width(), Some(machine.screen_size().width));
             }
         }
     }
