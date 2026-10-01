@@ -2811,9 +2811,13 @@ impl DrawApp {
 
                     let row_height = 108.0;
                     let mut scroll = egui::ScrollArea::vertical().id_salt("text-art-font-list").auto_shrink([false, false]);
-                    if std::mem::take(&mut self.scroll_to_text_font) {
+                    // Waits for the fonts, which load in the background, before scrolling to the selected one.
+                    if self.scroll_to_text_font && !groups.is_empty() {
+                        self.scroll_to_text_font = false;
                         let selected_row = groups.iter().position(|group| group.contains(&self.text_font_pending)).unwrap_or(0);
-                        scroll = scroll.vertical_scroll_offset(selected_row as f32 * row_height);
+                        let stride = row_height + ui.spacing().item_spacing.y;
+                        let centered = selected_row as f32 * stride - (ui.available_height() - row_height) / 2.0;
+                        scroll = scroll.vertical_scroll_offset(centered.max(0.0));
                     }
                     scroll.show_rows(ui, row_height, groups.len(), |ui, rows| {
                         for row in rows {

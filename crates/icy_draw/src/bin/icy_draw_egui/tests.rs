@@ -897,6 +897,46 @@ fn text_art_font_dialog_groups_color_variants_into_one_row() {
 }
 
 #[test]
+fn text_art_font_dialog_scrolls_the_current_font_into_the_middle() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    let font = |name: String| retrofont::Font::Tdf(Box::new(retrofont::tdf::TdfFont::new(name, icy_engine_edit::charset::TdfFontType::Color, 1)));
+    let mut fonts: Vec<_> = (0..400).map(|number| font(format!("Font {number:03}"))).collect();
+    fonts.extend(["Acidscape1C", "Acidscape1G", "Acidscape1R"].map(|name| font(name.to_owned())));
+    app.text_fonts = Some(icy_draw::text_art_fonts::TextArtFontLibrary::with_fonts(fonts));
+    app.document.tool = Tool::Font;
+    let positions = |output: &egui::FullOutput, name: &str| -> Vec<egui::Pos2> {
+        output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == name => Some(text.pos + text.galley.size() / 2.0),
+                _ => None,
+            })
+            .collect()
+    };
+    for (current, name) in [(250, "Font 250"), (398, "Font 398"), (402, "Acidscape1R")] {
+        app.text_font = current;
+        let output = frame(&context, &mut app, size, vec![]);
+        let button = positions(&output, name)[0];
+        frame(&context, &mut app, size, pointer(button, true));
+        frame(&context, &mut app, size, pointer(button, false));
+        frame(&context, &mut app, size, vec![]);
+        let output = frame(&context, &mut app, size, vec![]);
+        assert!(matches!(app.dialog, Some(Dialog::TextArtFontSelect)));
+        assert_eq!(app.text_font_pending, current);
+        let rows = positions(&output, name);
+        assert!(
+            rows.iter().any(|row| (200.0..650.0).contains(&row.y)),
+            "{name} is not scrolled into view: {rows:?}"
+        );
+        app.dialog = None;
+    }
+}
+
+#[test]
 fn fkey_strip_has_labels_and_types_from_label_and_glyph() {
     let context = egui::Context::default();
     appearance::apply(&context);
