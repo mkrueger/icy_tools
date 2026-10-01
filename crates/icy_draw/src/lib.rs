@@ -59,3 +59,23 @@ macro_rules! fl {
     ($message_id:literal) => {{ i18n_embed_fl::fl!($crate::LANGUAGE_LOADER, $message_id) }};
     ($message_id:literal, $($args:expr),* $(,)?) => {{ i18n_embed_fl::fl!($crate::LANGUAGE_LOADER, $message_id, $($args),*) }};
 }
+
+#[cfg(test)]
+mod i18n_tests {
+    use super::Localizations;
+    use std::collections::HashSet;
+
+    #[test]
+    fn translation_resources_have_unique_identifiers() {
+        let identifier = regex::Regex::new(r"(?m)^(-?[a-zA-Z][a-zA-Z0-9_-]*)[ \t]*=").unwrap();
+        for path in Localizations::iter().filter(|path| path.ends_with(".ftl")) {
+            let resource = Localizations::get(&path).unwrap();
+            let source = std::str::from_utf8(&resource.data).unwrap();
+            let mut identifiers = HashSet::new();
+            for entry in identifier.captures_iter(source) {
+                let id = entry.get(1).unwrap().as_str();
+                assert!(identifiers.insert(id), "Duplicate translation identifier {id} in {path}");
+            }
+        }
+    }
+}

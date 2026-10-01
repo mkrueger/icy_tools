@@ -1138,7 +1138,6 @@ new-kind-petscii-description=Commodore-Bildschirm mit 40 Zeichen
 new-kind-animation-description=Lua-gesteuerte ANSI-Animation
 new-kind-bitfont-description=8 × 16 Pixel Konsolenschrift
 new-kind-color_font-description=Zeichen mit Farben
-new-file-editor-tdf=TDF Font
 new-kind-tdf-description=Farb-, Block- oder Outline-Font wählen
 new-kind-block_font-description=Blockzeichen, eine Farbe
 new-kind-outline_font-description=Outline-Platzhalter

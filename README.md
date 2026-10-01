@@ -16,6 +16,29 @@ a tool that shows icy draw animations on cmd line/bbs.
 
 # Build instructions
 
+## Windows
+
+Install the Rust MSVC toolchain and Visual Studio (or Build Tools) with the
+**Desktop development with C++** workload, including a Windows SDK and
+**C++ CMake tools for Windows**.
+
+Open **x64 Native Tools Command Prompt for Visual Studio**, then run:
+
+```bat
+cd C:\work\icy_tools
+git submodule update --init --recursive
+cargo build --workspace --locked
+```
+
+Debug executables are in `target\debug`. Add `--release` for optimized
+executables in `target\release`.
+
+The native Opus dependency requires CMake and Ninja. If the build reports
+`CMAKE_MAKE_PROGRAM is not set` for Ninja, use the developer command prompt
+above so Visual Studio's bundled tools are on `PATH`.
+
+## Linux
+
 ```
 # Clone the repository  
 git clone https://github.com/mkrueger/icy_tools.git  

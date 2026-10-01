@@ -943,7 +943,6 @@ font-import-image-info=Image will be converted to a 16×16 character grid
 font-import-dithering=Use Dithering
 
 # Font Export Dialog
-menu-export-font=Export Font…
 font-export-format=Format
 font-export-com-format=COM Type
 font-export-path=Export to
@@ -1160,7 +1159,6 @@ new-kind-petscii-description=Commodore 40 column screen
 new-kind-animation-description=Lua scripted ANSI animation
 new-kind-bitfont-description=8 × 16 pixel console font
 new-kind-color_font-description=Characters with colors
-new-file-editor-tdf=TDF Font
 new-kind-tdf-description=Choose color, block or outline
 new-kind-block_font-description=Block characters, one color
 new-kind-outline_font-description=Outline placeholders

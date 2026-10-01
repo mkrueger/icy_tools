@@ -30,6 +30,29 @@ cargo run -p icy_draw -- --mcp-port 8080
 cargo run -p icy_draw -- host --bind 127.0.0.1 --port 8000 art.icy
 ```
 
+### Windows graphics troubleshooting
+
+If startup reports `vkCreateInstance: Found no drivers!`, the Vulkan loader
+cannot find a usable driver. Try DirectX 12 instead from PowerShell:
+
+```powershell
+$env:WGPU_BACKEND = "dx12"
+cargo run --locked -p icy_draw
+```
+
+This selects DirectX 12 for the current shell; it requires a compatible adapter
+and driver. Use `Remove-Item Env:WGPU_BACKEND` to restore automatic selection.
+On a physical PC, install the graphics vendor's driver for Vulkan support. In a
+virtual machine, check the hypervisor's graphics support, enable 3D acceleration
+and update the guest graphics tools; Vulkan or DirectX 12 may not be available
+on the virtual adapter.
+
+`VK_LAYER_KHRONOS_validation` is an optional development layer, not a graphics
+driver. Its absence in a debug build does not by itself prevent rendering.
+An OpenGL `glTexSubImage2D` bounds error is a separate rendering failure, not
+just a missing Vulkan extension; selecting DirectX 12 avoids that backend if
+supported, but does not repair the OpenGL error.
+
 The egui frontend currently includes:
 
 - The original window layout: colour switcher and 8×2 palette above the tool
