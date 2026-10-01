@@ -105,7 +105,7 @@ enum FileAction {
     ImportTaglist,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum TextArtFontKind {
     Outline,
     Block,
@@ -2741,6 +2741,11 @@ impl DrawApp {
             }
             fonts.push(index);
         }
+        // Color sets of one font (`Acidscape1C`, `Acidscape1G`, …) share a row with a chip per variant.
+        let groups = icy_draw::font_variants::variant_groups(fonts.iter().map(|&index| {
+            let (name, kind) = &self.text_font_info[index];
+            (index, name.as_str(), (*kind, self.text_art_font_metrics(index)))
+        }));
 
         let mut apply = false;
         let mut double_clicked = false;
@@ -2807,12 +2812,17 @@ impl DrawApp {
                     let row_height = 108.0;
                     let mut scroll = egui::ScrollArea::vertical().id_salt("text-art-font-list").auto_shrink([false, false]);
                     if std::mem::take(&mut self.scroll_to_text_font) {
-                        let selected_row = fonts.iter().position(|font| *font == self.text_font_pending).unwrap_or(0);
+                        let selected_row = groups.iter().position(|group| group.contains(&self.text_font_pending)).unwrap_or(0);
                         scroll = scroll.vertical_scroll_offset(selected_row as f32 * row_height);
                     }
-                    scroll.show_rows(ui, row_height, fonts.len(), |ui, rows| {
+                    scroll.show_rows(ui, row_height, groups.len(), |ui, rows| {
                         for row in rows {
-                            let index = fonts[row];
+                            let group = &groups[row];
+                            let index = if group.contains(&self.text_font_pending) {
+                                self.text_font_pending
+                            } else {
+                                group[0]
+                            };
                             let (name, kind) = self.text_font_info[index].clone();
                             let favorite = self.settings.text_art_font_favorites.contains(&Self::text_art_font_id(&name, kind));
                             let (width, height) = self.text_art_font_metrics(index).unwrap_or_default();
@@ -2852,8 +2862,52 @@ impl DrawApp {
                             name_job.wrap.max_width = (preview_left - left.left() - 16.0).max(80.0);
                             let name_galley = ui.fonts_mut(|fonts| fonts.layout_job(name_job));
                             ui.painter().galley(left.left_top(), name_galley, ui.visuals().strong_text_color());
+                            let mut variant_clicked = None;
+                            if group.len() > 1 {
+                                let names: Vec<&str> = group.iter().map(|&variant| self.text_font_info[variant].0.as_str()).collect();
+                                let mut labels = icy_draw::font_variants::variant_labels(names.iter().copied());
+                                let chip_font = egui::FontId::proportional(11.0);
+                                let chip_width = |ui: &egui::Ui, label: &str| {
+                                    let text = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.to_owned(), chip_font.clone(), Color32::WHITE));
+                                    (text.size().x + 10.0).max(22.0)
+                                };
+                                let room = preview_left - left.left() - 8.0;
+                                if labels.iter().map(|label| chip_width(ui, label) + 4.0).sum::<f32>() > room {
+                                    labels = (1..=group.len()).map(|number| number.to_string()).collect();
+                                }
+                                let chips = ui
+                                    .painter()
+                                    .with_clip_rect(egui::Rect::from_min_max(left.left_top(), egui::pos2(preview_left - 8.0, rect.bottom())));
+                                let mut x = left.left();
+                                for ((&variant, label), variant_name) in group.iter().zip(&labels).zip(&names) {
+                                    let chip_rect = egui::Rect::from_min_size(egui::pos2(x, left.top() + 24.0), egui::vec2(chip_width(ui, label), 20.0));
+                                    x = chip_rect.right() + 4.0;
+                                    let chip = ui
+                                        .interact(chip_rect, ui.id().with(("font-variant", variant)), egui::Sense::click())
+                                        .on_hover_text(*variant_name);
+                                    let current = variant == index;
+                                    let visuals = if current {
+                                        &ui.visuals().widgets.active
+                                    } else if chip.hovered() {
+                                        &ui.visuals().widgets.hovered
+                                    } else {
+                                        &ui.visuals().widgets.inactive
+                                    };
+                                    chips.rect(chip_rect, 3, visuals.weak_bg_fill, visuals.bg_stroke, egui::StrokeKind::Inside);
+                                    chips.text(
+                                        chip_rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        label,
+                                        chip_font.clone(),
+                                        visuals.fg_stroke.color,
+                                    );
+                                    if chip.clicked() || chip.double_clicked() {
+                                        variant_clicked = Some((variant, chip.double_clicked()));
+                                    }
+                                }
+                            }
                             ui.painter().text(
-                                left.left_top() + egui::vec2(0.0, 30.0),
+                                left.left_top() + egui::vec2(0.0, if group.len() > 1 { 48.0 } else { 30.0 }),
                                 egui::Align2::LEFT_TOP,
                                 "!\"#$%&'()*+,-./0123456789:;<=>?@\nABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`\nabcdefghijklmnopqrstuvwxyz{|}~",
                                 egui::FontId::monospace(12.0),
@@ -2906,6 +2960,9 @@ impl DrawApp {
                             }
                             if star.clicked() {
                                 self.toggle_text_art_favorite(&Self::text_art_font_id(&name, kind));
+                            } else if let Some((variant, double)) = variant_clicked {
+                                self.text_font_pending = variant;
+                                double_clicked |= double;
                             } else if response.clicked() {
                                 self.text_font_pending = index;
                             }

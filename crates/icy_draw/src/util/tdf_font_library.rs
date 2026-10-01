@@ -88,6 +88,17 @@ impl TextArtFontLibrary {
         library
     }
 
+    /// A shared library of `fonts` that neither loads nor watches the font directory.
+    #[must_use]
+    pub fn with_fonts(fonts: Vec<Font>) -> SharedFontLibrary {
+        let dimensions = fonts.iter().map(font_dimensions).collect();
+        Arc::new(RwLock::new(Self {
+            fonts,
+            dimensions,
+            ..Self::new()
+        }))
+    }
+
     /// Reload fonts asynchronously in a background thread
     /// Only locks the library briefly to swap in the new fonts
     pub fn reload_async(library: SharedFontLibrary) {

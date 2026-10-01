@@ -855,6 +855,48 @@ fn font_filter_highlights_all_case_insensitive_matches() {
 }
 
 #[test]
+fn text_art_font_dialog_groups_color_variants_into_one_row() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    let font = |name: &str| retrofont::Font::Tdf(Box::new(retrofont::tdf::TdfFont::new(name, icy_engine_edit::charset::TdfFontType::Color, 1)));
+    app.text_fonts = Some(icy_draw::text_art_fonts::TextArtFontLibrary::with_fonts(vec![
+        font("Acidscape1C"),
+        font("Acidscape1G"),
+        font("Acidscape1R"),
+        font("Blade"),
+    ]));
+    app.dialog = Some(Dialog::TextArtFontSelect);
+    frame(&context, &mut app, size, vec![]);
+    let texts = |output: &egui::FullOutput| -> Vec<(String, egui::Pos2)> {
+        output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) => Some((text.galley.text().to_owned(), text.pos + text.galley.size() / 2.0)),
+                _ => None,
+            })
+            .collect()
+    };
+    let output = texts(&frame(&context, &mut app, size, vec![]));
+    let shown = |name: &str| output.iter().any(|(text, _)| text == name);
+    assert!(shown("Acidscape1C") && shown("Blade"));
+    assert!(!shown("Acidscape1G") && !shown("Acidscape1R"), "variants need their own rows");
+    for label in ["C", "G", "R"] {
+        assert!(shown(label), "missing variant chip {label}");
+    }
+
+    let chip = output.iter().find(|(text, _)| text == "G").unwrap().1;
+    frame(&context, &mut app, size, pointer(chip, true));
+    frame(&context, &mut app, size, pointer(chip, false));
+    assert_eq!(app.text_font_pending, 1);
+    let output = texts(&frame(&context, &mut app, size, vec![]));
+    assert!(output.iter().any(|(text, _)| text == "Acidscape1G"));
+    assert!(!output.iter().any(|(text, _)| text == "Acidscape1C"));
+}
+
+#[test]
 fn fkey_strip_has_labels_and_types_from_label_and_glyph() {
     let context = egui::Context::default();
     appearance::apply(&context);
