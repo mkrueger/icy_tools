@@ -697,24 +697,7 @@ impl TerminalThread {
                         pending_data.append(&mut self.injected_data);
                     }
 
-                    // Process pending data with baud emulation
-                    if pending_offset < pending_data.len() {
-                        let remaining = pending_data.len() - pending_offset;
-                        let bytes_to_send = self.baud_emulator.calculate_bytes_to_send(remaining);
-                        if bytes_to_send > 0 {
-                            let end = pending_offset + bytes_to_send;
-                            let chunk = &pending_data[pending_offset..end];
-                            self.write_to_capture(chunk).await;
-                            self.process_data(chunk).await;
-                            pending_offset = end;
-
-                            // Clear buffer when fully processed
-                            if pending_offset >= pending_data.len() {
-                                pending_data.clear();
-                                pending_offset = 0;
-                            }
-                        }
-                    }
+                    self.process_pending_data(&mut pending_data, &mut pending_offset).await;
 
                     // Check for pending auto-transfers
                     if let Some((protocol_id, is_download, filename)) = self.auto_transfer.take() {
@@ -772,10 +755,34 @@ impl TerminalThread {
                         if let Some(new_data) = self.read_connection_raw(&mut read_buffer).await {
                             if !new_data.is_empty() {
                                 pending_data.extend_from_slice(&new_data);
+                                // Show it now rather than a tick later
+                                self.process_pending_data(&mut pending_data, &mut pending_offset).await;
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Processes as much of `pending_data` as the baud emulation allows.
+    async fn process_pending_data(&mut self, pending_data: &mut Vec<u8>, pending_offset: &mut usize) {
+        if *pending_offset >= pending_data.len() {
+            return;
+        }
+        let remaining = pending_data.len() - *pending_offset;
+        let bytes_to_send = self.baud_emulator.calculate_bytes_to_send(remaining);
+        if bytes_to_send > 0 {
+            let end = *pending_offset + bytes_to_send;
+            let chunk = &pending_data[*pending_offset..end];
+            self.write_to_capture(chunk).await;
+            self.process_data(chunk).await;
+            *pending_offset = end;
+
+            // Clear buffer when fully processed
+            if *pending_offset >= pending_data.len() {
+                pending_data.clear();
+                *pending_offset = 0;
             }
         }
     }
