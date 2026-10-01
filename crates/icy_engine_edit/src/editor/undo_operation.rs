@@ -73,19 +73,33 @@ pub enum EditorUndoOp {
     },
 
     /// Swap two characters
-    SwapChar { layer: usize, pos1: Position, pos2: Position },
+    SwapChar {
+        layer: usize,
+        pos1: Position,
+        pos2: Position,
+    },
 
     /// Add a new layer
-    AddLayer { index: usize, layer: Box<Layer> },
+    AddLayer {
+        index: usize,
+        layer: Box<Layer>,
+    },
 
     /// Remove a layer
-    RemoveLayer { layer_index: usize, layer: Box<Layer> },
+    RemoveLayer {
+        layer_index: usize,
+        layer: Box<Layer>,
+    },
 
     /// Raise layer in stack
-    RaiseLayer { layer_index: usize },
+    RaiseLayer {
+        layer_index: usize,
+    },
 
     /// Lower layer in stack
-    LowerLayer { layer_index: usize },
+    LowerLayer {
+        layer_index: usize,
+    },
 
     /// Merge layer down
     MergeLayerDown {
@@ -95,22 +109,40 @@ pub enum EditorUndoOp {
     },
 
     /// Toggle layer visibility
-    ToggleLayerVisibility { index: usize },
+    ToggleLayerVisibility {
+        index: usize,
+    },
 
     /// Move layer position
-    MoveLayer { index: usize, from: Position, to: Position },
+    MoveLayer {
+        index: usize,
+        from: Position,
+        to: Position,
+    },
 
     /// Set layer size
-    SetLayerSize { index: usize, from: Size, to: Size },
+    SetLayerSize {
+        index: usize,
+        from: Size,
+        to: Size,
+    },
 
     /// Paste operation
-    Paste { layer: Box<Layer>, current_layer: usize },
+    Paste {
+        layer: Box<Layer>,
+        current_layer: usize,
+    },
 
     /// Add floating layer
-    AddFloatingLayer { current_layer: usize },
+    AddFloatingLayer {
+        current_layer: usize,
+    },
 
     /// Resize buffer
-    ResizeBuffer { orig_size: Size, size: Size },
+    ResizeBuffer {
+        orig_size: Size,
+        size: Size,
+    },
 
     /// Layer change (bulk character change)
     LayerChange {
@@ -121,13 +153,25 @@ pub enum EditorUndoOp {
     },
 
     /// Crop buffer
-    Crop { orig_size: Size, size: Size, layers: Vec<Layer> },
+    Crop {
+        orig_size: Size,
+        size: Size,
+        layers: Vec<Layer>,
+    },
 
     /// Delete row
-    DeleteRow { layer: usize, line: i32, deleted_row: Line },
+    DeleteRow {
+        layer: usize,
+        line: i32,
+        deleted_row: Line,
+    },
 
     /// Insert row
-    InsertRow { layer: usize, line: i32, inserted_row: Line },
+    InsertRow {
+        layer: usize,
+        line: i32,
+        inserted_row: Line,
+    },
 
     /// Delete column
     DeleteColumn {
@@ -137,13 +181,20 @@ pub enum EditorUndoOp {
     },
 
     /// Insert column
-    InsertColumn { layer: usize, column: i32 },
+    InsertColumn {
+        layer: usize,
+        column: i32,
+    },
 
     /// Scroll whole layer up
-    ScrollWholeLayerUp { layer: usize },
+    ScrollWholeLayerUp {
+        layer: usize,
+    },
 
     /// Scroll whole layer down
-    ScrollWholeLayerDown { layer: usize },
+    ScrollWholeLayerDown {
+        layer: usize,
+    },
 
     /// Rotate floating paste layer (for collaboration: Moebius ROTATE=18)
     PasteRotate {
@@ -164,16 +215,31 @@ pub enum EditorUndoOp {
     },
 
     /// Flip floating paste layer horizontally (for collaboration: Moebius FLIP_X=19)
-    PasteFlipX { layer: usize, old_lines: Vec<Line>, new_lines: Vec<Line> },
+    PasteFlipX {
+        layer: usize,
+        old_lines: Vec<Line>,
+        new_lines: Vec<Line>,
+    },
 
     /// Flip floating paste layer vertically (for collaboration: Moebius FLIP_Y=20)
-    PasteFlipY { layer: usize, old_lines: Vec<Line>, new_lines: Vec<Line> },
+    PasteFlipY {
+        layer: usize,
+        old_lines: Vec<Line>,
+        new_lines: Vec<Line>,
+    },
 
     /// Anchor floating paste layer - generates DRAW commands for all blocks
-    PasteAnchor { x: i32, y: i32, blocks: crate::collaboration::Blocks },
+    PasteAnchor {
+        x: i32,
+        y: i32,
+        blocks: crate::collaboration::Blocks,
+    },
 
     /// Set background color
-    SetBackground { old_value: u32, new_value: u32 },
+    SetBackground {
+        old_value: u32,
+        new_value: u32,
+    },
 
     /// Reversed undo (wraps another operation)
     Reversed {
@@ -183,19 +249,33 @@ pub enum EditorUndoOp {
     },
 
     /// Reverse caret position
-    ReverseCaretPosition { pos: Position, old_pos: Position },
+    ReverseCaretPosition {
+        pos: Position,
+        old_pos: Position,
+    },
 
     /// Clear layer
-    ClearLayer { layer_index: usize, layer: Vec<Line> },
+    ClearLayer {
+        layer_index: usize,
+        layer: Vec<Line>,
+    },
 
     /// Deselect
-    Deselect { sel: Selection },
+    Deselect {
+        sel: Selection,
+    },
 
     /// Select nothing (clear selection and mask)
-    SelectNothing { sel: Option<Selection>, mask: SelectionMask },
+    SelectNothing {
+        sel: Option<Selection>,
+        mask: SelectionMask,
+    },
 
     /// Set selection
-    SetSelection { old: Option<Selection>, new: Option<Selection> },
+    SetSelection {
+        old: Option<Selection>,
+        new: Option<Selection>,
+    },
 
     /// Set selection mask
     SetSelectionMask {
@@ -205,7 +285,10 @@ pub enum EditorUndoOp {
     },
 
     /// Add selection to mask
-    AddSelectionToMask { old: SelectionMask, selection: Selection },
+    AddSelectionToMask {
+        old: SelectionMask,
+        selection: Selection,
+    },
 
     /// Inverse selection
     InverseSelection {
@@ -215,22 +298,41 @@ pub enum EditorUndoOp {
     },
 
     /// Switch palette (legacy)
-    SwitchPalettte { pal: Palette },
+    SwitchPalettte {
+        pal: Palette,
+    },
 
     /// Set SAUCE metadata
-    SetSauceData { new: SauceMetaData, old: SauceMetaData },
+    SetSauceData {
+        new: SauceMetaData,
+        old: SauceMetaData,
+    },
 
     /// Switch to font page
-    SwitchToFontPage { old: u8, new: u8 },
+    SwitchToFontPage {
+        old: u8,
+        new: u8,
+    },
 
     /// Set font
-    SetFont { font_page: u8, old: BitFont, new: BitFont },
+    SetFont {
+        font_page: u8,
+        old: BitFont,
+        new: BitFont,
+    },
 
     /// Add font
-    AddFont { old_font_page: u8, new_font_page: u8, font: BitFont },
+    AddFont {
+        old_font_page: u8,
+        new_font_page: u8,
+        font: BitFont,
+    },
 
     /// Add a font to a slot without changing the caret's current font.
-    AddFontInSlot { font_page: u8, font: BitFont },
+    AddFontInSlot {
+        font_page: u8,
+        font: BitFont,
+    },
 
     /// Switch palette mode
     SwitchPalette {
@@ -257,10 +359,16 @@ pub enum EditorUndoOp {
     },
 
     /// Remove font
-    RemoveFont { font_slot: u8, font: Option<Box<BitFont>> },
+    RemoveFont {
+        font_slot: u8,
+        font: Option<Box<BitFont>>,
+    },
 
     /// Change font slot
-    ChangeFontSlot { from: u8, to: u8 },
+    ChangeFontSlot {
+        from: u8,
+        to: u8,
+    },
 
     /// Update layer properties
     UpdateLayerProperties {
@@ -270,28 +378,65 @@ pub enum EditorUndoOp {
     },
 
     /// Set use letter spacing
-    SetUseLetterSpacing { new_ls: bool },
+    SetUseLetterSpacing {
+        new_ls: bool,
+    },
 
     /// Set use aspect ratio
-    SetUseAspectRatio { new_ar: bool },
+    SetUseAspectRatio {
+        new_ar: bool,
+    },
 
     /// Set font dimensions
-    SetFontDimensions { old_size: Size, new_size: Size },
+    SetFontDimensions {
+        old_size: Size,
+        new_size: Size,
+    },
+
+    /// Set the text screen's border palette index.
+    SetBorderColor {
+        old: Option<u32>,
+        new: Option<u32>,
+    },
+    SetBackgroundColor {
+        old: Option<u32>,
+        new: Option<u32>,
+    },
+    SetMachineMode {
+        old: Option<icy_engine::MachineMode>,
+        new: Option<icy_engine::MachineMode>,
+    },
 
     /// Add tag
-    AddTag { new_tag: Tag, clone: bool },
+    AddTag {
+        new_tag: Tag,
+        clone: bool,
+    },
 
     /// Edit tag
-    EditTag { tag_index: usize, old_tag: Tag, new_tag: Tag },
+    EditTag {
+        tag_index: usize,
+        old_tag: Tag,
+        new_tag: Tag,
+    },
 
     /// Move tag
-    MoveTag { tag: usize, new_pos: Position, old_pos: Position },
+    MoveTag {
+        tag: usize,
+        new_pos: Position,
+        old_pos: Position,
+    },
 
     /// Remove tag
-    RemoveTag { tag_index: usize, tag: Tag },
+    RemoveTag {
+        tag_index: usize,
+        tag: Tag,
+    },
 
     /// Show/hide tags
-    ShowTags { show: bool },
+    ShowTags {
+        show: bool,
+    },
 }
 
 impl EditorUndoOp {
@@ -351,6 +496,9 @@ impl EditorUndoOp {
             EditorUndoOp::SetUseLetterSpacing { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_use_letter_spacing"),
             EditorUndoOp::SetUseAspectRatio { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_use_aspect_ratio"),
             EditorUndoOp::SetFontDimensions { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_font_dimensions"),
+            EditorUndoOp::SetBorderColor { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set-border-color"),
+            EditorUndoOp::SetBackgroundColor { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_background"),
+            EditorUndoOp::SetMachineMode { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set-screen-mode"),
             EditorUndoOp::AddTag { clone, .. } => {
                 if *clone {
                     fl!(crate::LANGUAGE_LOADER, "undo-clone-tag")
@@ -820,6 +968,24 @@ impl EditorUndoOp {
                 // Redo left the previous size in `new_size`.
                 edit_state.get_buffer_mut().set_font_dimensions(*new_size);
                 std::mem::swap(old_size, new_size);
+                edit_state.get_buffer_mut().mark_dirty();
+                Ok(())
+            }
+            EditorUndoOp::SetBorderColor { old, new } => {
+                edit_state.get_buffer_mut().border_color = *new;
+                std::mem::swap(old, new);
+                edit_state.get_buffer_mut().mark_dirty();
+                Ok(())
+            }
+            EditorUndoOp::SetBackgroundColor { old, new } => {
+                edit_state.get_buffer_mut().background_color = *new;
+                std::mem::swap(old, new);
+                edit_state.get_buffer_mut().mark_dirty();
+                Ok(())
+            }
+            EditorUndoOp::SetMachineMode { old, new } => {
+                edit_state.get_buffer_mut().machine_mode = *new;
+                std::mem::swap(old, new);
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
@@ -1314,6 +1480,24 @@ impl EditorUndoOp {
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
+            EditorUndoOp::SetBorderColor { old, new } => {
+                edit_state.get_buffer_mut().border_color = *new;
+                std::mem::swap(old, new);
+                edit_state.get_buffer_mut().mark_dirty();
+                Ok(())
+            }
+            EditorUndoOp::SetBackgroundColor { old, new } => {
+                edit_state.get_buffer_mut().background_color = *new;
+                std::mem::swap(old, new);
+                edit_state.get_buffer_mut().mark_dirty();
+                Ok(())
+            }
+            EditorUndoOp::SetMachineMode { old, new } => {
+                edit_state.get_buffer_mut().machine_mode = *new;
+                std::mem::swap(old, new);
+                edit_state.get_buffer_mut().mark_dirty();
+                Ok(())
+            }
             EditorUndoOp::AddTag { new_tag, .. } => {
                 edit_state.get_buffer_mut().tags.push(new_tag.clone());
                 edit_state.get_buffer_mut().mark_dirty();
@@ -1497,6 +1681,9 @@ mod collab_mapping {
                 | EditorUndoOp::UpdateLayerProperties { .. }
                 | EditorUndoOp::SetUseAspectRatio { .. }
                 | EditorUndoOp::SetFontDimensions { .. }
+                | EditorUndoOp::SetBorderColor { .. }
+                | EditorUndoOp::SetBackgroundColor { .. }
+                | EditorUndoOp::SetMachineMode { .. }
                 | EditorUndoOp::AddTag { .. }
                 | EditorUndoOp::EditTag { .. }
                 | EditorUndoOp::MoveTag { .. }

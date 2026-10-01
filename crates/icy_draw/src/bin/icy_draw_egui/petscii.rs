@@ -265,14 +265,13 @@ pub fn load_petmate(path: &std::path::Path, index: usize) -> Result<Document, St
             buffer.layers[0].set_char((x as i32, y as i32), ch);
         }
     }
+    if machine.start_border().is_some() {
+        buffer.border_color = number("borderColor").map(|border| color_of(border as u64).min(machine.border_colors() - 1));
+    }
     let mut state = icy_engine_edit::EditState::from_buffer(buffer);
     state.set_caret_foreground(text);
     state.set_caret_background(background);
-    let mut document = Document::from_state(state);
-    if machine.start_border().is_some() {
-        document.border = number("borderColor").map(|border| color_of(border as u64).min(machine.border_colors() - 1));
-    }
-    Ok(document)
+    Ok(Document::from_state(state))
 }
 
 impl DrawApp {
@@ -391,13 +390,17 @@ impl DrawApp {
         self.document.with_state(|state| icy_engine::petscii_charset(state.get_buffer()))
     }
 
-    /// The border shown around a PETSCII screen: the one chosen, or the one the machine starts
-    /// with. The PETs and the VDC have none.
+    /// The border stored for a PETSCII screen, falling back to the machine's start-up color for
+    /// older files. The PETs and the VDC have none.
     pub(super) fn petscii_border(&self) -> Option<u32> {
         self.petscii.as_ref()?;
         let (machine, _) = self.petscii_charset();
         let start = machine.start_border()?;
-        Some(self.document.border.map_or(start, |border| border.min(machine.border_colors() - 1)))
+        Some(
+            self.document
+                .with_state(|state| state.get_buffer().border_color)
+                .map_or(start, |border| border.min(machine.border_colors() - 1)),
+        )
     }
 
     /// The text color on the screen color, in which characters are shown.
@@ -451,10 +454,11 @@ impl DrawApp {
         }
     }
 
-    /// Colors the whole screen: every character gets `color` as its background, in one undo step.
+    /// Sets the explicit screen color and mirrors it in visible characters, in one undo step.
     pub(super) fn set_petscii_background(&mut self, color: u32) {
         self.document.finish();
         let result = self.document.with_state(|state| {
+            let _undo = state.begin_atomic_undo(fl!("petscii-screen", color = color));
             let mut layers = state.get_buffer().layers.clone();
             for layer in &mut layers {
                 for line in &mut layer.lines {
@@ -465,6 +469,7 @@ impl DrawApp {
             }
             let palette = state.get_buffer().palette.clone();
             state.switch_to_palette_with_layers(palette, layers)?;
+            state.set_background_color(Some(color))?;
             state.set_caret_background(color);
             Ok::<(), icy_engine::EngineError>(())
         });
@@ -486,12 +491,17 @@ impl DrawApp {
                 self.document
                     .with_state(|state| state.set_caret_font_page(u8::from(case == PetsciiCase::Lower)));
             } else {
-                self.edit(|state| state.set_font_in_slot(0, font));
+                self.edit(|state| {
+                    let _undo = state.begin_atomic_undo(fl!("petscii-case-tooltip"));
+                    state.set_font_in_slot(0, font)?;
+                    state.set_machine_mode(Some(icy_engine::MachineMode::Petscii { machine, charset: case }))
+                });
             }
             return;
         }
-        // Another machine: its width, character set and colors in one undo step; the colors
-        // become the nearest the machine has for text and for the screen.
+        // Another machine: its width, character set and colors in one undo step. Text colors
+        // become the nearest the machine has; screen and border start as on the machine, like
+        // Petmate does.
         let palette = machine.palette();
         let text_colors = machine.text_colors();
         let nearest = |old: &icy_engine::Palette, index: u32, limit: u32| {
@@ -520,15 +530,15 @@ impl DrawApp {
             state.set_font_dimensions(icy_engine::petscii_font(machine, case).size())?;
             let old = state.get_buffer().palette.clone();
             let text = |index: u32| if monochrome(machine) { 1 } else { nearest(&old, index, text_colors) };
-            let screen = |index: u32| if monochrome(machine) { 0 } else { nearest(&old, index, u32::MAX) };
+            let (_, start_screen) = machine.start_colors();
             let attributes = machine.charset_per_character();
             let mut layers = state.get_buffer().layers.clone();
             for layer in &mut layers {
                 for line in &mut layer.lines {
                     for ch in line.chars.iter_mut().filter(|ch| ch.is_visible()) {
-                        let (foreground, background) = (text(ch.attribute.foreground()), screen(ch.attribute.background()));
+                        let foreground = text(ch.attribute.foreground());
                         ch.attribute.set_foreground(foreground);
-                        ch.attribute.set_background(background);
+                        ch.attribute.set_background(start_screen);
                         if !attributes {
                             // Blinking and underlining are the VDC's.
                             ch.attribute.set_is_blinking(false);
@@ -540,15 +550,17 @@ impl DrawApp {
             let caret = state.get_caret().attribute;
             state.switch_to_palette_with_layers(palette.clone(), layers)?;
             state.set_caret_foreground(text(caret.foreground()));
-            state.set_caret_background(screen(caret.background()));
+            state.set_caret_background(start_screen);
             state.set_caret_font_page(if attributes { u8::from(case == PetsciiCase::Lower) } else { 0 });
-            Ok::<_, icy_engine::EngineError>(old)
+            state.set_border_color(machine.start_border())?;
+            state.set_background_color(Some(start_screen))?;
+            state.set_machine_mode(Some(icy_engine::MachineMode::Petscii {
+                machine,
+                charset: if attributes { PetsciiCase::Upper } else { case },
+            }))?;
+            Ok::<(), icy_engine::EngineError>(())
         });
-        // A chosen border keeps its color as near as the machine has it.
-        if let (Ok(old), Some(border)) = (&result, self.document.border) {
-            self.document.border = machine.start_border().map(|_| nearest(old, border, machine.border_colors()));
-        }
-        self.result(result.map(|_| ()).map_err(|error| error.to_string()));
+        self.result(result.map_err(|error| error.to_string()));
     }
 
     /// Swatches of the first `count` colors; returns the clicked one.
@@ -628,7 +640,7 @@ impl DrawApp {
             });
         });
         if let Some(border) = picked_border {
-            self.document.border = Some(border);
+            self.edit(|state| state.set_border_color(Some(border)));
         }
         if let Some(background) = picked_background {
             self.set_petscii_background(background);
@@ -905,15 +917,8 @@ impl DrawApp {
         let mut picked = None;
         chrome::section(ui, |ui| {
             widgets::section_header(ui, &fl!("atascii-characters"), |_| {});
-            let mut reverse = self.document.inverse;
-            let options = [
-                (false, fl!("atascii-normal"), fl!("atascii-normal-tooltip")),
-                (true, fl!("petscii-reverse"), fl!("petscii-reverse-tooltip")),
-            ];
-            if widgets::segmented(ui, &mut reverse, &options) {
-                self.document.inverse = reverse;
-            }
-            ui.add_space(4.0);
+            self.petscii_character_toggles(ui);
+            ui.add_space(6.0);
             let page = if self.document.inverse { 0x80 } else { 0 };
             let codes: Vec<u8> = (0..128u8).map(|index| page | index).collect();
             picked = self.character_map(ui, &codes, Some(brush), self.petscii_colors());
@@ -923,10 +928,8 @@ impl DrawApp {
         }
         chrome::section(ui, |ui| {
             widgets::section_header(ui, &fl!("atascii-screen"), |_| {});
-            let (current_machine, screen_case) = self.petscii_charset();
-            let per_character = current_machine.charset_per_character();
-            let current_case = if per_character { self.petscii_typed_case() } else { screen_case };
-            let (mut machine, mut case) = (current_machine, current_case);
+            let (current, case) = self.petscii_charset();
+            let mut machine = current;
             ui.horizontal(|ui| {
                 ui.label(fl!("petscii-machine"));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -939,40 +942,50 @@ impl DrawApp {
                         });
                 });
             });
-            ui.add_space(4.0);
+            if machine != current {
+                let case = if current.charset_per_character() { self.petscii_typed_case() } else { case };
+                self.set_petscii_charset(machine, case);
+            }
+        });
+        let signature = self.document.with_state(|state| chrome::signature(state.get_buffer()));
+        self.layers(ui, signature);
+    }
+
+    /// The character set and attributes new characters are typed and drawn in, as toggles side by
+    /// side: reverse, the lower case set and, on the VDC, flashing and underlining.
+    fn petscii_character_toggles(&mut self, ui: &mut egui::Ui) {
+        let (machine, screen_case) = self.petscii_charset();
+        let per_character = machine.charset_per_character();
+        let case = if per_character { self.petscii_typed_case() } else { screen_case };
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            widgets::toggle(ui, &fl!("petscii-reverse"), &mut self.document.inverse, &fl!("petscii-reverse-tooltip"));
+            let mut lower = case == PetsciiCase::Lower;
             let tooltip = if per_character {
                 fl!("petscii-case-vdc-tooltip")
             } else {
                 fl!("petscii-case-tooltip")
             };
-            let cases = CASES.map(|case| (case, case_name(case), tooltip.clone()));
-            widgets::segmented(ui, &mut case, &cases);
-            if (machine, case) != (current_machine, current_case) {
+            if widgets::toggle(ui, &fl!("petscii-lower-case"), &mut lower, &tooltip).changed() {
+                let case = if lower { PetsciiCase::Lower } else { PetsciiCase::Upper };
                 self.set_petscii_charset(machine, case);
             }
-            if per_character {
-                ui.add_space(4.0);
+        });
+        if per_character {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
                 let mut attribute = self.document.with_state(|state| state.get_caret().attribute);
                 let (mut blink, mut underline) = (attribute.is_blinking(), attribute.is_underlined());
-                ui.horizontal(|ui| {
-                    let blink_changed = ui
-                        .toggle_value(&mut blink, fl!("petscii-blink"))
-                        .on_hover_text(fl!("petscii-blink-tooltip"))
-                        .changed();
-                    let underline_changed = ui
-                        .toggle_value(&mut underline, fl!("petscii-underline"))
-                        .on_hover_text(fl!("petscii-underline-tooltip"))
-                        .changed();
-                    if blink_changed || underline_changed {
-                        attribute.set_is_blinking(blink);
-                        attribute.set_is_underlined(underline);
-                        self.document.with_state(|state| state.set_caret_attribute(attribute));
-                    }
-                });
-            }
-        });
-        let signature = self.document.with_state(|state| chrome::signature(state.get_buffer()));
-        self.layers(ui, signature);
+                let blink_changed = widgets::toggle(ui, &fl!("petscii-blink"), &mut blink, &fl!("petscii-blink-tooltip")).changed();
+                let underline_changed = widgets::toggle(ui, &fl!("petscii-underline"), &mut underline, &fl!("petscii-underline-tooltip")).changed();
+                if blink_changed || underline_changed {
+                    attribute.set_is_blinking(blink);
+                    attribute.set_is_underlined(underline);
+                    self.document.with_state(|state| state.set_caret_attribute(attribute));
+                }
+            });
+        }
     }
 
     fn petscii_status_bar(&mut self, ui: &mut egui::Ui) {
@@ -983,7 +996,8 @@ impl DrawApp {
                 state.selection().map(|selection| selection.as_rectangle()),
             )
         });
-        let (machine, case) = self.petscii_charset();
+        let (machine, _) = self.petscii_charset();
+        let case = self.petscii_typed_case();
         let reverse = self.document.inverse;
         ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
@@ -1058,12 +1072,14 @@ mod tests {
         let (_, mut app) = petscii_app(PetsciiMachine::C64, PetsciiCase::Upper);
         app.document.type_text("HI").unwrap();
         app.set_petscii_background(0);
+        assert_eq!(app.document.with_state(|state| state.get_buffer().background_color), Some(0));
         assert_eq!((cell(&app, 0, 0).2, cell(&app, 39, 24).2), (0, 0));
         app.document.type_text("!").unwrap();
         assert_eq!(cell(&app, 2, 0).2, 0, "new characters get the screen color");
         app.undo(false);
         app.undo(false);
         assert_eq!(cell(&app, 39, 24).2, 6);
+        assert_eq!(app.document.with_state(|state| state.get_buffer().background_color), Some(6));
     }
 
     #[test]
@@ -1291,17 +1307,25 @@ mod tests {
     }
 
     #[test]
-    fn the_border_follows_the_machine_and_stays_out_of_the_file() {
+    fn the_border_follows_the_machine_and_is_one_undo_step() {
         let (_, mut app) = petscii_app(PetsciiMachine::C64, PetsciiCase::Upper);
         assert_eq!(app.petscii_border(), Some(14), "light blue, as the C64 starts");
-        app.document.border = Some(2);
+        app.edit(|state| state.set_border_color(Some(2)));
         assert_eq!(app.petscii_border(), Some(2));
         app.set_petscii_charset(PetsciiMachine::Vic20, PetsciiCase::Upper);
-        assert_eq!(app.petscii_border(), Some(2), "red stays red, one of the VIC-20's eight border colors");
+        assert_eq!(app.petscii_border(), Some(3), "cyan, as the VIC-20 starts");
+        assert_eq!(cell(&app, 0, 0).2, 1, "on its white screen");
         app.set_petscii_charset(PetsciiMachine::Pet, PetsciiCase::Upper);
         assert_eq!(app.petscii_border(), None, "the PET has no border");
         app.set_petscii_charset(PetsciiMachine::C128, PetsciiCase::Upper);
         assert_eq!(app.petscii_border(), Some(13), "the C128 starts with light green");
+        assert_eq!(cell(&app, 0, 0).2, 11, "on dark gray");
+        app.undo(false);
+        app.undo(false);
+        app.undo(false);
+        app.undo(false);
+        assert_eq!(app.petscii_border(), Some(14));
+        assert_eq!(cell(&app, 0, 0).2, 6);
         app.replace(Document::new(icy_engine::Size::new(80, 25)));
         assert_eq!(app.petscii_border(), None, "only PETSCII screens have one");
     }
@@ -1339,8 +1363,8 @@ mod tests {
             })
         };
         assert_eq!(colors(&vic20, 1), (2, 1));
-        assert_eq!(vic20.border, Some(3));
-        assert_eq!(c16.border, Some(0));
+        assert_eq!(vic20.with_state(|state| state.get_buffer().border_color), Some(3));
+        assert_eq!(c16.with_state(|state| state.get_buffer().border_color), Some(0));
         assert_eq!(colors(&c16, 0), (82, 113), "luminance 5, hue 2 on white");
         assert_eq!(colors(&c16, 1), (70, 113), "flashing (bit 7) is dropped");
     }

@@ -229,6 +229,9 @@ pub fn petscii_font(machine: PetsciiMachine, case: PetsciiCase) -> BitFont {
 
 /// The machine and character set of a PETSCII screen, from the name of its font.
 pub fn petscii_charset(buffer: &TextBuffer) -> (PetsciiMachine, PetsciiCase) {
+    if let Some(crate::MachineMode::Petscii { machine, charset }) = buffer.machine_mode {
+        return (machine, charset);
+    }
     let name = buffer.font(0).map(|font| font.name().to_ascii_lowercase()).unwrap_or_default();
     let machine = if name.starts_with("c128 vdc") {
         PetsciiMachine::C128Vdc
@@ -253,12 +256,9 @@ pub fn petscii_charset(buffer: &TextBuffer) -> (PetsciiMachine, PetsciiCase) {
     (machine, case)
 }
 
-/// The screen color: every character has it as its background.
+/// The explicit screen color, or the machine's start-up color for buffers without metadata.
 pub fn petscii_background(buffer: &TextBuffer) -> u32 {
-    buffer
-        .layers
-        .first()
-        .map_or(0, |layer| layer.char_at(Position::default()).attribute.background())
+    buffer.background_color.unwrap_or_else(|| petscii_charset(buffer).0.start_colors().1)
 }
 
 /// A PETSCII screen `width` × `height` of spaces in `foreground` on `background`, with the
@@ -275,6 +275,12 @@ pub fn petscii_buffer(machine: PetsciiMachine, case: PetsciiCase, size: Size, fo
         buffer.set_font(1, petscii_font(machine, PetsciiCase::Lower));
     }
     buffer.palette = machine.palette();
+    buffer.border_color = machine.start_border();
+    buffer.background_color = Some(background);
+    buffer.machine_mode = Some(crate::MachineMode::Petscii {
+        machine,
+        charset: if machine.charset_per_character() { PetsciiCase::Upper } else { case },
+    });
     buffer.buffer_type = crate::BufferType::Petscii;
     buffer.terminal_state.is_terminal_buffer = false;
     let mut blank = AttributedChar::new(' ', crate::TextAttribute::default());
@@ -487,6 +493,7 @@ pub(crate) fn load_seq(data: &[u8], _load_data_opt: Option<&LoadData>, sauce_opt
 
     result.buffer.palette = Palette::from_slice(&C64_DEFAULT_PALETTE);
     result.buffer.buffer_type = crate::BufferType::Petscii;
+    result.buffer.background_color = Some(0);
     result.buffer.terminal_state.is_terminal_buffer = false;
 
     // Apply SAUCE settings early
@@ -497,6 +504,8 @@ pub(crate) fn load_seq(data: &[u8], _load_data_opt: Option<&LoadData>, sauce_opt
     seq_prepare(&mut result);
     crate::load_with_parser(&mut result, &mut icy_parser_core::PetsciiParser::default(), data, true, 25)?;
     single_charset(&mut result);
+    let (machine, charset) = petscii_charset(&result.buffer);
+    result.buffer.machine_mode = Some(crate::MachineMode::Petscii { machine, charset });
     Ok(result)
 }
 

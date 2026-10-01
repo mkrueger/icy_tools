@@ -67,7 +67,11 @@ impl ScreenProfile {
     pub fn of(buffer: &TextBuffer) -> Self {
         match buffer.buffer_type {
             BufferType::CP437 | BufferType::Unicode => Self::Ansi,
-            BufferType::Atascii => Self::Atascii(AtasciiMode::for_columns(buffer.width())),
+            BufferType::Atascii => Self::Atascii(match buffer.machine_mode {
+                Some(icy_engine::MachineMode::Atari8Bit { xep80: true }) => AtasciiMode::Xep80,
+                Some(icy_engine::MachineMode::Atari8Bit { xep80: false }) => AtasciiMode::Antic,
+                _ => AtasciiMode::for_columns(buffer.width()),
+            }),
             BufferType::AtariSt => Self::AtariSt(icy_engine::atari_st_resolution(buffer)),
             BufferType::Petscii => {
                 let (machine, case) = icy_engine::petscii_charset(buffer);
@@ -143,6 +147,15 @@ pub fn atascii_columns(path: &std::path::Path) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_atari_mode_survives_geometry_changes() {
+        let mut buffer = atascii_buffer(AtasciiMode::Xep80);
+        buffer.set_size((40, 25));
+        assert_eq!(ScreenProfile::of(&buffer), ScreenProfile::Atascii(AtasciiMode::Xep80));
+        buffer.machine_mode = None;
+        assert_eq!(ScreenProfile::of(&buffer), ScreenProfile::Atascii(AtasciiMode::Antic));
+    }
 
     #[test]
     fn atascii_documents_have_the_screen_of_their_mode() {

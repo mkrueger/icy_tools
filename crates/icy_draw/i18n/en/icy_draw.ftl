@@ -1324,6 +1324,7 @@ petscii-new-screen=Screen
 petscii-new-hint=The whole screen shows one character set and one background color; each character has a text color. Reverse characters are the upper half of the character set. Export as SEQ.
 petscii-case-upper=Upper case/graphics
 petscii-case-lower=Lower/upper case
+petscii-lower-case=Lower case
 petscii-case-tooltip=Switches the whole screen, like the machine does
 petscii-case-vdc-tooltip=The set new characters are typed and drawn in; the VDC picks it per character
 petscii-blink=Flash

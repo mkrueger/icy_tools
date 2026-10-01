@@ -190,6 +190,9 @@ impl FontMode {
     }
 }
 
+mod screen_metadata;
+pub use screen_metadata::MachineMode;
+
 pub struct TextBuffer {
     original_size: Size,
     size: Size,
@@ -202,6 +205,11 @@ pub struct TextBuffer {
     pub font_mode: FontMode,
 
     pub palette: Palette,
+    /// Optional palette index used for the border around machine-specific text screens.
+    pub border_color: Option<u32>,
+    /// Optional palette index behind transparent cells; machine screens use this as their screen color.
+    pub background_color: Option<u32>,
+    pub machine_mode: Option<MachineMode>,
 
     font_table: HashMap<u8, BitFont>,
     is_font_table_dirty: bool,
@@ -277,6 +285,9 @@ impl Clone for TextBuffer {
             ice_mode: self.ice_mode,
             font_mode: self.font_mode,
             palette: self.palette.clone(),
+            border_color: self.border_color,
+            background_color: self.background_color,
+            machine_mode: self.machine_mode,
             font_table: self.font_table.clone(),
             is_font_table_dirty: self.is_font_table_dirty,
             layers: self.layers.clone(),
@@ -601,6 +612,9 @@ impl TextBuffer {
             font_mode: FontMode::Sauce,
 
             palette: Palette::dos_default(),
+            border_color: None,
+            background_color: None,
+            machine_mode: None,
 
             font_table,
             is_font_table_dirty: false,
@@ -1150,6 +1164,12 @@ impl TextPane for TextBuffer {
             }
         }
         let mut found_char = AttributedChar::invisible();
+        if let Some(background) = self.background_color {
+            if pos.x >= 0 && pos.y >= 0 && pos.x < self.width() && pos.y < self.height() {
+                found_char = AttributedChar::from_char(' ');
+                found_char.attribute.set_background(background);
+            }
+        }
         for i in 0..self.layers.len() {
             let cur_layer = &self.layers[i];
             if cur_layer.properties.is_visible {

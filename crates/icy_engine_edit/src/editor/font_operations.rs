@@ -7,6 +7,14 @@ use crate::{AttributedChar, BitFont, IceMode, Layer, Palette, Result, TextPane};
 use super::{undo_operation::EditorUndoOp, EditState};
 
 impl EditState {
+    pub fn set_machine_mode(&mut self, mode: Option<icy_engine::MachineMode>) -> Result<()> {
+        let old = self.get_buffer().machine_mode;
+        if old == mode {
+            return Ok(());
+        }
+        self.push_undo_action(EditorUndoOp::SetMachineMode { old, new: mode })
+    }
+
     pub fn switch_to_font_page(&mut self, page: u8) -> Result<()> {
         if self.get_buffer().font_mode == crate::FontMode::Unlimited && !self.get_buffer().has_font(page) && usize::from(page) < icy_engine::ANSI_SLOT_COUNT {
             let font = self
@@ -56,6 +64,22 @@ impl EditState {
         }
         let op = EditorUndoOp::SetFontDimensions { old_size, new_size: size };
         self.push_undo_action(op)
+    }
+
+    pub fn set_border_color(&mut self, color: Option<u32>) -> Result<()> {
+        let old = self.get_buffer().border_color;
+        if old == color {
+            return Ok(());
+        }
+        self.push_undo_action(EditorUndoOp::SetBorderColor { old, new: color })
+    }
+
+    pub fn set_background_color(&mut self, color: Option<u32>) -> Result<()> {
+        let old = self.get_buffer().background_color;
+        if old == color {
+            return Ok(());
+        }
+        self.push_undo_action(EditorUndoOp::SetBackgroundColor { old, new: color })
     }
 
     pub fn add_ansi_font(&mut self, page: u8) -> Result<()> {

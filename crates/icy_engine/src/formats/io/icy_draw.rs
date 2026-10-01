@@ -1,3 +1,15 @@
+//! Native PNG-based document format.
+//!
+//! The optional `SCREEN` record uses normal file-level compression. Its decoded payload is
+//! a little-endian u16 version (currently 1), followed by fields:
+//! `[tag: u16][length: u16][value: length bytes]`. Fields are optional, unique and unordered.
+//! Tag 1 contains `[machine: u16][mode: u16]`; tags 2 and 3 contain u32 palette indices for
+//! border and background. Missing fields mean no explicit value; zero is a valid color.
+//! Stable machine/mode IDs are defined in `MachineMode::to_screen_ids`.
+//! Unsupported versions, fields and IDs are rejected rather than silently lost on resave.
+//! Future layouts or additional fields require a new SCREEN version; the ICED header
+//! version and reserved bytes are unchanged. Older readers can ignore the entire record.
+
 use std::fmt::Alignment;
 use std::io::Cursor;
 
@@ -360,6 +372,49 @@ fn process_icy_draw_v1_decoded_chunk(
             result.palette = crate::FileFormat::Palette(crate::PaletteFormat::Ice)
                 .load_palette(bytes)
                 .map_err(|e| IcedError::InvalidRecord(format!("palette: {e}")))?;
+        }
+
+        "SCREEN" => {
+            if bytes.len() < 2 {
+                return Err(IcedError::DataTruncated(2));
+            }
+            let version = u16::from_le_bytes(bytes[..2].try_into().unwrap());
+            if version != 1 {
+                return Err(IcedError::InvalidRecord(format!("unsupported SCREEN version {version}")));
+            }
+            let mut fields = &bytes[2..];
+            let mut seen = 0u8;
+            while !fields.is_empty() {
+                if fields.len() < 4 {
+                    return Err(IcedError::InvalidRecord("truncated SCREEN field header".into()));
+                }
+                let tag = u16::from_le_bytes(fields[..2].try_into().unwrap());
+                let length = u16::from_le_bytes(fields[2..4].try_into().unwrap()) as usize;
+                fields = &fields[4..];
+                if !(1..=3).contains(&tag) || length != 4 || fields.len() < length {
+                    return Err(IcedError::InvalidRecord(format!("invalid SCREEN field {tag}, length {length}")));
+                }
+                let bit = 1 << (tag - 1);
+                if seen & bit != 0 {
+                    return Err(IcedError::InvalidRecord(format!("duplicate SCREEN field {tag}")));
+                }
+                seen |= bit;
+                let value = &fields[..length];
+                fields = &fields[length..];
+                match tag {
+                    1 => {
+                        let machine = u16::from_le_bytes(value[..2].try_into().unwrap());
+                        let mode = u16::from_le_bytes(value[2..].try_into().unwrap());
+                        result.machine_mode = Some(
+                            crate::MachineMode::from_screen_ids(machine, mode)
+                                .ok_or_else(|| IcedError::InvalidRecord(format!("unsupported SCREEN machine/mode {machine}/{mode}")))?,
+                        );
+                    }
+                    2 => result.border_color = Some(u32::from_le_bytes(value.try_into().unwrap())),
+                    3 => result.background_color = Some(u32::from_le_bytes(value.try_into().unwrap())),
+                    _ => unreachable!(),
+                }
+            }
         }
 
         "SAUCE" => {
@@ -732,6 +787,28 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         write_compressed_chunk(&mut writer, "PALETTE", file_compression, &pal_data)?;
     }
 
+    if buf.machine_mode.is_some() || buf.border_color.is_some() || buf.background_color.is_some() {
+        let mut screen = 1u16.to_le_bytes().to_vec();
+        let mut field = |tag: u16, value: [u8; 4]| {
+            screen.extend(tag.to_le_bytes());
+            screen.extend(4u16.to_le_bytes());
+            screen.extend(value);
+        };
+        if let Some(machine_mode) = buf.machine_mode {
+            let (machine, mode) = machine_mode.to_screen_ids();
+            let [a, b] = machine.to_le_bytes();
+            let [c, d] = mode.to_le_bytes();
+            field(1, [a, b, c, d]);
+        }
+        if let Some(border_color) = buf.border_color {
+            field(2, border_color.to_le_bytes());
+        }
+        if let Some(background_color) = buf.background_color {
+            field(3, background_color.to_le_bytes());
+        }
+        write_compressed_chunk(&mut writer, "SCREEN", file_compression, &screen)?;
+    }
+
     for (slot, v) in buf.font_iter() {
         let mut font_data: Vec<u8> = Vec::new();
         font_data.push(*slot);
@@ -856,12 +933,23 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
 
 pub(crate) fn load_icy_draw(data: &[u8], _load_data_opt: Option<&LoadData>) -> Result<(TextScreen, Option<SauceRecord>)> {
     // Try v1 binary chunks first
-    if let Some((screen, sauce_opt)) = load_icy_draw_v1_binary_chunks(data)? {
-        return Ok((screen, sauce_opt));
+    let (mut screen, sauce_opt) = match load_icy_draw_v1_binary_chunks(data)? {
+        Some(loaded) => loaded,
+        None => super::icy_draw_v0::load_icy_draw_v0(data)?,
+    };
+    if screen.buffer.buffer_type == crate::BufferType::Petscii && screen.buffer.background_color.is_none() {
+        // Migrate old files once, without treating a transparent cell's default index as screen color.
+        let background = screen.buffer.layers.first().and_then(|layer| {
+            layer
+                .lines
+                .iter()
+                .flat_map(|line| &line.chars)
+                .find(|ch| ch.is_visible() && !ch.attribute.is_background_transparent())
+                .map(|ch| ch.attribute.background())
+        });
+        screen.buffer.background_color = Some(background.unwrap_or_else(|| crate::petscii_charset(&screen.buffer).0.start_colors().1));
     }
-
-    // Fall back to v0 loader
-    super::icy_draw_v0::load_icy_draw_v0(data)
+    Ok((screen, sauce_opt))
 }
 
 fn load_icy_draw_v1_binary_chunks(data: &[u8]) -> Result<Option<(TextScreen, Option<SauceRecord>)>> {
@@ -979,3 +1067,47 @@ fn write_utf8_encoded_string(data: &mut Vec<u8>, s: &str) {
 }
 
 const MAX_LINES: i32 = 80;
+
+#[cfg(test)]
+mod screen_metadata_tests {
+    use super::*;
+
+    fn decode(bytes: &[u8]) -> std::result::Result<TextBuffer, IcedError> {
+        let mut buffer = TextBuffer::new((1, 1));
+        process_icy_draw_v1_decoded_chunk("SCREEN", bytes, &mut buffer, &mut 0, &mut None)?;
+        Ok(buffer)
+    }
+
+    #[test]
+    fn screen_fields_are_optional_and_order_independent() {
+        let buffer = decode(&[1, 0, 3, 0, 4, 0, 11, 0, 0, 0, 1, 0, 4, 0, 2, 0, 1, 0]).unwrap();
+        assert_eq!(buffer.background_color, Some(11));
+        assert_eq!(buffer.border_color, None);
+        assert_eq!(
+            buffer.machine_mode,
+            Some(crate::MachineMode::Petscii {
+                machine: crate::PetsciiMachine::C128,
+                charset: crate::PetsciiCase::Lower,
+            })
+        );
+        assert!(decode(&[1, 0]).unwrap().machine_mode.is_none());
+    }
+
+    #[test]
+    fn unsupported_and_malformed_screen_records_are_rejected() {
+        for bytes in [
+            vec![],
+            vec![1],
+            vec![2, 0],
+            vec![1, 0, 1],
+            vec![1, 0, 2, 0, 4, 0, 0],
+            vec![1, 0, 2, 0, 3, 0, 0, 0, 0],
+            vec![1, 0, 1, 0, 4, 0, 255, 255, 0, 0],
+            vec![1, 0, 1, 0, 4, 0, 8, 0, 3, 0],
+            vec![1, 0, 4, 0, 4, 0, 0, 0, 0, 0],
+            vec![1, 0, 2, 0, 4, 0, 0, 0, 0, 0, 2, 0, 4, 0, 0, 0, 0, 0],
+        ] {
+            assert!(decode(&bytes).is_err(), "{bytes:?}");
+        }
+    }
+}

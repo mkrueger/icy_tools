@@ -152,7 +152,10 @@ impl DrawApp {
             state.resize_buffer(true, icy_engine::Size::new(mode.columns(), height))?;
             state.set_font_dimensions(font.size())?;
             state.set_font_in_slot(0, font)?;
-            state.switch_to_palette(palette)
+            state.switch_to_palette(palette)?;
+            state.set_machine_mode(Some(icy_engine::MachineMode::Atari8Bit {
+                xep80: mode == AtasciiMode::Xep80,
+            }))
         });
         self.result(result.map_err(|error| error.to_string()));
         self.read_atascii_colors();

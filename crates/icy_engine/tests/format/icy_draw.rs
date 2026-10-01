@@ -7,6 +7,102 @@ const ICYD_RECORD_VERSION: u8 = 1;
 const ZSTD_FRAME_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
 #[test]
+fn border_color_round_trips() {
+    for compress in [false, true] {
+        let mut buffer = TextBuffer::new((40, 25));
+        buffer.border_color = Some(14);
+        buffer.background_color = Some(6);
+        let options = SaveOptions {
+            format: icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+                skip_thumbnail: false,
+                compress,
+            }),
+            ..Default::default()
+        };
+        let bytes = FileFormat::IcyDraw.to_bytes(&buffer, &options).unwrap();
+        let loaded = FileFormat::IcyDraw.from_bytes(&bytes, None).unwrap().screen.buffer;
+        assert_eq!(loaded.border_color, Some(14));
+        assert_eq!(loaded.background_color, Some(6));
+    }
+}
+
+#[test]
+fn machine_modes_round_trip_without_inference_from_fonts_or_geometry() {
+    use icy_engine::{MachineMode, PetsciiCase, PetsciiMachine, TerminalResolution};
+    let mut modes = Vec::new();
+    for machine in PetsciiMachine::ALL {
+        for charset in [PetsciiCase::Upper, PetsciiCase::Lower] {
+            modes.push(MachineMode::Petscii { machine, charset });
+        }
+    }
+    for resolution in [TerminalResolution::Low, TerminalResolution::Medium, TerminalResolution::High] {
+        modes.push(MachineMode::AtariSt { resolution });
+    }
+    modes.extend([
+        MachineMode::Atari8Bit { xep80: false },
+        MachineMode::Atari8Bit { xep80: true },
+        MachineMode::Viewdata,
+        MachineMode::Mode7,
+    ]);
+    for mode in modes {
+        for compress in [false, true] {
+            let mut buffer = TextBuffer::new((1, 1));
+            buffer.machine_mode = Some(mode);
+            buffer.border_color = Some(0);
+            buffer.background_color = Some(u32::MAX);
+            let options = SaveOptions {
+                format: icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+                    skip_thumbnail: true,
+                    compress,
+                }),
+                ..Default::default()
+            };
+            let bytes = FileFormat::IcyDraw.to_bytes(&buffer, &options).unwrap();
+            let loaded = FileFormat::IcyDraw.from_bytes(&bytes, None).unwrap().screen.buffer;
+            assert_eq!(loaded.machine_mode, Some(mode));
+            assert_eq!(loaded.border_color, Some(0));
+            assert_eq!(loaded.background_color, Some(u32::MAX));
+            match mode {
+                MachineMode::Petscii { machine, charset } => assert_eq!(icy_engine::petscii_charset(&loaded), (machine, charset)),
+                MachineMode::AtariSt { resolution } => assert_eq!(icy_engine::atari_st_resolution(&loaded), resolution),
+                _ => {}
+            }
+            let records = extract_png_chunks_by_type(&bytes, ICYD_CHUNK_TYPE);
+            let keywords: Vec<_> = records.iter().map(|record| parse_icyd_record(record).0).collect();
+            assert_eq!(keywords.iter().filter(|keyword| *keyword == "SCREEN").count(), 1);
+            assert!(!keywords.iter().any(|keyword| keyword == "BORDER" || keyword == "BACKGROUND"));
+        }
+    }
+}
+
+#[test]
+fn screen_background_does_not_depend_on_the_first_cell() {
+    let mut buffer = icy_engine::petscii_buffer(icy_engine::PetsciiMachine::C128, icy_engine::PetsciiCase::Upper, (40, 25).into(), 13, 11);
+    buffer.layers[0].set_char((0, 0), AttributedChar::invisible());
+    assert_eq!(icy_engine::petscii_background(&buffer), 11);
+    assert_eq!(buffer.char_at((0, 0).into()).attribute.background(), 11);
+    buffer.layers.clear();
+    assert_eq!(icy_engine::petscii_background(&buffer), 11);
+    assert_eq!(buffer.char_at((0, 0).into()).attribute.background(), 11);
+    assert_eq!(buffer.clone().background_color, Some(11));
+    let (_, pixels) = buffer.render_to_rgba(&icy_engine::Rectangle::from(0, 0, 1, 1).into(), false);
+    let (red, green, blue) = buffer.palette.rgb(11);
+    assert!(pixels.chunks_exact(4).all(|pixel| pixel == [red, green, blue, 255]));
+    buffer.background_color = None;
+    assert!(!buffer.char_at((0, 0).into()).is_visible(), "ordinary transparent buffers stay transparent");
+}
+
+#[test]
+fn legacy_petscii_background_is_migrated_from_a_visible_cell() {
+    let mut buffer = icy_engine::petscii_buffer(icy_engine::PetsciiMachine::C64, icy_engine::PetsciiCase::Upper, (40, 25).into(), 14, 2);
+    buffer.background_color = None;
+    buffer.layers[0].set_char((0, 0), AttributedChar::invisible());
+    let bytes = FileFormat::IcyDraw.to_bytes(&buffer, &SaveOptions::icy_draw()).unwrap();
+    let loaded = FileFormat::IcyDraw.from_bytes(&bytes, None).unwrap().screen.buffer;
+    assert_eq!(loaded.background_color, Some(2));
+}
+
+#[test]
 fn icy_preview_and_sauce_preserve_display_geometry() {
     use icy_engine::formats::SauceBuilder;
     for (spacing, aspect) in [(false, false), (true, false), (true, true)] {

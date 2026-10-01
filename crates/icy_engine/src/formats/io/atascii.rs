@@ -19,6 +19,7 @@ pub fn atascii_buffer(columns: i32, height: i32) -> TextBuffer {
 /// 40 columns.
 fn set_atascii_screen(buffer: &mut TextBuffer) {
     let xep80 = buffer.width() > 40;
+    buffer.machine_mode = Some(crate::MachineMode::Atari8Bit { xep80 });
     buffer.clear_font_table();
     let font = if xep80 { ATARI_XEP80.clone() } else { ATARI.clone() };
     buffer.set_font_dimensions(font.size());

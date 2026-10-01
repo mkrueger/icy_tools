@@ -1302,6 +1302,7 @@ petscii-new-screen=Bildschirm
 petscii-new-hint=Der ganze Bildschirm zeigt einen Zeichensatz und eine Hintergrundfarbe; jedes Zeichen hat eine Schriftfarbe. Reverse Zeichen sind die obere Hälfte des Zeichensatzes. Export als SEQ.
 petscii-case-upper=Groß/Grafik
 petscii-case-lower=Klein/Groß
+petscii-lower-case=Kleinschrift
 petscii-case-tooltip=Schaltet den ganzen Bildschirm um, wie der Rechner
 petscii-case-vdc-tooltip=Der Zeichensatz für neue Zeichen; der VDC wählt ihn pro Zeichen
 petscii-blink=Blinken

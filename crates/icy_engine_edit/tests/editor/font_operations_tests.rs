@@ -171,6 +171,43 @@ fn font_dimensions_undo_and_redo() {
 }
 
 #[test]
+fn border_color_undo_and_redo() {
+    let mut state = EditState::from_buffer(TextBuffer::create((10, 5)));
+    assert_eq!(state.get_buffer().border_color, None);
+    state.set_border_color(Some(14)).unwrap();
+    assert_eq!(state.get_buffer().border_color, Some(14));
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().border_color, None);
+    state.redo().unwrap();
+    assert_eq!(state.get_buffer().border_color, Some(14));
+}
+
+#[test]
+fn background_color_undo_and_redo() {
+    let mut state = EditState::from_buffer(TextBuffer::create((10, 5)));
+    state.set_background_color(Some(11)).unwrap();
+    assert_eq!(state.get_buffer().background_color, Some(11));
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().background_color, None);
+    state.redo().unwrap();
+    assert_eq!(state.get_buffer().background_color, Some(11));
+}
+
+#[test]
+fn machine_mode_undo_and_redo() {
+    let mut state = EditState::from_buffer(TextBuffer::create((10, 5)));
+    let mode = icy_engine::MachineMode::AtariSt {
+        resolution: icy_engine::TerminalResolution::High,
+    };
+    state.set_machine_mode(Some(mode)).unwrap();
+    assert_eq!(state.get_buffer().machine_mode, Some(mode));
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().machine_mode, None);
+    state.redo().unwrap();
+    assert_eq!(state.get_buffer().machine_mode, Some(mode));
+}
+
+#[test]
 fn palette_and_layers_switch_in_one_undo_step() {
     let mut state = EditState::from_buffer(TextBuffer::create((4, 1)));
     let mut attribute = icy_engine::TextAttribute::default();

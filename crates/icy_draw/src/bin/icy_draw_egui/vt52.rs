@@ -189,6 +189,7 @@ impl DrawApp {
             state.switch_to_palette_with_layers(palette.clone(), layers)?;
             state.set_caret_foreground(map(caret.foreground()));
             state.set_caret_background(map(caret.background()));
+            state.set_machine_mode(Some(icy_engine::MachineMode::AtariSt { resolution }))?;
             Ok::<(), icy_engine::EngineError>(())
         });
         self.result(result.map_err(|error| error.to_string()));

@@ -51,6 +51,7 @@ pub fn atari_st_buffer(resolution: TerminalResolution, height: i32) -> TextBuffe
 }
 
 fn set_atari_st_screen(buffer: &mut TextBuffer, resolution: TerminalResolution) {
+    buffer.machine_mode = Some(crate::MachineMode::AtariSt { resolution });
     buffer.clear_font_table();
     let font = atari_st_font(resolution);
     buffer.set_font_dimensions(font.size());
@@ -63,6 +64,9 @@ fn set_atari_st_screen(buffer: &mut TextBuffer, resolution: TerminalResolution) 
 /// The resolution of an ST text screen: its columns tell Low from the others, its colors
 /// Medium from High.
 pub fn atari_st_resolution(buffer: &TextBuffer) -> TerminalResolution {
+    if let Some(crate::MachineMode::AtariSt { resolution }) = buffer.machine_mode {
+        return resolution;
+    }
     if buffer.width() <= atari_st_columns(TerminalResolution::Low) {
         TerminalResolution::Low
     } else if buffer.palette.len() <= 2 {
