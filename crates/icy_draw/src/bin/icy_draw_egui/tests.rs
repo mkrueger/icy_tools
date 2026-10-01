@@ -2370,6 +2370,97 @@ fn text_position(output: &egui::FullOutput, label: &str) -> Option<egui::Pos2> {
 }
 
 #[test]
+fn rip_zoom_menu_shortcuts_and_wheel_reach_the_graphical_canvas() {
+    use icy_engine_gui::ScalingMode;
+
+    use_english();
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.create(NewKind::Rip, Size::new(80, 25));
+    app.settings.monitor_settings.use_integer_scaling = false;
+    app.settings.monitor_settings.scaling_mode = ScalingMode::Auto;
+    let size = egui::vec2(1280.0, 820.0);
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+
+    click_text(&context, &mut app, size, "View");
+    click_text(&context, &mut app, size, "Zoom (Fit to Window)");
+    click_text(&context, &mut app, size, "2:1  200%");
+    frame(&context, &mut app, size, vec![]);
+    let editor = app.rip.as_ref().unwrap();
+    assert_eq!(editor.zoom(), 2.0);
+    assert_eq!(editor.canvas_rect().size(), egui::vec2(1280.0, 700.0));
+
+    frame(&context, &mut app, size, vec![key_event(Key::Minus, egui::Modifiers::COMMAND)]);
+    frame(&context, &mut app, size, vec![]);
+    assert_eq!(app.rip.as_ref().unwrap().zoom(), 1.5);
+    frame(&context, &mut app, size, vec![key_event(Key::Plus, egui::Modifiers::COMMAND)]);
+    frame(&context, &mut app, size, vec![]);
+    assert_eq!(app.rip.as_ref().unwrap().zoom(), 2.0);
+
+    frame(&context, &mut app, size, vec![key_event(Key::Num0, egui::Modifiers::COMMAND)]);
+    frame(&context, &mut app, size, vec![]);
+    assert_eq!(app.rip.as_ref().unwrap().canvas_rect().size(), egui::vec2(640.0, 350.0));
+    frame(&context, &mut app, size, vec![key_event(Key::Num9, egui::Modifiers::COMMAND)]);
+    frame(&context, &mut app, size, vec![]);
+    assert_eq!(app.rip.as_ref().unwrap().scaling_mode(), ScalingMode::Auto);
+
+    let editor = app.rip.as_ref().unwrap();
+    let before = editor.zoom();
+    let pointer = editor.canvas_rect().min + egui::vec2(30.0, 30.0);
+    let wheel = || {
+        vec![
+            egui::Event::PointerMoved(pointer),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, 100.0),
+                modifiers: egui::Modifiers::COMMAND,
+            },
+        ]
+    };
+    frame(&context, &mut app, size, wheel());
+    for _ in 0..20 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    let zoomed = app.rip.as_ref().unwrap().zoom();
+    assert!(zoomed > before);
+    assert_eq!(app.settings.monitor_settings.scaling_mode, ScalingMode::Manual(zoomed));
+    frame(&context, &mut app, size, vec![]);
+    assert_eq!(app.rip.as_ref().unwrap().zoom(), zoomed);
+
+    app.dialog = Some(Dialog::New);
+    frame(&context, &mut app, size, wheel());
+    assert_eq!(app.rip.as_ref().unwrap().zoom(), zoomed);
+    app.dialog = None;
+
+    app.settings.monitor_settings.scaling_mode = ScalingMode::Auto;
+    frame(&context, &mut app, size, vec![]);
+    click_text(&context, &mut app, size, "View");
+    let zoom_title = format!("Zoom ({})", menus::zoom_label(app.settings.monitor_settings.scaling_mode));
+    click_text(&context, &mut app, size, &zoom_title);
+    click_text(&context, &mut app, size, &fl!("menu-zoom-fit_width"));
+    frame(&context, &mut app, size, vec![]);
+    assert_eq!(app.rip.as_ref().unwrap().scaling_mode(), ScalingMode::FitWidth);
+    let fit_width = app.rip.as_ref().unwrap().zoom();
+    let short = egui::vec2(1280.0, 400.0);
+    for _ in 0..3 {
+        frame(&context, &mut app, short, vec![]);
+    }
+    assert_eq!(app.rip.as_ref().unwrap().zoom(), fit_width, "fit width must allow vertical scrolling");
+    app.settings.monitor_settings.scaling_mode = ScalingMode::Auto;
+    frame(&context, &mut app, short, vec![]);
+    assert!(app.rip.as_ref().unwrap().zoom() < fit_width, "fit window must fit the height too");
+
+    let small = egui::vec2(720.0, 450.0);
+    app.settings.monitor_settings.scaling_mode = ScalingMode::Auto;
+    for _ in 0..3 {
+        frame(&context, &mut app, small, vec![]);
+    }
+    assert!(app.rip.as_ref().unwrap().zoom() < 0.5, "fit must not force scrolling in a small viewport");
+}
+
+#[test]
 fn rip_new_open_and_save_use_a_separate_graphical_editor() {
     let context = egui::Context::default();
     let mut app = DrawApp::new();
@@ -2425,7 +2516,7 @@ fn igs_new_open_and_save_use_their_own_editor() {
 }
 
 #[test]
-fn tdf_font_selector_shows_each_font_type_in_both_layouts() {
+fn tdf_font_selector_shows_type_icons_without_changing_names_in_both_layouts() {
     use_english();
     let context = egui::Context::default();
     let mut app = DrawApp::new();
@@ -2436,25 +2527,85 @@ fn tdf_font_selector_shows_each_font_type_in_both_layouts() {
     app.charfont = Some(font);
 
     for size in [egui::vec2(1280.0, 820.0), egui::vec2(740.0, 820.0)] {
-        let selected = "3. Outlines (Outline)";
+        let selected = "3. Outlines";
         let output = frame(&context, &mut app, size, vec![]);
-        let position = text_position(&output, selected).expect("selected font title includes its type");
+        let position = text_position(&output, selected).expect("selected font title");
         frame(&context, &mut app, size, vec![egui::Event::PointerMoved(position)]);
         for pressed in [true, false] {
             frame(&context, &mut app, size, pointer(position, pressed));
         }
         let output = frame(&context, &mut app, size, vec![]);
-        for label in ["1. New Font (Color)", "2. Blocks (Block)", selected] {
+        for label in ["1. New Font", "2. Blocks", selected] {
             assert!(text_position(&output, label).is_some(), "missing font list entry: {label}");
         }
-        let position = text_position(&output, "1. New Font (Color)").unwrap();
+        for icon in ["paint_brush", "rectangle_filled", "rectangle_outline"] {
+            assert!(app.icons.loaded(icon), "missing font type icon: {icon}");
+        }
+        let position = text_position(&output, "1. New Font").unwrap();
         frame(&context, &mut app, size, vec![egui::Event::PointerMoved(position)]);
         for pressed in [true, false] {
             frame(&context, &mut app, size, pointer(position, pressed));
         }
         assert_eq!(app.charfont.as_ref().unwrap().state.selected_font_index(), 0);
-        assert!(text_position(&frame(&context, &mut app, size, vec![]), "1. New Font (Color)").is_some());
+        assert!(text_position(&frame(&context, &mut app, size, vec![]), "1. New Font").is_some());
         app.change_charfont(|state| state.select_font(2));
+    }
+}
+
+#[test]
+fn tdf_font_selector_shows_eight_rows_and_scrolls_to_more_fonts() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let mut font = icy_draw::charfont::CharFontDocument::new(icy_engine_edit::charset::TdfFontType::Color);
+    font.state.set_font_name("Font1".into());
+    for index in 2..=12 {
+        font.state.add_font(icy_engine_edit::charset::TdfFontType::Block, format!("Font{index}"), 1);
+    }
+    font.state.select_font(0);
+    app.replace(font.document());
+    app.charfont = Some(font);
+    let visible = |output: &egui::FullOutput, label: &str| {
+        output.shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text)
+                if text.galley.text() == label && shape.clip_rect.contains_rect(egui::Rect::from_min_size(text.pos, text.galley.size())) =>
+            {
+                Some(text.pos + text.galley.size() / 2.0)
+            }
+            _ => None,
+        })
+    };
+    for size in [egui::vec2(1280.0, 820.0), egui::vec2(740.0, 820.0)] {
+        app.change_charfont(|state| state.select_font(0));
+        frame(&context, &mut app, size, vec![]);
+        click_text(&context, &mut app, size, "1. Font1");
+        let output = frame(&context, &mut app, size, vec![]);
+        let count = (1..=12).filter(|index| visible(&output, &format!("{index}. Font{index}")).is_some()).count();
+        assert_eq!(count, 8, "exactly eight fonts fit before scrolling");
+        let position = visible(&output, "2. Font2").unwrap();
+        frame(
+            &context,
+            &mut app,
+            size,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, -300.0),
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        for _ in 0..5 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        let output = frame(&context, &mut app, size, vec![]);
+        let position = visible(&output, "12. Font12").expect("last font is reachable by scrolling");
+        for pressed in [true, false] {
+            frame(&context, &mut app, size, pointer(position, pressed));
+        }
+        assert_eq!(app.charfont.as_ref().unwrap().state.selected_font_index(), 11);
     }
 }
 
@@ -2661,6 +2812,135 @@ fn recovery_dialog_can_postpone_and_discard() {
 }
 
 #[test]
+fn new_document_groups_cover_all_editors_in_the_same_order() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::vec2(1280.0, 820.0);
+    let mut app = DrawApp::new();
+    app.show_start = true;
+    let groups = NewKind::groups();
+    assert!(groups[0].1 == [NewKind::Ansi, NewKind::Animation, NewKind::Rip]);
+    assert!(groups[1].1 == [NewKind::Atascii, NewKind::Vt52, NewKind::Igs, NewKind::Petscii]);
+    assert!(groups[2].1 == [NewKind::BitmapFont, NewKind::TheDraw]);
+    let welcome = frame(&context, &mut app, size, vec![]);
+    for (title, kinds) in &groups {
+        let header = text_position(&welcome, &title.to_uppercase()).unwrap();
+        for kind in *kinds {
+            assert!(text_position(&welcome, &kind.name()).unwrap().y > header.y);
+        }
+    }
+    click_text(&context, &mut app, size, "Custom…");
+    assert!(matches!(app.dialog, Some(Dialog::New)));
+    app.show_start = false;
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    let dialog = frame(&context, &mut app, size, vec![]);
+    for (title, kinds) in &groups {
+        let header = text_position(&dialog, title).unwrap();
+        for kind in *kinds {
+            assert!(text_position(&dialog, &kind.name()).unwrap().y > header.y);
+            assert!(
+                dialog.shapes.iter().any(|shape| match &shape.shape {
+                    egui::Shape::Text(text) if text.galley.text() == kind.name() => {
+                        shape.clip_rect.contains_rect(egui::Rect::from_min_size(text.pos, text.galley.size()))
+                    }
+                    _ => false,
+                }),
+                "all editor types fit in the dialog at desktop size"
+            );
+        }
+    }
+}
+
+#[test]
+fn tdf_welcome_tile_opens_the_new_dialog_with_a_type_selector() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::vec2(1280.0, 820.0);
+    for (label, kind) in [
+        ("Color", icy_engine_edit::charset::TdfFontType::Color),
+        ("Block", icy_engine_edit::charset::TdfFontType::Block),
+        ("Outline", icy_engine_edit::charset::TdfFontType::Outline),
+    ] {
+        let mut app = DrawApp::new();
+        app.show_start = true;
+        assert_eq!(
+            NewKind::groups()
+                .iter()
+                .flat_map(|(_, kinds)| kinds.iter())
+                .filter(|&&kind| kind == NewKind::TheDraw)
+                .count(),
+            1
+        );
+        click_text(&context, &mut app, size, "TDF Font");
+        assert!(matches!(app.dialog, Some(Dialog::New)));
+        assert!(app.new_kind == NewKind::TheDraw);
+        assert!(app.charfont.is_none(), "the tile must not create a font immediately");
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        if label != "Color" {
+            click_text(&context, &mut app, size, "Color");
+            click_text(&context, &mut app, size, label);
+        }
+        click_text(&context, &mut app, size, "Create");
+        assert!(app.dialog.is_none(), "Create did not close the {label} dialog");
+        assert_eq!(app.charfont.as_ref().unwrap().state.selected_font().unwrap().font_type(), kind);
+    }
+}
+
+#[test]
+#[ignore]
+fn gpu_new_tdf_dialog_renders() {
+    use_english();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        app.show_start = true;
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "new-groups-warmup");
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "new-groups");
+        app.new_kind = NewKind::TheDraw;
+        app.dialog = Some(Dialog::New);
+        for _ in 0..4 {
+            gpu.capture(&mut app, [1280, 820], 1.0, vec![], "new-tdf-warmup");
+        }
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "new-tdf");
+    });
+}
+
+#[test]
+#[ignore]
+fn gpu_tdf_font_dropdown_renders_eight_icon_rows() {
+    use_english();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        let mut font = icy_draw::charfont::CharFontDocument::new(icy_engine_edit::charset::TdfFontType::Color);
+        for index in 2..=12 {
+            let kind = match index % 3 {
+                0 => icy_engine_edit::charset::TdfFontType::Outline,
+                1 => icy_engine_edit::charset::TdfFontType::Color,
+                _ => icy_engine_edit::charset::TdfFontType::Block,
+            };
+            font.state.add_font(kind, format!("Font {index}"), 1);
+        }
+        font.state.select_font(0);
+        app.replace(font.document());
+        app.charfont = Some(font);
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "tdf-font-dropdown-warmup");
+        let output = frame(&gpu.context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+        let position = text_position(&output, "1. New Font").unwrap();
+        for pressed in [true, false] {
+            gpu.capture(&mut app, [1280, 820], 1.0, pointer(position, pressed), "tdf-font-dropdown-warmup");
+        }
+        gpu.capture(&mut app, [1280, 820], 1.0, vec![], "tdf-font-dropdown");
+    });
+}
+
+#[test]
 fn autosave_restores_fonts_and_animations() {
     let context = egui::Context::default();
     let size = egui::vec2(1280.0, 820.0);
@@ -2678,7 +2958,7 @@ fn autosave_restores_fonts_and_animations() {
     };
 
     let mut app = recovering_app(directory.path());
-    app.create(NewKind::TheDraw(icy_engine_edit::charset::TdfFontType::Color), Size::new(80, 25));
+    app.create(NewKind::TheDraw, Size::new(80, 25));
     app.document.type_text("X").unwrap();
     frame(&context, &mut app, size, vec![]);
     flush_recovery(&app);

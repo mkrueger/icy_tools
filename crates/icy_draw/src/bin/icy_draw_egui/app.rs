@@ -161,7 +161,16 @@ fn tdf_type_label(kind: icy_engine_edit::charset::TdfFontType) -> String {
 }
 
 fn tdf_font_entry(index: usize, font: &retrofont::tdf::TdfFont) -> String {
-    format!("{}. {} ({})", index + 1, font.name, tdf_type_label(font.font_type))
+    format!("{}. {}", index + 1, font.name)
+}
+
+fn tdf_type_icon(kind: icy_engine_edit::charset::TdfFontType) -> &'static str {
+    use icy_engine_edit::charset::TdfFontType;
+    match kind {
+        TdfFontType::Color => "paint_brush",
+        TdfFontType::Block => "rectangle_filled",
+        TdfFontType::Outline => "rectangle_outline",
+    }
 }
 
 /// How a Select tool click combines with the current selection, matching `Document::start`.
@@ -219,26 +228,19 @@ pub enum NewKind {
     Igs,
     Animation,
     BitmapFont,
-    TheDraw(icy_engine_edit::charset::TdfFontType),
+    TheDraw,
 }
 
 impl NewKind {
-    pub const ALL: [NewKind; 11] = [
-        NewKind::Ansi,
-        NewKind::Petscii,
-        NewKind::Atascii,
-        NewKind::Vt52,
-        NewKind::Rip,
-        NewKind::Igs,
-        NewKind::Animation,
-        NewKind::BitmapFont,
-        NewKind::TheDraw(icy_engine_edit::charset::TdfFontType::Color),
-        NewKind::TheDraw(icy_engine_edit::charset::TdfFontType::Block),
-        NewKind::TheDraw(icy_engine_edit::charset::TdfFontType::Outline),
-    ];
+    pub fn groups() -> [(String, &'static [NewKind]); 3] {
+        [
+            (fl!("new-group-ansi"), &[Self::Ansi, Self::Animation, Self::Rip]),
+            (fl!("new-group-retro"), &[Self::Atascii, Self::Vt52, Self::Igs, Self::Petscii]),
+            (fl!("new-group-fonts"), &[Self::BitmapFont, Self::TheDraw]),
+        ]
+    }
 
     pub fn name(self) -> String {
-        use icy_engine_edit::charset::TdfFontType;
         match self {
             NewKind::Ansi => fl!("new-file-editor-ansi"),
             NewKind::Atascii => fl!("new-file-editor-atascii"),
@@ -248,14 +250,11 @@ impl NewKind {
             NewKind::Igs => fl!("igs-editor-title"),
             NewKind::Animation => fl!("new-file-editor-animation"),
             NewKind::BitmapFont => fl!("new-file-template-bit_font-title"),
-            NewKind::TheDraw(TdfFontType::Color) => fl!("new-file-template-color_font-title"),
-            NewKind::TheDraw(TdfFontType::Block) => fl!("new-file-template-block_font-title"),
-            NewKind::TheDraw(TdfFontType::Outline) => fl!("new-file-template-outline_font-title"),
+            NewKind::TheDraw => fl!("new-file-editor-tdf"),
         }
     }
 
     pub fn description(self) -> String {
-        use icy_engine_edit::charset::TdfFontType;
         match self {
             NewKind::Ansi => fl!("new-kind-ansi-description"),
             NewKind::Atascii => fl!("new-kind-atascii-description"),
@@ -265,14 +264,11 @@ impl NewKind {
             NewKind::Igs => fl!("igs-editor-description"),
             NewKind::Animation => fl!("new-kind-animation-description"),
             NewKind::BitmapFont => fl!("new-kind-bitfont-description"),
-            NewKind::TheDraw(TdfFontType::Color) => fl!("new-kind-color_font-description"),
-            NewKind::TheDraw(TdfFontType::Block) => fl!("new-kind-block_font-description"),
-            NewKind::TheDraw(TdfFontType::Outline) => fl!("new-kind-outline_font-description"),
+            NewKind::TheDraw => fl!("new-kind-tdf-description"),
         }
     }
 
     pub fn icon(self) -> &'static str {
-        use icy_engine_edit::charset::TdfFontType;
         match self {
             NewKind::Ansi => "pencil",
             NewKind::Atascii => "text",
@@ -282,9 +278,7 @@ impl NewKind {
             NewKind::Igs => "ellipse_filled",
             NewKind::Animation => "play",
             NewKind::BitmapFont => "font",
-            NewKind::TheDraw(TdfFontType::Color) => "paint_brush",
-            NewKind::TheDraw(TdfFontType::Block) => "rectangle_filled",
-            NewKind::TheDraw(TdfFontType::Outline) => "rectangle_outline",
+            NewKind::TheDraw => "paint_brush",
         }
     }
 
@@ -327,6 +321,7 @@ pub struct DrawApp {
     palette_editor: super::palette::PaletteEditor,
     charfont: Option<icy_draw::charfont::CharFontDocument>,
     new_kind: NewKind,
+    new_tdf_type: icy_engine_edit::charset::TdfFontType,
     new_template: file_settings::AnsiTemplate,
     animation: Option<super::animation::AnimationEditor>,
     rip: Option<super::rip::RipEditor>,
@@ -425,6 +420,7 @@ impl DrawApp {
             palette_editor: Default::default(),
             charfont: None,
             new_kind: NewKind::Ansi,
+            new_tdf_type: icy_engine_edit::charset::TdfFontType::Color,
             new_template: file_settings::AnsiTemplate::default(),
             animation: None,
             rip: None,
@@ -511,8 +507,8 @@ impl DrawApp {
                 // New fonts start from the IBM VGA font (CP437), like the classic editor.
                 self.font_editor = Some(super::font::FontEditor::new(icy_engine::BitFont::default()));
             }
-            NewKind::TheDraw(kind) => {
-                let font = icy_draw::charfont::CharFontDocument::new(kind);
+            NewKind::TheDraw => {
+                let font = icy_draw::charfont::CharFontDocument::new(self.new_tdf_type);
                 self.replace(font.document());
                 self.charfont = Some(font);
             }
@@ -1059,12 +1055,103 @@ impl DrawApp {
         }
     }
 
+    fn tdf_font_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        label: &str,
+        kind: icy_engine_edit::charset::TdfFontType,
+        width: f32,
+        selected: bool,
+        dropdown: bool,
+    ) -> egui::Response {
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(width, widgets::CONTROL_HEIGHT), egui::Sense::click());
+        let visuals = ui.style().interact_selectable(&response, selected);
+        if dropdown || selected || response.hovered() {
+            ui.painter().rect(
+                rect,
+                4,
+                visuals.weak_bg_fill,
+                if dropdown { visuals.bg_stroke } else { egui::Stroke::NONE },
+                egui::StrokeKind::Inside,
+            );
+        }
+        self.icons.image(ui, tdf_type_icon(kind), 16.0).tint(visuals.text_color()).paint_at(
+            ui,
+            egui::Rect::from_center_size(egui::pos2(rect.left() + 14.0, rect.center().y), egui::Vec2::splat(16.0)),
+        );
+        let text_rect = egui::Rect::from_min_max(rect.min + egui::vec2(28.0, 0.0), rect.max - egui::vec2(if dropdown { 24.0 } else { 4.0 }, 0.0));
+        ui.painter().with_clip_rect(text_rect).text(
+            egui::pos2(text_rect.left(), text_rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::TextStyle::Button.resolve(ui.style()),
+            visuals.text_color(),
+        );
+        if dropdown {
+            let arrow = egui::pos2(rect.right() - 12.0, rect.center().y);
+            ui.painter().add(egui::Shape::convex_polygon(
+                vec![arrow + egui::vec2(-4.0, -2.0), arrow + egui::vec2(4.0, -2.0), arrow + egui::vec2(0.0, 3.0)],
+                visuals.text_color(),
+                egui::Stroke::NONE,
+            ));
+        }
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(
+                if dropdown {
+                    egui::WidgetType::ComboBox
+                } else {
+                    egui::WidgetType::SelectableLabel
+                },
+                ui.is_enabled(),
+                selected,
+                format!("{label}, {}", tdf_type_label(kind)),
+            )
+        });
+        response.on_hover_text(tdf_type_label(kind))
+    }
+
+    /// Shared by the compact toolbar and sidebar; keeps at most eight font rows visible.
+    fn tdf_font_picker(&mut self, ui: &mut egui::Ui, fonts: &[(String, icy_engine_edit::charset::TdfFontType)], selected: usize, width: f32) -> Option<usize> {
+        let (label, kind) = fonts.get(selected)?;
+        let response = self.tdf_font_row(ui, label, *kind, width, false, true);
+        let id = ui.make_persistent_id("tdf-font");
+        let opening = !egui::Popup::is_id_open(ui.ctx(), id);
+        let mut picked = None;
+        egui::Popup::menu(&response).id(id).width(width).show(|ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            let spacing = ui.spacing().item_spacing.y;
+            egui::ScrollArea::vertical()
+                .id_salt("tdf-font-list")
+                .max_height(8.0 * (widgets::CONTROL_HEIGHT + spacing) - spacing)
+                .show(ui, |ui| {
+                    let width = ui.available_width();
+                    for (index, (label, kind)) in fonts.iter().enumerate() {
+                        let response = self.tdf_font_row(ui, label, *kind, width, index == selected, false);
+                        if index == selected && opening {
+                            response.scroll_to_me(Some(egui::Align::Center));
+                        }
+                        if response.clicked() {
+                            picked = Some(index);
+                            ui.close();
+                        }
+                    }
+                });
+        });
+        picked
+    }
+
     fn charfont_bar(&mut self, context: &egui::Context) {
         let Some(font) = &self.charfont else {
             return;
         };
-        let fonts: Vec<_> = font.state.fonts().iter().enumerate().map(|(index, font)| tdf_font_entry(index, font)).collect();
-        let mut selected = font.state.selected_font_index();
+        let fonts: Vec<_> = font
+            .state
+            .fonts()
+            .iter()
+            .enumerate()
+            .map(|(index, font)| (tdf_font_entry(index, font), font.font_type))
+            .collect();
+        let selected = font.state.selected_font_index();
         let mut character = font.state.selected_char().unwrap_or('A');
         let mut name = font.state.selected_font().map(|font| font.name.clone()).unwrap_or_default();
         let mut spacing = font.state.selected_font().map_or(0, |font| font.spacing);
@@ -1073,15 +1160,9 @@ impl DrawApp {
                 ui.disable();
             }
             ui.horizontal_wrapped(|ui| {
-                egui::ComboBox::from_id_salt("tdf-font")
-                    .selected_text(fonts.get(selected).map(String::as_str).unwrap_or_default())
-                    .show_ui(ui, |ui| {
-                        for (index, label) in fonts.iter().enumerate() {
-                            if ui.selectable_value(&mut selected, index, label).changed() {
-                                self.change_charfont(|state| state.select_font(index));
-                            }
-                        }
-                    });
+                if let Some(index) = self.tdf_font_picker(ui, &fonts, selected, 200.0) {
+                    self.change_charfont(|state| state.select_font(index));
+                }
                 if ui.add(egui::TextEdit::singleline(&mut name).desired_width(120.0).char_limit(12)).changed() {
                     self.change_charfont(|state| state.set_font_name(name));
                 }
@@ -1137,8 +1218,14 @@ impl DrawApp {
         let Some(font) = &self.charfont else {
             return;
         };
-        let fonts: Vec<_> = font.state.fonts().iter().enumerate().map(|(index, font)| tdf_font_entry(index, font)).collect();
-        let mut selected = font.state.selected_font_index();
+        let fonts: Vec<_> = font
+            .state
+            .fonts()
+            .iter()
+            .enumerate()
+            .map(|(index, font)| (tdf_font_entry(index, font), font.font_type))
+            .collect();
+        let selected = font.state.selected_font_index();
         let character = font.state.selected_char().unwrap_or('A');
         let mut name = font.state.selected_font().map(|font| font.name.clone()).unwrap_or_default();
         let mut spacing = font.state.selected_font().map_or(0, |font| font.spacing);
@@ -1166,16 +1253,9 @@ impl DrawApp {
                 self.change_charfont(|state| state.clone_font());
             }
         });
-        egui::ComboBox::from_id_salt("tdf-font")
-            .width(ui.available_width())
-            .selected_text(fonts.get(selected).map(String::as_str).unwrap_or_default())
-            .show_ui(ui, |ui| {
-                for (index, label) in fonts.iter().enumerate() {
-                    if ui.selectable_value(&mut selected, index, label).changed() {
-                        self.change_charfont(|state| state.select_font(index));
-                    }
-                }
-            });
+        if let Some(index) = self.tdf_font_picker(ui, &fonts, selected, ui.available_width()) {
+            self.change_charfont(|state| state.select_font(index));
+        }
         ui.add_space(2.0);
         egui::Grid::new("tdf-font-properties").num_columns(2).spacing([8.0, 4.0]).show(ui, |ui| {
             ui.label(fl!("edit-layer-dialog-name-label"));
@@ -1720,6 +1800,23 @@ impl DrawApp {
         );
         widgets::divider(ui);
         ui.weak(fl!("pipette-modifier-hint"));
+    }
+
+    fn new_tdf_group(&mut self, ui: &mut egui::Ui) {
+        use icy_engine_edit::charset::TdfFontType;
+        appearance::group(ui, &fl!("new-file-editor-tdf"), |ui| {
+            appearance::combo_row(ui, &fl!("tdf-editor-font_type_label"), tdf_type_label(self.new_tdf_type), |ui| {
+                for kind in [TdfFontType::Color, TdfFontType::Block, TdfFontType::Outline] {
+                    ui.selectable_value(&mut self.new_tdf_type, kind, tdf_type_label(kind));
+                }
+            });
+            let description = match self.new_tdf_type {
+                TdfFontType::Color => fl!("new-file-template-color_font-description"),
+                TdfFontType::Block => fl!("new-file-template-block_font-description"),
+                TdfFontType::Outline => fl!("new-file-template-outline_font-description"),
+            };
+            ui.add(egui::Label::new(egui::RichText::new(description).weak()).wrap());
+        });
     }
 
     /// Canvas size controls of the New and Canvas Size dialogs, with the ANSI format for new documents.
@@ -3626,6 +3723,7 @@ impl DrawApp {
                 let current = self.document.with_state(|state| state.get_buffer().size());
                 let response = appearance::Dialog::new(if resize { "resize" } else { "new" })
                     .size(if resize { DialogSize::Medium } else { DialogSize::Width(780.0) })
+                    .max_height(if resize { 560.0 } else { 660.0 })
                     .confirm_on_enter(true)
                     .show(context, |dialog| {
                         dialog.content(|ui| {
@@ -3636,10 +3734,16 @@ impl DrawApp {
                             let kinds = |this: &mut Self, ui: &mut egui::Ui| {
                                 appearance::group(ui, &fl!("new-file-type"), |ui| {
                                     ui.spacing_mut().item_spacing.y = 2.0;
-                                    for kind in NewKind::ALL {
-                                        let response = welcome::kind_row(&mut this.icons, ui, kind, this.new_kind == kind);
-                                        if response.clicked() {
-                                            this.new_kind = kind;
+                                    for (index, (title, kinds)) in NewKind::groups().into_iter().enumerate() {
+                                        if index > 0 {
+                                            ui.add_space(6.0);
+                                        }
+                                        ui.label(egui::RichText::new(title).weak().size(11.0));
+                                        for &kind in kinds {
+                                            let response = welcome::kind_row(&mut this.icons, ui, kind, this.new_kind == kind);
+                                            if response.clicked() {
+                                                this.new_kind = kind;
+                                            }
                                         }
                                     }
                                 });
@@ -3657,6 +3761,8 @@ impl DrawApp {
                                         self.new_vt52_group(&mut columns[1]);
                                     } else if self.new_kind == NewKind::Petscii {
                                         self.new_petscii_group(&mut columns[1]);
+                                    } else if self.new_kind == NewKind::TheDraw {
+                                        self.new_tdf_group(&mut columns[1]);
                                     }
                                 });
                             } else {
@@ -3671,6 +3777,8 @@ impl DrawApp {
                                     self.new_vt52_group(ui);
                                 } else if self.new_kind == NewKind::Petscii {
                                     self.new_petscii_group(ui);
+                                } else if self.new_kind == NewKind::TheDraw {
+                                    self.new_tdf_group(ui);
                                 }
                             }
                         });
@@ -3985,7 +4093,9 @@ impl DrawApp {
             return;
         }
         if let Some(editor) = &mut self.rip {
+            editor.set_scaling(self.settings.monitor_settings.scaling_mode, self.settings.monitor_settings.use_integer_scaling);
             editor.show(context, blocked);
+            self.settings.monitor_settings.scaling_mode = editor.scaling_mode();
             self.canvas_focus = false;
             if !blocked {
                 if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Z)) {

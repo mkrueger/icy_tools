@@ -70,7 +70,10 @@ The egui frontend currently includes:
   filled ellipses, polygons, filled polygons, polylines, circular and oval arcs,
   circular and oval pie slices, text, Bézier curves and buttons in the 640×350 preview using the
   left-hand icon tools. Click a draw, border or fill swatch to pick its color from
-  the popup palette. The toolbar above the drawing holds the options of the tool (line
+  the popup palette. The fill tool floods an enclosed region up to the chosen
+  border color, using the current fill color and pattern. Custom 8x8 fill patterns
+  and 16-bit line patterns can be edited in the toolbar and command properties.
+  The toolbar above the drawing holds the options of the tool (line
   style and thickness, fill pattern, font, size and direction, Bézier segments,
   button type and label) and shows the parameters of the shape being drawn, which
   the preview renders with the RIP engine while dragging. Only state commands whose
@@ -107,7 +110,23 @@ The egui frontend currently includes:
   and arcs, and four handles for ellipses and oval arcs. Dragging a handle
   resizes the shape and dragging the shape moves it, previewed with the RIP engine and
   applied as one undo step; arrow keys (with Shift: 10 pixels) nudge it and Delete
-  removes it. Buttons are objects of a button style and the button itself:
+  removes it. Text selections use the effective RIP font, size and direction for
+  their frame and hit area; text moves as a whole without resize handles.
+  The RIP canvas follows the View menu's zoom settings: Fit Window, Fit Width and
+  manual zoom levels, Ctrl/Cmd+Plus/Minus, Ctrl/Cmd+0 for actual size and
+  Ctrl/Cmd+9 to fit. Ctrl/Cmd+mouse wheel zooms the drawing without also scrolling
+  it; enlarged drawings can be scrolled in both directions.
+  The Edit menu and Ctrl/Cmd+C/X/V copy, cut and paste a single selected object
+  through the system clipboard as a self-contained RIP block, including its
+  drawing state. Ctrl/Cmd+D duplicates it with an eight-pixel offset. Each cut,
+  paste or duplicate is one undo step; focused text fields keep their normal
+  clipboard behavior. Pasting restores the destination's drawing state.
+  An empty drawing can adopt the copied object's palette; an incompatible
+  palette in a nonempty drawing is rejected rather than recoloring existing art.
+  Operations that depend on surrounding content or external resources, such as
+  XOR drawing, flood fills and icon/clipboard buttons, cannot be copied safely
+  and are explicitly rejected. Preserved mixed ANSI/RIP streams remain protected.
+  Buttons are objects of a button style and the button itself:
   **Button…** asks for the plain, icon or clipboard type, label, host command,
   hot key, group, colors, font, label position, bevel, effects and behavior with a
   preview, then a click places the button at the style's size or a drag sets its

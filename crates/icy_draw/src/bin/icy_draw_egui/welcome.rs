@@ -104,18 +104,24 @@ impl DrawApp {
     pub(super) fn start_screen(&mut self, ui: &mut egui::Ui) {
         let context = ui.ctx().clone();
         let recent: Vec<_> = self.settings.recent_files.files().into_iter().rev().take(8).collect();
-        let mut tiles: Vec<(Option<NewKind>, &str, String, String)> = vec![
-            (Some(NewKind::Ansi), "pencil", NewKind::Ansi.name(), fl!("start-ansi-subtitle")),
-            (None, "measure", fl!("start-custom"), fl!("start-custom-subtitle")),
-        ];
-        for kind in NewKind::ALL.into_iter().skip(1) {
-            let subtitle = if matches!(kind, NewKind::TheDraw(_)) {
-                fl!("start-tdf-subtitle")
-            } else {
-                kind.description()
-            };
-            tiles.push((Some(kind), kind.icon(), kind.name(), subtitle));
-        }
+        let groups: Vec<_> = NewKind::groups()
+            .into_iter()
+            .map(|(title, kinds)| {
+                let mut tiles = Vec::new();
+                for &kind in kinds {
+                    let subtitle = match kind {
+                        NewKind::Ansi => fl!("start-ansi-subtitle"),
+                        NewKind::TheDraw => fl!("start-tdf-subtitle"),
+                        _ => kind.description(),
+                    };
+                    tiles.push((Some(kind), kind.icon(), kind.name(), subtitle));
+                    if kind == NewKind::Ansi {
+                        tiles.push((None, "measure", fl!("start-custom"), fl!("start-custom-subtitle")));
+                    }
+                }
+                (title, tiles)
+            })
+            .collect();
         let mut create = None;
         let mut open = None;
         egui::ScrollArea::vertical().id_salt("start").auto_shrink([false, false]).show(ui, |ui| {
@@ -123,8 +129,11 @@ impl DrawApp {
                 .floor()
                 .clamp(1.0, 4.0) as usize;
             let width = columns as f32 * TILE_SIZE.x + (columns - 1) as f32 * TILE_SPACING;
-            let rows = tiles.len().div_ceil(columns) as f32;
-            let content_height = 240.0 + rows * (TILE_SIZE.y + TILE_SPACING) + if recent.is_empty() { 0.0 } else { 44.0 + recent.len() as f32 * 40.0 };
+            let rows: usize = groups.iter().map(|(_, tiles)| tiles.len().div_ceil(columns)).sum();
+            let content_height = 240.0
+                + rows as f32 * (TILE_SIZE.y + TILE_SPACING)
+                + groups.len() as f32 * 36.0
+                + if recent.is_empty() { 0.0 } else { 44.0 + recent.len() as f32 * 40.0 };
             ui.add_space(((ui.available_height() - content_height) / 2.0).max(24.0));
             ui.horizontal(|ui| {
                 ui.add_space(((ui.available_width() - width) / 2.0).max(0.0));
@@ -137,16 +146,22 @@ impl DrawApp {
                     ui.label(egui::RichText::new(fl!("start-tagline")).weak());
                     ui.add_space(20.0);
                     caption(ui, &fl!("start-new"));
-                    for row in tiles.chunks(columns) {
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = TILE_SPACING;
-                            for (kind, icon, title, subtitle) in row {
-                                if tile(&mut self.icons, ui, icon, title, subtitle).clicked() {
-                                    create = Some(*kind);
+                    for (index, (title, tiles)) in groups.iter().enumerate() {
+                        if index > 0 {
+                            ui.add_space(10.0);
+                        }
+                        caption(ui, title);
+                        for row in tiles.chunks(columns) {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = TILE_SPACING;
+                                for (kind, icon, title, subtitle) in row {
+                                    if tile(&mut self.icons, ui, icon, title, subtitle).clicked() {
+                                        create = Some(*kind);
+                                    }
                                 }
-                            }
-                        });
-                        ui.add_space(TILE_SPACING - ui.spacing().item_spacing.y);
+                            });
+                            ui.add_space(TILE_SPACING - ui.spacing().item_spacing.y);
+                        }
                     }
                     ui.add_space(14.0);
                     ui.horizontal_wrapped(|ui| {
@@ -208,6 +223,10 @@ impl DrawApp {
             ui.add_space(24.0);
         });
         match create {
+            Some(Some(NewKind::TheDraw)) => {
+                self.new_kind = NewKind::TheDraw;
+                self.request_new();
+            }
             Some(Some(kind)) => self.create(kind, Size::new(80, 25)),
             Some(None) => self.request_new(),
             None => {}

@@ -316,6 +316,8 @@ impl DrawApp {
                     if self.atascii.is_none() && self.vt52.is_none() && self.petscii.is_none() {
                         ui.menu_button(menu_title(fl!("menu-plugins")), |ui| self.extensions_menu(ui));
                     }
+                } else if self.rip.is_some() && !self.show_start {
+                    ui.menu_button(menu_title(fl!("menu-view")), |ui| self.zoom_menu(ui));
                 }
                 ui.menu_button(menu_title(fl!("menu-help")), |ui| {
                     if item(ui, &fl!("menu-discuss"), None, true) {
@@ -405,11 +407,26 @@ impl DrawApp {
             return;
         }
         if let Some(editor) = &mut self.rip {
-            if item(ui, &fl!("menu-undo"), Some(&UNDO), editor.can_undo()) {
+            let editable = editor.can_edit();
+            if item(ui, &fl!("menu-undo"), Some(&UNDO), editable && editor.can_undo()) {
                 editor.undo(false);
             }
-            if item(ui, &fl!("menu-redo"), Some(&REDO), editor.can_redo()) {
+            if item(ui, &fl!("menu-redo"), Some(&REDO), editable && editor.can_redo()) {
                 editor.undo(true);
+            }
+            ui.separator();
+            let selected = editable && editor.has_selection() && !context.wants_keyboard_input();
+            if item(ui, &fl!("menu-cut"), Some(&CUT), selected) {
+                editor.copy(context, true);
+            }
+            if item(ui, &fl!("menu-copy"), Some(&COPY), selected) {
+                editor.copy(context, false);
+            }
+            if item(ui, &fl!("menu-paste"), Some(&PASTE), editable && !context.wants_keyboard_input()) {
+                editor.request_paste(context);
+            }
+            if item(ui, &fl!("rip-editor-duplicate"), None, selected) {
+                editor.duplicate_selected();
             }
             return;
         }
@@ -734,7 +751,7 @@ impl DrawApp {
         }
     }
 
-    fn view_menu(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+    fn zoom_menu(&mut self, ui: &mut egui::Ui) {
         let current = self.settings.monitor_settings.scaling_mode;
         ui.menu_button(format!("{} ({})", fl!("menu-zoom"), zoom_label(current)), |ui| {
             if item(ui, &fl!("menu-zoom_in"), Some(&ZOOM_IN), true) {
@@ -759,6 +776,10 @@ impl DrawApp {
                 }
             }
         });
+    }
+
+    fn view_menu(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        self.zoom_menu(ui);
         ui.separator();
         ui.menu_button(fl!("menu-guides"), |ui| {
             let mut off = self.guide.is_none();
@@ -945,7 +966,7 @@ impl DrawApp {
 
     /// Moves to the next larger (`direction > 0`) or smaller manual zoom level.
     pub(super) fn zoom_step(&mut self, direction: i32) {
-        let zoom = self.view.zoom;
+        let zoom = self.rip.as_ref().map_or(self.view.zoom, |editor| editor.zoom());
         let next = if direction > 0 {
             ZOOM_STEPS
                 .iter()
@@ -1001,15 +1022,16 @@ impl DrawApp {
         let shift = modifiers.shift;
         // Canvas commands only apply to the ANSI editor.
         let animation = self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() || self.igs.is_some();
+        let zoomable = !animation || self.rip.is_some();
         match key {
             Key::N if shift => self.new_window(),
             Key::Q if !shift => context.send_viewport_cmd(egui::ViewportCommand::Close),
             Key::E if shift && self.animation.is_some() => self.animation.as_mut().unwrap().open_export_dialog(),
             Key::E if shift && !animation => self.dialog = Some(Dialog::Export),
-            Key::Plus | Key::Equals if !animation => self.zoom_step(1),
-            Key::Minus if !animation => self.zoom_step(-1),
-            Key::Num0 if !shift && !animation => self.settings.monitor_settings.scaling_mode = ScalingMode::Manual(1.0),
-            Key::Num9 if !shift && !animation => self.settings.monitor_settings.scaling_mode = ScalingMode::Auto,
+            Key::Plus | Key::Equals if zoomable => self.zoom_step(1),
+            Key::Minus if zoomable => self.zoom_step(-1),
+            Key::Num0 if !shift && zoomable => self.settings.monitor_settings.scaling_mode = ScalingMode::Manual(1.0),
+            Key::Num9 if !shift && zoomable => self.settings.monitor_settings.scaling_mode = ScalingMode::Auto,
             _ if !shift && !animation && self.canvas_focus && key != Key::Num0 && digit(key).is_some() => {
                 self.color_operation(ColorOp::ToggleForeground(digit(key).unwrap()));
             }

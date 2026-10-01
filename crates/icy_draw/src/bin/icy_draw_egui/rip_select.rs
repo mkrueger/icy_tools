@@ -11,8 +11,13 @@ const MAX_Y: i32 = 349;
 /// The editable geometry of a drawing command.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Geometry {
-    /// Pixels, text anchors, line ends and Bézier points.
+    /// Pixels, line ends and Bézier points.
     Points(Vec<Point>),
+    Text {
+        anchor: Point,
+        width: i32,
+        height: i32,
+    },
     /// Normalized so that `x0 <= x1` and `y0 <= y1`.
     Rect {
         x0: i32,
@@ -74,7 +79,12 @@ fn rect(x0: u16, y0: u16, x1: u16, y1: u16) -> Geometry {
 pub fn geometry(command: &RipCommand, button_size: (u16, u16)) -> Option<Geometry> {
     let point = |x: u16, y: u16| (i32::from(x), i32::from(y));
     Some(match command {
-        RipCommand::Pixel { x, y } | RipCommand::TextXY { x, y, .. } => Geometry::Points(vec![point(*x, *y)]),
+        RipCommand::Pixel { x, y } => Geometry::Points(vec![point(*x, *y)]),
+        RipCommand::TextXY { x, y, text } => Geometry::Text {
+            anchor: point(*x, *y),
+            width: (text.len() as i32 * 8).max(1),
+            height: 8,
+        },
         RipCommand::Line { x0, y0, x1, y1 } => Geometry::Points(vec![point(*x0, *y0), point(*x1, *y1)]),
         RipCommand::Bezier {
             x1,
@@ -127,8 +137,11 @@ fn coordinate(value: i32) -> u16 {
 pub fn apply(command: &RipCommand, geometry: &Geometry, button_size: (u16, u16)) -> RipCommand {
     let mut command = command.clone();
     match (&mut command, geometry) {
-        (RipCommand::Pixel { x, y } | RipCommand::TextXY { x, y, .. }, Geometry::Points(points)) if !points.is_empty() => {
+        (RipCommand::Pixel { x, y }, Geometry::Points(points)) if !points.is_empty() => {
             (*x, *y) = (coordinate(points[0].0), coordinate(points[0].1));
+        }
+        (RipCommand::TextXY { x, y, .. }, Geometry::Text { anchor, .. }) => {
+            (*x, *y) = (coordinate(anchor.0), coordinate(anchor.1));
         }
         (RipCommand::Line { x0, y0, x1, y1 }, Geometry::Points(points)) if points.len() == 2 => {
             (*x0, *y0, *x1, *y1) = (
@@ -214,7 +227,7 @@ pub fn handles(command: &RipCommand, geometry: &Geometry) -> Vec<(Handle, Point)
         {
             points.iter().enumerate().map(|(index, point)| (Handle::Point(index), *point)).collect()
         }
-        Geometry::Points(_) => Vec::new(),
+        Geometry::Points(_) | Geometry::Text { .. } => Vec::new(),
         Geometry::Rect { x0, y0, x1, y1 } => {
             let (cx, cy) = ((x0 + x1) / 2, (y0 + y1) / 2);
             let handle = |left, top, right, bottom| Handle::Rect { left, top, right, bottom };
@@ -253,6 +266,7 @@ pub fn bounds(geometry: &Geometry) -> (i32, i32, i32, i32) {
             )
         }
         Geometry::Rect { x0, y0, x1, y1 } => (*x0, *y0, *x1, *y1),
+        Geometry::Text { anchor, width, height } => (anchor.0, anchor.1, anchor.0 + width - 1, anchor.1 + height - 1),
         Geometry::Circle { center, radius } => (center.0 - radius, center.1 - radius, center.0 + radius, center.1 + radius),
         Geometry::Ellipse { center, rx, ry } => (center.0 - rx, center.1 - ry, center.0 + rx, center.1 + ry),
     }
@@ -266,6 +280,11 @@ pub fn translate(geometry: &Geometry, dx: i32, dy: i32) -> Geometry {
     let dy = dy.clamp(-y0.max(0), (MAX_Y - y1).max(0));
     match geometry {
         Geometry::Points(points) => Geometry::Points(points.iter().map(|(x, y)| (x + dx, y + dy)).collect()),
+        Geometry::Text { anchor, width, height } => Geometry::Text {
+            anchor: (anchor.0 + dx, anchor.1 + dy),
+            width: *width,
+            height: *height,
+        },
         Geometry::Rect { x0, y0, x1, y1 } => Geometry::Rect {
             x0: x0 + dx,
             y0: y0 + dy,
@@ -394,11 +413,6 @@ pub fn hit(command: &RipCommand, geometry: &Geometry, point: (f32, f32), toleran
     );
     match geometry {
         Geometry::Points(points) => match command {
-            RipCommand::TextXY { text, .. } => {
-                let (x, y) = (points[0].0 as f32, points[0].1 as f32);
-                let width = (text.chars().count() as f32 * 8.0).max(8.0);
-                point.0 >= x - tolerance && point.0 <= x + width + tolerance && point.1 >= y - tolerance && point.1 <= y + 8.0 + tolerance
-            }
             RipCommand::Bezier { .. } => bezier_points(points)
                 .windows(2)
                 .any(|pair| segment_distance(point, pair[0], pair[1]) <= tolerance),
@@ -419,6 +433,13 @@ pub fn hit(command: &RipCommand, geometry: &Geometry, point: (f32, f32), toleran
             _ if points.len() == 1 => segment_distance(point, points[0], points[0]) <= tolerance,
             _ => points.windows(2).any(|pair| segment_distance(point, pair[0], pair[1]) <= tolerance),
         },
+        Geometry::Text { .. } => {
+            let (x0, y0, x1, y1) = bounds(geometry);
+            point.0 >= x0 as f32 - tolerance
+                && point.0 <= x1 as f32 + 1.0 + tolerance
+                && point.1 >= y0 as f32 - tolerance
+                && point.1 <= y1 as f32 + 1.0 + tolerance
+        }
         Geometry::Rect { x0, y0, x1, y1 } => {
             let (x0, y0, x1, y1) = (*x0 as f32, *y0 as f32, *x1 as f32, *y1 as f32);
             let inside = |margin: f32| point.0 >= x0 - margin && point.0 <= x1 + margin && point.1 >= y0 - margin && point.1 <= y1 + margin;
@@ -449,6 +470,34 @@ pub fn hit(command: &RipCommand, geometry: &Geometry, point: (f32, f32), toleran
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_moves_as_a_whole_and_stays_within_the_canvas() {
+        let command = RipCommand::TextXY {
+            x: 100,
+            y: 100,
+            text: "Hello".into(),
+        };
+        for (width, height) in [(120, 24), (24, 120)] {
+            let geometry = Geometry::Text {
+                anchor: (100, 100),
+                width,
+                height,
+            };
+            let moved = drag(&geometry, Handle::Move, (100, 100), (639, 349));
+            assert_eq!(bounds(&moved), (640 - width, 350 - height, 639, 349));
+            assert_eq!(
+                apply(&command, &moved, (0, 0)),
+                RipCommand::TextXY {
+                    x: (640 - width) as u16,
+                    y: (350 - height) as u16,
+                    text: "Hello".into(),
+                }
+            );
+            assert_eq!(translate(&moved, -1000, -1000), Geometry::Text { anchor: (0, 0), width, height });
+            assert!(handles(&command, &geometry).is_empty());
+        }
+    }
 
     #[test]
     fn new_shapes_select_resize_and_respect_arc_angles() {
