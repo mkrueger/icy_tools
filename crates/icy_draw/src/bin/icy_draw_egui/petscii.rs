@@ -681,18 +681,11 @@ impl DrawApp {
                 if widgets::segmented(ui, &mut mode, &options) {
                     self.document.brush.primary = mode;
                 }
-            } else if (tool == Tool::Pencil || tool.is_shape_tool()) && !(tool == Tool::Line && self.document.box_line.is_some()) {
+            } else if (tool == Tool::Pencil || tool.is_shape_tool()) && !self.document.draws_boxes() {
                 self.petscii_paint_options(ui);
             }
-            if tool == Tool::Line {
-                let mut outline = self.document.box_line.is_some();
-                if ui
-                    .toggle_value(&mut outline, fl!("line-style-outline"))
-                    .on_hover_text(fl!("line-style-outline-tooltip"))
-                    .changed()
-                {
-                    self.document.box_line = outline.then_some(icy_draw::box_lines::BoxStyle::Single);
-                }
+            if matches!(tool, Tool::Line | Tool::RectangleOutline) {
+                self.petscii_outline_options(ui);
             }
             widgets::divider(ui);
             (picked, step) = self.screen_fkey_bar(ui, &FKEY_SETS[set], (set, FKEY_SETS.len()), colors);
@@ -756,6 +749,38 @@ impl DrawApp {
         if mode == PaintMode::Char && has_quarters {
             ui.toggle_value(&mut self.document.quarter_blocks, fl!("atascii-pixels"))
                 .on_hover_text(fl!("atascii-pixels-tooltip"));
+        }
+    }
+
+    /// The Outline mode of lines and rectangles, with rounded corners where the set has them.
+    fn petscii_outline_options(&mut self, ui: &mut egui::Ui) {
+        use icy_draw::box_lines::{BoxStyle, LineSet};
+        let mut outline = self.document.box_line.is_some();
+        if ui
+            .toggle_value(&mut outline, fl!("line-style-outline"))
+            .on_hover_text(fl!("line-style-outline-tooltip"))
+            .changed()
+        {
+            self.document.box_line = outline.then_some(BoxStyle::Single);
+        }
+        let styles = self.document.with_state(|state| LineSet::of(state.get_buffer()).styles());
+        if let Some(mut style) = self.document.box_line {
+            if !styles.contains(&style) {
+                style = BoxStyle::Single;
+                self.document.box_line = Some(style);
+            }
+            if styles.len() > 1 {
+                let options: Vec<(BoxStyle, String, String)> = styles
+                    .iter()
+                    .map(|&style| match style {
+                        BoxStyle::Rounded => (style, fl!("petscii-corners-round"), fl!("petscii-corners-round-tooltip")),
+                        _ => (style, fl!("petscii-corners-square"), fl!("line-style-single-tooltip")),
+                    })
+                    .collect();
+                if widgets::segmented(ui, &mut style, &options) {
+                    self.document.box_line = Some(style);
+                }
+            }
         }
     }
 
@@ -998,6 +1023,29 @@ mod tests {
         stroke(&mut app, (0, 3), (2, 3), icy_engine::MouseButton::Left);
         assert_eq!((0..5).map(|x| cell(&app, x, 1).0).collect::<Vec<_>>(), [0x40, 0x40, 0x5B, 0x40, 0x40]);
         assert_eq!([cell(&app, 2, 0).0, cell(&app, 2, 2).0, cell(&app, 2, 3).0], [0x5D, 0x5D, 0x7D], "│ │ ┘");
+    }
+
+    #[test]
+    fn outline_rectangles_have_square_or_round_corners() {
+        let (_, mut app) = petscii_app(PetsciiMachine::C64, PetsciiCase::Upper);
+        app.document.tool = Tool::RectangleOutline;
+        app.document.box_line = Some(icy_draw::box_lines::BoxStyle::Rounded);
+        app.document.begin(Position::new(0, 0), icy_engine::MouseButton::Left);
+        app.document.update(Position::new(3, 2));
+        let preview = app.document.preview_cells.clone();
+        app.document.finish();
+        let row = |app: &DrawApp, y: i32| (0..4).map(|x| cell(app, x, y).0).collect::<Vec<_>>();
+        assert_eq!(row(&app, 0), [0x55, 0x40, 0x40, 0x49]);
+        assert_eq!(row(&app, 1), [0x5D, 0x20, 0x20, 0x5D]);
+        assert_eq!(row(&app, 2), [0x4A, 0x40, 0x40, 0x4B]);
+        assert_eq!(preview.len(), 10, "the preview is the frame");
+        // A square frame across it joins at the crossings.
+        app.document.box_line = Some(icy_draw::box_lines::BoxStyle::Single);
+        app.document.begin(Position::new(2, 1), icy_engine::MouseButton::Left);
+        app.document.update(Position::new(5, 3));
+        app.document.finish();
+        assert_eq!(cell(&app, 3, 1).0, 0x5B, "┼ where the frames cross");
+        assert_eq!(cell(&app, 2, 2).0, 0x5B);
     }
 
     #[test]

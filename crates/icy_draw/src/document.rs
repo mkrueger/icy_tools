@@ -110,6 +110,11 @@ pub const OUTLINE_KEYS: [(&str, char); 18] = [
 /// Outline code typed by the digit keys 1–8.
 /// The character `font` draws for `character`: itself, a space as wide as the font's spacing,
 /// or the other case in fonts that have only upper or only lower case letters.
+/// Whether `tool` draws box-drawing lines in the Outline mode.
+fn boxes(tool: Tool) -> bool {
+    matches!(tool, Tool::Line | Tool::RectangleOutline)
+}
+
 fn art_glyph(font: &retrofont::Font, character: char) -> Option<char> {
     if font.has_char(character) || character == ' ' {
         return Some(character);
@@ -778,12 +783,16 @@ impl Document {
             for point in icy_engine_edit::brushes::get_line_points(last, position).into_iter().skip(1) {
                 self.stamp(point, brush, button);
             }
-        } else if let Some(style) = self.box_line.filter(|_| tool == Tool::Line) {
-            self.preview = box_lines::box_path(start, position);
+        } else if let Some(style) = self.box_line.filter(|_| boxes(tool)) {
+            self.preview = if tool == Tool::Line {
+                box_lines::box_path(start, position)
+            } else {
+                shape_points(tool, start, position)
+            };
             self.preview_cells = if clear {
                 Vec::new()
             } else {
-                self.box_cells(start, position, style, button)
+                self.box_cells(start, position, style, button, tool == Tool::RectangleOutline)
                     .into_iter()
                     .map(|(point, ch, attribute)| (point, icy_engine::AttributedChar::new(ch, attribute)))
                     .collect()
@@ -827,23 +836,31 @@ impl Document {
     /// already on the layer, for the cells inside the layer and the selection. The colors are the
     /// caret's (swapped by the right button); the brush's Apply switches keep a cell's own
     /// foreground or background.
-    pub fn box_cells(&self, start: Position, end: Position, style: BoxStyle, button: MouseButton) -> Vec<(Position, char, icy_engine::TextAttribute)> {
+    pub fn box_cells(
+        &self,
+        start: Position,
+        end: Position,
+        style: BoxStyle,
+        button: MouseButton,
+        rectangle: bool,
+    ) -> Vec<(Position, char, icy_engine::TextAttribute)> {
         let brush = self.brush;
         self.with_state(|state| {
             let Some(layer) = state.get_cur_layer() else {
                 return Vec::new();
             };
             let (offset, width, height) = (layer.offset(), layer.width(), layer.height());
-            let buffer_type = state.get_buffer().buffer_type;
+            let lines = box_lines::LineSet::of(state.get_buffer());
             let inside = |point: Position| {
                 let local = point - offset;
                 local.x >= 0 && local.y >= 0 && local.x < width && local.y < height
             };
-            let cells = box_lines::box_line(start, end, style, |point| {
-                inside(point)
-                    .then(|| layer.char_at(point - offset).ch)
-                    .and_then(|ch| box_lines::arms_in(buffer_type, ch))
-            });
+            let existing = |point: Position| inside(point).then(|| layer.char_at(point - offset).ch).and_then(|ch| lines.arms(ch));
+            let cells = if rectangle {
+                box_lines::box_rectangle(start, end, style, existing)
+            } else {
+                box_lines::box_line(start, end, style, existing)
+            };
             let mut caret = state.get_caret().attribute;
             if button == MouseButton::Right {
                 let foreground = caret.foreground();
@@ -864,18 +881,18 @@ impl Document {
                     if !brush.colorize_bg {
                         attribute.set_background(own.background());
                     }
-                    (point, box_lines::code_for(buffer_type, ch), attribute)
+                    (point, lines.code(ch, style), attribute)
                 })
                 .collect()
         })
     }
 
     /// Draws a box line, joining the box characters already on the layer; see [`Self::box_cells`].
-    fn draw_box_line(&self, start: Position, end: Position, style: BoxStyle, button: MouseButton) {
+    fn draw_box_line(&self, start: Position, end: Position, style: BoxStyle, button: MouseButton, rectangle: bool) {
         if !self.can_paint() {
             return;
         }
-        let cells = self.box_cells(start, end, style, button);
+        let cells = self.box_cells(start, end, style, button, rectangle);
         self.with_state(|state| {
             let Some(offset) = state.get_cur_layer().map(|layer| layer.offset()) else {
                 return;
@@ -887,11 +904,15 @@ impl Document {
         });
     }
 
+    /// Whether the current tool draws box-drawing lines: the line and the rectangle outline in
+    /// the Outline mode.
+    pub fn draws_boxes(&self) -> bool {
+        self.box_line.is_some() && boxes(self.tool)
+    }
+
     /// Whether positions of the current tool are quarter block pixels rather than characters.
     pub fn draws_pixels(&self) -> bool {
-        self.quarter_blocks
-            && !self.reverse_pen
-            && (self.tool == Tool::Pencil || self.tool.is_shape_tool() && !(self.tool == Tool::Line && self.box_line.is_some()))
+        self.quarter_blocks && !self.reverse_pen && (self.tool == Tool::Pencil || self.tool.is_shape_tool() && !self.draws_boxes())
     }
 
     /// Makes the character at `position` reverse or normal, keeping its colors.
@@ -1043,10 +1064,10 @@ impl Document {
                 });
             }
             if stroke.tool.is_shape_tool() {
-                if let Some(style) = self.box_line.filter(|_| stroke.tool == Tool::Line && !stroke.clear) {
+                if let Some(style) = self.box_line.filter(|_| boxes(stroke.tool) && !stroke.clear) {
                     self.preview.clear();
                     self.preview_cells.clear();
-                    self.draw_box_line(stroke.start, stroke.last, style, stroke.button);
+                    self.draw_box_line(stroke.start, stroke.last, style, stroke.button, stroke.tool == Tool::RectangleOutline);
                 }
                 for point in std::mem::take(&mut self.preview) {
                     if stroke.clear {

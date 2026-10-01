@@ -1314,7 +1314,7 @@ impl DrawApp {
                     .iter()
                     .map(|(mode, label, tooltip)| (Some(*mode), label.clone(), tooltip.clone()))
                     .collect();
-                if tool == Tool::Line {
+                if matches!(tool, Tool::Line | Tool::RectangleOutline) {
                     modes.push((None, fl!("line-style-outline"), fl!("line-style-outline-tooltip")));
                 }
                 let primary = match self.document.brush.primary {
@@ -1322,7 +1322,7 @@ impl DrawApp {
                     _ if tool == Tool::Fill => BrushPrimaryMode::Char,
                     mode => mode,
                 };
-                let outline = tool == Tool::Line && self.document.box_line.is_some();
+                let outline = self.document.draws_boxes();
                 let mut choice = if outline { None } else { Some(primary) };
                 if widgets::segmented(ui, &mut choice, &modes) {
                     match choice {
@@ -1868,7 +1868,7 @@ impl DrawApp {
     fn half_blocks(&self) -> bool {
         self.document.brush.primary == BrushPrimaryMode::HalfBlock
             && (self.document.tool == Tool::Pencil || self.document.tool == Tool::Fill || self.document.tool.is_shape_tool())
-            && !(self.document.tool == Tool::Line && self.document.box_line.is_some())
+            && !self.document.draws_boxes()
     }
 
     /// The outline mode's line style, shown beside the modes like the shading options.

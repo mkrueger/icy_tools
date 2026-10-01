@@ -2938,7 +2938,10 @@ fn line_tool_outline_mode_shows_its_styles_like_shading() {
 
     app.document.tool = Tool::RectangleOutline;
     let output = frame(&context, &mut app, size, vec![]);
-    assert!(text_position(&output, "Outline").is_none(), "only the line tool has the outline mode");
+    assert!(text_position(&output, "Outline").is_some(), "rectangle outlines draw box frames too");
+    app.document.tool = Tool::RectangleFilled;
+    let output = frame(&context, &mut app, size, vec![]);
+    assert!(text_position(&output, "Outline").is_none(), "filled rectangles have no outline mode");
 }
 
 #[test]

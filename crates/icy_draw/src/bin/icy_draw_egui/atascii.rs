@@ -435,7 +435,7 @@ impl DrawApp {
                 }
             }
             let tool = self.document.tool;
-            if (tool == Tool::Pencil || tool.is_shape_tool()) && !(tool == Tool::Line && self.document.box_line.is_some()) {
+            if (tool == Tool::Pencil || tool.is_shape_tool()) && !self.document.draws_boxes() {
                 let has_quarters = self
                     .document
                     .with_state(|state| state.get_buffer().font(0).and_then(icy_draw::quarter_blocks::QuarterBlocks::of).is_some());
@@ -446,7 +446,7 @@ impl DrawApp {
                 ui.toggle_value(&mut self.document.reverse_pen, fl!("atascii-inverse-pen"))
                     .on_hover_text(fl!("atascii-inverse-pen-tooltip"));
             }
-            if self.document.tool == Tool::Line {
+            if matches!(self.document.tool, Tool::Line | Tool::RectangleOutline) {
                 let mut outline = self.document.box_line.is_some();
                 if ui
                     .toggle_value(&mut outline, fl!("line-style-outline"))
