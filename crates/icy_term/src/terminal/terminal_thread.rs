@@ -697,24 +697,7 @@ impl TerminalThread {
                         pending_data.append(&mut self.injected_data);
                     }
 
-                    // Process pending data with baud emulation
-                    if pending_offset < pending_data.len() {
-                        let remaining = pending_data.len() - pending_offset;
-                        let bytes_to_send = self.baud_emulator.calculate_bytes_to_send(remaining);
-                        if bytes_to_send > 0 {
-                            let end = pending_offset + bytes_to_send;
-                            let chunk = &pending_data[pending_offset..end];
-                            self.write_to_capture(chunk).await;
-                            self.process_data(chunk).await;
-                            pending_offset = end;
-
-                            // Clear buffer when fully processed
-                            if pending_offset >= pending_data.len() {
-                                pending_data.clear();
-                                pending_offset = 0;
-                            }
-                        }
-                    }
+                    self.process_pending_data(&mut pending_data, &mut pending_offset).await;
 
                     // Check for pending auto-transfers
                     if let Some((protocol_id, is_download, filename)) = self.auto_transfer.take() {
@@ -772,10 +755,34 @@ impl TerminalThread {
                         if let Some(new_data) = self.read_connection_raw(&mut read_buffer).await {
                             if !new_data.is_empty() {
                                 pending_data.extend_from_slice(&new_data);
+                                // Show it now rather than a tick later
+                                self.process_pending_data(&mut pending_data, &mut pending_offset).await;
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Processes as much of `pending_data` as the baud emulation allows.
+    async fn process_pending_data(&mut self, pending_data: &mut Vec<u8>, pending_offset: &mut usize) {
+        if *pending_offset >= pending_data.len() {
+            return;
+        }
+        let remaining = pending_data.len() - *pending_offset;
+        let bytes_to_send = self.baud_emulator.calculate_bytes_to_send(remaining);
+        if bytes_to_send > 0 {
+            let end = *pending_offset + bytes_to_send;
+            let chunk = &pending_data[*pending_offset..end];
+            self.write_to_capture(chunk).await;
+            self.process_data(chunk).await;
+            *pending_offset = end;
+
+            // Clear buffer when fully processed
+            if *pending_offset >= pending_data.len() {
+                pending_data.clear();
+                *pending_offset = 0;
             }
         }
     }
@@ -1768,7 +1775,12 @@ impl TerminalThread {
                                 }
                             }
                         }
-                        tokio::time::sleep(Duration::from_millis(20)).await;
+                        // Pause so the UI can show each frame of a sixel animation played back
+                        // locally. On a live connection the host paces its frames; pausing there
+                        // only puts the terminal behind the stream (and holds up typed keys).
+                        if self.connection.is_none() {
+                            tokio::time::sleep(Duration::from_millis(20)).await;
+                        }
                     }
                     Err(err) => {
                         if shared {
@@ -3159,6 +3171,48 @@ mod tests {
                 assert_eq!(screen.char_at(Position::new(17, row)).ch, marker, "screen row {row}, bytewise={bytewise}");
             }
         }
+    }
+
+    /// Full-screen style animation: every frame replaces the previous one, and only the last frame is red.
+    fn sixel_frames(count: usize) -> Vec<u8> {
+        let mut data = Vec::new();
+        for frame in 0..count {
+            let color = if frame + 1 == count { "100;0;0" } else { "0;0;100" };
+            data.extend_from_slice(format!("\x1b[1;1H\x1bPq#1;2;{color}#1!16~-!16~\x1b\\").as_bytes());
+        }
+        data
+    }
+
+    #[tokio::test]
+    async fn sixel_frames_from_a_connection_skip_the_display_pause() {
+        let (mut terminal, _, screen) = test_terminal();
+        let frames = sixel_frames(20);
+        let start = std::time::Instant::now();
+
+        // Both all at once and one frame per read, the way a host pacing its frames delivers them.
+        terminal.process_data(&frames).await;
+        for frame in frames.split_inclusive(|byte| *byte == b'\\') {
+            terminal.process_data(frame).await;
+        }
+
+        // Pausing after each of the 40 frames would take at least 800 ms.
+        assert!(start.elapsed() < std::time::Duration::from_millis(200), "{:?}", start.elapsed());
+        let mut screen = screen.lock();
+        let text = screen.as_any_mut().downcast_mut::<TextScreen>().unwrap();
+        let sixels = &text.buffer.layers[0].sixels;
+        assert_eq!(sixels.len(), 1);
+        assert_eq!(&sixels[0].picture_data[..4], &[255, 0, 0, 255]);
+    }
+
+    #[tokio::test]
+    async fn sixel_frames_played_locally_keep_the_display_pause() {
+        let (mut terminal, _, _) = test_terminal();
+        terminal.connection = None;
+        let start = std::time::Instant::now();
+
+        terminal.process_data(&sixel_frames(3)).await;
+
+        assert!(start.elapsed() >= std::time::Duration::from_millis(60), "{:?}", start.elapsed());
     }
 
     #[test]

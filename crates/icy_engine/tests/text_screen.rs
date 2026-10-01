@@ -1529,3 +1529,21 @@ fn test_kitty_keyboard_resets_with_the_terminal() {
     screen.reset_terminal();
     assert!(!screen.terminal_state().kitty_keyboard.is_active());
 }
+
+#[test]
+fn test_render_snapshot_leaves_out_scrollback() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    screen.terminal_state_mut().is_terminal_buffer = true;
+    let mut parser = AnsiParser::new();
+    for line in 0..40 {
+        parser.parse(format!("\x1b[3{}mline {line}\r\n", line % 8).as_bytes(), &mut ScreenSink::new(&mut screen));
+    }
+    assert!(!screen.scrollback_buffer.chunks.is_empty());
+
+    let mut snapshot = screen.render_snapshot().unwrap();
+    let region = Rectangle::from(0, 0, screen.resolution().width, screen.resolution().height);
+    let options = RenderOptions::default();
+    assert_eq!(snapshot.render_region_to_rgba(region, &options), screen.render_region_to_rgba(region, &options));
+    let snapshot = snapshot.as_any_mut().downcast_mut::<TextScreen>().unwrap();
+    assert!(snapshot.scrollback_buffer.chunks.is_empty());
+}
