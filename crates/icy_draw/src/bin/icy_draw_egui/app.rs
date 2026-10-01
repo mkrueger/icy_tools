@@ -1222,6 +1222,118 @@ impl DrawApp {
         }
     }
 
+    /// The select tool's modes and what it does with the selection, in every editor's toolbar.
+    pub(super) fn selection_options(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
+        use icy_draw::document::SelectionMode;
+        let mut mode = self.document.selection_mode;
+        if widgets::segmented(
+            ui,
+            &mut mode,
+            &[
+                (SelectionMode::Rectangle, fl!("tool-select-normal"), fl!("select-mode-normal-tooltip")),
+                (SelectionMode::Character, fl!("tool-select-character"), fl!("select-mode-character-tooltip")),
+                (SelectionMode::Attribute, fl!("tool-select-attribute"), fl!("select-mode-attribute-tooltip")),
+                (SelectionMode::Foreground, fl!("tool-select-foreground"), fl!("select-mode-foreground-tooltip")),
+                (SelectionMode::Background, fl!("tool-select-background"), fl!("select-mode-background-tooltip")),
+            ],
+        ) {
+            self.document.finish();
+            self.document.selection_mode = mode;
+        }
+        widgets::divider(ui);
+        let selected = self.document.with_state(|state| state.is_something_selected());
+        let paint = self.document.can_paint();
+        let shortcut = |label: String, shortcut: &egui::KeyboardShortcut| format!("{label} ({})", context.format_shortcut(shortcut));
+        let key = |label: String, key: &str| format!("{label} ({key})");
+        if self
+            .icons
+            .button(ui, "select", &shortcut(fl!("menu-select-all"), &menus::SELECT_ALL), false)
+            .clicked()
+        {
+            self.select_all();
+        }
+        ui.add_enabled_ui(selected, |ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            if self
+                .icons
+                .button(ui, "deselect", &shortcut(fl!("select-deselect"), &menus::DESELECT), false)
+                .clicked()
+            {
+                self.edit(|state| state.clear_selection());
+            }
+            widgets::divider(ui);
+            if self.icons.button(ui, "file_copy", &fl!("select-copy"), false).clicked() {
+                self.copy(context);
+            }
+            ui.add_enabled_ui(paint, |ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                if self.icons.button(ui, "library_add", &key(fl!("shortcut-block-copy"), "C"), false).clicked() {
+                    let result = self.document.float_selection(false);
+                    self.result(result);
+                }
+                if self.icons.button(ui, "move", &key(fl!("shortcut-block-move"), "M"), false).clicked() {
+                    let result = self.document.float_selection(true);
+                    self.result(result);
+                }
+                widgets::divider(ui);
+                if self.icons.button(ui, "fill", &key(fl!("shortcut-block-fill"), "F"), false).clicked() {
+                    let result = self.document.fill_selection();
+                    self.result(result);
+                }
+                let erase = egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete);
+                if self
+                    .icons
+                    .button(ui, "eraser", &shortcut(fl!("shortcut-erase-selection"), &erase), false)
+                    .clicked()
+                {
+                    self.document.finish();
+                    self.edit(|state| state.erase_selection());
+                }
+                if self.icons.button(ui, "crop", &shortcut(fl!("menu-crop"), &menus::CROP), false).clicked() {
+                    self.edit(|state| state.crop());
+                }
+                widgets::divider(ui);
+                if self.icons.button(ui, "flip_tool", &fl!("menu-flip-x"), false).clicked() {
+                    self.edit(|state| state.flip_x());
+                }
+                if self.icons.button(ui, "swap", &fl!("menu-flip-y"), false).clicked() {
+                    self.edit(|state| state.flip_y());
+                }
+                let justify = self.icons.button(ui, "format_align_center", &fl!("select-justify"), false);
+                egui::Popup::menu(&justify).id(egui::Id::new("select-justify")).show(|ui| {
+                    if ui.button(fl!("menu-justifyleft")).clicked() {
+                        self.edit(|state| state.justify_left());
+                        ui.close();
+                    }
+                    if ui.button(fl!("menu-justifycenter")).clicked() {
+                        self.edit(|state| state.center());
+                        ui.close();
+                    }
+                    if ui.button(fl!("menu-justifyright")).clicked() {
+                        self.edit(|state| state.justify_right());
+                        ui.close();
+                    }
+                });
+            });
+        });
+        widgets::divider(ui);
+        match selection_add_type(ui.input(|input| input.modifiers)) {
+            AddType::Add => {
+                ui.label(egui::RichText::new(fl!("select-mode-add")).color(appearance::PRIMARY).strong());
+            }
+            AddType::Subtract => {
+                ui.label(egui::RichText::new(fl!("select-mode-subtract")).color(appearance::PRIMARY).strong());
+            }
+            AddType::Default => {
+                if let Some(bounds) = self.document.with_state(|state| state.selection().map(|selection| selection.as_rectangle())) {
+                    ui.weak(format!("{}, {}  ·  {} × {}", bounds.left(), bounds.top(), bounds.width(), bounds.height()));
+                } else {
+                    ui.weak(fl!("tool-select-description"));
+                }
+            }
+        }
+    }
+
     /// Anchoring, a new layer, stamping, rotating, flipping and cancelling of a floating paste.
     pub(super) fn paste_options(&mut self, ui: &mut egui::Ui) {
         use icy_draw::document::PasteAction;
@@ -1484,116 +1596,7 @@ impl DrawApp {
             Tool::Pipette => {
                 self.pipette_options(ui);
             }
-            Tool::Select => {
-                use icy_draw::document::SelectionMode;
-                let mut mode = self.document.selection_mode;
-                if widgets::segmented(
-                    ui,
-                    &mut mode,
-                    &[
-                        (SelectionMode::Rectangle, fl!("tool-select-normal"), fl!("select-mode-normal-tooltip")),
-                        (SelectionMode::Character, fl!("tool-select-character"), fl!("select-mode-character-tooltip")),
-                        (SelectionMode::Attribute, fl!("tool-select-attribute"), fl!("select-mode-attribute-tooltip")),
-                        (SelectionMode::Foreground, fl!("tool-select-foreground"), fl!("select-mode-foreground-tooltip")),
-                        (SelectionMode::Background, fl!("tool-select-background"), fl!("select-mode-background-tooltip")),
-                    ],
-                ) {
-                    self.document.finish();
-                    self.document.selection_mode = mode;
-                }
-                widgets::divider(ui);
-                let selected = self.document.with_state(|state| state.is_something_selected());
-                let paint = self.document.can_paint();
-                let shortcut = |label: String, shortcut: &egui::KeyboardShortcut| format!("{label} ({})", context.format_shortcut(shortcut));
-                let key = |label: String, key: &str| format!("{label} ({key})");
-                if self
-                    .icons
-                    .button(ui, "select", &shortcut(fl!("menu-select-all"), &menus::SELECT_ALL), false)
-                    .clicked()
-                {
-                    self.select_all();
-                }
-                ui.add_enabled_ui(selected, |ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    if self
-                        .icons
-                        .button(ui, "deselect", &shortcut(fl!("select-deselect"), &menus::DESELECT), false)
-                        .clicked()
-                    {
-                        self.edit(|state| state.clear_selection());
-                    }
-                    widgets::divider(ui);
-                    if self.icons.button(ui, "file_copy", &fl!("select-copy"), false).clicked() {
-                        self.copy(context);
-                    }
-                    ui.add_enabled_ui(paint, |ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-                        if self.icons.button(ui, "library_add", &key(fl!("shortcut-block-copy"), "C"), false).clicked() {
-                            let result = self.document.float_selection(false);
-                            self.result(result);
-                        }
-                        if self.icons.button(ui, "move", &key(fl!("shortcut-block-move"), "M"), false).clicked() {
-                            let result = self.document.float_selection(true);
-                            self.result(result);
-                        }
-                        widgets::divider(ui);
-                        if self.icons.button(ui, "fill", &key(fl!("shortcut-block-fill"), "F"), false).clicked() {
-                            let result = self.document.fill_selection();
-                            self.result(result);
-                        }
-                        let erase = egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete);
-                        if self
-                            .icons
-                            .button(ui, "eraser", &shortcut(fl!("shortcut-erase-selection"), &erase), false)
-                            .clicked()
-                        {
-                            self.document.finish();
-                            self.edit(|state| state.erase_selection());
-                        }
-                        if self.icons.button(ui, "crop", &shortcut(fl!("menu-crop"), &menus::CROP), false).clicked() {
-                            self.edit(|state| state.crop());
-                        }
-                        widgets::divider(ui);
-                        if self.icons.button(ui, "flip_tool", &fl!("menu-flip-x"), false).clicked() {
-                            self.edit(|state| state.flip_x());
-                        }
-                        if self.icons.button(ui, "swap", &fl!("menu-flip-y"), false).clicked() {
-                            self.edit(|state| state.flip_y());
-                        }
-                        let justify = self.icons.button(ui, "format_align_center", &fl!("select-justify"), false);
-                        egui::Popup::menu(&justify).id(egui::Id::new("select-justify")).show(|ui| {
-                            if ui.button(fl!("menu-justifyleft")).clicked() {
-                                self.edit(|state| state.justify_left());
-                                ui.close();
-                            }
-                            if ui.button(fl!("menu-justifycenter")).clicked() {
-                                self.edit(|state| state.center());
-                                ui.close();
-                            }
-                            if ui.button(fl!("menu-justifyright")).clicked() {
-                                self.edit(|state| state.justify_right());
-                                ui.close();
-                            }
-                        });
-                    });
-                });
-                widgets::divider(ui);
-                match selection_add_type(ui.input(|input| input.modifiers)) {
-                    AddType::Add => {
-                        ui.label(egui::RichText::new(fl!("select-mode-add")).color(appearance::PRIMARY).strong());
-                    }
-                    AddType::Subtract => {
-                        ui.label(egui::RichText::new(fl!("select-mode-subtract")).color(appearance::PRIMARY).strong());
-                    }
-                    AddType::Default => {
-                        if let Some(bounds) = self.document.with_state(|state| state.selection().map(|selection| selection.as_rectangle())) {
-                            ui.weak(format!("{}, {}  ·  {} × {}", bounds.left(), bounds.top(), bounds.width(), bounds.height()));
-                        } else {
-                            ui.weak(fl!("tool-select-description"));
-                        }
-                    }
-                }
-            }
+            Tool::Select => self.selection_options(ui, context),
 
             Tool::Tag => {
                 if self.icons.button(ui, "tag", &fl!("tag-list-title"), false).clicked() {

@@ -306,7 +306,13 @@ impl DrawApp {
                 }
             }
             widgets::divider(ui);
-            (picked, step) = self.screen_fkey_bar(ui, &fkey_codes(set), (set, FKEY_SETS.len()), colors);
+            if self.document.tool == Tool::Select {
+                // Selecting by character or color and filling with the brush replaces characters.
+                let context = ui.ctx().clone();
+                self.selection_options(ui, &context);
+            } else {
+                (picked, step) = self.screen_fkey_bar(ui, &fkey_codes(set), (set, FKEY_SETS.len()), colors);
+            }
         });
         if step != 0 {
             if let Some(editor) = &mut self.vt52 {

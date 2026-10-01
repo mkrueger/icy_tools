@@ -390,6 +390,12 @@ impl Document {
             return Ok(());
         }
         self.finish();
+        if !matches!(
+            self.profile(),
+            crate::screen_profile::ScreenProfile::Ansi | crate::screen_profile::ScreenProfile::Other(_)
+        ) {
+            return self.fill_selection_with_brush();
+        }
         self.with_state(|state| {
             let attribute = state.get_caret().attribute;
             if attribute.foreground() == 0 {
@@ -400,6 +406,29 @@ impl Document {
             state.fill_selection(icy_engine::AttributedChar::new('\u{00DB}', block))
         })
         .map_err(|error| error.to_string())
+    }
+
+    /// Paints the brush once into every selected character of the current layer, in one undo
+    /// step: the character with its colors, only the colors, reverse, or a shading step. Home
+    /// computer screens fill this way, as CP437's full block is not theirs.
+    fn fill_selection_with_brush(&mut self) -> DrawResult<()> {
+        let mut brush = self.brush;
+        brush.brush_size = 1;
+        self.with_state(|state| {
+            let Some(layer) = state.get_cur_layer() else {
+                return;
+            };
+            let (offset, width, height) = (layer.offset(), layer.width(), layer.height());
+            let selected: Vec<Position> = (0..height)
+                .flat_map(|y| (0..width).map(move |x| Position::new(x, y) + offset))
+                .filter(|&position| state.is_selected(position))
+                .collect();
+            let _undo = state.begin_atomic_undo("Fill selection");
+            for position in selected {
+                self.stamp_into(state, position, brush, MouseButton::Left);
+            }
+        });
+        Ok(())
     }
 
     fn start_floating_paste(&mut self, paste: impl FnOnce(&mut EditState) -> icy_engine::Result<()>) -> DrawResult<()> {

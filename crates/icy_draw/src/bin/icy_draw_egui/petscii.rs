@@ -688,7 +688,13 @@ impl DrawApp {
                 self.petscii_outline_options(ui);
             }
             widgets::divider(ui);
-            (picked, step) = self.screen_fkey_bar(ui, &FKEY_SETS[set], (set, FKEY_SETS.len()), colors);
+            if self.document.tool == Tool::Select {
+                // Selecting by character or color and filling with the brush replaces characters.
+                let context = ui.ctx().clone();
+                self.selection_options(ui, &context);
+            } else {
+                (picked, step) = self.screen_fkey_bar(ui, &FKEY_SETS[set], (set, FKEY_SETS.len()), colors);
+            }
         });
         if step != 0 {
             if let Some(editor) = &mut self.petscii {
@@ -1046,6 +1052,31 @@ mod tests {
         app.document.finish();
         assert_eq!(cell(&app, 3, 1).0, 0x5B, "┼ where the frames cross");
         assert_eq!(cell(&app, 2, 2).0, 0x5B);
+    }
+
+    #[test]
+    fn selecting_a_character_and_filling_with_the_brush_replaces_it() {
+        let (_, mut app) = petscii_app(PetsciiMachine::C64, PetsciiCase::Upper);
+        app.document.type_text("ABAB").unwrap();
+        // Select every A: the select tool's character mode.
+        app.document.tool = Tool::Select;
+        app.document.selection_mode = icy_draw::document::SelectionMode::Character;
+        app.document.begin(Position::new(0, 0), icy_engine::MouseButton::Left);
+        app.document.finish();
+        // Replace them with the brush: a reverse space in red.
+        app.document.brush.paint_char = char::from(0xA0);
+        app.document.with_state(|state| state.set_caret_foreground(2));
+        app.document.fill_selection().unwrap();
+        assert_eq!(
+            (0..4).map(|x| cell(&app, x, 0)).collect::<Vec<_>>(),
+            [(0xA0, 2, 6), (2, 14, 6), (0xA0, 2, 6), (2, 14, 6)]
+        );
+        app.undo(false);
+        assert_eq!(cell(&app, 0, 0), (1, 14, 6), "one undo step");
+        // Only the color.
+        app.apply_petscii_paint_mode(PaintMode::Color);
+        app.document.fill_selection().unwrap();
+        assert_eq!([cell(&app, 0, 0), cell(&app, 1, 0)], [(1, 2, 6), (2, 14, 6)]);
     }
 
     #[test]
