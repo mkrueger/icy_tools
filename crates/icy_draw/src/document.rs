@@ -182,6 +182,14 @@ impl Document {
         Self::from_state(state)
     }
 
+    /// An empty PETSCII document of `machine` in the character set `case`.
+    pub fn new_petscii(machine: icy_engine::PetsciiMachine, case: icy_engine::PetsciiCase) -> Self {
+        let mut state = EditState::from_buffer(crate::screen_profile::petscii_buffer(machine, case));
+        state.set_caret_foreground(crate::screen_profile::PETSCII_TEXT);
+        state.set_caret_background(crate::screen_profile::PETSCII_BACKGROUND);
+        Self::from_state(state)
+    }
+
     /// What the document's screen can hold.
     pub fn profile(&self) -> crate::screen_profile::ScreenProfile {
         self.with_state(|state| crate::screen_profile::ScreenProfile::of(state.get_buffer()))
@@ -1096,6 +1104,13 @@ impl Document {
                                 continue;
                             }
                             upper
+                        } else if state.get_buffer().buffer_type == icy_engine::BufferType::Petscii {
+                            // Letters depend on the screen's character set; reverse is the upper half.
+                            let (_, case) = icy_engine::petscii_charset(state.get_buffer());
+                            let Some(code) = icy_engine::petscii_screen_code(character, case) else {
+                                continue;
+                            };
+                            char::from(if self.inverse { code | 0x80 } else { code })
                         } else {
                             let buffer_type = state.get_buffer().buffer_type;
                             let encoded = buffer_type.convert_from_unicode(character);

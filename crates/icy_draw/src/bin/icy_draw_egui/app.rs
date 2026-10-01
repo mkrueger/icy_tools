@@ -33,6 +33,8 @@ mod font_select;
 mod mcp;
 #[path = "menus.rs"]
 mod menus;
+#[path = "petscii.rs"]
+mod petscii;
 #[path = "recovery.rs"]
 mod recovery;
 #[path = "retro.rs"]
@@ -192,6 +194,7 @@ pub enum NewKind {
     Ansi,
     Atascii,
     Vt52,
+    Petscii,
     Rip,
     Igs,
     Animation,
@@ -200,8 +203,9 @@ pub enum NewKind {
 }
 
 impl NewKind {
-    pub const ALL: [NewKind; 10] = [
+    pub const ALL: [NewKind; 11] = [
         NewKind::Ansi,
+        NewKind::Petscii,
         NewKind::Atascii,
         NewKind::Vt52,
         NewKind::Rip,
@@ -219,6 +223,7 @@ impl NewKind {
             NewKind::Ansi => fl!("new-file-editor-ansi"),
             NewKind::Atascii => fl!("new-file-editor-atascii"),
             NewKind::Vt52 => fl!("new-file-editor-vt52"),
+            NewKind::Petscii => fl!("new-file-editor-petscii"),
             NewKind::Rip => fl!("rip-editor-title"),
             NewKind::Igs => fl!("igs-editor-title"),
             NewKind::Animation => fl!("new-file-editor-animation"),
@@ -235,6 +240,7 @@ impl NewKind {
             NewKind::Ansi => fl!("new-kind-ansi-description"),
             NewKind::Atascii => fl!("new-kind-atascii-description"),
             NewKind::Vt52 => fl!("new-kind-vt52-description"),
+            NewKind::Petscii => fl!("new-kind-petscii-description"),
             NewKind::Rip => fl!("rip-editor-description"),
             NewKind::Igs => fl!("igs-editor-description"),
             NewKind::Animation => fl!("new-kind-animation-description"),
@@ -251,6 +257,7 @@ impl NewKind {
             NewKind::Ansi => "pencil",
             NewKind::Atascii => "text",
             NewKind::Vt52 => "cursor",
+            NewKind::Petscii => "spray",
             NewKind::Rip => "rectangle_outline",
             NewKind::Igs => "ellipse_filled",
             NewKind::Animation => "play",
@@ -309,6 +316,9 @@ pub struct DrawApp {
     /// The VT52 editor's state while the document is an Atari ST text screen.
     pub(super) vt52: Option<vt52::Vt52Editor>,
     pub(super) new_vt52_resolution: icy_parser_core::TerminalResolution,
+    /// The PETSCII editor's state while the document is a Commodore screen.
+    pub(super) petscii: Option<petscii::PetsciiEditor>,
+    pub(super) new_petscii: (icy_engine::PetsciiMachine, icy_engine::PetsciiCase),
     /// Resolution of IGS drawings created from the New dialog.
     new_igs_resolution: icy_parser_core::TerminalResolution,
     pub(super) new_atascii_mode: AtasciiMode,
@@ -402,6 +412,8 @@ impl DrawApp {
             atascii: None,
             vt52: None,
             new_vt52_resolution: icy_parser_core::TerminalResolution::Medium,
+            petscii: None,
+            new_petscii: (icy_engine::PetsciiMachine::C64, icy_engine::PetsciiCase::Upper),
             new_igs_resolution: icy_draw::igs_document::DEFAULT_RESOLUTION,
             new_atascii_mode: AtasciiMode::default(),
             clipboard: None,
@@ -461,6 +473,7 @@ impl DrawApp {
             }
             NewKind::Atascii => self.replace(Document::new_atascii(self.new_atascii_mode)),
             NewKind::Vt52 => self.replace(Document::new_atari_st(self.new_vt52_resolution)),
+            NewKind::Petscii => self.replace(Document::new_petscii(self.new_petscii.0, self.new_petscii.1)),
             NewKind::Rip => {
                 self.replace(Document::new(Size::new(80, 25)));
                 self.rip = Some(super::rip::RipEditor::new());
@@ -509,9 +522,11 @@ impl DrawApp {
         self.canvas_focus = true;
         self.atascii = None;
         self.vt52 = None;
+        self.petscii = None;
         match self.document.profile() {
             icy_draw::screen_profile::ScreenProfile::Atascii(_) => self.start_atascii(),
             icy_draw::screen_profile::ScreenProfile::AtariSt(_) => self.start_vt52(),
+            icy_draw::screen_profile::ScreenProfile::Petscii(..) => self.start_petscii(),
             _ => {}
         }
     }
@@ -538,6 +553,13 @@ impl DrawApp {
     }
 
     fn load_document(&mut self, path: PathBuf) {
+        if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("petmate")) {
+            match petscii::load_petmate(&path) {
+                Ok(document) => self.replace(document),
+                Err(error) => self.dialog = Some(Dialog::Error(error)),
+            }
+            return;
+        }
         if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("rip")) {
             match super::rip::RipEditor::load(&path) {
                 Ok(editor) => {
@@ -1772,6 +1794,20 @@ impl DrawApp {
         });
     }
 
+    /// The machine and character set of a new PETSCII document.
+    fn new_petscii_group(&mut self, ui: &mut egui::Ui) {
+        appearance::group(ui, &fl!("petscii-new-screen"), |ui| {
+            for machine in petscii::MACHINES {
+                ui.radio_value(&mut self.new_petscii.0, machine, petscii::machine_name(machine));
+            }
+            ui.separator();
+            for case in petscii::CASES {
+                ui.radio_value(&mut self.new_petscii.1, case, petscii::case_name(case));
+            }
+            ui.add(egui::Label::new(egui::RichText::new(fl!("petscii-new-hint")).weak()).wrap());
+        });
+    }
+
     /// The resolution of a new VT52 document.
     fn new_vt52_group(&mut self, ui: &mut egui::Ui) {
         appearance::group(ui, &fl!("vt52-new-resolution"), |ui| {
@@ -2106,6 +2142,8 @@ impl DrawApp {
                     self.pipette_atascii(position);
                 } else if self.document.tool == Tool::Pipette && self.vt52.is_some() {
                     self.pipette_vt52(position);
+                } else if self.document.tool == Tool::Pipette && self.petscii.is_some() {
+                    self.pipette_petscii(position);
                 } else if self.document.tool == Tool::Pipette {
                     let modifiers = ui.input(|input| input.modifiers);
                     self.document.begin_with_modifiers(
@@ -3474,6 +3512,8 @@ impl DrawApp {
                                         self.new_atascii_group(&mut columns[1]);
                                     } else if self.new_kind == NewKind::Vt52 {
                                         self.new_vt52_group(&mut columns[1]);
+                                    } else if self.new_kind == NewKind::Petscii {
+                                        self.new_petscii_group(&mut columns[1]);
                                     }
                                 });
                             } else {
@@ -3486,6 +3526,8 @@ impl DrawApp {
                                     self.new_atascii_group(ui);
                                 } else if self.new_kind == NewKind::Vt52 {
                                     self.new_vt52_group(ui);
+                                } else if self.new_kind == NewKind::Petscii {
+                                    self.new_petscii_group(ui);
                                 }
                             }
                         });
@@ -3869,6 +3911,8 @@ impl DrawApp {
             self.atascii_panels(context, blocked);
         } else if self.vt52.is_some() {
             self.vt52_panels(context, blocked);
+        } else if self.petscii.is_some() {
+            self.petscii_panels(context, blocked);
         } else {
             self.ansi_panels(context, blocked);
         }
@@ -3933,6 +3977,9 @@ impl DrawApp {
                 self.keys(context);
             } else if self.vt52.is_some() {
                 self.vt52_keys(context);
+                self.keys(context);
+            } else if self.petscii.is_some() {
+                self.petscii_keys(context);
                 self.keys(context);
             } else {
                 self.keys(context);
