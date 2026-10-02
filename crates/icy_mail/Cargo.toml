@@ -48,6 +48,8 @@ icy_parser_core = { workspace = true }
 parking_lot = { workspace = true }
 rayon = { workspace = true }
 bstr = { workspace = true }
+crc32fast = { workspace = true }
+bincode = "1.3.3"
 clap = { workspace = true }
 #sound
 rodio = { workspace = true }

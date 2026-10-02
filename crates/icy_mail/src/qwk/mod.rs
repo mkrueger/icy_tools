@@ -2,20 +2,27 @@ use bstr::ByteSlice;
 use i18n_embed_fl::fl;
 use jamjam::qwk::control::ControlDat;
 use jamjam::qwk::qwk_message::QWKMessage;
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::io::{Cursor, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
+use unarc_rs::unified::{ArchiveFormat, ArchiveOptions, UnifiedArchive};
 
 use crate::{text::HeaderText, Res, LANGUAGE_LOADER};
+
+mod bodies;
+mod cache;
+use bodies::MessageData;
+pub use cache::ExtractionCache;
 
 #[cfg(test)]
 pub mod tests;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageDescriptor {
     pub number: u32,
     pub conference: u16,
@@ -27,7 +34,7 @@ pub struct MessageDescriptor {
 ///
 /// The list view sorts, filters and threads over thousands of rows on every frame, so it must
 /// never touch the (lazily parsed) message bodies.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageInfo {
     pub index: usize,
     pub number: u32,
@@ -39,6 +46,7 @@ pub struct MessageInfo {
     pub subject: HeaderText,
     /// Subject with all `Re:` prefixes stripped, lowercased - the thread key.
     pub subject_key: String,
+    #[serde(with = "index_date")]
     pub date: chrono::NaiveDateTime,
     pub date_str: String,
     pub lines: u32,
@@ -91,8 +99,9 @@ pub struct QwkPackage {
     pub control_file: ControlDat,
     /// Welcome, news and goodbye screens, bulletins and new files lists, in display order.
     pub files: Arc<Vec<PacketFile>>,
-    messages_data: Arc<Vec<u8>>,                           // Keep the raw data for lazy loading
+    messages_data: Arc<MessageData>,
     message_cache: Arc<Mutex<HashMap<usize, QWKMessage>>>, // Thread-safe cache
+    thread_rows: Option<Arc<Vec<crate::threading::Row>>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -144,6 +153,18 @@ impl PacketFile {
 
 /// Larger files are not bulletins; skipping them keeps odd packets from exhausting memory.
 const MAX_PACKET_FILE_SIZE: u64 = 16 * 1024 * 1024;
+
+const MAX_ARCHIVE_ENTRY_SIZE: u64 = 10 * 1024 * 1024 * 1024;
+
+struct ExtractedPacket {
+    control: Vec<u8>,
+    messages: Vec<u8>,
+    message_source: Option<Arc<MessageData>>,
+    others: Vec<(String, Vec<u8>)>,
+    bbs_name: String,
+    metadata: Option<cache::MetadataIndex>,
+    cache_identity: Option<cache::CacheIdentity>,
+}
 
 /// Picks the screens named in CONTROL.DAT and the `BLT*`, `NEWFILES*` and `NFILE*` files, like MultiMail.
 /// `files` holds every other file of the packet.
@@ -211,6 +232,7 @@ impl Clone for QwkPackage {
             files: self.files.clone(),
             messages_data: self.messages_data.clone(),
             message_cache: self.message_cache.clone(), // Share the cache across clones
+            thread_rows: self.thread_rows.clone(),
         }
     }
 }
@@ -219,11 +241,42 @@ impl QwkPackage {
     pub fn load_from_file(path: impl AsRef<Path>) -> Res<Self> {
         let _timer = crate::perf::Timer::new("qwk::load_from_file");
         let path = path.as_ref();
+        Self::from_extracted(path, Self::extract_packet(path)?)
+    }
+
+    pub fn load_from_file_cached(path: impl AsRef<Path>, cache: &ExtractionCache) -> Res<Self> {
+        let _timer = crate::perf::Timer::new("qwk::load_from_file_cached");
+        let path = path.as_ref();
+        let mut extracted = cache.load(path, || Self::extract_packet(path))?;
+        let identity = extracted.cache_identity.take();
+        let indexed = extracted.metadata.is_some();
+        let mut package = Self::from_extracted(path, extracted)?;
+        if !indexed && identity.is_some() {
+            let _timer = crate::perf::Timer::new("qwk::build_cached_threads");
+            package.thread_rows = Some(Arc::new(crate::threading::build_threads(&package.infos.iter().collect::<Vec<_>>())));
+        }
+        if !indexed {
+            if let Some(identity) = identity {
+                if let Err(error) = cache.store_index(&identity, &package) {
+                    log::warn!("unable to store packet metadata cache for {}: {error}", path.display());
+                }
+            }
+        }
+        Ok(package)
+    }
+
+    /// Full all-message thread order; filtered views must build their own thread rows.
+    pub fn cached_threads(&self) -> Option<&[crate::threading::Row]> {
+        self.thread_rows.as_deref().map(Vec::as_slice)
+    }
+
+    fn extract_packet(path: &Path) -> Res<ExtractedPacket> {
         let mut reader = std::io::BufReader::new(fs::File::open(path)?);
         // Packets are usually ZIP files, but BBSes also pack them with ARJ, LHA, RAR, ARC, ZOO and
         // others; the content decides, since the extension is always `.QWK`.
         let format = ArchiveFormat::detect(&mut reader, Some(path))?.ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-unknown-archive-format"))?;
-        let mut archive = UnifiedArchive::open_with_format(reader, format)?;
+        let options = ArchiveOptions::new().with_max_entry_size(Some(MAX_ARCHIVE_ENTRY_SIZE));
+        let mut archive = UnifiedArchive::open_with_format_and_options(reader, format, options)?;
 
         let mut messages_dat: Option<Vec<u8>> = None;
         let mut control_dat: Option<Vec<u8>> = None;
@@ -257,12 +310,30 @@ impl QwkPackage {
             }
         }
 
-        // CONTROL.DAT is required
-        let control_data = control_dat.ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-control-dat-not-found"))?;
+        Ok(ExtractedPacket {
+            control: control_dat.ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-control-dat-not-found"))?,
+            messages: messages_dat.ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-messages-dat-not-found"))?,
+            message_source: None,
+            others,
+            bbs_name: bbs_id,
+            metadata: None,
+            cache_identity: None,
+        })
+    }
 
+    fn from_extracted(path: &Path, extracted: ExtractedPacket) -> Res<Self> {
+        let ExtractedPacket {
+            control,
+            messages,
+            message_source,
+            others,
+            bbs_name: mut bbs_id,
+            metadata,
+            cache_identity: _,
+        } = extracted;
         // Parse CONTROL.DAT
         let control_file =
-            ControlDat::read(&control_data).map_err(|error| fl!(LANGUAGE_LOADER, "packet-error-control-dat-parse-failed", error = format!("{error:?}")))?;
+            ControlDat::read(&control).map_err(|error| fl!(LANGUAGE_LOADER, "packet-error-control-dat-parse-failed", error = format!("{error:?}")))?;
 
         // Use BBS name from control file if we don't have one yet
         if !control_file.bbs_name.is_empty() && bbs_id.is_empty() {
@@ -270,9 +341,15 @@ impl QwkPackage {
         }
 
         // Parse just the headers, not full messages
-        let messages_data = messages_dat.ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-messages-dat-not-found"))?;
-        let headers = Self::parse_headers(&messages_data);
-        let messages_data = Arc::new(messages_data);
+        let (headers, infos, thread_rows) = match metadata {
+            Some(index) => (index.descriptors, index.infos, Some(Arc::new(index.threads))),
+            None => {
+                let headers = Self::parse_headers(&messages);
+                let infos = Self::build_index(&messages, &headers);
+                (headers, infos, None)
+            }
+        };
+        let messages_data = message_source.unwrap_or_else(|| Arc::new(MessageData::Memory(messages)));
 
         // Use filename as fallback for BBS name
         if bbs_id.is_empty() {
@@ -281,20 +358,22 @@ impl QwkPackage {
 
         Ok(QwkPackage {
             bbs_name: bbs_id,
-            infos: Self::build_index(&messages_data, &headers),
+            infos,
             descriptors: headers,
             files: Arc::new(packet_files(&control_file, others)),
             control_file,
             messages_data,
             message_cache: Arc::new(Mutex::new(HashMap::new())),
+            thread_rows,
         })
     }
 
-    /// Reads every message header once so the list view can sort/filter/thread without I/O.
+    /// Reads message metadata, including QWKE fields, so the list can sort/filter/thread without I/O.
     fn build_index(data: &[u8], descriptors: &[MessageDescriptor]) -> Vec<MessageInfo> {
         let _timer = crate::perf::Timer::with("qwk::build_index", format!("{} messages", descriptors.len()));
         descriptors
-            .iter()
+            .par_iter()
+            .with_min_len(256)
             .enumerate()
             .map(|(index, descriptor)| {
                 let mut cursor = Cursor::new(data);
@@ -442,9 +521,19 @@ impl QwkPackage {
             .descriptors
             .get(index)
             .ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-message-index-out-of-range"))?;
-        let mut cursor = Cursor::new(&*self.messages_data);
-        cursor.seek(SeekFrom::Start(header.offset))?;
+        let data = self.messages_data.read_range(header.offset, u64::from(header.block_count) * 128)?;
+        let mut cursor = Cursor::new(data);
         QWKMessage::read(&mut cursor, true)
+    }
+
+    /// Whether any file-backed raw-body chunks have yet to be loaded into RAM.
+    pub fn needs_preload(&self) -> bool {
+        self.messages_data.needs_preload()
+    }
+
+    /// Load verified raw-body chunks, stopping between chunks when the job is superseded.
+    pub fn preload_messages(&self, cancelled: impl Fn() -> bool) -> Res<bool> {
+        self.messages_data.preload(cancelled)
     }
 
     /// Clear the message cache to free memory
@@ -492,6 +581,22 @@ impl QwkPackage {
         );
         list.sort_by_key(|(number, _, _)| *number);
         list
+    }
+}
+
+mod index_date {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(date: &chrono::NaiveDateTime, serializer: S) -> Result<S::Ok, S::Error> {
+        let utc = date.and_utc();
+        (utc.timestamp(), utc.timestamp_subsec_nanos()).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<chrono::NaiveDateTime, D::Error> {
+        let (seconds, nanos) = <(i64, u32)>::deserialize(deserializer)?;
+        chrono::DateTime::from_timestamp(seconds, nanos)
+            .map(|date| date.naive_utc())
+            .ok_or_else(|| serde::de::Error::custom("invalid cached message date"))
     }
 }
 

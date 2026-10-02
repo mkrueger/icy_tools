@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use crate::qwk::QwkPackage;
+use crate::qwk::{ExtractionCache, QwkPackage};
 use crate::ui::threading::{self, Row};
 use crate::ui::{ConferenceColumn, Message, MessageColumn, NavigateDirection, Pane, SortDirection, ViewMode};
 use icy_engine::{Screen, Size, TextScreen};
 use icy_engine_gui::{MonitorSettings, Terminal};
+use icy_mail::options::Options;
 use icy_mail::reader::step;
 use icy_mail::text as header_text;
 use icy_ui::widget::{button, column, container, operation, progress_bar, text, Space};
@@ -141,7 +142,23 @@ impl MainWindow {
                 self.loading_message = format!("Loading {}", path.file_name().unwrap_or_default().to_string_lossy());
 
                 Task::perform(
-                    async move { tokio::task::spawn_blocking(move || QwkPackage::load_from_file(path).map(Arc::new)).await },
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            let options = Options::directory().and_then(|directory| Options::load_in(&directory)).unwrap_or_else(|error| {
+                                log::warn!("could not read the settings, using the defaults: {error}");
+                                Options::default()
+                            });
+                            match ExtractionCache::default_directory() {
+                                Ok(directory) => QwkPackage::load_from_file_cached(path, &ExtractionCache::new(directory, options.extraction_cache_days)),
+                                Err(error) => {
+                                    log::warn!("could not locate the packet extraction cache, loading uncached: {error}");
+                                    QwkPackage::load_from_file(path)
+                                }
+                            }
+                            .map(Arc::new)
+                        })
+                        .await
+                    },
                     |result| match result {
                         Ok(Ok(package)) => Message::PackageLoaded(package),
                         Ok(Err(e)) => Message::PackageLoadError(format!("Failed to load package: {e}")),
@@ -319,6 +336,12 @@ impl MainWindow {
         };
 
         let needle = self.filter.trim().to_ascii_lowercase();
+        if self.view_mode == ViewMode::Threads && self.selected_conference == 0 && needle.is_empty() {
+            if let Some(rows) = package.cached_threads() {
+                self.message_rows = rows.to_vec();
+                return;
+            }
+        }
         let mut infos: Vec<&crate::qwk::MessageInfo> = package
             .infos
             .iter()
@@ -718,6 +741,37 @@ mod tests {
 
         let _ = window.update(Message::SetViewMode(ViewMode::List));
         assert!(window.message_rows().iter().all(|row| row.depth == 0));
+    }
+
+    #[test]
+    fn cached_threads_match_fresh_rows_without_bypassing_legacy_filters() {
+        let (dir, package) = crate::qwk_tests::load();
+        assert!(package.cached_threads().is_none());
+        let path = dir.path().join("TEST.QWK");
+        let cache = ExtractionCache::new(dir.path().join("packet-extractions"), 30);
+        for _ in 0..2 {
+            let cached_package = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+            assert!(cached_package.cached_threads().is_some());
+            let mut cached = MainWindow::new(window::Id::unique(), MainWindowMode::ShowWelcomeScreen);
+            let mut fresh = MainWindow::new(window::Id::unique(), MainWindowMode::ShowWelcomeScreen);
+            let _ = cached.update(Message::PackageLoaded(Arc::new(cached_package)));
+            let _ = fresh.update(Message::PackageLoaded(Arc::new(QwkPackage::load_from_file(&path).unwrap())));
+            for window in [&mut cached, &mut fresh] {
+                let _ = window.update(Message::SetViewMode(ViewMode::Threads));
+            }
+            assert_eq!(cached.message_rows, fresh.message_rows);
+            assert_eq!(cached.conference_rows[0].count, 4);
+            for (conference, query, expected_len) in [(2, "", 2), (0, "coffee", 2), (2, "DAVE", 1), (1, "missing", 0), (0, "", 4)] {
+                for window in [&mut cached, &mut fresh] {
+                    let _ = window.update(Message::SelectConference(conference));
+                    let _ = window.update(Message::FilterChanged(query.into()));
+                }
+                assert_eq!(cached.message_rows, fresh.message_rows);
+                assert_eq!(cached.message_rows.len(), expected_len);
+                assert_eq!(cached.selected_message, fresh.selected_message);
+                assert_eq!(cached.conference_rows[0].count, 4, "filtered trees do not alter conference counts");
+            }
+        }
     }
 
     #[test]

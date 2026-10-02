@@ -74,6 +74,8 @@ pub struct Options {
     pub modern_font_size: f32,
     /// Parts of the messages the search looks at.
     pub search_fields: SearchFields,
+    /// Days since last use to retain packet extractions; zero disables the disk cache.
+    pub extraction_cache_days: u32,
 }
 
 impl Default for Options {
@@ -94,6 +96,7 @@ impl Default for Options {
             modern_font: ModernFont::default(),
             modern_font_size: DEFAULT_MODERN_FONT_SIZE,
             search_fields: SearchFields::default(),
+            extraction_cache_days: 30,
         }
     }
 }
@@ -135,6 +138,7 @@ mod tests {
         let (dir, _package) = crate::qwk::tests::load();
         assert_eq!(Options::load_in(dir.path()).unwrap(), Options::default());
         assert!(!Options::default().monitor_settings.use_integer_scaling);
+        assert_eq!(Options::default().extraction_cache_days, 30);
         let mut options = Options {
             theme: Theme::Dark,
             ..Default::default()
@@ -147,6 +151,7 @@ mod tests {
         options.modern_font = ModernFont::Proportional;
         options.modern_font_size = 18.0;
         options.search_fields.text = false;
+        options.extraction_cache_days = 0;
         options.save_in(dir.path()).unwrap();
         assert_eq!(Options::load_in(dir.path()).unwrap(), options);
         fs::write(dir.path().join(FILE_NAME), "theme = \"Light\"\n").unwrap();
@@ -159,5 +164,6 @@ mod tests {
         assert_eq!(partial.reading_mode, ReadingMode::Modern, "new installations read in the modern mode");
         assert_eq!(partial.modern_font, ModernFont::Monospace);
         assert!(partial.search_fields.all(), "search looks everywhere until restricted");
+        assert_eq!(partial.extraction_cache_days, 30, "older settings inherit the cache retention default");
     }
 }

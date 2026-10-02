@@ -4,11 +4,12 @@ use std::{fmt, ops::Deref};
 
 use bstr::BString;
 use icy_engine::{AttributeColor, BufferType, EditableScreen, Position, Screen, Size, TextPane, TextScreen, XTERM_256_PALETTE};
+use serde::{Deserialize, Serialize};
 
 const HEADER_WIDTH: i32 = 160;
 const HEADER_HEIGHT: i32 = 8;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StyledSpan {
     pub text: String,
     pub foreground: Option<[u8; 3]>,
@@ -19,7 +20,7 @@ pub struct StyledSpan {
     pub strikethrough: bool,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HeaderText {
     plain: String,
     styled: Option<Box<[StyledSpan]>>,

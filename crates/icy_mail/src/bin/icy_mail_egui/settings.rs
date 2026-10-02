@@ -91,6 +91,7 @@ impl MailApp {
             modern_font: self.modern_font,
             modern_font_size: self.modern_font_size,
             search_fields: self.reader.search_fields,
+            extraction_cache_days: self.extraction_cache_days,
         }
     }
 
@@ -102,6 +103,7 @@ impl MailApp {
         self.reading_mode = options.reading_mode;
         self.modern_font = options.modern_font;
         self.modern_font_size = options.modern_font_size.clamp(*MODERN_FONT_SIZES.start(), *MODERN_FONT_SIZES.end());
+        self.extraction_cache_days = options.extraction_cache_days;
         if self.reader.search_fields != options.search_fields && options.search_fields.any() {
             self.set_search_fields(options.search_fields);
         }
@@ -160,6 +162,7 @@ impl MailApp {
         let pages = [
             (0, fl!(LANGUAGE_LOADER, "settings-page-general")),
             (1, fl!(LANGUAGE_LOADER, "settings-page-monitor")),
+            (2, fl!(LANGUAGE_LOADER, "settings-section-cache")),
         ];
         let response = appearance::Dialog::new("mail-settings")
             .title(fl!(LANGUAGE_LOADER, "settings-title"))
@@ -169,7 +172,8 @@ impl MailApp {
                 frame.tabs(&mut dialog.page, &pages);
                 frame.content(|ui| match dialog.page {
                     0 => general(ui, &mut dialog.draft),
-                    _ => monitor::fields(ui, &mut dialog.draft.monitor_settings),
+                    1 => monitor::fields(ui, &mut dialog.draft.monitor_settings),
+                    _ => cache(ui, &mut dialog.draft),
                 });
                 frame.buttons([
                     appearance::DialogButton::secondary(appearance::labels::restore_defaults(), Footer::Restore).leading(),
@@ -189,6 +193,7 @@ impl MailApp {
                 dialog.draft.modern_font = defaults.modern_font;
                 dialog.draft.modern_font_size = defaults.modern_font_size;
             }
+            Some(Footer::Restore) if dialog.page == 2 => dialog.draft.extraction_cache_days = defaults.extraction_cache_days,
             Some(Footer::Restore) => {
                 let zoom = dialog.draft.monitor_settings.scaling_mode;
                 dialog.draft.monitor_settings = defaults.monitor_settings;
@@ -261,5 +266,15 @@ fn general(ui: &mut egui::Ui, options: &mut Options) {
     });
     appearance::group(ui, &fl!(LANGUAGE_LOADER, "settings-section-writing"), |ui| {
         appearance::check_row(ui, &fl!(LANGUAGE_LOADER, "settings-add-random-tagline"), &mut options.random_tagline);
+    });
+}
+
+fn cache(ui: &mut egui::Ui, options: &mut Options) {
+    appearance::group(ui, &fl!(LANGUAGE_LOADER, "settings-section-cache"), |ui| {
+        ui.horizontal(|ui| {
+            ui.label(fl!(LANGUAGE_LOADER, "settings-extraction-cache-days"));
+            ui.add(egui::DragValue::new(&mut options.extraction_cache_days).range(0..=u32::MAX));
+        });
+        ui.label(fl!(LANGUAGE_LOADER, "settings-extraction-cache-help"));
     });
 }

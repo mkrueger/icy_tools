@@ -113,7 +113,7 @@ pub struct MailApp {
     pub read_state: Option<ReadState>,
     pub marks: MarkWriter,
     pub recent: Option<RecentPackets>,
-    /// Keeps drafts, read marks and the recent list here instead of the user's data directory.
+    /// Keeps settings, drafts, read marks, recent packets and extractions isolated here.
     pub storage: Option<PathBuf>,
     pub folder: Folder,
     pub selected_draft: Option<u64>,
@@ -154,9 +154,11 @@ pub struct MailApp {
     pub reading_mode: ReadingMode,
     pub modern_font: ModernFont,
     pub modern_font_size: f32,
+    pub extraction_cache_days: u32,
     /// The shown message as text and rendered art for the modern reading mode, built on first use
     /// and keyed by the packet and message they came from.
     pub modern_items: Option<((usize, Document), Vec<Item>)>,
+    pub modern_layout_pending: bool,
     /// Long quotes the reader unfolded in the shown document, by their first item.
     pub open_quotes: std::collections::HashSet<usize>,
     /// Networks the user opened or closed in the sidebar, by lowercased name; others follow their unread state.
@@ -192,7 +194,11 @@ impl MailApp {
         icy_engine_gui::system_clipboard::disable();
         let options = storage
             .clone()
-            .or_else(|| Options::directory().ok())
+            .or_else(|| {
+                Options::directory()
+                    .inspect_err(|error| log::warn!("could not locate the settings directory, using the defaults: {error}"))
+                    .ok()
+            })
             .map(|directory| {
                 Options::load_in(&directory).unwrap_or_else(|error| {
                     log::warn!("could not read the settings, using the defaults: {error}");
@@ -256,7 +262,9 @@ impl MailApp {
             reading_mode: options.reading_mode,
             modern_font: options.modern_font,
             modern_font_size: options.modern_font_size,
+            extraction_cache_days: options.extraction_cache_days,
             modern_items: None,
+            modern_layout_pending: false,
             open_quotes: std::collections::HashSet::new(),
             network_open: HashMap::new(),
             options,
@@ -290,7 +298,8 @@ impl MailApp {
         self.loading = Some(path.clone());
         self.error = None;
         self.body_loading = false;
-        self.loader.package(path, context);
+        let cache_directory = self.storage.as_ref().map(|storage| storage.join("packet-extractions"));
+        self.loader.package(path, cache_directory, self.extraction_cache_days, context);
     }
 
     pub fn reload(&mut self, context: &egui::Context) {
@@ -340,11 +349,31 @@ impl MailApp {
                         }
                     }
                 }
-                Event::Body(generation, result) if generation == self.loader.body_generation => {
+                Event::Body(request, result)
+                    if request.generation == self.loader.body_generation
+                        && Some(request) == self.loader.body_request
+                        && request.mode == self.reading_mode
+                        && match request.source {
+                            BodySource::Message(index) => self.folder.holds_messages() && self.reader.selected_message == Some(index),
+                            BodySource::File(index, page) => {
+                                self.folder == Folder::Bulletins && self.selected_file == Some(index) && self.selected_file_page == page
+                            }
+                        } =>
+                {
                     self.body_loading = false;
                     match result {
-                        Ok(screen) => {
-                            self.screen = ScreenView::new(screen);
+                        Ok(prepared) => {
+                            self.modern_layout_pending = prepared.modern.is_some();
+                            self.modern_items = prepared.modern.map(|items| {
+                                let package = self.reader.package.as_ref().map_or(0, |package| Arc::as_ptr(package) as usize);
+                                let document = match request.source {
+                                    BodySource::Message(index) => Document::Message(index),
+                                    BodySource::File(index, page) => Document::File(index, page),
+                                };
+                                ((package, document), super::modern_view::upload(context, items))
+                            });
+                            self.open_quotes.clear();
+                            self.screen = ScreenView::new(prepared.classic);
                             if self.folder == Folder::Bulletins && self.file_page_scroll_to_end {
                                 self.screen.scroll_to = Some(egui::vec2(0.0, f32::MAX));
                             }
@@ -356,11 +385,22 @@ impl MailApp {
                                     }
                                 }
                             }
+                            if let Some(package) = &self.reader.package {
+                                self.loader.preload(package.clone(), context);
+                            }
                         }
                         Err(error) => {
+                            self.modern_items = None;
                             self.screen = ScreenView::new(TextScreen::new(Size::new(80, 25)));
                             self.error = Some(error);
                         }
+                    }
+                }
+                Event::Preloaded(package_generation, generation, result)
+                    if package_generation == self.loader.package_generation && generation == self.loader.preload_generation() =>
+                {
+                    if let Err(error) = result {
+                        self.error = Some(fl!(LANGUAGE_LOADER, "loading-preload-error", error = error.as_str()));
                     }
                 }
                 Event::Search(generation, query, result)
@@ -524,7 +564,11 @@ impl MailApp {
             let (Some(package), Some(index)) = (&self.reader.package, self.selected_file) else {
                 return;
             };
-            if self.rendered_file == Some(index) && self.rendered_file_page == self.selected_file_page && self.rendered_draft.is_none() {
+            if self.rendered_file == Some(index)
+                && self.rendered_file_page == self.selected_file_page
+                && self.rendered_draft.is_none()
+                && self.loader.body_request.is_some_and(|request| request.mode == self.reading_mode)
+            {
                 return;
             }
             if self.rendered_file != Some(index) {
@@ -538,10 +582,15 @@ impl MailApp {
             self.last_reader_click = None;
             self.reveal_message = true;
             self.body_loading = true;
-            self.loader.body(package.clone(), BodySource::File(index, self.selected_file_page), context);
+            self.loader
+                .body(package.clone(), BodySource::File(index, self.selected_file_page), self.reading_mode, context);
             return;
         }
-        if self.rendered == self.reader.selected_message && self.rendered_draft.is_none() && self.rendered_file.is_none() {
+        if self.rendered == self.reader.selected_message
+            && self.rendered_draft.is_none()
+            && self.rendered_file.is_none()
+            && (self.reader.selected_message.is_none() || self.loader.body_request.is_some_and(|request| request.mode == self.reading_mode))
+        {
             return;
         }
         self.rendered = self.reader.selected_message;
@@ -553,8 +602,10 @@ impl MailApp {
         self.reveal_message = true;
         if let (Some(package), Some(index)) = (&self.reader.package, self.reader.selected_message) {
             self.body_loading = true;
-            self.loader.body(package.clone(), BodySource::Message(index), context);
+            self.loader.body(package.clone(), BodySource::Message(index), self.reading_mode, context);
         } else {
+            self.loader.cancel_preload();
+            self.loader.body_request = None;
             self.loader.body_generation = self.loader.body_generation.wrapping_add(1);
             self.body_loading = false;
             self.screen = ScreenView::new(TextScreen::new(Size::new(80, 25)));

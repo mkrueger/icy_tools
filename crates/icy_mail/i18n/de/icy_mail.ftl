@@ -221,6 +221,10 @@ settings-reading-pane-right = Rechts neben der Liste
 settings-zoom-fit-width = An Breite anpassen
 settings-zoom-fit = Einpassen
 settings-section-writing = Schreiben
+settings-section-cache = Paket-Cache
+loading-preload-error = Nachrichtendaten des Pakets konnten nicht vorgeladen werden: { $error }
+settings-extraction-cache-days = Entpackte Pakete aufbewahren (Tage)
+settings-extraction-cache-help = Tage seit der letzten Nutzung. Alte Einträge werden beim nächsten Öffnen eines Pakets entfernt. 0 deaktiviert den Cache und entfernt gespeicherte Einträge beim nächsten Öffnen. Änderungen gelten ab dem nächsten Laden eines Pakets.
 settings-add-random-tagline = Neue Nachrichten mit einer zufälligen Tagline versehen
 
 # Mail dialogs

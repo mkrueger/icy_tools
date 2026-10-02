@@ -264,72 +264,84 @@ impl Reader {
         self.read.resize(package.infos.len(), false);
         self.starred.resize(package.infos.len(), false);
         let needle = self.filter.trim().to_lowercase();
-        if !needle.is_empty() && self.search.len() != package.infos.len() {
-            self.search = package
+        let cached_threads = (self.view_mode == ViewMode::Threads
+            && self.selected_conference.is_none()
+            && self.personal.is_none()
+            && !self.unread_only
+            && !self.starred_only
+            && needle.is_empty())
+        .then(|| package.cached_threads())
+        .flatten();
+        if let Some(rows) = cached_threads {
+            self.all_messages = rows.to_vec();
+        } else {
+            if !needle.is_empty() && self.search.len() != package.infos.len() {
+                self.search = package
+                    .infos
+                    .par_iter()
+                    .with_min_len(1024)
+                    .map(|info| [info.from.to_lowercase(), info.to.to_lowercase(), info.subject.to_lowercase()])
+                    .collect();
+            }
+            let personal = self.personal.as_ref().map(|name| name.trim().to_string());
+            let fields = self.search_fields;
+            let body_matches = self
+                .body_matches
+                .as_ref()
+                .filter(|(query, _)| fields.text && *query == needle)
+                .map(|(_, matches)| matches);
+            let search = &self.search;
+            let matches = |index: usize| {
+                let [from, to, subject] = &search[index];
+                (fields.from && from.contains(&needle))
+                    || (fields.to && to.contains(&needle))
+                    || (fields.subject && subject.contains(&needle))
+                    || body_matches.is_some_and(|matches| matches.contains(&index))
+            };
+            let mut infos: Vec<_> = package
                 .infos
                 .par_iter()
                 .with_min_len(1024)
-                .map(|info| [info.from.to_lowercase(), info.to.to_lowercase(), info.subject.to_lowercase()])
+                .filter(|info| {
+                    self.selected_conference.is_none_or(|number| info.conference == number)
+                        && personal.as_ref().is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name))
+                        && (!self.unread_only || !self.read[info.index])
+                        && (!self.starred_only || self.starred[info.index])
+                        && (needle.is_empty() || matches(info.index))
+                })
                 .collect();
-        }
-        let personal = self.personal.as_ref().map(|name| name.trim().to_string());
-        let fields = self.search_fields;
-        let body_matches = self
-            .body_matches
-            .as_ref()
-            .filter(|(query, _)| fields.text && *query == needle)
-            .map(|(_, matches)| matches);
-        let search = &self.search;
-        let matches = |index: usize| {
-            let [from, to, subject] = &search[index];
-            (fields.from && from.contains(&needle))
-                || (fields.to && to.contains(&needle))
-                || (fields.subject && subject.contains(&needle))
-                || body_matches.is_some_and(|matches| matches.contains(&index))
-        };
-        let mut infos: Vec<_> = package
-            .infos
-            .par_iter()
-            .with_min_len(1024)
-            .filter(|info| {
-                self.selected_conference.is_none_or(|number| info.conference == number)
-                    && personal.as_ref().is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name))
-                    && (!self.unread_only || !self.read[info.index])
-                    && (!self.starred_only || self.starred[info.index])
-                    && (needle.is_empty() || matches(info.index))
-            })
-            .collect();
-        self.all_messages = match self.view_mode {
-            ViewMode::Threads => threading::build_threads(&infos),
-            ViewMode::List => {
-                let (column, direction) = self.message_sort;
-                match column {
-                    // Lowercase each key once instead of in every comparison.
-                    MessageColumn::From | MessageColumn::Subject => {
-                        let text = |info: &MessageInfo| {
-                            if column == MessageColumn::From {
-                                info.from.to_lowercase()
-                            } else {
-                                info.subject.to_lowercase()
+            self.all_messages = match self.view_mode {
+                ViewMode::Threads => threading::build_threads(&infos),
+                ViewMode::List => {
+                    let (column, direction) = self.message_sort;
+                    match column {
+                        // Lowercase each key once instead of in every comparison.
+                        MessageColumn::From | MessageColumn::Subject => {
+                            let text = |info: &MessageInfo| {
+                                if column == MessageColumn::From {
+                                    info.from.to_lowercase()
+                                } else {
+                                    info.subject.to_lowercase()
+                                }
+                            };
+                            match direction {
+                                SortDirection::Ascending => infos.sort_by_cached_key(|info| (text(info), info.index)),
+                                SortDirection::Descending => infos.sort_by_cached_key(|info| (std::cmp::Reverse(text(info)), info.index)),
                             }
-                        };
-                        match direction {
-                            SortDirection::Ascending => infos.sort_by_cached_key(|info| (text(info), info.index)),
-                            SortDirection::Descending => infos.sort_by_cached_key(|info| (std::cmp::Reverse(text(info)), info.index)),
+                        }
+                        MessageColumn::Date => infos.sort_unstable_by(|left, right| {
+                            direction
+                                .apply(left.date.cmp(&right.date).then(left.number.cmp(&right.number)))
+                                .then(left.index.cmp(&right.index))
+                        }),
+                        MessageColumn::Lines => {
+                            infos.sort_unstable_by(|left, right| direction.apply(left.lines.cmp(&right.lines)).then(left.index.cmp(&right.index)));
                         }
                     }
-                    MessageColumn::Date => infos.sort_unstable_by(|left, right| {
-                        direction
-                            .apply(left.date.cmp(&right.date).then(left.number.cmp(&right.number)))
-                            .then(left.index.cmp(&right.index))
-                    }),
-                    MessageColumn::Lines => {
-                        infos.sort_unstable_by(|left, right| direction.apply(left.lines.cmp(&right.lines)).then(left.index.cmp(&right.index)));
-                    }
+                    infos.iter().map(|info| Row::flat(info.index)).collect()
                 }
-                infos.iter().map(|info| Row::flat(info.index)).collect()
-            }
-        };
+            };
+        }
         self.all_positions.clear();
         self.all_positions.resize(package.infos.len(), u32::MAX);
         self.unread = 0;
@@ -823,6 +835,110 @@ mod tests {
         let mut reader = Reader::default();
         reader.set_package(Arc::new(package));
         (dir, reader)
+    }
+
+    fn thread_reader(package: QwkPackage) -> Reader {
+        let mut reader = Reader {
+            view_mode: ViewMode::Threads,
+            ..Default::default()
+        };
+        reader.set_package(Arc::new(package));
+        reader
+    }
+
+    fn assert_same_thread_view(cached: &Reader, fresh: &Reader) {
+        assert_eq!(cached.all_messages, fresh.all_messages);
+        assert_eq!(cached.messages, fresh.messages);
+        assert_eq!(cached.selected_message, fresh.selected_message);
+        assert_eq!(cached.unread_count(), fresh.unread_count());
+        assert_eq!(cached.positions, fresh.positions);
+        assert_eq!(cached.all_positions, fresh.all_positions);
+    }
+
+    #[test]
+    fn cached_threads_match_fresh_rows_with_collapsing_and_read_marks() {
+        let (dir, package) = crate::qwk::tests::load();
+        assert!(package.cached_threads().is_none(), "uncached mutable fixtures must build their own threads");
+        let path = dir.path().join("TEST.QWK");
+        let cache = crate::qwk::ExtractionCache::new(dir.path().join("packet-extractions"), 30);
+        for _ in 0..2 {
+            let package = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+            let expected = threading::build_threads(&package.infos.iter().collect::<Vec<_>>());
+            assert_eq!(package.cached_threads().unwrap(), expected);
+            let mut cached = thread_reader(package);
+            let mut fresh = thread_reader(QwkPackage::load_from_file(&path).unwrap());
+            assert_same_thread_view(&cached, &fresh);
+            for reader in [&mut cached, &mut fresh] {
+                reader.set_read_marks([0, 2]);
+                reader.select_message(3);
+                reader.set_collapsed(2, true);
+                reader.rebuild_messages();
+            }
+            assert_same_thread_view(&cached, &fresh);
+            assert_eq!(cached.selected_message, Some(2));
+            assert_eq!(cached.unread_count(), 2, "hidden unread replies still count");
+            assert_eq!(cached.unread_replies(2), 1);
+            assert_eq!(cached.next_unread(Some(2)), Some(3));
+            assert!(!cached.messages.iter().any(|row| row.index == 3));
+            for reader in [&mut cached, &mut fresh] {
+                reader.select_message(3);
+                reader.rebuild_messages();
+            }
+            assert_same_thread_view(&cached, &fresh);
+            assert!(!cached.is_collapsed(2), "selecting a hidden reply still unfolds its cached thread");
+        }
+    }
+
+    #[test]
+    fn cached_threads_do_not_bypass_folder_or_search_filters() {
+        let (dir, _) = crate::qwk::tests::load();
+        let path = dir.path().join("TEST.QWK");
+        let cache = crate::qwk::ExtractionCache::new(dir.path().join("packet-extractions"), 30);
+        let cached_package = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+        for case in 0..8 {
+            let mut cached = thread_reader(cached_package.clone());
+            let mut fresh = thread_reader(QwkPackage::load_from_file(&path).unwrap());
+            for reader in [&mut cached, &mut fresh] {
+                reader.set_read_marks([0, 2]);
+                reader.set_stars([1, 3]);
+                match case {
+                    0 => reader.selected_conference = Some(2),
+                    1 => reader.personal = Some("nobody".into()),
+                    2 => reader.unread_only = true,
+                    3 => reader.starred_only = true,
+                    4 => reader.filter = "coffee".into(),
+                    5 => {
+                        reader.filter = "line 4".into();
+                        reader.search_fields = SearchFields {
+                            from: false,
+                            to: false,
+                            subject: false,
+                            text: true,
+                        };
+                        reader.set_body_matches("line 4".into(), HashSet::from([2]));
+                    }
+                    6 => {
+                        reader.selected_conference = Some(2);
+                        reader.personal = Some("all".into());
+                        reader.unread_only = true;
+                        reader.starred_only = true;
+                        reader.filter = "dave".into();
+                    }
+                    _ => reader.selected_conference = Some(0),
+                }
+                reader.rebuild_messages();
+            }
+            assert_same_thread_view(&cached, &fresh);
+            assert!(cached.messages.len() < cached_package.infos.len(), "case {case} must restrict the cached tree");
+            cached.selected_conference = None;
+            cached.personal = None;
+            cached.unread_only = false;
+            cached.starred_only = false;
+            cached.filter.clear();
+            cached.rebuild_messages();
+            assert_eq!(cached.all_messages, cached_package.cached_threads().unwrap());
+            assert_eq!(cached.unread_count(), 2, "returning to all messages preserves read marks");
+        }
     }
 
     #[test]

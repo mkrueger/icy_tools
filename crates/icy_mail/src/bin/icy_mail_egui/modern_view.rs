@@ -11,7 +11,7 @@ use icy_engine_gui::egui::appearance;
 use icy_mail::{
     editor,
     options::{ModernFont, ReadingMode, MODERN_FONT_SIZES},
-    reader::{render_body, render_body_wide, render_file_page, render_file_page_wide, Pane},
+    reader::{render_body, render_body_wide, Pane},
     text::{styled_lines, StyledSpan},
     LANGUAGE_LOADER,
 };
@@ -103,6 +103,12 @@ pub enum Document {
 pub enum Item {
     Text(ModernLine),
     Art(egui::TextureHandle),
+}
+
+/// CPU-prepared content; textures are uploaded only on the UI thread.
+pub enum PreparedItem {
+    Text(ModernLine),
+    Art(egui::ColorImage),
 }
 
 /// Splits a message into text lines and art. `classic` is the message on the 80 column terminal,
@@ -273,11 +279,14 @@ fn soft_wraps(classic: &[Vec<StyledSpan>], wide: &TextScreen, columns: usize) ->
 
 /// Renders the art of `blocks` into textures; text lines are kept as they are.
 pub fn items(context: &egui::Context, screen: &TextScreen, blocks: Vec<Block>) -> Vec<Item> {
+    upload(context, prepare_items(screen, blocks))
+}
+
+pub fn prepare_items(screen: &TextScreen, blocks: Vec<Block>) -> Vec<PreparedItem> {
     blocks
         .into_iter()
-        .enumerate()
-        .map(|(index, block)| match block {
-            Block::Text(line) => Item::Text(line),
+        .map(|block| match block {
+            Block::Text(line) => PreparedItem::Text(line),
             Block::Art { rows, columns } => {
                 let options: RenderOptions = Rectangle::from(0, rows.start, columns, rows.end - rows.start).into();
                 let (size, rgba) = screen.buffer.render_to_rgba(&options, false);
@@ -287,6 +296,19 @@ pub fn items(context: &egui::Context, screen: &TextScreen, blocks: Vec<Block>) -
                 } else {
                     egui::ColorImage::new([1, 1], vec![Color32::TRANSPARENT])
                 };
+                PreparedItem::Art(image)
+            }
+        })
+        .collect()
+}
+
+pub fn upload(context: &egui::Context, prepared: Vec<PreparedItem>) -> Vec<Item> {
+    prepared
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| match item {
+            PreparedItem::Text(line) => Item::Text(line),
+            PreparedItem::Art(image) => {
                 let options = egui::TextureOptions {
                     magnification: egui::TextureFilter::Nearest,
                     minification: egui::TextureFilter::Linear,
@@ -417,29 +439,16 @@ impl MailApp {
         }
     }
 
-    /// The document on the 80 column terminal and without that limit, see [`blocks`].
-    fn document_screens(&self, document: Document) -> Result<(TextScreen, TextScreen), String> {
-        let package = self.reader.package.as_ref();
-        let screens = match document {
-            Document::Message(index) => package
-                .ok_or_else(String::new)?
-                .get_message(index)
-                .and_then(|message| Ok((render_body(&message.text)?, render_body_wide(&message.text)?))),
-            Document::File(index, page) => {
-                let file = package.and_then(|package| package.files.get(index)).ok_or_else(String::new)?;
-                render_file_page(&file.data, page).and_then(|classic| Ok((classic, render_file_page_wide(&file.data, page)?)))
-            }
-            Document::Draft(id, _) => {
-                let draft = self
-                    .drafts
-                    .as_ref()
-                    .and_then(|store| store.drafts().iter().find(|draft| draft.id == id).cloned())
-                    .ok_or_else(String::new)?;
-                let text = editor::encode_message(&draft.text());
-                render_body(&text).and_then(|classic| Ok((classic, render_body_wide(&text)?)))
-            }
-        };
-        screens.map_err(|error| error.to_string())
+    fn draft_screens(&self, id: u64) -> Result<(TextScreen, TextScreen), String> {
+        let draft = self
+            .drafts
+            .as_ref()
+            .and_then(|store| store.drafts().iter().find(|draft| draft.id == id).cloned())
+            .ok_or_else(|| format!("Draft {id} does not exist"))?;
+        let text = editor::encode_message(&draft.text());
+        render_body(&text)
+            .and_then(|classic| Ok((classic, render_body_wide(&text)?)))
+            .map_err(|error| error.to_string())
     }
 
     /// A document in the modern reading mode. Scrolling reuses the terminal's offsets, so the
@@ -450,12 +459,13 @@ impl MailApp {
         let key = (package, document);
         let rebuilt = self.modern_items.as_ref().is_none_or(|(cached, _)| *cached != key);
         if rebuilt {
-            let rendered = match self.document_screens(document) {
+            let Document::Draft(id, _) = document else {
+                return ui.centered_and_justified(|ui| ui.spinner()).response;
+            };
+            let rendered = match self.draft_screens(id) {
                 Ok((classic, wide)) => items(ui.ctx(), &classic, blocks(&classic, &wide)),
                 Err(error) => {
-                    if !error.is_empty() {
-                        self.error = Some(error);
-                    }
+                    self.error = Some(error);
                     Vec::new()
                 }
             };
@@ -600,7 +610,7 @@ impl MailApp {
         let mut scroll = egui::ScrollArea::vertical().id_salt("modern-body").auto_shrink([false, false]);
         // Clamped here, as the scroll area keeps an offset past the end; a new document is laid out
         // once first, so the end is known.
-        if !rebuilt {
+        if !rebuilt && !self.modern_layout_pending {
             if let Some(offset) = self.screen.scroll_to.take() {
                 scroll = scroll.vertical_scroll_offset(offset.y.clamp(0.0, self.screen.max_offset.y));
             }
@@ -659,6 +669,7 @@ impl MailApp {
         let max = (output.content_size - output.inner_rect.size()).max(egui::Vec2::ZERO);
         self.screen.offset = egui::vec2(0.0, output.state.offset.y.min(max.y));
         self.screen.max_offset = egui::vec2(0.0, max.y);
+        self.modern_layout_pending = false;
         self.content_rect = output.inner_rect;
         // Hovering anywhere in the pane counts, e.g. for turning bulletin pages with the wheel.
         let area = ui.interact(output.inner_rect, ui.id().with("modern-area"), egui::Sense::hover());

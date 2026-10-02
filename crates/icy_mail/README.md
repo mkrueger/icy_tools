@@ -21,6 +21,53 @@ so ZIP, ARJ, LHA/LZH, RAR, 7z, ARC, ZOO and the other formats it detects work;
 the archive must contain `CONTROL.DAT` and `MESSAGES.DAT`. Standalone REP
 archives are export files, not readable incoming packets.
 
+Archive entries may expand to at most 10 GiB each; bulletin and screen files
+retain their separate 16 MiB limit. Cold extraction and disabled caching keep
+message data in memory; warm cache openings can show the first message before
+background loading finishes. Large packets still require enough available RAM
+for the uncompressed data and index.
+
+### Packet extraction cache
+
+Both frontends reuse extracted packets on disk in the application's OS cache
+directory under `packet-extractions`. **Settings ▸ Packet cache**
+controls retention in days since last use (default **30**); the persisted
+`settings.toml` field is `extraction_cache_days`, also used by the legacy frontend.
+Expired entries are cleaned up when another packet is opened, not by a background
+timer. Setting **0** disables reuse and removes cached entries on the next
+opening. Changes apply to the next packet load.
+
+Cache identity uses the source packet's canonical path, file size and modification
+time, plus change time (`ctime`) on Unix: changing that metadata invalidates the
+extraction. Source validation is metadata-based, not a content hash; replacing a
+packet while preserving all checked metadata may reuse its old extraction.
+Extracted files are checked with CRC32 to detect cache corruption. Cache
+discovery or storage problems are logged and opening falls back to uncached
+extraction. On Unix, cache directories are private (`0700`) and files use `0600`.
+The cache also persists compact binary message metadata (including decoded
+styles and dates), the message index and the default, unfiltered thread rows.
+The binary index is decoded in parallel chunks on subsequent openings.
+An older cache gains this metadata on its next opening; stale or corrupt metadata
+is rebuilt without discarding valid extracted message data. Both frontends reuse
+the saved thread rows only when every message is in scope. Conference, personal,
+unread, starred and search filters build their own trees, and collapsed threads
+and current read marks are applied as usual.
+Warm cached packets open with file-backed message bodies: the selected message
+loads verified ranges on demand, without waiting for every body. After the first
+selected body is prepared, the egui frontend preloads the remaining raw, verified
+body chunks in the background. Selecting another body cancels that preload so
+the new selection takes priority; packet changes and closing the window also
+cancel it. Search remains available during preloading and keeps its separate
+decoded-text cache lazy. Preload errors are logged and shown for the current
+packet; stale results cannot replace a newer packet's state. Corrupt body chunks
+attempt recovery from the unchanged source packet, otherwise loading reports
+the error.
+
+Cold extraction and disabled caching still load all message bodies into memory.
+Background preloading also eventually makes the warm packet's raw bodies
+resident, so large packets still need enough RAM. The disk cache avoids repeated
+decompression, metadata parsing and default thread construction.
+
 The old frontend remains available:
 
 ```sh
@@ -31,6 +78,12 @@ cargo run -p icy_mail --no-default-features --features legacy-ui --bin icy_mail_
 does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
 
 ## Reading
+
+In egui, received messages and bulletin pages are prepared in background workers
+for both display modes. Modern mode prepares classic and wide screens, analyzes text/art
+blocks and renders art pixels there; only texture upload and text layout run on
+the UI thread. Navigation and mode changes discard stale preparations. Editable
+draft and composer previews still render locally.
 
 - Three-pane layout: mailboxes and conferences, message list, and reader.
   The reader sits beside the list on wide windows and below it otherwise;
@@ -79,7 +132,9 @@ does not depend on `icy_ui`; workspace-wide builds may enable it for other apps.
   A spinner indicates an ongoing text search. Changing or clearing the query
   cancels the previous search. ANSI formatting is ignored and CP437 characters
   are decoded for searching. Malformed ANSI formatting is logged without
-  aborting the search; message-loading failures still show an error.
+  aborting the search; message-loading failures are logged and abort the search
+  with an error, including unrecoverable file-backed cache reads. Failed searches
+  never publish successful, incomplete body matches.
   Matches are highlighted in the list, message header and displayed message
   text. Body highlights update with the filter and disappear when it is cleared,
   without changing the original message colors, text selection or copied text.
@@ -306,3 +361,61 @@ No live network service is required. Tests use synthetic QWK packets and do not
 modify user mail. The screenshot directory also receives a synthetic packet
 for native startup checks. Platform file pickers and Windows/macOS window
 behavior still require validation on those systems.
+
+An optional large-packet test checks loading message data larger than 1 GiB
+without modifying the supplied packet:
+
+```sh
+ICY_MAIL_TEST_PACKET=/path/to/large.qwk \
+  cargo test --release -p icy_mail --lib qwk::tests::large_packet_opens -- --ignored
+```
+
+To validate disk-cache round trips in an isolated cache directory and print
+timings for one cold load and three warm loads:
+
+```sh
+ICY_MAIL_TEST_PACKET=/path/to/large.qwk \
+  cargo test --release -p icy_mail --lib qwk::tests::large_packet_cache_roundtrip -- --ignored --nocapture
+```
+
+To measure an existing cache in the normal OS default cache directory, including
+cached loading, Reader rebuilding and fresh thread construction:
+
+```sh
+ICY_MAIL_TEST_PACKET=/path/to/cached.qwk ICY_MAIL_PERF=1 \
+  cargo test --release -p icy_mail --lib qwk::cache::tests::existing_packet_cache_timings -- --ignored --nocapture
+```
+
+This test requires an existing extraction cache, upgrades older cache metadata
+when needed and prints the timings. It does not modify the source packet.
+
+To measure the actual egui open-to-first-accepted-body pipeline in both Classic
+and Modern modes without creating a GPU device:
+
+```sh
+ICY_MAIL_TEST_PACKET=/home/mkrueger/work/bbs/BEERS24.qwk ICY_MAIL_PERF=1 \
+  cargo test --release -p icy_mail --bin icy_mail_egui tests::cached_packet_open_to_first_prepared_body_timings -- --ignored --nocapture
+```
+
+This uses the normal OS default extraction cache, while isolating settings,
+drafts, read marks and recent packets in temporary storage. It prints cache
+loading plus Reader setup, selected-body worker/acceptance time and total
+open-to-first-prepared-body time. Modern preparation includes CPU art pixels and
+texture registration, not GPU painting. Raw preloading is cancelled after the
+first accepted body; startup does not scan or normalize every message for search.
+The source packet is not modified. Set `ICY_MAIL_TEST_PACKET` to another cached
+packet to measure it instead.
+
+A reference release run with 526,386 messages (1.39 GiB of raw message data),
+an already-upgraded cache and the default list view measured:
+
+| Display | Cache load + Reader setup | Body worker + acceptance | Open to first prepared body |
+| --- | ---: | ---: | ---: |
+| Classic | 202.77 ms | 0.484 ms | 203.25 ms |
+| Modern | 181.87 ms | 0.434 ms | 182.30 ms |
+
+These are individual reference timings, not performance guarantees or GPU paint
+times. Separate final core measurements put metadata-only warm cache opening at
+35–43 ms; the frontend table additionally includes Reader and application-state
+setup and selected-body acceptance. Older caches can incur a one-time metadata/manifest upgrade on first
+opening; that work is not included in these warm-cache measurements.

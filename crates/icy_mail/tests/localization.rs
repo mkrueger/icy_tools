@@ -56,6 +56,11 @@ fn german_locale_formats_labels_plurals_and_placeholders() {
     assert_eq!(loader.current_languages()[0], "de".parse::<LanguageIdentifier>().unwrap());
     assert_eq!(loader.get("toolbar-open"), "Öffnen");
     assert_eq!(loader.get("settings-title"), "Einstellungen");
+    assert_eq!(loader.get("settings-extraction-cache-days"), "Entpackte Pakete aufbewahren (Tage)");
+    let cache_help = loader.get("settings-extraction-cache-help");
+    assert!(cache_help.contains("letzten Nutzung"));
+    assert!(cache_help.contains("nächsten Öffnen"));
+    assert!(cache_help.contains("0 deaktiviert"));
     assert_eq!(loader.get("folder-outbox"), "Postausgang");
     assert_eq!(loader.get("address-title-manage"), "Adressbuch");
 

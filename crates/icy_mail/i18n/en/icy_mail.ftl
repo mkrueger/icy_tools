@@ -221,6 +221,10 @@ settings-reading-pane-right = Right of the list
 settings-zoom-fit-width = Fit Width
 settings-zoom-fit = Fit
 settings-section-writing = Writing
+settings-section-cache = Packet cache
+loading-preload-error = Could not preload packet message data: { $error }
+settings-extraction-cache-days = Keep extracted packets (days)
+settings-extraction-cache-help = Days since last use. Old entries are removed when you next open a packet. 0 disables caching and removes cached entries on the next opening. Changes apply to the next packet load.
 settings-add-random-tagline = Add a random tagline to new messages
 
 # Mail dialogs

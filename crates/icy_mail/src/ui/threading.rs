@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::qwk::MessageInfo;
 
 /// A message as it appears in the list, carrying its place inside a thread.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Row {
     /// Index into `QwkPackage::infos` / `descriptors`.
     pub index: usize,

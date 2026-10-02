@@ -7,6 +7,7 @@ use crate::qwk::QwkPackage;
 fn header(status: u8, number: u32, date_time: &str, to: &str, from: &str, subject: &str, ref_number: u32, blocks: u32, conference: u16) -> Vec<u8> {
     fn field(value: &str, len: usize) -> Vec<u8> {
         let mut bytes = value.as_bytes().to_vec();
+        bytes.truncate(len);
         bytes.resize(len, b' ');
         bytes
     }
@@ -34,6 +35,11 @@ fn header(status: u8, number: u32, date_time: &str, to: &str, from: &str, subjec
 fn message(out: &mut Vec<u8>, number: u32, date_time: &str, from: &str, subject: &str, ref_number: u32, conference: u16, body_lines: usize) {
     // QWK separates body lines with 0xE3, not LF.
     let mut body: Vec<u8> = Vec::new();
+    if subject.len() > 25 {
+        body.extend(b"Subject: ");
+        body.extend(subject.as_bytes());
+        body.extend([0xE3, 0xE3]);
+    }
     for line in 0..body_lines {
         body.extend(format!("line {line}").as_bytes());
         body.push(0xE3);
@@ -185,6 +191,50 @@ fn index_covers_every_message() {
 }
 
 #[test]
+#[ignore = "requires ICY_MAIL_TEST_PACKET pointing to a packet with over 1 GiB of message data"]
+fn large_packet_opens() {
+    let path = std::env::var("ICY_MAIL_TEST_PACKET").expect("set ICY_MAIL_TEST_PACKET to a large QWK packet");
+    let package = QwkPackage::load_from_file(&path).unwrap();
+    let message_bytes: u64 = package.descriptors.iter().map(|descriptor| u64::from(descriptor.block_count) * 128).sum();
+    assert!(
+        message_bytes > 1024 * 1024 * 1024,
+        "the test packet must exceed the archive reader's default 1 GiB entry limit"
+    );
+    assert_eq!(package.infos.len(), package.descriptors.len());
+    assert!(package.infos.iter().enumerate().all(|(index, info)| info.index == index));
+    package.read_message(0).unwrap();
+    package.read_message(package.infos.len() - 1).unwrap();
+}
+
+#[test]
+#[ignore = "requires ICY_MAIL_TEST_PACKET and disk space for its decompressed data"]
+fn large_packet_cache_roundtrip() {
+    let path = std::env::var("ICY_MAIL_TEST_PACKET").expect("set ICY_MAIL_TEST_PACKET to a large QWK packet");
+    let directory = TempDir::new();
+    let cache = crate::qwk::ExtractionCache::new(directory.path().join("cache"), 30);
+    let start = std::time::Instant::now();
+    let cold = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    println!("cold extraction and cache write: {:?}", start.elapsed());
+    let count = cold.infos.len();
+    assert!(count > 0);
+    let first = cold.read_message(0).unwrap();
+    let last = cold.read_message(count - 1).unwrap();
+    let subjects = [cold.infos[0].subject.as_str().to_owned(), cold.infos[count - 1].subject.as_str().to_owned()];
+    drop(cold);
+    for run in 0..3 {
+        let start = std::time::Instant::now();
+        let warm = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+        println!("warm cache load {run}: {:?}", start.elapsed());
+        assert_eq!(warm.infos.len(), count);
+        assert!(warm.infos.iter().enumerate().all(|(index, info)| info.index == index));
+        assert_eq!(warm.read_message(0).unwrap().text, first.text);
+        assert_eq!(warm.read_message(count - 1).unwrap().text, last.text);
+        assert_eq!(warm.infos[0].subject.as_str(), subjects[0]);
+        assert_eq!(warm.infos[count - 1].subject.as_str(), subjects[1]);
+    }
+}
+
+#[test]
 fn index_extracts_header_fields() {
     let (_dir, package) = load();
     let first = &package.infos[0];
@@ -194,6 +244,29 @@ fn index_extracts_header_fields() {
     assert_eq!(first.conference, 1);
     assert_eq!(first.lines, 3);
     assert_eq!(first.date_str, "2020-01-02 10:00");
+}
+
+#[test]
+fn index_extracts_extended_subjects_for_the_message_list() {
+    let subject = "A complete subject that is much longer than twenty-five characters";
+    let mut messages = vec![b' '; 128];
+    message(&mut messages, 14, "01-05-2600:00", "erin", subject, 0, 1, 1);
+
+    let dir = TempDir::new();
+    let path = dir.path().join("LONG.QWK");
+    let file = std::fs::File::create(&path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    zip.start_file("CONTROL.DAT", options).unwrap();
+    zip.write_all(&control_dat()).unwrap();
+    zip.start_file("MESSAGES.DAT", options).unwrap();
+    zip.write_all(&messages).unwrap();
+    zip.finish().unwrap();
+
+    let package = QwkPackage::load_from_file(&path).unwrap();
+    assert_eq!(package.infos.len(), 1);
+    assert_eq!(package.infos[0].subject, subject);
+    assert_eq!(package.infos[0].subject_key, subject.to_ascii_lowercase());
 }
 
 #[test]

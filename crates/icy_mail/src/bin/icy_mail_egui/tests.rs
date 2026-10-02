@@ -441,12 +441,24 @@ fn settings_preview_live_cancel_restores_and_ok_persists() {
     assert!(matches!(mail.modal, Some(app::Modal::Settings)));
     let output = settle(&context, &mut mail, size);
     label(&output, "Theme");
+    click_label(&context, &mut mail, size, "Packet cache");
+    label(&settle(&context, &mut mail, size), "Keep extracted packets (days)");
+    click_label(&context, &mut mail, size, "30");
+    frame(
+        &context,
+        &mut mail,
+        size,
+        vec![egui::Event::Text("0".into()), key(egui::Key::Enter, egui::Modifiers::NONE)],
+    );
+    assert_eq!(mail.extraction_cache_days, 0, "the numeric field previews the cache retention");
+    click_label(&context, &mut mail, size, "General");
     click_label(&context, &mut mail, size, "Fit Width");
     click_label(&context, &mut mail, size, "200%");
     assert_eq!(mail.settings.scaling_mode, ScalingMode::Manual(2.0), "changes preview live");
     frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
     assert!(mail.modal.is_none());
     assert_eq!(mail.settings.scaling_mode, ScalingMode::FitWidth, "cancel restores the settings");
+    assert_eq!(mail.extraction_cache_days, 30, "cancel restores cache retention too");
     assert!(!dir.path().join("settings.toml").exists());
 
     frame(&context, &mut mail, size, vec![key(egui::Key::Comma, egui::Modifiers::COMMAND)]);
@@ -469,6 +481,32 @@ fn settings_preview_live_cancel_restores_and_ok_persists() {
     frame(&context, &mut mail, size, vec![]);
     let fresh = app::MailApp::with_storage(&context, dir.path().to_path_buf());
     assert_eq!(fresh.settings.scaling_mode, ScalingMode::Manual(1.0));
+}
+
+#[test]
+fn extraction_cache_settings_are_applied_persisted_and_storage_isolated() {
+    let context = egui::Context::default();
+    let (dir, mut mail) = loaded(&context);
+    assert_eq!(mail.extraction_cache_days, 30);
+    let cache = dir.path().join("packet-extractions");
+    assert!(cache.is_dir(), "isolated application storage also isolates disk extractions");
+    let mut options = mail.current_options(&context);
+    options.extraction_cache_days = 0;
+    mail.apply_options(&context, &options);
+    assert_eq!(mail.current_options(&context).extraction_cache_days, 0);
+    mail.persist_options(&context);
+    let fresh = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    assert_eq!(fresh.extraction_cache_days, 0, "zero is saved rather than replaced by the default");
+    assert!(
+        std::fs::read_dir(&cache).unwrap().any(|entry| entry.unwrap().path().is_dir()),
+        "settings do not clean the cache immediately"
+    );
+    mail.open(dir.path().join("TEST.QWK"), &context);
+    wait(&mut mail, &context);
+    assert!(
+        !std::fs::read_dir(&cache).unwrap().any(|entry| entry.unwrap().path().is_dir()),
+        "the next packet load uses the changed setting"
+    );
 }
 
 #[test]
@@ -969,6 +1007,63 @@ fn wait(mail: &mut app::MailApp, context: &egui::Context) {
     assert!(mail.error.is_none(), "{:?}", mail.error);
 }
 
+#[test]
+#[ignore = "requires ICY_MAIL_TEST_PACKET and an existing packet cache; prints frontend startup timings"]
+fn cached_packet_open_to_first_prepared_body_timings() {
+    use icy_mail::options::ReadingMode;
+    let path = PathBuf::from(std::env::var_os("ICY_MAIL_TEST_PACKET").expect("set ICY_MAIL_TEST_PACKET to a cached QWK packet"));
+    assert!(path.is_file(), "packet does not exist: {}", path.display());
+    println!(
+        "packet: {}\ncache: {}",
+        path.display(),
+        icy_mail::qwk::ExtractionCache::default_directory().unwrap().display()
+    );
+    for mode in [ReadingMode::Classic, ReadingMode::Modern] {
+        let context = egui::Context::default();
+        let storage = packet_tests::TempDir::new();
+        let mut mail = app::MailApp::with_storage(&context, storage.path().to_path_buf());
+        mail.reading_mode = mode;
+        // Only cache discovery uses the normal user location; restore isolated application
+        // storage before polling accepts the package and opens drafts, marks and recent packets.
+        let isolated_storage = mail.storage.take();
+        let started = Instant::now();
+        mail.open(path.clone(), &context);
+        mail.storage = isolated_storage;
+        let deadline = started + Duration::from_secs(120);
+        let mut reader_ready = None;
+        loop {
+            mail.poll(&context);
+            assert!(mail.error.is_none(), "frontend startup failed: {:?}", mail.error);
+            if mail.reader.package.is_some() && reader_ready.is_none() {
+                reader_ready = Some(started.elapsed());
+            }
+            if mail.loading.is_none()
+                && !mail.body_loading
+                && mail.rendered.is_some()
+                && mail.rendered == mail.reader.selected_message
+                && mail.loader.body_request.is_some_and(|request| request.mode == mode)
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline, "frontend startup timed out for {mode:?}");
+            std::thread::yield_now();
+        }
+        let elapsed = started.elapsed();
+        mail.loader.cancel_preload();
+        let reader_ready = reader_ready.expect("package metadata reached the Reader");
+        assert!(mail.reader.filter.is_empty() && !mail.loader.searching && mail.loader.search_query.is_none());
+        assert_eq!(mail.modern_items.is_some(), mode == ReadingMode::Modern);
+        println!(
+            "{mode:?}: {} messages, selected {:?}; cache load + Reader setup {:?}; selected-body worker + acceptance {:?}; open-to-first prepared body {:?}",
+            mail.reader.package.as_ref().unwrap().message_count(),
+            mail.reader.selected_message,
+            reader_ready,
+            elapsed.saturating_sub(reader_ready),
+            elapsed,
+        );
+    }
+}
+
 fn key(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
     egui::Event::Key {
         key,
@@ -1173,8 +1268,12 @@ fn stale_package_and_body_results_cannot_replace_current_mail() {
     mail.loader
         .sender
         .send(loading::Event::Body(
-            8,
-            icy_mail::reader::render_body(b"STALE").map_err(|error| error.to_string()),
+            loading::BodyRequest {
+                generation: 8,
+                source: loading::BodySource::Message(0),
+                mode: mail.reading_mode,
+            },
+            Err("stale body failure".into()),
         ))
         .unwrap();
     mail.poll(&context);
@@ -1191,6 +1290,92 @@ fn stale_package_and_body_results_cannot_replace_current_mail() {
 }
 
 #[test]
+fn stale_preload_results_do_not_replace_current_packet_errors() {
+    let context = egui::Context::default();
+    let (_dir, mut mail) = loaded(&context);
+    let previous_packet = mail.loader.package_generation;
+    let previous_preload = mail.loader.preload_generation();
+    mail.loader.package_generation = mail.loader.package_generation.wrapping_add(1);
+    mail.loader.cancel_preload();
+    mail.error = Some("current packet error".into());
+    mail.loader
+        .sender
+        .send(loading::Event::Preloaded(
+            previous_packet,
+            previous_preload,
+            Err("stale preload failure".into()),
+        ))
+        .unwrap();
+    mail.poll(&context);
+    assert_eq!(mail.error.as_deref(), Some("current packet error"));
+    let generation = mail.loader.preload_generation();
+    mail.loader
+        .sender
+        .send(loading::Event::Preloaded(
+            mail.loader.package_generation,
+            generation,
+            Err("current preload failure".into()),
+        ))
+        .unwrap();
+    mail.poll(&context);
+    assert!(mail.error.as_ref().unwrap().contains("current preload failure"));
+}
+
+#[test]
+fn changing_reading_mode_requests_matching_background_preparation() {
+    use icy_mail::options::ReadingMode;
+    let context = egui::Context::default();
+    let (_dir, mut mail) = loaded(&context);
+    assert!(mail.modern_items.is_some(), "modern content is prepared before the first UI paint");
+    mail.reading_mode = ReadingMode::Classic;
+    mail.poll(&context);
+    wait(&mut mail, &context);
+    assert!(mail.modern_items.is_none());
+    assert_eq!(mail.loader.body_request.unwrap().mode, ReadingMode::Classic);
+    mail.reading_mode = ReadingMode::Modern;
+    mail.poll(&context);
+    let mut wrong_mode = mail.loader.body_request.unwrap();
+    wrong_mode.mode = ReadingMode::Classic;
+    mail.loader.sender.send(loading::Event::Body(wrong_mode, Err("wrong mode".into()))).unwrap();
+    mail.poll(&context);
+    assert!(mail.error.is_none(), "a result for another mode must not replace the requested preparation");
+    wait(&mut mail, &context);
+    assert!(mail.modern_items.is_some());
+    assert_eq!(mail.loader.body_request.unwrap().mode, ReadingMode::Modern);
+}
+
+#[test]
+fn modern_bulletin_paint_uses_worker_content_without_reparsing_file_data() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    mail.select_folder(app::Folder::Bulletins);
+    mail.poll(&context);
+    wait(&mut mail, &context);
+    let prepared_text = |mail: &app::MailApp| {
+        mail.modern_items
+            .as_ref()
+            .unwrap()
+            .1
+            .iter()
+            .filter_map(|item| match item {
+                modern_view::Item::Text(line) => Some(line.spans.iter().map(|span| span.text.as_str()).collect::<String>()),
+                modern_view::Item::Art(_) => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let original = prepared_text(&mail);
+    let package = Arc::make_mut(mail.reader.package.as_mut().unwrap());
+    Arc::make_mut(&mut package.files)[0].data = b"changed after the worker finished".to_vec();
+    let package_key = Arc::as_ptr(mail.reader.package.as_ref().unwrap()) as usize;
+    mail.modern_items.as_mut().unwrap().0 .0 = package_key;
+    let generation = mail.loader.body_generation;
+    settle(&context, &mut mail, egui::vec2(1100.0, 760.0));
+    assert_eq!(prepared_text(&mail), original, "painting must not decode the bulletin again");
+    assert_eq!(mail.loader.body_generation, generation);
+}
+
+#[test]
 fn selection_change_and_empty_filter_drop_old_body_results() {
     let context = egui::Context::default();
     let (_dir, mut mail) = loaded(&context);
@@ -1204,8 +1389,12 @@ fn selection_change_and_empty_filter_drop_old_body_results() {
     mail.loader
         .sender
         .send(loading::Event::Body(
-            generation,
-            icy_mail::reader::render_body(b"STALE").map_err(|error| error.to_string()),
+            loading::BodyRequest {
+                generation,
+                source: loading::BodySource::Message(3),
+                mode: mail.reading_mode,
+            },
+            Err("stale body failure".into()),
         ))
         .unwrap();
     mail.poll(&context);
