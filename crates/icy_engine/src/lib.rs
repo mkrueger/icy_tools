@@ -117,6 +117,7 @@ pub use selection::*;
 mod selection_mask;
 mod url_scanner;
 pub use selection_mask::*;
+pub use url_scanner::find_url_ranges;
 
 mod parser_sink;
 pub use parser_sink::*;

@@ -159,6 +159,9 @@ pub struct MailApp {
     /// and keyed by the packet and message they came from.
     pub modern_items: Option<((usize, Document), Vec<Item>)>,
     pub modern_layout_pending: bool,
+    pub modern_selection_snapshot: Option<egui::text_selection::LabelSelectionState>,
+    pub modern_context_menu_open: bool,
+    pub copy_modern_selection: bool,
     /// Long quotes the reader unfolded in the shown document, by their first item.
     pub open_quotes: std::collections::HashSet<usize>,
     /// Networks the user opened or closed in the sidebar, by lowercased name; others follow their unread state.
@@ -265,6 +268,9 @@ impl MailApp {
             extraction_cache_days: options.extraction_cache_days,
             modern_items: None,
             modern_layout_pending: false,
+            modern_selection_snapshot: None,
+            modern_context_menu_open: false,
+            copy_modern_selection: false,
             open_quotes: std::collections::HashSet::new(),
             network_open: HashMap::new(),
             options,

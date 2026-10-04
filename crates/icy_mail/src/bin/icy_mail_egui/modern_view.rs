@@ -16,7 +16,63 @@ use icy_mail::{
     LANGUAGE_LOADER,
 };
 
-use super::{app::MailApp, widgets};
+use super::{app::MailApp, reader_view::open_link_on_click, widgets};
+
+fn link_rects(galley: &egui::Galley, range: Range<usize>, position: egui::Pos2) -> Vec<egui::Rect> {
+    let mut offset = 0;
+    let mut rects = Vec::new();
+    for row in &galley.rows {
+        let start = range.start.saturating_sub(offset);
+        let end = range.end.saturating_sub(offset).min(row.glyphs.len());
+        if start < end {
+            let first = &row.glyphs[start];
+            let last = &row.glyphs[end - 1];
+            rects.push(
+                egui::Rect::from_min_max(
+                    egui::pos2(row.pos.x + first.pos.x, row.pos.y),
+                    egui::pos2(row.pos.x + last.max_x(), row.pos.y + row.size.y),
+                )
+                .translate(position.to_vec2()),
+            );
+        }
+        offset += row.char_count_including_newline();
+    }
+    rects
+}
+
+fn text_label(ui: &mut egui::Ui, mut job: egui::text::LayoutJob, needle: &str, preserve_selection: bool) -> egui::Response {
+    let links = icy_mail::text::web_links(&job.text);
+    let color = ui.visuals().hyperlink_color;
+    widgets::format_ranges(&mut job, &links, |format| {
+        format.color = color;
+        format.underline = egui::Stroke::new(1.0, color);
+    });
+    widgets::highlight(&mut job, 0, needle, ui);
+    let (position, galley, response) = egui::Label::new(job).selectable(true).layout_in_ui(ui);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), galley.text()));
+    if ui.is_rect_visible(response.rect) {
+        let hovered_link = response.hover_pos().and_then(|pointer| {
+            links.iter().find(|range| {
+                let start = galley.text()[..range.start].chars().count();
+                let end = start + galley.text()[range.start..range.end].chars().count();
+                link_rects(&galley, start..end, position)
+                    .iter()
+                    .any(|rect| rect.intersect(ui.clip_rect()).contains(pointer))
+            })
+        });
+        // egui treats any pressed mouse button as a new text selection.
+        // Suppress pointer input only while painting, not while allocating the context-menu response.
+        let pointer = preserve_selection.then(|| ui.ctx().input_mut(|input| std::mem::take(&mut input.pointer)));
+        egui::text_selection::LabelSelectionState::label_text_selection(ui, &response, position, galley.clone(), ui.visuals().text_color(), egui::Stroke::NONE);
+        if let Some(pointer) = pointer {
+            ui.ctx().input_mut(|input| input.pointer = pointer);
+        }
+        if let Some(range) = hovered_link {
+            open_link_on_click(ui, &response, &galley.text()[range.clone()]);
+        }
+    }
+    response
+}
 
 /// Quotes of at least this many lines fold away below their first [`QUOTE_CONTEXT`] lines.
 const FOLD_QUOTE_LINES: usize = 6;
@@ -176,6 +232,7 @@ fn art_rows(lines: &[Vec<StyledSpan>]) -> Vec<bool> {
         Decorated,
         Plain,
     }
+    let mut art = framed_rows(lines);
     let blank = |spans: &Vec<StyledSpan>| spans.iter().all(|span| span.text.trim().is_empty() && span.background.is_none());
     let mut paragraphs: Vec<(Range<usize>, Kind)> = Vec::new();
     let mut row = 0;
@@ -189,7 +246,7 @@ fn art_rows(lines: &[Vec<StyledSpan>]) -> Vec<bool> {
             row += 1;
         }
         let rows = &lines[start..row];
-        let kind = if rows.iter().any(|spans| is_art(spans)) {
+        let kind = if art[start..row].iter().any(|&framed| framed) || rows.iter().any(|spans| is_art(spans)) {
             Kind::Art
         } else if rows.iter().any(|spans| {
             let text: String = spans.iter().map(|span| span.text.as_str()).collect();
@@ -202,7 +259,6 @@ fn art_rows(lines: &[Vec<StyledSpan>]) -> Vec<bool> {
         paragraphs.push((start..row, kind));
     }
 
-    let mut art = vec![false; lines.len()];
     let mut index = 0;
     while index < paragraphs.len() {
         if paragraphs[index].1 != Kind::Art {
@@ -246,6 +302,59 @@ fn art_rows(lines: &[Vec<StyledSpan>]) -> Vec<bool> {
         index = next;
     }
     art
+}
+
+/// Closed ASCII/box-drawing frames keep their cell grid, including tall interiors and blank rows.
+fn framed_rows(lines: &[Vec<StyledSpan>]) -> Vec<bool> {
+    let mut framed = vec![false; lines.len()];
+    let mut frame: Option<(usize, usize, usize)> = None;
+    for (row, spans) in lines.iter().enumerate() {
+        let text: Vec<char> = spans.iter().flat_map(|span| span.text.chars()).collect();
+        let Some(column) = text.iter().position(|ch| !ch.is_whitespace()) else {
+            continue;
+        };
+        let left = text[column];
+        let corner = matches!(
+            left,
+            '.' | ':'
+                | '+'
+                | '\''
+                | '`'
+                | '\u{250c}'
+                | '\u{2514}'
+                | '\u{251c}'
+                | '\u{250f}'
+                | '\u{2517}'
+                | '\u{2523}'
+                | '\u{2554}'
+                | '\u{255a}'
+                | '\u{2560}'
+                | '\u{256d}'
+                | '\u{2570}'
+        );
+        let horizontal = |ch: &char| matches!(ch, '-' | '=' | '\u{2500}' | '\u{2501}' | '\u{2550}');
+        let border = corner
+            && text[column + 1..].iter().filter(|ch| horizontal(ch)).count() >= 6
+            && text[column + 1..]
+                .iter()
+                .all(|&ch| ch.is_whitespace() || matches!(ch, '-' | '=' | '.' | ':' | '+' | '\'' | '`') || is_box_drawing(ch));
+        if border {
+            if let Some((start, previous_column, sides)) = frame {
+                if previous_column == column && sides > 0 {
+                    framed[start..=row].fill(true);
+                }
+            }
+            // A horizontal divider can close one section and open the next.
+            frame = Some((row, column, 0));
+        } else if let Some((_, previous_column, sides)) = &mut frame {
+            if *previous_column == column && matches!(left, '|' | ':' | '\u{2502}' | '\u{2503}' | '\u{2551}') {
+                *sides += 1;
+            } else {
+                frame = None;
+            }
+        }
+    }
+    framed
 }
 
 /// Which rows of the classic rendering continue on the next row because their line was longer than
@@ -470,6 +579,8 @@ impl MailApp {
                 }
             };
             self.modern_items = Some((key, rendered));
+            self.modern_selection_snapshot = None;
+            self.modern_context_menu_open = false;
             self.open_quotes.clear();
         }
         if let Some(zoom) = ui.input(|input| (input.zoom_delta() != 1.0).then(|| input.zoom_delta())) {
@@ -500,6 +611,18 @@ impl MailApp {
             String::new()
         };
         let text_width = (area.width() - MARGIN.x * 2.0).max(40.0);
+        let copy_selection = std::mem::take(&mut self.copy_modern_selection);
+        let preserve_selection = !copy_selection
+            && (self.modern_context_menu_open
+                || ui.input(|input| {
+                    input.pointer.secondary_pressed()
+                        || input.pointer.secondary_down()
+                        || input.pointer.secondary_released()
+                        || input.pointer.secondary_clicked()
+                }));
+        if copy_selection {
+            ui.ctx().input_mut(|input| input.events.push(egui::Event::Copy));
+        }
         // One art cell as wide as a character of the fixed-width text; the font's cells are 8 pixels wide.
         let cell = ui.ctx().fonts_mut(|fonts| fonts.glyph_width(&fixed, 'M'));
         let art_scale = cell / (8.0 * ART_OVERSAMPLING as f32);
@@ -626,10 +749,7 @@ impl MailApp {
                     let mut response = ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover());
                     for part in parts {
                         let part_response = match part {
-                            Part::Text(mut job) => {
-                                widgets::highlight(&mut job, 0, &needle, ui);
-                                ui.add(egui::Label::new(job).selectable(true))
-                            }
+                            Part::Text(job) => text_label(ui, job, &needle, preserve_selection),
                             Part::Art(texture) => {
                                 let size = texture.size_vec2() * art_scale;
                                 let size = size * (text_width / size.x).min(1.0);
@@ -659,6 +779,23 @@ impl MailApp {
                 })
                 .inner
         });
+        if copy_selection {
+            ui.ctx().input_mut(|input| {
+                let event = input.events.pop();
+                debug_assert!(matches!(event, Some(egui::Event::Copy)));
+            });
+        }
+        {
+            let plugin = ui.ctx().plugin::<egui::text_selection::LabelSelectionState>();
+            let mut selection = plugin.lock();
+            if preserve_selection {
+                if let Some(snapshot) = self.modern_selection_snapshot.clone() {
+                    *selection = snapshot;
+                }
+            } else {
+                self.modern_selection_snapshot = Some(selection.clone());
+            }
+        }
         if let Some((start, open)) = toggle {
             if open {
                 self.open_quotes.insert(start);

@@ -778,6 +778,7 @@ fn render_with(data: &[u8], parser: &mut dyn icy_parser_core::CommandParser, wid
     let mut screen = TextScreen::new(Size::new(width, height as i32));
     screen.terminal_state_mut().is_terminal_buffer = false;
     icy_engine::load_with_parser(&mut screen, parser, &normalized, true, -1)?;
+    screen.update_hyperlinks();
     screen.caret_mut().visible = false;
     Ok(screen)
 }

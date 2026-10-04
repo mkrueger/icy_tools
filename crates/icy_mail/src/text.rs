@@ -157,6 +157,20 @@ pub fn find_ignore_case(text: &str, needle: &str) -> Vec<std::ops::Range<usize>>
     matches
 }
 
+/// Only web links are opened from packet contents, never local files or arbitrary URL handlers.
+#[must_use]
+pub fn is_web_link(text: &str) -> bool {
+    url::Url::parse(text).is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
+}
+
+#[must_use]
+pub fn web_links(text: &str) -> Vec<std::ops::Range<usize>> {
+    icy_engine::find_url_ranges(text)
+        .into_iter()
+        .filter(|range| is_web_link(&text[range.clone()]))
+        .collect()
+}
+
 /// Message text as UTF-8 for saving: CP437 bytes become their Unicode characters, while ASCII,
 /// control codes and ANSI escape sequences stay as they are. Text that already is UTF-8 is kept.
 #[must_use]
@@ -303,6 +317,15 @@ fn has_style(span: &StyledSpan) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detects_web_links_with_unicode_and_surrounding_punctuation() {
+        let text = "Gr\u{fc}\u{df}e (https://example.org/a_(b)?x=1&y=2), https://example.org/c#part.";
+        let links: Vec<_> = web_links(text).into_iter().map(|range| &text[range]).collect();
+        assert_eq!(links, ["https://example.org/a_(b)?x=1&y=2", "https://example.org/c#part"]);
+        assert!(web_links("file:///etc/passwd ssh://example.org javascript:alert(1) ordinary text").is_empty());
+        assert!(!is_web_link("https://"));
+    }
 
     #[test]
     fn finds_matches_ignoring_case() {

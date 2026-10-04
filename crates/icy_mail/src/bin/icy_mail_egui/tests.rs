@@ -2975,6 +2975,156 @@ fn modern_reading_mode_sets_lines_by_content() {
 }
 
 #[test]
+#[ignore = "requires ICY_MAIL_TEST_MESSAGE pointing to an exported UTF-8 ANSI message"]
+fn modern_reading_mode_exported_ansi_message_stays_one_art_block() {
+    use modern_view::{blocks, Block};
+
+    let path = std::env::var_os("ICY_MAIL_TEST_MESSAGE").expect("set ICY_MAIL_TEST_MESSAGE to the exported ANSI message");
+    let message = std::fs::read_to_string(path).unwrap();
+    let body = icy_mail::editor::encode_message(&message);
+    let classic = icy_mail::reader::render_body(&body).unwrap();
+    let wide = icy_mail::reader::render_body_wide(&body).unwrap();
+    let lines = icy_mail::text::styled_lines(&classic);
+    let plain: Vec<String> = lines.iter().map(|spans| spans.iter().map(|span| span.text.as_str()).collect()).collect();
+    let footer = plain
+        .iter()
+        .position(|line| line.starts_with("--- "))
+        .expect("the message has a separate footer");
+    let end = plain[..footer].iter().rposition(|line| !line.trim().is_empty()).unwrap() + 1;
+    let parts = blocks(&classic, &wide);
+    let art: Vec<_> = parts
+        .iter()
+        .filter_map(|block| match block {
+            Block::Art { rows, .. } => Some(rows.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(art, [0..end as i32], "the complete advertisement must be one ANSI block");
+    assert!(
+        parts
+            .iter()
+            .any(|block| matches!(block, Block::Text(line) if line.spans.iter().any(|span| span.text.contains("--- ")))),
+        "the message footer must remain text"
+    );
+}
+
+#[test]
+fn modern_reading_mode_keeps_backtick_frames_built_with_cursor_commands() {
+    use modern_view::{blocks, Block};
+
+    let mut body = b"\xdb\xdb Banner\r\n\r\n".to_vec();
+    for _ in 0..3 {
+        body.extend_from_slice(b"\x1b[1;30m  \x1b[s\r\n\x1b[u\x1b[0;37m \x1b[1;36m.---\x1b[0;36m--- -\x1b[4C-\r\n");
+        for _ in 0..20 {
+            body.extend_from_slice(b"\x1b[1;30m  \x1b[s\r\n\x1b[u\x1b[0;37m \x1b[36m|\x1b[37m\x1b[10C\x1b[33mTitle\x1b[37m\x1b[8CDescription\r\n");
+        }
+        body.extend_from_slice(b"\x1b[3C\x1b[s\r\n\x1b[u\x1b[36m`----------------- -- - ---'\x1b[0m\r\n\r\n");
+    }
+    body.extend_from_slice(b"\xdb\xdb Footer\r\n");
+    let classic = icy_mail::reader::render_body(&body).unwrap();
+    let wide = icy_mail::reader::render_body_wide(&body).unwrap();
+    let end = icy_mail::text::styled_lines(&classic).len() as i32;
+    assert!(
+        matches!(blocks(&classic, &wide).as_slice(), [Block::Art { rows, .. }] if *rows == (0..end)),
+        "backtick corners and cursor save/restore must not split the framed advertisement into text"
+    );
+}
+
+#[test]
+fn modern_reading_mode_keeps_tall_bordered_listings_as_one_art_block() {
+    use modern_view::{blocks, Block};
+
+    for (top, side, divider, bottom) in [
+        (
+            b"  .------ - -\r\n".as_slice(),
+            b"  |".as_slice(),
+            b"  :-----------------------------:\r\n".as_slice(),
+            b"  :-----------------------------:\r\n".as_slice(),
+        ),
+        (
+            b"  \xda\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xbf\r\n".as_slice(),
+            b"  \xb3".as_slice(),
+            b"  \xc3\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xb4\r\n".as_slice(),
+            b"  \xc0\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xc4\xd9\r\n".as_slice(),
+        ),
+    ] {
+        let mut body = b"\xdb\xdb ANSI banner\r\n\r\n".to_vec();
+        for _ in 0..2 {
+            body.extend_from_slice(top);
+            for row in 0..24 {
+                body.extend_from_slice(b"\x1b[36m");
+                body.extend_from_slice(side);
+                body.extend_from_slice(b" \x1b[1;33mGame title    \x1b[0;37mDescription\r\n");
+                if row % 4 == 0 {
+                    body.extend_from_slice(b"\r\n");
+                }
+                if row == 12 {
+                    body.extend_from_slice(divider);
+                }
+            }
+            body.extend_from_slice(bottom);
+            body.extend_from_slice(b"\r\n");
+        }
+        body.extend_from_slice(b"\xdf\xdf ANSI footer\r\n");
+        let end = body.iter().filter(|&&byte| byte == b'\n').count() as i32;
+        body.extend_from_slice(b"\r\n\r\n\r\n\r\nOrdinary prose after the advertisement.\r\n");
+        let classic = icy_mail::reader::render_body(&body).unwrap();
+        let wide = icy_mail::reader::render_body_wide(&body).unwrap();
+        let parts = blocks(&classic, &wide);
+        let art: Vec<_> = parts
+            .iter()
+            .filter_map(|block| match block {
+                Block::Art { rows, .. } => Some(rows.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(art, [0..end], "all framed sections must retain their ANSI cell layout");
+        assert!(parts.iter().any(|block| matches!(
+            block,
+            Block::Text(line) if line.spans.iter().map(|span| span.text.as_str()).collect::<String>() == "Ordinary prose after the advertisement."
+        )));
+    }
+}
+
+#[test]
+fn modern_reading_mode_does_not_bridge_unframed_or_broken_listings() {
+    use modern_view::{blocks, Block};
+
+    let classify = |body: &[u8]| {
+        blocks(
+            &icy_mail::reader::render_body(body).unwrap(),
+            &icy_mail::reader::render_body_wide(body).unwrap(),
+        )
+    };
+    let decorated = b"\x1b[33mGame title    Description\x1b[0m\r\n".repeat(24);
+    let body = [b"\xdb\r\n\r\n".as_slice(), &decorated, b"\r\n\xdf\r\n"].concat();
+    let parts = classify(&body);
+    assert_eq!(parts.iter().filter(|block| matches!(block, Block::Art { .. })).count(), 2);
+    assert_eq!(
+        parts
+            .iter()
+            .filter(|block| matches!(block, Block::Text(line) if line.spans.iter().any(|span| span.text.contains("Game title"))))
+            .count(),
+        24,
+        "unframed listings between unrelated pictures must remain text"
+    );
+
+    for body in [
+        b".----------.\r\n| Unclosed listing\r\n| More text\r\n".as_slice(),
+        b".----------.\r\n| Left edge\r\n  | Different column\r\n:----------:\r\n".as_slice(),
+        b".----------.\r\nOrdinary prose without a frame edge\r\n:----------:\r\n".as_slice(),
+        b".----------.\r\n:----------:\r\n".as_slice(),
+    ] {
+        assert!(
+            classify(body).iter().all(|block| matches!(block, Block::Text(_))),
+            "incomplete frames and unrelated separators must not become art"
+        );
+    }
+    let standalone = classify(b".----------.\r\n| Bordered listing\r\n:----------:\r\n");
+    assert!(matches!(standalone.as_slice(), [Block::Art { rows, .. }] if *rows == (0..3)));
+}
+
+#[test]
 fn modern_reading_mode_shows_selectable_text_and_keeps_keyboard_reading() {
     let context = egui::Context::default();
     appearance::apply(&context);
@@ -2997,6 +3147,288 @@ fn modern_reading_mode_shows_selectable_text_and_keeps_keyboard_reading() {
     frame(&context, &mut mail, size, vec![key(egui::Key::Space, egui::Modifiers::NONE)]);
     assert_ne!(mail.reader.selected_message, first, "Space at the end continues with the next unread message");
     assert!(mail.current_options(&context).reading_mode == icy_mail::options::ReadingMode::Modern);
+}
+
+#[test]
+fn classic_reader_opens_wrapped_links_but_not_drags_or_right_clicks() {
+    let context = egui::Context::default();
+    let (_dir, mut mail) = loaded(&context);
+    mail.reading_mode = icy_mail::options::ReadingMode::Classic;
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    let url = format!("https://example.org/{}", "path/".repeat(20));
+    mail.screen = icy_engine_gui::egui::screen::ScreenView::new(icy_mail::reader::render_body(url.as_bytes()).unwrap());
+    settle(&context, &mut mail, size);
+    {
+        let mut info = mail.screen.terminal.render_info.write();
+        info.bounds_x = mail.content_rect.left();
+        info.bounds_y = mail.content_rect.top();
+        info.display_scale = 1.0;
+        info.font_width = 8.0;
+        info.font_height = 16.0;
+        info.viewport_width = 640.0;
+        info.viewport_height = mail.content_rect.height();
+    }
+    let first = mail.content_rect.min + egui::vec2(4.0, 8.0);
+    let continuation = first + egui::vec2(16.0, 16.0);
+    let has_open_url = |output: &egui::FullOutput| {
+        output
+            .platform_output
+            .commands
+            .iter()
+            .any(|command| matches!(command, egui::OutputCommand::OpenUrl(_)))
+    };
+    frame(&context, &mut mail, size, pointer(continuation, true));
+    let clicked = frame(&context, &mut mail, size, pointer(continuation, false));
+    assert!(clicked
+        .platform_output
+        .commands
+        .iter()
+        .any(|command| matches!(command, egui::OutputCommand::OpenUrl(open) if open.url == url)));
+
+    frame(&context, &mut mail, size, pointer(first, true));
+    frame(&context, &mut mail, size, vec![egui::Event::PointerMoved(continuation)]);
+    let released = frame(&context, &mut mail, size, pointer(continuation, false));
+    assert!(!has_open_url(&released), "dragging must not open the link");
+    assert!(mail.screen.terminal.screen.lock().selection().is_some());
+    for pressed in [true, false] {
+        let output = frame(
+            &context,
+            &mut mail,
+            size,
+            vec![
+                egui::Event::PointerMoved(first),
+                egui::Event::PointerButton {
+                    pos: first,
+                    button: egui::PointerButton::Secondary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        assert!(!has_open_url(&output));
+    }
+    assert!(mail.screen.terminal.screen.lock().selection().is_some());
+    let menu = frame(&context, &mut mail, size, vec![]);
+    label(&menu, "Copy");
+}
+
+#[test]
+fn modern_reader_links_wrap_and_keep_selection_and_context_menus() {
+    use icy_mail::text::StyledSpan;
+
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    mail.reading_mode = icy_mail::options::ReadingMode::Modern;
+    let size = egui::vec2(900.0, 760.0);
+    settle(&context, &mut mail, size);
+    let url = format!("https://example.org/{}?q=1#part", "section/".repeat(25));
+    let text = format!("Gr\u{fc}\u{df}e {url}.\nNot a link: file:///etc/passwd");
+    let span = |text: String, bold| StyledSpan {
+        text,
+        foreground: None,
+        background: None,
+        bold,
+        italic: false,
+        underline: false,
+        strikethrough: false,
+    };
+    let key = (
+        Arc::as_ptr(mail.reader.package.as_ref().unwrap()) as usize,
+        modern_view::Document::Message(mail.reader.selected_message.unwrap()),
+    );
+    mail.modern_items = Some((
+        key,
+        vec![modern_view::Item::Text(modern_view::ModernLine {
+            spans: vec![span(text[..30].into(), false), span(text[30..].into(), true)],
+            fixed: false,
+            quote: false,
+        })],
+    ));
+    let output = settle(&context, &mut mail, size);
+    let (position, galley) = output
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Text(shape) if shape.galley.text() == text => Some((shape.pos, shape.galley.clone())),
+            _ => None,
+        })
+        .expect("the message text is rendered");
+    let start = "Gr\u{fc}\u{df}e ".chars().count();
+    let end = start + url.chars().count();
+    let mut offset = 0;
+    let mut points = Vec::new();
+    for row in &galley.rows {
+        let first = start.saturating_sub(offset);
+        let last = end.saturating_sub(offset).min(row.glyphs.len());
+        if first < last {
+            let glyph = &row.glyphs[first];
+            points.push(position + row.pos.to_vec2() + egui::vec2(glyph.pos.x + glyph.advance_width / 2.0, row.size.y / 2.0));
+        }
+        offset += row.char_count_including_newline();
+    }
+    assert!(points.len() >= 2, "the URL must wrap for this test");
+    let opens_url = |output: &egui::FullOutput| {
+        output
+            .platform_output
+            .commands
+            .iter()
+            .any(|command| matches!(command, egui::OutputCommand::OpenUrl(open) if open.url == url))
+    };
+    let hovered = frame(&context, &mut mail, size, vec![egui::Event::PointerMoved(points[1])]);
+    assert_eq!(hovered.platform_output.cursor_icon, egui::CursorIcon::PointingHand);
+    frame(&context, &mut mail, size, pointer(points[1], true));
+    let clicked = frame(&context, &mut mail, size, pointer(points[1], false));
+    assert!(opens_url(&clicked), "clicking a wrapped continuation opens the complete URL");
+
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, pointer(points[0], true));
+    let dragged = frame(&context, &mut mail, size, vec![egui::Event::PointerMoved(points[1])]);
+    assert!(!opens_url(&dragged));
+    let released = frame(&context, &mut mail, size, pointer(points[1], false));
+    assert!(!opens_url(&released), "dragging a link selects text without opening it");
+    let copied = frame(&context, &mut mail, size, vec![egui::Event::Copy]);
+    assert!(copied
+        .platform_output
+        .commands
+        .iter()
+        .any(|command| matches!(command, egui::OutputCommand::CopyText(text) if !text.is_empty() && url.contains(text))));
+    for pressed in [true, false] {
+        let output = frame(
+            &context,
+            &mut mail,
+            size,
+            vec![
+                egui::Event::PointerMoved(points[0]),
+                egui::Event::PointerButton {
+                    pos: points[0],
+                    button: egui::PointerButton::Secondary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        assert!(!opens_url(&output), "right-click opens the context menu, not the URL");
+    }
+    let menu = frame(&context, &mut mail, size, vec![]);
+    label(&menu, "Copy");
+}
+
+#[test]
+fn modern_text_selection_survives_context_menu_and_can_be_copied() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    mail.reading_mode = icy_mail::options::ReadingMode::Modern;
+    let output = settle(&context, &mut mail, size);
+    let body = output
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.text().starts_with("line 0\nline 1\n") => Some(text.galley.rect.translate(text.pos.to_vec2())),
+            _ => None,
+        })
+        .expect("the message is drawn as text");
+    let start = body.left_top() + egui::vec2(2.0, 8.0);
+    let end = start + egui::vec2(30.0, 0.0);
+    frame(&context, &mut mail, size, pointer(start, true));
+    frame(&context, &mut mail, size, vec![egui::Event::PointerMoved(end)]);
+    frame(&context, &mut mail, size, pointer(end, false));
+    assert!(context.plugin::<egui::text_selection::LabelSelectionState>().lock().has_selection());
+    let before = frame(&context, &mut mail, size, vec![egui::Event::Copy]);
+    let selected = before
+        .platform_output
+        .commands
+        .iter()
+        .find_map(|command| match command {
+            egui::OutputCommand::CopyText(text) if !text.is_empty() => Some(text.clone()),
+            _ => None,
+        })
+        .expect("the initial selection can be copied");
+    let painted_selection = |output: &egui::FullOutput| {
+        output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text().starts_with("line 0\nline 1\n") => Some(
+                    text.galley
+                        .rows
+                        .iter()
+                        .flat_map(|row| row.visuals.mesh.vertices.iter().map(|vertex| (vertex.pos, vertex.color)))
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .expect("the selected message remains painted")
+    };
+    let original_paint = painted_selection(&before);
+
+    let context_position = start + egui::vec2(15.0, 0.0);
+    let secondary = |pressed| {
+        vec![
+            egui::Event::PointerMoved(context_position),
+            egui::Event::PointerButton {
+                pos: context_position,
+                button: egui::PointerButton::Secondary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ]
+    };
+    let pressed = frame(&context, &mut mail, size, secondary(true));
+    assert_eq!(
+        painted_selection(&pressed),
+        original_paint,
+        "right-click press must not change the painted selection"
+    );
+    let held = frame(&context, &mut mail, size, vec![]);
+    assert_eq!(
+        painted_selection(&held),
+        original_paint,
+        "holding right-click must not change the painted selection"
+    );
+    let released = frame(&context, &mut mail, size, secondary(false));
+    assert_eq!(
+        painted_selection(&released),
+        original_paint,
+        "right-click release must not change the painted selection"
+    );
+    assert!(
+        context.plugin::<egui::text_selection::LabelSelectionState>().lock().has_selection(),
+        "opening the context menu must preserve the selected text"
+    );
+
+    let menu = frame(&context, &mut mail, size, vec![]);
+    assert_eq!(
+        painted_selection(&menu),
+        original_paint,
+        "opening the menu must not change the painted selection"
+    );
+    let copy = label(&menu, "Copy").center();
+    let copy_pressed = frame(&context, &mut mail, size, pointer(copy, true));
+    assert_eq!(
+        painted_selection(&copy_pressed),
+        original_paint,
+        "pressing Copy must not change the painted selection"
+    );
+    let copy_released = frame(&context, &mut mail, size, pointer(copy, false));
+    assert_eq!(
+        painted_selection(&copy_released),
+        original_paint,
+        "releasing Copy must not change the painted selection"
+    );
+    let copied = frame(&context, &mut mail, size, vec![]);
+    assert!(
+        copied
+            .platform_output
+            .commands
+            .iter()
+            .any(|command| matches!(command, egui::OutputCommand::CopyText(text) if text == &selected)),
+        "{:?}",
+        copied.platform_output.commands
+    );
 }
 
 #[test]

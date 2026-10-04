@@ -677,7 +677,17 @@ pub fn highlight(job: &mut egui::text::LayoutJob, start: usize, needle: &str, ui
         return;
     }
     let background = search_highlight_color(ui.visuals().dark_mode);
-    let mut sections = Vec::with_capacity(job.sections.len() + matches.len() * 2);
+    format_ranges(job, &matches, |format| {
+        format.background = background;
+        format.color = Color32::BLACK;
+    });
+}
+
+pub fn format_ranges(job: &mut egui::text::LayoutJob, ranges: &[std::ops::Range<usize>], mut format_range: impl FnMut(&mut egui::TextFormat)) {
+    if ranges.is_empty() {
+        return;
+    }
+    let mut sections = Vec::with_capacity(job.sections.len() + ranges.len() * 2);
     for section in std::mem::take(&mut job.sections) {
         let mut start = section.byte_range.start;
         let mut leading_space = section.leading_space;
@@ -687,8 +697,7 @@ pub fn highlight(job: &mut egui::text::LayoutJob, start: usize, needle: &str, ui
             }
             let mut format = section.format.clone();
             if marked {
-                format.background = background;
-                format.color = Color32::BLACK;
+                format_range(&mut format);
             }
             sections.push(egui::text::LayoutSection {
                 leading_space: std::mem::take(&mut leading_space),
@@ -696,7 +705,7 @@ pub fn highlight(job: &mut egui::text::LayoutJob, start: usize, needle: &str, ui
                 format,
             });
         };
-        for found in &matches {
+        for found in ranges {
             let (from, to) = (found.start.max(start), found.end.min(section.byte_range.end));
             if from >= to {
                 continue;

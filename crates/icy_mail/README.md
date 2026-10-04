@@ -85,6 +85,15 @@ blocks and renders art pixels there; only texture upload and text layout run on
 the UI thread. Navigation and mode changes discard stale preparations. Editable
 draft and composer previews still render locally.
 
+- Modern mode keeps closed ASCII and box-drawing frames in the original ANSI
+  cell grid, including tall bordered listings, backtick lower-left corners,
+  and their interior blank lines. Frames are detected after ANSI cursor commands
+  have positioned the text.
+  Ordinary text between unrelated art sections stays selectable modern text.
+- HTTP(S) links in the reader open in the browser with a click in both reading
+  modes. Modern mode colors and underlines links, including links that wrap
+  across display lines. Dragging still selects text; Shift/Alt-click does not
+  open links. Right-click preserves the selection and offers **Copy**.
 - Three-pane layout: mailboxes and conferences, message list, and reader.
   The reader sits beside the list on wide windows and below it otherwise;
   **View ▸ Reading Pane** in the main menu or the settings fixes either placement.
@@ -346,6 +355,18 @@ cargo test -p icy_mail --no-default-features --lib
 cargo test -p icy_mail --bin icy_mail
 cargo test -p icy_mail --no-default-features --features legacy-ui --bin icy_mail_legacy
 ```
+
+To check an exported UTF-8 ANSI advertisement against the modern reader's
+art classification without copying the message into the repository:
+
+```sh
+ICY_MAIL_TEST_MESSAGE=/path/to/message.txt \
+  cargo test -p icy_mail --bin icy_mail modern_reading_mode_exported_ansi_message_stays_one_art_block -- --ignored
+```
+
+This check expects one leading advertisement and a separate `--- ` message
+footer. It verifies that the advertisement remains one art block and that the
+footer remains text.
 
 GPU tests require a working wgpu adapter. They render actual terminal pixels,
 check text selection/copy and scrolling, and cover desktop, 360x640, 360x240 and

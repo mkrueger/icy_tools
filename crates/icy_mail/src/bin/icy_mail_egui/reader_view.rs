@@ -24,6 +24,18 @@ use super::{
 /// Space between the message text and the edges of the reading pane.
 const BODY_PADDING: egui::Vec2 = egui::vec2(12.0, 8.0);
 
+pub(super) fn open_link_on_click(ui: &egui::Ui, response: &egui::Response, url: &str) {
+    response.clone().on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(url);
+    if response.clicked()
+        && !response.double_clicked()
+        && !response.triple_clicked()
+        && !ui.input(|input| input.modifiers.shift || input.modifiers.alt)
+        && !ui.ctx().will_discard()
+    {
+        ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+    }
+}
+
 #[derive(Default)]
 pub struct BodyHighlights {
     key: Option<(u64, String, bool)>,
@@ -299,9 +311,13 @@ impl MailApp {
         let modern = self.reading_mode == ReadingMode::Modern;
         let response = self.document_body(ui, Document::Message(info.index));
         response.context_menu(|ui| {
-            // The modern view copies its own text selection with Ctrl+C.
-            if !modern && ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
-                self.copy(ui.ctx());
+            if ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
+                if modern {
+                    self.copy_modern_selection = true;
+                    ui.ctx().request_repaint();
+                } else {
+                    self.copy(ui.ctx());
+                }
                 ui.close();
             }
             if ui.button(fl!(LANGUAGE_LOADER, "reader-copy-message")).clicked() {
@@ -318,6 +334,7 @@ impl MailApp {
                 ui.close();
             }
         });
+        self.modern_context_menu_open = modern && response.context_menu_opened();
     }
 
     /// Less frequent message actions behind the header's "more" button.
@@ -428,6 +445,31 @@ impl MailApp {
             self.selection_anchor = None;
             self.last_reader_click = None;
             return response;
+        }
+        if let Some(position) = response
+            .hover_pos()
+            .filter(|pointer| {
+                self.screen
+                    .terminal
+                    .render_info
+                    .read()
+                    .screen_to_terminal_pixels(pointer.x, pointer.y)
+                    .is_some()
+            })
+            .and_then(|pointer| self.cell(pointer))
+        {
+            let url = {
+                let screen = self.screen.terminal.screen.lock();
+                screen
+                    .hyperlinks()
+                    .iter()
+                    .find(|link| screen.is_position_in_range(position, link.position, link.length))
+                    .map(|link| link.url(&**screen))
+                    .filter(|url| icy_mail::text::is_web_link(url))
+            };
+            if let Some(url) = url {
+                open_link_on_click(ui, &response, &url);
+            }
         }
         if !response.hovered() && ui.input(|input| input.pointer.primary_pressed()) {
             self.last_reader_click = None;
@@ -626,9 +668,13 @@ impl MailApp {
             }
         }
         response.context_menu(|ui| {
-            // The modern view copies its own text selection with Ctrl+C.
-            if !modern && ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
-                self.copy(ui.ctx());
+            if ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
+                if modern {
+                    self.copy_modern_selection = true;
+                    ui.ctx().request_repaint();
+                } else {
+                    self.copy(ui.ctx());
+                }
                 ui.close();
             }
             if ui.button(fl!(LANGUAGE_LOADER, "reader-copy-file-text")).clicked() {
@@ -636,6 +682,7 @@ impl MailApp {
                 ui.close();
             }
         });
+        self.modern_context_menu_open = modern && response.context_menu_opened();
     }
 
     fn draft_preview(&mut self, ui: &mut egui::Ui) {
@@ -728,13 +775,16 @@ impl MailApp {
         };
         let response = self.document_body(ui, Document::Draft(draft.id, text));
         response.context_menu(|ui| {
-            if !modern && ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
-                self.copy(ui.ctx());
+            if ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {
+                if modern {
+                    self.copy_modern_selection = true;
+                    ui.ctx().request_repaint();
+                } else {
+                    self.copy(ui.ctx());
+                }
                 ui.close();
             }
-            if !modern {
-                ui.separator();
-            }
+            ui.separator();
             if ui.button(fl!(LANGUAGE_LOADER, "reader-edit")).clicked() {
                 edit = true;
                 ui.close();
@@ -744,6 +794,7 @@ impl MailApp {
                 ui.close();
             }
         });
+        self.modern_context_menu_open = modern && response.context_menu_opened();
         if edit {
             self.edit_draft(&context, draft.id);
         }

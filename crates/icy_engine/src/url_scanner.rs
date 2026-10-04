@@ -1,5 +1,20 @@
 use crate::{HyperLink, Position, TextBuffer, TextPane};
 
+/// Byte ranges of URLs in plain text, using the same scanner as terminal buffers.
+pub fn find_url_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+    let characters: Vec<_> = text.char_indices().collect();
+    let mut parser = rfind_url::Parser::new();
+    let mut ranges = Vec::new();
+    for (index, &(start, character)) in characters.iter().enumerate().rev() {
+        if let rfind_url::ParserState::Url(length) = parser.advance(character) {
+            let end = characters.get(index + length).map_or(text.len(), |&(offset, _)| offset);
+            ranges.push(start..end);
+        }
+    }
+    ranges.reverse();
+    ranges
+}
+
 impl TextBuffer {
     pub fn parse_hyperlinks(&self) -> Vec<HyperLink> {
         let mut result: Vec<HyperLink> = Vec::new();
