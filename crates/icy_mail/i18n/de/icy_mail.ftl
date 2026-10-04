@@ -226,6 +226,50 @@ loading-preload-error = Nachrichtendaten des Pakets konnten nicht vorgeladen wer
 settings-extraction-cache-days = Entpackte Pakete aufbewahren (Tage)
 settings-extraction-cache-help = Tage seit der letzten Nutzung. Alte Einträge werden beim nächsten Öffnen eines Pakets entfernt. 0 deaktiviert den Cache und entfernt gespeicherte Einträge beim nächsten Öffnen. Änderungen gelten ab dem nächsten Laden eines Pakets.
 settings-add-random-tagline = Neue Nachrichten mit einer zufälligen Tagline versehen
+settings-signature = Signatur
+settings-signature-hint = Wird neuen Nachrichten, Antworten und Weiterleitungen hinzugefügt.
+settings-quote-header = Zitat-Einleitung
+settings-quote-header-hint = Für die integrierte Zitat-Einleitung leer lassen. Unterstützte Platzhalter: { "{author}" }, { "{subject}" }, { "{date}" }.
+settings-quote-header-invalid = Ungültige Zitat-Einleitung: { $error }
+writing-quote-header-unsupported = Nicht unterstützter Platzhalter: { $placeholder }
+writing-quote-header-unclosed = Nicht geschlossener Platzhalter in der Zitat-Einleitung.
+writing-quote-header-unexpected-close = Unerwartete schließende Klammer in der Zitat-Einleitung.
+app-quote-header-failed = Die Zitat-Einleitung konnte nicht vorbereitet werden: { $error }
+app-quote-character-invalid = Die Zitat-Einleitung enthält ein Zeichen, das QWK nicht übertragen kann: U+{ $code }
+
+# Antwortimport, Sammelspeichern und Offline-Konferenzanfragen
+menu-import-replies = Antworten importieren…
+menu-conference-subscriptions = Konferenzabonnements…
+menu-save-messages = Nachrichten speichern
+menu-save-filtered-messages = Aktueller Ordner / Suchergebnisse…
+menu-save-starred-messages = Alle markierten Nachrichten…
+menu-save-conference-messages = Gesamte Konferenz…
+loading-import-title = Antwortpaket importieren
+loading-save-messages-title = Nachrichten als UTF-8-Protokoll speichern
+batch-save-empty = Es sind keine Nachrichten zum Speichern vorhanden.
+batch-save-source-packet = Das Protokoll darf das geöffnete Paket nicht überschreiben.
+notice-messages-saved = { $count ->
+    [one] 1 Nachricht unter { $path } gespeichert
+   *[other] { $count } Nachrichten unter { $path } gespeichert
+}
+notice-replies-imported = { $count ->
+    [one] 1 Antwort in den Postausgang importiert.
+   *[other] { $count } Antworten in den Postausgang importiert.
+}
+notice-import-packet-changed = Das Paket wurde während des Imports gewechselt. Es wurden keine Antworten importiert.
+app-import-failed = { $path } konnte nicht importiert werden:
+    { $error }
+app-import-drafts-failed = Antworten konnten nicht importiert werden: { $error }
+app-import-no-packet = Öffne zuerst ein Paket, bevor du Antworten importierst oder Abonnements änderst.
+app-subscription-failed = Die Konferenzanfrage konnte nicht gespeichert werden: { $error }
+notice-subscription-updated = Konferenzanfragen lokal gespeichert. Exportiere und übertrage ein Antwortpaket, um sie anzuwenden.
+subscriptions-title = Konferenzabonnements
+subscriptions-help = Anfragen werden lokal gespeichert und in exportierte Antwortpakete aufgenommen. Lade die .REP-Datei hoch, um sie anzuwenden.
+subscriptions-unsupported = Dieses Paket kündigt keine unterstützten Befehle zum Abonnieren oder Abbestellen an.
+subscriptions-pending = Ausstehende Anfragen: { $count }
+subscriptions-no-change = Keine Änderung
+subscriptions-subscribe = Abonnieren
+subscriptions-unsubscribe = Abbestellen
 
 # Mail dialogs
 dialog-mail-app-title = Icy Mail
@@ -345,7 +389,9 @@ composer-private-tooltip = Nur der Empfänger und der Sysop können private Nach
 composer-field-to = An
 composer-field-subject = Betreff
 composer-field-from = Von
-composer-qwk-header-limit-tooltip = QWK-Kopffelder können bis zu 25 Zeichen enthalten
+composer-qwk-header-limit-tooltip = Dieses Paket unterstützt Kopffelder mit bis zu { $limit } Zeichen
+composer-signature = Signatur
+composer-signature-hint = Wird einmal vor der Tagline eingefügt; für keine Signatur leer lassen.
 composer-address-book-tooltip = Aus dem Adressbuch auswählen (Ctrl+B)
 composer-tagline = Tagline
 composer-no-tagline = Keine Tagline
@@ -609,6 +655,7 @@ draft-field-from = Absender
 draft-field-to = Empfänger
 draft-field-subject = Betreff
 draft-field-body = Nachrichtentext
+draft-field-signature = Signatur
 draft-field-tagline = Tagline
 draft-issue-conference-not-in-packet = Konferenz { $conference } ist nicht Teil dieses Pakets
 draft-issue-field-required = { $field } muss angegeben werden

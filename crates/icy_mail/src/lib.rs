@@ -10,6 +10,8 @@ pub mod taglines;
 pub mod text;
 #[path = "ui/threading.rs"]
 pub mod threading;
+pub mod transcript;
+pub mod writing;
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "i18n"]

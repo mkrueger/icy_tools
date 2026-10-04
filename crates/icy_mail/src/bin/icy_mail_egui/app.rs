@@ -88,6 +88,14 @@ pub enum Modal {
     Settings,
     Taglines,
     AddressBook,
+    Subscriptions,
+}
+
+#[derive(Clone, Copy)]
+pub enum SaveMessages {
+    Filtered,
+    Starred,
+    Conference,
 }
 
 /// Unread counts for the sidebar, refreshed when the packet or the read marks change.
@@ -149,6 +157,8 @@ pub struct MailApp {
     pub settings_dialog: Option<SettingsDialog>,
     /// New messages start with a random tagline.
     pub random_tagline: bool,
+    pub signature: String,
+    pub quote_header: String,
     pub reading_pane: ReadingPane,
     pub conferences_unread_only: bool,
     pub reading_mode: ReadingMode,
@@ -260,6 +270,8 @@ impl MailApp {
             new_window: false,
             closed: false,
             random_tagline: options.random_tagline,
+            signature: options.signature.clone(),
+            quote_header: options.quote_header.clone(),
             reading_pane: options.reading_pane,
             conferences_unread_only: options.conferences_unread_only,
             reading_mode: options.reading_mode,
@@ -434,6 +446,38 @@ impl MailApp {
                             context,
                             NoticeKind::Success,
                             fl!(LANGUAGE_LOADER, "notice-message-saved", path = path.display().to_string()),
+                        ),
+                        Some((path, Err(error))) => {
+                            self.error = Some(fl!(
+                                LANGUAGE_LOADER,
+                                "app-save-message-failed",
+                                path = path.display().to_string(),
+                                error = error
+                            ))
+                        }
+                        None => {}
+                    }
+                }
+                Event::RepliesPicked(generation, result) => {
+                    self.loader.import_picking = false;
+                    if let Some((path, result)) = result {
+                        if generation != self.loader.package_generation || self.loading.is_some() {
+                            self.notify(context, NoticeKind::Warning, fl!(LANGUAGE_LOADER, "notice-import-packet-changed"));
+                        } else {
+                            match result {
+                                Ok(drafts) => self.import_replies(context, drafts),
+                                Err(error) => self.error = Some(fl!(LANGUAGE_LOADER, "app-import-failed", path = path.display().to_string(), error = error)),
+                            }
+                        }
+                    }
+                }
+                Event::MessagesSaved(count, result) => {
+                    self.loader.save_picking = false;
+                    match result {
+                        Some((path, Ok(()))) => self.notify(
+                            context,
+                            NoticeKind::Success,
+                            fl!(LANGUAGE_LOADER, "notice-messages-saved", count = count, path = path.display().to_string()),
                         ),
                         Some((path, Err(error))) => {
                             self.error = Some(fl!(
@@ -1090,7 +1134,13 @@ impl MailApp {
                 return;
             }
         };
-        let quotes = quotes(info, &message.text);
+        let quotes = match quotes(info, &message.text, &self.quote_header) {
+            Ok(quotes) => quotes,
+            Err(error) => {
+                self.error = Some(fl!(LANGUAGE_LOADER, "app-quote-header-failed", error = error.to_string()));
+                return;
+            }
+        };
         if forward {
             let text = editor::strip_codes(&editor::decode_message(&message.text));
             let quoted: String = text.trim_end().lines().map(|line| format!("> {line}\n")).collect();
@@ -1117,7 +1167,13 @@ impl MailApp {
             .cloned();
         if let Some(draft) = draft {
             let origin = self.origin(&draft);
-            let quotes = self.original_quotes(&draft);
+            let quotes = match self.original_quotes(&draft) {
+                Ok(quotes) => quotes,
+                Err(error) => {
+                    self.error = Some(fl!(LANGUAGE_LOADER, "app-original-failed", error = error.to_string()));
+                    return;
+                }
+            };
             self.start_composer(context, Composer::new(draft, true, origin, quotes, false));
         } else {
             self.error = Some(fl!(LANGUAGE_LOADER, "app-draft-unavailable"));
@@ -1138,22 +1194,28 @@ impl MailApp {
     }
 
     /// Quote lines of the message a reply refers to, when it is in the open packet.
-    fn original_quotes(&self, draft: &Draft) -> Vec<String> {
+    fn original_quotes(&self, draft: &Draft) -> icy_mail::Res<Vec<String>> {
         if draft.ref_number == 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let Some(package) = self.reader.package.as_ref() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        package
+        let Some(index) = package
             .infos
             .iter()
             .position(|info| info.number == draft.ref_number && info.conference == draft.conference)
-            .and_then(|index| Some(quotes(&package.infos[index], &package.get_message(index).ok()?.text)))
-            .unwrap_or_default()
+        else {
+            return Ok(Vec::new());
+        };
+        quotes(&package.infos[index], &package.get_message(index)?.text, &self.quote_header)
     }
 
     fn start_composer(&mut self, context: &egui::Context, mut composer: Composer) {
+        if !composer.existing {
+            composer.draft.signature = self.signature.clone();
+            composer.original.signature = self.signature.clone();
+        }
         if !composer.existing && self.random_tagline {
             if let Some(tagline) = self.taglines.as_ref().and_then(Taglines::random) {
                 composer.draft.tagline = tagline.to_string();
@@ -1192,7 +1254,7 @@ impl MailApp {
         let (Some(path), Some(store)) = (&self.path, &self.drafts) else {
             return;
         };
-        if store.drafts().is_empty() {
+        if !store.has_exportable() {
             self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-nothing-to-export"));
             return;
         }
@@ -1208,6 +1270,101 @@ impl MailApp {
             return;
         }
         self.loader.pick_export(store.default_export_path(path), store.clone(), context);
+    }
+
+    pub fn import_replies(&mut self, context: &egui::Context, drafts: Vec<Draft>) {
+        let Some(store) = &self.drafts else {
+            self.error = Some(fl!(LANGUAGE_LOADER, "app-import-no-packet"));
+            return;
+        };
+        let mut next = store.clone();
+        match next.import_drafts(drafts) {
+            Ok(count) => {
+                if let Some(composer) = &mut self.composer {
+                    if !composer.existing {
+                        composer.draft.id = next.next_id();
+                        composer.original.id = next.next_id();
+                    }
+                }
+                self.selected_draft = next.drafts().last().map(|draft| draft.id);
+                self.drafts = Some(next);
+                self.select_folder(Folder::Drafts);
+                self.notify(context, NoticeKind::Success, fl!(LANGUAGE_LOADER, "notice-replies-imported", count = count));
+            }
+            Err(error) => self.error = Some(fl!(LANGUAGE_LOADER, "app-import-drafts-failed", error = error.to_string())),
+        }
+    }
+
+    pub fn batch_indices(&self, scope: SaveMessages) -> Vec<usize> {
+        let Some(package) = &self.reader.package else {
+            return Vec::new();
+        };
+        match scope {
+            SaveMessages::Filtered if self.folder.holds_messages() && !self.loader.searching => {
+                self.reader.all_messages().iter().map(|row| row.index).collect()
+            }
+            SaveMessages::Starred => package
+                .infos
+                .iter()
+                .filter(|info| self.reader.is_starred(info.index))
+                .map(|info| info.index)
+                .collect(),
+            SaveMessages::Conference => {
+                let conference = match self.folder {
+                    Folder::Conference(number) => Some(number),
+                    _ if self.folder.holds_messages() => self.selected_info().map(|info| info.conference),
+                    _ => None,
+                };
+                package
+                    .infos
+                    .iter()
+                    .filter(|info| Some(info.conference) == conference)
+                    .map(|info| info.index)
+                    .collect()
+            }
+            SaveMessages::Filtered => Vec::new(),
+        }
+    }
+
+    pub fn save_messages(&mut self, context: &egui::Context, scope: SaveMessages) {
+        let indices = self.batch_indices(scope);
+        if indices.is_empty() {
+            self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "batch-save-empty"));
+            return;
+        }
+        if let (Some(package), Some(source)) = (&self.reader.package, &self.path) {
+            self.loader.pick_save_messages(package.clone(), indices, source.clone(), context);
+        }
+    }
+
+    pub fn set_subscription(&mut self, context: &egui::Context, conference: u16, subscribe: Option<bool>) {
+        let Some(store) = &self.drafts else {
+            self.error = Some(fl!(LANGUAGE_LOADER, "app-import-no-packet"));
+            return;
+        };
+        let mut next = store.clone();
+        let result = match subscribe {
+            Some(subscribe) => next.set_subscription(conference, subscribe),
+            None => next.clear_subscription(conference),
+        };
+        match result {
+            Ok(()) => {
+                self.drafts = Some(next);
+                self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-subscription-updated"));
+            }
+            Err(error) => self.error = Some(fl!(LANGUAGE_LOADER, "app-subscription-failed", error = error.to_string())),
+        }
+    }
+
+    pub fn has_exportable(&self) -> bool {
+        self.drafts.as_ref().is_some_and(DraftStore::has_exportable)
+    }
+
+    pub fn supports_subscriptions(&self) -> bool {
+        self.reader
+            .package
+            .as_ref()
+            .is_some_and(|package| package.capabilities.supports_subscriptions())
     }
 
     pub fn set_focus(&mut self, pane: Pane, context: &egui::Context) {
@@ -1407,7 +1564,7 @@ impl MailApp {
         tagline
     }
 
-    /// Adds the tagline of the selected message to the tagline list, like MultiMail's tagline stealer.
+    /// Adds the tagline of the selected message to the tagline list.
     pub fn save_tagline(&mut self, context: &egui::Context) {
         let Some(tagline) = self.message_tagline() else {
             if self.message_selected() && self.folder.holds_messages() {
@@ -1829,15 +1986,18 @@ fn message_origin(info: &MessageInfo) -> String {
 }
 
 /// The attribution and quoted lines offered in the editor's quote panel.
-fn quotes(info: &MessageInfo, text: &[u8]) -> Vec<String> {
-    let mut lines = vec![fl!(
-        LANGUAGE_LOADER,
-        "app-quote-attribution",
-        date = info.date_str.as_str(),
-        name = info.from.trim()
-    )];
+fn quotes(info: &MessageInfo, text: &[u8], template: &str) -> icy_mail::Res<Vec<String>> {
+    let attribution = if template.is_empty() {
+        fl!(LANGUAGE_LOADER, "app-quote-attribution", date = info.date_str.as_str(), name = info.from.trim())
+    } else {
+        icy_mail::writing::format_quote_attribution(template, info.from.trim(), &info.subject, &info.date_str)?
+    };
+    if let Some(character) = attribution.chars().find(|&character| character != '\n' && !editor::is_message_char(character)) {
+        return Err(fl!(LANGUAGE_LOADER, "app-quote-character-invalid", code = format!("{:04X}", u32::from(character))).into());
+    }
+    let mut lines = vec![attribution];
     lines.extend(editor::quote_lines(&info.from, &editor::decode_message(text), editor::WRAP_WIDTH));
-    lines
+    Ok(lines)
 }
 
 pub fn decode_cp437(bytes: &[u8]) -> String {

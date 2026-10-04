@@ -8,7 +8,7 @@ use icy_mail::{
 };
 
 use super::{
-    app::{Folder, MailApp, Modal, NoticeKind},
+    app::{Folder, MailApp, Modal, NoticeKind, SaveMessages},
     settings,
     widgets::{self, Icon},
 };
@@ -90,7 +90,7 @@ impl MailApp {
                     Icon::Export,
                     captions.then_some(export.as_str()),
                     &fl!(LANGUAGE_LOADER, "toolbar-export-tooltip"),
-                    drafts > 0,
+                    self.has_exportable() && !self.loader.export_picking,
                     false,
                 )
                 .clicked()
@@ -278,8 +278,26 @@ impl MailApp {
             self.modal = Some(Modal::PacketInfo);
         }
         ui.separator();
-        if item(ui, &fl!(LANGUAGE_LOADER, "menu-export-replies"), &command_shift(Key::E), self.draft_count() > 0) {
+        if item(
+            ui,
+            &fl!(LANGUAGE_LOADER, "menu-import-replies"),
+            "",
+            open && self.loading.is_none() && !self.loader.import_picking,
+        ) {
+            if let Some(store) = &self.drafts {
+                self.loader.pick_import(store.clone(), &context);
+            }
+        }
+        if item(
+            ui,
+            &fl!(LANGUAGE_LOADER, "menu-export-replies"),
+            &command_shift(Key::E),
+            self.has_exportable() && !self.loader.export_picking,
+        ) {
             self.export(&context);
+        }
+        if item(ui, &fl!(LANGUAGE_LOADER, "menu-conference-subscriptions"), "", open) {
+            self.modal = Some(Modal::Subscriptions);
         }
         ui.separator();
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-settings"), &command(Key::Comma), true) {
@@ -364,6 +382,20 @@ impl MailApp {
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-save-message-utf8"), "", saving) {
             self.save_message(&context, true);
         }
+        ui.add_enabled_ui(open && !self.loader.save_picking, |ui| {
+            ui.menu_button(fl!(LANGUAGE_LOADER, "menu-save-messages"), |ui| {
+                menu_width(ui);
+                for (scope, label) in [
+                    (SaveMessages::Filtered, fl!(LANGUAGE_LOADER, "menu-save-filtered-messages")),
+                    (SaveMessages::Starred, fl!(LANGUAGE_LOADER, "menu-save-starred-messages")),
+                    (SaveMessages::Conference, fl!(LANGUAGE_LOADER, "menu-save-conference-messages")),
+                ] {
+                    if item(ui, &label, "", !self.batch_indices(scope).is_empty()) {
+                        self.save_messages(&context, scope);
+                    }
+                }
+            });
+        });
     }
 
     fn view_menu(&mut self, ui: &mut egui::Ui) {

@@ -1,7 +1,7 @@
 //! Taglines, the one-line sayings BBS mail readers put below a message as `... text`.
 //!
 //! They are kept in `taglines.txt` in the user data directory, one per line like
-//! MultiMail's tagline file, so existing collections can be copied over.
+//! A plain-text tagline file, so existing collections can be copied over.
 
 use std::{
     fs,
@@ -11,7 +11,7 @@ use std::{
 
 use crate::{drafts::atomic_write, editor};
 
-/// Longest tagline, as in MultiMail and Blue Wave.
+/// Longest tagline supported by the reply format.
 pub const TAGLINE_LENGTH: usize = 76;
 const FILE_NAME: &str = "taglines.txt";
 const PREFIX: &str = "... ";
@@ -130,7 +130,7 @@ pub fn clean(text: &str) -> String {
     text.chars().take(TAGLINE_LENGTH).collect::<String>().trim_end().to_string()
 }
 
-/// The tagline of a message: its last `... text` line, like MultiMail's tagline stealer.
+/// The tagline of a message: its last `... text` line.
 /// `text` is the plain message text without color codes.
 pub fn find(text: &str) -> Option<String> {
     text.lines()

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     drafts::atomic_write,
     reader::{SearchFields, ViewMode},
+    writing::{validate_quote_header, DEFAULT_QUOTE_HEADER},
     LANGUAGE_LOADER,
 };
 
@@ -64,6 +65,10 @@ pub struct Options {
     pub monitor_settings: MonitorSettings,
     /// New messages start with a random tagline from the tagline list.
     pub random_tagline: bool,
+    /// Plain message footer seeded into new drafts, independently of their body and tagline.
+    pub signature: String,
+    /// Quote attribution template using original message metadata; empty uses the localized default.
+    pub quote_header: String,
     /// Message list shown flat or as threads.
     pub view_mode: ViewMode,
     pub reading_pane: ReadingPane,
@@ -89,6 +94,8 @@ impl Default for Options {
                 ..Default::default()
             },
             random_tagline: true,
+            signature: String::new(),
+            quote_header: DEFAULT_QUOTE_HEADER.to_string(),
             view_mode: ViewMode::default(),
             reading_pane: ReadingPane::default(),
             conferences_unread_only: false,
@@ -112,13 +119,18 @@ impl Options {
     /// Settings stored in `directory`, the defaults when there are none yet.
     pub fn load_in(directory: &Path) -> crate::Res<Self> {
         match fs::read_to_string(directory.join(FILE_NAME)) {
-            Ok(content) => Ok(toml::from_str(&content)?),
+            Ok(content) => {
+                let options: Self = toml::from_str(&content)?;
+                validate_quote_header(&options.quote_header)?;
+                Ok(options)
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
             Err(error) => Err(error.into()),
         }
     }
 
     pub fn save_in(&self, directory: &Path) -> crate::Res<()> {
+        validate_quote_header(&self.quote_header)?;
         fs::create_dir_all(directory)?;
         let content = toml::to_string(self)?;
         atomic_write(&directory.join(FILE_NAME), |file| {
@@ -152,6 +164,8 @@ mod tests {
         options.modern_font_size = 18.0;
         options.search_fields.text = false;
         options.extraction_cache_days = 0;
+        options.signature = "Regards,\nJörg".to_string();
+        options.quote_header = "On {date}, {author} wrote about {subject}:".to_string();
         options.save_in(dir.path()).unwrap();
         assert_eq!(Options::load_in(dir.path()).unwrap(), options);
         fs::write(dir.path().join(FILE_NAME), "theme = \"Light\"\n").unwrap();
@@ -159,11 +173,26 @@ mod tests {
         assert_eq!(partial.theme, Theme::Light);
         assert_eq!(partial.monitor_settings, Options::default().monitor_settings);
         assert!(partial.random_tagline);
+        assert!(partial.signature.is_empty());
+        assert_eq!(partial.quote_header, DEFAULT_QUOTE_HEADER);
         assert_eq!(partial.view_mode, ViewMode::List);
         assert_eq!(partial.reading_pane, ReadingPane::Automatic);
         assert_eq!(partial.reading_mode, ReadingMode::Modern, "new installations read in the modern mode");
         assert_eq!(partial.modern_font, ModernFont::Monospace);
         assert!(partial.search_fields.all(), "search looks everywhere until restricted");
         assert_eq!(partial.extraction_cache_days, 30, "older settings inherit the cache retention default");
+    }
+
+    #[test]
+    fn invalid_quote_attribution_is_not_saved_or_loaded() {
+        let (dir, _package) = crate::qwk::tests::load();
+        let options = Options {
+            quote_header: "{unsupported}".to_string(),
+            ..Default::default()
+        };
+        assert!(options.save_in(dir.path()).is_err());
+        assert!(!dir.path().join(FILE_NAME).exists());
+        fs::write(dir.path().join(FILE_NAME), "quote_header = \"{author\"\n").unwrap();
+        assert!(Options::load_in(dir.path()).is_err());
     }
 }

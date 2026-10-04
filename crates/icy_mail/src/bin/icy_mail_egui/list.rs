@@ -152,7 +152,14 @@ impl MailApp {
                     ui.label(egui::RichText::new(detail).weak().size(12.0));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if self.folder == Folder::Drafts {
-                            if self.draft_count() > 0 && ui.add(appearance::primary_button(fl!(LANGUAGE_LOADER, "list-export-replies"))).clicked() {
+                            if self.has_exportable()
+                                && ui
+                                    .add_enabled(
+                                        !self.loader.export_picking,
+                                        appearance::primary_button(fl!(LANGUAGE_LOADER, "list-export-replies")),
+                                    )
+                                    .clicked()
+                            {
                                 self.export(&context);
                             }
                         } else if self.folder.holds_messages() {

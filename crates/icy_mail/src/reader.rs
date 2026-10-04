@@ -727,7 +727,7 @@ pub fn render_body_wide(data: &[u8]) -> Res<TextScreen> {
 }
 
 /// Renders a bulletin, news or new files screen. These stop at the DOS end-of-file mark and may use
-/// PCBoard `@X` colours, which MultiMail's viewer translates as well.
+/// PCBoard `@X` colours.
 pub fn render_file(data: &[u8]) -> Res<TextScreen> {
     render_file_page(data, 0)
 }

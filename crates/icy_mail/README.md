@@ -178,6 +178,12 @@ draft and composer previews still render locally.
   `.txt` with CP437 characters converted and ANSI codes kept; both are also in
   the reader header's **⋯** menu. Handy for other viewers or to report a
   display problem.
+- **Message ▸ Save Messages** saves a UTF-8 transcript with message headers:
+  the current folder/search results (including collapsed thread replies), all
+  starred messages across the packet, or the entire selected conference.
+  Conference saving ignores search and unread filters. ANSI codes are retained.
+  Saving runs in the background and replaces the destination only after every
+  selected message has been read successfully.
 - **Settings** (Ctrl/Cmd+,): theme, message display and zoom, and the shared monitor
   emulation (monitor color, scaling, filtering, brightness, contrast, CRT
   effects…). Changes preview live; Cancel restores the previous values. They
@@ -199,7 +205,7 @@ Use **New** (Ctrl/Cmd+N) from the toolbar, or **Reply** (Ctrl/Cmd+R) and
 **Forward** (Ctrl/Cmd+L) from the reader header, the message context menu or
 **Message** in the main menu. The composer
 replaces the reader pane: choose the conference and privacy, edit recipient,
-subject and sender (with QWK's 25 character limits shown), and write the
+subject and sender (with the packet's supported header limits shown), and write the
 message in the BBS editor described below.
 Problems that would block export are listed live. Save with Ctrl/Cmd+S or
 Ctrl/Cmd+Enter; Escape cancels and asks before discarding changes. Closing a
@@ -261,10 +267,39 @@ invalid QWK fields are reported rather than silently replaced. After a successfu
 export, the confirmation shows the full `.rep` file path and offers **Open Folder**
 so you can find the file to upload. The packet is not sent automatically.
 
+Packets advertising QWKE support can export recipient, sender and subject
+fields longer than the standard 25-character QWK headers. The composer shows
+the applicable limit, and extended fields are included in the reply body
+headers rather than silently truncated.
+
+**File ▸ Import Replies…** reopens a `.rep` archive as editable drafts in the
+current outbox. Open its corresponding QWK packet first. The BBS ID,
+conference numbers and reply records are validated before any drafts are
+added; malformed or mismatched packets leave the outbox unchanged. Imported
+reply text, ANSI formatting, privacy and reply references are retained.
+Door-control records are excluded from imported drafts; subscription requests
+are managed separately in the subscriptions dialog.
+
+**Settings ▸ Writing** configures a signature and quote attribution template.
+New messages, replies and forwards inherit the signature; existing drafts keep
+their own editable signature. It is appended once, before the tagline.
+Quote templates support `{author}`, `{date}` and `{subject}`; an empty template
+uses the built-in localized attribution. Unknown or malformed placeholders
+are reported instead of being ignored.
+
+**File ▸ Conference Subscriptions…** queues explicit subscribe/unsubscribe
+requests, or cancels a queued request with **No change**. Controls are available
+only when the packet advertises supported commands. Requests are saved with
+the packet's drafts and included in **Export Replies**, even when there are
+no messages to export. Exporting does not contact the BBS; upload the reply
+packet to apply the requests. The packet does not necessarily describe the
+server's current subscription state, so the dialog shows pending requests
+rather than claiming a live subscription status.
+
 ## Taglines
 
 Taglines are kept in `taglines.txt` in the user data directory, one per line
-(the same format as MultiMail's `taglines` file, so an existing list can be
+(a plain-text format, so an existing list can be
 copied over). A tagline is sent below the message as `... text`, up to 76
 characters.
 
@@ -274,14 +309,14 @@ characters.
 - Ctrl+T (or clicking the tagline) opens the picker: filter, arrows and Enter,
   **Random** or **No Tagline**.
 - **T** or **Save Tagline** in the reader header's **⋯** menu saves the tagline of the shown
-  message (its last `... ` line) to the list, like MultiMail's tagline stealer.
+  message (its last `... ` line) to the list.
 - Ctrl/Cmd+Shift+T or **Tools ▸ Taglines…** manages the list: add, edit
   (Enter) and delete (Delete) entries.
 
 ## Address book
 
 Contacts are stored in `addressbook.txt` in the user data directory in
-MultiMail's address book format (name line, address line, blank line; Internet
+a plain-text address book format (name line, address line, blank line; Internet
 addresses are recognized by their `@`).
 
 - **A** or **Tools ▸ Address Book…** opens it: filter, add, edit and delete

@@ -11,7 +11,7 @@ use eframe::egui;
 use i18n_embed_fl::fl;
 use icy_engine::TextScreen;
 use icy_mail::{
-    drafts::DraftStore,
+    drafts::{Draft, DraftStore},
     options::ReadingMode,
     qwk::{ExtractionCache, QwkPackage},
     reader::{render_body, render_body_wide, render_file_page, render_file_page_wide},
@@ -29,6 +29,8 @@ pub enum Event {
     Picked(Option<PathBuf>),
     Exported(Option<(PathBuf, Result<(), String>)>),
     MessageSaved(Option<(PathBuf, Result<(), String>)>),
+    MessagesSaved(usize, Option<(PathBuf, Result<(), String>)>),
+    RepliesPicked(u64, Option<(PathBuf, Result<Vec<Draft>, String>)>),
 }
 
 type Jobs<T> = mpsc::Sender<(T, egui::Context)>;
@@ -123,6 +125,7 @@ pub struct Loader {
     pub body_generation: u64,
     pub picking: bool,
     pub export_picking: bool,
+    pub import_picking: bool,
     pub save_picking: bool,
     pub sender: mpsc::Sender<Event>,
     pub receiver: mpsc::Receiver<Event>,
@@ -198,6 +201,7 @@ impl Default for Loader {
             body_generation: 0,
             picking: false,
             export_picking: false,
+            import_picking: false,
             save_picking: false,
             sender,
             receiver,
@@ -337,6 +341,51 @@ impl Loader {
                 (path, result)
             });
             let _ = sender.send(Event::MessageSaved(result));
+            context.request_repaint();
+        });
+    }
+
+    pub fn pick_import(&mut self, drafts: DraftStore, context: &egui::Context) {
+        if self.import_picking {
+            return;
+        }
+        self.import_picking = true;
+        let generation = self.package_generation;
+        let sender = self.sender.clone();
+        let context = context.clone();
+        std::thread::spawn(move || {
+            let path = rfd::FileDialog::new()
+                .set_title(fl!(LANGUAGE_LOADER, "loading-import-title"))
+                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-reply"), &["rep"])
+                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-all"), &["*"])
+                .pick_file();
+            let result = path.map(|path| {
+                let result = drafts.read_rep(&path).map_err(|error| error.to_string());
+                (path, result)
+            });
+            let _ = sender.send(Event::RepliesPicked(generation, result));
+            context.request_repaint();
+        });
+    }
+
+    pub fn pick_save_messages(&mut self, package: Arc<QwkPackage>, indices: Vec<usize>, source: PathBuf, context: &egui::Context) {
+        if self.save_picking {
+            return;
+        }
+        self.save_picking = true;
+        let sender = self.sender.clone();
+        let context = context.clone();
+        std::thread::spawn(move || {
+            let path = rfd::FileDialog::new()
+                .set_title(fl!(LANGUAGE_LOADER, "loading-save-messages-title"))
+                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-message"), &["txt"])
+                .set_file_name("messages.txt")
+                .save_file();
+            let result = path.map(|path| {
+                let result = icy_mail::transcript::save_transcript(&package, &indices, &source, &path).map_err(|error| error.to_string());
+                (path, result)
+            });
+            let _ = sender.send(Event::MessagesSaved(indices.len(), result));
             context.request_repaint();
         });
     }

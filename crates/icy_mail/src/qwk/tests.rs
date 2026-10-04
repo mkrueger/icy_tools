@@ -126,6 +126,39 @@ pub(crate) fn write_packet_with_newfiles(dir: &std::path::Path, newfiles: Option
 }
 
 #[test]
+fn capabilities_survive_cold_warm_and_cloned_packages() {
+    use std::io::Read;
+    let dir = TempDir::new();
+    let original = write_packet(dir.path());
+    let mut source = zip::ZipArchive::new(std::fs::File::open(original).unwrap()).unwrap();
+    let path = dir.path().join("CAPABLE.QWK");
+    let mut destination = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    for index in 0..source.len() {
+        let mut entry = source.by_index(index).unwrap();
+        destination.start_file(entry.name(), zip::write::SimpleFileOptions::default()).unwrap();
+        if entry.name() == "DOOR.ID" {
+            destination
+                .write_all(b"CONTROLNAME=CUSTOM\r\nCONTROLTYPE=ADD\r\nCONTROLTYPE=DROP\r\nCONTROLTYPE=QWKE\r\n")
+                .unwrap();
+        } else {
+            let mut bytes = Vec::new();
+            entry.read_to_end(&mut bytes).unwrap();
+            destination.write_all(&bytes).unwrap();
+        }
+    }
+    destination.finish().unwrap();
+    let cache = crate::qwk::ExtractionCache::new(dir.path().join("cache"), 30);
+    let cold = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    assert!(cold.capabilities.qwke);
+    assert!(cold.capabilities.supports_subscriptions());
+    assert_eq!(cold.capabilities.control_name.as_deref(), Some("CUSTOM"));
+    assert_eq!(cold.clone().capabilities, cold.capabilities);
+    let warm = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    assert!(warm.cached_threads().is_some(), "metadata cache was used");
+    assert_eq!(cold.capabilities, warm.capabilities);
+}
+
+#[test]
 fn large_newfiles_list_is_discoverable_and_paged() {
     let dir = TempDir::new();
     let data = b"0123456789abcdef0123456789abcdef\n".repeat(252_000);
@@ -156,7 +189,10 @@ impl TempDir {
     pub fn new() -> Self {
         static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!("icy_mail_qwk_{}_{id}", std::process::id()));
+        let path = std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join(format!("icy_mail_qwk_{}_{id}", std::process::id()));
         std::fs::create_dir_all(&path).unwrap();
         Self(path)
     }
@@ -327,7 +363,7 @@ fn unknown_archives_are_rejected() {
 }
 
 #[test]
-fn screens_bulletins_and_new_files_are_listed_like_multimail() {
+fn screens_bulletins_and_new_files_are_listed_in_packet_order() {
     use crate::qwk::PacketFileKind::*;
     let (_dir, package) = load();
     let files: Vec<_> = package.files.iter().map(|file| (file.name.as_str(), file.kind)).collect();

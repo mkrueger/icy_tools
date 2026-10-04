@@ -56,6 +56,16 @@ fn german_locale_formats_labels_plurals_and_placeholders() {
     assert_eq!(loader.current_languages()[0], "de".parse::<LanguageIdentifier>().unwrap());
     assert_eq!(loader.get("toolbar-open"), "Öffnen");
     assert_eq!(loader.get("settings-title"), "Einstellungen");
+    assert_eq!(loader.get("settings-signature"), "Signatur");
+    assert_eq!(loader.get("composer-signature"), "Signatur");
+    let quote_help = loader.get("settings-quote-header-hint");
+    for placeholder in ["{author}", "{subject}", "{date}"] {
+        assert!(quote_help.contains(placeholder));
+    }
+    assert_eq!(
+        loader.get_args("composer-qwk-header-limit-tooltip", HashMap::from([("limit", 255)])),
+        "Dieses Paket unterstützt Kopffelder mit bis zu 255 Zeichen"
+    );
     assert_eq!(loader.get("settings-extraction-cache-days"), "Entpackte Pakete aufbewahren (Tage)");
     let cache_help = loader.get("settings-extraction-cache-help");
     assert!(cache_help.contains("letzten Nutzung"));
@@ -76,6 +86,11 @@ fn german_locale_formats_labels_plurals_and_placeholders() {
             "Entwurf im Postausgang gespeichert (2 Entwürfe), noch nicht versendet. Exportiere die Antworten, wenn du bereit bist.",
         ),
         ("list-draft-count", "1 Nachricht", "2 Nachrichten"),
+        (
+            "notice-replies-imported",
+            "1 Antwort in den Postausgang importiert.",
+            "2 Antworten in den Postausgang importiert.",
+        ),
     ] {
         assert_eq!(loader.get_args(key, HashMap::from([("count", 1)])), singular);
         assert_eq!(loader.get_args(key, HashMap::from([("count", 2)])), plural);

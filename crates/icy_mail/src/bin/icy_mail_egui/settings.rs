@@ -6,6 +6,7 @@ use icy_engine_gui::{
 };
 use icy_mail::{
     options::{ModernFont, Options, ReadingMode, ReadingPane, Theme, MODERN_FONT_SIZES},
+    writing::validate_quote_header,
     LANGUAGE_LOADER,
 };
 
@@ -84,6 +85,8 @@ impl MailApp {
             },
             monitor_settings: self.settings.clone(),
             random_tagline: self.random_tagline,
+            signature: self.signature.clone(),
+            quote_header: self.quote_header.clone(),
             view_mode: self.reader.view_mode,
             reading_pane: self.reading_pane,
             conferences_unread_only: self.conferences_unread_only,
@@ -98,6 +101,10 @@ impl MailApp {
     pub fn apply_options(&mut self, context: &egui::Context, options: &Options) {
         self.settings = options.monitor_settings.clone();
         self.random_tagline = options.random_tagline;
+        self.signature = options.signature.clone();
+        if validate_quote_header(&options.quote_header).is_ok() {
+            self.quote_header = options.quote_header.clone();
+        }
         self.reading_pane = options.reading_pane;
         self.conferences_unread_only = options.conferences_unread_only;
         self.reading_mode = options.reading_mode;
@@ -170,15 +177,24 @@ impl MailApp {
             .fixed_height(560.0)
             .show(context, |frame| {
                 frame.tabs(&mut dialog.page, &pages);
-                frame.content(|ui| match dialog.page {
-                    0 => general(ui, &mut dialog.draft),
-                    1 => monitor::fields(ui, &mut dialog.draft.monitor_settings),
-                    _ => cache(ui, &mut dialog.draft),
+                frame.content(|ui| {
+                    match dialog.page {
+                        0 => general(ui, &mut dialog.draft),
+                        1 => monitor::fields(ui, &mut dialog.draft.monitor_settings),
+                        _ => cache(ui, &mut dialog.draft),
+                    }
+                    if let Err(error) = validate_quote_header(&dialog.draft.quote_header) {
+                        ui.colored_label(
+                            ui.visuals().error_fg_color,
+                            fl!(LANGUAGE_LOADER, "settings-quote-header-invalid", error = error.to_string()),
+                        );
+                    }
                 });
                 frame.buttons([
                     appearance::DialogButton::secondary(appearance::labels::restore_defaults(), Footer::Restore).leading(),
                     appearance::DialogButton::cancel(appearance::labels::cancel(), Footer::Cancel),
-                    appearance::DialogButton::primary(appearance::labels::ok(), Footer::Save),
+                    appearance::DialogButton::primary(appearance::labels::ok(), Footer::Save)
+                        .enabled(validate_quote_header(&dialog.draft.quote_header).is_ok()),
                 ]);
             });
         let defaults = Options::default();
@@ -188,6 +204,8 @@ impl MailApp {
                 dialog.draft.theme = defaults.theme;
                 dialog.draft.monitor_settings.scaling_mode = defaults.monitor_settings.scaling_mode;
                 dialog.draft.random_tagline = defaults.random_tagline;
+                dialog.draft.signature = defaults.signature;
+                dialog.draft.quote_header = defaults.quote_header;
                 dialog.draft.reading_pane = defaults.reading_pane;
                 dialog.draft.reading_mode = defaults.reading_mode;
                 dialog.draft.modern_font = defaults.modern_font;
@@ -199,7 +217,11 @@ impl MailApp {
                 dialog.draft.monitor_settings = defaults.monitor_settings;
                 dialog.draft.monitor_settings.scaling_mode = zoom;
             }
-            Some(Footer::Save) => close = Some(true),
+            Some(Footer::Save) => {
+                if validate_quote_header(&dialog.draft.quote_header).is_ok() {
+                    close = Some(true);
+                }
+            }
             Some(Footer::Cancel) => close = Some(false),
             None if response.dismissed => close = Some(false),
             None => {}
@@ -266,6 +288,21 @@ fn general(ui: &mut egui::Ui, options: &mut Options) {
     });
     appearance::group(ui, &fl!(LANGUAGE_LOADER, "settings-section-writing"), |ui| {
         appearance::check_row(ui, &fl!(LANGUAGE_LOADER, "settings-add-random-tagline"), &mut options.random_tagline);
+        ui.label(fl!(LANGUAGE_LOADER, "settings-signature"));
+        ui.add(
+            egui::TextEdit::multiline(&mut options.signature)
+                .id_salt("settings-signature")
+                .desired_rows(2)
+                .desired_width(f32::INFINITY),
+        )
+        .on_hover_text(fl!(LANGUAGE_LOADER, "settings-signature-hint"));
+        ui.label(fl!(LANGUAGE_LOADER, "settings-quote-header"));
+        ui.add(
+            appearance::text_edit(&mut options.quote_header)
+                .id_salt("settings-quote-header")
+                .desired_width(f32::INFINITY),
+        );
+        ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "settings-quote-header-hint")).weak().small());
     });
 }
 

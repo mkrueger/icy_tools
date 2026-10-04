@@ -1,4 +1,4 @@
-//! Address book of people to write to, in MultiMail's file format so books can be shared:
+//! Address book of people to write to, in a portable plain-text format:
 //! each entry is a name line and an address line followed by a blank line, and Internet
 //! addresses are marked with a leading `I`.
 
@@ -167,7 +167,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_and_writes_multimail_address_books() {
+    fn reads_and_writes_plain_text_address_books() {
         let dir = crate::qwk::tests::TempDir::new();
         fs::write(
             dir.path().join(FILE_NAME),

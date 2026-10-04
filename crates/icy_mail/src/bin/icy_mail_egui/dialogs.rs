@@ -63,6 +63,11 @@ impl MailApp {
                     self.modal = None;
                 }
             }
+            Modal::Subscriptions => {
+                if self.subscriptions_dialog(context) {
+                    self.modal = None;
+                }
+            }
             Modal::Exported(path) => {
                 let path = path.clone();
                 let response = appearance::MessageBox::new(
@@ -286,6 +291,59 @@ impl MailApp {
             &fl!(LANGUAGE_LOADER, "shortcuts-subtitle"),
             &groups,
         )
+    }
+
+    fn subscriptions_dialog(&mut self, context: &egui::Context) -> bool {
+        let supported = self.supports_subscriptions() && self.drafts.is_some();
+        let mut changes = Vec::new();
+        let response = appearance::Dialog::new("mail-subscriptions")
+            .title(fl!(LANGUAGE_LOADER, "subscriptions-title"))
+            .subtitle(fl!(LANGUAGE_LOADER, "subscriptions-help"))
+            .size(appearance::DialogSize::Medium)
+            .show(context, |dialog| {
+                dialog.content(|ui| {
+                    if !supported {
+                        ui.label(fl!(LANGUAGE_LOADER, "subscriptions-unsupported"));
+                    } else {
+                        let pending: std::collections::BTreeMap<_, _> = self
+                            .drafts
+                            .as_ref()
+                            .map(|store| store.subscriptions())
+                            .unwrap_or_default()
+                            .into_iter()
+                            .collect();
+                        ui.label(fl!(LANGUAGE_LOADER, "subscriptions-pending", count = pending.len()));
+                        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                            for (number, name) in &self.choices {
+                                let current = pending.get(number).copied();
+                                let mut next = current;
+                                ui.horizontal(|ui| {
+                                    egui::ComboBox::from_id_salt(("mail-subscription", number))
+                                        .selected_text(match current {
+                                            Some(true) => fl!(LANGUAGE_LOADER, "subscriptions-subscribe"),
+                                            Some(false) => fl!(LANGUAGE_LOADER, "subscriptions-unsubscribe"),
+                                            None => fl!(LANGUAGE_LOADER, "subscriptions-no-change"),
+                                        })
+                                        .show_ui(ui, |ui| {
+                                            ui.selectable_value(&mut next, None, fl!(LANGUAGE_LOADER, "subscriptions-no-change"));
+                                            ui.selectable_value(&mut next, Some(true), fl!(LANGUAGE_LOADER, "subscriptions-subscribe"));
+                                            ui.selectable_value(&mut next, Some(false), fl!(LANGUAGE_LOADER, "subscriptions-unsubscribe"));
+                                        });
+                                    ui.label(format!("{number} - {name}"));
+                                });
+                                if next != current {
+                                    changes.push((*number, next));
+                                }
+                            }
+                        });
+                    }
+                });
+                dialog.buttons([appearance::DialogButton::primary(appearance::labels::close(), ()).cancels()]);
+            });
+        for (conference, subscribe) in changes {
+            self.set_subscription(context, conference, subscribe);
+        }
+        response.action.is_some() || response.dismissed
     }
 
     fn packet_info(&self, context: &egui::Context) -> bool {

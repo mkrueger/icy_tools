@@ -2,7 +2,7 @@ use eframe::egui::{self, Key};
 use i18n_embed_fl::fl;
 use icy_engine_gui::egui::appearance;
 use icy_mail::{
-    drafts::{Draft, DraftField, DraftKind, HEADER_FIELD_LENGTH},
+    drafts::{Draft, DraftField, DraftKind},
     LANGUAGE_LOADER,
 };
 
@@ -126,10 +126,14 @@ impl MailApp {
             return;
         }
         let conferences = self.choices.clone();
+        let Some(store) = self.drafts.as_ref() else {
+            return;
+        };
+        let header_limit = store.header_limit();
         let Some(composer) = &mut self.composer else {
             return;
         };
-        let issues = self.drafts.as_ref().map(|store| store.issues(&composer.draft)).unwrap_or_default();
+        let issues = store.issues(&composer.draft);
         let mut problems: Vec<String> = issues.iter().map(|issue| issue.message.clone()).collect();
         problems.dedup();
         #[derive(Clone, Copy)]
@@ -247,13 +251,13 @@ impl MailApp {
                             *value = value.replace('\t', " ");
                         }
                         let length = value.chars().count();
-                        let color = if length > HEADER_FIELD_LENGTH {
+                        let color = if length > header_limit {
                             ui.visuals().error_fg_color
                         } else {
                             ui.visuals().weak_text_color()
                         };
-                        ui.label(egui::RichText::new(format!("{length}/{HEADER_FIELD_LENGTH}")).size(11.5).color(color))
-                            .on_hover_text(fl!(LANGUAGE_LOADER, "composer-qwk-header-limit-tooltip"));
+                        ui.label(egui::RichText::new(format!("{length}/{header_limit}")).size(11.5).color(color))
+                            .on_hover_text(fl!(LANGUAGE_LOADER, "composer-qwk-header-limit-tooltip", limit = header_limit));
                         if field == DraftField::To
                             && icons
                                 .button(ui, Icon::Contacts, &fl!(LANGUAGE_LOADER, "composer-address-book-tooltip"), true)
@@ -272,6 +276,19 @@ impl MailApp {
                     .frame(egui::Frame::new().inner_margin(egui::Margin { top: 6, ..Default::default() }))
                     .show_separator_line(false)
                     .show_inside(ui, |ui| {
+                        egui::CollapsingHeader::new(fl!(LANGUAGE_LOADER, "composer-signature"))
+                            .id_salt("composer-signature")
+                            .default_open(!composer.draft.signature.is_empty())
+                            .show(ui, |ui| {
+                                let invalid = issues.iter().any(|issue| issue.field == DraftField::Signature);
+                                let mut edit = egui::TextEdit::multiline(&mut composer.draft.signature)
+                                    .desired_rows(2)
+                                    .desired_width(f32::INFINITY);
+                                if invalid {
+                                    edit = edit.text_color(ui.visuals().error_fg_color);
+                                }
+                                ui.add(edit).on_hover_text(fl!(LANGUAGE_LOADER, "composer-signature-hint"));
+                            });
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 4.0;
                             ui.allocate_ui_with_layout(egui::vec2(label_width, 28.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {

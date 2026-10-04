@@ -226,6 +226,50 @@ loading-preload-error = Could not preload packet message data: { $error }
 settings-extraction-cache-days = Keep extracted packets (days)
 settings-extraction-cache-help = Days since last use. Old entries are removed when you next open a packet. 0 disables caching and removes cached entries on the next opening. Changes apply to the next packet load.
 settings-add-random-tagline = Add a random tagline to new messages
+settings-signature = Signature
+settings-signature-hint = Added to new messages, replies, and forwards.
+settings-quote-header = Quote attribution
+settings-quote-header-hint = Leave empty for the built-in attribution. Supported placeholders: { "{author}" }, { "{subject}" }, { "{date}" }.
+settings-quote-header-invalid = Invalid quote attribution: { $error }
+writing-quote-header-unsupported = Unsupported placeholder: { $placeholder }
+writing-quote-header-unclosed = Unclosed placeholder in quote attribution.
+writing-quote-header-unexpected-close = Unexpected closing brace in quote attribution.
+app-quote-header-failed = Unable to prepare the quote attribution: { $error }
+app-quote-character-invalid = Quote attribution contains a character that QWK cannot transport: U+{ $code }
+
+# Reply import, batch saving and offline conference requests
+menu-import-replies = Import Replies…
+menu-conference-subscriptions = Conference Subscriptions…
+menu-save-messages = Save Messages
+menu-save-filtered-messages = Current Folder / Search Results…
+menu-save-starred-messages = All Starred Messages…
+menu-save-conference-messages = Entire Conference…
+loading-import-title = Import reply packet
+loading-save-messages-title = Save messages as a UTF-8 transcript
+batch-save-empty = No messages are available to save.
+batch-save-source-packet = The transcript cannot overwrite the open packet.
+notice-messages-saved = { $count ->
+    [one] Saved 1 message to { $path }
+   *[other] Saved { $count } messages to { $path }
+}
+notice-replies-imported = { $count ->
+    [one] Imported 1 reply into the outbox.
+   *[other] Imported { $count } replies into the outbox.
+}
+notice-import-packet-changed = The packet changed while importing. No replies were imported.
+app-import-failed = Unable to import { $path }:
+    { $error }
+app-import-drafts-failed = Unable to import replies: { $error }
+app-import-no-packet = Open a packet before importing replies or changing subscriptions.
+app-subscription-failed = Unable to save the conference request: { $error }
+notice-subscription-updated = Conference requests saved locally. Export and upload a reply packet to apply them.
+subscriptions-title = Conference Subscriptions
+subscriptions-help = Requests are saved locally and included in exported reply packets. Upload the .REP file to apply them.
+subscriptions-unsupported = This packet does not advertise supported subscribe/unsubscribe commands.
+subscriptions-pending = Pending requests: { $count }
+subscriptions-no-change = No change
+subscriptions-subscribe = Subscribe
+subscriptions-unsubscribe = Unsubscribe
 
 # Mail dialogs
 dialog-mail-app-title = Icy Mail
@@ -345,7 +389,9 @@ composer-private-tooltip = Only the recipient and the sysop can read private mes
 composer-field-to = To
 composer-field-subject = Subject
 composer-field-from = From
-composer-qwk-header-limit-tooltip = QWK headers hold up to 25 characters
+composer-qwk-header-limit-tooltip = This packet supports headers of up to { $limit } characters
+composer-signature = Signature
+composer-signature-hint = Included once before the tagline; leave empty for no signature.
 composer-address-book-tooltip = Choose from the address book (Ctrl+B)
 composer-tagline = Tagline
 composer-no-tagline = No tagline
@@ -609,6 +655,7 @@ draft-field-from = From
 draft-field-to = To
 draft-field-subject = Subject
 draft-field-body = Message text
+draft-field-signature = Signature
 draft-field-tagline = Tagline
 draft-issue-conference-not-in-packet = Conference { $conference } is not part of this packet
 draft-issue-field-required = { $field } is required

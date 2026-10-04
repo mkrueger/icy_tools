@@ -16,8 +16,11 @@ use crate::{text::HeaderText, Res, LANGUAGE_LOADER};
 
 mod bodies;
 mod cache;
+mod protocol;
 use bodies::MessageData;
 pub use cache::ExtractionCache;
+pub use protocol::Capabilities;
+pub(crate) use protocol::SubscriptionFormat;
 
 #[cfg(test)]
 pub mod tests;
@@ -97,6 +100,7 @@ pub struct QwkPackage {
     /// Header index, parallel to `descriptors`.
     pub infos: Vec<MessageInfo>,
     pub control_file: ControlDat,
+    pub capabilities: Capabilities,
     /// Welcome, news and goodbye screens, bulletins and new files lists, in display order.
     pub files: Arc<Vec<PacketFile>>,
     messages_data: Arc<MessageData>,
@@ -113,7 +117,7 @@ pub enum PacketFileKind {
     Goodbye,
 }
 
-/// A text screen shipped next to the messages, like MultiMail's bulletin and new files viewer shows.
+/// A text screen shipped next to the messages.
 #[derive(Clone, Debug)]
 pub struct PacketFile {
     /// File name inside the packet, as stored.
@@ -166,7 +170,7 @@ struct ExtractedPacket {
     cache_identity: Option<cache::CacheIdentity>,
 }
 
-/// Picks the screens named in CONTROL.DAT and the `BLT*`, `NEWFILES*` and `NFILE*` files, like MultiMail.
+/// Picks the screens named in CONTROL.DAT and the `BLT*`, `NEWFILES*` and `NFILE*` files.
 /// `files` holds every other file of the packet.
 pub fn packet_files(control: &ControlDat, mut files: Vec<(String, Vec<u8>)>) -> Vec<PacketFile> {
     files.sort_by_cached_key(|(name, _)| natural_key(name));
@@ -180,7 +184,7 @@ pub fn packet_files(control: &ControlDat, mut files: Vec<(String, Vec<u8>)>) -> 
         if wanted.is_empty() {
             continue;
         }
-        // Exact names first; otherwise the first file starting with it, as MultiMail matches them.
+        // Exact names first; otherwise the first file starting with it.
         let position = files
             .iter()
             .position(|(name, _)| name.to_uppercase() == wanted)
@@ -229,6 +233,7 @@ impl Clone for QwkPackage {
             descriptors: self.descriptors.clone(),
             infos: self.infos.clone(),
             control_file: self.control_file.clone(),
+            capabilities: self.capabilities.clone(),
             files: self.files.clone(),
             messages_data: self.messages_data.clone(),
             message_cache: self.message_cache.clone(), // Share the cache across clones
@@ -356,10 +361,17 @@ impl QwkPackage {
             bbs_id = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
         }
 
+        let mut capabilities = Capabilities::parse(&others);
+        // Actual extended headers are evidence for QWKE posting, but not for
+        // offline subscription commands (those still need an advertisement).
+        capabilities.qwke |= infos
+            .iter()
+            .any(|info| [&info.from, &info.to, &info.subject].iter().any(|field| field.chars().count() > 25));
         Ok(QwkPackage {
             bbs_name: bbs_id,
             infos,
             descriptors: headers,
+            capabilities,
             files: Arc::new(packet_files(&control_file, others)),
             control_file,
             messages_data,

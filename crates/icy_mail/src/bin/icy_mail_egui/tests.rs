@@ -686,6 +686,216 @@ fn compose_reply_edit_delete_and_export_from_ui() {
 }
 
 #[test]
+fn batch_save_scopes_keep_search_results_and_hidden_thread_replies() {
+    let context = egui::Context::default();
+    let (_dir, mut mail) = loaded(&context);
+    mail.reader.set_starred(0, true);
+    mail.reader.set_starred(3, true);
+    assert_eq!(mail.batch_indices(app::SaveMessages::Starred), [0, 3]);
+    mail.set_mode(ViewMode::Threads);
+    mail.reader.set_collapsed(2, true);
+    let all = mail.batch_indices(app::SaveMessages::Filtered);
+    assert!(all.contains(&3), "collapsed replies are still saved");
+    mail.select_folder(app::Folder::Conference(2));
+    mail.reader.filter = "dave".into();
+    mail.filter_changed();
+    assert_eq!(mail.batch_indices(app::SaveMessages::Filtered), [3]);
+    assert_eq!(mail.batch_indices(app::SaveMessages::Conference), [2, 3]);
+    assert_eq!(mail.batch_indices(app::SaveMessages::Starred), [0, 3], "stars span the packet");
+    mail.select_folder(app::Folder::Drafts);
+    assert!(mail.batch_indices(app::SaveMessages::Filtered).is_empty());
+    assert!(mail.batch_indices(app::SaveMessages::Conference).is_empty());
+}
+
+#[test]
+fn imported_replies_join_latest_outbox_without_replacing_unsaved_composer() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, mut mail) = loaded(&context);
+    mail.new_draft(&context);
+    let mut draft = mail.composer.as_ref().unwrap().draft.clone();
+    draft.subject = "Imported reply".into();
+    draft.body = "Reply body".into();
+    let mut exported = icy_mail::drafts::DraftStore::open_in(
+        &dir.path().join("TEST.QWK"),
+        mail.reader.package.as_ref().unwrap(),
+        &dir.path().join("rep-source"),
+    )
+    .unwrap();
+    exported.insert(draft).unwrap();
+    let path = dir.path().join("TEST.REP");
+    exported.export_rep(&path).unwrap();
+    let parsed = mail.drafts.as_ref().unwrap().read_rep(&path).unwrap();
+    let mut current = mail.composer.as_ref().unwrap().draft.clone();
+    let mut local = current.clone();
+    local.subject = "Saved while importing".into();
+    local.body = "Keep this local reply".into();
+    mail.drafts.as_mut().unwrap().insert(local).unwrap();
+    mail.loader
+        .sender
+        .send(loading::Event::RepliesPicked(mail.loader.package_generation, Some((path, Ok(parsed)))))
+        .unwrap();
+    mail.poll(&context);
+    assert_eq!(mail.drafts.as_ref().unwrap().drafts().len(), 2);
+    assert_eq!(mail.drafts.as_ref().unwrap().drafts()[0].subject, "Saved while importing");
+    assert_eq!(mail.drafts.as_ref().unwrap().drafts()[1].subject, "Imported reply");
+    current.id = mail.drafts.as_ref().unwrap().next_id();
+    assert_eq!(mail.composer.as_ref().unwrap().draft, current, "unsaved work remains open");
+    assert_eq!(mail.folder, app::Folder::Drafts);
+    assert!(mail.notice.as_ref().is_some_and(|notice| notice.text.contains("Imported 1")));
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    mail.composer.as_mut().unwrap().draft.subject = "Ongoing draft".into();
+    mail.composer.as_mut().unwrap().editor.request_focus();
+    frame(&context, &mut mail, size, vec![]);
+    frame(&context, &mut mail, size, vec![text("Unsaved work can still be saved")]);
+    click_label(&context, &mut mail, size, "Save Draft");
+    assert!(mail.composer.is_none(), "{:?}", mail.error);
+    assert_eq!(mail.drafts.as_ref().unwrap().drafts().len(), 3);
+    assert_eq!(mail.drafts.as_ref().unwrap().drafts()[2].subject, "Ongoing draft");
+}
+
+#[test]
+fn stale_and_failed_reply_imports_preserve_outbox() {
+    let context = egui::Context::default();
+    let (dir, mut mail) = loaded(&context);
+    mail.new_draft(&context);
+    let draft = mail.composer.as_ref().unwrap().draft.clone();
+    let path = dir.path().join("TEST.REP");
+    mail.loader
+        .sender
+        .send(loading::Event::RepliesPicked(
+            mail.loader.package_generation.wrapping_sub(1),
+            Some((path.clone(), Ok(vec![draft]))),
+        ))
+        .unwrap();
+    mail.poll(&context);
+    assert!(mail.drafts.as_ref().unwrap().drafts().is_empty());
+    assert!(mail.notice.as_ref().is_some_and(|notice| notice.kind == app::NoticeKind::Warning));
+    mail.loader
+        .sender
+        .send(loading::Event::RepliesPicked(
+            mail.loader.package_generation,
+            Some((path, Err("invalid reply packet".into()))),
+        ))
+        .unwrap();
+    mail.poll(&context);
+    assert!(mail.drafts.as_ref().unwrap().drafts().is_empty());
+    assert!(mail.error.as_ref().is_some_and(|error| error.contains("invalid reply packet")));
+}
+
+#[test]
+fn unsupported_subscription_dialog_does_not_offer_changes() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    assert!(!mail.supports_subscriptions());
+    mail.modal = Some(app::Modal::Subscriptions);
+    let output = settle(&context, &mut mail, egui::vec2(1100.0, 760.0));
+    label(&output, "This packet does not advertise supported subscribe/unsubscribe commands.");
+    assert_eq!(count(&output, "Subscribe"), 0);
+    assert_eq!(count(&output, "Unsubscribe"), 0);
+    mail.set_subscription(&context, 1, Some(true));
+    assert!(mail.error.is_some());
+    assert!(!mail.has_exportable());
+}
+
+#[test]
+fn subscription_only_outbox_is_exportable_and_requests_survive_reload() {
+    use std::io::Write;
+
+    let context = egui::Context::default();
+    let (dir, mut mail) = loaded(&context);
+    let mut source = zip::ZipArchive::new(std::fs::File::open(dir.path().join("TEST.QWK")).unwrap()).unwrap();
+    let capable = dir.path().join("CAPABLE.QWK");
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&capable).unwrap());
+    for index in 0..source.len() {
+        let mut entry = source.by_index(index).unwrap();
+        zip.start_file(entry.name(), zip::write::SimpleFileOptions::default()).unwrap();
+        if entry.name() == "DOOR.ID" {
+            zip.write_all(b"CONTROLNAME = OFFLINE\r\nCONTROLTYPE = ADD\r\nCONTROLTYPE = DROP\r\n").unwrap();
+        } else {
+            std::io::copy(&mut entry, &mut zip).unwrap();
+        }
+    }
+    zip.finish().unwrap();
+    mail.open(capable, &context);
+    wait(&mut mail, &context);
+    assert!(mail.supports_subscriptions());
+    let number = mail.choices[0].0;
+    mail.set_subscription(&context, number, Some(true));
+    assert!(mail.error.is_none(), "{:?}", mail.error);
+    assert!(mail.drafts.as_ref().unwrap().drafts().is_empty());
+    assert!(mail.has_exportable());
+    assert_eq!(mail.drafts.as_ref().unwrap().subscriptions(), [(number, true)]);
+    mail.drafts.as_ref().unwrap().export_rep(&dir.path().join("subscriptions.rep")).unwrap();
+    mail.reload(&context);
+    wait(&mut mail, &context);
+    assert_eq!(mail.drafts.as_ref().unwrap().subscriptions(), [(number, true)]);
+    mail.set_subscription(&context, number, Some(false));
+    assert_eq!(mail.drafts.as_ref().unwrap().subscriptions(), [(number, false)]);
+    mail.set_subscription(&context, number, None);
+    assert!(!mail.has_exportable());
+}
+
+#[test]
+fn filtered_batch_save_waits_for_body_search_completion() {
+    let context = egui::Context::default();
+    let (_dir, mut mail) = loaded(&context);
+    assert!(!mail.batch_indices(app::SaveMessages::Filtered).is_empty());
+    mail.loader.searching = true;
+    assert!(mail.batch_indices(app::SaveMessages::Filtered).is_empty());
+    mail.loader.searching = false;
+    assert!(!mail.batch_indices(app::SaveMessages::Filtered).is_empty());
+}
+
+#[test]
+fn configured_quote_attribution_and_signature_are_used_once_and_drafts_keep_their_signature() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    mail.random_tagline = false;
+    mail.signature = "Regards,\nAlice".into();
+    mail.quote_header = "{author} on {subject} ({date}) wrote:".into();
+    let info = mail.selected_info().unwrap().clone();
+    mail.reply(&context, false);
+    assert_eq!(mail.composer.as_ref().unwrap().draft.signature, "Regards,\nAlice");
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![key(egui::Key::A, egui::Modifiers::COMMAND)]);
+    click_label(&context, &mut mail, size, "Save Draft");
+    let draft = mail.drafts.as_ref().unwrap().drafts()[0].clone();
+    assert!(draft.body.contains(&format!("{} on {} ({}) wrote:", info.from, info.subject, info.date_str)));
+    assert_eq!(draft.text().matches("Regards,").count(), 1);
+    assert!(draft.text().ends_with("Regards,\nAlice"));
+    mail.signature = "New signature".into();
+    mail.edit_draft(&context, draft.id);
+    assert_eq!(mail.composer.as_ref().unwrap().draft.signature, "Regards,\nAlice");
+    mail.composer = None;
+    mail.new_draft(&context);
+    assert_eq!(mail.composer.as_ref().unwrap().draft.signature, "New signature");
+    mail.composer = None;
+    mail.select_folder(app::Folder::All);
+    mail.reply(&context, true);
+    assert_eq!(mail.composer.as_ref().unwrap().draft.signature, "New signature");
+}
+
+#[test]
+fn invalid_quote_attribution_reports_error_without_starting_composer() {
+    let context = egui::Context::default();
+    let (_dir, mut mail) = loaded(&context);
+    mail.quote_header = "{unknown} wrote:".into();
+    mail.reply(&context, false);
+    assert!(mail.composer.is_none());
+    assert!(mail.error.as_ref().is_some_and(|error| error.contains("{unknown}")));
+    mail.quote_header = "Unsupported character: \u{1F30D}".into();
+    mail.error = None;
+    mail.reply(&context, false);
+    assert!(mail.composer.is_none());
+    assert!(mail.error.as_ref().is_some_and(|error| error.contains("1F30D")));
+}
+
+#[test]
 fn exporting_replies_shows_the_saved_file_and_next_step() {
     let context = egui::Context::default();
     appearance::apply(&context);
