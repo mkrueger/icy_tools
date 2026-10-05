@@ -165,7 +165,15 @@ draft and composer previews still render locally.
   search match inside opens them). Tables
   and lines with aligned columns use the fixed-width font. ANSI art is drawn
   with the BBS font on the 80 column grid, exactly as in the classic view, at
-  the size of the fixed-width text: a paragraph with block graphics (▀ ▄ █ ░ ▒
+  the size of the fixed-width text at 100%. The status-bar picker, View menu and
+  settings offer 100%, 150% and 200% image zoom without changing the text size.
+  Oversized art scrolls horizontally instead of shrinking to fit; Fit Width
+  remains available only in classic mode. Turn off **Render ANSI art as images**
+  in Settings ▸ Messages to show art as selectable Unicode characters, preserving
+  its fixed-width grid and ANSI colors instead of generating pictures. Image
+  generation is enabled by default; the choice also applies to bulletins and
+  outbox previews. Image zoom controls are hidden when image generation is off.
+  A paragraph with block graphics (▀ ▄ █ ░ ▒
   ▓ …) or colored backgrounds becomes a picture (bullets like ■ or ► stay text), together with short colored or aligned
   paragraphs up to the next piece of art (like a BBS ad); the next plain text
   paragraph switches back to text. Only text lines the terminal wrapped are

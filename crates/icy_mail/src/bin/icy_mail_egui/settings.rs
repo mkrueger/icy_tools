@@ -26,6 +26,21 @@ pub const ZOOMS: [ScalingMode; 4] = [
     ScalingMode::Manual(2.0),
 ];
 
+pub fn zoom_modes(reading_mode: ReadingMode) -> &'static [ScalingMode] {
+    match reading_mode {
+        ReadingMode::Classic => &ZOOMS,
+        ReadingMode::Modern => &ZOOMS[1..],
+    }
+}
+
+/// Automatic terminal scaling displays modern art at 100%, without changing the classic setting.
+pub fn display_zoom(mode: ScalingMode, reading_mode: ReadingMode) -> ScalingMode {
+    match (reading_mode, mode) {
+        (ReadingMode::Modern, ScalingMode::Manual(_)) | (ReadingMode::Classic, _) => mode,
+        (ReadingMode::Modern, _) => ScalingMode::Manual(1.0),
+    }
+}
+
 pub fn theme_name(theme: Theme) -> String {
     match theme {
         Theme::System => fl!(LANGUAGE_LOADER, "settings-theme-follow-system"),
@@ -93,6 +108,7 @@ impl MailApp {
             reading_mode: self.reading_mode,
             modern_font: self.modern_font,
             modern_font_size: self.modern_font_size,
+            modern_art_images: self.modern_art_images,
             search_fields: self.reader.search_fields,
             extraction_cache_days: self.extraction_cache_days,
         }
@@ -110,6 +126,13 @@ impl MailApp {
         self.reading_mode = options.reading_mode;
         self.modern_font = options.modern_font;
         self.modern_font_size = options.modern_font_size.clamp(*MODERN_FONT_SIZES.start(), *MODERN_FONT_SIZES.end());
+        if self.modern_art_images != options.modern_art_images {
+            self.modern_art_images = options.modern_art_images;
+            self.modern_items = None;
+            self.modern_selection_snapshot = None;
+            self.modern_context_menu_open = false;
+            self.open_quotes.clear();
+        }
         self.extraction_cache_days = options.extraction_cache_days;
         if self.reader.search_fields != options.search_fields && options.search_fields.any() {
             self.set_search_fields(options.search_fields);
@@ -210,6 +233,7 @@ impl MailApp {
                 dialog.draft.reading_mode = defaults.reading_mode;
                 dialog.draft.modern_font = defaults.modern_font;
                 dialog.draft.modern_font_size = defaults.modern_font_size;
+                dialog.draft.modern_art_images = defaults.modern_art_images;
             }
             Some(Footer::Restore) if dialog.page == 2 => dialog.draft.extraction_cache_days = defaults.extraction_cache_days,
             Some(Footer::Restore) => {
@@ -272,13 +296,19 @@ fn general(ui: &mut egui::Ui, options: &mut Options) {
                 MODERN_FONT_SIZES,
             );
             options.modern_font_size = options.modern_font_size.round();
+            appearance::check_row(ui, &fl!(LANGUAGE_LOADER, "settings-modern-art-images"), &mut options.modern_art_images);
         });
-        let zoom = &mut options.monitor_settings.scaling_mode;
-        appearance::combo_row(ui, &fl!(LANGUAGE_LOADER, "settings-zoom-label"), zoom_name(*zoom), |ui| {
-            for mode in ZOOMS {
-                ui.selectable_value(zoom, mode, zoom_name(mode));
-            }
-        });
+        if !modern || options.modern_art_images {
+            let zoom = &mut options.monitor_settings.scaling_mode;
+            let shown_zoom = display_zoom(*zoom, options.reading_mode);
+            appearance::combo_row(ui, &fl!(LANGUAGE_LOADER, "settings-zoom-label"), zoom_name(shown_zoom), |ui| {
+                for &mode in zoom_modes(options.reading_mode) {
+                    if ui.selectable_label(shown_zoom == mode, zoom_name(mode)).clicked() {
+                        *zoom = mode;
+                    }
+                }
+            });
+        }
         let pane = &mut options.reading_pane;
         appearance::combo_row(ui, &fl!(LANGUAGE_LOADER, "settings-reading-pane-label"), reading_pane_name(*pane), |ui| {
             for choice in READING_PANES {

@@ -450,10 +450,12 @@ impl MailApp {
                 }
             }
         });
-        ui.menu_button(fl!(LANGUAGE_LOADER, "menu-message-zoom"), |ui| {
-            menu_width(ui);
-            zoom_choices(ui, &mut self.settings.scaling_mode);
-        });
+        if self.reading_mode == icy_mail::options::ReadingMode::Classic || self.modern_art_images || self.composer.is_some() {
+            ui.menu_button(fl!(LANGUAGE_LOADER, "menu-message-zoom"), |ui| {
+                menu_width(ui);
+                zoom_choices(ui, &mut self.settings.scaling_mode, self.reading_mode);
+            });
+        }
         ui.menu_button(fl!(LANGUAGE_LOADER, "menu-appearance"), |ui| {
             menu_width(ui);
             let current = context.options(|options| options.theme_preference);
@@ -546,10 +548,12 @@ impl MailApp {
                 if self.reader.package.is_none() {
                     return;
                 }
-                let zoom = settings::zoom_name(self.settings.scaling_mode);
-                widgets::status_menu(ui, egui::RichText::new(zoom).size(12.0), &fl!(LANGUAGE_LOADER, "status-message-zoom"), |ui| {
-                    zoom_choices(ui, &mut self.settings.scaling_mode);
-                });
+                if self.reading_mode == icy_mail::options::ReadingMode::Classic || self.modern_art_images {
+                    let zoom = settings::zoom_name(settings::display_zoom(self.settings.scaling_mode, self.reading_mode));
+                    widgets::status_menu(ui, egui::RichText::new(zoom).size(12.0), &fl!(LANGUAGE_LOADER, "status-message-zoom"), |ui| {
+                        zoom_choices(ui, &mut self.settings.scaling_mode, self.reading_mode);
+                    });
+                }
                 let drafts = self.draft_count();
                 if drafts > 0 && ui.available_width() > 260.0 {
                     ui.separator();
@@ -591,9 +595,15 @@ fn search_hint(fields: SearchFields) -> String {
     fl!(LANGUAGE_LOADER, "toolbar-search-hint-fields", fields = names.join(", "))
 }
 
-fn zoom_choices(ui: &mut egui::Ui, mode: &mut ScalingMode) {
-    for zoom in settings::ZOOMS {
-        if ui.add(egui::Button::selectable(*mode == zoom, settings::zoom_name(zoom))).clicked() {
+fn zoom_choices(ui: &mut egui::Ui, mode: &mut ScalingMode, reading_mode: icy_mail::options::ReadingMode) {
+    for &zoom in settings::zoom_modes(reading_mode) {
+        if ui
+            .add(egui::Button::selectable(
+                settings::display_zoom(*mode, reading_mode) == zoom,
+                settings::zoom_name(zoom),
+            ))
+            .clicked()
+        {
             *mode = zoom;
             ui.close();
         }

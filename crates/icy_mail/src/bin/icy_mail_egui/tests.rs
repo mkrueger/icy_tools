@@ -340,6 +340,215 @@ fn command_wheel_zooms_the_message() {
 }
 
 #[test]
+fn modern_art_zoom_choices_exclude_automatic_scaling() {
+    use icy_mail::options::ReadingMode;
+
+    assert_eq!(settings::zoom_modes(ReadingMode::Classic), &settings::ZOOMS);
+    assert_eq!(
+        settings::zoom_modes(ReadingMode::Modern),
+        &[ScalingMode::Manual(1.0), ScalingMode::Manual(1.5), ScalingMode::Manual(2.0)]
+    );
+    assert_eq!(settings::display_zoom(ScalingMode::FitWidth, ReadingMode::Modern), ScalingMode::Manual(1.0));
+    assert_eq!(settings::display_zoom(ScalingMode::FitWidth, ReadingMode::Classic), ScalingMode::FitWidth);
+}
+
+#[test]
+fn modern_art_images_disabled_preserve_unicode_rows_and_ansi_styles() {
+    let body = b"\x1b[31;44m\xdb  \xdb\r\n\xdb \xb3\xdb\x1b[0m\r\n\r\nOrdinary prose.";
+    let classic = icy_mail::reader::render_body(body).unwrap();
+    let wide = icy_mail::reader::render_body_wide(body).unwrap();
+    let lines = icy_mail::text::styled_lines(&classic);
+    let images = modern_view::prepare_items(&classic, modern_view::blocks(&classic, &wide), true);
+    assert!(images.iter().any(|item| matches!(item, modern_view::PreparedItem::Art(_))));
+    let text = modern_view::prepare_items(&classic, modern_view::blocks(&classic, &wide), false);
+    assert!(text.iter().all(|item| matches!(item, modern_view::PreparedItem::Text(_))));
+    for (index, item) in text.iter().take(2).enumerate() {
+        let modern_view::PreparedItem::Text(line) = item else { unreachable!() };
+        assert_eq!(line.spans, lines[index], "Unicode characters, spaces and ANSI styles are preserved");
+        assert!(line.fixed && line.unwrapped && !line.quote, "art keeps its grid and cannot fold as a quote");
+    }
+    let modern_view::PreparedItem::Text(line) = &text[0] else { unreachable!() };
+    assert!(line.spans.iter().any(|span| span.text.contains('\u{2588}')));
+    assert!(line.spans.iter().any(|span| span.foreground.is_some() && span.background.is_some()));
+}
+
+#[test]
+fn modern_art_images_toggle_previews_cancels_and_persists() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, mut mail) = loaded(&context);
+    let size = egui::vec2(850.0, 760.0);
+    let package = Arc::make_mut(mail.reader.package.as_mut().unwrap());
+    let mut body = b"\x1b[31;44m".to_vec();
+    body.extend([219; 80]);
+    body.extend(b"\x1b[0m\r\n\r\nOrdinary prose.");
+    Arc::make_mut(&mut package.files)[0].data = body;
+    mail.select_folder(app::Folder::Bulletins);
+    wait(&mut mail, &context);
+    settle(&context, &mut mail, size);
+    let has_images = |mail: &app::MailApp| {
+        mail.modern_items
+            .as_ref()
+            .unwrap()
+            .1
+            .iter()
+            .any(|item| matches!(item, modern_view::Item::Art(_)))
+    };
+    assert!(has_images(&mail));
+    for save in [false, true] {
+        mail.open_settings(&context);
+        let output = settle(&context, &mut mail, size);
+        let caption = label(&output, "Render ANSI art as images");
+        let checkbox = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect)
+                    if rect.rect.size() == egui::vec2(18.0, 18.0)
+                        && (rect.rect.center().y - caption.center().y).abs() < 2.0
+                        && rect.rect.left() > caption.right() =>
+                {
+                    Some(rect.rect.center())
+                }
+                _ => None,
+            })
+            .expect("image-generation checkbox is visible beside its caption");
+        for pressed in [true, false] {
+            frame(&context, &mut mail, size, pointer(checkbox, pressed));
+        }
+        mail.poll(&context);
+        let mut stale = mail.loader.body_request.unwrap();
+        assert!(!stale.art_images);
+        stale.art_images = true;
+        mail.loader
+            .sender
+            .send(loading::Event::Body(stale, Err("stale image preparation".into())))
+            .unwrap();
+        wait(&mut mail, &context);
+        assert!(!has_images(&mail));
+        let output = settle(&context, &mut mail, size);
+        assert_eq!(count(&output, "100%"), 0, "image zoom is hidden when no images are generated");
+        let art = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text().contains('\u{2588}') => Some(&text.galley),
+                _ => None,
+            })
+            .expect("ANSI art is painted as Unicode text");
+        assert_eq!(art.rows.len(), art.text().split('\n').count(), "art does not wrap to the narrow reading pane");
+        assert!(art.size().x > mail.content_rect.width(), "the text grid scrolls horizontally");
+        assert!(art.job.sections.iter().any(|section| section.format.background != egui::Color32::TRANSPARENT));
+        if save {
+            click_label(&context, &mut mail, size, "OK");
+            let fresh = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+            assert!(!fresh.modern_art_images, "the option survives restarting");
+        } else {
+            frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
+            wait(&mut mail, &context);
+            assert!(mail.modern_art_images && has_images(&mail), "cancel restores image generation");
+        }
+    }
+}
+
+#[test]
+fn modern_art_images_toggle_rebuilds_the_outbox_preview() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    let mut draft = mail
+        .drafts
+        .as_ref()
+        .unwrap()
+        .prepare(mail.reader.package.as_ref().unwrap(), icy_mail::drafts::Compose::New { conference: 1 })
+        .unwrap();
+    draft.to = "Alice".into();
+    draft.subject = "ANSI draft".into();
+    draft.body = "\u{2588}\u{2588}\u{2588}\u{2588}\n\u{2588}\u{2588}\u{2588}\u{2588}".into();
+    mail.drafts.as_mut().unwrap().insert(draft).unwrap();
+    mail.select_folder(app::Folder::Drafts);
+    let mut options = mail.current_options(&context);
+    for images in [true, false, true] {
+        options.modern_art_images = images;
+        mail.apply_options(&context, &options);
+        settle(&context, &mut mail, size);
+        let (_, items) = mail.modern_items.as_ref().unwrap();
+        assert_eq!(items.iter().any(|item| matches!(item, modern_view::Item::Art(_))), images);
+        if !images {
+            assert!(items.iter().any(|item| matches!(item, modern_view::Item::Text(line) if line.unwrapped)));
+        }
+    }
+}
+
+#[test]
+fn modern_art_zoom_scales_images_without_fitting_or_scaling_text() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    let texture = context.load_texture(
+        "zoom-test-art",
+        egui::ColorImage::filled([2048, 64], egui::Color32::WHITE),
+        egui::TextureOptions::NEAREST,
+    );
+    let key = (
+        Arc::as_ptr(mail.reader.package.as_ref().unwrap()) as usize,
+        modern_view::Document::Message(mail.reader.selected_message.unwrap()),
+    );
+    mail.modern_items = Some((
+        key,
+        vec![
+            modern_view::Item::Text(modern_view::ModernLine {
+                spans: icy_mail::text::styled_lines(&icy_mail::reader::render_body(b"Text stays the same size").unwrap()).remove(0),
+                fixed: false,
+                quote: false,
+                unwrapped: false,
+            }),
+            modern_view::Item::Art(texture.clone()),
+        ],
+    ));
+    let art_size = |output: &egui::FullOutput| {
+        output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect) if rect.fill_texture_id() == texture.id() => Some(rect.rect.size()),
+                _ => None,
+            })
+            .expect("ANSI image is painted")
+    };
+    let output = settle(&context, &mut mail, size);
+    let original = art_size(&output);
+    let text_size = label(&output, "Text stays the same size").size();
+    assert_eq!(mail.settings.scaling_mode, ScalingMode::FitWidth, "showing 100% keeps classic fit width intact");
+    assert!(original.x > mail.content_rect.width(), "art must not shrink to fit the pane");
+    for zoom in [1.5, 2.0, 1.0] {
+        let current = settings::zoom_name(settings::display_zoom(mail.settings.scaling_mode, mail.reading_mode));
+        click_label(&context, &mut mail, size, &current);
+        let popup = settle(&context, &mut mail, size);
+        assert_eq!(count(&popup, "Fit Width"), 0, "modern picker has no fit-width option");
+        for choice in ["100%", "150%", "200%"] {
+            label(&popup, choice);
+        }
+        click_label(&context, &mut mail, size, &settings::zoom_name(ScalingMode::Manual(zoom)));
+        let output = settle(&context, &mut mail, size);
+        assert_eq!(mail.settings.scaling_mode, ScalingMode::Manual(zoom));
+        assert!((art_size(&output) - original * zoom).length() < 0.1, "both image dimensions scale by {zoom}");
+        assert_eq!(label(&output, "Text stays the same size").size(), text_size, "image zoom leaves text unchanged");
+        assert!(mail.screen.max_offset.x > 0.0, "oversized art can be scrolled horizontally");
+    }
+    let narrower = settle(&context, &mut mail, egui::vec2(850.0, 760.0));
+    assert!((art_size(&narrower) - original).length() < 0.1, "resizing the pane does not scale art");
+
+    mail.reading_mode = icy_mail::options::ReadingMode::Classic;
+    settle(&context, &mut mail, size);
+    click_label(&context, &mut mail, size, "100%");
+    label(&settle(&context, &mut mail, size), "Fit Width");
+}
+
+#[test]
 fn reader_drag_uses_release_position_in_both_directions_and_clamps_to_body() {
     for reverse in [false, true] {
         let context = egui::Context::default();
@@ -452,7 +661,7 @@ fn settings_preview_live_cancel_restores_and_ok_persists() {
     );
     assert_eq!(mail.extraction_cache_days, 0, "the numeric field previews the cache retention");
     click_label(&context, &mut mail, size, "General");
-    click_label(&context, &mut mail, size, "Fit Width");
+    click_label(&context, &mut mail, size, "100%");
     click_label(&context, &mut mail, size, "200%");
     assert_eq!(mail.settings.scaling_mode, ScalingMode::Manual(2.0), "changes preview live");
     frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
@@ -467,7 +676,7 @@ fn settings_preview_live_cancel_restores_and_ok_persists() {
     let output = settle(&context, &mut mail, size);
     label(&output, "Gamma");
     click_label(&context, &mut mail, size, "General");
-    click_label(&context, &mut mail, size, "Fit Width");
+    click_label(&context, &mut mail, size, "100%");
     click_label(&context, &mut mail, size, "150%");
     click_label(&context, &mut mail, size, "OK");
     assert!(mail.modal.is_none());
@@ -1482,6 +1691,7 @@ fn stale_package_and_body_results_cannot_replace_current_mail() {
                 generation: 8,
                 source: loading::BodySource::Message(0),
                 mode: mail.reading_mode,
+                art_images: mail.modern_art_images,
             },
             Err("stale body failure".into()),
         ))
@@ -1552,6 +1762,27 @@ fn changing_reading_mode_requests_matching_background_preparation() {
     wait(&mut mail, &context);
     assert!(mail.modern_items.is_some());
     assert_eq!(mail.loader.body_request.unwrap().mode, ReadingMode::Modern);
+    let generation = mail.loader.body_generation;
+    let mut options = mail.current_options(&context);
+    options.modern_art_images = false;
+    mail.apply_options(&context, &options);
+    wait(&mut mail, &context);
+    assert_ne!(
+        mail.loader.body_generation, generation,
+        "changing image generation re-prepares the current message"
+    );
+    assert!(!mail.loader.body_request.unwrap().art_images);
+    assert!(mail
+        .modern_items
+        .as_ref()
+        .unwrap()
+        .1
+        .iter()
+        .all(|item| matches!(item, modern_view::Item::Text(_))));
+    options.modern_art_images = true;
+    mail.apply_options(&context, &options);
+    wait(&mut mail, &context);
+    assert!(mail.loader.body_request.unwrap().art_images);
 }
 
 #[test]
@@ -1603,6 +1834,7 @@ fn selection_change_and_empty_filter_drop_old_body_results() {
                 generation,
                 source: loading::BodySource::Message(3),
                 mode: mail.reading_mode,
+                art_images: mail.modern_art_images,
             },
             Err("stale body failure".into()),
         ))
@@ -3454,6 +3686,7 @@ fn modern_reader_links_wrap_and_keep_selection_and_context_menus() {
             spans: vec![span(text[..30].into(), false), span(text[30..].into(), true)],
             fixed: false,
             quote: false,
+            unwrapped: false,
         })],
     ));
     let output = settle(&context, &mut mail, size);
@@ -3684,7 +3917,10 @@ fn gpu_modern_reading_mode() {
     );
     let classic = icy_mail::reader::render_body(&body).unwrap();
     let wide = icy_mail::reader::render_body_wide(&body).unwrap();
-    mail.modern_items = Some((cache_key, modern_view::items(&gpu.context, &classic, modern_view::blocks(&classic, &wide))));
+    mail.modern_items = Some((
+        cache_key,
+        modern_view::items(&gpu.context, &classic, modern_view::blocks(&classic, &wide), true),
+    ));
     mail.reading_mode = icy_mail::options::ReadingMode::Modern;
     for (theme, font, name) in [
         (egui::Theme::Dark, icy_mail::options::ModernFont::Proportional, "modern-dark"),
@@ -3737,7 +3973,10 @@ fn gpu_modern_reading_mode() {
     );
     for (theme, name) in [(egui::Theme::Dark, "dark"), (egui::Theme::Light, "light")] {
         gpu.context.set_theme(theme);
-        mail.modern_items = Some((swatch_key, modern_view::items(&gpu.context, &classic, modern_view::blocks(&classic, &wide))));
+        mail.modern_items = Some((
+            swatch_key,
+            modern_view::items(&gpu.context, &classic, modern_view::blocks(&classic, &wide), true),
+        ));
         for _ in 0..3 {
             gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
         }
@@ -3798,7 +4037,10 @@ fn gpu_modern_reading_mode() {
         Arc::as_ptr(&package) as usize,
         modern_view::Document::Message(mail.reader.selected_message.unwrap()),
     );
-    mail.modern_items = Some((quote_key, modern_view::items(&gpu.context, &classic, modern_view::blocks(&classic, &wide))));
+    mail.modern_items = Some((
+        quote_key,
+        modern_view::items(&gpu.context, &classic, modern_view::blocks(&classic, &wide), true),
+    ));
     for _ in 0..3 {
         gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
     }
@@ -3982,7 +4224,7 @@ fn long_quotes_fold_below_their_first_lines() {
         Arc::as_ptr(mail.reader.package.as_ref().unwrap()) as usize,
         modern_view::Document::Message(mail.reader.selected_message.unwrap()),
     );
-    mail.modern_items = Some((key, modern_view::items(&context, &classic, modern_view::blocks(&classic, &wide))));
+    mail.modern_items = Some((key, modern_view::items(&context, &classic, modern_view::blocks(&classic, &wide), true)));
     let text = |output: &egui::FullOutput| -> String {
         output
             .shapes

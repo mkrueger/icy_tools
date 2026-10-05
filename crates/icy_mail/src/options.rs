@@ -77,6 +77,8 @@ pub struct Options {
     pub reading_mode: ReadingMode,
     pub modern_font: ModernFont,
     pub modern_font_size: f32,
+    /// Render ANSI art as images; otherwise keep its Unicode characters as selectable text.
+    pub modern_art_images: bool,
     /// Parts of the messages the search looks at.
     pub search_fields: SearchFields,
     /// Days since last use to retain packet extractions; zero disables the disk cache.
@@ -102,6 +104,7 @@ impl Default for Options {
             reading_mode: ReadingMode::default(),
             modern_font: ModernFont::default(),
             modern_font_size: DEFAULT_MODERN_FONT_SIZE,
+            modern_art_images: true,
             search_fields: SearchFields::default(),
             extraction_cache_days: 30,
         }
@@ -162,6 +165,7 @@ mod tests {
         options.reading_mode = ReadingMode::Classic;
         options.modern_font = ModernFont::Proportional;
         options.modern_font_size = 18.0;
+        options.modern_art_images = false;
         options.search_fields.text = false;
         options.extraction_cache_days = 0;
         options.signature = "Regards,\nJörg".to_string();
@@ -179,6 +183,7 @@ mod tests {
         assert_eq!(partial.reading_pane, ReadingPane::Automatic);
         assert_eq!(partial.reading_mode, ReadingMode::Modern, "new installations read in the modern mode");
         assert_eq!(partial.modern_font, ModernFont::Monospace);
+        assert!(partial.modern_art_images, "older settings keep ANSI image rendering enabled");
         assert!(partial.search_fields.all(), "search looks everywhere until restricted");
         assert_eq!(partial.extraction_cache_days, 30, "older settings inherit the cache retention default");
     }

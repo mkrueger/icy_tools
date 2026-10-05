@@ -1,13 +1,14 @@
 //! The modern reading mode: the message as selectable, wrapping text in the application font that
 //! keeps its ANSI colors but follows the theme. ANSI art is drawn with the BBS font, as in the
-//! classic view, since block graphics only line up in their own cell grid.
+//! classic view, since block graphics only line up in their own cell grid. Image generation can
+//! be disabled to show the art as selectable Unicode characters instead.
 
 use std::ops::Range;
 
 use eframe::egui::{self, Color32};
 use i18n_embed_fl::fl;
 use icy_engine::{Rectangle, RenderOptions, TextPane, TextScreen};
-use icy_engine_gui::egui::appearance;
+use icy_engine_gui::{egui::appearance, ScalingMode};
 use icy_mail::{
     editor,
     options::{ModernFont, ReadingMode, MODERN_FONT_SIZES},
@@ -16,7 +17,7 @@ use icy_mail::{
     LANGUAGE_LOADER,
 };
 
-use super::{app::MailApp, reader_view::open_link_on_click, widgets};
+use super::{app::MailApp, reader_view::open_link_on_click, settings, widgets};
 
 fn link_rects(galley: &egui::Galley, range: Range<usize>, position: egui::Pos2) -> Vec<egui::Rect> {
     let mut offset = 0;
@@ -48,7 +49,12 @@ fn text_label(ui: &mut egui::Ui, mut job: egui::text::LayoutJob, needle: &str, p
         format.underline = egui::Stroke::new(1.0, color);
     });
     widgets::highlight(&mut job, 0, needle, ui);
-    let (position, galley, response) = egui::Label::new(job).selectable(true).layout_in_ui(ui);
+    let unwrapped = job.wrap.max_width.is_infinite();
+    let mut label = egui::Label::new(job).selectable(true);
+    if unwrapped {
+        label = label.extend();
+    }
+    let (position, galley, response) = label.layout_in_ui(ui);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), galley.text()));
     if ui.is_rect_visible(response.rect) {
         let hovered_link = response.hover_pos().and_then(|pointer| {
@@ -131,6 +137,8 @@ pub struct ModernLine {
     pub fixed: bool,
     /// An uncolored quote line (`> …`, ` JD> …`), drawn dimmed.
     pub quote: bool,
+    /// Art shown as Unicode text keeps its original cell grid instead of wrapping.
+    pub unwrapped: bool,
 }
 
 /// A message split into text and art.
@@ -216,6 +224,7 @@ pub fn blocks(classic: &TextScreen, wide: &TextScreen) -> Vec<Block> {
         blocks.push(Block::Text(ModernLine {
             fixed: text.chars().any(is_box_drawing) || is_aligned(&text),
             quote: !colored && is_quote(&text),
+            unwrapped: false,
             spans,
         }));
     }
@@ -386,17 +395,29 @@ fn soft_wraps(classic: &[Vec<StyledSpan>], wide: &TextScreen, columns: usize) ->
     }
 }
 
-/// Renders the art of `blocks` into textures; text lines are kept as they are.
-pub fn items(context: &egui::Context, screen: &TextScreen, blocks: Vec<Block>) -> Vec<Item> {
-    upload(context, prepare_items(screen, blocks))
+/// Prepares art as textures or Unicode text; ordinary text lines are kept as they are.
+pub fn items(context: &egui::Context, screen: &TextScreen, blocks: Vec<Block>, art_images: bool) -> Vec<Item> {
+    upload(context, prepare_items(screen, blocks, art_images))
 }
 
-pub fn prepare_items(screen: &TextScreen, blocks: Vec<Block>) -> Vec<PreparedItem> {
-    blocks
-        .into_iter()
-        .map(|block| match block {
-            Block::Text(line) => PreparedItem::Text(line),
+pub fn prepare_items(screen: &TextScreen, blocks: Vec<Block>, art_images: bool) -> Vec<PreparedItem> {
+    let art_text = (!art_images).then(|| styled_lines(screen));
+    let mut items = Vec::with_capacity(blocks.len());
+    for block in blocks {
+        match block {
+            Block::Text(line) => items.push(PreparedItem::Text(line)),
             Block::Art { rows, columns } => {
+                if let Some(lines) = &art_text {
+                    items.extend(rows.map(|row| {
+                        PreparedItem::Text(ModernLine {
+                            spans: lines[row as usize].clone(),
+                            fixed: true,
+                            quote: false,
+                            unwrapped: true,
+                        })
+                    }));
+                    continue;
+                }
                 let options: RenderOptions = Rectangle::from(0, rows.start, columns, rows.end - rows.start).into();
                 let (size, rgba) = screen.buffer.render_to_rgba(&options, false);
                 let (width, height) = (size.width.max(0) as usize, size.height.max(0) as usize);
@@ -405,10 +426,11 @@ pub fn prepare_items(screen: &TextScreen, blocks: Vec<Block>) -> Vec<PreparedIte
                 } else {
                     egui::ColorImage::new([1, 1], vec![Color32::TRANSPARENT])
                 };
-                PreparedItem::Art(image)
+                items.push(PreparedItem::Art(image));
             }
-        })
-        .collect()
+        }
+    }
+    items
 }
 
 pub fn upload(context: &egui::Context, prepared: Vec<PreparedItem>) -> Vec<Item> {
@@ -572,7 +594,7 @@ impl MailApp {
                 return ui.centered_and_justified(|ui| ui.spinner()).response;
             };
             let rendered = match self.draft_screens(id) {
-                Ok((classic, wide)) => items(ui.ctx(), &classic, blocks(&classic, &wide)),
+                Ok((classic, wide)) => items(ui.ctx(), &classic, blocks(&classic, &wide), self.modern_art_images),
                 Err(error) => {
                     self.error = Some(error);
                     Vec::new()
@@ -625,7 +647,11 @@ impl MailApp {
         }
         // One art cell as wide as a character of the fixed-width text; the font's cells are 8 pixels wide.
         let cell = ui.ctx().fonts_mut(|fonts| fonts.glyph_width(&fixed, 'M'));
-        let art_scale = cell / (8.0 * ART_OVERSAMPLING as f32);
+        let zoom = match settings::display_zoom(self.settings.scaling_mode, ReadingMode::Modern) {
+            ScalingMode::Manual(zoom) => zoom,
+            _ => unreachable!("modern art always uses manual scaling"),
+        };
+        let art_scale = cell / (8.0 * ART_OVERSAMPLING as f32) * zoom;
 
         // Consecutive text lines share one label; art sits between them as images.
         let new_job = || {
@@ -674,12 +700,17 @@ impl MailApp {
                 }
                 Item::Text(line) => line,
             };
+            let wrap_width = if line.unwrapped { f32::INFINITY } else { text_width };
+            if job.wrap.max_width != wrap_width && !job.text.is_empty() {
+                parts.push(Part::Text(std::mem::replace(&mut job, new_job())));
+            }
+            job.wrap.max_width = wrap_width;
             if !job.text.is_empty() {
                 job.append(
                     "\n",
                     0.0,
                     egui::TextFormat {
-                        font_id: text_font.clone(),
+                        font_id: if line.unwrapped { fixed.clone() } else { text_font.clone() },
                         ..Default::default()
                     },
                 );
@@ -691,7 +722,7 @@ impl MailApp {
                     " ",
                     0.0,
                     egui::TextFormat {
-                        font_id: text_font.clone(),
+                        font_id: if line.unwrapped { fixed.clone() } else { text_font.clone() },
                         ..Default::default()
                     },
                 );
@@ -714,6 +745,11 @@ impl MailApp {
                     egui::TextFormat {
                         font_id: font,
                         color,
+                        background: if line.unwrapped {
+                            span.background.map_or(Color32::TRANSPARENT, |color| modern_color(color, true, dark_mode))
+                        } else {
+                            Color32::TRANSPARENT
+                        },
                         italics: span.italic,
                         underline: if span.underline { egui::Stroke::new(1.0, color) } else { egui::Stroke::NONE },
                         strikethrough: if span.strikethrough {
@@ -730,12 +766,12 @@ impl MailApp {
             parts.push(Part::Text(job));
         }
 
-        let mut scroll = egui::ScrollArea::vertical().id_salt("modern-body").auto_shrink([false, false]);
+        let mut scroll = egui::ScrollArea::both().id_salt("modern-body").auto_shrink([false, false]);
         // Clamped here, as the scroll area keeps an offset past the end; a new document is laid out
         // once first, so the end is known.
         if !rebuilt && !self.modern_layout_pending {
             if let Some(offset) = self.screen.scroll_to.take() {
-                scroll = scroll.vertical_scroll_offset(offset.y.clamp(0.0, self.screen.max_offset.y));
+                scroll = scroll.scroll_offset(offset.clamp(egui::Vec2::ZERO, self.screen.max_offset));
             }
         } else if self.screen.scroll_to.is_some() {
             ui.ctx().request_repaint();
@@ -752,7 +788,6 @@ impl MailApp {
                             Part::Text(job) => text_label(ui, job, &needle, preserve_selection),
                             Part::Art(texture) => {
                                 let size = texture.size_vec2() * art_scale;
-                                let size = size * (text_width / size.x).min(1.0);
                                 ui.add(egui::Image::new((texture.id(), size)))
                             }
                             Part::Fold { start, hidden, open } => {
@@ -804,8 +839,8 @@ impl MailApp {
             }
         }
         let max = (output.content_size - output.inner_rect.size()).max(egui::Vec2::ZERO);
-        self.screen.offset = egui::vec2(0.0, output.state.offset.y.min(max.y));
-        self.screen.max_offset = egui::vec2(0.0, max.y);
+        self.screen.offset = output.state.offset.min(max);
+        self.screen.max_offset = max;
         self.modern_layout_pending = false;
         self.content_rect = output.inner_rect;
         // Hovering anywhere in the pane counts, e.g. for turning bulletin pages with the wheel.

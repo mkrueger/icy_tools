@@ -164,6 +164,7 @@ pub struct MailApp {
     pub reading_mode: ReadingMode,
     pub modern_font: ModernFont,
     pub modern_font_size: f32,
+    pub modern_art_images: bool,
     pub extraction_cache_days: u32,
     /// The shown message as text and rendered art for the modern reading mode, built on first use
     /// and keyed by the packet and message they came from.
@@ -277,6 +278,7 @@ impl MailApp {
             reading_mode: options.reading_mode,
             modern_font: options.modern_font,
             modern_font_size: options.modern_font_size,
+            modern_art_images: options.modern_art_images,
             extraction_cache_days: options.extraction_cache_days,
             modern_items: None,
             modern_layout_pending: false,
@@ -371,6 +373,7 @@ impl MailApp {
                     if request.generation == self.loader.body_generation
                         && Some(request) == self.loader.body_request
                         && request.mode == self.reading_mode
+                        && request.art_images == self.modern_art_images
                         && match request.source {
                             BodySource::Message(index) => self.folder.holds_messages() && self.reader.selected_message == Some(index),
                             BodySource::File(index, page) => {
@@ -617,7 +620,10 @@ impl MailApp {
             if self.rendered_file == Some(index)
                 && self.rendered_file_page == self.selected_file_page
                 && self.rendered_draft.is_none()
-                && self.loader.body_request.is_some_and(|request| request.mode == self.reading_mode)
+                && self
+                    .loader
+                    .body_request
+                    .is_some_and(|request| request.mode == self.reading_mode && request.art_images == self.modern_art_images)
             {
                 return;
             }
@@ -632,14 +638,23 @@ impl MailApp {
             self.last_reader_click = None;
             self.reveal_message = true;
             self.body_loading = true;
-            self.loader
-                .body(package.clone(), BodySource::File(index, self.selected_file_page), self.reading_mode, context);
+            self.loader.body(
+                package.clone(),
+                BodySource::File(index, self.selected_file_page),
+                self.reading_mode,
+                self.modern_art_images,
+                context,
+            );
             return;
         }
         if self.rendered == self.reader.selected_message
             && self.rendered_draft.is_none()
             && self.rendered_file.is_none()
-            && (self.reader.selected_message.is_none() || self.loader.body_request.is_some_and(|request| request.mode == self.reading_mode))
+            && (self.reader.selected_message.is_none()
+                || self
+                    .loader
+                    .body_request
+                    .is_some_and(|request| request.mode == self.reading_mode && request.art_images == self.modern_art_images))
         {
             return;
         }
@@ -652,7 +667,8 @@ impl MailApp {
         self.reveal_message = true;
         if let (Some(package), Some(index)) = (&self.reader.package, self.reader.selected_message) {
             self.body_loading = true;
-            self.loader.body(package.clone(), BodySource::Message(index), self.reading_mode, context);
+            self.loader
+                .body(package.clone(), BodySource::Message(index), self.reading_mode, self.modern_art_images, context);
         } else {
             self.loader.cancel_preload();
             self.loader.body_request = None;

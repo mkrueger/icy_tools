@@ -47,6 +47,7 @@ pub struct BodyRequest {
     pub generation: u64,
     pub source: BodySource,
     pub mode: ReadingMode,
+    pub art_images: bool,
 }
 
 pub struct PreparedBody {
@@ -54,7 +55,7 @@ pub struct PreparedBody {
     pub modern: Option<Vec<PreparedItem>>,
 }
 
-fn prepare_body(package: &QwkPackage, source: BodySource, mode: ReadingMode) -> icy_mail::Res<PreparedBody> {
+fn prepare_body(package: &QwkPackage, source: BodySource, mode: ReadingMode, art_images: bool) -> icy_mail::Res<PreparedBody> {
     let (classic, wide) = match source {
         BodySource::Message(index) => {
             let message = package.get_message(index)?;
@@ -69,7 +70,7 @@ fn prepare_body(package: &QwkPackage, source: BodySource, mode: ReadingMode) -> 
             (classic, wide)
         }
     };
-    let modern = wide.map(|wide| modern_view::prepare_items(&classic, modern_view::blocks(&classic, &wide)));
+    let modern = wide.map(|wide| modern_view::prepare_items(&classic, modern_view::blocks(&classic, &wide), art_images));
     Ok(PreparedBody { classic, modern })
 }
 
@@ -157,7 +158,7 @@ impl Default for Loader {
             Some(Event::Package(generation, path, result))
         });
         let bodies = latest_worker(sender.clone(), |(request, package): (BodyRequest, Arc<QwkPackage>)| {
-            let result = prepare_body(&package, request.source, request.mode).map_err(|error| error.to_string());
+            let result = prepare_body(&package, request.source, request.mode, request.art_images).map_err(|error| error.to_string());
             Some(Event::Body(request, result))
         });
         let preload_generation = Arc::new(AtomicU64::new(0));
@@ -233,13 +234,14 @@ impl Loader {
             .send(((self.package_generation, path, cache_directory, retention_days), context.clone()));
     }
 
-    pub fn body(&mut self, package: Arc<QwkPackage>, source: BodySource, mode: ReadingMode, context: &egui::Context) {
+    pub fn body(&mut self, package: Arc<QwkPackage>, source: BodySource, mode: ReadingMode, art_images: bool, context: &egui::Context) {
         self.cancel_preload();
         self.body_generation = self.body_generation.wrapping_add(1);
         let request = BodyRequest {
             generation: self.body_generation,
             source,
             mode,
+            art_images,
         };
         self.body_request = Some(request);
         if let Err(error) = self.bodies.send(((request, package), context.clone())) {
@@ -447,6 +449,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn body_worker_prepares_unicode_art_without_generating_images() {
+        let (_dir, mut package) = crate::packet_tests::load();
+        Arc::make_mut(&mut package.files)[0].data = b"\x1b[31m\xdb\xdb\xdb\r\n\xdb\xdb\xdb\x1b[0m".to_vec();
+        let context = egui::Context::default();
+        let mut loader = Loader::default();
+        loader.body(Arc::new(package), BodySource::File(0, 0), ReadingMode::Modern, false, &context);
+        let Event::Body(request, Ok(prepared)) = loader.receiver.recv_timeout(std::time::Duration::from_secs(10)).unwrap() else {
+            panic!("body worker failed to prepare Unicode art");
+        };
+        assert!(!request.art_images);
+        let items = prepared.modern.unwrap();
+        assert!(items.iter().all(|item| matches!(item, PreparedItem::Text(_))));
+        assert!(items
+            .iter()
+            .any(|item| matches!(item, PreparedItem::Text(line) if line.unwrapped && line.spans.iter().any(|span| span.text.contains('\u{2588}')))));
+    }
+
+    #[test]
     fn body_worker_prepares_modern_message_and_bulletin_content() {
         let (_dir, mut package) = crate::packet_tests::load();
         let mut data = format!("{}\r\n\r\n\x1b[31m", "long wrapped text ".repeat(10)).into_bytes();
@@ -459,7 +479,7 @@ mod tests {
         for source in [BodySource::Message(2), BodySource::File(0, 0)] {
             for mode in [ReadingMode::Classic, ReadingMode::Modern] {
                 let previous_preload = loader.preload_generation();
-                loader.body(package.clone(), source, mode, &context);
+                loader.body(package.clone(), source, mode, true, &context);
                 assert_ne!(
                     loader.preload_generation(),
                     previous_preload,
@@ -477,7 +497,7 @@ mod tests {
                         BodySource::Message(index) => render_body_wide(&package.get_message(index).unwrap().text).unwrap(),
                         BodySource::File(index, page) => render_file_page_wide(&package.files[index].data, page).unwrap(),
                     };
-                    let expected = modern_view::prepare_items(&prepared.classic, modern_view::blocks(&prepared.classic, &wide));
+                    let expected = modern_view::prepare_items(&prepared.classic, modern_view::blocks(&prepared.classic, &wide), true);
                     assert_eq!(items.len(), expected.len());
                     for (actual, expected) in items.iter().zip(&expected) {
                         match (actual, expected) {

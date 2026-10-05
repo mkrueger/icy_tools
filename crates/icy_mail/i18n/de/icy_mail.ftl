@@ -213,6 +213,7 @@ settings-modern-font-label = Schrift
 settings-modern-font-proportional = Proportional
 settings-modern-font-monospace = Feste Breite
 settings-modern-font-size-label = Schriftgröße
+settings-modern-art-images = ANSI-Grafiken als Bilder darstellen
 settings-zoom-label = Zoom
 settings-reading-pane-label = Lesebereich
 settings-reading-pane-automatic = Automatisch
