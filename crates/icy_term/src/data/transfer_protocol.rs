@@ -327,3 +327,59 @@ pub fn default_protocols() -> Vec<TransferProtocol> {
 fn default_true() -> bool {
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use icy_net::{
+        connection::channel::ChannelConnection,
+        protocol::{Header, HeaderType, ZFrameType, Zmodem, ZCRCE, ZCRCW},
+        Connection,
+    };
+
+    #[tokio::test]
+    async fn internal_zmodem_downloads_accept_large_subpackets() {
+        for id in ["@zmodem", "@zmodem8k"] {
+            for size in [1025, 8192] {
+                tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                    let protocol = TransferProtocol::from_internal_id(id).unwrap();
+                    let mut receiver = protocol.create(std::env::temp_dir()).unwrap();
+                    let (mut conn, mut peer) = ChannelConnection::create_pair();
+                    let mut state = receiver.initiate_recv(&mut conn).await.unwrap();
+                    assert_eq!(Header::read(&mut peer, &mut 0).await.unwrap().unwrap().frame_type, ZFrameType::RIinit);
+
+                    let data: Vec<u8> = (0..size).map(|index| (index % 256) as u8).collect();
+                    let metadata = format!("download.bin\0{size}\0");
+                    let mut bytes = Header::empty(ZFrameType::File).build(HeaderType::Bin32, false);
+                    bytes.extend(Zmodem::encode_subpacket_crc32(ZCRCW, metadata.as_bytes(), false));
+                    peer.send(&bytes).await.unwrap();
+                    receiver.update_transfer(&mut conn, &mut state).await.unwrap();
+                    assert_eq!(Header::read(&mut peer, &mut 0).await.unwrap().unwrap().frame_type, ZFrameType::RPos);
+
+                    let mut bytes = Header::from_number(ZFrameType::Data, 0).build(HeaderType::Bin32, false);
+                    bytes.extend(Zmodem::encode_subpacket_crc32(ZCRCE, &data, false));
+                    peer.send(&bytes).await.unwrap();
+                    while state.recieve_state.cur_bytes_transfered < size as u64 {
+                        receiver.update_transfer(&mut conn, &mut state).await.unwrap();
+                    }
+                    assert_eq!(state.recieve_state.cur_bytes_transfered, size as u64);
+                    assert_eq!(state.recieve_state.errors, 0);
+                    assert_eq!(state.recieve_state.warnings, 0);
+                    Header::from_number(ZFrameType::Eof, size as u32)
+                        .write(&mut peer, HeaderType::Bin32, false)
+                        .await
+                        .unwrap();
+                    while state.recieve_state.finished_files.is_empty() {
+                        receiver.update_transfer(&mut conn, &mut state).await.unwrap();
+                    }
+                    let path = &state.recieve_state.finished_files[0].1;
+                    let received = std::fs::read(path).unwrap();
+                    std::fs::remove_file(path).unwrap();
+                    assert_eq!(received, data, "{id} download with a {size}-byte subpacket");
+                })
+                .await
+                .expect("ZMODEM download regression timed out");
+            }
+        }
+    }
+}

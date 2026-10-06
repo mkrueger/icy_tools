@@ -3690,7 +3690,7 @@ dependencies = [
 [[package]]
 name = "icy_net"
 version = "0.2.2"
-source = "git+https://github.com/mkrueger/icy_board?rev=bf5d2fb88a441da3d045dc34352942b7c2e195ad#bf5d2fb88a441da3d045dc34352942b7c2e195ad"
+source = "git+https://github.com/mkrueger/icy_board?rev=afbd45e14bf579543dd3d0a38ba21901c8e60fce#afbd45e14bf579543dd3d0a38ba21901c8e60fce"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3825,7 +3825,7 @@ dependencies = [
 [[package]]
 name = "icy_terminal_emulation"
 version = "0.2.2"
-source = "git+https://github.com/mkrueger/icy_board?rev=bf5d2fb88a441da3d045dc34352942b7c2e195ad#bf5d2fb88a441da3d045dc34352942b7c2e195ad"
+source = "git+https://github.com/mkrueger/icy_board?rev=afbd45e14bf579543dd3d0a38ba21901c8e60fce#afbd45e14bf579543dd3d0a38ba21901c8e60fce"
 dependencies = [
  "serde",
 ]

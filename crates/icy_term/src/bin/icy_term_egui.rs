@@ -1204,12 +1204,17 @@ impl TerminalApp {
             self.focus_terminal = true;
         }
         if !directory_was_open {
+            let transfer_was_open = self.transfers.open;
             for command in self.transfers.show(context, &self.dialing_directory.options, self.connected) {
                 if let Some(session) = &self.session {
                     if let Err(error) = session.command(command) {
                         self.error = Some(error);
                     }
                 }
+            }
+            if transfer_was_open && !self.transfers.open {
+                self.focus_terminal = true;
+                context.request_repaint();
             }
             for command in self.tools.show(context) {
                 self.command(command, context);
@@ -1958,6 +1963,88 @@ mod gpu_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn closing_a_finished_transfer_restores_terminal_keyboard_focus() {
+        for download in [true, false] {
+            for dismissal in ["button", "enter", "escape"] {
+                let context = egui::Context::default();
+                let mut app = TerminalApp::new(TextScreen::default(), "transfer focus".into());
+                let run = |app: &mut TerminalApp, events| {
+                    context.run(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 720.0))),
+                            focused: true,
+                            events,
+                            ..Default::default()
+                        },
+                        |context| app.show(context),
+                    )
+                };
+                run(&mut app, vec![]);
+                run(&mut app, vec![]);
+                let terminal_id = app.terminal_input_id.unwrap();
+                let mut state = icy_net::protocol::TransferState::new("Zmodem".into());
+                app.transfers.event(
+                    &icy_term::TerminalEvent::TransferStarted(state.clone(), download),
+                    &app.dialing_directory.options,
+                );
+                state.is_finished = true;
+                app.transfers
+                    .event(&icy_term::TerminalEvent::TransferCompleted(state), &app.dialing_directory.options);
+                context.memory_mut(|memory| memory.surrender_focus(terminal_id));
+                run(&mut app, vec![]);
+                let output = run(&mut app, vec![]);
+                assert!(app.transfers.open);
+                assert!(!app.terminal.has_focus);
+                match dismissal {
+                    "button" => {
+                        let close = output
+                            .shapes
+                            .iter()
+                            .rev()
+                            .find_map(|shape| match &shape.shape {
+                                egui::Shape::Text(text) if text.galley.text() == &*tr!("egui-close") => Some(text.pos + text.galley.rect.center().to_vec2()),
+                                _ => None,
+                            })
+                            .expect("finished transfer has a Close button");
+                        for pressed in [true, false] {
+                            run(
+                                &mut app,
+                                vec![
+                                    egui::Event::PointerMoved(close),
+                                    egui::Event::PointerButton {
+                                        pos: close,
+                                        button: egui::PointerButton::Primary,
+                                        pressed,
+                                        modifiers: egui::Modifiers::NONE,
+                                    },
+                                ],
+                            );
+                        }
+                    }
+                    _ => {
+                        run(
+                            &mut app,
+                            vec![egui::Event::Key {
+                                key: if dismissal == "enter" { egui::Key::Enter } else { egui::Key::Escape },
+                                physical_key: None,
+                                pressed: true,
+                                repeat: false,
+                                modifiers: egui::Modifiers::NONE,
+                            }],
+                        );
+                    }
+                }
+                assert!(!app.transfers.open, "{dismissal} closes the finished transfer");
+                assert!(app.session.is_none(), "dialog dismissal must not send a key to the terminal");
+                run(&mut app, vec![]);
+                run(&mut app, vec![]);
+                assert_eq!(context.memory(|memory| memory.focused()), Some(terminal_id), "{dismissal}, download={download}");
+                assert!(app.terminal.has_focus && !app.blocks_terminal());
+            }
+        }
+    }
 
     #[test]
     fn escape_clears_selection_before_leaving_scrollback_and_respects_focus() {

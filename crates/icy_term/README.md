@@ -51,8 +51,12 @@ RIP file APCs (`QueryFile`, `ReadFile`, …) are parsed but not answered yet.
 ### 📁 File Transfers
 
 - **Protocols**: ZModem (including 8k), XModem (Classic/1k/1k-G), YModem/YModem-G
+- **ZModem downloads**: Accept subpackets up to 8 KiB in both ZModem modes;
+  ordinary ZModem uploads still use 1 KiB blocks.
 - **Features**: Auto-download detection, batch transfers, resume support
 - **UI**: Real-time statistics, transfer logs, protocol details
+  Closing a transfer dialog restores terminal keyboard focus, including with
+  Enter or Escape after the transfer finishes.
 
 ### 🎨 Rendering Engine
 

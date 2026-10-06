@@ -29,8 +29,8 @@ icy_sauce = { git = "https://github.com/mkrueger/icy_sauce" }
 
 #icy_sauce = { path = "../icy_sauce" }
 icy_sixel = "0.7.0"
-icy_net = { git = "https://github.com/mkrueger/icy_board", rev = "bf5d2fb88a441da3d045dc34352942b7c2e195ad" }
-icy_terminal_emulation = { git = "https://github.com/mkrueger/icy_board", rev = "bf5d2fb88a441da3d045dc34352942b7c2e195ad" }
+icy_net = { git = "https://github.com/mkrueger/icy_board", rev = "afbd45e14bf579543dd3d0a38ba21901c8e60fce" }
+icy_terminal_emulation = { git = "https://github.com/mkrueger/icy_board", rev = "afbd45e14bf579543dd3d0a38ba21901c8e60fce" }
 #icy_net = { path = "../icy_board/crates/icy_net" }
 #unarc-rs = { path ="../unarc-rs" }
 unarc-rs = {  version = "0.7.0", default-features = false }
