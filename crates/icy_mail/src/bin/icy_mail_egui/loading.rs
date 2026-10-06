@@ -13,7 +13,7 @@ use icy_engine::TextScreen;
 use icy_mail::{
     drafts::{Draft, DraftStore},
     options::ReadingMode,
-    qwk::{ExtractionCache, QwkPackage},
+    qwk::{packet_extensions, ExtractionCache, QwkPackage},
     reader::{render_body, render_body_wide, render_file_page, render_file_page_wide},
     LANGUAGE_LOADER,
 };
@@ -308,10 +308,7 @@ impl Loader {
         std::thread::spawn(move || {
             let path = rfd::FileDialog::new()
                 .set_title(fl!(LANGUAGE_LOADER, "loading-open-title"))
-                .add_filter(
-                    fl!(LANGUAGE_LOADER, "loading-filter-packages"),
-                    &["qwk", "zip", "arj", "lzh", "lha", "rar", "7z", "arc", "zoo", "rep"],
-                )
+                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-packages"), &packet_extensions())
                 .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-all"), &["*"])
                 .pick_file();
             let _ = sender.send(Event::Picked(path));
@@ -358,7 +355,7 @@ impl Loader {
         std::thread::spawn(move || {
             let path = rfd::FileDialog::new()
                 .set_title(fl!(LANGUAGE_LOADER, "loading-import-title"))
-                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-reply"), &["rep"])
+                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-reply"), &[drafts.reply_extension()])
                 .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-all"), &["*"])
                 .pick_file();
             let result = path.map(|path| {
@@ -402,7 +399,7 @@ impl Loader {
         std::thread::spawn(move || {
             let mut dialog = rfd::FileDialog::new()
                 .set_title(fl!(LANGUAGE_LOADER, "loading-export-title"))
-                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-reply"), &["rep"])
+                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-reply"), &[drafts.reply_extension()])
                 .set_file_name(suggested.file_name().unwrap_or_default().to_string_lossy());
             if let Some(directory) = suggested.parent() {
                 dialog = dialog.set_directory(directory);

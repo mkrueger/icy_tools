@@ -6,6 +6,62 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "../../../tests/fixtures/blue_wave.rs"]
+mod blue_wave_fixture;
+
+#[test]
+fn blue_wave_packets_open_reply_with_native_limits_and_export_in_the_frontend() {
+    use std::io::Write;
+
+    crate::use_english();
+    for (level, uses_upl) in [(2, false), (3, true)] {
+        let context = egui::Context::default();
+        let dir = packet_tests::TempDir::new();
+        let path = dir.path().join("mail.BW");
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        for (name, data) in blue_wave_fixture::fixture_files(level, uses_upl) {
+            zip.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+            zip.write_all(&data).unwrap();
+        }
+        zip.finish().unwrap();
+        let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+        mail.open(path.clone(), &context);
+        wait(&mut mail, &context);
+        assert!(mail.error.is_none(), "{:?}", mail.error);
+        assert_eq!(mail.reader.package.as_ref().unwrap().format(), icy_mail::qwk::PacketFormat::BlueWave);
+        assert_eq!(mail.counts.personal.1, 1);
+        assert!(!mail.supports_subscriptions());
+        let size = egui::vec2(1100.0, 760.0);
+        settle(&context, &mut mail, size);
+        mail.reply(&context, false);
+        assert!(mail.error.is_none(), "{:?}", mail.error);
+        let output = settle(&context, &mut mail, size);
+        label(&output, "Re: Hey");
+        if !uses_upl {
+            label(
+                &output,
+                "Legacy Blue Wave replies preserve quoted context but cannot include a message-number reference.",
+            );
+        }
+        assert_eq!(mail.drafts.as_ref().unwrap().field_limit(icy_mail::drafts::DraftField::To), 35);
+        assert_eq!(mail.drafts.as_ref().unwrap().field_limit(icy_mail::drafts::DraftField::Subject), 71);
+        frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
+        frame(&context, &mut mail, size, vec![egui::Event::Text("Pi \u{03c0}".into())]);
+        frame(&context, &mut mail, size, vec![key(egui::Key::S, egui::Modifiers::COMMAND)]);
+        assert!(mail.composer.is_none(), "{:?}", mail.error);
+        let store = mail.drafts.as_ref().unwrap();
+        assert_eq!(store.drafts().len(), 1);
+        assert_eq!(store.drafts()[0].body, "Pi \u{03c0}");
+        assert_eq!(store.drafts()[0].ref_number, 45);
+        let reply = store.default_export_path(&path);
+        assert_eq!(reply.extension().unwrap(), "NEW");
+        store.export(&reply).unwrap();
+        let imported = store.read_rep(&reply).unwrap();
+        assert_eq!(imported[0].body, "Pi \u{03c0}");
+        assert_eq!(imported[0].ref_number, if uses_upl { 45 } else { 0 });
+    }
+}
+
 /// A window with the test packet open; drafts, read marks and the recent list stay in the packet's directory.
 fn loaded(context: &egui::Context) -> (packet_tests::TempDir, app::MailApp) {
     let (dir, _package) = packet_tests::load();
@@ -2156,7 +2212,7 @@ fn welcome_page_opens_and_forgets_recent_packets() {
     let size = egui::vec2(1100.0, 760.0);
     let output = settle(&context, &mut mail, size);
     label(&output, "Open Packet\u{2026}");
-    label(&output, "Drop a QWK packet here");
+    label(&output, "Drop a mail packet here");
     // Without a stored summary the card is titled by the file.
     click_label(&context, &mut mail, size, "TEST.QWK");
     wait(&mut mail, &context);

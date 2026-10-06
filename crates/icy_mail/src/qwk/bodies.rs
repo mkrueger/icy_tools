@@ -26,6 +26,13 @@ pub(super) struct FileBodies {
 }
 
 impl MessageData {
+    pub fn len(&self) -> u64 {
+        match self {
+            Self::Memory(bytes) => bytes.len() as u64,
+            Self::File(bodies) => bodies.size as u64,
+        }
+    }
+
     pub fn file(file: File, size: u64, crc32: u32, checksums: Vec<u32>, recover: impl Fn() -> Res<Vec<u8>> + Send + Sync + 'static) -> Res<Self> {
         let size = usize::try_from(size)?;
         if file.metadata()?.len() != size as u64 || checksums.len() != size.div_ceil(CHUNK_SIZE) {

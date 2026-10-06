@@ -304,7 +304,7 @@ impl Reader {
                 .with_min_len(1024)
                 .filter(|info| {
                     self.selected_conference.is_none_or(|number| info.conference == number)
-                        && personal.as_ref().is_none_or(|name| info.to.trim().eq_ignore_ascii_case(name))
+                        && personal.as_ref().is_none_or(|name| package.matches_personal(&info.to, name))
                         && (!self.unread_only || !self.read[info.index])
                         && (!self.starred_only || self.starred[info.index])
                         && (needle.is_empty() || matches(info.index))

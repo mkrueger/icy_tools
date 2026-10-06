@@ -161,6 +161,7 @@ pub struct Editor {
     typing: bool,
     revision: u64,
     edits: u64,
+    blue_wave: bool,
 }
 
 impl Default for Editor {
@@ -172,7 +173,21 @@ impl Default for Editor {
 impl Editor {
     /// Parses message text containing ANSI color codes.
     pub fn from_body(body: &str) -> Self {
-        Self::with_paragraphs(parse(body, false))
+        Self::from_body_with_format(body, false)
+    }
+
+    pub fn from_body_with_format(body: &str, blue_wave: bool) -> Self {
+        let mut editor = Self::with_paragraphs(parse(body, false, blue_wave));
+        editor.blue_wave = blue_wave;
+        editor
+    }
+
+    pub fn is_insertable(&self, byte: u8) -> bool {
+        is_insertable(byte) || self.blue_wave && byte == 0xe3
+    }
+
+    fn accepts_character(&self, ch: char) -> bool {
+        is_message_char_for(ch, self.blue_wave)
     }
 
     fn with_paragraphs(paragraphs: Vec<Vec<Cell>>) -> Self {
@@ -192,6 +207,7 @@ impl Editor {
             typing: false,
             revision: 0,
             edits: 0,
+            blue_wave: false,
         };
         editor.relayout();
         editor
@@ -481,7 +497,7 @@ impl Editor {
 
     /// Types one character. Returns `false` if it cannot be written to a QWK message.
     pub fn type_char(&mut self, ch: char) -> bool {
-        if !is_message_char(ch) {
+        if !self.accepts_character(ch) {
             return false;
         }
         self.checkpoint(true);
@@ -517,7 +533,7 @@ impl Editor {
                         self.insert_cell(' ');
                     }
                 }
-                ch if is_message_char(ch) => self.insert_cell(ch),
+                ch if self.accepts_character(ch) => self.insert_cell(ch),
                 ch if ch.is_control() => {}
                 _ => {
                     replaced += 1;
@@ -636,7 +652,7 @@ impl Editor {
             let cells = line
                 .chars()
                 .map(|ch| Cell {
-                    ch: if is_message_char(ch) { ch } else { '?' },
+                    ch: if self.accepts_character(ch) { ch } else { '?' },
                     attr: Attr::DEFAULT,
                 })
                 .collect();
@@ -891,7 +907,7 @@ fn wrap(cells: &[Cell], width: usize) -> Vec<(usize, usize)> {
 /// Paragraphs and colors of a message body. The editor replaces what cannot be sent with `?`; `raw`
 /// keeps every character (tabs and control codes too), so wrapping for export changes nothing but
 /// the line breaks and the checks before exporting still see the original text.
-fn parse(body: &str, raw: bool) -> Vec<Vec<Cell>> {
+fn parse(body: &str, raw: bool, blue_wave: bool) -> Vec<Vec<Cell>> {
     let mut paragraphs = vec![Vec::new()];
     let mut attr = Attr::DEFAULT;
     let mut chars = body.chars().peekable();
@@ -924,7 +940,7 @@ fn parse(body: &str, raw: bool) -> Vec<Vec<Cell>> {
             }
             ch if ch.is_control() && !raw => {}
             ch => paragraphs.last_mut().unwrap().push(Cell {
-                ch: if raw || is_message_char(ch) { ch } else { '?' },
+                ch: if raw || is_message_char_for(ch, blue_wave) { ch } else { '?' },
                 attr,
             }),
         }
@@ -952,7 +968,11 @@ pub fn is_insertable(byte: u8) -> bool {
 
 /// Whether a character can be stored in a QWK message body.
 pub fn is_message_char(ch: char) -> bool {
-    !ch.is_control() && ch != '\u{e3}' && cp437_byte(ch).is_some_and(is_insertable)
+    is_message_char_for(ch, false)
+}
+
+pub fn is_message_char_for(ch: char, blue_wave: bool) -> bool {
+    !ch.is_control() && (blue_wave || ch != '\u{e3}') && cp437_byte(ch).is_some_and(|byte| is_insertable(byte) || blue_wave && byte == 0xe3)
 }
 
 /// Message bytes as text, keeping line breaks and escape sequences (so colors survive).
@@ -1019,7 +1039,7 @@ pub fn initials(name: &str) -> String {
 /// [`WRAP_WIDTH`] columns, exactly as the editor shows them.
 #[must_use]
 pub fn wrap_body(body: &str) -> String {
-    Editor::with_paragraphs(parse(body, true)).to_body()
+    Editor::with_paragraphs(parse(body, true, false)).to_body()
 }
 
 /// Quote lines for a reply, re-quoting existing quotes (`" AB> "` becomes `" AB>> "`) and wrapping long lines.
@@ -1067,6 +1087,29 @@ fn wrap_text(line: &str, width: usize, prefix: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blue_wave_keeps_cp437_pi_in_typing_paste_quotes_and_reload() {
+        let pi = cp437_char(0xe3);
+        let mut editor = Editor::from_body_with_format(&format!("Start {pi}"), true);
+        assert_eq!(editor.plain_text(), format!("Start {pi}"));
+        assert!(editor.is_insertable(0xe3));
+        assert!(!editor.is_insertable(0x1b));
+        assert!(editor.type_char(pi));
+        assert_eq!(editor.insert_text(&pi.to_string()), 0);
+        editor.insert_lines(&[format!("Quoted {pi}")]);
+        let body = editor.to_body();
+        assert!(body.contains(&format!("Quoted {pi}")));
+        assert_eq!(Editor::from_body_with_format(&body, true).to_body(), body);
+        assert_eq!(encode_message(&pi.to_string()), [0xe3]);
+        assert!(wrap_body(&pi.to_string()).contains(pi));
+
+        let mut qwk = Editor::from_body(&pi.to_string());
+        assert_eq!(qwk.plain_text(), "?");
+        assert!(!qwk.is_insertable(0xe3));
+        assert!(!qwk.type_char(pi));
+        assert_eq!(qwk.insert_text(&pi.to_string()), 1);
+    }
 
     fn typed(text: &str) -> Editor {
         let mut editor = Editor::default();

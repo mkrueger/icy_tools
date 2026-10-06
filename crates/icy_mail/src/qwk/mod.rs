@@ -1,7 +1,7 @@
 use bstr::ByteSlice;
 use i18n_embed_fl::fl;
-use jamjam::qwk::control::ControlDat;
-use jamjam::qwk::qwk_message::QWKMessage;
+use jamjam::qwk::control::{Conference, ControlDat};
+use jamjam::qwk::qwk_message::{QWKMessage, MSG_ACTIVE};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -22,6 +22,28 @@ pub use cache::ExtractionCache;
 pub use protocol::Capabilities;
 pub(crate) use protocol::SubscriptionFormat;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PacketFormat {
+    #[default]
+    Qwk,
+    BlueWave,
+}
+
+pub fn packet_extensions() -> Vec<String> {
+    let mut extensions: Vec<_> = ["qwk", "bw", "zip", "arj", "lzh", "lha", "rar", "7z", "arc", "zoo", "rep"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    for day in ["su", "mo", "tu", "we", "th", "fr", "sa"] {
+        for sequence in 0..=9 {
+            extensions.push(format!("{day}{sequence}"));
+        }
+    }
+    // Linux portal filters use case-sensitive globs.
+    extensions.extend(extensions.clone().into_iter().map(|extension| extension.to_ascii_uppercase()));
+    extensions
+}
+
 #[cfg(test)]
 pub mod tests;
 
@@ -31,6 +53,8 @@ pub struct MessageDescriptor {
     pub conference: u16,
     pub offset: u64,
     pub block_count: u32,
+    /// Native Blue Wave byte length; QWK messages use `block_count` instead.
+    pub body_len: Option<u64>,
 }
 
 /// Header fields of a message, extracted once at load time.
@@ -103,6 +127,7 @@ pub struct QwkPackage {
     pub capabilities: Capabilities,
     /// Welcome, news and goodbye screens, bulletins and new files lists, in display order.
     pub files: Arc<Vec<PacketFile>>,
+    pub blue_wave: Option<Arc<crate::blue_wave::Packet>>,
     messages_data: Arc<MessageData>,
     message_cache: Arc<Mutex<HashMap<usize, QWKMessage>>>, // Thread-safe cache
     thread_rows: Option<Arc<Vec<crate::threading::Row>>>,
@@ -161,6 +186,7 @@ const MAX_PACKET_FILE_SIZE: u64 = 16 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRY_SIZE: u64 = 10 * 1024 * 1024 * 1024;
 
 struct ExtractedPacket {
+    format: PacketFormat,
     control: Vec<u8>,
     messages: Vec<u8>,
     message_source: Option<Arc<MessageData>>,
@@ -235,6 +261,7 @@ impl Clone for QwkPackage {
             control_file: self.control_file.clone(),
             capabilities: self.capabilities.clone(),
             files: self.files.clone(),
+            blue_wave: self.blue_wave.clone(),
             messages_data: self.messages_data.clone(),
             message_cache: self.message_cache.clone(), // Share the cache across clones
             thread_rows: self.thread_rows.clone(),
@@ -303,11 +330,11 @@ impl QwkPackage {
                 }
             } else if base_name == "CONTROL.DAT" {
                 control_dat = Some(archive.read(&entry)?);
-            } else if !base_name.is_empty() && !base_name.ends_with(".NDX") && entry.original_size() <= MAX_PACKET_FILE_SIZE {
+            } else if !base_name.is_empty() && !base_name.ends_with(".NDX") && (entry.original_size() <= MAX_PACKET_FILE_SIZE || blue_wave_member(base_name)) {
                 // The screen names are only known once CONTROL.DAT is parsed, which may come later.
                 let name = entry.name().replace('\\', "/").rsplit('/').next().unwrap_or_default().to_string();
                 let data = archive.read(&entry)?;
-                if data.len() as u64 <= MAX_PACKET_FILE_SIZE {
+                if data.len() as u64 <= MAX_PACKET_FILE_SIZE || blue_wave_member(base_name) {
                     others.push((name, data));
                 }
             } else {
@@ -315,7 +342,51 @@ impl QwkPackage {
             }
         }
 
+        let mut stems = Vec::new();
+        for (name, _) in &others {
+            let upper = name.to_ascii_uppercase();
+            let Some(stem) = upper.strip_suffix(".INF") else { continue };
+            if ["INF", "MIX", "FTI", "DAT"]
+                .iter()
+                .all(|extension| others.iter().any(|(name, _)| name.eq_ignore_ascii_case(&format!("{stem}.{extension}"))))
+            {
+                stems.push(stem.to_owned());
+            }
+        }
+        if stems.len() > 1 || !stems.is_empty() && (control_dat.is_some() || messages_dat.is_some()) {
+            return Err("Archive contains ambiguous or mixed mail packet formats".into());
+        }
+        if let Some(stem) = stems.pop() {
+            for extension in ["INF", "MIX", "FTI", "DAT"] {
+                let name = format!("{stem}.{extension}");
+                if others.iter().filter(|(member, _)| member.eq_ignore_ascii_case(&name)).count() != 1 {
+                    return Err(format!("Blue Wave packet has duplicate {extension} members").into());
+                }
+            }
+            let inf = others.iter().position(|(name, _)| name.eq_ignore_ascii_case(&format!("{stem}.INF"))).unwrap();
+            let control = others.remove(inf).1;
+            let dat = others.iter().position(|(name, _)| name.eq_ignore_ascii_case(&format!("{stem}.DAT"))).unwrap();
+            let messages = others.remove(dat).1;
+            others.retain(|(name, data)| {
+                data.len() as u64 <= MAX_PACKET_FILE_SIZE || ["MIX", "FTI"].iter().any(|extension| name.eq_ignore_ascii_case(&format!("{stem}.{extension}")))
+            });
+            return Ok(ExtractedPacket {
+                format: PacketFormat::BlueWave,
+                control,
+                messages,
+                message_source: None,
+                others,
+                bbs_name: stem,
+                metadata: None,
+                cache_identity: None,
+            });
+        }
+        if others.iter().any(|(name, _)| name.to_ascii_uppercase().ends_with(".INF")) && control_dat.is_none() && messages_dat.is_none() {
+            return Err("Incomplete Blue Wave packet: matching INF, MIX, FTI and DAT files are required".into());
+        }
+        others.retain(|(_, data)| data.len() as u64 <= MAX_PACKET_FILE_SIZE);
         Ok(ExtractedPacket {
+            format: PacketFormat::Qwk,
             control: control_dat.ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-control-dat-not-found"))?,
             messages: messages_dat.ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-messages-dat-not-found"))?,
             message_source: None,
@@ -327,6 +398,9 @@ impl QwkPackage {
     }
 
     fn from_extracted(path: &Path, extracted: ExtractedPacket) -> Res<Self> {
+        if extracted.format == PacketFormat::BlueWave {
+            return Self::from_blue_wave(extracted);
+        }
         let ExtractedPacket {
             control,
             messages,
@@ -335,6 +409,7 @@ impl QwkPackage {
             bbs_name: mut bbs_id,
             metadata,
             cache_identity: _,
+            format: _,
         } = extracted;
         // Parse CONTROL.DAT
         let control_file =
@@ -373,10 +448,152 @@ impl QwkPackage {
             descriptors: headers,
             capabilities,
             files: Arc::new(packet_files(&control_file, others)),
+            blue_wave: None,
             control_file,
             messages_data,
             message_cache: Arc::new(Mutex::new(HashMap::new())),
             thread_rows,
+        })
+    }
+
+    fn from_blue_wave(extracted: ExtractedPacket) -> Res<Self> {
+        let ExtractedPacket {
+            control,
+            messages,
+            message_source,
+            mut others,
+            bbs_name: stem,
+            metadata,
+            ..
+        } = extracted;
+        let mix = others
+            .iter()
+            .position(|(name, _)| name.eq_ignore_ascii_case(&format!("{stem}.MIX")))
+            .ok_or("Blue Wave MIX file is missing")?;
+        let mix = others.remove(mix).1;
+        let fti = others
+            .iter()
+            .position(|(name, _)| name.eq_ignore_ascii_case(&format!("{stem}.FTI")))
+            .ok_or("Blue Wave FTI file is missing")?;
+        let fti = others.remove(fti).1;
+        let messages_data = message_source.unwrap_or_else(|| Arc::new(MessageData::Memory(messages)));
+        let packet = crate::blue_wave::parse(&control, &mix, &fti, messages_data.len())?;
+        let mut descriptors = Vec::with_capacity(packet.messages.len());
+        let mut infos = Vec::with_capacity(packet.messages.len());
+        for (index, message) in packet.messages.iter().enumerate() {
+            let number = if message.number == 0 {
+                u32::try_from(index)?.checked_add(0x1_0000).ok_or("Blue Wave local message identity overflow")?
+            } else {
+                message.number
+            };
+            descriptors.push(MessageDescriptor {
+                number,
+                conference: message.area,
+                offset: message.body_offset,
+                block_count: 0,
+                body_len: Some(message.body_len),
+            });
+            if metadata.is_some() {
+                continue;
+            }
+            let date = chrono::DateTime::from_timestamp(message.unix_time, 0)
+                .ok_or("Invalid Blue Wave message date")?
+                .naive_utc();
+            let subject = HeaderText::new(&message.subject);
+            infos.push(MessageInfo {
+                index,
+                number,
+                ref_number: message.reply_to,
+                conference: message.area,
+                from: HeaderText::new(&message.from),
+                to: HeaderText::new(&message.to),
+                subject_key: normalize_subject(&subject),
+                subject,
+                date,
+                date_str: if message.date_known {
+                    date.format("%Y-%m-%d %H:%M").to_string()
+                } else if !message.date_raw.is_empty() {
+                    HeaderText::new(&message.date_raw).to_string()
+                } else {
+                    fl!(LANGUAGE_LOADER, "packet-date-unknown")
+                },
+                lines: u32::try_from(blue_wave_body(&messages_data, message)?.iter().filter(|&&byte| byte == b'\n').count())?,
+                private: message.private,
+            });
+        }
+        let (infos, thread_rows) = if let Some(metadata) = metadata {
+            if metadata.descriptors != descriptors {
+                return Err("Blue Wave metadata cache does not match the packet index".into());
+            }
+            (metadata.infos, Some(Arc::new(metadata.threads)))
+        } else {
+            (infos, None)
+        };
+        let control_file = ControlDat {
+            bbs_name: packet
+                .info
+                .bbs_name
+                .chars()
+                .map(crate::editor::cp437_byte)
+                .collect::<Option<Vec<_>>>()
+                .ok_or("Blue Wave BBS name cannot be encoded as CP437")?
+                .into(),
+            bbs_city_and_state: "".into(),
+            bbs_phone_number: "".into(),
+            bbs_sysop_name: "".into(),
+            bbs_id: packet.info.bbs_id.as_bytes().into(),
+            serial_number: 0,
+            creation_time: "".into(),
+            qmail_user_name: packet.info.user_name.clone().into(),
+            qmail_menu_name: "".into(),
+            zero_line: "".into(),
+            message_count: u32::try_from(packet.messages.len())?,
+            conferences: packet
+                .areas
+                .iter()
+                .map(|area| Conference {
+                    number: area.number,
+                    name: area.title.clone().into(),
+                })
+                .collect(),
+            welcome_screen: "WELCOME".into(),
+            news_screen: "NEWS".into(),
+            logoff_screen: "GOODBYE".into(),
+        };
+        Ok(Self {
+            bbs_name: packet.info.bbs_name.clone(),
+            descriptors,
+            infos,
+            files: Arc::new(packet_files(&control_file, others)),
+            control_file,
+            capabilities: Capabilities::default(),
+            blue_wave: Some(Arc::new(packet)),
+            messages_data,
+            message_cache: Arc::new(Mutex::new(HashMap::new())),
+            thread_rows,
+        })
+    }
+
+    pub fn format(&self) -> PacketFormat {
+        if self.blue_wave.is_some() {
+            PacketFormat::BlueWave
+        } else {
+            PacketFormat::Qwk
+        }
+    }
+
+    pub fn matches_personal(&self, recipient: &str, user: &str) -> bool {
+        if user.is_empty() {
+            return false;
+        }
+        if recipient.trim().eq_ignore_ascii_case(user.trim()) {
+            return true;
+        }
+        self.blue_wave.as_ref().is_some_and(|packet| {
+            let name = HeaderText::new(&packet.info.user_name);
+            let alias = HeaderText::new(&packet.info.alias);
+            (user.trim().eq_ignore_ascii_case(name.trim()) || !alias.is_empty() && user.trim().eq_ignore_ascii_case(alias.trim()))
+                && (recipient.trim().eq_ignore_ascii_case(name.trim()) || !alias.is_empty() && recipient.trim().eq_ignore_ascii_case(alias.trim()))
         })
     }
 
@@ -481,6 +698,7 @@ impl QwkPackage {
                 conference,
                 offset: pos as u64,
                 block_count,
+                body_len: None,
             });
 
             // Skip to next message (header + content blocks)
@@ -529,6 +747,33 @@ impl QwkPackage {
 
     /// Read without locking or populating the interactive message cache, for bulk scans.
     pub fn read_message(&self, index: usize) -> Res<QWKMessage> {
+        if let Some(packet) = &self.blue_wave {
+            let message = packet
+                .messages
+                .get(index)
+                .ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-message-index-out-of-range"))?;
+            let text = blue_wave_body(&self.messages_data, message)?;
+            let date = chrono::DateTime::from_timestamp(message.unix_time, 0).ok_or("Invalid Blue Wave message date")?;
+            return Ok(QWKMessage {
+                status: if message.private { b'*' } else { b' ' },
+                msg_number: message.number,
+                date_time: if message.date_known {
+                    date.format("%m-%d-%y%H:%M").to_string().into()
+                } else {
+                    message.date_raw.clone().into()
+                },
+                to: message.to.clone().into(),
+                from: message.from.clone().into(),
+                subj: message.subject.clone().into(),
+                password: "".into(),
+                ref_msg_number: message.reply_to,
+                active_flag: MSG_ACTIVE,
+                conference_number: message.area,
+                logical_message_number: 1,
+                net_tag: b' ',
+                text: text.into(),
+            });
+        }
         let header = self
             .descriptors
             .get(index)
@@ -594,6 +839,33 @@ impl QwkPackage {
         list.sort_by_key(|(number, _, _)| *number);
         list
     }
+}
+
+fn blue_wave_member(name: &str) -> bool {
+    ["INF", "MIX", "FTI", "DAT"].iter().any(|extension| name.ends_with(&format!(".{extension}")))
+}
+
+fn blue_wave_body(data: &MessageData, message: &crate::blue_wave::Message) -> Res<Vec<u8>> {
+    let offset = message.body_offset.checked_sub(1).ok_or("Invalid Blue Wave body offset")?;
+    let length = message.body_len.checked_add(1).ok_or("Invalid Blue Wave body length")?;
+    let bytes = data.read_range(offset, length)?;
+    if bytes.first() != Some(&b' ') {
+        return Err("Blue Wave message body is missing its leading marker".into());
+    }
+    let mut body = Vec::with_capacity(bytes.len() - 1);
+    let mut text = bytes[1..].iter().copied().peekable();
+    while let Some(byte) = text.next() {
+        match byte {
+            b'\r' => {
+                if text.peek() == Some(&b'\n') {
+                    text.next();
+                }
+                body.push(b'\n');
+            }
+            byte => body.push(byte),
+        }
+    }
+    Ok(body)
 }
 
 mod index_date {

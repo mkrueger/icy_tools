@@ -157,6 +157,7 @@ pub struct DraftStore {
     next_id: u64,
     allowed_conferences: BTreeSet<u16>,
     capabilities: Capabilities,
+    blue_wave: Option<std::sync::Arc<crate::blue_wave::Packet>>,
     sender: String,
     subscriptions: BTreeMap<u16, bool>,
     pub drafts: Vec<Draft>,
@@ -206,7 +207,7 @@ impl DraftStore {
             if draft.date.is_empty() {
                 draft.date.clone_from(&stored.date);
             }
-            validate_metadata(draft)?;
+            validate_metadata_for(draft, package.blue_wave.is_some())?;
             validate_conference(&allowed_conferences, draft.conference)?;
             if draft.id <= max_id {
                 return Err(invalid("draft IDs", "duplicate or unordered IDs").into());
@@ -226,6 +227,7 @@ impl DraftStore {
             next_id,
             allowed_conferences,
             capabilities: package.capabilities.clone(),
+            blue_wave: package.blue_wave.clone(),
             sender: decode(&package.control_file.qmail_user_name),
             subscriptions: stored.subscriptions,
             drafts: stored.drafts,
@@ -245,8 +247,8 @@ impl DraftStore {
         if self.bbs_id != bbs_id(package)? {
             return Err(DraftError::WrongPacket);
         }
-        let from = decode(&package.control_file.qmail_user_name);
-        let (kind, to, subject, conference, ref_number, private) = match compose {
+        let mut from = decode(&package.control_file.qmail_user_name);
+        let (kind, to, subject, conference, ref_number, mut private) = match compose {
             Compose::New { conference } => (DraftKind::New, String::new(), String::new(), conference, 0, false),
             Compose::Reply { index } | Compose::Forward { index } => {
                 let info = package.infos.get(index).ok_or_else(|| invalid("message index", "out of range"))?;
@@ -262,15 +264,30 @@ impl DraftStore {
                             format!("Re: {subject}")
                         },
                         info.conference,
-                        info.number,
+                        if package.blue_wave.is_some() { original.msg_number } else { info.number },
                         info.private,
                     )
                 } else {
-                    (DraftKind::Forward, String::new(), format!("Fwd: {subject}"), info.conference, 0, false)
+                    let conference = if self.can_post(info.conference) {
+                        info.conference
+                    } else {
+                        self.allowed_conferences
+                            .iter()
+                            .copied()
+                            .find(|&number| self.can_post(number))
+                            .ok_or_else(|| invalid("conference", "the packet contains no writable conference"))?
+                    };
+                    (DraftKind::Forward, String::new(), format!("Fwd: {subject}"), conference, 0, false)
                 }
             }
         };
         validate_conference(&self.allowed_conferences, conference)?;
+        if let Some(packet) = &self.blue_wave {
+            let (sender, required_private) =
+                crate::blue_wave::posting_defaults(packet, conference).map_err(|error| invalid("conference", error.to_string()))?;
+            from = decode(&sender);
+            private |= required_private;
+        }
         Ok(Draft {
             id: self.next_id,
             kind,
@@ -281,7 +298,11 @@ impl DraftStore {
             conference,
             ref_number,
             private,
-            date: chrono::Local::now().format("%m-%d-%y%H:%M").to_string(),
+            date: if self.blue_wave.is_some() {
+                chrono::Utc::now().format("%m-%d-%y%H:%M").to_string()
+            } else {
+                chrono::Local::now().format("%m-%d-%y%H:%M").to_string()
+            },
             tagline: String::new(),
             signature: String::new(),
         })
@@ -293,7 +314,7 @@ impl DraftStore {
         if draft.id != self.next_id {
             return Err(invalid("draft ID", "draft must be prepared for the current store"));
         }
-        validate_metadata(&draft)?;
+        validate_metadata_for(&draft, self.blue_wave.is_some())?;
         validate_conference(&self.allowed_conferences, draft.conference)?;
         let mut next = self.clone();
         next.next_id = next.next_id.checked_add(1).ok_or_else(|| invalid("draft ID", "exhausted"))?;
@@ -309,7 +330,7 @@ impl DraftStore {
         if draft.kind != self.drafts[index].kind || draft.date != self.drafts[index].date {
             return Err(invalid("draft metadata", "kind and date cannot be changed"));
         }
-        validate_metadata(&draft)?;
+        validate_metadata_for(&draft, self.blue_wave.is_some())?;
         validate_conference(&self.allowed_conferences, draft.conference)?;
         let mut next = self.clone();
         next.drafts[index] = draft;
@@ -363,7 +384,7 @@ impl DraftStore {
         validate_date(&self.date)?;
         validate_subscriptions(&self.allowed_conferences, &self.capabilities, &self.subscriptions)?;
         for draft in &self.drafts {
-            validate_metadata(draft)?;
+            validate_metadata_for(draft, self.blue_wave.is_some())?;
             validate_conference(&self.allowed_conferences, draft.conference)?;
         }
         let content = toml::to_string(&Stored {
@@ -380,13 +401,30 @@ impl DraftStore {
         Ok(())
     }
 
-    /// Write a deterministic ZIP with one uppercase `<BBSID>.MSG` member.
+    /// Write a deterministic ZIP using the incoming packet's reply format.
     pub fn export(&self, destination: &Path) -> crate::Res<()> {
         if destination.canonicalize().is_ok_and(|path| path == self.source_path) {
             return Err(invalid("export path", "cannot overwrite the source packet").into());
         }
         if !self.has_exportable() {
             return Err(DraftError::Empty.into());
+        }
+        if let Some(packet) = &self.blue_wave {
+            let replies = self.drafts.iter().map(|draft| self.blue_wave_reply(draft)).collect::<crate::Res<Vec<_>>>()?;
+            let files = crate::blue_wave::reply_files(packet, &replies)?;
+            atomic_write(destination, |file| {
+                let mut zip = zip::ZipWriter::new(file);
+                let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored)
+                    .last_modified_time(zip::DateTime::default());
+                for (name, data) in &files {
+                    zip.start_file(name, options)?;
+                    zip.write_all(data)?;
+                }
+                zip.finish()?;
+                Ok(())
+            })?;
+            return Ok(());
         }
         let mut data = vec![b' '; 128];
         data[..self.bbs_id.len()].copy_from_slice(self.bbs_id.as_bytes());
@@ -484,7 +522,8 @@ impl DraftStore {
                 continue;
             }
             let length = value.chars().count();
-            if length > self.header_limit() {
+            let limit = self.field_limit(field);
+            if length > limit {
                 issues.push(DraftIssue {
                     field,
                     message: fl!(
@@ -492,11 +531,11 @@ impl DraftStore {
                         "draft-issue-field-too-long",
                         field = field.label(),
                         length = length,
-                        limit = self.header_limit()
+                        limit = limit
                     ),
                 });
             }
-            character_issues(field, value, false, &mut issues);
+            character_issues_for(field, value, false, self.blue_wave.is_some(), &mut issues);
         }
         let body = draft.body.replace("\r\n", "\n").replace('\r', "\n");
         if crate::editor::strip_codes(&body).trim().is_empty() {
@@ -506,23 +545,95 @@ impl DraftStore {
             });
         } else {
             for line in body.split('\n') {
-                character_issues(DraftField::Body, line, true, &mut issues);
+                character_issues_for(DraftField::Body, line, true, self.blue_wave.is_some(), &mut issues);
             }
         }
-        character_issues(DraftField::Tagline, &draft.tagline, false, &mut issues);
+        character_issues_for(DraftField::Tagline, &draft.tagline, false, self.blue_wave.is_some(), &mut issues);
         for line in draft.signature.replace("\r\n", "\n").replace('\r', "\n").split('\n') {
-            character_issues(DraftField::Signature, line, true, &mut issues);
+            character_issues_for(DraftField::Signature, line, true, self.blue_wave.is_some(), &mut issues);
+        }
+        if issues.is_empty() && self.blue_wave.is_some() {
+            if let Err(error) = self.blue_wave_reply(draft) {
+                issues.push(DraftIssue {
+                    field: DraftField::Conference,
+                    message: error.to_string(),
+                });
+            }
         }
         issues
     }
 
-    /// Suggested `.REP` filename beside the packet, using the BBS ID from CONTROL.DAT.
+    /// Suggested reply archive filename beside the packet, using its BBS ID.
     pub fn default_export_path(&self, packet_path: &Path) -> PathBuf {
-        packet_path.with_file_name(format!("{}.REP", self.bbs_id))
+        packet_path.with_file_name(format!("{}.{}", self.bbs_id, self.reply_extension().to_ascii_uppercase()))
     }
 
     pub fn header_limit(&self) -> usize {
-        self.capabilities.header_limit()
+        self.field_limit(DraftField::Subject)
+    }
+
+    pub fn field_limit(&self, field: DraftField) -> usize {
+        if let Some(packet) = &self.blue_wave {
+            if field == DraftField::Subject {
+                usize::from(packet.info.subject_limit).min(71)
+            } else {
+                usize::from(packet.info.from_to_limit).min(35)
+            }
+        } else {
+            self.capabilities.header_limit()
+        }
+    }
+
+    pub fn reply_extension(&self) -> &'static str {
+        if self.blue_wave.is_some() {
+            "new"
+        } else {
+            "rep"
+        }
+    }
+
+    pub fn is_blue_wave(&self) -> bool {
+        self.blue_wave.is_some()
+    }
+
+    pub fn can_post(&self, conference: u16) -> bool {
+        self.allowed_conferences.contains(&conference)
+            && self
+                .blue_wave
+                .as_ref()
+                .is_none_or(|packet| crate::blue_wave::posting_defaults(packet, conference).is_ok())
+    }
+
+    pub fn preserves_reply_references(&self) -> bool {
+        self.blue_wave.as_ref().is_none_or(|packet| packet.info.uses_upl)
+    }
+
+    fn blue_wave_reply(&self, draft: &Draft) -> crate::Res<crate::blue_wave::Reply> {
+        validate_conference(&self.allowed_conferences, draft.conference)?;
+        let (to, from, subject, body) = validate_draft_for(
+            draft,
+            true,
+            [
+                self.field_limit(DraftField::To),
+                self.field_limit(DraftField::From),
+                self.field_limit(DraftField::Subject),
+            ],
+            true,
+        )?;
+        let unix_time = chrono::NaiveDateTime::parse_from_str(&draft.date, "%m-%d-%y%H:%M")?.and_utc().timestamp();
+        let reply = crate::blue_wave::Reply {
+            conference: draft.conference,
+            reply_to: if self.preserves_reply_references() { draft.ref_number } else { 0 },
+            unix_time,
+            from,
+            to,
+            subject,
+            body,
+            private: draft.private,
+        };
+        let packet = self.blue_wave.as_ref().ok_or("Blue Wave reply requires a Blue Wave packet")?;
+        crate::blue_wave::validate_reply(packet, &reply)?;
+        Ok(reply)
     }
 
     /// ID assigned to the next new draft; imports may advance it while composing.
@@ -571,16 +682,46 @@ impl DraftStore {
         self.import_drafts(drafts)
     }
 
-    /// Parse and validate a REP without touching the draft store or writing files.
+    /// Parse and validate a reply archive without changing drafts or writing files.
     /// Door controls are excluded. Returned IDs are placeholders; `import_drafts`
     /// assigns fresh IDs when the main thread merges into its latest store.
     pub fn read_rep(&self, path: &Path) -> crate::Res<Vec<Draft>> {
         let mut reader = io::BufReader::new(File::open(path)?);
-        let format = ArchiveFormat::detect(&mut reader, Some(path))?.ok_or_else(|| invalid("REP archive", "unknown archive format"))?;
+        let format = ArchiveFormat::detect(&mut reader, Some(path))?.ok_or_else(|| invalid("reply archive", "unknown archive format"))?;
         let options = ArchiveOptions::new()
             .with_max_entry_size(Some(128 * 999_999))
             .with_max_total_size(Some(256 * 999_999));
         let mut archive = UnifiedArchive::open_with_format_and_options(reader, format, options)?;
+        if let Some(packet) = &self.blue_wave {
+            let mut files = Vec::new();
+            while let Some(entry) = archive.next_entry()? {
+                if entry.original_size() > 128 * 999_999 {
+                    return Err(invalid("Blue Wave replies", "member is too large").into());
+                }
+                files.push((entry.name().to_owned(), archive.read(&entry)?));
+            }
+            let mut drafts = Vec::new();
+            for reply in crate::blue_wave::read_replies(packet, &files)? {
+                let date = chrono::DateTime::from_timestamp(reply.unix_time, 0).ok_or_else(|| invalid("date", "invalid Blue Wave timestamp"))?;
+                let draft = Draft {
+                    id: 1,
+                    kind: if reply.reply_to == 0 { DraftKind::New } else { DraftKind::Reply },
+                    to: decode(&reply.to),
+                    from: decode(&reply.from),
+                    subject: decode(&reply.subject),
+                    body: decode_text(&reply.body).replace("\r\n", "\n").replace('\r', "\n"),
+                    conference: reply.conference,
+                    ref_number: reply.reply_to,
+                    private: reply.private,
+                    date: date.format("%m-%d-%y%H:%M").to_string(),
+                    tagline: String::new(),
+                    signature: String::new(),
+                };
+                self.blue_wave_reply(&draft)?;
+                drafts.push(draft);
+            }
+            return Ok(drafts);
+        }
         let expected = format!("{}.MSG", self.bbs_id);
         let mut messages = None;
         let mut commands_seen = false;
@@ -690,7 +831,11 @@ impl DraftStore {
         for mut draft in drafts {
             draft.id = next.next_id;
             validate_conference(&self.allowed_conferences, draft.conference)?;
-            validate_draft(&draft, true, self.header_limit())?;
+            if self.blue_wave.is_some() {
+                self.blue_wave_reply(&draft)?;
+            } else {
+                validate_draft(&draft, true, self.header_limit())?;
+            }
             next.next_id = next.next_id.checked_add(1).ok_or_else(|| invalid("draft ID", "exhausted"))?;
             next.drafts.push(draft);
         }
@@ -838,8 +983,13 @@ fn validate_conference(allowed: &BTreeSet<u16>, conference: u16) -> Result<()> {
 
 pub(crate) fn bbs_id(package: &QwkPackage) -> Result<String> {
     let raw = package.control_file.bbs_id.as_slice();
-    if raw.is_empty() || raw.len() > 8 || !raw.iter().all(u8::is_ascii_alphanumeric) {
-        return Err(invalid("BBS ID", "expected 1–8 ASCII letters or digits in CONTROL.DAT"));
+    if raw.is_empty()
+        || raw.len() > 8
+        || !raw
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || package.blue_wave.is_some() && matches!(byte, b'_' | b'-'))
+    {
+        return Err(invalid("BBS ID", "expected 1–8 safe ASCII BBS identifier characters"));
     }
     Ok(String::from_utf8(raw.to_ascii_uppercase()).expect("ASCII ID"))
 }
@@ -892,7 +1042,7 @@ fn data_directory(_packet_path: &Path) -> Result<PathBuf> {
 
 /// Reports each distinct character of `value` that cannot be written to a QWK message once.
 /// Message text may contain ESC for ANSI color sequences.
-fn character_issues(field: DraftField, value: &str, allow_escape: bool, issues: &mut Vec<DraftIssue>) {
+fn character_issues_for(field: DraftField, value: &str, allow_escape: bool, blue_wave: bool, issues: &mut Vec<DraftIssue>) {
     for ch in value.chars() {
         if allow_escape && ch == '\x1b' {
             continue;
@@ -913,7 +1063,7 @@ fn character_issues(field: DraftField, value: &str, allow_escape: bool, issues: 
                     field = field_label,
                     character = ch.to_string()
                 ),
-                Some(byte) if byte as u32 == 0xE3 || ch == '\u{e3}' => {
+                Some(byte) if !blue_wave && (byte as u32 == 0xE3 || ch == '\u{e3}') => {
                     fl!(LANGUAGE_LOADER, "draft-issue-qwk-line-break", field = field_label, character = ch.to_string())
                 }
                 Some(_) => continue,
@@ -935,19 +1085,23 @@ fn decode(bytes: &[u8]) -> String {
 }
 
 fn encode(field: &'static str, value: &str, max: Option<usize>) -> Result<Vec<u8>> {
+    encode_for(field, value, max, false)
+}
+
+fn encode_for(field: &'static str, value: &str, max: Option<usize>, blue_wave: bool) -> Result<Vec<u8>> {
     let mut bytes = Vec::with_capacity(value.len());
     for ch in value.chars() {
         if field == "body" && ch == '\x1b' {
             bytes.push(0x1b);
             continue;
         }
-        if ch.is_control() || ch == '\u{e3}' {
+        if ch.is_control() || !blue_wave && ch == '\u{e3}' {
             return Err(invalid(field, "control characters are not allowed"));
         }
         let byte = BufferType::CP437
             .try_convert_from_unicode(ch)
             .ok_or_else(|| invalid(field, format!("{ch:?} cannot be encoded as CP437")))? as u8;
-        if byte == 0xE3 {
+        if !blue_wave && byte == 0xE3 {
             return Err(invalid(field, "CP437 byte E3 is reserved for QWK newlines"));
         }
         bytes.push(byte);
@@ -968,35 +1122,50 @@ fn validate_date(date: &str) -> Result<()> {
 }
 
 fn validate_metadata(d: &Draft) -> Result<()> {
+    validate_metadata_for(d, false)
+}
+
+fn validate_metadata_for(d: &Draft, blue_wave: bool) -> Result<()> {
     if d.id == 0 {
         return Err(invalid("draft ID", "must be prepared before saving"));
     }
     validate_date(&d.date)?;
-    if d.ref_number > 99_999_999 {
+    if !blue_wave && d.ref_number > 99_999_999 {
         return Err(invalid("reference number", "exceeds eight digits"));
     }
     Ok(())
 }
 
 fn validate_draft(d: &Draft, complete: bool, header_limit: usize) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
-    validate_metadata(d)?;
+    validate_draft_for(d, complete, [header_limit; 3], false)
+}
+
+fn validate_draft_for(d: &Draft, complete: bool, limits: [usize; 3], blue_wave: bool) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
+    validate_metadata_for(d, blue_wave)?;
     let text = d.text();
-    if text.len() > 128 * 999_998 {
-        return Err(invalid("body", "QWK block count exceeds six digits"));
+    if text.len() > if blue_wave { u32::MAX as usize - 1 } else { 128 * 999_998 } {
+        return Err(invalid(
+            "body",
+            if blue_wave {
+                "Blue Wave body length exceeds its 32-bit field"
+            } else {
+                "QWK block count exceeds six digits"
+            },
+        ));
     }
-    let to = encode("to", &d.to, Some(header_limit))?;
-    let from = encode("from", &d.from, Some(header_limit))?;
-    let subject = encode("subject", &d.subject, Some(header_limit))?;
+    let to = encode_for("to", &d.to, Some(limits[0]), blue_wave)?;
+    let from = encode_for("from", &d.from, Some(limits[1]), blue_wave)?;
+    let subject = encode_for("subject", &d.subject, Some(limits[2]), blue_wave)?;
     // Validate even when the signature is already present in the body.
     for line in d.signature.replace("\r\n", "\n").replace('\r', "\n").split('\n') {
-        encode("body", line, None)?;
+        encode_for("body", line, None, blue_wave)?;
     }
     let mut body = Vec::new();
     for (index, line) in text.replace("\r\n", "\n").replace('\r', "\n").split('\n').enumerate() {
         if index > 0 {
             body.push(b'\n');
         }
-        body.extend(encode("body", line, None)?);
+        body.extend(encode_for("body", line, None, blue_wave)?);
     }
     if complete && (d.to.trim().is_empty() || d.from.trim().is_empty() || d.subject.trim().is_empty() || crate::editor::strip_codes(&d.body).trim().is_empty())
     {

@@ -11,7 +11,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::bodies::{MessageData, CHUNK_SIZE};
-use super::{ExtractedPacket, MessageDescriptor, MessageInfo, QwkPackage, MAX_ARCHIVE_ENTRY_SIZE, MAX_PACKET_FILE_SIZE};
+use super::{blue_wave_member, ExtractedPacket, MessageDescriptor, MessageInfo, PacketFormat, QwkPackage, MAX_ARCHIVE_ENTRY_SIZE, MAX_PACKET_FILE_SIZE};
 use crate::Res;
 
 const VERSION: u32 = 1;
@@ -20,8 +20,8 @@ const PENDING_PREFIX: &str = ".pending-v1-";
 const MANIFEST: &str = "manifest.toml";
 const MAX_MANIFEST_SIZE: u64 = 1024 * 1024;
 const DAY: u64 = 24 * 60 * 60;
-const INDEX_FILE: &str = "index-v3.bin";
-const INDEX_VERSION: u32 = 3;
+const INDEX_FILE: &str = "index-v4.bin";
+const INDEX_VERSION: u32 = 4;
 const MAX_INDEX_SIZE: u64 = 1024 * 1024 * 1024;
 const INDEX_CHUNK_MESSAGES: usize = 4096;
 
@@ -87,6 +87,8 @@ struct Manifest {
     version: u32,
     source: SourceStamp,
     bbs_name: String,
+    #[serde(default)]
+    format: PacketFormat,
     files: Vec<CachedFile>,
 }
 
@@ -100,6 +102,7 @@ struct CachedFile {
 }
 
 pub(super) struct CacheIdentity {
+    format: PacketFormat,
     source: SourceStamp,
     messages_size: u64,
     messages_crc32: u32,
@@ -234,6 +237,7 @@ impl ExtractionCache {
             return Err(invalid("cache manifest does not match the packet").into());
         }
         let identity = CacheIdentity {
+            format: manifest.format,
             source: source.clone(),
             messages_size: manifest.files[1].size,
             messages_crc32: manifest.files[1].crc32,
@@ -254,11 +258,15 @@ impl ExtractionCache {
         let mut upgraded = false;
         let mut files = Vec::with_capacity(manifest.files.len());
         for (index, entry) in manifest.files.iter_mut().enumerate() {
-            let limit = if index < 2 { MAX_ARCHIVE_ENTRY_SIZE } else { MAX_PACKET_FILE_SIZE };
+            let limit = if index < 2 || manifest.format == PacketFormat::BlueWave && blue_wave_member(&entry.name.to_ascii_uppercase()) {
+                MAX_ARCHIVE_ENTRY_SIZE
+            } else {
+                MAX_PACKET_FILE_SIZE
+            };
             if entry.size > limit {
                 return Err(invalid("cached file exceeds its size limit").into());
             }
-            if index == 1 && metadata.is_some() && !entry.chunks.is_empty() {
+            if index == 1 && (metadata.is_some() || manifest.format == PacketFormat::BlueWave) && !entry.chunks.is_empty() {
                 let file_path = directory.join("1.dat");
                 if !fs::symlink_metadata(&file_path)?.file_type().is_file() {
                     return Err(invalid("cached messages are not a regular file").into());
@@ -328,6 +336,7 @@ impl ExtractionCache {
         let control = files.next().expect("checked manifest length").1;
         let messages = files.next().expect("checked manifest length").1;
         Ok(Some(ExtractedPacket {
+            format: manifest.format,
             control,
             messages,
             message_source,
@@ -393,6 +402,13 @@ impl ExtractionCache {
             index.threads.extend(part.threads);
         }
         Self::validate_index(&index, identity.messages_size)?;
+        if index
+            .descriptors
+            .iter()
+            .any(|descriptor| descriptor.body_len.is_some() != (identity.format == PacketFormat::BlueWave))
+        {
+            return Err(invalid("metadata cache uses the wrong packet format").into());
+        }
         Ok(Some(index))
     }
 
@@ -400,6 +416,8 @@ impl ExtractionCache {
         let directory = self.directory.join(identity.source.key());
         let manifest: Manifest = toml::from_str(std::str::from_utf8(&read_file(&directory.join(MANIFEST), MAX_MANIFEST_SIZE)?)?)?;
         if manifest.source != identity.source
+            || manifest.format != identity.format
+            || package.format() != identity.format
             || manifest.files.len() < 2
             || manifest.files[1].size != identity.messages_size
             || manifest.files[1].crc32 != identity.messages_crc32
@@ -468,6 +486,7 @@ impl ExtractionCache {
                 version: VERSION,
                 source: source.clone(),
                 bbs_name: packet.bbs_name.clone(),
+                format: packet.format,
                 files: Vec::new(),
             };
             let files = [("CONTROL.DAT", packet.control.as_slice()), ("MESSAGES.DAT", packet.messages.as_slice())]
@@ -505,6 +524,7 @@ impl ExtractionCache {
         }
         result?;
         Ok(CacheIdentity {
+            format: packet.format,
             source: source.clone(),
             messages_size: packet.messages.len() as u64,
             messages_crc32,
@@ -517,10 +537,14 @@ impl ExtractionCache {
             return Err(invalid("metadata cache contains inconsistent index lengths"));
         }
         for (position, (descriptor, info)) in index.descriptors.iter().zip(&index.infos).enumerate() {
-            let end = descriptor.offset.checked_add(u64::from(descriptor.block_count) * 128);
-            if descriptor.offset < 128
-                || descriptor.offset % 128 != 0
-                || descriptor.block_count == 0
+            let length = descriptor.body_len.unwrap_or(u64::from(descriptor.block_count) * 128);
+            let end = descriptor.offset.checked_add(length);
+            let invalid_alignment = if descriptor.body_len.is_some() {
+                descriptor.block_count != 0
+            } else {
+                descriptor.offset < 128 || descriptor.offset % 128 != 0 || descriptor.block_count == 0
+            };
+            if invalid_alignment
                 || end.is_none_or(|end| end > message_bytes)
                 || info.index != position
                 || info.number != descriptor.number
@@ -712,6 +736,32 @@ mod tests {
         let path = dir.path().join("TEST.QWK");
         let cache = ExtractionCache::new(dir.path().join("cache"), 30);
         (dir, path, cache)
+    }
+
+    #[test]
+    fn native_body_ranges_are_not_interpreted_as_qwk_blocks() {
+        let (_dir, path, cache) = fixture();
+        let package = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+        let mut index = MetadataIndex {
+            descriptors: package.descriptors.clone(),
+            infos: package.infos.clone(),
+            threads: package.cached_threads().unwrap().to_vec(),
+        };
+        for descriptor in &mut index.descriptors {
+            descriptor.offset = 1;
+            descriptor.block_count = 0;
+            descriptor.body_len = Some(3);
+        }
+        ExtractionCache::validate_index(&index, 4).unwrap();
+        assert!(ExtractionCache::validate_index(&index, 3).is_err());
+        index.descriptors[0].body_len = None;
+        assert!(ExtractionCache::validate_index(&index, 4).is_err());
+        index.descriptors[0].body_len = Some(1);
+        index.descriptors[0].offset = u64::MAX;
+        assert!(ExtractionCache::validate_index(&index, u64::MAX).is_err());
+        index.descriptors[0].body_len = Some(0);
+        index.descriptors[0].offset = 4;
+        ExtractionCache::validate_index(&index, 4).unwrap();
     }
 
     fn entry(cache: &ExtractionCache, path: &Path) -> PathBuf {

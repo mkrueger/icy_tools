@@ -1,7 +1,7 @@
 # Icy Mail
 
-An offline QWK mail reader and reply-packet composer. The regular binary uses
-egui with the existing wgpu ANSI renderer. QWK parsing, header indexing, lazy
+An offline QWK and Blue Wave mail reader and reply-packet composer. The regular binary uses
+egui with the existing wgpu ANSI renderer. Packet parsing, header indexing, lazy
 body loading, caching and reply threading remain shared with the previous
 frontend.
 
@@ -18,8 +18,15 @@ name, unread count, file size, packing date, and the starred messages and
 drafts still to export, as they were when the packet was last open; hover a
 card and press × to forget it. Packets are unpacked with [unarc-rs](https://github.com/mkrueger/unarc-rs),
 so ZIP, ARJ, LHA/LZH, RAR, 7z, ARC, ZOO and the other formats it detects work;
-the archive must contain `CONTROL.DAT` and `MESSAGES.DAT`. Standalone REP
-archives are export files, not readable incoming packets.
+QWK archives must contain `CONTROL.DAT` and `MESSAGES.DAT`. Blue Wave level 2
+and 3 archives must contain matching `<BBSID>.INF`, `.MIX`, `.FTI` and `.DAT`
+files. Format detection uses the archive contents, not its filename. Both Open
+dialogs include Blue Wave's weekday extensions: `.SU0`–`.SU9`, `.MO0`–`.MO9`,
+`.TU0`–`.TU9`, `.WE0`–`.WE9`, `.TH0`–`.TH9`, `.FR0`–`.FR9` and `.SA0`–`.SA9`,
+in uppercase and lowercase, alongside `.BW`, `.QWK` and common archive extensions.
+The All Files filter remains available for other names.
+Incomplete, duplicate or mixed-format Blue Wave packets are rejected.
+Standalone reply archives are export files, not readable incoming packets.
 
 Archive entries may expand to at most 10 GiB each; bulletin and screen files
 retain their separate 16 MiB limit. Cold extraction and disabled caching keep
@@ -44,7 +51,7 @@ packet while preserving all checked metadata may reuse its old extraction.
 Extracted files are checked with CRC32 to detect cache corruption. Cache
 discovery or storage problems are logged and opening falls back to uncached
 extraction. On Unix, cache directories are private (`0700`) and files use `0600`.
-The cache also persists compact binary message metadata (including decoded
+The cache also persists format-aware binary message metadata (including decoded
 styles and dates), the message index and the default, unfiltered thread rows.
 The binary index is decoded in parallel chunks on subsequent openings.
 An older cache gains this metadata on its next opening; stale or corrupt metadata
@@ -241,8 +248,9 @@ terminal are regular panels, reachable from the toolbar above it or by keyboard:
   font, beside the text (below it in narrow windows). Clicking a character
   inserts it and keeps the table open. Ctrl+G moves the keyboard into the table:
   arrows choose, Enter inserts, Space inserts and stays, Escape returns to the
-  text. Control codes and QWK's line separator (227) are dimmed and cannot be
-  used. Characters that CP437 lacks are refused when typed and become `?` when
+  text. Control codes are dimmed and cannot be used. QWK additionally reserves
+  byte 227 as its line separator; Blue Wave allows its CP437 character, pi.
+  Characters that CP437 lacks are refused when typed and become `?` when
   pasted.
 - **Quoting** (Ctrl+Q): a reply starts empty with the quote panel open below the
   text. It lists an attribution line and the original quoted with the author's
@@ -267,12 +275,14 @@ double-click to edit it, and Delete to remove it. Drafts are stored separately
 for each source packet and survive restarts. Saving a draft does not send it;
 the Outbox shows the remaining steps to deliver it.
 
-**Export Replies** (Ctrl/Cmd+Shift+E) saves all drafts as a QWK `.rep` ZIP
-archive containing the BBS's `.MSG` reply file. Transfer that file to the BBS
+**Export Replies** (Ctrl/Cmd+Shift+E) saves all drafts as a ZIP reply archive:
+QWK uses `.REP` with the BBS's `.MSG` reply file; Blue Wave uses `.NEW` with
+`.UPL` and individual message files, or `.UPI`/`.NET` for doors requesting the
+level-2 reply format. Transfer that file to the BBS
 using your usual offline mail workflow. Drafts with problems are listed instead
 of being exported. Export does not delete drafts. Unsupported characters and
-invalid QWK fields are reported rather than silently replaced. After a successful
-export, the confirmation shows the full `.rep` file path and offers **Open Folder**
+invalid packet fields are reported rather than silently replaced. After a successful
+export, the confirmation shows the full reply file path and offers **Open Folder**
 so you can find the file to upload. The packet is not sent automatically.
 
 Packets advertising QWKE support can export recipient, sender and subject
@@ -280,13 +290,27 @@ fields longer than the standard 25-character QWK headers. The composer shows
 the applicable limit, and extended fields are included in the reply body
 headers rather than silently truncated.
 
-**File ▸ Import Replies…** reopens a `.rep` archive as editable drafts in the
-current outbox. Open its corresponding QWK packet first. The BBS ID,
+Blue Wave honors the door's header limits, posting/privacy restrictions and
+required sender identity. Its maxima are 35 CP437 bytes for sender/recipient
+and 71 for the subject, possibly reduced by the door. `.UPL` replies retain
+32-bit message references. The older `.UPI`/`.NET` format has no thread-reference
+field: the composer explicitly notes this, keeps the original reference in
+the local draft, and exports the reply's subject and quoted context without
+that number. Importing those older replies cannot restore the missing reference.
+Blue Wave timestamps are shown and composed in UTC.
+Doors may omit BBS message numbers (zero in the packet). These messages receive
+distinct local identities for read marks and stars; replies never send those
+local identities to the BBS.
+
+**File ▸ Import Replies…** reopens a QWK `.REP` or Blue Wave `.NEW` archive as
+editable drafts in the current outbox. Open its corresponding incoming packet
+first. The BBS ID,
 conference numbers and reply records are validated before any drafts are
 added; malformed or mismatched packets leave the outbox unchanged. Imported
 reply text, ANSI formatting, privacy and reply references are retained.
-Door-control records are excluded from imported drafts; subscription requests
-are managed separately in the subscriptions dialog.
+Door-control records are excluded from imported QWK drafts; QWK subscription
+requests are managed separately in the subscriptions dialog. Blue Wave does
+not expose QWK subscription commands.
 
 **Settings ▸ Writing** configures a signature and quote attribution template.
 New messages, replies and forwards inherit the signature; existing drafts keep
@@ -385,8 +409,9 @@ and frame scheduling are also used by icy_term and icy_view. Native windows use
 
 ## Scope
 
-QWK replies are exported as files, not sent over a network. Blue Wave, OMEN,
-SOUP and OPX packets, direct mail delivery and the legacy frontend's composer
+Replies are exported as files, not sent over a network. Blue Wave offline door
+configuration, file requests and addressed netmail export are not supported.
+OMEN, SOUP and OPX packets, direct mail delivery and the legacy frontend's composer
 are not implemented. Read marks, recent packets, drafts, taglines and the
 address book are stored in the user data directory, theme, zoom and monitor settings
 in the configuration directory; pane sizes are session settings. Closing the main window also closes its additional windows.
@@ -421,7 +446,7 @@ ICY_EGUI_SCREENSHOTS="$PWD/target/egui-mail" \
   cargo test -p icy_mail --bin icy_mail -- --include-ignored
 ```
 
-No live network service is required. Tests use synthetic QWK packets and do not
+No live network service is required. Tests use synthetic QWK and Blue Wave packets and do not
 modify user mail. The screenshot directory also receives a synthetic packet
 for native startup checks. Platform file pickers and Windows/macOS window
 behavior still require validation on those systems.

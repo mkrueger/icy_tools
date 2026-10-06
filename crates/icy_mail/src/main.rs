@@ -74,7 +74,7 @@ static LANGUAGE_LOADER: Lazy<i18n_embed::fluent::FluentLanguageLoader> = Lazy::n
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Mail package file to open (QWK/REP/ZIP format)
+    /// Mail package file to open (QWK or Blue Wave in a supported archive format)
     #[arg(value_name = "FILE")]
     file: Option<PathBuf>,
 }

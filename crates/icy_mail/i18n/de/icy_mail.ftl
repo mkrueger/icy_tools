@@ -117,14 +117,14 @@ loading-filter-all = Alle Dateien
 loading-save-message-title = Nachricht speichern
 loading-filter-message = Nachrichtentext
 loading-export-title = Antwortpaket exportieren
-loading-filter-reply = QWK-Antwortpaket
+loading-filter-reply = Nachrichten-Antwortpaket
 
 # Start page
 welcome-opening = { $name } wird geöffnet…
 welcome-tagline = BBS-Nachrichten offline lesen und beantworten.
 welcome-open-packet = Paket öffnen…
-welcome-open-packet-tooltip = QWK-Paket öffnen (Ctrl+O)
-welcome-drop-title = QWK-Paket hierher ziehen
+welcome-open-packet-tooltip = QWK- oder Blue-Wave-Paket öffnen (Ctrl+O)
+welcome-drop-title = Nachrichtenpaket hierher ziehen
 welcome-drop-release = Loslassen, um das Paket zu öffnen
 welcome-recent-unread = { $count } ungelesen
 welcome-recent-all-read = Alles gelesen
@@ -143,9 +143,9 @@ welcome-recent-packets = Zuletzt geöffnete Pakete
 welcome-forget-recent = Aus der Liste entfernen
 
 # Command line
-cli-about = Ein Offline-QWK-Nachrichtenleser zum Lesen und Erstellen von Antwortpaketen
+cli-about = Ein Offline-Nachrichtenleser für QWK und Blue Wave zum Lesen und Erstellen von Antwortpaketen
 cli-debug-help = Debug-Protokollierung einschließlich unverarbeiteter ANSI-QWK-Kopfzeilen aktivieren
-cli-file-help = Zu öffnendes Nachrichtenpaket (QWK in einem gängigen Archivformat)
+cli-file-help = Zu öffnendes Nachrichtenpaket (QWK oder Blue Wave in einem gängigen Archivformat)
 
 # Application: notices, errors and generated text
 folder-conference = Konferenz { $number }
@@ -236,7 +236,7 @@ writing-quote-header-unsupported = Nicht unterstützter Platzhalter: { $placehol
 writing-quote-header-unclosed = Nicht geschlossener Platzhalter in der Zitat-Einleitung.
 writing-quote-header-unexpected-close = Unerwartete schließende Klammer in der Zitat-Einleitung.
 app-quote-header-failed = Die Zitat-Einleitung konnte nicht vorbereitet werden: { $error }
-app-quote-character-invalid = Die Zitat-Einleitung enthält ein Zeichen, das QWK nicht übertragen kann: U+{ $code }
+app-quote-character-invalid = Die Zitat-Einleitung enthält ein Zeichen, das dieses Paket nicht übertragen kann: U+{ $code }
 
 # Antwortimport, Sammelspeichern und Offline-Konferenzanfragen
 menu-import-replies = Antworten importieren…
@@ -294,7 +294,7 @@ dialog-mail-exported-message = Das Antwortpaket wurde hier gespeichert:
 
     { $path }
 
-    Es wurde noch nicht versendet. Lade diese .REP-Datei in deine BBS hoch, um die Antworten zuzustellen. Die Entwürfe bleiben im Postausgang.
+    Es wurde noch nicht versendet. Lade dieses Antwortpaket in deine BBS hoch, um die Antworten zuzustellen. Die Entwürfe bleiben im Postausgang.
 dialog-mail-open-folder = Ordner öffnen
 dialog-mail-open-folder-error = { $path } konnte nicht geöffnet werden:
     { $error }
@@ -391,6 +391,8 @@ composer-field-to = An
 composer-field-subject = Betreff
 composer-field-from = Von
 composer-qwk-header-limit-tooltip = Dieses Paket unterstützt Kopffelder mit bis zu { $limit } Zeichen
+composer-bluewave-legacy-reply = Antworten im älteren Blue-Wave-Format behalten den zitierten Kontext, können aber keinen Verweis auf die ursprüngliche Nachrichtennummer enthalten.
+packet-date-unknown = Unbekanntes Datum
 composer-signature = Signatur
 composer-signature-hint = Wird einmal vor der Tagline eingefügt; für keine Signatur leer lassen.
 composer-address-book-tooltip = Aus dem Adressbuch auswählen (Ctrl+B)
@@ -533,7 +535,7 @@ list-draft-count = { $count ->
 }
 list-message-count-unread = { $count } · { $unread } ungelesen
 list-export-replies = Antworten exportieren…
-list-outbox-steps = Entwürfe werden lokal gespeichert, nicht versendet. Exportiere die Antworten als .REP-Datei und lade sie dann in deine BBS hoch.
+list-outbox-steps = Entwürfe werden lokal gespeichert, nicht versendet. Exportiere die Antworten als Antwortpaket und lade es dann in deine BBS hoch.
 list-unread = Ungelesen
 list-show-only-unread-messages = Nur ungelesene Nachrichten anzeigen
 list-column-from = Von
@@ -660,7 +662,7 @@ draft-field-signature = Signatur
 draft-field-tagline = Tagline
 draft-issue-conference-not-in-packet = Konferenz { $conference } ist nicht Teil dieses Pakets
 draft-issue-field-required = { $field } muss angegeben werden
-draft-issue-field-too-long = { $field } enthält { $length } Zeichen; QWK erlaubt { $limit }
+draft-issue-field-too-long = { $field } enthält { $length } Zeichen; dieses Paket erlaubt { $limit }
 draft-issue-message-text-required = Nachrichtentext muss angegeben werden
 draft-issue-control-character = { $field } enthält ein Steuerzeichen (U+{ $code })
 draft-issue-no-cp437-equivalent = { $field } enthält „{ $character }“, wofür es keine CP437-Entsprechung gibt

@@ -728,7 +728,7 @@ impl MailApp {
         if let Some(package) = &self.reader.package {
             for info in &package.infos {
                 let unread = !self.reader.is_read(info.index);
-                let personal = is_personal(info, &user);
+                let personal = package.matches_personal(&info.to, &user);
                 if self.reader.is_starred(info.index) {
                     counts.starred += 1;
                 }
@@ -868,7 +868,7 @@ impl MailApp {
             if !self.reader.set_read(info.index, read) {
                 continue;
             }
-            let personal = is_personal(info, &user);
+            let personal = package.matches_personal(&info.to, &user);
             let delta = |count: &mut usize| {
                 if read {
                     *count = count.saturating_sub(1);
@@ -1100,7 +1100,12 @@ impl MailApp {
         let Some(package) = self.reader.package.clone() else {
             return;
         };
-        let choices = self.choices.clone();
+        let choices: Vec<_> = self
+            .choices
+            .iter()
+            .filter(|(number, _)| self.drafts.as_ref().is_some_and(|store| store.can_post(*number)))
+            .cloned()
+            .collect();
         let conference = match self.folder {
             Folder::Conference(number) => Some(number),
             _ => self.selected_info().map(|info| info.conference),
@@ -1115,7 +1120,7 @@ impl MailApp {
             match store.prepare(&package, Compose::New { conference }) {
                 Ok(mut draft) => {
                     draft.to = "ALL".into();
-                    self.start_composer(context, Composer::new(draft, false, None, Vec::new(), false));
+                    self.start_composer(context, Composer::new(draft, false, None, Vec::new(), false, store.is_blue_wave()));
                 }
                 Err(error) => self.error = Some(fl!(LANGUAGE_LOADER, "app-new-message-failed", error = error.to_string())),
             }
@@ -1150,7 +1155,7 @@ impl MailApp {
                 return;
             }
         };
-        let quotes = match quotes(info, &message.text, &self.quote_header) {
+        let quotes = match quotes(info, &message.text, &self.quote_header, package.blue_wave.is_some()) {
             Ok(quotes) => quotes,
             Err(error) => {
                 self.error = Some(fl!(LANGUAGE_LOADER, "app-quote-header-failed", error = error.to_string()));
@@ -1172,7 +1177,7 @@ impl MailApp {
         }
         let origin = message_origin(info);
         // Like on a BBS, a reply starts empty with the quote panel open to pick lines from.
-        self.start_composer(context, Composer::new(draft, false, Some(origin), quotes, !forward));
+        self.start_composer(context, Composer::new(draft, false, Some(origin), quotes, !forward, store.is_blue_wave()));
     }
 
     pub fn edit_draft(&mut self, context: &egui::Context, id: u64) {
@@ -1190,7 +1195,17 @@ impl MailApp {
                     return;
                 }
             };
-            self.start_composer(context, Composer::new(draft, true, origin, quotes, false));
+            self.start_composer(
+                context,
+                Composer::new(
+                    draft,
+                    true,
+                    origin,
+                    quotes,
+                    false,
+                    self.drafts.as_ref().is_some_and(|store| store.is_blue_wave()),
+                ),
+            );
         } else {
             self.error = Some(fl!(LANGUAGE_LOADER, "app-draft-unavailable"));
         }
@@ -1224,7 +1239,12 @@ impl MailApp {
         else {
             return Ok(Vec::new());
         };
-        quotes(&package.infos[index], &package.get_message(index)?.text, &self.quote_header)
+        quotes(
+            &package.infos[index],
+            &package.get_message(index)?.text,
+            &self.quote_header,
+            package.blue_wave.is_some(),
+        )
     }
 
     fn start_composer(&mut self, context: &egui::Context, mut composer: Composer) {
@@ -1984,10 +2004,6 @@ pub fn sidebar_fill(visuals: &egui::Visuals) -> egui::Color32 {
     }
 }
 
-fn is_personal(info: &MessageInfo, user: &str) -> bool {
-    !user.is_empty() && info.to.trim().eq_ignore_ascii_case(user)
-}
-
 pub fn draft_title(draft: &Draft) -> String {
     if draft.subject.trim().is_empty() {
         fl!(LANGUAGE_LOADER, "app-no-subject")
@@ -2002,13 +2018,16 @@ fn message_origin(info: &MessageInfo) -> String {
 }
 
 /// The attribution and quoted lines offered in the editor's quote panel.
-fn quotes(info: &MessageInfo, text: &[u8], template: &str) -> icy_mail::Res<Vec<String>> {
+fn quotes(info: &MessageInfo, text: &[u8], template: &str, blue_wave: bool) -> icy_mail::Res<Vec<String>> {
     let attribution = if template.is_empty() {
         fl!(LANGUAGE_LOADER, "app-quote-attribution", date = info.date_str.as_str(), name = info.from.trim())
     } else {
         icy_mail::writing::format_quote_attribution(template, info.from.trim(), &info.subject, &info.date_str)?
     };
-    if let Some(character) = attribution.chars().find(|&character| character != '\n' && !editor::is_message_char(character)) {
+    if let Some(character) = attribution
+        .chars()
+        .find(|&character| character != '\n' && !editor::is_message_char_for(character, blue_wave))
+    {
         return Err(fl!(LANGUAGE_LOADER, "app-quote-character-invalid", code = format!("{:04X}", u32::from(character))).into());
     }
     let mut lines = vec![attribution];

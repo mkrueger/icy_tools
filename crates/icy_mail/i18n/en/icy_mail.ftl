@@ -117,14 +117,14 @@ loading-filter-all = All Files
 loading-save-message-title = Save Message
 loading-filter-message = Message text
 loading-export-title = Export Reply Packet
-loading-filter-reply = QWK Reply Packet
+loading-filter-reply = Mail Reply Packet
 
 # Start page
 welcome-opening = Opening { $name }…
 welcome-tagline = Read and answer your BBS mail offline.
 welcome-open-packet = Open Packet…
-welcome-open-packet-tooltip = Open a QWK packet (Ctrl+O)
-welcome-drop-title = Drop a QWK packet here
+welcome-open-packet-tooltip = Open a QWK or Blue Wave packet (Ctrl+O)
+welcome-drop-title = Drop a mail packet here
 welcome-drop-release = Release to open the packet
 welcome-recent-unread = { $count } unread
 welcome-recent-all-read = All read
@@ -143,9 +143,9 @@ welcome-recent-packets = Recent packets
 welcome-forget-recent = Remove from the list
 
 # Command line
-cli-about = An offline QWK mail reader and reply-packet composer
+cli-about = An offline QWK and Blue Wave mail reader and reply-packet composer
 cli-debug-help = Enable debug logging, including raw ANSI QWK headers
-cli-file-help = Mail package to open (QWK in any common archive format)
+cli-file-help = Mail package to open (QWK or Blue Wave in any common archive format)
 
 # Application: notices, errors and generated text
 folder-conference = Conference { $number }
@@ -236,7 +236,7 @@ writing-quote-header-unsupported = Unsupported placeholder: { $placeholder }
 writing-quote-header-unclosed = Unclosed placeholder in quote attribution.
 writing-quote-header-unexpected-close = Unexpected closing brace in quote attribution.
 app-quote-header-failed = Unable to prepare the quote attribution: { $error }
-app-quote-character-invalid = Quote attribution contains a character that QWK cannot transport: U+{ $code }
+app-quote-character-invalid = Quote attribution contains a character that this packet cannot transport: U+{ $code }
 
 # Reply import, batch saving and offline conference requests
 menu-import-replies = Import Replies…
@@ -294,7 +294,7 @@ dialog-mail-exported-message = The reply packet was saved to:
 
     { $path }
 
-    It has not been sent. Upload this .REP file to your BBS to deliver your replies. Your drafts remain in the Outbox.
+    It has not been sent. Upload this reply packet to your BBS to deliver your replies. Your drafts remain in the Outbox.
 dialog-mail-open-folder = Open Folder
 dialog-mail-open-folder-error = Unable to open { $path }:
     { $error }
@@ -391,6 +391,8 @@ composer-field-to = To
 composer-field-subject = Subject
 composer-field-from = From
 composer-qwk-header-limit-tooltip = This packet supports headers of up to { $limit } characters
+composer-bluewave-legacy-reply = Legacy Blue Wave replies preserve quoted context but cannot include a message-number reference.
+packet-date-unknown = Unknown date
 composer-signature = Signature
 composer-signature-hint = Included once before the tagline; leave empty for no signature.
 composer-address-book-tooltip = Choose from the address book (Ctrl+B)
@@ -533,7 +535,7 @@ list-draft-count = { $count ->
 }
 list-message-count-unread = { $count } · { $unread } unread
 list-export-replies = Export Replies…
-list-outbox-steps = Drafts are saved locally, not sent. Export Replies to create a .REP file, then upload it to your BBS.
+list-outbox-steps = Drafts are saved locally, not sent. Export Replies to create a reply packet, then upload it to your BBS.
 list-unread = Unread
 list-show-only-unread-messages = Show only unread messages
 list-column-from = From
@@ -660,7 +662,7 @@ draft-field-signature = Signature
 draft-field-tagline = Tagline
 draft-issue-conference-not-in-packet = Conference { $conference } is not part of this packet
 draft-issue-field-required = { $field } is required
-draft-issue-field-too-long = { $field } has { $length } characters; QWK allows { $limit }
+draft-issue-field-too-long = { $field } has { $length } characters; this packet allows { $limit }
 draft-issue-message-text-required = Message text is required
 draft-issue-control-character = { $field } contains a control character (U+{ $code })
 draft-issue-no-cp437-equivalent = { $field } contains “{ $character }”, which has no CP437 equivalent

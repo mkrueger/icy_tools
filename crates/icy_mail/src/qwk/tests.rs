@@ -2,6 +2,25 @@ use std::io::Write;
 
 use crate::qwk::QwkPackage;
 
+#[test]
+fn open_packet_filter_includes_every_blue_wave_weekday_sequence_in_both_cases() {
+    let extensions = crate::qwk::packet_extensions();
+    for day in ["su", "mo", "tu", "we", "th", "fr", "sa"] {
+        for sequence in 0..=9 {
+            let extension = format!("{day}{sequence}");
+            assert!(extensions.contains(&extension));
+            assert!(extensions.contains(&extension.to_ascii_uppercase()));
+        }
+    }
+    for extension in ["qwk", "bw", "zip", "arj", "lzh", "lha", "rar", "7z", "arc", "zoo", "rep"] {
+        assert!(extensions.iter().any(|candidate| candidate == extension));
+        assert!(extensions.contains(&extension.to_ascii_uppercase()));
+    }
+    assert_eq!(extensions.len(), 162);
+    assert_eq!(extensions.iter().collect::<std::collections::HashSet<_>>().len(), extensions.len());
+    assert!(!extensions.iter().any(|extension| extension.contains(['*', '?', '.'])));
+}
+
 /// Builds a 128-byte QWK message header.
 #[allow(clippy::too_many_arguments)] // each argument maps directly to a fixed QWK header field
 fn header(status: u8, number: u32, date_time: &str, to: &str, from: &str, subject: &str, ref_number: u32, blocks: u32, conference: u16) -> Vec<u8> {

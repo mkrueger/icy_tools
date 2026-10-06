@@ -95,7 +95,7 @@ fn german_locale_formats_labels_plurals_and_placeholders() {
         assert_eq!(loader.get_args(key, HashMap::from([("count", 1)])), singular);
         assert_eq!(loader.get_args(key, HashMap::from([("count", 2)])), plural);
     }
-    assert!(loader.get("list-outbox-steps").contains(".REP-Datei"));
+    assert!(loader.get("list-outbox-steps").contains("Antwortpaket"));
     assert_eq!(
         loader.get_args_concrete("list-date-weekday", HashMap::from([("weekday", 1.into()), ("time", "08:00".into())])),
         "Dienstag 08:00"
@@ -112,7 +112,7 @@ fn german_locale_formats_labels_plurals_and_placeholders() {
             "draft-issue-field-too-long",
             HashMap::from([("field", "Betreff".into()), ("length", 26.into()), ("limit", 25.into()),])
         ),
-        "Betreff enthält 26 Zeichen; QWK erlaubt 25"
+        "Betreff enthält 26 Zeichen; dieses Paket erlaubt 25"
     );
     assert_eq!(
         loader.get_args(

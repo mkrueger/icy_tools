@@ -99,7 +99,11 @@ pub struct TerminalEditor {
 
 impl TerminalEditor {
     pub fn new(body: &str, quotes: Vec<String>, open_quotes: bool) -> Self {
-        let editor = Editor::from_body(body);
+        Self::new_with_format(body, quotes, open_quotes, false)
+    }
+
+    pub fn new_with_format(body: &str, quotes: Vec<String>, open_quotes: bool, blue_wave: bool) -> Self {
+        let editor = Editor::from_body_with_format(body, blue_wave);
         let view = screen_view(MIN_ROWS);
         let palette = {
             let screen = view.terminal.screen.lock();
@@ -545,7 +549,7 @@ impl TerminalEditor {
 
     fn insert_char(&mut self, code: u8) {
         self.chars.code = code;
-        if !editor::is_insertable(code) {
+        if !self.editor.is_insertable(code) {
             self.status = Some(if code == 0xe3 {
                 fl!(LANGUAGE_LOADER, "editor-qwk-separator-unusable")
             } else {
@@ -853,7 +857,7 @@ impl TerminalEditor {
                 if hovered == Some(code) {
                     painter.rect_filled(cell_rect.shrink(0.5), 3, visuals.widgets.hovered.weak_bg_fill);
                 }
-                if editor::is_insertable(code) {
+                if self.editor.is_insertable(code) {
                     visuals.text_color()
                 } else {
                     visuals.weak_text_color().gamma_multiply(0.45)
@@ -885,7 +889,7 @@ impl TerminalEditor {
             paint_glyph(ui.painter(), &glyphs, shown, preview.center(), font * scale, self.palette[7]);
             ui.vertical(|ui| {
                 let hex = format!("{shown:02X}");
-                let details = if editor::is_insertable(shown) {
+                let details = if self.editor.is_insertable(shown) {
                     fl!(LANGUAGE_LOADER, "editor-character-details", code = shown, hex = hex.as_str())
                 } else {
                     fl!(LANGUAGE_LOADER, "editor-character-details-reserved", code = shown, hex = hex.as_str())

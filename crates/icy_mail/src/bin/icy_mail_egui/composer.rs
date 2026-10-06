@@ -28,9 +28,13 @@ pub struct Composer {
 
 impl Composer {
     /// `quotes` are the original message's lines for the quote panel, opened right away if `open_quotes`.
-    pub fn new(draft: Draft, existing: bool, origin: Option<String>, quotes: Vec<String>, open_quotes: bool) -> Self {
+    pub fn new(draft: Draft, existing: bool, origin: Option<String>, quotes: Vec<String>, open_quotes: bool, blue_wave: bool) -> Self {
         Self {
-            editor: TerminalEditor::new(&draft.body, quotes, open_quotes),
+            editor: if blue_wave {
+                TerminalEditor::new_with_format(&draft.body, quotes, open_quotes, true)
+            } else {
+                TerminalEditor::new(&draft.body, quotes, open_quotes)
+            },
             original: draft.clone(),
             draft,
             existing,
@@ -125,11 +129,10 @@ impl MailApp {
         if self.reader.package.is_none() {
             return;
         }
-        let conferences = self.choices.clone();
         let Some(store) = self.drafts.as_ref() else {
             return;
         };
-        let header_limit = store.header_limit();
+        let conferences: Vec<_> = self.choices.iter().filter(|(number, _)| store.can_post(*number)).cloned().collect();
         let Some(composer) = &mut self.composer else {
             return;
         };
@@ -209,6 +212,9 @@ impl MailApp {
                     });
                 };
                 let draft = &mut composer.draft;
+                if !store.preserves_reply_references() && draft.ref_number != 0 {
+                    ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "composer-bluewave-legacy-reply")).weak().small());
+                }
                 let icons = &mut self.icons;
                 row(ui, &fl!(LANGUAGE_LOADER, "composer-conference"), &mut |ui| {
                     let selected = conferences.iter().find(|(number, _)| *number == draft.conference).map_or_else(
@@ -232,6 +238,7 @@ impl MailApp {
                     (DraftField::Subject, fl!(LANGUAGE_LOADER, "composer-field-subject"), "Subject"),
                     (DraftField::From, fl!(LANGUAGE_LOADER, "composer-field-from"), "From"),
                 ] {
+                    let header_limit = store.field_limit(field);
                     let value = match field {
                         DraftField::To => &mut draft.to,
                         DraftField::Subject => &mut draft.subject,

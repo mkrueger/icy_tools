@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::qwk::{ExtractionCache, QwkPackage};
+use crate::qwk::{packet_extensions, ExtractionCache, QwkPackage};
 use crate::ui::threading::{self, Row};
 use crate::ui::{ConferenceColumn, Message, MessageColumn, NavigateDirection, Pane, SortDirection, ViewMode};
 use icy_engine::{Screen, Size, TextScreen};
@@ -122,7 +122,7 @@ impl MainWindow {
                 async {
                     let file_dialog = rfd::AsyncFileDialog::new()
                         .set_title("Open Mail Package")
-                        .add_filter("Mail Packages", &["qwk", "zip", "arj", "lzh", "lha", "rar", "7z", "arc", "zoo", "rep"])
+                        .add_filter("Mail Packages", &packet_extensions())
                         .add_filter("All Files", &["*"]);
 
                     file_dialog.pick_file().await
