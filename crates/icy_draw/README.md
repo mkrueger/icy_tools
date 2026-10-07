@@ -30,6 +30,39 @@ cargo run -p icy_draw -- --mcp-port 8080
 cargo run -p icy_draw -- host --bind 127.0.0.1 --port 8000 art.icy
 ```
 
+Changing a color, tool, or function-key character set keeps keyboard input on
+the drawing canvas, so you can continue typing without clicking it again.
+Text and numeric entry fields temporarily take keyboard input while focused.
+
+### Editing bitmap fonts
+
+Bitmap font operations respect the active panel. With the character set focused,
+**Inverse** and **Clear** affect every selected character (a linear range, or an
+Alt-drag rectangle). Without a range, they affect the character at the cursor.
+With the pixel editor focused, they affect only the current character's selected
+pixels, or the whole character if no pixels are selected. A multi-character
+operation is undone or redone in one step.
+
+The active panel has a highlighted heading and border. The status bar shows the
+character-selection count or pixel-selection dimensions, and **Inverse**/**Clear**
+menu labels describe their current target.
+
+For 8-pixel-wide fonts, choose **View → 8/9-Dot Cell Mode**, press **F8**, or
+click **8px/9px** in the status bar to switch VGA display width. The glyph grid,
+character set, tile view, and both previews reflect the mode. The ninth column
+is not editable: CP437 characters `0xC0`–`0xDF` repeat their rightmost pixel,
+while other characters leave it blank. This is a display option; saved glyphs
+remain 8 pixels wide and switching modes does not mark the font modified.
+
+The **Live Preview** toggle shows a resizable sample-text panel below the editor,
+without leaving the glyph grid. Enter custom CP437 text or choose alphabet,
+box-drawing, or block/shading samples, then view them at native size or 2×.
+The preview updates as glyphs, dimensions, colors, or undo/redo change; editing
+sample text does not modify the font. Unsupported characters are shown as `?`
+with a warning. Samples wrap at 64 columns and display up to 16 rows, with a
+warning if more text is present. The existing full **Preview** and tile view
+remain available.
+
 ### Importing bitmap fonts
 
 Choose **File → Import Font…** from the drawing or bitmap font editor to preview
@@ -91,13 +124,16 @@ automatically when it opens with Copilot selected.
 
 Copilot can draw in the character-based editors (ANSI/ASCII, ATASCII, PETSCII,
 VT52 and the text-art font glyph editor). There, its tools are icy_draw's drawing
-tools — `icy_canvas_info`, `icy_read_region`, `icy_draw_text`, `icy_fill_rect` and
-`icy_set_cells` — which work on a draft copy of the document using palette indices
+tools — `icy_canvas_info`, `icy_read_canvas_glyphs`, `icy_read_region`, `icy_draw_text`,
+`icy_fill_rect`, `icy_set_cells`, `icy_convert_reference_image` and `icy_preview_canvas` —
+which work on a draft copy of the document using palette indices
 and the document's character encoding. When Copilot finishes, a card in the chat
 shows a preview of the changed area with **Apply** and **Discard**. Nothing changes
 before you apply; applying writes all changes as one undo step. Further requests
 refine the open draft. The proposal is dropped when you switch documents, start a
 new chat or discard it; it cannot be applied to locked, removed or shrunk layers.
+Apply also rejects changed encoding, fonts, palette/display settings or conflicting
+edits to proposed cells. Edits elsewhere in the document are preserved.
 In the Lua animation editor, Copilot works on the script instead:
 `icy_animation_info`, `icy_animation_api` (the Lua API documentation),
 `icy_read_source`, `icy_replace_lines`, `icy_write_source` and `icy_check_lua`.
@@ -165,12 +201,202 @@ OpenAI-compatible advice-only requests retain their existing 120-second limit.
 
 Each editor contributes its own tools; the session registers all of them, every
 message tells Copilot which editor is open, and tools of other editors report which
-tools apply instead. In the remaining editors (RIP, IGS, SkyPix) Copilot answers in
-text. The OpenAI-compatible connection remains advice-only.
+tools apply instead. SkyPix also has dedicated graphics/state draft tools.
+The OpenAI-compatible connection remains advice-only.
+
+#### ANSI drawing and picture conversion
+
+ANSI format/drawing guidance is included automatically in every character-canvas
+turn, even with optional knowledge disabled. It distinguishes CP437, printable
+ASCII and Unicode, explains foreground/background block construction and blink
+versus iCE backgrounds, and emphasizes silhouette, composition, restrained
+shading and clean contours. Optional **ANSI scene-style illustration**,
+**Picture-to-character conversion and refinement**, and **Printable ASCII drawing**
+presets complement the existing BBS-menu and shading workflows.
+
+`icy_convert_reference_image` creates a local, deterministic first pass from the
+**most recently explicitly attached picture in the current conversation**.
+It cannot open paths or download images. `icy_canvas_info` reports which picture
+is available. The tool works on CP437, ATASCII, PETSCII and Atari ST byte-font
+canvases, not Unicode canvases. Target coordinates are layer-relative; specify
+`layer`, `x`, `y`, `width`, `height` to preserve unrelated art. Omitting the
+rectangle converts the whole current layer.
+
+- `mode: "half_blocks"` (CP437 default): space, full and upper/lower half blocks.
+- `mode: "blocks"`: also left/right halves and the three shade patterns.
+- `mode: "full"`: match all 256 actual glyphs; required for native retro editors.
+- `mode: "ascii"`: printable CP437 ASCII codes 32–126 only.
+- `fit: "contain"` (default) preserves the whole picture; `"crop"` center-crops
+  to fill the target. Both account for font/display cell proportions.
+- `dither: false` (default) avoids added noise; `true` uses mild ordered dithering.
+
+Matching uses real font bitmaps and legal palette combinations. CP437 is limited
+to 16 foreground colors, with 8 backgrounds in blink mode or 16 in iCE mode.
+Retro shared colors and font pages are preserved; ATASCII maps image luminance
+to its two screen colors. Source transparency and contain margins use the cell
+background (palette 0 on transparent cells), or the retro shared background.
+The converted region replaces previous glyphs and styling, including blink.
+All validation completes before any cells are written.
+
+`icy_preview_canvas` returns an actual PNG tool result to an image-capable
+Copilot model, not a text approximation. It renders the combined draft with its
+fonts, palette, letter spacing and aspect ratio. Preview coordinates are
+document-relative. The model can inspect and correct the result before finishing.
+Known non-vision models receive an explicit error instead.
+
+Both tools are bounded to 8,000 cells and 4 megapixels; full-glyph matching also
+has a work limit and can require a smaller region. Each turn allows at most
+three conversions and three previews. Preview PNGs are normalized to at most
+1024 pixels per edge. This is a starting point, not a guarantee of artistic
+quality: scene-style art still benefits from simplification and refinement.
+
+To try it, select GitHub Copilot and an image-capable model, attach a picture,
+and ask: **"Convert this picture to ANSI using half blocks, preserve the full
+image, then inspect the rendered preview and improve it."** Review Apply/Discard.
+OpenAI-compatible connections remain advice-only and have neither tool.
+
+#### RIP assistant
+
+The RIP editor supports Copilot draft editing with `icy_rip_info`,
+`icy_rip_api`, `icy_read_rip_commands` and `icy_replace_rip_commands`.
+It works on ordered RIPscrip commands for the 640x350 pixel scene, not ANSI
+cells. Reads provide command indices, decoded parameters and canonical wire
+source. Insert, replace or delete coherent batches using zero-based command
+indices and fixed-width base-36 source fields. Invalid batches are rejected
+atomically. Limits: 2048 commands, 128 KiB total source; reads at most 128
+commands / 64 KiB per call. New wire source must be ASCII; existing non-ASCII
+text remains preserved.
+
+Proposals show a rendered RIP preview with **Apply / Discard**. Apply is one
+undo step and refuses a changed document revision or unfinished drawing/text
+edit. Mixed ANSI/RIP and non-round-trippable source prefixes remain read-only;
+their editable suffix can be extended without rewriting the original bytes.
+The tools cannot introduce external icons (including icon-button styles),
+scene/file operations, queries, transfers or unsupported stream controls.
+Picture references can guide a RIP interpretation using geometry and text,
+without embedding an external icon.
+
+Enable the opt-in **RIPscrip commands and graphics authoring** reference or
+**RIP BBS menu and graphics workflow** preset in Instructions and knowledge.
+Both providers can also use explicitly selected `.rip` files as read-only,
+CP437-decoded command-stream references; imports do not render the file or
+load external assets. OpenAI-compatible connections remain advice-only.
+
+#### IGS assistant
+
+The IGS editor now has its own Copilot draft tools:
+`icy_igs_info`, `icy_igs_api`, `icy_read_igs_items`,
+`icy_replace_igs_items` and `icy_preview_igs`. These edit ordered IGS
+graphics/state commands and mixed VT52 text, not ANSI cells.
+
+Read info/API and existing item pages first. Replacement uses zero-based
+`start`/`delete_count` and either ASCII `source` or native byte `source_hex`.
+Zero deletions insert; an empty source deletes; `start == item_count` appends.
+Untouched items retain original bytes, including chained commands and VT52
+text. Accepted replacements are parsed and round-trip checked atomically.
+The subset supports bounded shapes, palette/pen and fill/line attributes,
+VDI text, scaling, resolution/clear state and safe VT52 text/cursor operations.
+Pen writes respect the active resolution: 320x200/16 pens, 640x200/4 pens,
+640x400/2 pens. Literal coordinates are 0..10000, radii at most 640, polygons
+at most 128 points and text at most 1024 ASCII bytes per VDI command.
+
+Existing loops, pauses, palette rotations, sound/MIDI, host/input/query,
+memory/file operations, random/loop parameters and malformed/unsafe fragments
+are **read-only**. They remain unchanged and ordered in the applied document.
+The static preview **omits** these items instead of executing them. Both the
+proposal card and PNG tool result identify omissions; playback can differ,
+particularly when omitted loops would change graphics or state. Applying a
+draft does not start playback.
+
+The user reviews a static rendered preview and Apply/Discard. Applying the
+lossless item list is one undo step and rejects changed document revisions or
+unfinished editor operations. Drafts are bounded to 1024 items/128 KiB;
+reads return at most 64 items/64 KiB, and image feedback allows three previews
+per turn for image-capable models.
+
+The **IGS graphics, state and static-preview rules** reference and **IGS graphics
+workflow** preset are available under Instructions and knowledge. Explicit
+`.ig` imports work via the picker, drops and knowledge references for both
+providers: they carry native source hex and metadata, never render or execute
+the referenced stream. OpenAI-compatible connections remain advice-only.
+Picture attachments can guide IGS geometry; the character-canvas image
+converter is not an IGS tool.
+
+#### SkyPix assistant
+
+The SkyPix editor supports `icy_skypix_info`, `icy_skypix_api`,
+`icy_read_skypix_items`, `icy_replace_skypix_items` and `icy_preview_skypix`.
+These edit ordered graphics/state, bundled Amiga fonts, local brush copies
+and mixed CP437/safe ANSI terminal text on the fixed 640x200 pixel canvas.
+Read info/API first. The 8/16-color mode constrains pen choices; palette values
+pack red in the low nibble. Image feedback is displayed with 2:1 vertical
+pixel-aspect correction, matching the editor's default view.
+
+Replace zero-based `start`/`delete_count` ranges with ASCII `source` containing
+actual ESC bytes or native `source_hex`. Zero deletions insert; empty source
+deletes. Untouched source bytes are retained. Edits are atomic, round-trip checked,
+bounded to 1024 items/128 KiB, and require user Apply/Discard. Reads allow
+64 items/64 KiB; image-capable models get up to three static PNG previews per turn.
+Apply is one undo step, rejecting stale documents or unfinished property,
+text, palette or drag edits.
+
+Existing audio, delays, transfers, controller/gadget operations, mode terminators
+and unsafe/unsupported fragments remain **read-only and ordered**.
+Static previews omit them before rendering; no runtime/external operations run.
+Unavailable fonts and unsupported brush modes are also omitted rather than
+silently substituted. Warnings disclose that playback may differ.
+
+The **SkyPix graphics, text and static-preview rules** reference and **SkyPix
+graphics workflow** preset are available under Instructions and knowledge.
+Explicit `.skypix`/legacy `.spx` references work through the picker, drops and
+knowledge imports for both providers; they carry native source hex and metadata,
+never render or execute the referenced stream. Picture attachments can guide
+SkyPix geometry, but the character-canvas converter is not a SkyPix tool.
+OpenAI-compatible connections remain advice-only.
+
+#### PETSCII, ATASCII and VT52 assistant
+
+These editors already use Copilot's character-canvas draft tools with rendered
+preview, Apply/Discard and one-step undo. They now have individual opt-in
+references and a **PETSCII / ATASCII / VT52 character-art workflow** preset
+under Instructions and knowledge.
+
+`icy_canvas_info` reports the native screen profile, machine/resolution and
+character-set constraints, actual font names and glyph/display-cell dimensions.
+`icy_read_canvas_glyphs` reads up to 256 real glyph bitmaps from a document font
+page as MSB-first hex rows, including native graphics and inverse glyphs.
+`icy_read_region` exposes exact `glyph_codes` and
+`font_pages` for retro screens alongside approximate Unicode text.
+Use `char_code` (0..255) in `icy_set_cells` or `icy_fill_rect` for graphical
+or inverse glyphs; this is a screen glyph code, **not a terminal control byte**.
+Do not supply both `char` and `char_code`. Existing font pages are preserved.
+PETSCII ordinary text uses the current character set, including per-cell
+C128 VDC banks. Unmappable retro Unicode text rejects the whole write batch.
+Apply refuses changed retro profiles, fonts/cell dimensions, character sets, shared backgrounds or
+conflicting user edits to the proposed cells rather than silently overwriting them.
+ATASCII shared colors and PETSCII shared backgrounds cannot be overridden per
+cell; use native inverse glyphs or the editor's screen/palette controls.
+
+Native editor constraints are included in every Copilot turn even without
+opt-in knowledge. ATASCII image conversion is fixed-grid, two-tone character
+art: the assistant reads the actual glyphs, simplifies the picture and writes
+native glyph batches without per-cell color overrides. Canvas tools cannot
+change screen size, resolution, fonts or global colors. The local image converter
+can produce the first pass, then the model can refine it using rendered feedback.
+If a tool-enabled turn finishes without draft changes, the chat explicitly says
+there is no new drawing to apply, regardless of what the model's text claims.
+
+Both providers can use `.pet`/`.seq`, `.ata`/`.xep`, and `.vt52`/`.v52`/`.vt5`
+reference files via the picker, chat drops or knowledge imports. Real format
+parsers produce bounded read-only snapshots with native glyph codes and font
+pages, not UTF-8 guesses; `.xep` correctly loads 80-column XEP80 screens.
+References do not execute terminal commands or change the document.
+OpenAI-compatible connections remain advice-only.
 
 Rejected tool calls (for example an out-of-range color) are logged as warnings with
 the reason and arguments; Copilot receives the error and usually corrects the call.
-Run with `RUST_LOG=warn,icy_draw=debug` to log every tool call and its result.
+Run with `RUST_LOG=warn,icy_draw=debug` to log tool calls and their completion;
+binary preview data is not logged.
 
 Everything else is disabled: built-in tools such as shell and file access, MCP
 servers (including the built-in GitHub MCP server), CLI-discovered skills, memory, instruction
@@ -197,14 +423,18 @@ In the gear menu, expand **Instructions and knowledge**:
   with that assumption stated. Its documented extensions are included when
   relevant. PCBoard-style conventions do not imply identical implementations;
   an explicit historical PCBoard target and the user's configuration take precedence.
-- **Drawing skills / presets** offers original workflows for BBS menus, eyes and
-  faces, restrained shading, outline-first palette experiments and composition.
+  Additional references cover RIPscrip, PETSCII, ATASCII and Atari ST VT52
+  using the editor's own parsers, character encoders and screen profiles.
+- **Drawing skills / presets** offers original workflows for BBS menus, RIP menus,
+  PETSCII/ATASCII/VT52 art, eyes and faces, restrained shading, outline-first
+  palette experiments and composition.
   The guides link to Enzo, ZeroVision, The Knight/Fuel, Lord Soth, Halaster and
   scene archives for further study. They do not reproduce tutorial artwork or
   text. Community advice supplied by the user is identified as such; unavailable
   sources are not presented as independently verified.
 - **Local reference files** imports explicitly selected UTF-8 `.txt`, `.md`,
-  `.rst`, `.toml`, `.json`, or `.icy`, `.ans`, `.asc`, `.pcb` screens. Use this
+  `.rst`, `.toml`, `.json`, `.rip`/`.ig` command streams or `.icy`, `.ans`, `.asc`, `.pcb`,
+  `.pet`/`.seq`, `.ata`/`.xep`, `.vt52`/`.v52`/`.vt5` screens. Use this
   for your board's actual command configuration or Icy Board's bundled
   `crates/icbsetup/data/new_bbs/` templates. Extensionless installed displays
   need a copy with the appropriate extension before importing.
@@ -291,7 +521,7 @@ opening behavior. Finish the current request/import before adding more attachmen
 remove the pending picture before attaching another picture.
 
 You can also **drop text, configuration or source files and `.icy`, `.ans`,
-`.asc`, `.pcb` screens onto the chat**. Common UTF-8 formats include Markdown,
+`.asc`, `.pcb` screens or `.rip`/`.ig` command streams onto the chat**. Common UTF-8 formats include Markdown,
 TOML/JSON/YAML, INI/CFG, CSV, Lua, Rust, Python, JavaScript/TypeScript, C/C++,
 HTML/CSS, shell scripts, SQL and PPL sources; extensionless text files such as
 README are accepted too. PDF and binary documents are not supported.

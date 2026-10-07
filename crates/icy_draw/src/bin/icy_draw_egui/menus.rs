@@ -316,6 +316,8 @@ impl DrawApp {
                     }
                 } else if self.rip.is_some() || self.skypix.is_some() {
                     ui.menu_button(menu_title(fl!("menu-view")), |ui| self.zoom_menu(ui));
+                } else if self.font_editor.is_some() {
+                    ui.menu_button(menu_title(fl!("menu-view")), |ui| self.font_view_menu(ui));
                 }
                 ui.menu_button(menu_title(fl!("menu-help")), |ui| {
                     if item(ui, &fl!("menu-discuss"), None, true) {
@@ -337,7 +339,12 @@ impl DrawApp {
                         self.open_about();
                     }
                 });
-                ui.toggle_value(&mut self.ai_chat.visible, fl!("ai-chat-title"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let label = if self.ai_chat.visible { fl!("ai-chat-hide") } else { fl!("ai-chat-show") };
+                    if self.icons.button_sized(ui, "dock_right", &label, self.ai_chat.visible, 24.0).clicked() {
+                        self.ai_chat.visible = !self.ai_chat.visible;
+                    }
+                });
             });
         });
     }
@@ -1021,6 +1028,21 @@ impl DrawApp {
         }
     }
 
+    fn font_view_menu(&mut self, ui: &mut egui::Ui) {
+        use super::super::font::CELL_MODE_SHORTCUT;
+        let Some(editor) = &mut self.font_editor else {
+            return;
+        };
+        let mut spacing = editor.state.use_letter_spacing();
+        let response = ui.add_enabled_ui(editor.state.font_width() == 8, |ui| {
+            if check_item(ui, &fl!("cmd-bitfont-toggle_letter_spacing-menu"), Some(&CELL_MODE_SHORTCUT), &mut spacing) {
+                editor.toggle_letter_spacing();
+            }
+        });
+        let tooltip = fl!("font-editor-cell-mode-tooltip");
+        response.response.on_hover_text(tooltip.clone()).on_disabled_hover_text(tooltip);
+    }
+
     fn font_edit_menu(&mut self, ui: &mut egui::Ui) {
         use super::super::font::GlyphOperation;
         let Some(editor) = &mut self.font_editor else {
@@ -1047,12 +1069,8 @@ impl DrawApp {
             editor.select_all();
         }
         ui.separator();
-        for (operation, label) in [
-            (GlyphOperation::FlipX, fl!("menu-flip-x")),
-            (GlyphOperation::FlipY, fl!("menu-flip-y")),
-            (GlyphOperation::Inverse, fl!("font-editor-inverse")),
-            (GlyphOperation::Clear, fl!("menu-clear-glyph")),
-        ] {
+        for operation in [GlyphOperation::FlipX, GlyphOperation::FlipY, GlyphOperation::Inverse, GlyphOperation::Clear] {
+            let label = editor.glyph_operation_label(operation);
             if item(ui, &label, None, true) {
                 editor.glyph_operation(operation);
             }
@@ -1213,7 +1231,14 @@ impl DrawApp {
                     (format(&PANELS), fl!("shortcut-toggle-side-panel")),
                     (format(&FULLSCREEN), fl!("shortcut-fullscreen")),
                     (format(&ICE_COLORS), fl!("shortcut-ice-colors")),
-                    (format(&LETTER_SPACING), fl!("shortcut-letter-spacing")),
+                    (
+                        format(if self.font_editor.is_some() {
+                            &super::super::font::CELL_MODE_SHORTCUT
+                        } else {
+                            &LETTER_SPACING
+                        }),
+                        fl!("shortcut-letter-spacing"),
+                    ),
                     (format(&CANVAS_SIZE), fl!("shortcut-canvas-size")),
                     (format(&MIRROR_MODE), fl!("shortcut-mirror-mode")),
                 ],
@@ -1467,6 +1492,24 @@ impl DrawApp {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn assistant_uses_a_persistent_material_sidebar_icon() {
+        let context = eframe::egui::Context::default();
+        let mut app = super::DrawApp::new();
+        let output = context.run(Default::default(), |context| app.menu(context));
+        assert!(app.icons.loaded("dock_right"));
+        assert!(!app.icons.loaded("navigate_prev"));
+        assert!(!output
+            .shapes
+            .iter()
+            .any(|shape| matches!(&shape.shape, eframe::egui::Shape::Text(text) if text.galley.text() == icy_draw::fl!("ai-chat-title"))));
+
+        app.ai_chat.visible = true;
+        let _ = context.run(Default::default(), |context| app.menu(context));
+        assert!(app.icons.loaded("dock_right"));
+        assert!(!app.icons.loaded("navigate_next"));
+    }
+
     #[test]
     fn about_dialog_shows_the_shared_artwork_dialog() {
         let context = eframe::egui::Context::default();

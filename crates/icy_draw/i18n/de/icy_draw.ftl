@@ -1,6 +1,8 @@
 font-editor-table = Zeichentabelle 0-{ $length }:
 
 ai-chat-title = KI-Assistent
+ai-chat-show = KI-Assistent einblenden
+ai-chat-hide = KI-Assistent ausblenden
 ai-chat-read-only = Nur Zeichenberatung – der Assistent kann deine Dokumente nicht ändern.
 ai-chat-settings = Verbindungseinstellungen
 ai-chat-back = Zurück zum Chat
@@ -18,7 +20,7 @@ ai-chat-setup = Verbindung einrichten
 ai-chat-privacy = Senden übermittelt diesen Chat, angehängte Bilder, Dateiinhalte und Momentaufnahmen, eigene Anweisungen und ausgewähltes Wissen an den konfigurierten Server. Editor-Kontext wird nie automatisch angehängt. Keine vertraulichen Dateien anhängen.
 ai-chat-attach = Editor-Kontext anhängen
 ai-chat-attach-files = Bilder oder Referenzdateien anhängen
-ai-chat-attach-files-tip = Bilder, Text-/Konfigurations-/Quelldateien oder ANSI-/Icy-Draw-Bildschirme auswählen. Native Wayland-Dateiablagen sind nicht verfügbar; die Dateiauswahl oder --x11 verwenden.
+ai-chat-attach-files-tip = Bilder, Text-/Konfigurations-/Quelldateien, ANSI-/Icy-Draw-/PETSCII-/ATASCII-/VT52-Bildschirme oder RIP-/IGS-/SkyPix-Ströme auswählen. Native Wayland-Dateiablagen sind nicht verfügbar; die Dateiauswahl oder --x11 verwenden.
 ai-chat-native-drop-error = { $error } Stattdessen „Bilder oder Referenzdateien anhängen“ verwenden.
 ai-chat-attached = Editor-Kontext · { $size }
 ai-chat-preview = Angehängte Momentaufnahme ein- oder ausblenden
@@ -55,9 +57,24 @@ ai-chat-proposal = Vorgeschlagene Zeichnung · { $count } Zellen geändert
 ai-chat-accept = Übernehmen
 ai-chat-discard = Verwerfen
 ai-chat-proposal-hint = Weitere Wünsche verfeinern diesen Entwurf. Übernehmen ist ein Rückgängig-Schritt.
+ai-chat-no-draft-changes = Es wurde kein geänderter Entwurf zurückgegeben. Es gibt keine neue Zeichnung zum Übernehmen; ein bestehender Vorschlag bleibt unverändert.
 ai-chat-proposal-script = Vorgeschlagene Skriptänderung · −{ $removed } +{ $added } Zeilen ab Zeile { $line }
 ai-chat-apply-stale = Das Skript wurde nach diesem Vorschlag geändert. Verwirf ihn und frag erneut.
 ai-chat-proposal-font = Vorgeschlagene Glyphen · { $count } geändert
+ai-chat-proposal-rip = Vorgeschlagene RIP-Zeichnung · { $count } Befehle geändert
+ai-chat-proposal-igs = Vorgeschlagene IGS-Zeichnung · { $count } Einträge geändert
+ai-chat-igs-static = Statische Vorschau · { $count } Laufzeit-/unsichere Einträge ausgelassen. Schleifen, Wartezeiten, Audio und Eingaben werden nicht ausgeführt; die Wiedergabe kann abweichen.
+ai-chat-apply-stale-igs = Die IGS-Zeichnung wurde geändert oder eine Bearbeitung ist noch offen. Bearbeitung abschließen, den Vorschlag verwerfen und erneut fragen.
+ai-knowledge-igs = IGS-Grafik, Zustand und Regeln für statische Vorschauen
+ai-knowledge-igs-art = IGS-Grafikablauf
+ai-chat-proposal-skypix = Vorgeschlagene SkyPix-Zeichnung · { $count } Einträge geändert
+ai-chat-skypix-static = Statische Vorschau · { $count } Laufzeit-/externe/nicht unterstützte Einträge ausgelassen. Audio, Wartezeiten, Übertragungen und Eingaben werden nicht ausgeführt; die Wiedergabe kann abweichen.
+ai-chat-apply-stale-skypix = Die SkyPix-Zeichnung wurde geändert oder eine Bearbeitung ist noch offen. Bearbeitung abschließen, den Vorschlag verwerfen und erneut fragen.
+ai-knowledge-skypix = SkyPix-Grafik, Text und Regeln für statische Vorschauen
+ai-knowledge-skypix-art = SkyPix-Grafikablauf
+ai-chat-apply-stale-rip = Die RIP-Zeichnung wurde geändert oder eine Bearbeitung ist noch offen. Bearbeitung abschließen, den Vorschlag verwerfen und erneut fragen.
+ai-chat-apply-stale-retro = Bildschirmprofil, Zeichensatz, Hintergrund oder vorgeschlagene Zellen wurden nach diesem Entwurf geändert. Vorschlag verwerfen und erneut fragen.
+ai-chat-apply-stale-canvas = Kodierung, Font, Palette, Anzeigeeinstellungen oder vorgeschlagene Zellen wurden nach diesem Entwurf geändert. Vorschlag verwerfen und erneut fragen.
 ai-chat-proposal-font-legend = Grau: aktueller Glyph · Weiß: vorgeschlagener Glyph
 ai-chat-font-prev = Vorherige Glyphenvorschau
 ai-chat-font-next = Nächste Glyphenvorschau
@@ -77,26 +94,44 @@ ai-chat-copilot-install = GitHub Copilot CLI installieren
 ai-chat-copilot-login-hint = Noch nicht angemeldet? Einmal „copilot login“ im Terminal ausführen, dann verbinden.
 ai-chat-copilot-missing = Die GitHub Copilot CLI wurde nicht gefunden. Installiere sie oder gib ihren Pfad an.
 ai-chat-copilot-login = Nicht bei GitHub Copilot angemeldet. Führe „copilot login“ im Terminal aus und verbinde erneut.
-ai-knowledge-title = Anweisungen und Wissen
-ai-knowledge-privacy = Nur aktivierte Vorlagen und Referenzen werden gesendet. Anweisungen, Auswahl und lokale Pfade werden gespeichert; Dateien werden beim Senden erneut gelesen. Keine vertraulichen Dateien auswählen.
+ai-knowledge-title = Eigene Anweisungen und Referenzdateien
+ai-knowledge-privacy = Skills und Referenzen werden im +-Menü unter dem Eingabefeld gewählt; manche werden für den offenen Editor automatisch hinzugefügt. Nur Einträge, die als Chips über dem Eingabefeld angezeigt werden, werden gesendet. Anweisungen, Auswahl und lokale Pfade werden gespeichert; Dateien werden beim Senden erneut gelesen. Keine vertraulichen Dateien auswählen.
 ai-knowledge-instructions = Eigene Anweisungen
 ai-knowledge-instructions-hint = Zeichenpräferenzen, BBS-Konventionen, Farb- oder Layoutregeln…
 ai-knowledge-limits = Grenzen: 8 KiB Anweisungen, 48 KiB Wissen insgesamt, 16 lokale Dateien.
-ai-knowledge-references = Mitgelieferte Referenzen
-ai-knowledge-presets = Zeichen-Skills / Vorlagen
+ai-knowledge-references = Referenzen
+ai-knowledge-presets = Skills
 ai-knowledge-files = Lokale Referenzdateien
-ai-knowledge-files-hint = UTF-8-Text/Konfiguration/Quellcode oder .icy/.ans/.asc/.pcb-Bildschirme importieren. Bildschirme werden als schreibgeschützte Text- und Attributdaten geteilt, nicht als Bilder. Entfernen beendet das Senden der Datei in zukünftigen Anfragen.
+ai-knowledge-files-hint = UTF-8-Text/Konfiguration/Quellcode, .icy/.ans/.asc/.pcb-, PETSCII- (.pet/.seq), ATASCII- (.ata/.xep), VT52-Bildschirme (.vt52/.v52/.vt5) oder .rip-/.ig-Ströme importieren. Referenzen werden als schreibgeschützte Quellen oder Schnappschüsse geteilt, nicht als gerenderte Bilder. Entfernen beendet das Senden der Datei in zukünftigen Anfragen.
 ai-knowledge-preview = Inhalt anzeigen
 ai-knowledge-add-file = Referenzdatei hinzufügen…
 ai-knowledge-path-error = Referenzdateipfade müssen gültiges UTF-8 sein.
+ai-knowledge-auto-editor = automatisch
+ai-knowledge-auto-bundled = mit { $name }
+ai-knowledge-chip-settings = Klicken zum Bearbeiten in den Einstellungen.
+ai-knowledge-chip-remove = Klicken zum Abschalten.
+ai-knowledge-chip-auto = Automatisch für den offenen Editor hinzugefügt.
+ai-knowledge-chip-bundled = Enthalten in „{ $name }“.
+ai-knowledge-more = Eigene Anweisungen und Referenzdateien…
+ai-chat-add-menu = Kontext, Skills und Referenzen anhängen
 ai-knowledge-macros = Icy-Board-Anzeigemakros
+ai-knowledge-ripscrip = RIPscrip-Befehle und Grafikgestaltung
+ai-knowledge-rip-menu = RIP-BBS-Menü- und Grafikablauf
+ai-knowledge-petscii = PETSCII-Bildschirmcodes, Zeichensätze und Paletten
+ai-knowledge-atascii = ATASCII-/XEP80-Zeichenkunst und Inversdarstellung
+ai-knowledge-vt52 = Atari-ST-VT52-Zeichen und Bildschirmmodi
+ai-knowledge-retro-art = PETSCII-/ATASCII-/VT52-Zeichenkunstablauf
 ai-knowledge-commands = Icy-Board-Befehle (PCBoard-artig)
 ai-knowledge-screens = Icy-Board-Bildschirmrollen und eigene Layouts
-ai-knowledge-bbs-menu = Icy-Board-Menüablauf (PCBoard-artig)
+ai-knowledge-bbs-menu = Icy-Board-Menüablauf + Befehle (PCBoard-artig)
 ai-knowledge-eyes-faces = Augen und Gesichter zeichnen
 ai-knowledge-shading = Zurückhaltende Schattierung
 ai-knowledge-outline = Umrisse und Farbexperimente
 ai-knowledge-composition = Szenenkomposition und Feinschliff
+ai-knowledge-ansi-art = ANSI-Formate, Blöcke, Farben und Zeichenregeln
+ai-knowledge-ansi-scene = ANSI-Illustration im Szenestil
+ai-knowledge-image-conversion = Bildumwandlung in Zeichenkunst und Verfeinerung
+ai-knowledge-ascii-art = Zeichnen mit druckbaren ASCII-Zeichen
 
 unsaved-title=Unbenannt
 
@@ -1560,6 +1595,40 @@ font-editor-status-char = Zeichen 0x{ $code } { $char }
 font-editor-status-size = Glyphengröße in Pixeln
 font-editor-hints = Strg+Pfeile verschieben  ·  Alt+Pfeile Zeile/Spalte einfügen/löschen  ·  +/- nächstes/vorheriges Zeichen  ·  Tab wechselt den Bereich
 font-editor-character-set = Zeichensatz
+font-editor-cell-mode-tooltip = Zwischen 8- und 9-Pixel-VGA-Anzeige wechseln (F8). Erfordert 8 Pixel breite Zeichen; die Schriftdaten bleiben 8 Pixel breit.
+font-editor-ninth-column-tooltip = VGA-Anzeigespalte (nicht bearbeitbar). CP437-Zeichen 0xC0-0xDF wiederholen den rechten Zeichenpixel; andere Zeichen lassen sie leer.
+font-editor-selected-characters = { $count ->
+    [one] 1 Zeichen ausgewählt
+    *[other] { $count } Zeichen ausgewählt
+}
+font-editor-selected-pixels = { $width } × { $height } Pixel ausgewählt
+font-editor-inverse-character = Zeichen invertieren
+font-editor-clear-character = Zeichen löschen
+font-editor-inverse-characters = { $count ->
+    [one] Ausgewähltes Zeichen invertieren
+    *[other] { $count } ausgewählte Zeichen invertieren
+}
+font-editor-clear-characters = { $count ->
+    [one] Ausgewähltes Zeichen löschen
+    *[other] { $count } ausgewählte Zeichen löschen
+}
+font-editor-inverse-pixels = Ausgewählte Pixel invertieren
+font-editor-clear-pixels = Ausgewählte Pixel löschen
+font-editor-live-preview = Live-Vorschau
+font-editor-live-preview-tooltip = Den bearbeitbaren Beispieltext unter dem Editor ein- oder ausblenden
+font-editor-sample-text = Beispieltext
+font-editor-preview-native = Originalgröße
+font-editor-preview-alphabet = Alphabet
+font-editor-preview-box-drawing = Linienzeichen
+font-editor-preview-shading = Blöcke & Schattierung
+font-editor-preview-custom = Benutzerdefiniert
+font-editor-preview-text-hint = Beispieltext eingeben…
+font-editor-preview-text-tooltip = CP437-Beispieltext mit bis zu { $limit } Zeichen. Änderungen hier verändern die Schrift nicht.
+font-editor-preview-unsupported = { $count ->
+    [one] 1 Zeichen ist nicht in CP437 enthalten und wird als ? angezeigt.
+    *[other] { $count } Zeichen sind nicht in CP437 enthalten und werden als ? angezeigt.
+}
+font-editor-preview-clipped = Vorschau auf { $columns } Spalten × { $rows } Zeilen begrenzt; weiterer Text wird nicht angezeigt.
 outline-code-fill=Füllmarkierung (@)
 outline-code-end=Endmarkierung (&)
 outline-code-hole=Outline-Loch (Leerzeichen)

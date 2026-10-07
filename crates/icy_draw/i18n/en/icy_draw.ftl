@@ -1,6 +1,8 @@
 font-editor-table = Char table 0-{ $length }:
 
 ai-chat-title = AI Assistant
+ai-chat-show = Show AI Assistant
+ai-chat-hide = Hide AI Assistant
 ai-chat-read-only = Drawing advice only — the assistant cannot change your documents.
 ai-chat-settings = Connection settings
 ai-chat-back = Back to chat
@@ -18,7 +20,7 @@ ai-chat-setup = Set up connection
 ai-chat-privacy = Sending shares this conversation, attached pictures, file contents and snapshots, custom instructions and selected knowledge with the configured server. No editor context is attached automatically. Do not attach confidential files.
 ai-chat-attach = Attach editor context
 ai-chat-attach-files = Attach pictures or reference files
-ai-chat-attach-files-tip = Choose pictures, text/config/source files, or ANSI/Icy Draw screens. Native Wayland file drops are unavailable; use this picker or launch with --x11.
+ai-chat-attach-files-tip = Choose pictures, text/config/source files, ANSI/Icy Draw/PETSCII/ATASCII/VT52 screens or RIP/IGS/SkyPix command streams. Native Wayland file drops are unavailable; use this picker or launch with --x11.
 ai-chat-native-drop-error = { $error } Use Attach pictures or reference files instead.
 ai-chat-attached = Editor context · { $size }
 ai-chat-preview = Show or hide the attached snapshot
@@ -55,9 +57,24 @@ ai-chat-proposal = Proposed drawing · { $count } cells changed
 ai-chat-accept = Apply
 ai-chat-discard = Discard
 ai-chat-proposal-hint = Further requests refine this draft. Applying is one undo step.
+ai-chat-no-draft-changes = No changed draft was returned. There is no new drawing to apply; any existing proposal is unchanged.
 ai-chat-proposal-script = Proposed script change · −{ $removed } +{ $added } lines from line { $line }
 ai-chat-apply-stale = The script was edited after this proposal. Discard it and ask again.
 ai-chat-proposal-font = Proposed glyph changes · { $count } glyphs
+ai-chat-proposal-rip = Proposed RIP drawing · { $count } commands changed
+ai-chat-proposal-igs = Proposed IGS drawing · { $count } items changed
+ai-chat-igs-static = Static preview · { $count } runtime/unsafe items omitted. Loops, timing, audio and input are not executed; playback may differ.
+ai-chat-apply-stale-igs = The IGS drawing changed or has an unfinished edit. Finish the edit, discard this proposal and ask again.
+ai-knowledge-igs = IGS graphics, state and static-preview rules
+ai-knowledge-igs-art = IGS graphics workflow
+ai-chat-proposal-skypix = Proposed SkyPix drawing · { $count } items changed
+ai-chat-skypix-static = Static preview · { $count } runtime/external/unsupported items omitted. Audio, delays, transfers and input are not executed; playback may differ.
+ai-chat-apply-stale-skypix = The SkyPix drawing changed or has an unfinished edit. Finish the edit, discard this proposal and ask again.
+ai-knowledge-skypix = SkyPix graphics, text and static-preview rules
+ai-knowledge-skypix-art = SkyPix graphics workflow
+ai-chat-apply-stale-rip = The RIP drawing changed or has an unfinished edit. Finish the edit, discard this proposal and ask again.
+ai-chat-apply-stale-retro = The retro screen profile, character set, background or proposed cells changed after this draft. Discard it and ask again.
+ai-chat-apply-stale-canvas = The canvas encoding, font, palette, display settings or proposed cells changed after this draft. Discard it and ask again.
 ai-chat-proposal-font-legend = Gray: current glyph · White: proposed glyph
 ai-chat-font-prev = Previous glyph preview page
 ai-chat-font-next = Next glyph preview page
@@ -77,26 +94,44 @@ ai-chat-copilot-install = Install the GitHub Copilot CLI
 ai-chat-copilot-login-hint = Not signed in yet? Run “copilot login” in a terminal once, then connect.
 ai-chat-copilot-missing = The GitHub Copilot CLI was not found. Install it or enter its path.
 ai-chat-copilot-login = Not signed in to GitHub Copilot. Run “copilot login” in a terminal, then connect again.
-ai-knowledge-title = Instructions and knowledge
-ai-knowledge-privacy = Only enabled presets and references are sent. Instructions, selections and local paths are saved; file contents are read again when sending. Do not select confidential files.
+ai-knowledge-title = Custom instructions and reference files
+ai-knowledge-privacy = Skills and references are chosen from the + menu below the message box; some are added automatically for the open editor. Only items shown as chips above the message box are sent. Instructions, selections and local paths are saved; file contents are read again when sending. Do not select confidential files.
 ai-knowledge-instructions = Custom instructions
 ai-knowledge-instructions-hint = Drawing preferences, BBS conventions, palette or layout rules…
 ai-knowledge-limits = Limits: 8 KiB instructions, 48 KiB total knowledge, 16 local files.
-ai-knowledge-references = Bundled references
-ai-knowledge-presets = Drawing skills / presets
+ai-knowledge-references = References
+ai-knowledge-presets = Skills
 ai-knowledge-files = Local reference files
-ai-knowledge-files-hint = Import UTF-8 text/configuration/source files or .icy/.ans/.asc/.pcb screens. Screens are shared as read-only text and attribute snapshots, not images. Remove a file to stop sending it in future requests.
+ai-knowledge-files-hint = Import UTF-8 text/configuration/source files, .icy/.ans/.asc/.pcb, PETSCII (.pet/.seq), ATASCII (.ata/.xep), VT52 (.vt52/.v52/.vt5) screens or .rip/.ig streams. References are shared as read-only source or snapshots, not rendered images. Remove a file to stop sending it in future requests.
 ai-knowledge-preview = Preview content
 ai-knowledge-add-file = Add reference file…
 ai-knowledge-path-error = Reference file paths must be valid UTF-8.
+ai-knowledge-auto-editor = auto
+ai-knowledge-auto-bundled = with { $name }
+ai-knowledge-chip-settings = Click to edit in settings.
+ai-knowledge-chip-remove = Click to turn off.
+ai-knowledge-chip-auto = Added automatically for the open editor.
+ai-knowledge-chip-bundled = Included by “{ $name }”.
+ai-knowledge-more = Custom instructions and reference files…
+ai-chat-add-menu = Attach context, skills and references
 ai-knowledge-macros = Icy Board display macros
+ai-knowledge-ripscrip = RIPscrip commands and graphics authoring
+ai-knowledge-rip-menu = RIP BBS menu and graphics workflow
+ai-knowledge-petscii = PETSCII screen codes, character sets and palettes
+ai-knowledge-atascii = ATASCII / XEP80 character art and inverse video
+ai-knowledge-vt52 = Atari ST VT52 characters and screen modes
+ai-knowledge-retro-art = PETSCII / ATASCII / VT52 character-art workflow
 ai-knowledge-commands = Icy Board commands (PCBoard-style)
 ai-knowledge-screens = Icy Board screen roles and original layouts
-ai-knowledge-bbs-menu = Icy Board menu workflow (PCBoard-style)
+ai-knowledge-bbs-menu = Icy Board menu workflow + commands (PCBoard-style)
 ai-knowledge-eyes-faces = Eyes and face construction
 ai-knowledge-shading = Restrained shading
 ai-knowledge-outline = Outline-first and palette experimentation
 ai-knowledge-composition = Scene composition and finishing
+ai-knowledge-ansi-art = ANSI formats, blocks, colors and drawing rules
+ai-knowledge-ansi-scene = ANSI scene-style illustration
+ai-knowledge-image-conversion = Picture-to-character conversion and refinement
+ai-knowledge-ascii-art = Printable ASCII drawing
 
 unsaved-title=Untitled
 
@@ -1645,6 +1680,40 @@ font-editor-status-char = Char 0x{ $code } { $char }
 font-editor-status-size = Glyph size in pixels
 font-editor-hints = Ctrl+Arrows slide  ·  Alt+Arrows insert/delete line or column  ·  +/- next/previous char  ·  Tab switches panel
 font-editor-character-set = Character Set
+font-editor-cell-mode-tooltip = Switch 8/9-pixel VGA display mode (F8). Requires 8-pixel-wide glyphs; the font data stays 8 pixels wide.
+font-editor-ninth-column-tooltip = VGA display column (not editable). CP437 characters 0xC0-0xDF repeat the rightmost glyph pixel; other characters leave it blank.
+font-editor-selected-characters = { $count ->
+    [one] 1 character selected
+    *[other] { $count } characters selected
+}
+font-editor-selected-pixels = { $width } × { $height } pixels selected
+font-editor-inverse-character = Inverse character
+font-editor-clear-character = Clear character
+font-editor-inverse-characters = { $count ->
+    [one] Inverse selected character
+    *[other] Inverse { $count } selected characters
+}
+font-editor-clear-characters = { $count ->
+    [one] Clear selected character
+    *[other] Clear { $count } selected characters
+}
+font-editor-inverse-pixels = Inverse selected pixels
+font-editor-clear-pixels = Clear selected pixels
+font-editor-live-preview = Live Preview
+font-editor-live-preview-tooltip = Show or hide the editable sample text below the editor
+font-editor-sample-text = Sample text
+font-editor-preview-native = Native size
+font-editor-preview-alphabet = Alphabet
+font-editor-preview-box-drawing = Box drawing
+font-editor-preview-shading = Blocks & shading
+font-editor-preview-custom = Custom
+font-editor-preview-text-hint = Type sample text…
+font-editor-preview-text-tooltip = CP437 sample text, up to { $limit } characters. Changes here do not modify the font.
+font-editor-preview-unsupported = { $count ->
+    [one] 1 character is not in CP437 and is shown as ?.
+    *[other] { $count } characters are not in CP437 and are shown as ?.
+}
+font-editor-preview-clipped = Preview limited to { $columns } columns × { $rows } rows; remaining text is not shown.
 outline-code-fill=Fill marker (@)
 outline-code-end=End marker (&)
 outline-code-hole=Outline hole (space)

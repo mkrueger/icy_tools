@@ -22,13 +22,13 @@ pub mod quarter_blocks;
 pub mod recovery;
 pub mod rip_document;
 pub mod screen_profile;
-pub mod skypix_document;
 #[path = "ui/editor/ansi/selection_drag.rs"]
 pub mod selection_drag;
 #[path = "ui/settings/mod.rs"]
 pub mod settings;
 #[path = "ui/editor/ansi/shape_points.rs"]
 pub mod shape_points;
+pub mod skypix_document;
 #[path = "util/tag_replacements.rs"]
 pub mod tag_replacements;
 #[path = "util/tdf_font_library.rs"]

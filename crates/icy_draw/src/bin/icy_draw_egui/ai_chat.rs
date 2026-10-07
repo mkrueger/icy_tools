@@ -17,6 +17,12 @@ mod animation_tools;
 mod canvas;
 #[path = "ai_font.rs"]
 mod font_tools;
+#[path = "ai_igs.rs"]
+mod igs_tools;
+#[path = "ai_rip.rs"]
+mod rip_tools;
+#[path = "ai_skypix.rs"]
+mod skypix_tools;
 #[path = "ai_workspace.rs"]
 mod workspace;
 use workspace::Workspace;
@@ -36,6 +42,8 @@ mod copilot;
 const MAX_CONTEXT_BYTES: usize = 48 * 1024;
 const MAX_CONTEXT_CELLS: usize = 16 * 1024;
 const FONT_PREVIEW_GLYPHS: usize = 64;
+const COMPOSER_MODEL_WIDTH: f32 = 128.0;
+const MODEL_MENU_HEIGHT: f32 = 240.0;
 const TRUNCATED: &str = "\n[Snapshot truncated at 48 KiB; remaining content is not attached.]";
 
 struct Entry {
@@ -74,6 +82,7 @@ struct Proposal {
     changes: usize,
     script_diff: Option<animation_tools::Diff>,
     preview: Option<egui::TextureHandle>,
+    preview_error: Option<String>,
     glyph_page: usize,
 }
 
@@ -86,6 +95,9 @@ impl Proposal {
                 (diff.removed.max(diff.added), Some(diff))
             }
             Workspace::Font(draft) => (draft.changed_codes().len(), None),
+            Workspace::Rip(draft) => (draft.changes(), None),
+            Workspace::Igs(draft) => (draft.changes(), None),
+            Workspace::Skypix(draft) => (draft.changes(), None),
         };
         Self {
             workspace,
@@ -93,6 +105,7 @@ impl Proposal {
             changes,
             script_diff,
             preview: None,
+            preview_error: None,
             glyph_page: 0,
         }
     }
@@ -144,6 +157,10 @@ pub(super) struct Chat {
     pending_document: usize,
     /// Send was requested; the app adds the drawing draft and sends.
     send_requested: bool,
+    /// Knowledge implied by the open editor, refreshed every frame the panel is visible.
+    editor_knowledge: knowledge::EditorKnowledge,
+    /// Expands the knowledge settings once, e.g. after clicking the composer's summary.
+    open_knowledge: bool,
 }
 
 impl Chat {
@@ -192,6 +209,7 @@ impl Chat {
                 self.persist = true;
             }
             Ok(Response::Reply(text)) => self.push_reply(text),
+            Ok(Response::Unchanged(text)) => self.push_reply(format!("{}\n\n{text}", fl!("ai-chat-no-draft-changes"))),
             Ok(Response::Proposal(text, workspace)) => {
                 self.push_reply(text);
                 self.proposal = Some(Proposal::new(*workspace, self.pending_document));
@@ -313,7 +331,7 @@ impl Chat {
             self.error = Some(fl!("ai-chat-empty"));
             return;
         }
-        let knowledge = match knowledge::prepare(&self.connection.knowledge) {
+        let knowledge = match knowledge::prepare(&self.connection.knowledge, self.editor_knowledge) {
             Ok(knowledge) => knowledge,
             Err(error) => {
                 log::warn!("Assistant knowledge rejected: {error}");
@@ -527,7 +545,8 @@ impl Chat {
 
     fn knowledge_settings(&mut self, ui: &mut egui::Ui) {
         let mut changed = false;
-        ui.collapsing(fl!("ai-knowledge-title"), |ui| {
+        let open = std::mem::take(&mut self.open_knowledge).then_some(true);
+        egui::CollapsingHeader::new(fl!("ai-knowledge-title")).open(open).show(ui, |ui| {
             ui.label(fl!("ai-knowledge-privacy"));
             ui.label(fl!("ai-knowledge-instructions"));
             changed |= ui
@@ -541,28 +560,6 @@ impl Chat {
                 )
                 .changed();
             ui.label(fl!("ai-knowledge-limits"));
-            for (label, catalog, selected) in [
-                (fl!("ai-knowledge-references"), knowledge::REFERENCES, &mut self.connection.knowledge.references),
-                (fl!("ai-knowledge-presets"), knowledge::PRESETS, &mut self.connection.knowledge.presets),
-            ] {
-                ui.collapsing(label, |ui| {
-                    for item in catalog {
-                        let mut enabled = selected.iter().any(|id| id == item.id);
-                        if ui.checkbox(&mut enabled, item.label()).changed() {
-                            selected.retain(|id| id != item.id);
-                            if enabled {
-                                selected.push(item.id.into());
-                            }
-                            changed = true;
-                        }
-                        ui.push_id(item.id, |ui| {
-                            ui.collapsing(fl!("ai-knowledge-preview"), |ui| {
-                                ui.add(egui::Label::new(item.text).wrap().selectable(true));
-                            });
-                        });
-                    }
-                });
-            }
             ui.collapsing(fl!("ai-knowledge-files"), |ui| {
                 ui.label(fl!("ai-knowledge-files-hint"));
                 let mut remove = None;
@@ -610,7 +607,7 @@ impl Chat {
                                     if !self.connection.knowledge.reference_files.iter().any(|existing| existing == path) {
                                         let mut candidate = self.connection.knowledge.clone();
                                         candidate.reference_files.push(path.into());
-                                        match knowledge::prepare(&candidate) {
+                                        match knowledge::prepare(&candidate, self.editor_knowledge) {
                                             Ok(_) => {
                                                 self.connection.knowledge = candidate;
                                                 changed = true;
@@ -690,12 +687,16 @@ impl Chat {
         } else {
             self.model().clone()
         };
+        let width = width.min(ui.available_width());
         let mut manage = false;
         egui::ComboBox::from_id_salt("ai-model")
             .selected_text(egui::RichText::new(selected).small())
-            .width(width.min(ui.available_width()))
+            .width(width)
+            .height(MODEL_MENU_HEIGHT)
             .truncate()
             .show_ui(ui, |ui| {
+                ui.set_max_width(width);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                 let mut chosen = None;
                 for model in &self.models {
                     if ui.selectable_label(model == self.model(), model).clicked() {
@@ -793,6 +794,77 @@ impl Chat {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 match (&proposal.workspace, &proposal.script_diff) {
+                    (Workspace::Skypix(draft), _) => {
+                        ui.label(appearance::bold(ui, fl!("ai-chat-proposal-skypix", count = proposal.changes)));
+                        ui.label(egui::RichText::new(fl!("ai-chat-skypix-static", count = draft.omitted())).small().weak());
+                        if proposal.preview.is_none() && proposal.preview_error.is_none() {
+                            match draft.preview() {
+                                Ok(preview) => {
+                                    let image = egui::ColorImage::from_rgba_unmultiplied([preview.width(), preview.height()], &preview.rgba());
+                                    proposal.preview = Some(ui.ctx().load_texture("ai-skypix-proposal", image, egui::TextureOptions::NEAREST));
+                                }
+                                Err(error) => {
+                                    log::warn!("Cannot preview SkyPix proposal: {error}");
+                                    proposal.preview_error = Some(error);
+                                }
+                            }
+                        }
+                        if let Some(texture) = &proposal.preview {
+                            let size = texture.size_vec2() * egui::vec2(1.0, 2.0);
+                            let scale = (ui.available_width() / size.x).min(1.0);
+                            ui.add(egui::Image::new((texture.id(), size * scale)));
+                        }
+                        if let Some(error) = &proposal.preview_error {
+                            ui.colored_label(ui.visuals().error_fg_color, error);
+                        }
+                    }
+                    (Workspace::Igs(draft), _) => {
+                        ui.label(appearance::bold(ui, fl!("ai-chat-proposal-igs", count = proposal.changes)));
+                        ui.label(egui::RichText::new(fl!("ai-chat-igs-static", count = draft.omitted())).small().weak());
+                        if proposal.preview.is_none() && proposal.preview_error.is_none() {
+                            match draft.preview() {
+                                Ok(preview) => {
+                                    let image = egui::ColorImage::from_rgba_unmultiplied([preview.width(), preview.height()], &preview.rgba());
+                                    proposal.preview = Some(ui.ctx().load_texture("ai-igs-proposal", image, egui::TextureOptions::NEAREST));
+                                }
+                                Err(error) => {
+                                    log::warn!("Cannot preview IGS proposal: {error}");
+                                    proposal.preview_error = Some(error);
+                                }
+                            }
+                        }
+                        if let Some(texture) = &proposal.preview {
+                            let size = texture.size_vec2();
+                            let scale = (ui.available_width() / size.x).min(1.0);
+                            ui.add(egui::Image::new((texture.id(), size * scale)));
+                        }
+                        if let Some(error) = &proposal.preview_error {
+                            ui.colored_label(ui.visuals().error_fg_color, error);
+                        }
+                    }
+                    (Workspace::Rip(draft), _) => {
+                        ui.label(appearance::bold(ui, fl!("ai-chat-proposal-rip", count = proposal.changes)));
+                        if proposal.preview.is_none() && proposal.preview_error.is_none() {
+                            match draft.preview() {
+                                Ok(preview) => {
+                                    let image = egui::ColorImage::from_rgba_unmultiplied([preview.width(), preview.height()], &preview.rgba());
+                                    proposal.preview = Some(ui.ctx().load_texture("ai-rip-proposal", image, egui::TextureOptions::NEAREST));
+                                }
+                                Err(error) => {
+                                    log::warn!("Cannot preview RIP proposal: {error}");
+                                    proposal.preview_error = Some(error);
+                                }
+                            }
+                        }
+                        if let Some(texture) = &proposal.preview {
+                            let size = texture.size_vec2();
+                            let scale = (ui.available_width() / size.x).min(1.0);
+                            ui.add(egui::Image::new((texture.id(), size * scale)));
+                        }
+                        if let Some(error) = &proposal.preview_error {
+                            ui.colored_label(ui.visuals().error_fg_color, error);
+                        }
+                    }
                     (Workspace::Canvas(draft), _) => {
                         ui.label(appearance::bold(ui, fl!("ai-chat-proposal", count = proposal.changes)));
                         ui.add_space(4.0);
@@ -855,7 +927,10 @@ impl Chat {
                 ui.add_space(4.0);
                 ui.add_enabled_ui(!busy, |ui| {
                     ui.horizontal(|ui| {
-                        if ui.add(appearance::primary_button(fl!("ai-chat-accept"))).clicked() {
+                        if ui
+                            .add_enabled(proposal.preview_error.is_none(), appearance::primary_button(fl!("ai-chat-accept")))
+                            .clicked()
+                        {
                             action = Some(ProposalAction::Accept);
                         }
                         if ui.button(fl!("ai-chat-discard")).clicked() {
@@ -900,6 +975,7 @@ impl Chat {
             ui.add(egui::Label::new(egui::RichText::new(error).color(ui.visuals().error_fg_color)).wrap());
             ui.add_space(4.0);
         }
+        self.knowledge_chips(ui);
         let prompt = egui::Id::new("ai-prompt");
         let focused = ui.memory(|memory| memory.has_focus(prompt));
         let visuals = ui.visuals();
@@ -1042,29 +1118,12 @@ impl Chat {
                     );
                 });
                 ui.horizontal(|ui| {
-                    ui.add_enabled_ui(can_attach && self.job.is_none(), |ui| {
-                        attach = icons.button_sized(ui, "add", &fl!("ai-chat-attach"), false, 24.0).clicked();
-                    });
-                    ui.add_enabled_ui(self.job.is_none() && self.reference_import.is_none(), |ui| {
-                        if icons
-                            .button_sized(ui, "file_copy", &fl!("ai-chat-attach-files"), false, 24.0)
-                            .on_hover_text(fl!("ai-chat-attach-files-tip"))
-                            .clicked()
-                        {
-                            let files = rfd::FileDialog::new()
-                                .set_title(fl!("ai-chat-attach-files"))
-                                .pick_files()
-                                .unwrap_or_default()
-                                .into_iter()
-                                .map(|path| egui::DroppedFile {
-                                    path: Some(path),
-                                    ..Default::default()
-                                })
-                                .collect();
-                            self.import_references(ui.ctx(), files, false);
-                        }
-                    });
-                    let model_width = (ui.available_width() - 24.0 - ui.spacing().item_spacing.x).clamp(0.0, 180.0);
+                    let add = icons.button_sized(ui, "add", &fl!("ai-chat-add-menu"), false, 24.0);
+                    egui::Popup::menu(&add)
+                        .id(egui::Id::new("ai-add-menu"))
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                        .show(|ui| attach = self.add_menu(ui, can_attach));
+                    let model_width = (ui.available_width() - 24.0 - ui.spacing().item_spacing.x).clamp(0.0, COMPOSER_MODEL_WIDTH);
                     self.model_picker(ui, model_width);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if self.job.is_some() {
@@ -1083,6 +1142,158 @@ impl Chat {
                 });
             });
         attach
+    }
+
+    /// The composer's "+" menu: attachments, then the skills and references sent as knowledge.
+    /// Returns true when the editor context should be attached.
+    fn add_menu(&mut self, ui: &mut egui::Ui, can_attach: bool) -> bool {
+        let mut attach = false;
+        ui.set_min_width(300.0);
+        if ui
+            .add_enabled(can_attach && self.job.is_none(), egui::Button::new(fl!("ai-chat-attach")))
+            .clicked()
+        {
+            attach = true;
+            ui.close();
+        }
+        let files_enabled = self.job.is_none() && self.reference_import.is_none();
+        if ui
+            .add_enabled(files_enabled, egui::Button::new(fl!("ai-chat-attach-files")))
+            .on_hover_text(fl!("ai-chat-attach-files-tip"))
+            .clicked()
+        {
+            ui.close();
+            let files = rfd::FileDialog::new()
+                .set_title(fl!("ai-chat-attach-files"))
+                .pick_files()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|path| egui::DroppedFile {
+                    path: Some(path),
+                    ..Default::default()
+                })
+                .collect();
+            self.import_references(ui.ctx(), files, false);
+        }
+        ui.separator();
+        let active = knowledge::active(&self.connection.knowledge, self.editor_knowledge).unwrap_or_default();
+        let mut toggled = None;
+        egui::ScrollArea::vertical().id_salt("ai-add-menu-knowledge").max_height(360.0).show(ui, |ui| {
+            for (heading, catalog) in [
+                (fl!("ai-knowledge-presets"), knowledge::PRESETS),
+                (fl!("ai-knowledge-references"), knowledge::REFERENCES),
+            ] {
+                ui.label(egui::RichText::new(heading).strong());
+                for item in catalog {
+                    let entry = active.iter().find(|entry| entry.item.id == item.id);
+                    let mut enabled = entry.is_some();
+                    ui.horizontal(|ui| {
+                        let response = ui.checkbox(&mut enabled, item.label());
+                        if let Some(source) = entry.and_then(|entry| source_label(entry.source)) {
+                            ui.label(egui::RichText::new(source).small().weak());
+                        }
+                        if response.on_hover_ui(|ui| knowledge_preview(ui, item.text)).changed() {
+                            toggled = Some((item.id, enabled));
+                        }
+                    });
+                }
+                ui.add_space(4.0);
+            }
+        });
+        if let Some((id, enabled)) = toggled {
+            knowledge::toggle(&mut self.connection.knowledge, self.editor_knowledge, id, enabled);
+            self.knowledge_persist = true;
+        }
+        ui.separator();
+        if ui.button(fl!("ai-knowledge-more")).clicked() {
+            self.settings_open = true;
+            self.open_knowledge = true;
+            ui.close();
+        }
+        attach
+    }
+
+    /// Everything sent as knowledge, as chips above the prompt; clicking one turns it off.
+    fn knowledge_chips(&mut self, ui: &mut egui::Ui) {
+        let settings = &self.connection.knowledge;
+        let active = knowledge::active(settings, self.editor_knowledge).unwrap_or_default();
+        let files: Vec<String> = settings
+            .reference_files
+            .iter()
+            .filter_map(|path| std::path::Path::new(path).file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .collect();
+        let instructions = !settings.custom_instructions.trim().is_empty();
+        if active.is_empty() && files.is_empty() && !instructions {
+            return;
+        }
+        let mut removed = None;
+        let mut open_settings = false;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+            for entry in &active {
+                let (label, reason) = match entry.source {
+                    knowledge::Source::Selected => (entry.item.label(), None),
+                    knowledge::Source::Editor => (
+                        format!("{} · {}", entry.item.label(), fl!("ai-knowledge-auto-editor")),
+                        Some(fl!("ai-knowledge-chip-auto")),
+                    ),
+                    knowledge::Source::Bundled(id) => (
+                        format!("{} · {}", entry.item.label(), fl!("ai-knowledge-auto-editor")),
+                        knowledge::find(id).map(|(preset, _)| fl!("ai-knowledge-chip-bundled", name = preset.label())),
+                    ),
+                };
+                let mut text = egui::RichText::new(format!("{label}  ×")).small();
+                if reason.is_some() {
+                    text = text.italics();
+                }
+                let chip = egui::Button::new(text).corner_radius(4);
+                if ui
+                    .add(chip)
+                    .on_hover_ui(|ui| {
+                        if let Some(reason) = &reason {
+                            ui.label(reason);
+                        }
+                        ui.label(fl!("ai-knowledge-chip-remove"));
+                        ui.separator();
+                        knowledge_preview(ui, entry.item.text);
+                    })
+                    .clicked()
+                {
+                    removed = Some(entry.item.id);
+                }
+            }
+            for name in std::iter::once(fl!("ai-knowledge-instructions")).filter(|_| instructions).chain(files) {
+                let chip = egui::Button::new(egui::RichText::new(name).small()).corner_radius(4);
+                open_settings |= ui.add(chip).on_hover_text(fl!("ai-knowledge-chip-settings")).clicked();
+            }
+        });
+        ui.add_space(4.0);
+        if let Some(id) = removed {
+            knowledge::toggle(&mut self.connection.knowledge, self.editor_knowledge, id, false);
+            self.knowledge_persist = true;
+        }
+        if open_settings {
+            self.settings_open = true;
+            self.open_knowledge = true;
+        }
+    }
+}
+
+/// Hover preview of a bundled knowledge item, shortened to fit a tooltip.
+fn knowledge_preview(ui: &mut egui::Ui, text: &str) {
+    const MAX_CHARS: usize = 1200;
+    ui.set_max_width(440.0);
+    let end = text.char_indices().nth(MAX_CHARS).map_or(text.len(), |(index, _)| index);
+    let ellipsis = if end < text.len() { "…" } else { "" };
+    ui.label(egui::RichText::new(format!("{}{ellipsis}", &text[..end])).small());
+}
+
+fn source_label(source: knowledge::Source) -> Option<String> {
+    match source {
+        knowledge::Source::Selected => None,
+        knowledge::Source::Editor => Some(fl!("ai-knowledge-auto-editor")),
+        knowledge::Source::Bundled(id) => knowledge::find(id).map(|(item, _)| fl!("ai-knowledge-auto-bundled", name = item.label())),
     }
 }
 
@@ -1334,6 +1545,7 @@ impl DrawApp {
         if opened && !self.ai_chat.settings_open {
             context.memory_mut(|memory| memory.request_focus(egui::Id::new("ai-prompt")));
         }
+        self.ai_chat.editor_knowledge = self.ai_editor_knowledge();
         let chat = &mut self.ai_chat;
         if chat.connection.provider == AiProvider::Copilot && !chat.connected && chat.job.is_none() && !std::mem::replace(&mut chat.auto_connected, true) {
             chat.connect(context);
@@ -1427,6 +1639,47 @@ impl DrawApp {
         std::sync::Arc::as_ptr(&self.document.screen) as *const () as usize
     }
 
+    /// Bundled knowledge that fits the open editor; `.pcb` files and screens with display
+    /// macros are Icy Board screens.
+    fn ai_editor_knowledge(&self) -> knowledge::EditorKnowledge {
+        use knowledge::EditorKnowledge as Knowledge;
+        if self.show_start || self.animation.is_some() || self.font_editor.is_some() {
+            return Knowledge::None;
+        }
+        if self.rip.is_some() {
+            return Knowledge::Rip;
+        }
+        if self.igs.is_some() {
+            return Knowledge::Igs;
+        }
+        if self.skypix.is_some() {
+            return Knowledge::Skypix;
+        }
+        if self.charfont.is_some() {
+            return Knowledge::None;
+        }
+        if self.atascii.is_some() {
+            return Knowledge::Atascii;
+        }
+        if self.vt52.is_some() {
+            return Knowledge::Vt52;
+        }
+        if self.petscii.is_some() {
+            return Knowledge::Petscii;
+        }
+        let pcb = self
+            .document
+            .path
+            .as_ref()
+            .and_then(|path| path.extension())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("pcb"));
+        if pcb || self.document.with_state(|state| !state.get_buffer().tags.is_empty()) {
+            Knowledge::IcyBoard
+        } else {
+            Knowledge::Ansi
+        }
+    }
+
     /// The character-based editor the AI may draw in, if one is open.
     fn ai_drawable_kind(&self) -> Option<&'static str> {
         if self.show_start || self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() || self.igs.is_some() || self.skypix.is_some() {
@@ -1450,6 +1703,9 @@ impl DrawApp {
             && match proposal.workspace {
                 Workspace::Canvas(_) => self.ai_drawable_kind().is_some(),
                 Workspace::Animation(_) => self.animation.is_some(),
+                Workspace::Rip(_) => self.rip.is_some() && self.font_editor.is_none() && self.animation.is_none() && !self.show_start,
+                Workspace::Igs(_) => self.igs.is_some() && self.font_editor.is_none() && self.animation.is_none() && !self.show_start,
+                Workspace::Skypix(_) => self.skypix.is_some() && self.font_editor.is_none() && self.animation.is_none() && !self.show_start,
                 Workspace::Font(ref draft) => self.font_editor.as_ref().is_some_and(|editor| {
                     (editor.state.font_width().max(0) as usize, editor.state.font_height().max(0) as usize) == (draft.width, draft.height)
                         && editor.state.get_all_glyph_data().len() == draft.glyphs.len()
@@ -1485,6 +1741,15 @@ impl DrawApp {
             let draft = animation_tools::AnimationDraft::new(&editor.source, file_name, status.frame_count, status.errors.first().cloned());
             return Some((Workspace::Animation(draft), document));
         }
+        if let Some(editor) = self.rip.as_ref().filter(|_| !self.show_start) {
+            return Some((Workspace::Rip(rip_tools::RipDraft::new(&editor.document)), document));
+        }
+        if let Some(editor) = self.igs.as_ref().filter(|_| !self.show_start) {
+            return Some((Workspace::Igs(igs_tools::IgsDraft::new(&editor.document)), document));
+        }
+        if let Some(editor) = self.skypix.as_ref().filter(|_| !self.show_start) {
+            return Some((Workspace::Skypix(skypix_tools::SkypixDraft::new(&editor.document)), document));
+        }
         let kind = self.ai_drawable_kind()?;
         let draft = self.document.with_state(|state| {
             let selection = state.selection().map(|selection| {
@@ -1515,6 +1780,20 @@ impl DrawApp {
                 _ => Err(fl!("ai-chat-apply-stale")),
             },
             Workspace::Font(draft) => self.apply_ai_glyphs(draft),
+            Workspace::Rip(draft) => match &mut self.rip {
+                Some(editor) if draft.matches(&editor.document) => draft
+                    .validate()
+                    .and_then(|()| editor.apply_ai_commands(draft.commands[draft.preserved..].to_vec())),
+                _ => Err(fl!("ai-chat-apply-stale-rip")),
+            },
+            Workspace::Igs(draft) => match &mut self.igs {
+                Some(editor) if draft.matches(&editor.document) => draft.validate().and_then(|()| editor.apply_ai_items(draft.items.clone())),
+                _ => Err(fl!("ai-chat-apply-stale-igs")),
+            },
+            Workspace::Skypix(draft) => match &mut self.skypix {
+                Some(editor) if draft.matches(&editor.document) => draft.validate().and_then(|()| editor.apply_ai_items(draft.items().to_vec())),
+                _ => Err(fl!("ai-chat-apply-stale-skypix")),
+            },
         };
         if let Err(error) = result {
             self.ai_chat.error = Some(error);
@@ -1538,10 +1817,31 @@ impl DrawApp {
         let changes = draft.changes();
         self.document.with_state(|state| -> Result<(), String> {
             let buffer = state.get_buffer();
+            let stale = if canvas::is_retro(&draft.original) {
+                fl!("ai-chat-apply-stale-retro")
+            } else {
+                fl!("ai-chat-apply-stale-canvas")
+            };
+            let font_changed = buffer.font_count() != draft.original.font_count()
+                || draft.original.font_iter().any(|(page, font)| buffer.font_for_render(*page) != Some(font));
+            if canvas::character_profile(buffer) != canvas::character_profile(&draft.original)
+                || buffer.buffer_type != draft.original.buffer_type
+                || buffer.palette != draft.original.palette
+                || buffer.ice_mode != draft.original.ice_mode
+                || font_changed
+                || buffer.font_dimensions() != draft.original.font_dimensions()
+                || buffer.use_letter_spacing() != draft.original.use_letter_spacing()
+                || buffer.font_dimensions_with_aspect_ratio() != draft.original.font_dimensions_with_aspect_ratio()
+            {
+                return Err(stale);
+            }
             for (layer, position, _) in &changes {
                 let target = buffer.layers.get(*layer).ok_or_else(|| fl!("ai-chat-apply-failed"))?;
                 if target.properties.is_locked || position.x >= target.width() || position.y >= target.height() {
                     return Err(fl!("ai-chat-apply-failed"));
+                }
+                if target.char_at(*position) != draft.original.layers[*layer].char_at(*position) {
+                    return Err(stale);
                 }
             }
             let _undo = state.begin_atomic_undo(fl!("ai-chat-undo"));
@@ -1581,7 +1881,12 @@ impl DrawApp {
                 }
             }
         } else if let Some(editor) = &self.rip {
-            writeln!(out, "Editor: RIP\nCommands: {}", editor.document.commands().len())?;
+            writeln!(
+                out,
+                "Editor: RIP\nCanvas: 640x350 pixels\nPalette indices: 0..15\nCommands: {}\nRead-only prefix commands: {}",
+                editor.document.commands().len(),
+                editor.document.preserved_commands()
+            )?;
             for (index, command) in editor.document.commands().iter().enumerate() {
                 writeln!(out, "{index}: {command:?}")?;
             }
@@ -1613,6 +1918,9 @@ impl DrawApp {
                     buffer.ice_mode,
                     buffer.palette
                 )?;
+                if canvas::is_retro(buffer) {
+                    writeln!(out, "Character profile: {}", canvas::character_profile(buffer))?;
+                }
                 for (slot, font) in buffer.font_iter() {
                     writeln!(out, "Font slot {slot}: {} ({:?})", font.name(), font.size())?;
                 }
@@ -2413,6 +2721,16 @@ mod tests {
     }
 
     #[test]
+    fn unchanged_turn_explicitly_reports_no_new_drawing() {
+        let mut chat = Chat::new(AiChatSettings::default());
+        chat.handle(Ok(Response::Unchanged("Created a stylized ATASCII draft".into())));
+        assert!(chat.proposal.is_none());
+        assert_eq!(chat.entries.len(), 1);
+        assert!(chat.entries[0].text.starts_with(&fl!("ai-chat-no-draft-changes")));
+        assert!(chat.entries[0].text.contains("Created a stylized ATASCII draft"));
+    }
+
+    #[test]
     fn copilot_progress_is_visible_and_cancellation_keeps_the_live_font_unchanged() {
         let mut app = DrawApp::new();
         app.create(NewKind::BitmapFont, Size::new(80, 25));
@@ -2472,6 +2790,73 @@ mod tests {
         assert_eq!(chat.attachment.as_deref(), Some("editor snapshot"));
         assert!(chat.pending.is_none());
         assert!(chat.job.is_none());
+    }
+
+    #[test]
+    fn knowledge_is_chosen_from_the_add_menu_and_shown_as_removable_chips() {
+        fn find(shapes: &[egui::Shape], needle: &str) -> Option<egui::Pos2> {
+            shapes.iter().find_map(|shape| match shape {
+                egui::Shape::Text(text) if text.galley.text().starts_with(needle) => Some(text.visual_bounding_rect().center()),
+                egui::Shape::Vec(shapes) => find(shapes, needle),
+                _ => None,
+            })
+        }
+        fn run(context: &egui::Context, chat: &mut Chat, click: Option<egui::Pos2>, chips: bool) -> Vec<egui::Shape> {
+            let events = click.map_or_else(Vec::new, |pos| {
+                vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ]
+            });
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 900.0))),
+                    events,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        if chips {
+                            chat.knowledge_chips(ui);
+                        } else {
+                            chat.add_menu(ui, true);
+                        }
+                    });
+                },
+            );
+            output.shapes.into_iter().map(|clipped| clipped.shape).collect()
+        }
+        let context = egui::Context::default();
+        let mut chat = Chat::new(AiChatSettings::default());
+        chat.editor_knowledge = knowledge::EditorKnowledge::IcyBoard;
+
+        let shapes = run(&context, &mut chat, None, false);
+        assert!(find(&shapes, &fl!("ai-knowledge-preview")).is_none());
+        let ascii = knowledge::find("ascii-art").unwrap().0.label();
+        let checkbox = find(&shapes, &ascii).expect("skill listed in the + menu");
+        run(&context, &mut chat, Some(checkbox), false);
+        assert_eq!(chat.connection.knowledge.presets, ["ascii-art"]);
+        assert!(std::mem::take(&mut chat.knowledge_persist));
+
+        let shapes = run(&context, &mut chat, None, true);
+        let commands = knowledge::find("icy-board-commands").unwrap().0.label();
+        let chip = find(&shapes, &commands).expect("automatic knowledge shown as a chip");
+        assert!(find(&shapes, &ascii).is_some());
+        run(&context, &mut chat, Some(chip), true);
+        assert_eq!(chat.connection.knowledge.excluded, ["icy-board-commands"]);
+        assert!(chat.knowledge_persist);
+        assert!(find(&run(&context, &mut chat, None, true), &commands).is_none());
     }
 
     #[test]
@@ -2732,12 +3117,14 @@ mod tests {
         frame(&context, &mut app, size, vec![]);
         assert!(app.ai_chat.proposal.is_none(), "a proposal never lands in another document");
 
-        for kind in [NewKind::Rip, NewKind::Igs, NewKind::Skypix] {
-            app.create(kind, Size::new(80, 25));
-            assert!(app.ai_draft().is_none());
-        }
+        app.create(NewKind::Skypix, Size::new(80, 25));
+        assert!(matches!(app.ai_draft(), Some((Workspace::Skypix(_), _))));
+        app.create(NewKind::Igs, Size::new(80, 25));
+        assert!(matches!(app.ai_draft(), Some((Workspace::Igs(_), _))));
         app.create(NewKind::Animation, Size::new(80, 25));
         assert!(matches!(app.ai_draft(), Some((Workspace::Animation(_), _))));
+        app.create(NewKind::Rip, Size::new(80, 25));
+        assert!(matches!(app.ai_draft(), Some((Workspace::Rip(_), _))));
         for kind in [NewKind::Ansi, NewKind::Atascii, NewKind::Vt52, NewKind::Petscii, NewKind::TheDraw] {
             app.create(kind, Size::new(80, 25));
             assert!(app.ai_draft().is_some());
@@ -2753,6 +3140,334 @@ mod tests {
         assert!(app.ai_chat.proposal.is_some());
         assert!(app.ai_chat.error.is_some());
         assert!(!app.document.modified());
+    }
+
+    #[test]
+    fn skypix_proposals_preview_refine_apply_undo_and_reject_stale_documents() {
+        let mut app = image_chat_app();
+        app.create(NewKind::Skypix, Size::new(80, 25));
+        let baseline = app.skypix.as_ref().unwrap().document.to_bytes().unwrap();
+        let (mut workspace, document) = app.ai_draft().unwrap();
+        workspace
+            .call(
+                "icy_replace_skypix_items",
+                &serde_json::json!({"start":0,"delete_count":0,"source":"\u{1b}[15;3!\u{1b}[4;10;10;50;50!\u{1b}[19;10;70!HELLO"}),
+            )
+            .unwrap();
+        app.ai_chat.pending_document = document;
+        app.ai_chat.handle(Ok(Response::Proposal("SkyPix draft".into(), Box::new(workspace))));
+        assert_eq!(app.skypix.as_ref().unwrap().document.to_bytes().unwrap(), baseline);
+        frame(&egui::Context::default(), &mut app, egui::vec2(1280.0, 820.0), vec![]);
+        assert!(app.ai_chat.proposal.as_ref().unwrap().preview.is_some());
+        let Some((Workspace::Skypix(refined), _)) = app.ai_draft() else {
+            panic!("SkyPix refinement")
+        };
+        assert!(refined.changed());
+        app.accept_ai_proposal();
+        assert!(app.ai_chat.proposal.is_none(), "{:?}", app.ai_chat.error);
+        assert_ne!(app.skypix.as_ref().unwrap().document.to_bytes().unwrap(), baseline);
+        assert!(app.skypix.as_mut().unwrap().document.undo());
+        assert_eq!(app.skypix.as_ref().unwrap().document.to_bytes().unwrap(), baseline);
+        let (mut workspace, document) = app.ai_draft().unwrap();
+        workspace
+            .call(
+                "icy_replace_skypix_items",
+                &serde_json::json!({"start":0,"delete_count":0,"source":"\u{1b}[1;40;30!"}),
+            )
+            .unwrap();
+        app.ai_chat.pending_document = document;
+        app.ai_chat.handle(Ok(Response::Proposal("SkyPix draft".into(), Box::new(workspace))));
+        app.skypix
+            .as_mut()
+            .unwrap()
+            .document
+            .append(vec![icy_draw::skypix_document::SkypixItem::text("USER").unwrap()])
+            .unwrap();
+        app.accept_ai_proposal();
+        assert!(app.ai_chat.proposal.is_some());
+        assert!(app.ai_chat.error.is_some());
+    }
+
+    fn propose_native_code(app: &mut DrawApp, code: u8) {
+        let (mut workspace, document) = app.ai_draft().expect("native character editor");
+        workspace
+            .call("icy_set_cells", &serde_json::json!({"cells": [{"x": 0, "y": 0, "char_code": code}]}))
+            .unwrap();
+        app.ai_chat.pending_document = document;
+        app.ai_chat.handle(Ok(Response::Proposal("Native glyph draft".into(), Box::new(workspace))));
+    }
+
+    #[test]
+    fn retro_native_proposals_render_apply_and_undo_in_all_three_editors() {
+        let context = egui::Context::default();
+        for kind in [NewKind::Petscii, NewKind::Atascii, NewKind::Vt52] {
+            let mut app = image_chat_app();
+            app.create(kind, Size::new(40, 25));
+            let original = app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)));
+            propose_native_code(&mut app, 193);
+            assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0))), original);
+            frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+            assert!(app.ai_chat.proposal.as_ref().unwrap().preview.is_some());
+            assert!(app.ai_editor_context().contains("Character profile:"));
+            app.accept_ai_proposal();
+            assert!(app.ai_chat.proposal.is_none());
+            assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch as u32), 193);
+            app.document.undo().unwrap();
+            assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0))), original);
+            assert!(!app.document.modified());
+        }
+    }
+
+    #[test]
+    fn converted_images_preview_apply_and_undo_without_touching_the_live_canvas_early() {
+        for kind in [NewKind::Ansi, NewKind::Atascii] {
+            let mut app = image_chat_app();
+            app.create(kind, Size::new(40, 24));
+            let (mut workspace, document) = app.ai_draft().unwrap();
+            let Workspace::Canvas(draft) = &mut workspace else { panic!("canvas") };
+            draft.begin_turn(Some(image_attachment::test_image()));
+            let result = draft
+                .call("icy_convert_reference_image", &serde_json::json!({"width": 4, "height": 3}))
+                .unwrap();
+            assert!(serde_json::from_str::<serde_json::Value>(&result).unwrap()["changed_cells"].as_u64().unwrap() > 0);
+            let preview = draft.preview_image(&serde_json::json!({"width": 4, "height": 3})).unwrap();
+            assert!(preview.color_image().pixels.iter().any(|pixel| pixel.a() == 255));
+            assert!(!app.document.modified());
+            let expected = draft.changes();
+            assert!(!expected.is_empty());
+            app.ai_chat.pending_document = document;
+            app.ai_chat.handle(Ok(Response::Proposal("Converted image".into(), Box::new(workspace))));
+            app.accept_ai_proposal();
+            assert!(app.ai_chat.proposal.is_none(), "{:?}", app.ai_chat.error);
+            app.document.with_state(|state| {
+                for (layer, pos, cell) in &expected {
+                    assert_eq!(state.get_buffer().layers[*layer].char_at(*pos), *cell);
+                }
+            });
+            app.document.undo().unwrap();
+            assert!(!app.document.modified());
+        }
+    }
+
+    #[test]
+    fn ansi_apply_rejects_palette_changes_and_conflicting_cells() {
+        for palette_change in [true, false] {
+            let mut app = image_chat_app();
+            propose(&mut app, "X");
+            app.document.with_state(|state| {
+                if palette_change {
+                    state.get_buffer_mut().palette.set_color_rgb(0, 1, 2, 3);
+                } else {
+                    state.get_buffer_mut().layers[0].set_char(Position::new(0, 0), icy_engine::AttributedChar::from_char('Y'));
+                }
+            });
+            app.accept_ai_proposal();
+            assert_eq!(app.ai_chat.error, Some(fl!("ai-chat-apply-stale-canvas")));
+            assert!(app.ai_chat.proposal.is_some());
+        }
+    }
+
+    #[test]
+    fn retro_apply_refuses_profile_changes_or_conflicting_user_cells() {
+        let mut app = image_chat_app();
+        app.create(NewKind::Petscii, Size::new(40, 25));
+        propose_native_code(&mut app, 193);
+        app.set_petscii_background(2);
+        app.accept_ai_proposal();
+        assert_eq!(app.ai_chat.error, Some(fl!("ai-chat-apply-stale-retro")));
+        assert!(app.ai_chat.proposal.is_some());
+        assert_eq!(app.document.with_state(|state| icy_engine::petscii_background(state.get_buffer())), 2);
+        app.ai_chat.proposal = None;
+        propose_native_code(&mut app, 193);
+        app.document.with_state(|state| {
+            let mut cell = state.get_buffer().char_at(Position::new(0, 0));
+            cell.ch = char::from(5);
+            let _undo = state.begin_atomic_undo("Manual edit");
+            state.set_char_at_layer_in_atomic(0, Position::new(0, 0), cell).unwrap();
+        });
+        app.accept_ai_proposal();
+        assert_eq!(app.ai_chat.error, Some(fl!("ai-chat-apply-stale-retro")));
+        assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch as u32), 5);
+    }
+
+    #[test]
+    fn retro_apply_refuses_changed_font_bitmaps_or_cell_dimensions() {
+        for change_font in [true, false] {
+            let mut app = image_chat_app();
+            app.create(NewKind::Atascii, Size::new(40, 24));
+            propose_native_code(&mut app, 193);
+            app.document.with_state(|state| {
+                let buffer = state.get_buffer_mut();
+                if change_font {
+                    let mut font = buffer.font_for_render(0).unwrap().clone();
+                    let value = font.glyphs[193].get_pixel(0, 0);
+                    font.glyphs[193].set_pixel(0, 0, !value);
+                    buffer.set_font(0, font);
+                } else {
+                    buffer.set_font_dimensions(Size::new(8, 16));
+                }
+            });
+            app.accept_ai_proposal();
+            assert_eq!(app.ai_chat.error, Some(fl!("ai-chat-apply-stale-retro")));
+            assert!(app.ai_chat.proposal.is_some());
+            assert_ne!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch as u32), 193);
+        }
+    }
+
+    fn propose_rip(app: &mut DrawApp, source: &str) {
+        let (mut workspace, document) = app.ai_draft().expect("RIP editor");
+        let Workspace::Rip(draft) = &workspace else { panic!("expected RIP draft") };
+        let start = draft.commands.len();
+        workspace
+            .call(
+                "icy_replace_rip_commands",
+                &serde_json::json!({"start": start, "delete_count": 0, "source": source}),
+            )
+            .unwrap();
+        app.ai_chat.pending_document = document;
+        app.ai_chat.handle(Ok(Response::Proposal("RIP draft".into(), Box::new(workspace))));
+    }
+
+    fn propose_igs(app: &mut DrawApp) {
+        let (mut workspace, document) = app.ai_draft().expect("IGS editor");
+        let Workspace::Igs(draft) = &workspace else { panic!("IGS draft") };
+        let start = draft.items.len();
+        workspace
+            .call(
+                "icy_replace_igs_items",
+                &serde_json::json!({
+                    "start":start,"delete_count":0,"source":"G#C>1,1:\nG#L>10,10,100,100:\n"
+                }),
+            )
+            .unwrap();
+        app.ai_chat.pending_document = document;
+        app.ai_chat.handle(Ok(Response::Proposal("IGS draft".into(), Box::new(workspace))));
+    }
+
+    #[test]
+    fn igs_proposals_render_apply_as_one_undo_step_and_refuse_stale_documents() {
+        let mut app = image_chat_app();
+        app.create(NewKind::Igs, Size::new(80, 25));
+        let before = app.igs.as_ref().unwrap().document.to_bytes().unwrap();
+        propose_igs(&mut app);
+        assert_eq!(app.igs.as_ref().unwrap().document.to_bytes().unwrap(), before);
+        let context = egui::Context::default();
+        frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+        assert!(app.ai_chat.proposal.as_ref().unwrap().preview.is_some());
+        app.accept_ai_proposal();
+        assert!(app.ai_chat.proposal.is_none(), "{:?}", app.ai_chat.error);
+        assert!(app.igs.as_ref().unwrap().document.is_dirty());
+        app.igs.as_mut().unwrap().undo(false);
+        assert_eq!(app.igs.as_ref().unwrap().document.to_bytes().unwrap(), before);
+        assert!(!app.igs.as_ref().unwrap().document.is_dirty());
+        propose_igs(&mut app);
+        app.igs
+            .as_mut()
+            .unwrap()
+            .document
+            .append(icy_parser_core::IgsCommand::HollowSet { enabled: true })
+            .unwrap();
+        app.accept_ai_proposal();
+        assert!(app.ai_chat.proposal.is_some());
+        assert_eq!(app.ai_chat.error, Some(fl!("ai-chat-apply-stale-igs")));
+    }
+
+    #[test]
+    fn rip_proposals_render_apply_as_one_undo_step_and_refuse_stale_revisions() {
+        let mut app = image_chat_app();
+        app.create(NewKind::Rip, Size::new(80, 25));
+        let before = app.rip.as_ref().unwrap().document.commands().to_vec();
+        propose_rip(&mut app, "!|c0B|L00002S2S\r\n");
+        let context = egui::Context::default();
+        frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+        let proposal = app.ai_chat.proposal.as_ref().unwrap();
+        assert_eq!(proposal.changes, 2);
+        assert!(proposal.preview.is_some());
+        assert!(proposal.preview_error.is_none());
+        assert_eq!(app.rip.as_ref().unwrap().document.commands(), before);
+        assert!(!app.rip.as_ref().unwrap().modified());
+        app.accept_ai_proposal();
+        assert!(app.ai_chat.proposal.is_none());
+        let editor = app.rip.as_mut().unwrap();
+        assert!(editor.modified() && editor.can_undo());
+        assert_eq!(editor.document.preview().unwrap().pixel_index(50, 50), Some(11));
+        editor.undo(false);
+        assert_eq!(editor.document.commands(), before);
+        assert!(!editor.modified() && !editor.can_undo(), "one undo restores the entire proposal");
+        editor.undo(true);
+        assert_eq!(editor.document.commands().len(), before.len() + 2);
+        propose_rip(&mut app, "!|c0F|X0101\r\n");
+        let editor = app.rip.as_mut().unwrap();
+        editor.document.append(icy_parser_core::RipCommand::Pixel { x: 3, y: 3 });
+        editor.document.undo();
+        let before = editor.document.commands().to_vec();
+        app.accept_ai_proposal();
+        assert_eq!(app.ai_chat.error, Some(fl!("ai-chat-apply-stale-rip")));
+        assert!(app.ai_chat.proposal.is_some());
+        assert_eq!(app.rip.as_ref().unwrap().document.commands(), before);
+        app.create(NewKind::Ansi, Size::new(80, 25));
+        frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+        assert!(app.ai_chat.proposal.is_none());
+    }
+
+    #[test]
+    fn rip_apply_preserves_mixed_stream_bytes_and_discard_changes_nothing() {
+        let mut app = image_chat_app();
+        app.create(NewKind::Rip, Size::new(80, 25));
+        let source = b"ANSI menu\r\n!|c07\r\n";
+        app.rip.as_mut().unwrap().document = icy_draw::rip_document::RipDocument::from_bytes(source).unwrap();
+        propose_rip(&mut app, "!|X0101\r\n");
+        app.accept_ai_proposal();
+        let editor = app.rip.as_mut().unwrap();
+        assert!(editor.document.to_bytes().unwrap().starts_with(source));
+        editor.undo(false);
+        assert_eq!(editor.document.to_bytes().unwrap(), source);
+        propose_rip(&mut app, "!|X0202\r\n");
+        app.ai_chat.proposal_action = Some(ProposalAction::Discard);
+        let context = egui::Context::default();
+        frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+        assert!(app.ai_chat.proposal.is_none());
+        assert_eq!(app.rip.as_ref().unwrap().document.to_bytes().unwrap(), source);
+    }
+
+    #[tokio::test]
+    async fn sending_a_rip_reference_with_a_picture_shares_read_only_source() {
+        let (settings, server) = connection::tests::mock(
+            "200 OK",
+            r#"{"choices":[{"message":{"content":"RIP design advice","finish_reason":"stop"}]}"#.into(),
+        )
+        .await;
+        let mut chat = Chat::new(settings);
+        chat.import_references(
+            &egui::Context::default(),
+            vec![egui::DroppedFile {
+                name: "/private/menu.rip".into(),
+                bytes: Some(b"!|c0B|L00002S2S\r\n".to_vec().into()),
+                ..Default::default()
+            }],
+            false,
+        );
+        wait_for_references(&mut chat);
+        chat.input = "Interpret the picture as RIP, using this example".into();
+        let image = image_attachment::test_image();
+        chat.image = Some(image.clone());
+        chat.send(&egui::Context::default(), None);
+        let request = tokio::time::timeout(std::time::Duration::from_secs(5), server).await.unwrap().unwrap();
+        let body: serde_json::Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        let text = body["messages"][1]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("|L00002S2S") && text.contains("Not rendered or executed"));
+        assert!(!text.contains("/private"));
+        assert_eq!(body["messages"][1]["content"][1]["image_url"]["url"], image.data_url());
+    }
+
+    #[test]
+    fn rip_tools_do_not_refine_a_hidden_document_on_the_welcome_screen() {
+        let mut app = image_chat_app();
+        app.create(NewKind::Rip, Size::new(80, 25));
+        propose_rip(&mut app, "!|c0F|X0101\n");
+        app.show_start = true;
+        assert!(app.ai_draft().is_none());
+        assert!(!app.ai_proposal_fits(app.ai_chat.proposal.as_ref().unwrap()));
     }
 
     fn propose_script(app: &mut DrawApp, text: &str) {

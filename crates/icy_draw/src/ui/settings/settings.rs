@@ -94,6 +94,8 @@ pub struct AiKnowledgeSettings {
     pub presets: Vec<String>,
     /// Explicitly selected paths, not file contents. Files are read again when sending.
     pub reference_files: Vec<String>,
+    /// Knowledge the user turned off although the open editor or a preset would add it.
+    pub excluded: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -430,6 +432,7 @@ mod tests {
                 references: vec!["icy-board-macros".into()],
                 presets: vec!["bbs-menu".into()],
                 reference_files: vec!["/example/menu.pcb".into()],
+                excluded: vec!["ansi-art".into()],
             },
         };
         let encoded = toml::to_string(&settings).unwrap();

@@ -19,6 +19,8 @@ mod command_list;
 mod export;
 #[path = "icy_draw_egui/font.rs"]
 mod font;
+#[path = "icy_draw_egui/font_preview.rs"]
+mod font_preview;
 #[path = "icy_draw_egui/igs.rs"]
 mod igs;
 #[path = "icy_draw_egui/input.rs"]

@@ -1356,6 +1356,21 @@ impl RipEditor {
         self.preview_dirty = true;
     }
 
+    pub(super) fn apply_ai_commands(&mut self, commands: Vec<RipCommand>) -> Result<(), String> {
+        if self.drag.is_some() || self.shape_drag.is_some() || self.bezier.is_some() || !self.poly.is_empty() || self.text_edit.is_some() {
+            return Err(fl!("ai-chat-apply-stale-rip"));
+        }
+        self.document.replace_editable(commands).map_err(|error| error.to_string())?;
+        if self.transport.animating() {
+            self.transport_action(Action::Stop, 0.0);
+        }
+        self.selected = None;
+        self.editing = None;
+        self.error = None;
+        self.preview_dirty = true;
+        Ok(())
+    }
+
     fn select_tool(&mut self, tool: Tool) {
         self.finish_pending();
         self.tool = tool;
@@ -3105,6 +3120,18 @@ impl RipEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn assistant_apply_refuses_unfinished_paths_without_discarding_them() {
+        let mut editor = RipEditor::new();
+        editor.poly.push((10, 20));
+        let error = editor.apply_ai_commands(vec![RipCommand::Pixel { x: 1, y: 1 }]).unwrap_err();
+        assert_eq!(error, fl!("ai-chat-apply-stale-rip"));
+        assert_eq!(editor.poly, vec![(10, 20)]);
+        assert!(editor.document.commands().is_empty());
+        assert!(!editor.can_redo() && !editor.document.is_dirty());
+        assert!(editor.modified(), "the unfinished user edit remains intact");
+    }
 
     #[test]
     fn sidebar_palette_opens_only_for_the_chosen_color() {

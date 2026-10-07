@@ -572,6 +572,11 @@ impl IgsDocument {
         Ok(())
     }
 
+    /// Replaces the complete lossless item list as one checked undo step.
+    pub fn replace_items(&mut self, items: Vec<IgsItem>) -> IgsResult<()> {
+        self.commit(items)
+    }
+
     pub fn append(&mut self, command: IgsCommand) -> IgsResult<()> {
         self.append_many(vec![command])
     }

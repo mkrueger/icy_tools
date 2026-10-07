@@ -264,6 +264,11 @@ impl RipDocument {
         self.preserved_commands
     }
 
+    /// Original mixed or non-round-trippable stream, kept read-only before editable commands.
+    pub fn preserved_source(&self) -> Option<&[u8]> {
+        self.preserved.as_deref()
+    }
+
     pub fn path(&self) -> Option<&Path> {
         self.path.as_deref()
     }

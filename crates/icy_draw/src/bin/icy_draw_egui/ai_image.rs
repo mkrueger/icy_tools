@@ -28,6 +28,10 @@ pub struct ReferenceImage {
 }
 
 impl ReferenceImage {
+    pub(super) fn pixels(&self) -> Result<image::RgbaImage, String> {
+        image::RgbaImage::from_raw(self.width, self.height, self.rgba.to_vec()).ok_or_else(|| "Invalid reference image dimensions".into())
+    }
+
     pub fn color_image(&self) -> egui::ColorImage {
         egui::ColorImage::from_rgba_unmultiplied([self.width as usize, self.height as usize], &self.rgba)
     }

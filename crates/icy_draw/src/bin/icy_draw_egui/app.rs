@@ -2195,19 +2195,6 @@ impl DrawApp {
             self.view.show(ui, &self.settings.monitor_settings)
         };
         self.canvas_rect = response.rect;
-        if !blocked {
-            ui.memory_mut(|memory| {
-                memory.set_focus_lock_filter(
-                    response.id,
-                    egui::EventFilter {
-                        tab: true,
-                        horizontal_arrows: true,
-                        vertical_arrows: true,
-                        escape: true,
-                    },
-                );
-            });
-        }
         if self.document.tool == Tool::Tag && !blocked {
             let hovering_tag = response.hover_pos().and_then(|point| self.position(point)).is_some_and(|position| {
                 self.document
@@ -2275,13 +2262,33 @@ impl DrawApp {
         // Like Moebius, the canvas keeps the keyboard when panels, tools or colors are clicked;
         // only a focused text field takes it. It comes back a frame after the field lets go, so
         // the Enter that ends a field (e.g. chat) does not also reach the canvas.
-        let field_focused = ui.ctx().wants_keyboard_input() && !response.has_focus();
+        // wants_keyboard_input also includes focused buttons and other non-text controls.
+        let focused = ui.memory(|memory| memory.focused());
+        let field_focused = focused
+            .filter(|id| *id != response.id)
+            .is_some_and(|id| egui::text_edit::TextEditState::load(ui.ctx(), id).is_some());
         if field_focused {
             self.canvas_focus = false;
         } else if !self.field_focused_last_frame && !self.layer_properties_open() {
             self.canvas_focus = true;
         }
         self.field_focused_last_frame = field_focused;
+        if self.canvas_focus && !blocked {
+            if focused != Some(response.id) {
+                response.request_focus();
+            }
+            ui.memory_mut(|memory| {
+                memory.set_focus_lock_filter(
+                    response.id,
+                    egui::EventFilter {
+                        tab: true,
+                        horizontal_arrows: true,
+                        vertical_arrows: true,
+                        escape: true,
+                    },
+                );
+            });
+        }
         let info = self.view.terminal.render_info.read().clone();
         let (red, green, blue) = self.document.preview_color();
         let (columns, rows) = self.sub_cells();

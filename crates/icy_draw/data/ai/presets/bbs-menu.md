@@ -1,7 +1,8 @@
 # Icy Board BBS menu (PCBoard-style conventions)
 
-Original Icy Draw workflow. Use the selected Icy Board references as factual
-data, and the user's actual command configuration in preference to generic lists.
+Original Icy Draw workflow. This preset bundles the Icy Board command reference
+as factual data. Use the user's actual command configuration in preference to
+that generic list.
 
 Icy Board is the primary target of this workflow. Icy Board, IcyBoard and
 icy_board refer to the same platform. If the request names no BBS platform,
@@ -13,7 +14,9 @@ An explicitly requested historical PCBoard version remains a separate target;
 do not silently substitute Icy Board commands or macros.
 
 1. Establish canvas size, encoding, palette, iCE/blink mode and target BBS.
-   With drawing tools, start with icy_canvas_info. Without tools, ask for a
+   With character drawing tools, start with icy_canvas_info. In the RIP editor,
+   use icy_rip_info and icy_rip_api, plan pixel geometry rather than ANSI cells,
+   and follow the RIP workflow. Without tools, ask for a
    snapshot when document-specific advice requires it.
 2. Extract the required command keys and labels before drawing. If version
    differences matter, ask one focused question rather than inventing a list.

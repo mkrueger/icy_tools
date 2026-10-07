@@ -540,6 +540,31 @@ impl SkypixDocument {
     pub fn items(&self) -> &[SkypixItem] {
         &self.current.items
     }
+    /// An isolated draft retaining source spelling but no file path or undo history.
+    pub fn draft_copy(&self) -> Self {
+        Self {
+            current: self.current.clone(),
+            saved: self.current.clone(),
+            revision: self.revision,
+            baseline: self.baseline.clone(),
+            ..Self::new()
+        }
+    }
+
+    /// Exact imported bytes or checked canonical bytes for one item.
+    pub fn item_source(&self, index: usize) -> SkypixResult<Vec<u8>> {
+        let item = self.current.items.get(index).ok_or(SkypixDocumentError::InvalidIndex {
+            index,
+            len: self.items().len(),
+        })?;
+        if let Some(source) = &self.current.original[index] {
+            return Ok(source.clone());
+        }
+        match item {
+            SkypixItem::Command(command) => encode_command(command),
+            SkypixItem::Text(bytes) | SkypixItem::Raw(bytes) => Ok(bytes.clone()),
+        }
+    }
     pub fn path(&self) -> Option<&Path> {
         self.path.as_deref()
     }

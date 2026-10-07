@@ -318,6 +318,7 @@ pub struct SkypixEditor {
     preview_selection: bool,
     palette: icy_engine::Palette,
     palette_draft: [[u8; 3]; 16],
+    palette_original: [[u8; 3]; 16],
     palette_revision: Option<u64>,
     colors: usize,
     texture: Option<egui::TextureHandle>,
@@ -366,6 +367,7 @@ impl SkypixEditor {
             preview_selection: false,
             palette: icy_engine::Palette::from_slice(&icy_engine::SKYPIX_PALETTE),
             palette_draft: [[0; 3]; 16],
+            palette_original: [[0; 3]; 16],
             palette_revision: None,
             colors: 16,
             texture: None,
@@ -384,6 +386,29 @@ impl SkypixEditor {
 
     pub fn path(&self) -> Option<&Path> {
         self.document.path()
+    }
+
+    pub(super) fn apply_ai_items(&mut self, items: Vec<SkypixItem>) -> Result<(), String> {
+        let edited = self
+            .selected
+            .zip(self.draft.as_ref())
+            .is_some_and(|(index, item)| self.document.items().get(index) != Some(item));
+        let text_edited = self.text_draft != self.draft.as_ref().and_then(SkypixItem::as_text).map(text_string).unwrap_or_default();
+        let palette_edited = self.palette_revision.is_some() && self.palette_draft != self.palette_original;
+        let line_edited = self
+            .line_start
+            .is_some_and(|start| self.selected.is_none_or(|index| start != pen_before(self.document.items(), index)));
+        if edited || text_edited || palette_edited || line_edited || self.drag.is_some() || self.drag_handle.is_some() {
+            return Err(fl!("ai-chat-apply-stale-skypix"));
+        }
+        self.document.set_items(items).map_err(|error| error.to_string())?;
+        self.select(None);
+        self.listed_selection = None;
+        self.line_start = None;
+        self.shown = None;
+        self.palette_revision = None;
+        self.error = None;
+        Ok(())
     }
 
     pub fn save(&mut self, path: &Path, overwrite: bool) -> Result<(), String> {
@@ -581,6 +606,7 @@ impl SkypixEditor {
                         *rgb = [r / 17, g / 17, b / 17];
                     }
                     self.palette_revision = Some(revision);
+                    self.palette_original = self.palette_draft;
                 }
                 self.colors = 16;
                 for item in self.document.items().iter().take(count.unwrap_or(self.document.items().len())) {
@@ -1388,6 +1414,42 @@ impl SkypixEditor {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ai_apply_accepts_ordinary_selection_and_rejects_pending_edits() {
+        let mut editor = super::SkypixEditor::new();
+        editor
+            .document
+            .append(vec![icy_draw::skypix_document::SkypixItem::text("LABEL").unwrap()])
+            .unwrap();
+        editor.select(Some(0));
+        let items = editor.document.items().to_vec();
+        editor.apply_ai_items(items.clone()).unwrap();
+        editor.select(Some(0));
+        editor.text_draft.push('!');
+        assert!(editor.apply_ai_items(items.clone()).is_err());
+        editor.select(None);
+        editor.palette_revision = Some(editor.document.revision());
+        for (index, rgb) in editor.palette_draft.iter_mut().enumerate() {
+            let (r, g, b) = editor.palette.rgb(index as u32);
+            *rgb = [r / 17, g / 17, b / 17];
+        }
+        editor.palette_original = editor.palette_draft;
+        editor.apply_ai_items(items.clone()).unwrap();
+        editor.palette_revision = Some(editor.document.revision());
+        editor.palette_draft[0][0] ^= 1;
+        assert!(editor.apply_ai_items(items).is_err());
+        let mut editor = super::SkypixEditor::new();
+        editor
+            .document
+            .append(vec![icy_draw::skypix_document::SkypixItem::command(icy_parser_core::SkypixCommand::DrawLine {
+                x: 20,
+                y: 20,
+            })])
+            .unwrap();
+        editor.select(Some(0));
+        editor.line_start = Some((10, 10));
+        assert!(editor.apply_ai_items(editor.document.items().to_vec()).is_err());
+    }
     use super::*;
 
     fn frame(context: &egui::Context, editor: &mut SkypixEditor, events: Vec<egui::Event>, blocked: bool) -> egui::FullOutput {

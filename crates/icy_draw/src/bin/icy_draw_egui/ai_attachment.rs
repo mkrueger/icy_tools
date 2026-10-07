@@ -183,16 +183,50 @@ mod tests {
     }
 
     #[test]
+    fn rip_drop_uses_the_same_read_only_command_reference_decoder() {
+        let imported = read_drop(vec![file("/private/menu.RIP", b"!|c0B|L00002S2S\r\n")], None).unwrap();
+        let references = imported.files.unwrap();
+        assert_eq!(references.files[0].name, "menu.RIP");
+        let data: serde_json::Value = serde_json::from_str(&references.files[0].content).unwrap();
+        assert_eq!(data["format"], "RIP");
+        assert_eq!(data["commands"], 2);
+        assert!(data["source"].as_str().unwrap().contains("|L00002S2S"));
+        assert!(!references.context.contains("/private"));
+        assert!(read_drop(vec![file("invalid.rip", b"not a RIP command")], None).is_err());
+    }
+
+    #[test]
+    fn native_retro_file_drops_are_read_only_snapshots_not_utf8_guesses() {
+        for (name, bytes, encoding, width, code) in [
+            ("/private/example.seq", b"A".as_slice(), "Petscii", 40, 1),
+            ("/private/example.xep", b"A\x9bB".as_slice(), "Atascii", 80, 65),
+            ("/private/example.vt52", b"A".as_slice(), "AtariSt", 80, 65),
+        ] {
+            let imported = read_drop(vec![file(name, bytes)], None).unwrap();
+            let references = imported.files.unwrap();
+            assert_eq!(references.files.len(), 1);
+            assert!(!references.context.contains("/private"));
+            let data: serde_json::Value = serde_json::from_str(&references.files[0].content).unwrap();
+            assert_eq!(data["encoding"], encoding);
+            assert_eq!(data["width"], width);
+            assert_eq!(data["glyph_codes"][0][0], code);
+        }
+    }
+
+    #[test]
     fn file_count_source_size_encoding_and_document_types_are_bounded() {
-        for extension in knowledge::REFERENCE_EXTENSIONS
-            .iter()
-            .filter(|extension| !matches!(**extension, "icy" | "ans" | "asc" | "pcb"))
-        {
+        for extension in knowledge::REFERENCE_EXTENSIONS.iter().filter(|extension| {
+            !matches!(
+                **extension,
+                "icy" | "ans" | "asc" | "pcb" | "rip" | "ig" | "skypix" | "spx" | "pet" | "seq" | "ata" | "xep" | "vt52" | "v52" | "vt5"
+            )
+        }) {
             assert!(
                 read_drop(vec![file(&format!("reference.{extension}"), b"UTF-8 reference")], None).is_ok(),
                 "{extension}"
             );
         }
+
         let overhead = FileReferences::new(vec![ReferenceFile {
             name: "large.txt".into(),
             content: String::new(),
@@ -238,6 +272,18 @@ mod tests {
     }
 
     #[test]
+    fn igs_file_attachment_is_native_read_only_source_not_utf8() {
+        let bytes = b"\x1bEHello\x82\nG#R>0,0:\nG#q>9999:\n";
+        let imported = read_drop(vec![file("reference.ig", bytes)], None).unwrap();
+        let references = imported.files.unwrap();
+        assert_eq!(references.files.len(), 1);
+        let data: serde_json::Value = serde_json::from_str(&references.files[0].content).unwrap();
+        assert_eq!(data["format"], "IGS");
+        assert_eq!(data["source_hex"], super::super::igs_tools::hex(bytes));
+        assert!(data["note"].as_str().unwrap().contains("Not rendered or executed"));
+    }
+
+    #[test]
     fn late_invalid_files_do_not_replace_previous_references_and_removal_rebuilds_context() {
         let previous = read_drop(vec![file("old.txt", b"old text")], None).unwrap().files.unwrap();
         let context = previous.context.clone();
@@ -255,5 +301,17 @@ mod tests {
         appended.remove(0).unwrap();
         assert!(appended.files.is_empty());
         assert!(!appended.context.contains("new text"));
+    }
+
+    #[test]
+    fn native_skypix_references_are_lossless_and_not_executed() {
+        for extension in ["skypix", "spx"] {
+            let bytes = b"\x1b[014;999999!\x1b[15;3!\x1b[1;40;30!\x82";
+            let imported = read_drop(vec![file(&format!("sample.{extension}"), bytes)], None).unwrap().files.unwrap();
+            let data: serde_json::Value = serde_json::from_str(&imported.files[0].content).unwrap();
+            assert_eq!(data["format"], "SkyPix");
+            assert_eq!(data["source_hex"], super::super::igs_tools::hex(bytes));
+            assert!(data["note"].as_str().unwrap().contains("Not rendered or executed"));
+        }
     }
 }

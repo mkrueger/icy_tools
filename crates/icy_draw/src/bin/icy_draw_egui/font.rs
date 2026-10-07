@@ -1,3 +1,4 @@
+use super::font_preview::FontPreview;
 use super::widgets::{self, Icons};
 use eframe::egui::{self, Color32};
 use icy_draw::fl;
@@ -15,6 +16,8 @@ pub enum Action {
     Apply(Box<BitFont>),
     Close,
 }
+
+pub(super) const CELL_MODE_SHORTCUT: egui::KeyboardShortcut = egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::F8);
 
 pub struct FontEditor {
     pub state: BitFontEditState,
@@ -36,6 +39,7 @@ pub struct FontEditor {
     pub apply_target: bool,
     dimensions: [i32; 2],
     preview: Option<ScreenView>,
+    live_preview: FontPreview,
     error: Option<String>,
     /// DOS palette indices of the glyph and background color.
     colors: (u32, u32),
@@ -62,6 +66,7 @@ impl FontEditor {
             apply_target: false,
             dimensions,
             preview: None,
+            live_preview: FontPreview::default(),
             error: None,
             colors: (7, 0),
             textures: Textures::default(),
@@ -127,6 +132,48 @@ impl FontEditor {
             first_char: 0,
             last_char: count.saturating_sub(1) as u32,
             selected_char: self.state.selected_char() as u32,
+        }
+    }
+
+    pub fn glyph_operation_label(&self, operation: GlyphOperation) -> String {
+        match operation {
+            GlyphOperation::FlipX => fl!("menu-flip-x"),
+            GlyphOperation::FlipY => fl!("menu-flip-y"),
+            GlyphOperation::Inverse | GlyphOperation::Clear => {
+                let inverse = matches!(operation, GlyphOperation::Inverse);
+                if self.state.focused_panel() == BitFontFocusedPanel::CharSet && self.state.charset_selection().is_some() {
+                    let count = self.state.get_target_chars().len();
+                    if inverse {
+                        fl!("font-editor-inverse-characters", count = count)
+                    } else {
+                        fl!("font-editor-clear-characters", count = count)
+                    }
+                } else if self.state.focused_panel() == BitFontFocusedPanel::EditGrid && self.state.edit_selection().is_some() {
+                    if inverse {
+                        fl!("font-editor-inverse-pixels")
+                    } else {
+                        fl!("font-editor-clear-pixels")
+                    }
+                } else if inverse {
+                    fl!("font-editor-inverse-character")
+                } else {
+                    fl!("font-editor-clear-character")
+                }
+            }
+        }
+    }
+
+    fn selection_status(&self) -> Option<String> {
+        match self.state.focused_panel() {
+            BitFontFocusedPanel::CharSet => self
+                .state
+                .charset_selection()
+                .map(|_| fl!("font-editor-selected-characters", count = self.state.get_target_chars().len())),
+            BitFontFocusedPanel::EditGrid => self.state.selection().map(|(x1, y1, x2, y2)| {
+                let width = (x2 - x1).abs() + 1;
+                let height = (y2 - y1).abs() + 1;
+                fl!("font-editor-selected-pixels", width = width, height = height)
+            }),
         }
     }
 
@@ -459,8 +506,20 @@ impl FontEditor {
         match operation {
             GlyphOperation::FlipX => self.operation(|state| state.flip_glyph_x(character)),
             GlyphOperation::FlipY => self.operation(|state| state.flip_glyph_y(character)),
-            GlyphOperation::Inverse => self.operation(|state| state.inverse_glyph(character)),
-            GlyphOperation::Clear => self.operation(|state| state.clear_glyph(character)),
+            GlyphOperation::Inverse => self.operation(BitFontEditState::inverse_edit_selection),
+            GlyphOperation::Clear => self.operation(BitFontEditState::erase_selection),
+        }
+    }
+
+    pub fn toggle_letter_spacing(&mut self) {
+        self.finish();
+        self.state.toggle_letter_spacing();
+        if self.preview.is_some() {
+            self.preview = Some(ScreenView::new(self.state.build_preview_content_for(
+                self.state.selected_char(),
+                self.colors.0 as u8,
+                self.colors.1 as u8,
+            )));
         }
     }
 
@@ -476,6 +535,9 @@ impl FontEditor {
     }
 
     fn handle_events(&mut self, context: &egui::Context) {
+        if self.state.font_width() == 8 && context.input_mut(|input| input.modifiers.is_none() && input.consume_shortcut(&CELL_MODE_SHORTCUT)) {
+            self.toggle_letter_spacing();
+        }
         // Keys belong to another widget (e.g. a size field) unless the editor areas hold focus.
         let focus = context.memory(|memory| memory.focused());
         if focus.is_some_and(|id| id != editor_focus_id()) {
@@ -525,7 +587,12 @@ impl FontEditor {
         egui::TopBottomPanel::bottom("font-status")
             .exact_height(layout.status_height)
             .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| self.status_bar(ui));
+            .show(context, |ui| {
+                if !interactive {
+                    ui.disable();
+                }
+                self.status_bar(ui);
+            });
         egui::SidePanel::left("font-tools")
             .exact_width(layout.rail_width)
             .resizable(false)
@@ -543,6 +610,7 @@ impl FontEditor {
                 .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::symmetric(12, 8)))
                 .show(context, |ui| self.tile_view(ui));
         }
+        self.live_preview.show(context, &self.state, self.colors, interactive);
         let well = if context.style().visuals.dark_mode {
             Color32::from_gray(22)
         } else {
@@ -617,6 +685,13 @@ impl FontEditor {
                     self.preview =
                         previewing.then(|| ScreenView::new(self.state.build_preview_content_for(character, self.colors.0 as u8, self.colors.1 as u8)));
                 }
+                widgets::divider(ui);
+                widgets::toggle(
+                    ui,
+                    &fl!("font-editor-live-preview"),
+                    &mut self.live_preview.visible,
+                    &fl!("font-editor-live-preview-tooltip"),
+                );
                 widgets::divider(ui);
                 let size = [self.state.font_width(), self.state.font_height()];
                 if ui
@@ -745,7 +820,11 @@ impl FontEditor {
             ui.spacing_mut().item_spacing.x = 6.0;
             ui.add_space(8.0);
             let small = |text: String| egui::RichText::new(text).size(12.0);
-            let code = self.state.selected_char() as u32;
+            let code = if self.state.focused_panel() == BitFontFocusedPanel::CharSet {
+                self.state.char_at_charset_cursor()
+            } else {
+                self.state.selected_char()
+            } as u32;
             ui.label(small(fl!(
                 "font-editor-status-char",
                 code = format!("{code:02X}"),
@@ -754,10 +833,33 @@ impl FontEditor {
             ui.label(small("·".into()).weak());
             ui.label(small(format!("{} × {}", self.state.font_width(), self.state.font_height())).weak())
                 .on_hover_text(fl!("font-editor-status-size"));
+            if self.state.font_width() == 8 {
+                ui.label(small("·".into()).weak());
+                let spacing = self.state.use_letter_spacing();
+                let tooltip = if spacing {
+                    fl!("status-9px-font-tooltip")
+                } else {
+                    fl!("status-8px-font-tooltip")
+                };
+                if widgets::status_button(
+                    ui,
+                    if spacing { "9px" } else { "8px" },
+                    &format!("{tooltip}\n{}", fl!("font-editor-cell-mode-tooltip")),
+                )
+                .clicked()
+                {
+                    self.toggle_letter_spacing();
+                    ui.ctx().request_repaint();
+                }
+            }
             if self.state.focused_panel() == BitFontFocusedPanel::EditGrid {
                 let (column, row) = self.state.cursor_pos();
                 ui.label(small("·".into()).weak());
                 ui.label(small(format!("{column}, {row}")).weak());
+            }
+            if let Some(selection) = self.selection_status() {
+                ui.label(small("·".into()).weak());
+                ui.add(egui::Label::new(small(selection)).truncate());
             }
             if let Some(error) = &self.error {
                 ui.label(small("·".into()).weak());
@@ -775,17 +877,19 @@ impl FontEditor {
         widgets::section_header(ui, &fl!("font-editor-tile_area"), |_| {});
         let width = self.state.font_width().max(1) as usize;
         let height = self.state.font_height().max(1) as usize;
-        let pixels = self.state.get_glyph_pixels(self.state.selected_char());
-        let key = hash_glyphs([pixels].into_iter(), width, height) ^ color_key(self.colors);
+        let columns = self.display_width() as usize;
+        let character = self.state.selected_char();
+        let pixels = self.state.get_glyph_pixels(character);
+        let key = hash_glyphs([pixels].into_iter(), columns, height) ^ color_key(self.colors) ^ (u64::from(character) << 32);
         if self.textures.tiles.as_ref().is_none_or(|(cached, _)| *cached != key) {
             let (foreground, background) = (palette_color(self.colors.0), palette_color(self.colors.1));
-            let mut image = egui::ColorImage::filled([width * 8, height * 8], background);
+            let mut image = egui::ColorImage::filled([columns * 8, height * 8], background);
             for tile_y in 0..8 {
                 for tile_x in 0..8 {
                     for (row, line) in pixels.iter().enumerate().take(height) {
-                        for (column, set) in line.iter().enumerate().take(width) {
-                            if *set {
-                                image[(tile_x * width + column, tile_y * height + row)] = foreground;
+                        for column in 0..columns {
+                            if display_pixel(line, column, width, character as u32) {
+                                image[(tile_x * columns + column, tile_y * height + row)] = foreground;
                             }
                         }
                     }
@@ -796,8 +900,8 @@ impl FontEditor {
         let Some((_, texture)) = &self.textures.tiles else {
             return;
         };
-        let scale = (ui.available_width() / (width * 8) as f32).floor().max(1.0);
-        ui.add(egui::Image::new(texture).fit_to_exact_size(egui::vec2((width * 8) as f32, (height * 8) as f32) * scale));
+        let scale = (ui.available_width() / (columns * 8) as f32).floor().max(1.0);
+        ui.add(egui::Image::new(texture).fit_to_exact_size(egui::vec2((columns * 8) as f32, (height * 8) as f32) * scale));
     }
 
     /// Glyph editor and character set side by side at the classic sizes (30 px pixels,
@@ -827,28 +931,26 @@ impl FontEditor {
             egui::Sense::focusable_noninteractive(),
         );
         let code = self.state.selected_char() as u32;
-        let title_font = egui::FontId::proportional(16.0);
-        let title_color = ui.visuals().strong_text_color();
-        ui.painter().text(
-            origin + egui::vec2(grid_size.x / 2.0, title_height / 2.0),
-            egui::Align2::CENTER_CENTER,
-            format!("0x{code:02X}: {}", cp437(code)),
-            title_font.clone(),
-            title_color,
+        panel_header(
+            ui,
+            egui::Rect::from_min_size(origin, egui::vec2(grid_size.x, title_height + grid_size.y)),
+            title_height,
+            &format!("{} · 0x{code:02X}: {}", fl!("font-editor-pixels"), cp437(code)),
+            self.state.focused_panel() == BitFontFocusedPanel::EditGrid,
         );
         let font_name = self.state.font_name();
         let charset_title = if font_name.is_empty() {
             fl!("font-editor-character-set")
         } else {
-            font_name.to_owned()
+            format!("{} · {font_name}", fl!("font-editor-character-set"))
         };
         let charset_origin = origin + egui::vec2(grid_size.x + gap, 0.0);
-        ui.painter().text(
-            charset_origin + egui::vec2(charset_size.x / 2.0, title_height / 2.0),
-            egui::Align2::CENTER_CENTER,
-            charset_title,
-            title_font,
-            title_color,
+        panel_header(
+            ui,
+            egui::Rect::from_min_size(charset_origin, egui::vec2(charset_size.x, title_height + charset_size.y)),
+            title_height,
+            &charset_title,
+            self.state.focused_panel() == BitFontFocusedPanel::CharSet,
         );
         self.edit_grid(ui, egui::Rect::from_min_size(origin + egui::vec2(0.0, title_height), grid_size), pitch);
         self.charset(
@@ -861,12 +963,7 @@ impl FontEditor {
 
     /// Columns shown per glyph: the 9th column of 9-dot fonts is shown but not editable.
     fn display_width(&self) -> i32 {
-        let width = self.state.font_width().max(1);
-        if self.state.use_letter_spacing() && width == 8 {
-            9
-        } else {
-            width
-        }
+        display_width(&self.state)
     }
 
     fn edit_grid(&mut self, ui: &mut egui::Ui, rect: egui::Rect, pitch: f32) {
@@ -894,14 +991,9 @@ impl FontEditor {
         let (foreground, background) = (palette_color(self.colors.0), palette_color(self.colors.1));
         let (cursor_foreground, cursor_background) = cursor_colors(foreground, background);
         let pixels = self.state.get_glyph_pixels(character);
-        let box_drawing = (0xC0..=0xDF).contains(&(character as u32));
         for row in 0..height {
             for column in 0..columns {
-                let set = if column < width {
-                    pixels[row as usize][column as usize]
-                } else {
-                    box_drawing && pixels[row as usize][7]
-                };
+                let set = display_pixel(&pixels[row as usize], column as usize, width as usize, character as u32);
                 let color = if column >= width {
                     if set {
                         foreground.gamma_multiply(0.85)
@@ -944,7 +1036,8 @@ impl FontEditor {
                 (((position.y - grid.top()) / pitch) as i32).clamp(0, height - 1),
             )
         };
-        if let Some(position) = response.hover_pos() {
+        let editable_right = grid.left() + width as f32 * pitch;
+        if let Some(position) = response.hover_pos().filter(|position| position.x < editable_right) {
             let cell = cell_at(position);
             if !(focused && cell.x == cursor_column && cell.y == cursor_row) {
                 corner_brackets(&painter, cell_rect(cell.x, cell.y), HOVER, 2.0);
@@ -961,17 +1054,27 @@ impl FontEditor {
         }
         if response.hovered() && (pointer.button_pressed(egui::PointerButton::Primary) || pointer.button_pressed(egui::PointerButton::Secondary)) {
             if let Some(position) = pointer.interact_pos() {
-                self.preview = None;
-                self.begin_grid(cell_at(position), pointer.secondary_down());
+                if position.x < editable_right {
+                    self.preview = None;
+                    self.begin_grid(cell_at(position), pointer.secondary_down());
+                    ui.ctx().request_repaint();
+                } else {
+                    self.finish();
+                    self.state.set_focused_panel(BitFontFocusedPanel::EditGrid);
+                }
             }
         }
         if self.stroke.is_some() {
             if let Some(position) = pointer.interact_pos() {
                 self.update_grid(cell_at(position));
+                ui.ctx().request_repaint();
             }
             if !pointer.any_down() {
                 self.finish();
             }
+        }
+        if response.hover_pos().is_some_and(|position| position.x >= editable_right) {
+            response.on_hover_text(fl!("font-editor-ninth-column-tooltip"));
         }
     }
 
@@ -998,15 +1101,9 @@ impl FontEditor {
             let mut image = egui::ColorImage::filled([columns * 16, height * 16], Color32::TRANSPARENT);
             for (code, pixels) in glyphs.iter().enumerate().take(256) {
                 let (base_x, base_y) = ((code % 16) * columns, (code / 16) * height);
-                let box_drawing = (0xC0..=0xDF).contains(&code);
                 for (row, line) in pixels.iter().enumerate().take(height) {
                     for column in 0..columns {
-                        let set = if column < width {
-                            line.get(column).copied().unwrap_or(false)
-                        } else {
-                            box_drawing && line.get(7).copied().unwrap_or(false)
-                        };
-                        if set {
+                        if display_pixel(line, column, width, code as u32) {
                             image[(base_x + column, base_y + row)] = foreground;
                         }
                     }
@@ -1063,8 +1160,8 @@ impl FontEditor {
             let pixel = egui::vec2(area.width() / columns as f32, area.height() / height as f32);
             if let Some(pixels) = glyphs.get(code as usize) {
                 for (row, line) in pixels.iter().enumerate().take(height) {
-                    for (column, set) in line.iter().enumerate().take(width) {
-                        if *set {
+                    for column in 0..columns {
+                        if display_pixel(line, column, width, code as u32) {
                             painter.rect_filled(
                                 egui::Rect::from_min_size(area.min + egui::vec2(column as f32 * pixel.x, row as f32 * pixel.y), pixel),
                                 0,
@@ -1187,17 +1284,17 @@ struct Textures {
     tiles: Option<(u64, egui::TextureHandle)>,
 }
 
-fn palette_color(index: u32) -> Color32 {
+pub(super) fn palette_color(index: u32) -> Color32 {
     let (red, green, blue) = icy_engine::DOS_DEFAULT_PALETTE[(index as usize) % 16].rgb();
     Color32::from_rgb(red, green, blue)
 }
 
-fn color_key(colors: (u32, u32)) -> u64 {
+pub(super) fn color_key(colors: (u32, u32)) -> u64 {
     (u64::from(colors.0) << 8 | u64::from(colors.1)).wrapping_mul(0x9e37_79b9_7f4a_7c15)
 }
 
 /// Hash of the glyph bitmaps, packing each row into one word so it stays cheap per frame.
-fn hash_glyphs<'a>(glyphs: impl Iterator<Item = &'a Vec<Vec<bool>>>, width: usize, height: usize) -> u64 {
+pub(super) fn hash_glyphs<'a>(glyphs: impl Iterator<Item = &'a Vec<Vec<bool>>>, width: usize, height: usize) -> u64 {
     use std::hash::Hasher;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     hasher.write_usize(width);
@@ -1208,6 +1305,44 @@ fn hash_glyphs<'a>(glyphs: impl Iterator<Item = &'a Vec<Vec<bool>>>, width: usiz
         }
     }
     hasher.finish()
+}
+
+pub(super) fn display_width(state: &BitFontEditState) -> i32 {
+    let width = state.font_width().max(1);
+    if state.use_letter_spacing() && width == 8 {
+        9
+    } else {
+        width
+    }
+}
+
+pub(super) fn display_pixel(line: &[bool], column: usize, width: usize, code: u32) -> bool {
+    if column < width {
+        line.get(column).copied().unwrap_or(false)
+    } else {
+        width == 8 && column == 8 && (0xC0..=0xDF).contains(&code) && line.get(7).copied().unwrap_or(false)
+    }
+}
+
+fn panel_header(ui: &egui::Ui, rect: egui::Rect, title_height: f32, title: &str, active: bool) {
+    let visuals = ui.visuals();
+    let header = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), title_height));
+    if active {
+        ui.painter().rect_filled(header, 4, visuals.selection.bg_fill);
+        ui.painter().rect_stroke(
+            rect.expand(4.0),
+            4,
+            egui::Stroke::new(2.0, visuals.selection.stroke.color),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let font = egui::FontId::proportional(16.0);
+    let color = if active { visuals.strong_text_color() } else { visuals.weak_text_color() };
+    let mut job = egui::text::LayoutJob::simple(title.to_owned(), font, color, (rect.width() - 8.0).max(1.0));
+    job.wrap.max_rows = 1;
+    let galley = ui.painter().layout_job(job);
+    let painter = ui.painter_at(header);
+    painter.galley(header.center() - galley.size() / 2.0, galley, color);
 }
 
 /// Cursor colors that stand out against both the glyph and the background color.
@@ -1333,6 +1468,282 @@ fn rail_divider(ui: &mut egui::Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cell_mode_keeps_full_preview_open_without_modifying_font_data() {
+        let mut editor = FontEditor::new(BitFont::from_ansi_font_page(0, 16).unwrap().clone());
+        let original = editor.state.build_font().to_psf2_bytes().unwrap();
+        let undo = editor.state.undo_stack_len();
+        editor.preview = Some(ScreenView::new(editor.state.build_preview_content_for('A', 7, 0)));
+        for (spacing, width) in [(true, 9), (false, 8)] {
+            editor.toggle_letter_spacing();
+            assert_eq!(editor.state.use_letter_spacing(), spacing);
+            assert_eq!(editor.display_width(), width);
+            assert_eq!(editor.preview.as_ref().unwrap().terminal.screen.lock().font_dimensions().width, width);
+            assert_eq!(editor.state.font_width(), 8);
+            assert_eq!(editor.state.build_font().to_psf2_bytes().unwrap(), original);
+            assert_eq!(editor.state.undo_stack_len(), undo);
+            assert!(!editor.modified());
+        }
+    }
+
+    #[test]
+    fn cell_mode_tile_preview_repeats_box_drawing_but_not_letter_pixels() {
+        let context = egui::Context::default();
+        let mut editor = FontEditor::new(BitFont::from_ansi_font_page(0, 16).unwrap().clone());
+        for ch in ['A', char::from(0xC4)] {
+            editor.state.clear_glyph(ch).unwrap();
+            editor.state.set_pixel(ch, 7, 0, true).unwrap();
+        }
+        let render = |editor: &mut FontEditor| {
+            context.run(Default::default(), |context| {
+                egui::CentralPanel::default().show(context, |ui| editor.tile_view(ui));
+            })
+        };
+        for (spacing, character, columns) in [(false, 'A', 8), (true, 'A', 9), (true, char::from(0xC4), 9), (false, char::from(0xC4), 8)] {
+            editor.state.set_selected_char(character);
+            if editor.state.use_letter_spacing() != spacing {
+                editor.toggle_letter_spacing();
+            }
+            let output = render(&mut editor);
+            let id = editor.textures.tiles.as_ref().unwrap().1.id();
+            let delta = &output.textures_delta.set.iter().find(|(texture, _)| *texture == id).unwrap().1;
+            let egui::ImageData::Color(image) = &delta.image;
+            assert_eq!(image.size, [columns * 8, 16 * 8]);
+            for y in 0..image.size[1] {
+                for x in 0..image.size[0] {
+                    let set = y % 16 == 0 && (x % columns == 7 || (character == char::from(0xC4) && x % columns == 8));
+                    assert_eq!(image[(x, y)], palette_color(if set { 7 } else { 0 }), "tile pixel {x}, {y}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cell_mode_charset_cursor_repeats_the_ninth_pixel_only_for_box_drawing() {
+        let context = egui::Context::default();
+        let mut editor = FontEditor::new(BitFont::from_ansi_font_page(0, 16).unwrap().clone());
+        for ch in ['A', char::from(0xC4)] {
+            editor.state.clear_glyph(ch).unwrap();
+            editor.state.set_pixel(ch, 7, 0, true).unwrap();
+        }
+        editor.toggle_letter_spacing();
+        editor.state.set_focused_panel(BitFontFocusedPanel::CharSet);
+        let cell = egui::vec2(18.0, 32.0);
+        let foreground = cursor_colors(palette_color(7), palette_color(0)).0;
+        for character in ['A', char::from(0xC4)] {
+            editor.state.set_selected_char(character);
+            let output = context.run(Default::default(), |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    editor.charset(ui, egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::splat(RULER) + cell * 16.0), cell);
+                });
+            });
+            let code = character as u32;
+            let ninth_pixel = egui::Rect::from_min_size(
+                egui::pos2(RULER + (code % 16) as f32 * cell.x + 16.0, RULER + (code / 16) as f32 * cell.y),
+                egui::Vec2::splat(2.0),
+            );
+            let repeated = output
+                .shapes
+                .iter()
+                .any(|shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.rect == ninth_pixel && rect.fill == foreground));
+            assert_eq!(repeated, character == char::from(0xC4));
+        }
+    }
+
+    #[test]
+    fn cell_mode_ninth_column_is_read_only_for_both_mouse_buttons() {
+        let context = egui::Context::default();
+        let mut editor = FontEditor::new(BitFont::from_ansi_font_page(0, 16).unwrap().clone());
+        editor.state.set_pixel('A', 7, 0, true).unwrap();
+        editor.baseline = editor.content_hash();
+        editor.toggle_letter_spacing();
+        let original = editor.state.get_all_glyph_data().clone();
+        let undo = editor.state.undo_stack_len();
+        let render = |editor: &mut FontEditor, events| {
+            context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    time: Some(context.input(|input| input.time) + 0.05),
+                    events,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        editor.edit_grid(
+                            ui,
+                            egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(RULER + 9.0 * 32.0, RULER + 16.0 * 32.0)),
+                            32.0,
+                        );
+                    });
+                },
+            )
+        };
+        render(&mut editor, vec![]);
+        let click = |editor: &mut FontEditor, column: f32, button| {
+            let pos = egui::pos2(RULER + column * 32.0, RULER + 16.0);
+            render(editor, vec![egui::Event::PointerMoved(pos)]);
+            for pressed in [true, false] {
+                render(
+                    editor,
+                    vec![egui::Event::PointerButton {
+                        pos,
+                        button,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    }],
+                );
+            }
+        };
+        for button in [egui::PointerButton::Primary, egui::PointerButton::Secondary] {
+            click(&mut editor, 8.5, button);
+            assert_eq!(editor.state.get_all_glyph_data(), &original);
+            assert_eq!(editor.state.undo_stack_len(), undo);
+            assert!(!editor.modified());
+        }
+        click(&mut editor, 7.5, egui::PointerButton::Primary);
+        assert!(!editor.state.get_glyph_pixels('A')[0][7], "the eighth glyph column remains editable");
+        assert_eq!(editor.state.undo_stack_len(), undo + 1);
+    }
+
+    #[test]
+    fn selection_status_and_operation_labels_follow_the_active_panel() {
+        use icy_engine::Position;
+        let mut editor = FontEditor::new(BitFont::default());
+        editor.state.set_focused_panel(BitFontFocusedPanel::CharSet);
+        assert_eq!(editor.selection_status(), None);
+        assert_eq!(editor.glyph_operation_label(GlyphOperation::Inverse), fl!("font-editor-inverse-character"));
+        assert_eq!(editor.glyph_operation_label(GlyphOperation::Clear), fl!("font-editor-clear-character"));
+        for (anchor, lead, rectangle, count) in [
+            (Position::new(1, 4), Position::new(3, 5), false, 19),
+            (Position::new(3, 5), Position::new(1, 4), false, 19),
+            (Position::new(1, 4), Position::new(3, 5), true, 6),
+            (Position::new(3, 5), Position::new(1, 4), true, 6),
+            (Position::new(1, 4), Position::new(1, 4), false, 1),
+        ] {
+            editor.state.set_charset_selection(Some((anchor, lead, rectangle)));
+            assert_eq!(editor.selection_status(), Some(fl!("font-editor-selected-characters", count = count)));
+            assert_eq!(
+                editor.glyph_operation_label(GlyphOperation::Inverse),
+                fl!("font-editor-inverse-characters", count = count)
+            );
+            assert_eq!(
+                editor.glyph_operation_label(GlyphOperation::Clear),
+                fl!("font-editor-clear-characters", count = count)
+            );
+        }
+        editor.state.set_focused_panel(BitFontFocusedPanel::EditGrid);
+        assert_eq!(editor.selection_status(), None);
+        assert_eq!(editor.glyph_operation_label(GlyphOperation::Inverse), fl!("font-editor-inverse-character"));
+        editor.state.set_selection(Some((3, 5, 1, 2)));
+        assert_eq!(editor.selection_status(), Some(fl!("font-editor-selected-pixels", width = 3, height = 4)));
+        assert_eq!(editor.glyph_operation_label(GlyphOperation::Inverse), fl!("font-editor-inverse-pixels"));
+        assert_eq!(editor.glyph_operation_label(GlyphOperation::Clear), fl!("font-editor-clear-pixels"));
+        assert_eq!(editor.glyph_operation_label(GlyphOperation::FlipX), fl!("menu-flip-x"));
+    }
+
+    #[test]
+    fn inverse_and_clear_respect_charset_selection_and_group_undo() {
+        use icy_engine::Position;
+
+        for operation in [GlyphOperation::Inverse, GlyphOperation::Clear] {
+            for (anchor, lead, rectangle) in [
+                (Position::new(14, 4), Position::new(1, 5), false),
+                (Position::new(1, 5), Position::new(14, 4), false),
+                (Position::new(1, 4), Position::new(3, 5), true),
+                (Position::new(3, 5), Position::new(1, 4), true),
+                (Position::new(0, 0), Position::new(15, 15), false),
+            ] {
+                let mut editor = FontEditor::new(BitFont::default());
+                editor.state.set_selected_char('Z');
+                editor.state.set_focused_panel(BitFontFocusedPanel::CharSet);
+                editor.state.set_charset_selection(Some((anchor, lead, rectangle)));
+                let original = editor.state.get_all_glyph_data().clone();
+                let before = editor.state.undo_stack_len();
+                let selected: Vec<_> = (0..256)
+                    .filter(|code| {
+                        if rectangle {
+                            (anchor.x.min(lead.x)..=anchor.x.max(lead.x)).contains(&(code % 16))
+                                && (anchor.y.min(lead.y)..=anchor.y.max(lead.y)).contains(&(code / 16))
+                        } else {
+                            (anchor.y * 16 + anchor.x).min(lead.y * 16 + lead.x) <= *code && *code <= (anchor.y * 16 + anchor.x).max(lead.y * 16 + lead.x)
+                        }
+                    })
+                    .collect();
+                let mut expected = original.clone();
+                for code in selected {
+                    for row in &mut expected[code as usize] {
+                        for pixel in row {
+                            *pixel = matches!(operation, GlyphOperation::Inverse) && !*pixel;
+                        }
+                    }
+                }
+                editor.glyph_operation(operation);
+                assert_eq!(editor.state.get_all_glyph_data(), &expected);
+                assert_eq!(editor.state.undo_stack_len(), before + 1);
+                assert_eq!(editor.state.charset_selection(), Some((anchor, lead, rectangle)));
+                assert_eq!(editor.state.focused_panel(), BitFontFocusedPanel::CharSet);
+                assert!(editor.modified());
+                editor.undo(false);
+                assert_eq!(editor.state.get_all_glyph_data(), &original);
+                assert!(!editor.modified());
+                editor.undo(true);
+                assert_eq!(editor.state.get_all_glyph_data(), &expected);
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_and_clear_target_one_charset_character_without_a_range() {
+        use icy_engine::Position;
+
+        for operation in [GlyphOperation::Inverse, GlyphOperation::Clear] {
+            for selection in [None, Some((Position::new(2, 4), Position::new(2, 4), false))] {
+                let mut editor = FontEditor::new(BitFont::default());
+                editor.state.set_selected_char(if selection.is_some() { 'B' } else { 'Z' });
+                editor.state.set_charset_cursor(2, 4);
+                editor.state.set_charset_selection(selection);
+                editor.state.set_focused_panel(BitFontFocusedPanel::CharSet);
+                let mut expected = editor.state.get_all_glyph_data().clone();
+                for row in &mut expected['B' as usize] {
+                    for pixel in row {
+                        *pixel = matches!(operation, GlyphOperation::Inverse) && !*pixel;
+                    }
+                }
+                editor.glyph_operation(operation);
+                assert_eq!(editor.state.get_all_glyph_data(), &expected);
+            }
+        }
+    }
+
+    #[test]
+    fn inverse_and_clear_use_only_the_current_glyph_when_the_pixel_editor_has_focus() {
+        use icy_engine::Position;
+
+        for operation in [GlyphOperation::Inverse, GlyphOperation::Clear] {
+            for pixel_selection in [None, Some((1, 2, 3, 5))] {
+                let mut editor = FontEditor::new(BitFont::default());
+                editor.state.set_selected_char('A');
+                editor.state.set_charset_selection(Some((Position::new(1, 4), Position::new(3, 4), false)));
+                editor.state.set_selection(pixel_selection);
+                editor.state.set_focused_panel(BitFontFocusedPanel::EditGrid);
+                let original = editor.state.get_all_glyph_data().clone();
+                let mut expected = original.clone();
+                let (left, top, right, bottom) = pixel_selection.unwrap_or((0, 0, editor.state.font_width() - 1, editor.state.font_height() - 1));
+                for y in top..=bottom {
+                    for x in left..=right {
+                        let pixel = &mut expected['A' as usize][y as usize][x as usize];
+                        *pixel = matches!(operation, GlyphOperation::Inverse) && !*pixel;
+                    }
+                }
+                editor.glyph_operation(operation);
+                assert_eq!(editor.state.get_all_glyph_data(), &expected);
+                assert_eq!(editor.state.focused_panel(), BitFontFocusedPanel::EditGrid);
+                editor.undo(false);
+                assert_eq!(editor.state.get_all_glyph_data(), &original);
+            }
+        }
+    }
 
     #[test]
     fn bitmap_mouse_modes_preview_toggle_select_and_fill() {

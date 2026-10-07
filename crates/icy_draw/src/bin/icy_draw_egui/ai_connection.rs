@@ -65,6 +65,8 @@ pub enum Response {
     },
     /// An answer together with a drawing the user can accept or discard.
     Proposal(String, Box<super::workspace::Workspace>),
+    /// A tool-enabled turn completed without changing the draft.
+    Unchanged(String),
     Reply(String),
 }
 
@@ -505,7 +507,7 @@ pub(super) mod tests {
             references: vec!["icy-board-macros".into()],
             ..Default::default()
         };
-        let knowledge = super::super::knowledge::prepare(&settings).unwrap();
+        let knowledge = super::super::knowledge::prepare(&settings, super::super::knowledge::EditorKnowledge::None).unwrap();
         let messages = [
             Message {
                 role: "system".into(),

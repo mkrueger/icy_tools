@@ -120,6 +120,290 @@ fn dirty_open_prompts_before_replacing() {
 }
 
 #[test]
+fn font_inverse_and_clear_menus_preserve_selection_and_editor_focus() {
+    use icy_engine_edit::bitfont::BitFontFocusedPanel;
+
+    use_english();
+    for inverse in [true, false] {
+        for focus in [BitFontFocusedPanel::CharSet, BitFontFocusedPanel::EditGrid] {
+            let context = egui::Context::default();
+            appearance::apply(&context);
+            let mut app = DrawApp::new();
+            app.create(NewKind::BitmapFont, Size::new(80, 25));
+            let editor = app.font_editor.as_mut().unwrap();
+            editor.state.set_selected_char('Z');
+            let selection = Some((Position::new(1, 4), Position::new(3, 4), false));
+            editor.state.set_charset_selection(selection);
+            editor.state.set_focused_panel(focus);
+            let original = editor.state.get_all_glyph_data().clone();
+            let mut expected = original.clone();
+            let characters = if focus == BitFontFocusedPanel::CharSet { 'A'..='C' } else { 'Z'..='Z' };
+            for character in characters {
+                for row in &mut expected[character as usize] {
+                    for pixel in row {
+                        *pixel = inverse && !*pixel;
+                    }
+                }
+            }
+            let before = editor.state.undo_stack_len();
+            let size = egui::vec2(1000.0, 760.0);
+            for _ in 0..3 {
+                frame(&context, &mut app, size, vec![]);
+            }
+            click_text(&context, &mut app, size, "Edit");
+            let label = match (inverse, focus) {
+                (true, BitFontFocusedPanel::CharSet) => fl!("font-editor-inverse-characters", count = 3),
+                (false, BitFontFocusedPanel::CharSet) => fl!("font-editor-clear-characters", count = 3),
+                (true, BitFontFocusedPanel::EditGrid) => fl!("font-editor-inverse-character"),
+                (false, BitFontFocusedPanel::EditGrid) => fl!("font-editor-clear-character"),
+            };
+            click_text(&context, &mut app, size, &label);
+            let editor = app.font_editor.as_mut().unwrap();
+            assert_eq!(editor.state.get_all_glyph_data(), &expected);
+            assert_eq!(editor.state.charset_selection(), selection);
+            assert_eq!(editor.state.focused_panel(), focus);
+            assert_eq!(editor.state.undo_stack_len(), before + 1);
+            editor.undo(false);
+            assert_eq!(editor.state.get_all_glyph_data(), &original);
+            editor.undo(true);
+            assert_eq!(editor.state.get_all_glyph_data(), &expected);
+        }
+    }
+}
+
+#[test]
+fn font_cell_mode_status_menu_and_f8_preserve_font_data_in_both_layouts() {
+    use_english();
+    for size in [egui::vec2(1280.0, 820.0), egui::vec2(740.0, 600.0)] {
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let mut app = DrawApp::new();
+        app.create(NewKind::BitmapFont, Size::new(80, 25));
+        let editor = app.font_editor.as_ref().unwrap();
+        let original = editor.state.build_font().to_psf2_bytes().unwrap();
+        let undo = editor.state.undo_stack_len();
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        click_text(&context, &mut app, size, "8px");
+        assert!(app.font_editor.as_ref().unwrap().state.use_letter_spacing());
+        assert!(text_position(&frame(&context, &mut app, size, vec![]), "9px").is_some());
+        click_text(&context, &mut app, size, "View");
+        click_text(&context, &mut app, size, &fl!("cmd-bitfont-toggle_letter_spacing-menu"));
+        assert!(!app.font_editor.as_ref().unwrap().state.use_letter_spacing());
+        frame(&context, &mut app, size, vec![key_event(Key::F8, egui::Modifiers::NONE)]);
+        assert!(app.font_editor.as_ref().unwrap().state.use_letter_spacing());
+        frame(&context, &mut app, size, vec![key_event(Key::F8, egui::Modifiers::SHIFT)]);
+        assert!(app.font_editor.as_ref().unwrap().state.use_letter_spacing(), "only bare F8 toggles the mode");
+        click_text(
+            &context,
+            &mut app,
+            size,
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz\n0123456789 !?.,:;+-*/",
+        );
+        frame(&context, &mut app, size, vec![key_event(Key::F8, egui::Modifiers::NONE)]);
+        assert!(
+            !app.font_editor.as_ref().unwrap().state.use_letter_spacing(),
+            "F8 also works while editing sample text"
+        );
+        let editor = app.font_editor.as_ref().unwrap();
+        assert_eq!(editor.state.build_font().to_psf2_bytes().unwrap(), original);
+        assert_eq!(editor.state.undo_stack_len(), undo);
+        assert!(!editor.modified());
+    }
+}
+
+#[test]
+fn font_cell_mode_controls_are_disabled_for_modals_and_non_eight_pixel_fonts() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.create(NewKind::BitmapFont, Size::new(80, 25));
+    let size = egui::vec2(1280.0, 820.0);
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    app.dialog = Some(Dialog::New);
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    click_text(&context, &mut app, size, "8px");
+    frame(&context, &mut app, size, vec![key_event(Key::F8, egui::Modifiers::NONE)]);
+    assert!(!app.font_editor.as_ref().unwrap().state.use_letter_spacing());
+    app.dialog = None;
+    app.font_editor.as_mut().unwrap().state.resize_font(7, 16).unwrap();
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    assert!(text_position(&frame(&context, &mut app, size, vec![]), "8px").is_none());
+    frame(&context, &mut app, size, vec![key_event(Key::F8, egui::Modifiers::NONE)]);
+    click_text(&context, &mut app, size, "View");
+    click_text(&context, &mut app, size, &fl!("cmd-bitfont-toggle_letter_spacing-menu"));
+    assert!(!app.font_editor.as_ref().unwrap().state.use_letter_spacing());
+}
+
+#[test]
+fn font_panel_highlights_and_selection_counts_follow_keyboard_focus_in_both_layouts() {
+    use icy_engine_edit::bitfont::BitFontFocusedPanel;
+
+    use_english();
+    for (size, height) in [(egui::vec2(1280.0, 820.0), 16), (egui::vec2(740.0, 820.0), 16), (egui::vec2(740.0, 600.0), 32)] {
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let mut app = DrawApp::new();
+        app.create(NewKind::BitmapFont, Size::new(80, 25));
+        let state = &mut app.font_editor.as_mut().unwrap().state;
+        state.resize_font(8, height).unwrap();
+        state.set_charset_selection(Some((Position::new(1, 4), Position::new(3, 5), false)));
+        state.set_focused_panel(BitFontFocusedPanel::CharSet);
+        let active_panel = |output: &egui::FullOutput| {
+            let color = context.style().visuals.selection.stroke.color;
+            let borders: Vec<_> = output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Rect(rect) if rect.stroke.color == color && rect.stroke.width == 2.0 && rect.rect.height() > 100.0 => {
+                        assert!(shape.clip_rect.contains_rect(rect.rect), "active panel must not be clipped by the preview");
+                        Some(rect.rect)
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(borders.len(), 1, "exactly one editor panel has the active border");
+            assert!(egui::Rect::from_min_size(egui::Pos2::ZERO, size).contains_rect(borders[0]));
+            borders[0]
+        };
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        let output = frame(&context, &mut app, size, vec![]);
+        let tool_icons: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect) if rect.brush.is_some() && rect.rect.center().x < 52.0 && rect.rect.top() > 80.0 && rect.rect.width() < 30.0 => {
+                    assert!(shape.clip_rect.contains_rect(rect.rect), "the live preview must not clip tool icons");
+                    Some(rect.rect)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tool_icons.len(), 6, "all drawing tools remain visible");
+        assert!(text_position(&output, "19 characters selected").is_some());
+        assert!(text_position(&output, &fl!("font-editor-sample-text")).is_some());
+        let charset = active_panel(&output);
+        frame(&context, &mut app, size, vec![key_event(Key::Tab, egui::Modifiers::NONE)]);
+        let state = &mut app.font_editor.as_mut().unwrap().state;
+        assert_eq!(state.focused_panel(), BitFontFocusedPanel::EditGrid);
+        state.set_selection(Some((1, 2, 3, 5)));
+        let output = frame(&context, &mut app, size, vec![]);
+        assert!(text_position(&output, "3 × 4 pixels selected").is_some());
+        assert!(active_panel(&output).left() < charset.left());
+        click_text(&context, &mut app, size, "Edit");
+        let output = frame(&context, &mut app, size, vec![]);
+        assert!(text_position(&output, "Inverse selected pixels").is_some());
+        assert!(text_position(&output, "Clear selected pixels").is_some());
+    }
+}
+
+#[test]
+fn font_live_preview_text_uses_widget_shortcuts_without_modifying_the_font() {
+    use_english();
+    for size in [egui::vec2(1280.0, 820.0), egui::vec2(740.0, 820.0)] {
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let mut app = DrawApp::new();
+        app.create(NewKind::BitmapFont, Size::new(80, 25));
+        let editor = app.font_editor.as_ref().unwrap();
+        let original = editor.state.get_all_glyph_data().clone();
+        let original_undo = editor.state.undo_stack_len();
+        let original_focus = editor.state.focused_panel();
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        click_text(
+            &context,
+            &mut app,
+            size,
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz\n0123456789 !?.,:;+-*/",
+        );
+        assert_eq!(context.memory(|memory| memory.focused()), Some(super::super::font_preview::text_id()));
+        frame(&context, &mut app, size, vec![key_event(Key::A, egui::Modifiers::COMMAND)]);
+        let output = frame(&context, &mut app, size, vec![egui::Event::Paste("A─\n\u{1f600}".into())]);
+        assert!(text_position(&output, "A─\n\u{1f600}").is_some());
+        let output = frame(&context, &mut app, size, vec![]);
+        assert!(text_position(&output, "Custom").is_some());
+        assert!(text_position(&output, "1 character is not in CP437 and is shown as ?.").is_some());
+        for (key, modifiers) in [
+            (Key::ArrowLeft, egui::Modifiers::COMMAND),
+            (Key::Plus, egui::Modifiers::NONE),
+            (Key::Space, egui::Modifiers::NONE),
+            (Key::Delete, egui::Modifiers::NONE),
+            (Key::Z, egui::Modifiers::COMMAND),
+        ] {
+            frame(&context, &mut app, size, vec![key_event(key, modifiers)]);
+        }
+        let editor = app.font_editor.as_ref().unwrap();
+        assert_eq!(editor.state.get_all_glyph_data(), &original);
+        assert_eq!(editor.state.undo_stack_len(), original_undo);
+        assert_eq!(editor.state.focused_panel(), original_focus);
+        assert!(!editor.modified());
+        click_text(&context, &mut app, size, "2×");
+        click_text(&context, &mut app, size, "Live Preview");
+        let output = frame(&context, &mut app, size, vec![]);
+        assert!(text_position(&output, &fl!("font-editor-sample-text")).is_none());
+        click_text(&context, &mut app, size, "Live Preview");
+        let output = frame(&context, &mut app, size, vec![]);
+        assert!(text_position(&output, &fl!("font-editor-sample-text")).is_some());
+    }
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_font_polish_renders_live_preview_and_active_panels() {
+    use icy_engine_edit::bitfont::BitFontFocusedPanel;
+
+    use_english();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        app.create(NewKind::BitmapFont, Size::new(80, 25));
+        for (size, name) in [([1280, 820], "font-polish-desktop"), ([740, 600], "font-polish-compact")] {
+            for theme in [egui::Theme::Dark, egui::Theme::Light] {
+                gpu.context.set_theme(theme);
+                appearance::apply(&gpu.context);
+                let state = &mut app.font_editor.as_mut().unwrap().state;
+                state.set_letter_spacing(false);
+                state.set_selected_char('A');
+                state.set_charset_selection(Some((Position::new(1, 4), Position::new(3, 5), false)));
+                state.set_focused_panel(BitFontFocusedPanel::CharSet);
+                gpu.capture(&mut app, size, 1.0, vec![], "font-polish-warmup");
+                gpu.capture(&mut app, size, 1.0, vec![], "font-polish-warmup");
+                let pixels = gpu.capture(&mut app, size, 1.0, vec![], &format!("{name}-{theme:?}"));
+                assert!(pixels.chunks_exact(4).all(|pixel| pixel[3] == 255));
+                gpu.capture(
+                    &mut app,
+                    size,
+                    1.0,
+                    vec![key_event(Key::F8, egui::Modifiers::NONE)],
+                    &format!("{name}-{theme:?}-9px"),
+                );
+                assert!(app.font_editor.as_ref().unwrap().state.use_letter_spacing());
+                let state = &mut app.font_editor.as_mut().unwrap().state;
+                state.set_selected_char(char::from(0xC4));
+                state.clear_charset_selection();
+                gpu.capture(&mut app, size, 1.0, vec![], &format!("{name}-{theme:?}-9px-box-drawing"));
+                let state = &mut app.font_editor.as_mut().unwrap().state;
+                state.set_selection(Some((1, 2, 3, 5)));
+                state.set_focused_panel(BitFontFocusedPanel::EditGrid);
+                gpu.capture(&mut app, size, 1.0, vec![], &format!("{name}-{theme:?}-pixels"));
+            }
+        }
+    });
+}
+
+#[test]
 fn font_import_menu_picker_preview_and_import_open_a_new_font() {
     use_english();
     for bitmap in [false, true] {
@@ -1553,6 +1837,7 @@ fn canvas_keeps_keyboard_after_toolbar_and_palette_clicks() {
         frame(&context, &mut app, size, pointer(canvas, pressed));
     }
     let output = frame(&context, &mut app, size, vec![]);
+    let canvas_id = context.memory(|memory| memory.focused()).expect("canvas keyboard focus");
     let set_label = output
         .shapes
         .iter()
@@ -1605,16 +1890,27 @@ fn canvas_keeps_keyboard_after_toolbar_and_palette_clicks() {
             for pressed in [true, false] {
                 frame(&context, &mut app, size, pointer(target, pressed));
             }
-            frame(&context, &mut app, size, vec![]);
+            assert_eq!(
+                context.memory(|memory| memory.focused()),
+                Some(canvas_id),
+                "canvas must own keyboard focus after clicking the {name}"
+            );
         }
         app.document.with_state(|state| state.set_caret_position((2, 2).into()));
         frame(&context, &mut app, size, vec![egui::Event::Text("A".into())]);
         frame(&context, &mut app, size, vec![key_event(Key::ArrowDown, egui::Modifiers::NONE)]);
         frame(&context, &mut app, size, vec![key_event(Key::ArrowLeft, egui::Modifiers::NONE)]);
         frame(&context, &mut app, size, vec![egui::Event::Text("B".into())]);
+        frame(&context, &mut app, size, vec![key_event(Key::F1, egui::Modifiers::NONE)]);
+        let fkey_character = char::from_u32(app.settings.fkeys.code_at(app.settings.fkeys.current_set, 0) as u32).unwrap();
         app.document.with_state(|state| {
             assert_eq!(state.get_buffer().char_at((2, 2).into()).ch, 'A', "typing after clicking the {name}");
             assert_eq!(state.get_buffer().char_at((2, 3).into()).ch, 'B', "arrow keys after clicking the {name}");
+            assert_eq!(
+                state.get_buffer().char_at((3, 3).into()).ch,
+                fkey_character,
+                "function keys after clicking the {name}"
+            );
         });
     }
     assert_eq!(app.document.with_state(|state| state.get_caret().attribute.foreground()), 2);
@@ -1657,6 +1953,124 @@ fn text_tool_yields_to_focused_text_fields() {
     }
     assert_eq!(value, "xZy");
     assert!(!app.document.modified(), "typing into a focused field must not edit the canvas");
+}
+
+#[test]
+fn canvas_keyboard_is_not_blocked_by_a_focused_button() {
+    for os in [
+        egui::os::OperatingSystem::Mac,
+        egui::os::OperatingSystem::Windows,
+        egui::os::OperatingSystem::Nix,
+    ] {
+        let context = egui::Context::default();
+        context.set_os(os);
+        let mut app = DrawApp::new();
+        let size = egui::vec2(1280.0, 820.0);
+        let mut activated = false;
+        for events in [vec![], vec![egui::Event::Text("A".into())], vec![key_event(Key::Enter, egui::Modifiers::NONE)]] {
+            let _ = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    events,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::TopBottomPanel::top("focus-test-button-panel").show(context, |ui| {
+                        let response = ui.button("Not a text field");
+                        if !app.document.modified() {
+                            response.request_focus();
+                        }
+                        activated |= response.clicked();
+                    });
+                    app.show(context);
+                },
+            );
+            assert!(app.canvas_focus, "{os:?}: button focus must not block canvas input");
+        }
+        assert!(!activated, "{os:?}: Enter must reach the canvas, not activate the button");
+        app.document.with_state(|state| {
+            assert_eq!(state.get_buffer().char_at(Position::new(0, 0)).ch, 'A');
+            assert_eq!(state.get_caret().position(), Position::new(0, 1));
+        });
+    }
+}
+
+#[test]
+fn canvas_keyboard_returns_after_text_field_submission_without_reusing_enter() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    let mut value = String::new();
+    let field = egui::Id::new("focus-test-submit-field");
+    for (index, events) in [
+        vec![],
+        vec![egui::Event::Text("field".into())],
+        vec![key_event(Key::Enter, egui::Modifiers::NONE)],
+        vec![egui::Event::Text("A".into())],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                events,
+                ..Default::default()
+            },
+            |context| {
+                egui::TopBottomPanel::top("focus-test-submit-panel").show(context, |ui| {
+                    let response = ui.add(egui::TextEdit::singleline(&mut value).id(field));
+                    if index == 0 {
+                        response.request_focus();
+                    }
+                });
+                app.show(context);
+            },
+        );
+        assert_eq!(app.canvas_focus, index == 3);
+    }
+    assert_eq!(value, "field");
+    app.document.with_state(|state| {
+        assert_eq!(state.get_buffer().char_at(Position::new(0, 0)).ch, 'A');
+        assert_eq!(state.get_caret().position(), Position::new(1, 0));
+    });
+}
+
+#[test]
+fn canvas_keyboard_yields_to_clicked_numeric_fields() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    let mut value = 10;
+    let mut field_rect = egui::Rect::NOTHING;
+    let mut field_id = None;
+    for index in 0..5 {
+        let events = match index {
+            2 => pointer(field_rect.center(), true),
+            3 => pointer(field_rect.center(), false),
+            4 => vec![egui::Event::Text("42".into())],
+            _ => vec![],
+        };
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                events,
+                ..Default::default()
+            },
+            |context| {
+                egui::TopBottomPanel::top("focus-test-number-panel").show(context, |ui| {
+                    let response = ui.add(egui::DragValue::new(&mut value));
+                    field_rect = response.rect;
+                    field_id = Some(response.id);
+                });
+                app.show(context);
+            },
+        );
+        if index >= 3 {
+            assert_eq!(context.memory(|memory| memory.focused()), field_id);
+            assert!(!app.canvas_focus);
+        }
+    }
+    assert_eq!(value, 42);
+    assert!(!app.document.modified(), "editing a numeric field must not edit the canvas");
 }
 
 #[test]

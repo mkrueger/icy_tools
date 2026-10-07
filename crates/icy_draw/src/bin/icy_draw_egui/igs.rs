@@ -1420,6 +1420,33 @@ impl IgsEditor {
         self.document.path()
     }
 
+    pub(super) fn apply_ai_items(&mut self, items: Vec<IgsItem>) -> Result<(), String> {
+        if self.editing.is_some()
+            || self.source.is_some()
+            || self.palette_dialog.is_some()
+            || self.tune_dialog.is_some()
+            || self.pattern_dialog.is_some()
+            || self.copy_source.is_some()
+            || !self.poly.is_empty()
+            || self.text_edit.is_some()
+            || self.shape_drag.is_some()
+            || self.drag.is_some()
+            || self.attribute_draft.is_some()
+            || self.pattern_request.is_some()
+        {
+            return Err(fl!("ai-chat-apply-stale-igs"));
+        }
+        self.document.replace_items(items).map_err(|error| error.to_string())?;
+        if self.animating() {
+            self.stop_playback();
+        }
+        self.selected = None;
+        self.listed_selection = None;
+        self.shown = None;
+        self.error = None;
+        Ok(())
+    }
+
     pub fn save(&mut self, path: &Path, overwrite: bool) -> Result<(), String> {
         self.finish_pending();
         self.commit_properties();
@@ -3577,6 +3604,18 @@ impl IgsEditor {
 mod tests {
     use super::*;
     use icy_parser_core::BaudEmulation;
+
+    #[test]
+    fn ai_application_preserves_unfinished_user_operations() {
+        let mut editor = IgsEditor::new(TerminalResolution::Low);
+        let before = editor.document.items().to_vec();
+        editor.poly.push((10, 20));
+        let error = editor.apply_ai_items(Vec::new()).unwrap_err();
+        assert_eq!(error, fl!("ai-chat-apply-stale-igs"));
+        assert_eq!(editor.poly, vec![(10, 20)]);
+        assert_eq!(editor.document.items(), before);
+        assert!(!editor.document.can_undo());
+    }
 
     fn run(context: &egui::Context, editor: &mut IgsEditor, events: Vec<egui::Event>) {
         let _ = context.run(
