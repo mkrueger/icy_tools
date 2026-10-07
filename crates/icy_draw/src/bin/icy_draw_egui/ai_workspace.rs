@@ -42,7 +42,13 @@ impl Workspace {
             Self::Igs(_) => super::igs_tools::tool_specs(),
             Self::Skypix(_) => super::skypix_tools::tool_specs(),
         };
-        specs.into_iter().map(|(name, _, _)| name).collect()
+        specs
+            .into_iter()
+            .map(|(name, _, _)| name)
+            .filter(|name| {
+                !matches!(self, Self::Canvas(draft) if draft.image_authoring) || !matches!(*name, "icy_convert_reference_image" | "icy_refine_reference_image")
+            })
+            .collect()
     }
 
     pub fn changed(&self) -> bool {
@@ -100,6 +106,18 @@ pub fn editor_hint(workspace: Option<&Workspace>) -> String {
             super::tdf_tools::GUIDANCE
         ),
         Some(workspace @ Workspace::Canvas(draft)) => {
+            if draft.image_authoring {
+                return format!(
+                    "[icy_draw: AI image authoring on a blank native {} canvas. Constraints: {}. \
+                     Author the picture as recognizable character art using native glyphs, large coherent \
+                     shapes and deliberate facial features. Local pixel conversion tools are unavailable. \
+                     Read icy_canvas_info and icy_read_canvas_glyphs, draw with cell batches and rectangles, \
+                     then inspect icy_preview_canvas and correct the composition. The user sees this draft \
+                     in the import dialog before accepting it; do not claim it has already been applied.]",
+                    workspace.editor(),
+                    draft.info()
+                );
+            }
             let info = draft.info();
             let target = serde_json::json!({
                 "width": info["width"],

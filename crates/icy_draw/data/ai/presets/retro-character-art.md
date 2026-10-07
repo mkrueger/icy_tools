@@ -7,8 +7,13 @@ Original Icy Draw workflow for the active retro character editor.
    never change it into a generic ANSI/CP437 target.
 2. Read the target region. Use glyph_codes/font_pages as authoritative native
    glyph data; Unicode text is an approximation, particularly for PETSCII.
-   Inspect actual shapes with icy_read_canvas_glyphs. For pictures, prefer
-   icy_convert_reference_image with mode=full; preserve shared colors and banks.
+   Inspect actual shapes with icy_read_canvas_glyphs. For ordinary local picture
+   conversion, prefer icy_convert_reference_image with mode=full; preserve
+   shared colors and banks. In AI image-authoring mode that tool is deliberately
+   unavailable: design the image from its silhouette and large coherent regions
+   on the blank native canvas, then construct important features with glyphs.
+   Follow the face and composition guidance rather than approximating each
+   photo pixel or retaining noisy cell-by-cell texture.
 3. Plan readable titles, hotkeys, outlines and shading in the actual character
    grid. Copy native glyphs from existing art or the character picker.
 4. PETSCII: respect the current machine and upper/graphics versus lower set.

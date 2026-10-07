@@ -334,7 +334,7 @@ pub struct DrawApp {
     receiver: Receiver<Picked>,
     pending: Option<PathBuf>,
     pending_font: Option<icy_engine::BitFont>,
-    pending_import: Option<ai_import::Imported>,
+    pending_import: Option<ai_import::Accepted>,
     pending_connect: bool,
     quitting: bool,
     allow_close: bool,
@@ -971,10 +971,12 @@ impl DrawApp {
     }
 
     fn import_ansi(&mut self, buffer: icy_engine::TextBuffer) {
-        self.import_image(ai_import::Imported::Ansi(buffer));
+        self.import_image(ai_import::Accepted {
+            imported: ai_import::Imported::Ansi(buffer),
+        });
     }
 
-    fn import_image(&mut self, imported: ai_import::Imported) {
+    fn import_image(&mut self, accepted: ai_import::Accepted) {
         self.document.finish();
         if let Some(editor) = &mut self.font_editor {
             editor.finish();
@@ -984,14 +986,19 @@ impl DrawApp {
         self.pending_connect = false;
         self.quitting = false;
         if self.modified() {
-            self.pending_import = Some(imported);
+            self.pending_import = Some(accepted);
             self.dialog = Some(Dialog::Close);
         } else {
-            self.install_imported(imported);
+            self.install_imported(accepted);
         }
     }
 
-    fn install_imported(&mut self, imported: ai_import::Imported) {
+    fn install_imported(&mut self, accepted: ai_import::Accepted) {
+        self.install_imported_document(accepted.imported);
+    }
+
+    /// Opens the imported document in its editor; false if it could not be installed.
+    fn install_imported_document(&mut self, imported: ai_import::Imported) -> bool {
         self.pending_import = None;
         let imported_text = |buffer: icy_engine::TextBuffer, caret: Option<(u32, u32)>| {
             let mut state = icy_engine_edit::EditState::from_buffer(buffer);
@@ -1023,7 +1030,7 @@ impl DrawApp {
                 let mut document = icy_draw::rip_document::RipDocument::new();
                 if let Err(error) = document.replace_editable(commands) {
                     self.dialog = Some(Dialog::Error(error.to_string()));
-                    return;
+                    return false;
                 }
                 self.replace(Document::new(Size::new(80, 25)));
                 self.rip = Some(super::rip::RipEditor::from_document(document));
@@ -1033,13 +1040,14 @@ impl DrawApp {
                 let mut document = icy_draw::igs_document::IgsDocument::new(icy_parser_core::TerminalResolution::Low);
                 if let Err(error) = document.replace_items(commands.into_iter().map(icy_parser_core::IgsItem::from).collect()) {
                     self.dialog = Some(Dialog::Error(error.to_string()));
-                    return;
+                    return false;
                 }
                 self.replace(Document::new(Size::new(80, 25)));
                 self.igs = Some(super::igs::IgsEditor::from_document(document));
                 self.new_kind = NewKind::Igs;
             }
         }
+        true
     }
 
     fn open_font_export(&mut self) {
@@ -3771,13 +3779,18 @@ impl DrawApp {
             }
             Dialog::AiImport(draft) => {
                 let mut draft = draft.clone();
+                draft.ai_available = self.ai_chat.can_edit_drawings();
                 keep = false;
                 match draft.show(context, self.picker) {
                     Some(ai_import::Action::Browse) => {
                         self.dialog = Some(Dialog::AiImport(draft));
                         self.choose(context, FileAction::AiImport);
                     }
-                    Some(ai_import::Action::Accept(imported)) => self.import_image(*imported),
+                    Some(ai_import::Action::Accept(accepted)) => self.import_image(*accepted),
+                    Some(ai_import::Action::Generate(request)) => {
+                        draft.begin_ai(self.ai_chat.start_image_import(context, *request));
+                        self.dialog = Some(Dialog::AiImport(draft));
+                    }
                     Some(ai_import::Action::Cancel) => self.canvas_focus = true,
                     None => self.dialog = Some(Dialog::AiImport(draft)),
                 }

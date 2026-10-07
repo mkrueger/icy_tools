@@ -30,8 +30,19 @@ const IGS_SIZE: (u32, u32) = (320, 200);
 
 pub enum Action {
     Browse,
-    Accept(Box<Imported>),
+    Accept(Box<Accepted>),
+    Generate(Box<AiRequest>),
     Cancel,
+}
+
+pub struct Accepted {
+    pub imported: Imported,
+}
+
+pub struct AiRequest {
+    pub image: ReferenceImage,
+    pub format: &'static str,
+    pub buffer: TextBuffer,
 }
 
 #[derive(Clone)]
@@ -73,6 +84,11 @@ impl Target {
             Self::Vt52 => Some(icy_draw::screen_profile::atari_st_buffer(VT52_RESOLUTION)),
             Self::Ansi | Self::Rip | Self::Igs => None,
         }
+    }
+
+    /// Character canvases fit the assistant's draft limits; imported RIP and IGS line runs do not.
+    fn refinable(self) -> bool {
+        matches!(self, Self::Ansi | Self::Petscii | Self::Vt52)
     }
 }
 
@@ -629,6 +645,10 @@ pub struct ImportDialog {
     worker: Option<Worker>,
     error: Option<String>,
     drag_start: Option<egui::Pos2>,
+    /// The AI chat can edit drawings, i.e. uses the Copilot connection.
+    pub ai_available: bool,
+    refine: bool,
+    ai_job: Option<Arc<Mutex<Option<super::ai_chat::ImportJob>>>>,
 }
 
 impl ImportDialog {
@@ -659,12 +679,26 @@ impl ImportDialog {
     }
 
     fn invalidate(&mut self) {
+        self.cancel_ai();
         self.result = None;
         self.result_texture = None;
         self.error = None;
     }
 
     fn poll(&mut self) {
+        if let Some(job) = &self.ai_job {
+            let message = job.lock().as_ref().and_then(super::ai_chat::ImportJob::poll);
+            if let Some(message) = message {
+                self.cancel_ai();
+                match message.and_then(|buffer| self.converted_buffer(buffer)) {
+                    Ok(result) => self.result = Some(Arc::new(result)),
+                    Err(error) => {
+                        log::warn!("AI image import failed: {error}");
+                        self.error = Some(error);
+                    }
+                }
+            }
+        }
         let Some(worker) = &self.worker else { return };
         let message = worker.lock().try_recv();
         let result = match message {
@@ -704,8 +738,9 @@ impl ImportDialog {
             Cancel,
         }
         self.poll();
-        let busy = self.worker.is_some();
+        let busy = self.worker.is_some() || self.ai_job.is_some();
         let before = self.options.clone();
+        let before_refine = self.refine;
         let mut browse = false;
         let response = appearance::Dialog::new("ai-import")
             .title(fl!("ai-import-title"))
@@ -725,7 +760,7 @@ impl ImportDialog {
                                 ui.weak(fl!("ai-import-select-source"));
                             }
                         });
-                        ui.weak(fl!("ai-import-local"));
+                        ui.weak(if self.refines() { fl!("ai-import-ai-info") } else { fl!("ai-import-local") });
                         ui.separator();
                         self.controls(ui);
                     });
@@ -744,7 +779,11 @@ impl ImportDialog {
                     if busy {
                         ui.horizontal(|ui| {
                             ui.spinner();
-                            ui.label(fl!("ai-import-working"));
+                            ui.label(if self.ai_job.is_some() {
+                                fl!("ai-import-ai-working")
+                            } else {
+                                fl!("ai-import-working")
+                            });
                         });
                     } else if let Some(error) = &self.error {
                         ui.colored_label(icy_engine_gui::egui::dialog::DANGER, error);
@@ -752,7 +791,7 @@ impl ImportDialog {
                         ui.colored_label(icy_engine_gui::egui::dialog::DANGER, error);
                     }
                 });
-                if self.options != before {
+                if self.options != before || self.refine != before_refine {
                     self.invalidate();
                 }
                 dialog.buttons([
@@ -768,16 +807,92 @@ impl ImportDialog {
             return None;
         }
         match response.action {
-            Some(Button::Accept) if !busy => self.result.as_ref().map(|result| Action::Accept(Box::new(result.imported.clone()))),
+            Some(Button::Accept) if !busy => self.accepted().map(Action::Accept),
             Some(Button::Convert) if !busy => {
+                if self.refines() {
+                    return match self.ai_request() {
+                        Ok(request) => {
+                            self.invalidate();
+                            Some(Action::Generate(Box::new(request)))
+                        }
+                        Err(error) => {
+                            log::warn!("Cannot prepare AI image import: {error}");
+                            self.error = Some(error);
+                            None
+                        }
+                    };
+                }
                 self.start_conversion(context);
                 None
             }
-            Some(Button::Cancel) => Some(Action::Cancel),
-            _ if response.dismissed => Some(Action::Cancel),
+            Some(Button::Cancel) => {
+                self.cancel_ai();
+                Some(Action::Cancel)
+            }
+            _ if response.dismissed => {
+                self.cancel_ai();
+                Some(Action::Cancel)
+            }
             _ if browse && !busy => Some(Action::Browse),
             _ => None,
         }
+    }
+
+    fn refines(&self) -> bool {
+        self.refine && self.ai_available && self.options.target.refinable()
+    }
+
+    fn accepted(&mut self) -> Option<Box<Accepted>> {
+        let imported = self.result.as_ref()?.imported.clone();
+        Some(Box::new(Accepted { imported }))
+    }
+
+    fn ai_request(&self) -> Result<AiRequest, String> {
+        self.options.validate()?;
+        let source = self.source.as_ref().ok_or_else(|| fl!("ai-import-select-source"))?;
+        let buffer = if self.options.target == Target::Ansi {
+            self.options.buffer()
+        } else {
+            self.options.target.retro_buffer().ok_or_else(|| fl!("ai-import-refine-unavailable"))?
+        };
+        let font = buffer.font_dimensions();
+        let size = ((buffer.width() * font.width) as u32, (buffer.height() * font.height) as u32);
+        let fitted = fit_pixels(source, &self.options, size)?;
+        let mut png = Cursor::new(Vec::new());
+        fitted.write_to(&mut png, ImageFormat::Png).map_err(|error| error.to_string())?;
+        Ok(AiRequest {
+            image: image_attachment::prepare(&source.name, &png.into_inner())?,
+            format: self.options.target.label(),
+            buffer,
+        })
+    }
+
+    pub fn begin_ai(&mut self, job: Result<super::ai_chat::ImportJob, String>) {
+        match job {
+            Ok(job) => self.ai_job = Some(Arc::new(Mutex::new(Some(job)))),
+            Err(error) => {
+                log::warn!("Cannot start AI image import: {error}");
+                self.error = Some(error);
+            }
+        }
+    }
+
+    fn cancel_ai(&mut self) {
+        if let Some(job) = self.ai_job.take() {
+            job.lock().take();
+        }
+    }
+
+    fn converted_buffer(&self, buffer: TextBuffer) -> Result<Converted, String> {
+        let imported = match self.options.target {
+            Target::Ansi => Imported::Ansi(buffer.clone()),
+            Target::Petscii => Imported::Petscii(buffer.clone()),
+            Target::Vt52 => Imported::Vt52(buffer.clone()),
+            _ => return Err("AI image authoring requires a character target".into()),
+        };
+        let (size, pixels) = buffer.render_to_rgba(&Rectangle::from(0, 0, buffer.width(), buffer.height()).into(), false);
+        let preview = egui::ColorImage::from_rgba_unmultiplied([size.width as usize, size.height as usize], &pixels);
+        Ok(Converted { imported, preview })
     }
 
     fn controls(&mut self, ui: &mut egui::Ui) {
@@ -787,15 +902,25 @@ impl ImportDialog {
                 ui.selectable_value(&mut self.options.target, target, target.label());
             }
         });
+        if self.options.target.refinable() {
+            let response = ui
+                .add_enabled(self.ai_available, egui::Checkbox::new(&mut self.refine, fl!("ai-import-refine")))
+                .on_hover_text(fl!("ai-import-refine-hint"));
+            if !self.ai_available {
+                response.on_disabled_hover_text(fl!("ai-import-refine-unavailable"));
+            }
+        }
         if self.options.target == Target::Ansi {
             ui.horizontal_wrapped(|ui| {
-                ui.label(fl!("ai-import-style"));
-                for preset in [Preset::Scene, Preset::Shaded] {
-                    if ui.selectable_label(self.options.preset == preset, preset.label()).clicked() {
-                        self.options.select_preset(preset);
+                if !self.refines() {
+                    ui.label(fl!("ai-import-style"));
+                    for preset in [Preset::Scene, Preset::Shaded] {
+                        if ui.selectable_label(self.options.preset == preset, preset.label()).clicked() {
+                            self.options.select_preset(preset);
+                        }
                     }
+                    ui.separator();
                 }
-                ui.separator();
                 for (columns, rows) in [(80, 25), (80, 50)] {
                     if ui
                         .selectable_label((self.options.columns, self.options.rows) == (columns, rows), format!("{columns} x {rows}"))
@@ -831,11 +956,11 @@ impl ImportDialog {
                 ui.checkbox(&mut self.options.ice, fl!("ai-import-ice"));
                 ui.checkbox(&mut self.options.spacing, fl!("ai-import-spacing"));
                 ui.checkbox(&mut self.options.aspect, fl!("ai-import-aspect"));
-            } else {
+            } else if !self.refines() {
                 ui.checkbox(&mut self.options.dither, fl!("ai-import-dither"));
             }
         });
-        if self.options.target == Target::Ansi {
+        if self.options.target == Target::Ansi && !self.refines() {
             ui.horizontal_wrapped(|ui| {
                 ui.label(fl!("ai-import-glyphs"));
                 for glyphs in [Glyphs::HalfBlocks, Glyphs::Blocks, Glyphs::Full, Glyphs::Ascii] {
@@ -1316,6 +1441,103 @@ mod tests {
     }
 
     #[test]
+    fn image_import_offers_ai_authoring_only_for_character_targets_with_copilot() {
+        let source = source();
+        for target in Target::ALL {
+            let options = Options {
+                target,
+                fit: Fit::Stretch,
+                ..Default::default()
+            };
+            let result = convert(&source, &options).unwrap();
+            for ai_available in [false, true] {
+                let mut dialog = ImportDialog {
+                    source: Some(source.clone()),
+                    options: options.clone(),
+                    result: Some(Arc::new(Converted {
+                        imported: result.imported.clone(),
+                        preview: result.preview.clone(),
+                    })),
+                    ai_available,
+                    refine: true,
+                    ..Default::default()
+                };
+                let expected = ai_available && target.refinable();
+                assert_eq!(dialog.refines(), expected, "{target:?}, AI available: {ai_available}");
+                if expected {
+                    let request = dialog.ai_request().unwrap();
+                    assert_eq!(request.format, target.label());
+                    assert!(request.image.width > 0 && request.image.height > 0);
+                    assert!(super::super::ai_chat::canvas::Draft::new(request.format, request.buffer, 0, None)
+                        .changes()
+                        .is_empty());
+                }
+                assert!(dialog.accepted().is_some());
+            }
+        }
+        assert!(!Target::Rip.refinable() && !Target::Igs.refinable());
+    }
+
+    #[test]
+    fn image_import_ai_proposal_is_previewed_and_accepted_exactly_before_installation() {
+        use super::super::ai_chat::{canvas::Draft, ImportJob, ImportResponse as Response, ImportWorkspace as Workspace};
+        let mut dialog = ImportDialog {
+            source: Some(source()),
+            options: Options {
+                target: Target::Petscii,
+                ..Default::default()
+            },
+            ai_available: true,
+            refine: true,
+            ..Default::default()
+        };
+        let request = dialog.ai_request().unwrap();
+        let mut draft = Draft::new(request.format, request.buffer, 0, None);
+        draft.image_authoring = true;
+        draft
+            .call("icy_set_cells", &serde_json::json!({"cells": [{"x": 10, "y": 8, "char_code": 65, "fg": 2}]}))
+            .unwrap();
+        let expected_cell = draft.buffer.char_at(Position::new(10, 8));
+        let expected = dialog.converted_buffer(draft.buffer.clone()).unwrap();
+        let (job, sender) = ImportJob::pending();
+        dialog.begin_ai(Ok(job));
+        let clone = dialog.clone();
+        drop(clone);
+        assert!(dialog.accepted().is_none());
+        sender
+            .send(Ok(Response::Proposal("drawn".into(), Box::new(Workspace::Canvas(Box::new(draft))))))
+            .unwrap();
+        dialog.poll();
+        assert!(dialog.ai_job.is_none() && dialog.error.is_none());
+        assert_eq!(dialog.result.as_ref().unwrap().preview, expected.preview);
+        let Imported::Petscii(buffer) = dialog.accepted().unwrap().imported else {
+            panic!("wrong target")
+        };
+        assert_eq!(buffer.char_at(Position::new(10, 8)), expected_cell);
+    }
+
+    #[test]
+    fn image_import_ai_cancellation_and_failures_never_accept_a_local_fallback() {
+        use super::super::ai_chat::{ImportJob, ImportResponse as Response};
+        let mut dialog = ImportDialog::default();
+        for response in [Ok(Response::Reply("advice".into())), Err("model failed".into())] {
+            let (job, sender) = ImportJob::pending();
+            dialog.begin_ai(Ok(job));
+            sender.send(response).unwrap();
+            dialog.poll();
+            assert!(dialog.error.is_some());
+            assert!(dialog.accepted().is_none());
+        }
+        let (job, sender) = ImportJob::pending();
+        dialog.begin_ai(Ok(job));
+        let clone = dialog.clone();
+        dialog.invalidate();
+        assert!(clone.ai_job.unwrap().lock().is_none());
+        assert!(sender.send(Ok(Response::Reply("stale".into()))).is_err());
+        assert!(dialog.result.is_none() && dialog.ai_job.is_none());
+    }
+
+    #[test]
     fn image_import_focus_drag_and_overlay_follow_the_image_not_the_column() {
         use_english();
         let context = egui::Context::default();
@@ -1559,6 +1781,28 @@ mod tests {
         let Some(Dialog::AiImport(dialog)) = &app.dialog else { panic!("import") };
         assert!(dialog.error.is_some() && dialog.result.is_none() && dialog.source.is_none());
         assert!(!app.document.modified());
+    }
+
+    #[test]
+    fn image_import_ai_checkbox_invalidates_the_local_preview_without_changing_the_document() {
+        use_english();
+        let context = egui::Context::default();
+        let mut app = DrawApp::new();
+        app.ai_chat = super::super::ai_chat::Chat::new(icy_draw::AiChatSettings {
+            provider: icy_draw::AiProvider::Copilot,
+            copilot_model: "vision-model".into(),
+            ..Default::default()
+        });
+        let original = app.document.screen.clone();
+        app.dialog = Some(Dialog::AiImport(Box::new(ready_dialog())));
+        let size = egui::vec2(1280.0, 900.0);
+        frame(&context, &mut app, size, vec![]);
+        click_text(&context, &mut app, size, &fl!("ai-import-refine"));
+        let Some(Dialog::AiImport(dialog)) = &mut app.dialog else { panic!("import") };
+        assert!(dialog.refines());
+        assert!(dialog.result.is_none() && dialog.accepted().is_none());
+        assert!(dialog.worker.is_none() && dialog.ai_job.is_none());
+        assert!(Arc::ptr_eq(&original, &app.document.screen));
     }
 
     #[test]

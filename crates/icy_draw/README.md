@@ -91,8 +91,21 @@ font's save path or mark unsaved edits as saved; **Save** continues to use PSF.
 ### AI image import
 
 Choose **File → AI Import…**, **AI Import…** in the New File dialog, or its
-welcome-page tile to convert a local picture into a new ANSI drawing. This
-workflow runs locally and needs no AI account or network connection.
+welcome-page tile to convert a picture into a new ANSI, RIP, IGS, PETSCII or
+VT52 drawing. Local conversion needs no AI account or network connection.
+
+For ANSI, PETSCII and VT52, **Draw the picture with AI** switches **Convert**
+to semantic character-art authoring using the configured Copilot model.
+The selected crop and fit are sent as a picture alongside the native editor's
+drawing guidance and face/composition skills. The AI starts on a blank native
+canvas; local pixel-matching tools are disabled for this request. Its rendered
+result appears in the import dialog before **Accept**, not afterward in chat.
+The current document and chat conversation remain untouched. Cancellation
+cancels the request; errors or replies without a drawing do not fall back to
+local conversion. This option requires Copilot and a selected model, uses an
+AI request, and generated artistic quality varies by model and source.
+
+Local-conversion controls:
 
 - **Scene** favors coherent hues with stronger tone/detail contrast; **Shaded**
   uses eight tone bands and a stronger penalty against high-contrast shade

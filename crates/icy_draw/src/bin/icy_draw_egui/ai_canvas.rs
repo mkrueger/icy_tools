@@ -93,6 +93,8 @@ pub struct Draft {
     pub selection: Option<(i32, i32, i32, i32)>,
     pub reference_image: Option<super::image_attachment::ReferenceImage>,
     pub preview_enabled: bool,
+    /// Semantic image authoring must not fall back to the local pixel matcher.
+    pub image_authoring: bool,
     preview_calls: usize,
     conversion_calls: usize,
     conversion_review: Option<raster::Review>,
@@ -105,6 +107,7 @@ impl Draft {
     pub fn new(editor: &str, buffer: TextBuffer, current_layer: usize, selection: Option<(i32, i32, i32, i32)>) -> Self {
         Self {
             editor: editor.to_owned(),
+            image_authoring: false,
             original: buffer.clone(),
             buffer,
             current_layer,

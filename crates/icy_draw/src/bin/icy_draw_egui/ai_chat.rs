@@ -36,8 +36,12 @@ mod file_attachment;
 pub(super) mod image_attachment;
 #[path = "ai_knowledge.rs"]
 mod knowledge;
+#[cfg(test)]
+pub(super) use connection::Response as ImportResponse;
 use connection::{Job, Message, Request, Response};
 use image_attachment::ReferenceImage;
+#[cfg(test)]
+pub(super) use workspace::Workspace as ImportWorkspace;
 #[path = "ai_copilot.rs"]
 mod copilot;
 
@@ -166,6 +170,45 @@ pub(super) struct Chat {
     open_knowledge: bool,
 }
 
+const IMPORT_AUTHORING_PROMPT: &str = "Draw the attached picture from scratch as recognizable {format} character art on this \
+blank native canvas. This is a designed illustration, NOT a pixel-by-pixel approximation. Preserve the composition, \
+silhouette, pose and expression. Build large calm color regions first, then deliberately construct the important features: \
+for portraits, readable eyes with pupils, eyebrows, nose, mouth, jaw and flowing hair shapes. Use native graphical glyphs \
+for contours and details. Avoid gray speckles, random glyph noise and unrelated highlights. Read the actual glyph bitmaps \
+and format constraints before drawing. The attached picture already has the chosen crop and fit; use the full canvas. \
+You may replace every cell but must preserve the canvas size, machine, font, palette and shared background. \
+Local image conversion is disabled for this task. Draw with coherent cell batches, inspect the rendered whole-canvas preview, \
+and correct facial proportions and silhouette before finishing. Return a drawing proposal, not just advice.";
+
+/// An isolated import request, independent of the chat conversation and the live document.
+pub(super) struct ImportJob {
+    job: Job,
+}
+
+impl ImportJob {
+    #[cfg(test)]
+    pub fn pending() -> (Self, std::sync::mpsc::Sender<Result<Response, String>>) {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let (cancel, _) = tokio::sync::oneshot::channel();
+        (
+            Self {
+                job: Job::from_parts(receiver, cancel),
+            },
+            sender,
+        )
+    }
+
+    pub fn poll(&self) -> Option<Result<icy_engine::TextBuffer, String>> {
+        self.job.poll().map(|response| match response? {
+            Response::Proposal(_, workspace) => match *workspace {
+                Workspace::Canvas(draft) if draft.image_authoring && !draft.changes().is_empty() => Ok(draft.buffer),
+                _ => Err(fl!("ai-import-ai-no-drawing")),
+            },
+            _ => Err(fl!("ai-import-ai-no-drawing")),
+        })
+    }
+}
+
 impl Chat {
     pub fn new(connection: AiChatSettings) -> Self {
         Self {
@@ -173,6 +216,52 @@ impl Chat {
             connection,
             ..Default::default()
         }
+    }
+
+    /// Only Copilot sessions get drawing tools; OpenAI-compatible endpoints answer in text.
+    pub(super) fn can_edit_drawings(&self) -> bool {
+        self.connection.provider == AiProvider::Copilot
+    }
+
+    pub(super) fn start_image_import(&mut self, context: &egui::Context, request: super::ai_import::AiRequest) -> Result<ImportJob, String> {
+        let command = self.image_import_command(request)?;
+        Ok(ImportJob {
+            job: self.copilot().request(command, context),
+        })
+    }
+
+    fn image_import_command(&mut self, request: super::ai_import::AiRequest) -> Result<copilot::Command, String> {
+        if !self.can_edit_drawings() || self.model().trim().is_empty() {
+            return Err(fl!("ai-import-ai-setup"));
+        }
+        if self.job.is_some() {
+            return Err(fl!("ai-import-ai-busy"));
+        }
+        let editor = match request.buffer.buffer_type {
+            icy_engine::BufferType::CP437 => knowledge::EditorKnowledge::Ansi,
+            icy_engine::BufferType::Petscii => knowledge::EditorKnowledge::Petscii,
+            icy_engine::BufferType::AtariSt => knowledge::EditorKnowledge::Vt52,
+            _ => return Err(fl!("ai-import-refine-unavailable")),
+        };
+        let mut settings = self.connection.knowledge.clone();
+        // Explicit authoring skills for this request; do not persist them in the chat preferences.
+        for id in editor.items().iter().copied().chain(["eyes-faces", "scene-composition"]) {
+            knowledge::toggle(&mut settings, editor, id, true);
+        }
+        settings.presets.retain(|id| id != "image-conversion");
+        let knowledge = knowledge::prepare(&settings, editor)?;
+        let mut draft = canvas::Draft::new(request.format, request.buffer, 0, None);
+        draft.image_authoring = true;
+        self.conversation = self.conversation.wrapping_add(1);
+        let conversation = self.conversation;
+        self.conversation = self.conversation.wrapping_add(1);
+        Ok(copilot::Command::Chat {
+            model: self.model().clone(),
+            conversation,
+            messages: vec![Message::user(&IMPORT_AUTHORING_PROMPT.replace("{format}", request.format), None).with_image(Some(request.image))],
+            draft: Some(Box::new(Workspace::Canvas(Box::new(draft)))),
+            knowledge,
+        })
     }
 
     fn poll(&mut self) {
@@ -2308,6 +2397,56 @@ mod tests {
         assert!(app.ai_chat.reference_import.is_none());
         assert!(std::sync::Arc::ptr_eq(&original, &app.document.screen));
         assert!(app.dialog.is_none());
+    }
+
+    #[test]
+    fn image_import_authors_on_a_blank_draft_without_touching_chat_or_document() {
+        let mut app = image_chat_app();
+        app.ai_chat.connection.provider = AiProvider::Copilot;
+        app.ai_chat.connection.copilot_model = "vision-model".into();
+        app.ai_chat.visible = false;
+        app.ai_chat.input = "old draft".into();
+        let image = image_attachment::test_image();
+        let buffer = icy_draw::screen_profile::petscii_buffer(icy_engine::PetsciiMachine::C64, icy_engine::PetsciiCase::Upper);
+        let screen = app.document.screen.clone();
+        let entries: Vec<_> = app.ai_chat.entries.iter().map(|entry| entry.text.clone()).collect();
+        let knowledge_before = app.ai_chat.connection.knowledge.clone();
+        let command = app
+            .ai_chat
+            .image_import_command(super::super::ai_import::AiRequest {
+                image: image.clone(),
+                format: "PETSCII",
+                buffer,
+            })
+            .unwrap();
+        let copilot::Command::Chat {
+            conversation,
+            messages,
+            draft,
+            knowledge,
+            ..
+        } = command
+        else {
+            panic!("expected drawing request")
+        };
+        assert!(knowledge.contains("eyes-faces") && knowledge.contains("petscii"));
+        assert_eq!(messages[0].image, Some(image));
+        assert!(messages[0].content.contains("from scratch"));
+        let mut workspace = *draft.unwrap();
+        assert!(!workspace.changed());
+        assert!(!workspace.tool_names().contains(&"icy_convert_reference_image"));
+        assert!(!workspace.tool_names().contains(&"icy_refine_reference_image"));
+        assert!(workspace.call("icy_convert_reference_image", &serde_json::json!({})).is_err());
+        assert!(workspace.tool_names().contains(&"icy_set_cells"));
+        assert!(workspace::editor_hint(Some(&workspace)).contains("blank native"));
+        let chat = &app.ai_chat;
+        assert_ne!(conversation, chat.conversation);
+        assert!(!chat.visible && chat.job.is_none() && chat.pending.is_none());
+        assert_eq!(chat.input, "old draft");
+        assert_eq!(chat.entries.iter().map(|entry| entry.text.clone()).collect::<Vec<_>>(), entries);
+        assert_eq!(chat.connection.knowledge, knowledge_before);
+        assert!(std::sync::Arc::ptr_eq(&screen, &app.document.screen));
+        assert!(app.petscii.is_none());
     }
 
     #[test]
