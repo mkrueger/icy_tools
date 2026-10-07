@@ -19,6 +19,9 @@ pub(crate) static PROJECT_DIRS: std::sync::LazyLock<Option<directories::ProjectD
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedSettings {
     #[serde(default)]
+    pub ai_chat: AiChatSettings,
+
+    #[serde(default)]
     pub monitor_settings: MonitorSettings,
 
     #[serde(default)]
@@ -68,6 +71,39 @@ pub struct CollaborationSettings {
     pub servers: Vec<String>,
 }
 
+/// Connection and explicitly selected knowledge preferences; never credentials or conversations.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct AiChatSettings {
+    pub provider: AiProvider,
+    /// Base URL of the OpenAI-compatible API.
+    pub endpoint: String,
+    /// Model of the OpenAI-compatible API.
+    pub model: String,
+    pub copilot_model: String,
+    /// Copilot CLI executable; empty searches `PATH` and common install locations.
+    pub copilot_path: String,
+    pub knowledge: AiKnowledgeSettings,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct AiKnowledgeSettings {
+    pub custom_instructions: String,
+    pub references: Vec<String>,
+    pub presets: Vec<String>,
+    /// Explicitly selected paths, not file contents. Files are read again when sending.
+    pub reference_files: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AiProvider {
+    #[default]
+    OpenAiCompatible,
+    Copilot,
+}
+
 impl Default for CollaborationSettings {
     fn default() -> Self {
         Self {
@@ -93,6 +129,7 @@ fn default_true() -> bool {
 impl Default for PersistedSettings {
     fn default() -> Self {
         Self {
+            ai_chat: Default::default(),
             monitor_settings: MonitorSettings::default(),
             font_outline_style: 0,
             text_art_font_favorites: Vec::new(),
@@ -112,6 +149,7 @@ impl Default for PersistedSettings {
 /// Persisted values are stored in `settings.toml`.
 /// Some values (MRU, F-keys) are stored separately (see their modules).
 pub struct Settings {
+    pub ai_chat: AiChatSettings,
     /// Most recently used files
     pub recent_files: MostRecentlyUsedFiles,
     /// F-key character sets
@@ -155,6 +193,7 @@ impl Settings {
     pub fn load() -> Self {
         let persistent = Self::load_settings_file();
         Self {
+            ai_chat: persistent.ai_chat,
             recent_files: MostRecentlyUsedFiles::load(),
             fkeys: FKeySets::load(),
             monitor_settings: persistent.monitor_settings,
@@ -172,6 +211,7 @@ impl Settings {
 
     pub fn store_persistent(&self) {
         let settings = PersistedSettings {
+            ai_chat: self.ai_chat.clone(),
             monitor_settings: self.monitor_settings.clone(),
             font_outline_style: self.font_outline_style,
             text_art_font_favorites: self.text_art_font_favorites.clone(),
@@ -373,6 +413,35 @@ fn normalize_monitor_settings(mut settings: MonitorSettings) -> MonitorSettings 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ai_chat_settings_are_optional_and_do_not_store_credentials_or_conversations() {
+        let old: PersistedSettings = toml::from_str("").unwrap();
+        assert_eq!(old.ai_chat, AiChatSettings::default());
+        let mut settings = old;
+        settings.ai_chat = AiChatSettings {
+            provider: AiProvider::Copilot,
+            endpoint: "http://localhost:11434/v1".into(),
+            model: "local-model".into(),
+            copilot_model: "copilot-model".into(),
+            copilot_path: String::new(),
+            knowledge: AiKnowledgeSettings {
+                custom_instructions: "Use CP437 and blue accents.".into(),
+                references: vec!["icy-board-macros".into()],
+                presets: vec!["bbs-menu".into()],
+                reference_files: vec!["/example/menu.pcb".into()],
+            },
+        };
+        let encoded = toml::to_string(&settings).unwrap();
+        let decoded: PersistedSettings = toml::from_str(&encoded).unwrap();
+        assert_eq!(settings.ai_chat, decoded.ai_chat);
+        let ai = toml::Value::try_from(&settings.ai_chat).unwrap();
+        let keys: Vec<_> = ai.as_table().unwrap().keys().cloned().collect();
+        assert_eq!(keys, ["copilot_model", "copilot_path", "endpoint", "knowledge", "model", "provider"]);
+        let old: AiChatSettings = toml::from_str("endpoint = \"x\"\nmodel = \"m\"").unwrap();
+        assert_eq!(old.provider, AiProvider::OpenAiCompatible);
+        assert_eq!(old.knowledge, AiKnowledgeSettings::default());
+    }
 
     #[test]
     fn text_art_favorites_are_backward_compatible_and_persisted() {

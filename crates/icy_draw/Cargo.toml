@@ -30,6 +30,11 @@ required-features = ["legacy-ui"]
 # Frontends
 icy_ui = { workspace = true, optional = true, features = ["wgpu", "highlighter"] }
 eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
+reqwest = { workspace = true, optional = true }
+# Uses the user's installed Copilot CLI; no runtime is downloaded or bundled.
+github-copilot-sdk = { version = "1.0.16", optional = true, default-features = false }
+async-trait = { version = "0.1", optional = true }
+tracing = "0.1"
 
 # GPU/Shader support
 bytemuck = { workspace = true, features = ["derive"] }
@@ -128,7 +133,7 @@ schemars = "1.2"
 [features]
 default = ["egui"]
 legacy-ui = ["dep:icy_ui", "dep:rfd", "icy_engine_edit/legacy-ui", "icy_engine_gui/legacy-ui"]
-egui = ["dep:eframe", "dep:rfd", "icy_engine_gui/egui"]
+egui = ["dep:eframe", "dep:rfd", "dep:reqwest", "dep:github-copilot-sdk", "dep:async-trait", "icy_engine_gui/egui"]
 
 # Opt-in: enable rav1e's NASM-based assembly optimizations.
 rav1e-asm = ["rav1e/asm"]

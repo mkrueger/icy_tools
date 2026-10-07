@@ -182,6 +182,28 @@ impl FontEditor {
             .map_err(|error| error.to_string())
     }
 
+    /// Replaces glyphs as one undo step; used by the AI assistant.
+    pub fn replace_glyphs(&mut self, glyphs: Vec<(u32, Vec<Vec<bool>>)>, description: &str) -> Result<(), String> {
+        self.finish();
+        self.preview = None;
+        let mut guard = self.state.begin_atomic_undo(description);
+        let mut result = Ok(());
+        for (code, pixels) in glyphs {
+            let Some(character) = char::from_u32(code) else {
+                result = Err(format!("Invalid glyph {code}"));
+                break;
+            };
+            if let Err(error) = self.state.set_glyph_pixels(character, pixels) {
+                result = Err(error.to_string());
+                break;
+            }
+        }
+        if let Some((count, description, operation)) = guard.end_params() {
+            self.state.end_atomic_undo(count, description, operation);
+        }
+        result
+    }
+
     pub fn finish(&mut self) {
         if let Some(start) = self.drag_start.take().filter(|_| self.drag_tool.is_shape_tool()) {
             let (column, row) = self.state.cursor_pos();

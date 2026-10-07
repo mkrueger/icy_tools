@@ -1685,7 +1685,7 @@ fn gpu_editor_modes_and_dialogs_render() {
     });
 }
 
-struct Gpu {
+pub(super) struct Gpu {
     context: egui::Context,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -1693,7 +1693,7 @@ struct Gpu {
 }
 
 impl Gpu {
-    async fn new() -> Self {
+    pub(super) async fn new() -> Self {
         let adapter = wgpu::Instance::default().request_adapter(&Default::default()).await.unwrap();
         let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
         let mut renderer = egui_wgpu::Renderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, Default::default());
@@ -1711,7 +1711,7 @@ impl Gpu {
         }
     }
 
-    fn capture(&mut self, app: &mut DrawApp, size: [u32; 2], scale: f32, events: Vec<egui::Event>, name: &str) -> Vec<u8> {
+    pub(super) fn capture(&mut self, app: &mut DrawApp, size: [u32; 2], scale: f32, events: Vec<egui::Event>, name: &str) -> Vec<u8> {
         let time = self.context.input(|input| input.time) + 0.05;
         let mut input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(

@@ -1044,7 +1044,7 @@ fn command_properties(ui: &mut egui::Ui, command: &mut RipCommand) -> bool {
 }
 
 pub struct RipEditor {
-    document: RipDocument,
+    pub(super) document: RipDocument,
     selected: Option<usize>,
     preview_to_selection: bool,
     editing: Option<(usize, RipCommand)>,

@@ -2718,6 +2718,7 @@ mod caret_focus_tests {
 
     fn settings() -> Settings {
         Settings {
+            ai_chat: Default::default(),
             recent_files: MostRecentlyUsedFiles::default(),
             fkeys: FKeySets::default(),
             monitor_settings: Default::default(),

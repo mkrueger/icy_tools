@@ -19,6 +19,8 @@ use std::{
 };
 
 use super::widgets::{self, Icons};
+#[path = "ai_chat.rs"]
+mod ai_chat;
 #[path = "atascii.rs"]
 mod atascii;
 #[path = "chrome.rs"]
@@ -365,6 +367,7 @@ pub struct DrawApp {
     script: String,
     script_output: String,
     mcp: Option<mcp::Bridge>,
+    ai_chat: ai_chat::Chat,
     chrome: chrome::Chrome,
     pub persist_settings: bool,
     pub show_start: bool,
@@ -398,6 +401,8 @@ impl DrawApp {
         let mut settings = Settings::load();
         settings.monitor_settings.scaling_mode = ScalingMode::Manual(2.0);
         let show_line_numbers = settings.show_line_numbers;
+        // Tests must not pick up a stored Copilot connection and start the CLI.
+        let ai_chat = ai_chat::Chat::new(if cfg!(test) { Default::default() } else { settings.ai_chat.clone() });
         let (sender, receiver) = mpsc::channel();
         #[cfg(test)]
         system_clipboard::disable();
@@ -460,6 +465,7 @@ impl DrawApp {
             script: String::new(),
             script_output: String::new(),
             mcp: None,
+            ai_chat,
             chrome: chrome::Chrome::default(),
             persist_settings: false,
             show_start: false,
@@ -4131,6 +4137,8 @@ impl DrawApp {
             // Waits for pending removals, since the process ends with the window.
             self.finish_recovery();
         }
+        let drop_blocked = self.dialog.is_some() || self.picker || self.layer_properties_open();
+        self.ai_chat.route_file_drop(context, drop_blocked);
         if self.dialog.is_none() && !self.picker {
             for file in context.input(|input| input.raw.dropped_files.clone()) {
                 if let Some(path) = file.path {
@@ -4152,6 +4160,7 @@ impl DrawApp {
             self.document.finish();
         }
         self.menu(context);
+        self.ai_chat_panel(context, blocked);
         if let Some(editor) = &mut self.font_editor {
             let layout = super::font::Layout {
                 toolbar_height: chrome::TOOLBAR_HEIGHT,

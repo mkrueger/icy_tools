@@ -30,6 +30,249 @@ cargo run -p icy_draw -- --mcp-port 8080
 cargo run -p icy_draw -- host --bind 127.0.0.1 --port 8000 art.icy
 ```
 
+### AI drawing assistant
+
+The **AI Assistant** button in the menu bar toggles a resizable chat panel in every
+editor mode of `icy_draw` / `icy_draw_egui`, laid out like the VS Code chat: the
+conversation fills the panel and the message composer sits at the bottom. This first
+version gives advice only with OpenAI-compatible servers; with GitHub Copilot it can
+also propose drawings that you preview and apply (see below). It never runs scripts,
+saves files or uses the MCP server. The legacy frontend does not include this panel.
+
+The gear button opens the connection settings (they are shown automatically until a
+server is configured). Choose **OpenAI-compatible** or **GitHub Copilot** at the top.
+For an OpenAI-compatible server, enter its API base URL (including `/v1`
+where required) and optionally an API key — for example
+`https://api.openai.com/v1`, or `http://localhost:11434/v1` for a local Ollama
+server — then choose **Connect**. On success the settings close and the chat is
+shown. Pick a model from the dropdown in the composer (or enter a model ID manually
+in the settings if discovery is unsupported); **Manage connection…** at the end of
+that dropdown returns to the settings. The server must support
+`POST /chat/completions` with non-streaming text responses; discovery uses
+`GET /models`. Remote connections require HTTPS; plain HTTP is limited to
+loopback addresses. Redirects are not followed.
+
+#### GitHub Copilot
+
+Choose **GitHub Copilot** at the top of the connection settings to use your Copilot
+plan (including Copilot Free) through the official
+[Copilot SDK](https://github.com/github/copilot-sdk). Icy Draw does not bundle the
+Copilot CLI; install it from <https://gh.io/copilot-cli> and sign in once with
+`copilot login` in a terminal. The CLI is found via the optional path field,
+`COPILOT_CLI_PATH`, `PATH`, `~/.local/bin`, `/usr/local/bin`, `/opt/homebrew/bin`,
+and on Windows the WinGet and npm locations. Connecting starts the CLI in the
+background and lists the models your plan allows; the panel also connects
+automatically when it opens with Copilot selected.
+
+Copilot can draw in the character-based editors (ANSI/ASCII, ATASCII, PETSCII,
+VT52 and the text-art font glyph editor). There, its tools are icy_draw's drawing
+tools — `icy_canvas_info`, `icy_read_region`, `icy_draw_text`, `icy_fill_rect` and
+`icy_set_cells` — which work on a draft copy of the document using palette indices
+and the document's character encoding. When Copilot finishes, a card in the chat
+shows a preview of the changed area with **Apply** and **Discard**. Nothing changes
+before you apply; applying writes all changes as one undo step. Further requests
+refine the open draft. The proposal is dropped when you switch documents, start a
+new chat or discard it; it cannot be applied to locked, removed or shrunk layers.
+In the Lua animation editor, Copilot works on the script instead:
+`icy_animation_info`, `icy_animation_api` (the Lua API documentation),
+`icy_read_source`, `icy_replace_lines`, `icy_write_source` and `icy_check_lua`.
+The proposal card shows a line diff with the unchanged lines as context; applying
+replaces the script as one undo step in the animation editor. Scripts are only
+compiled to check their syntax, never run, until you apply the change and the
+editor runs it as usual. A proposal is refused if you edited the script after it
+was made.
+
+In the bitmap font editor, Copilot uses `icy_font_info`, `icy_read_glyphs`,
+`icy_write_glyph`, `icy_write_glyphs`, `icy_transform_glyphs` and
+`icy_preview_font_text`. Mechanical changes run locally on the draft instead
+of making the model regenerate every bitmap:
+
+- `icy_transform_glyphs` supports `bold`, `shift`, `flip_x`, `flip_y`, `invert`
+  and `clear`. Choose `codes`, `text`, or `from`/`to`; without a selector it
+  affects **the entire font**, including CP437 graphics. Specify a range such
+  as 32–126 to affect only printable ASCII.
+- `bold` grows existing strokes by `amount` pixels (default 1) toward
+  `direction` (`right`, default, or `left`), without cascading newly set pixels.
+- `shift` accepts integer `dx`/`dy` (positive means right/down), bounded by the
+  glyph dimensions. By default it clips and reports lost source pixels;
+  `wrap: true` wraps around. Glyph dimensions never change.
+- `icy_write_glyphs` accepts 1–64 glyphs per call. The complete batch is
+  validated before modifying anything; duplicate glyph codes are rejected.
+  Designing 256/512 glyphs therefore needs 4/8 write batches, not 256/512
+  single-glyph write calls.
+
+Reads and writes support `format: "hex"` as well as the backward-compatible
+default `format: "pixels"` (`#`/`.` rows). Hex rows use **two digits per byte,
+MSB/leftmost pixel first**, with zero unused low bits for non-byte-aligned widths.
+For an 8-pixel row, `#..##...` is `98`; for a 3-pixel row, `#.#` is `A0`.
+There must still be exactly `glyph_height` rows. Compact reads support up to
+512 glyphs; pixel reads remain limited to 64.
+
+For example, this batch writes two 8×2 glyphs:
+
+```json
+{
+  "format": "hex",
+  "glyphs": [
+    { "code": 65, "rows": ["18", "24"] },
+    { "code": 66, "rows": ["7C", "42"] }
+  ]
+}
+```
+
+These transformations operate on draft pixels, not the live editor's undo
+operations. `icy_preview_font_text` checks representative words. The proposal
+card shows current glyphs in gray above proposed glyphs in white, with pages of
+up to 64 changed glyphs so the entire font can be inspected. Applying all changes
+is still one undo step. A proposal is refused if the font was resized or a
+changed glyph was edited after it was made.
+
+Copilot requests can run for up to **10 minutes**, but stop after **120 seconds
+without meaningful progress**. Streaming response/reasoning/tool-input data and
+tool starts/completions count as activity; heartbeats and repeated unchanged
+stream-size reports do not. The chat displays elapsed time, the current phase,
+tool-call count, last tool and (for bitmap fonts) changed-glyph count. Reasoning
+contents are not displayed or stored by this progress UI. Stop still cancels
+the request. Failed or timed-out turns are aborted and their sessions discarded;
+unfinished edits never reach the live document. Complex artistic font design
+can still reach the limits; use a smaller glyph range or a faster model.
+OpenAI-compatible advice-only requests retain their existing 120-second limit.
+
+Each editor contributes its own tools; the session registers all of them, every
+message tells Copilot which editor is open, and tools of other editors report which
+tools apply instead. In the remaining editors (RIP, IGS, SkyPix) Copilot answers in
+text. The OpenAI-compatible connection remains advice-only.
+
+Rejected tool calls (for example an out-of-range color) are logged as warnings with
+the reason and arguments; Copilot receives the error and usually corrects the call.
+Run with `RUST_LOG=warn,icy_draw=debug` to log every tool call and its result.
+
+Everything else is disabled: built-in tools such as shell and file access, MCP
+servers (including the built-in GitHub MCP server), CLI-discovered skills, memory, instruction
+discovery and the session store. Every permission request is denied, and the CLI
+works in an empty temporary directory. Requests count towards your Copilot plan.
+The conversation continues in one Copilot session; after a new chat, a cancelled or
+failed request, the history is replayed into a fresh session.
+Building on Linux requires the OpenSSL development package (`libssl-dev`), which
+the SDK uses for TLS.
+
+#### Custom instructions, references and drawing presets
+
+In the gear menu, expand **Instructions and knowledge**:
+
+- **Custom instructions** saves multiline drawing preferences, BBS conventions,
+  palette choices and layout rules.
+- **Bundled references** provides opt-in, source-linked summaries of Icy Board
+  display macros, commands and screen roles, with original example
+  layouts. These are checked against a pinned Icy Board revision, not a claim
+  that every historical PCBoard version has the same commands or macro behavior.
+  Selecting an Icy Board reference or the Icy Board menu workflow makes Icy Board
+  a first-class target: `Icy Board`, `IcyBoard` and `icy_board` are recognized as
+  the same platform, and BBS requests without a named platform default to it
+  with that assumption stated. Its documented extensions are included when
+  relevant. PCBoard-style conventions do not imply identical implementations;
+  an explicit historical PCBoard target and the user's configuration take precedence.
+- **Drawing skills / presets** offers original workflows for BBS menus, eyes and
+  faces, restrained shading, outline-first palette experiments and composition.
+  The guides link to Enzo, ZeroVision, The Knight/Fuel, Lord Soth, Halaster and
+  scene archives for further study. They do not reproduce tutorial artwork or
+  text. Community advice supplied by the user is identified as such; unavailable
+  sources are not presented as independently verified.
+- **Local reference files** imports explicitly selected UTF-8 `.txt`, `.md`,
+  `.rst`, `.toml`, `.json`, or `.icy`, `.ans`, `.asc`, `.pcb` screens. Use this
+  for your board's actual command configuration or Icy Board's bundled
+  `crates/icbsetup/data/new_bbs/` templates. Extensionless installed displays
+  need a copy with the appropriate extension before importing.
+
+Nothing is enabled by default. Inspect bundled content or a local-file preview
+before sending. Local paths are saved, but file contents are not: selected files
+are read again for every request. Screens are converted to read-only composite
+text, palette/attribute runs and native display tags; PCBoard references also
+include literal source macros. They are not attached as images and cannot modify
+the open document. Local filesystem directories are not sent to the provider.
+Source URLs are citations only: the assistant does not fetch them.
+
+Both providers receive selected knowledge. OpenAI-compatible connections remain
+advice-only. These application presets do not enable Copilot CLI skill discovery,
+file access, shell access, MCP or additional permissions. Changing knowledge
+recreates the Copilot session with the conversation and updated context.
+Removing a resource stops sending it in future requests; start a **New chat**
+if you also want to discard conversation answers influenced by earlier resources.
+
+Limits are 8 KiB of custom instructions, 48 KiB of total encoded knowledge and
+16 local files. Text/ANSI/PCBoard input files are limited to 48 KiB; native `.icy`
+files to 1 MiB, with a maximum 16,384-cell screen snapshot. Missing, unsupported,
+invalid or oversized references produce an explicit error without sending the
+request or consuming the message in the composer. Shorten or remove references
+when their combined context exceeds the limit.
+
+The URL, provider, CLI path and models are saved after a successful connection or model change. API
+keys, chat history, and attached context stay in memory for the current window.
+Custom instructions, knowledge selections and local reference paths are saved
+when changed, even before a connection is configured. Selected content is shared
+with the configured provider on sending; do not import confidential material.
+Changing the endpoint or provider clears the key and conversation to avoid forwarding them to a
+different server. Switching models on the same endpoint retains the conversation.
+
+**Enter** sends, **Shift+Enter** inserts a line break, and the stop button cancels a
+running request (requests also time out after two minutes); cancelled or failed
+messages are put back into the composer. The **+** button in the header starts a new
+chat. Answers render common Markdown (headings, lists, bold, inline and fenced code)
+and can be copied.
+
+Nothing from the editor is attached automatically.
+
+#### Reference pictures
+
+You can also **drag a PNG, JPEG, BMP or WebP picture onto the visible chat panel**.
+The highlighted drop target attaches one reference picture with a removable preview;
+dropping never submits a request or changes the document. Enter a prompt such as
+"Interpret this picture as 80x25 CP437 ANSI art using the current palette", then
+send. With an image-capable Copilot model in a character editor, the assistant can
+use its existing drawing tools to produce an ANSI draft for **Apply / Discard**.
+This is an artistic interpretation, not a deterministic pixel-for-cell conversion.
+OpenAI-compatible image-capable models receive the picture but remain advice-only.
+
+Pictures are decoded in a worker, oriented using their metadata and normalized to
+PNG with a maximum 1024-pixel edge (no upscaling). The preview shows the normalized
+picture sent to the provider, not the full-resolution original. Only normalized
+pixels and the basename are shared; source paths and source image metadata are
+not sent. Supported animated WebP inputs use their first frame. Imports are
+limited to 20 MiB, 8192 pixels per dimension and 32 megapixels; normalized PNGs
+to 5 MiB. Text requests retain the 256 KiB limit, and image request payloads are
+limited to 16 MiB. An unsupported model or invalid/oversized image reports an
+error instead of silently omitting the picture.
+
+Reference pictures remain in the window's conversation memory, not in saved
+settings or files. Cancelled/failed requests restore the picture to the composer.
+New chat, provider/endpoint changes and closing the window clear them. Removing
+the pending picture does not remove pictures in earlier conversation turns.
+Copilot conversation replay resends the corresponding earlier pictures as inline
+blobs; CLI file access stays disabled. Drops outside the chat retain normal file
+opening behavior. Finish the current request/import or remove the pending picture
+before attaching another.
+
+#### Editor snapshots
+
+The **+** button in the composer captures a read-only snapshot as a chip; click
+the chip to inspect it before sending:
+
+- ANSI/ASCII, ATASCII, VT52 and PETSCII: encoding, palette, fonts, layer metadata,
+  caret/selection, and composite character cells (selection only when present).
+- Text-art fonts: the selected character and its current editing canvas.
+- Bitmap fonts: font dimensions and the selected glyph's pixel grid.
+- Animations: the current Lua source, without executing it.
+- RIP, IGS and SkyPix: the current graphics command/item list.
+
+Snapshots are text, not screenshots, and are capped at 48 KiB with a visible
+truncation notice. Cell snapshots also inspect at most 16,384 cells, with an
+omission notice for larger regions. They are not refreshed automatically. Chat
+requests are capped at 256 KiB and responses at 1 MiB; start a new chat if the
+conversation is too large. Sending transmits the conversation, including previous
+attachments, to the configured server; attached source may contain private content,
+so review it first. Local filesystem paths are not added as document metadata.
+The panel is independent of collaboration chat and never broadcasts to peers.
+
 ### SkyPix art editor
 
 Both `icy_draw` and its `icy_draw_egui` alias offer **SkyPix** under **Home computers**

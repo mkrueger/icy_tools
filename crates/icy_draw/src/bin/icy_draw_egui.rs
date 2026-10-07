@@ -23,6 +23,8 @@ mod font;
 mod igs;
 #[path = "icy_draw_egui/input.rs"]
 mod input;
+#[path = "icy_draw_egui/log_bridge.rs"]
+mod log_bridge;
 #[path = "icy_draw_egui/palette.rs"]
 mod palette;
 #[path = "icy_draw_egui/playback.rs"]
@@ -55,6 +57,7 @@ enum Command {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let _logger = flexi_logger::Logger::try_with_env_or_str(DEFAULT_LOG_FILTER)?.start()?;
+    log_bridge::LogBridge::install();
     if let Some(Command::Host(host)) = args.command {
         return host.run();
     }

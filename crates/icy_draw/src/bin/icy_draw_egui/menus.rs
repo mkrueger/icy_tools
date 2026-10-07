@@ -345,6 +345,7 @@ impl DrawApp {
                         self.open_about();
                     }
                 });
+                ui.toggle_value(&mut self.ai_chat.visible, fl!("ai-chat-title"));
             });
         });
     }

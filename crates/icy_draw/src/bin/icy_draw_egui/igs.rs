@@ -1325,7 +1325,7 @@ struct PreviewRequest {
 }
 
 pub struct IgsEditor {
-    document: IgsDocument,
+    pub(super) document: IgsDocument,
     selected: Option<usize>,
     preview_to_selection: bool,
     /// The property draft of the selected command.
