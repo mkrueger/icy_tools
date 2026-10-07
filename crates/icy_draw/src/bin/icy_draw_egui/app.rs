@@ -334,7 +334,7 @@ pub struct DrawApp {
     receiver: Receiver<Picked>,
     pending: Option<PathBuf>,
     pending_font: Option<icy_engine::BitFont>,
-    pending_import: Option<icy_engine::TextBuffer>,
+    pending_import: Option<ai_import::Imported>,
     pending_connect: bool,
     quitting: bool,
     allow_close: bool,
@@ -930,8 +930,8 @@ impl DrawApp {
             self.show_connect_dialog();
         } else if let Some(font) = self.pending_font.take() {
             self.install_imported_font(font);
-        } else if let Some(buffer) = self.pending_import.take() {
-            self.install_imported_ansi(buffer);
+        } else if let Some(imported) = self.pending_import.take() {
+            self.install_imported(imported);
         } else if let Some(path) = self.pending.take() {
             self.load_path(path);
         } else {
@@ -971,6 +971,10 @@ impl DrawApp {
     }
 
     fn import_ansi(&mut self, buffer: icy_engine::TextBuffer) {
+        self.import_image(ai_import::Imported::Ansi(buffer));
+    }
+
+    fn import_image(&mut self, imported: ai_import::Imported) {
         self.document.finish();
         if let Some(editor) = &mut self.font_editor {
             editor.finish();
@@ -980,19 +984,62 @@ impl DrawApp {
         self.pending_connect = false;
         self.quitting = false;
         if self.modified() {
-            self.pending_import = Some(buffer);
+            self.pending_import = Some(imported);
             self.dialog = Some(Dialog::Close);
         } else {
-            self.install_imported_ansi(buffer);
+            self.install_imported(imported);
         }
     }
 
-    fn install_imported_ansi(&mut self, buffer: icy_engine::TextBuffer) {
-        let mut document = Document::from_state(icy_engine_edit::EditState::from_buffer(buffer));
-        document.metadata_dirty = true;
-        self.replace(document);
-        self.new_kind = NewKind::Ansi;
+    fn install_imported(&mut self, imported: ai_import::Imported) {
         self.pending_import = None;
+        let imported_text = |buffer: icy_engine::TextBuffer, caret: Option<(u32, u32)>| {
+            let mut state = icy_engine_edit::EditState::from_buffer(buffer);
+            if let Some((foreground, background)) = caret {
+                state.set_caret_foreground(foreground);
+                state.set_caret_background(background);
+            }
+            let mut document = Document::from_state(state);
+            document.metadata_dirty = true;
+            document
+        };
+        match imported {
+            ai_import::Imported::Ansi(buffer) => {
+                self.replace(imported_text(buffer, None));
+                self.new_kind = NewKind::Ansi;
+            }
+            ai_import::Imported::Petscii(buffer) => {
+                self.replace(imported_text(buffer, Some(ai_import::PETSCII_MACHINE.start_colors())));
+                self.new_petscii = (ai_import::PETSCII_MACHINE, ai_import::PETSCII_CASE);
+                self.new_kind = NewKind::Petscii;
+            }
+            ai_import::Imported::Vt52(buffer) => {
+                let text = icy_engine::atari_st_text_color(ai_import::VT52_RESOLUTION);
+                self.replace(imported_text(buffer, Some((text, 0))));
+                self.new_vt52_resolution = ai_import::VT52_RESOLUTION;
+                self.new_kind = NewKind::Vt52;
+            }
+            ai_import::Imported::Rip(commands) => {
+                let mut document = icy_draw::rip_document::RipDocument::new();
+                if let Err(error) = document.replace_editable(commands) {
+                    self.dialog = Some(Dialog::Error(error.to_string()));
+                    return;
+                }
+                self.replace(Document::new(Size::new(80, 25)));
+                self.rip = Some(super::rip::RipEditor::from_document(document));
+                self.new_kind = NewKind::Rip;
+            }
+            ai_import::Imported::Igs(commands) => {
+                let mut document = icy_draw::igs_document::IgsDocument::new(icy_parser_core::TerminalResolution::Low);
+                if let Err(error) = document.replace_items(commands.into_iter().map(icy_parser_core::IgsItem::from).collect()) {
+                    self.dialog = Some(Dialog::Error(error.to_string()));
+                    return;
+                }
+                self.replace(Document::new(Size::new(80, 25)));
+                self.igs = Some(super::igs::IgsEditor::from_document(document));
+                self.new_kind = NewKind::Igs;
+            }
+        }
     }
 
     fn open_font_export(&mut self) {
@@ -3730,7 +3777,7 @@ impl DrawApp {
                         self.dialog = Some(Dialog::AiImport(draft));
                         self.choose(context, FileAction::AiImport);
                     }
-                    Some(ai_import::Action::Accept(buffer)) => self.import_ansi(*buffer),
+                    Some(ai_import::Action::Accept(imported)) => self.import_image(*imported),
                     Some(ai_import::Action::Cancel) => self.canvas_focus = true,
                     None => self.dialog = Some(Dialog::AiImport(draft)),
                 }

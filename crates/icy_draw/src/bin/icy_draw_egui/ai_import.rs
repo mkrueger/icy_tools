@@ -1,4 +1,5 @@
-//! Local image-to-ANSI import. The dialog and chat use the same bounded converter.
+//! Local image import into ANSI, RIP, IGS, PETSCII and VT52 documents. The dialog and chat
+//! use the same bounded character converter.
 
 use std::{
     io::Cursor,
@@ -7,9 +8,10 @@ use std::{
 };
 
 use eframe::egui;
-use icy_draw::fl;
-use icy_engine::{IceMode, Rectangle, TextBuffer};
+use icy_draw::{fl, igs_document::IgsDocument, rip_document::RipDocument};
+use icy_engine::{IceMode, PetsciiCase, PetsciiMachine, Rectangle, TextBuffer, TextPane, EGA_PALETTE};
 use icy_engine_gui::egui::appearance::{self, labels, DialogButton, DialogSize};
+use icy_parser_core::{IgsCommand, IgsItem, IgsParameter, PaletteMode, PenType, RipCommand, ScreenClearMode, TerminalResolution};
 use image::{imageops, ImageFormat};
 use parking_lot::Mutex;
 use serde_json::json;
@@ -19,10 +21,59 @@ use super::ai_chat::{
     image_attachment::{self, ReferenceImage},
 };
 
+pub const PETSCII_MACHINE: PetsciiMachine = PetsciiMachine::C64;
+pub const PETSCII_CASE: PetsciiCase = PetsciiCase::Upper;
+/// Low resolution offers 16 colors, which suits images better than the 4 of medium resolution.
+pub const VT52_RESOLUTION: TerminalResolution = TerminalResolution::Low;
+const RIP_SIZE: (u32, u32) = (640, 350);
+const IGS_SIZE: (u32, u32) = (320, 200);
+
 pub enum Action {
     Browse,
-    Accept(Box<TextBuffer>),
+    Accept(Box<Imported>),
     Cancel,
+}
+
+#[derive(Clone)]
+pub enum Imported {
+    Ansi(TextBuffer),
+    Petscii(TextBuffer),
+    Vt52(TextBuffer),
+    Rip(Vec<RipCommand>),
+    Igs(Vec<IgsCommand>),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Target {
+    #[default]
+    Ansi,
+    Rip,
+    Igs,
+    Petscii,
+    Vt52,
+}
+
+impl Target {
+    const ALL: [Self; 5] = [Self::Ansi, Self::Rip, Self::Igs, Self::Petscii, Self::Vt52];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Ansi => "ANSI",
+            Self::Rip => "RIP",
+            Self::Igs => "IGS",
+            Self::Petscii => "PETSCII",
+            Self::Vt52 => "VT52",
+        }
+    }
+
+    /// The native screen of the character targets other than ANSI.
+    fn retro_buffer(self) -> Option<TextBuffer> {
+        match self {
+            Self::Petscii => Some(icy_draw::screen_profile::petscii_buffer(PETSCII_MACHINE, PETSCII_CASE)),
+            Self::Vt52 => Some(icy_draw::screen_profile::atari_st_buffer(VT52_RESOLUTION)),
+            Self::Ansi | Self::Rip | Self::Igs => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,6 +138,7 @@ impl Glyphs {
 
 #[derive(Clone, Debug, PartialEq)]
 struct Options {
+    target: Target,
     columns: i32,
     rows: i32,
     preset: Preset,
@@ -110,6 +162,7 @@ struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            target: Target::Ansi,
             columns: 80,
             rows: 50,
             preset: Preset::Scene,
@@ -150,7 +203,7 @@ impl Options {
     }
 
     fn validate(&self) -> Result<(), String> {
-        if !(1..=160).contains(&self.columns) || !(1..=200).contains(&self.rows) || self.columns * self.rows > 8000 {
+        if self.target == Target::Ansi && (!(1..=160).contains(&self.columns) || !(1..=200).contains(&self.rows) || self.columns * self.rows > 8000) {
             return Err(fl!("ai-import-invalid-size"));
         }
         if !self.focus.is_finite()
@@ -161,6 +214,23 @@ impl Options {
             return Err(fl!("ai-import-invalid-crop"));
         }
         Ok(())
+    }
+
+    fn target_aspect(&self) -> f64 {
+        match self.target {
+            Target::Ansi => {
+                let buffer = self.buffer();
+                let aspect = if self.aspect { buffer.get_aspect_ratio_stretch_factor() } else { 1.0 };
+                self.columns as f64 * if self.spacing { 9.0 } else { 8.0 } / (self.rows as f64 * 16.0 * f64::from(aspect))
+            }
+            Target::Rip => f64::from(RIP_SIZE.0) / f64::from(RIP_SIZE.1),
+            Target::Igs => f64::from(IGS_SIZE.0) / f64::from(IGS_SIZE.1),
+            Target::Petscii | Target::Vt52 => {
+                let buffer = self.target.retro_buffer().unwrap();
+                let font = buffer.font_dimensions();
+                f64::from(buffer.width() * font.width) / f64::from(buffer.height() * font.height)
+            }
+        }
     }
 
     fn buffer(&self) -> TextBuffer {
@@ -180,9 +250,7 @@ impl Options {
         let mut x = left;
         let mut y = top;
         if self.fit == Fit::Crop {
-            let buffer = self.buffer();
-            let aspect = if self.aspect { buffer.get_aspect_ratio_stretch_factor() } else { 1.0 };
-            let target = self.columns as f64 * if self.spacing { 9.0 } else { 8.0 } / (self.rows as f64 * 16.0 * f64::from(aspect));
+            let target = self.target_aspect();
             if f64::from(width) / f64::from(height) > target {
                 let cropped = (f64::from(height) * target).round().clamp(1.0, f64::from(width)) as u32;
                 x += (width - cropped) / 2;
@@ -198,17 +266,204 @@ impl Options {
 }
 
 struct Converted {
-    buffer: TextBuffer,
+    imported: Imported,
     preview: egui::ColorImage,
+}
+
+#[cfg(test)]
+impl Converted {
+    fn ansi_buffer(&self) -> &TextBuffer {
+        let Imported::Ansi(buffer) = &self.imported else {
+            panic!("expected ANSI import")
+        };
+        buffer
+    }
 }
 
 fn convert(source: &ReferenceImage, options: &Options) -> Result<Converted, String> {
     options.validate()?;
+    match options.target {
+        Target::Ansi => convert_ansi(source, options),
+        Target::Rip => convert_rip(source, options),
+        Target::Igs => convert_igs(source, options),
+        Target::Petscii | Target::Vt52 => convert_retro(source, options),
+    }
+}
+
+fn cropped_reference(source: &ReferenceImage, options: &Options) -> Result<ReferenceImage, String> {
     let (x, y, width, height) = options.crop(source);
     let cropped = imageops::crop_imm(&source.pixels()?, x, y, width, height).to_image();
     let mut png = Cursor::new(Vec::new());
     cropped.write_to(&mut png, ImageFormat::Png).map_err(|error| error.to_string())?;
-    let reference = image_attachment::prepare(&source.name, &png.into_inner())?;
+    image_attachment::prepare(&source.name, &png.into_inner())
+}
+
+/// PETSCII and VT52 screens convert literally with the native glyphs and colors of the machine.
+fn convert_retro(source: &ReferenceImage, options: &Options) -> Result<Converted, String> {
+    let buffer = options.target.retro_buffer().ok_or("Not a character target")?;
+    let reference = cropped_reference(source, options)?;
+    let mut draft = Draft::new(options.target.label(), buffer, 0, None);
+    draft.begin_turn(Some(reference));
+    draft.convert_image(&json!({
+        "preset": "faithful", "mode": "full", "dither": options.dither,
+        "fit": if options.fit == Fit::Contain { "contain" } else { "stretch" },
+    }))?;
+    let buffer = draft.buffer;
+    let (size, pixels) = buffer.render_to_rgba(&Rectangle::from(0, 0, buffer.width(), buffer.height()).into(), false);
+    let preview = egui::ColorImage::from_rgba_unmultiplied([size.width as usize, size.height as usize], &pixels);
+    let imported = if options.target == Target::Petscii {
+        Imported::Petscii(buffer)
+    } else {
+        Imported::Vt52(buffer)
+    };
+    Ok(Converted { imported, preview })
+}
+
+/// The cropped source scaled to a fixed pixel canvas, centered on black for "contain".
+fn fit_pixels(source: &ReferenceImage, options: &Options, (canvas_width, canvas_height): (u32, u32)) -> Result<image::RgbaImage, String> {
+    let (x, y, width, height) = options.crop(source);
+    let source = imageops::crop_imm(&source.pixels()?, x, y, width, height).to_image();
+    Ok(match options.fit {
+        Fit::Crop | Fit::Stretch => imageops::resize(&source, canvas_width, canvas_height, imageops::FilterType::Triangle),
+        Fit::Contain => {
+            let scale = (f64::from(canvas_width) / f64::from(width)).min(f64::from(canvas_height) / f64::from(height));
+            let scaled_width = (f64::from(width) * scale).round().clamp(1.0, f64::from(canvas_width)) as u32;
+            let scaled_height = (f64::from(height) * scale).round().clamp(1.0, f64::from(canvas_height)) as u32;
+            let scaled = imageops::resize(&source, scaled_width, scaled_height, imageops::FilterType::Triangle);
+            let mut contained = image::RgbaImage::from_pixel(canvas_width, canvas_height, image::Rgba([0, 0, 0, 255]));
+            imageops::overlay(
+                &mut contained,
+                &scaled,
+                i64::from((canvas_width - scaled_width) / 2),
+                i64::from((canvas_height - scaled_height) / 2),
+            );
+            contained
+        }
+    })
+}
+
+/// Horizontal runs `(x0, x1, y)` of each palette index, except `background`. Runs never
+/// overlap, so drawing them grouped by color needs only one color change per color.
+fn runs_by_color(indices: &[u8], width: usize, background: u8) -> Vec<Vec<(u16, u16, u16)>> {
+    let mut runs = vec![Vec::new(); 16];
+    for (y, row) in indices.chunks_exact(width).enumerate() {
+        let mut x = 0;
+        while x < row.len() {
+            let color = row[x];
+            let mut end = x + 1;
+            while end < row.len() && row[end] == color {
+                end += 1;
+            }
+            if color != background {
+                runs[color as usize].push((x as u16, (end - 1) as u16, y as u16));
+            }
+            x = end;
+        }
+    }
+    runs
+}
+
+fn convert_igs(source: &ReferenceImage, options: &Options) -> Result<Converted, String> {
+    let image = fit_pixels(source, options, IGS_SIZE)?;
+    let mut levels = igs_palette(&image)?;
+    let rgb: Vec<[f32; 3]> = levels.iter().map(|level| level.map(|value| f32::from(value * 34))).collect();
+    let mut indices = quantize(&image, &rgb, options.dither);
+
+    // Pen 0 is the color the screen is cleared to, so the most common color needs no lines.
+    let mut counts = [0usize; 16];
+    for index in &indices {
+        counts[*index as usize] += 1;
+    }
+    let dominant = (0..16).max_by_key(|index| counts[*index]).unwrap_or(0) as u8;
+    levels.swap(0, dominant as usize);
+    for index in &mut indices {
+        if *index == dominant {
+            *index = 0;
+        } else if *index == 0 {
+            *index = dominant;
+        }
+    }
+
+    let mut commands = vec![IgsCommand::SetResolution {
+        resolution: TerminalResolution::Low,
+        palette: PaletteMode::IgDefault,
+    }];
+    commands.extend(levels.iter().enumerate().map(|(pen, [red, green, blue])| IgsCommand::SetPenColor {
+        pen: pen as u8,
+        red: *red,
+        green: *green,
+        blue: *blue,
+    }));
+    commands.push(IgsCommand::ScreenClear {
+        mode: ScreenClearMode::ClearWholeScreenAndHome,
+    });
+    for (pen, runs) in runs_by_color(&indices, IGS_SIZE.0 as usize, 0).into_iter().enumerate() {
+        if runs.is_empty() {
+            continue;
+        }
+        commands.push(IgsCommand::ColorSet {
+            pen: PenType::Line,
+            color: pen as u8,
+        });
+        commands.extend(runs.into_iter().map(|(x0, x1, y)| IgsCommand::Line {
+            x1: IgsParameter::Value(x0.into()),
+            y1: IgsParameter::Value(y.into()),
+            x2: IgsParameter::Value(x1.into()),
+            y2: IgsParameter::Value(y.into()),
+        }));
+    }
+    let items: Vec<IgsItem> = commands.iter().cloned().map(IgsItem::from).collect();
+    let preview = IgsDocument::render(&items).map_err(|error| error.to_string())?;
+    let size = [preview.width(), preview.height()];
+    Ok(Converted {
+        imported: Imported::Igs(commands),
+        preview: egui::ColorImage::from_rgba_unmultiplied(size, &preview.rgba()),
+    })
+}
+
+/// 16 distinct Atari ST colors (3 bits per channel) adapted to the image.
+fn igs_palette(image: &image::RgbaImage) -> Result<Vec<[u8; 3]>, String> {
+    use quantette::{deps::palette::Srgb, Image, PaletteSize, Pipeline};
+
+    let pixels: Vec<Srgb<u8>> = image
+        .pixels()
+        .map(|pixel| {
+            let alpha = u16::from(pixel[3]);
+            let channel = |value: u8| (u16::from(value) * alpha / 255) as u8;
+            Srgb::new(channel(pixel[0]), channel(pixel[1]), channel(pixel[2]))
+        })
+        .collect();
+    let input = Image::new(image.width(), image.height(), pixels).map_err(|error| error.to_string())?;
+    let size = PaletteSize::try_from(16u16).map_err(|_| "Invalid palette size")?;
+    let indexed = Pipeline::new().palette_size(size).input_image(input.as_ref()).output_srgb8_indexed_image();
+    let level = |value: u8| ((u16::from(value) * 7 + 127) / 255) as u8;
+    let mut palette: Vec<[u8; 3]> = Vec::with_capacity(16);
+    let grays = (0..8).map(|value| [value; 3]);
+    for color in indexed
+        .palette()
+        .iter()
+        .map(|color| [level(color.red), level(color.green), level(color.blue)])
+        .chain(grays)
+    {
+        if palette.len() == 16 {
+            break;
+        }
+        if !palette.contains(&color) {
+            palette.push(color);
+        }
+    }
+    let mut extra = (0..512u16).map(|value| [(value >> 6) as u8, ((value >> 3) & 7) as u8, (value & 7) as u8]);
+    while palette.len() < 16 {
+        let color = extra.next().ok_or("Palette exhausted")?;
+        if !palette.contains(&color) {
+            palette.push(color);
+        }
+    }
+    Ok(palette)
+}
+
+fn convert_ansi(source: &ReferenceImage, options: &Options) -> Result<Converted, String> {
+    let reference = cropped_reference(source, options)?;
     let mut draft = Draft::new("ANSI/ASCII", options.buffer(), 0, None);
     draft.begin_turn(Some(reference));
     draft.convert_image(&json!({
@@ -229,7 +484,132 @@ fn convert(source: &ReferenceImage, options: &Options) -> Result<Converted, Stri
     } else {
         egui::ColorImage::from_rgba_unmultiplied([size.width as usize, size.height as usize], &pixels)
     };
-    Ok(Converted { buffer, preview })
+    Ok(Converted {
+        imported: Imported::Ansi(buffer),
+        preview,
+    })
+}
+
+fn convert_rip(source: &ReferenceImage, options: &Options) -> Result<Converted, String> {
+    let image = fit_pixels(source, options, RIP_SIZE)?;
+    let palette = rip_palette(&image);
+    let rgb: Vec<[f32; 3]> = palette
+        .iter()
+        .map(|index| {
+            let (r, g, b) = EGA_PALETTE[*index as usize].rgb();
+            [f32::from(r), f32::from(g), f32::from(b)]
+        })
+        .collect();
+    let indices = quantize(&image, &rgb, options.dither);
+    let mut commands = vec![RipCommand::SetPalette { colors: palette.clone() }];
+    for (color, runs) in runs_by_color(&indices, RIP_SIZE.0 as usize, 0).into_iter().enumerate() {
+        if runs.is_empty() {
+            continue;
+        }
+        commands.push(RipCommand::Color { c: color as u16 });
+        commands.extend(runs.into_iter().map(|(x0, x1, y)| RipCommand::Line { x0, y0: y, x1, y1: y }));
+    }
+    let mut document = RipDocument::new();
+    document.replace_editable(commands.clone()).map_err(|error| error.to_string())?;
+    let preview = document.preview().map_err(|error| error.to_string())?;
+    let rgba = preview.rgba();
+    Ok(Converted {
+        imported: Imported::Rip(commands),
+        preview: egui::ColorImage::from_rgba_unmultiplied([RIP_SIZE.0 as usize, RIP_SIZE.1 as usize], &rgba),
+    })
+}
+
+fn rip_palette(image: &image::RgbaImage) -> Vec<u16> {
+    const DEFAULT: [u16; 16] = [0, 1, 2, 3, 4, 5, 20, 7, 56, 57, 58, 59, 60, 61, 62, 63];
+    let ega: Vec<[f32; 3]> = EGA_PALETTE
+        .iter()
+        .map(|color| {
+            let (r, g, b) = color.rgb();
+            [f32::from(r), f32::from(g), f32::from(b)]
+        })
+        .collect();
+    let mut frequency = [0usize; 64];
+    for pixel in image.pixels() {
+        let alpha = f32::from(pixel[3]) / 255.0;
+        let rgb = [f32::from(pixel[0]) * alpha, f32::from(pixel[1]) * alpha, f32::from(pixel[2]) * alpha];
+        let nearest = ega
+            .iter()
+            .enumerate()
+            .min_by(|(_, left), (_, right)| {
+                color_distance(rgb, **left)
+                    .partial_cmp(&color_distance(rgb, **right))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map_or(0, |(index, _)| index);
+        frequency[nearest] += 1;
+    }
+    let mut ranked: Vec<_> = (1..64).collect();
+    ranked.sort_unstable_by_key(|index| std::cmp::Reverse(frequency[*index]));
+    let mut palette = vec![0];
+    palette.extend(ranked.into_iter().filter(|index| frequency[*index] > 0).take(15).map(|index| index as u16));
+    for color in DEFAULT.into_iter().chain(0..64) {
+        if palette.len() == 16 {
+            break;
+        }
+        if !palette.contains(&color) {
+            palette.push(color);
+        }
+    }
+    palette
+}
+
+fn quantize(image: &image::RgbaImage, palette: &[[f32; 3]], dither: bool) -> Vec<u8> {
+    let mut pixels: Vec<[f32; 3]> = image
+        .pixels()
+        .map(|pixel| {
+            let alpha = f32::from(pixel[3]) / 255.0;
+            [f32::from(pixel[0]) * alpha, f32::from(pixel[1]) * alpha, f32::from(pixel[2]) * alpha]
+        })
+        .collect();
+    let width = image.width() as usize;
+    let mut indices = vec![0; pixels.len()];
+    for index in 0..pixels.len() {
+        let old = pixels[index];
+        let (color, mapped) = palette
+            .iter()
+            .enumerate()
+            .min_by(|(_, left), (_, right)| {
+                color_distance(old, **left)
+                    .partial_cmp(&color_distance(old, **right))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap();
+        indices[index] = color as u8;
+        if !dither {
+            continue;
+        }
+        let error = [old[0] - mapped[0], old[1] - mapped[1], old[2] - mapped[2]];
+        let x = index % width;
+        let distribute = |pixels: &mut [[f32; 3]], at: usize, factor: f32| {
+            if let Some(pixel) = pixels.get_mut(at) {
+                for channel in 0..3 {
+                    pixel[channel] = (pixel[channel] + error[channel] * factor).clamp(0.0, 255.0);
+                }
+            }
+        };
+        if x + 1 < width {
+            distribute(&mut pixels, index + 1, 7.0 / 16.0);
+        }
+        if index + width < pixels.len() {
+            if x > 0 {
+                distribute(&mut pixels, index + width - 1, 3.0 / 16.0);
+            }
+            distribute(&mut pixels, index + width, 5.0 / 16.0);
+            if x + 1 < width {
+                distribute(&mut pixels, index + width + 1, 1.0 / 16.0);
+            }
+        }
+    }
+    indices
+}
+
+fn color_distance(left: [f32; 3], right: [f32; 3]) -> f32 {
+    (left[0] - right[0]).powi(2) + (left[1] - right[1]).powi(2) + (left[2] - right[2]).powi(2)
 }
 
 enum Completed {
@@ -354,7 +734,7 @@ impl ImportDialog {
                     let height = (ui.clip_rect().height() - controls_height - 64.0).clamp(80.0, 450.0);
                     ui.columns(2, |columns| {
                         columns[0].label(fl!("ai-import-source"));
-                        columns[1].label(fl!("ai-import-result"));
+                        columns[1].label(fl!("ai-import-result", format = self.options.target.label()));
                         columns[0].add_enabled_ui(!blocked && !busy, |ui| self.source_preview(ui, height));
                         self.result_preview(&mut columns[1], height);
                     });
@@ -380,14 +760,15 @@ impl ImportDialog {
                         .leading()
                         .enabled(!blocked && !busy && self.source.is_some() && self.options.validate().is_ok()),
                     DialogButton::cancel(labels::cancel(), Button::Cancel).enabled(!blocked),
-                    DialogButton::primary(fl!("ai-import-accept"), Button::Accept).enabled(!blocked && !busy && self.result.is_some()),
+                    DialogButton::primary(fl!("ai-import-accept", format = self.options.target.label()), Button::Accept)
+                        .enabled(!blocked && !busy && self.result.is_some()),
                 ]);
             });
         if blocked {
             return None;
         }
         match response.action {
-            Some(Button::Accept) if !busy => self.result.as_ref().map(|result| Action::Accept(Box::new(result.buffer.clone()))),
+            Some(Button::Accept) if !busy => self.result.as_ref().map(|result| Action::Accept(Box::new(result.imported.clone()))),
             Some(Button::Convert) if !busy => {
                 self.start_conversion(context);
                 None
@@ -401,71 +782,93 @@ impl ImportDialog {
 
     fn controls(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            ui.label(fl!("ai-import-style"));
-            for preset in [Preset::Scene, Preset::Shaded] {
-                if ui.selectable_label(self.options.preset == preset, preset.label()).clicked() {
-                    self.options.select_preset(preset);
-                }
+            ui.label(fl!("ai-import-target"));
+            for target in Target::ALL {
+                ui.selectable_value(&mut self.options.target, target, target.label());
             }
-            ui.separator();
-            for (columns, rows) in [(80, 25), (80, 50)] {
-                if ui
-                    .selectable_label((self.options.columns, self.options.rows) == (columns, rows), format!("{columns} x {rows}"))
-                    .clicked()
-                {
-                    self.options.columns = columns;
-                    self.options.rows = rows;
-                }
-            }
-            ui.label(fl!("ai-import-columns"));
-            ui.add(egui::DragValue::new(&mut self.options.columns).range(1..=160));
-            ui.label(fl!("ai-import-rows"));
-            ui.add(egui::DragValue::new(&mut self.options.rows).range(1..=200));
         });
+        if self.options.target == Target::Ansi {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(fl!("ai-import-style"));
+                for preset in [Preset::Scene, Preset::Shaded] {
+                    if ui.selectable_label(self.options.preset == preset, preset.label()).clicked() {
+                        self.options.select_preset(preset);
+                    }
+                }
+                ui.separator();
+                for (columns, rows) in [(80, 25), (80, 50)] {
+                    if ui
+                        .selectable_label((self.options.columns, self.options.rows) == (columns, rows), format!("{columns} x {rows}"))
+                        .clicked()
+                    {
+                        self.options.columns = columns;
+                        self.options.rows = rows;
+                    }
+                }
+                ui.label(fl!("ai-import-columns"));
+                ui.add(egui::DragValue::new(&mut self.options.columns).range(1..=160));
+                ui.label(fl!("ai-import-rows"));
+                ui.add(egui::DragValue::new(&mut self.options.rows).range(1..=200));
+            });
+        } else {
+            ui.weak(match self.options.target {
+                Target::Igs => fl!("ai-import-igs-size"),
+                Target::Petscii => fl!("ai-import-petscii-size"),
+                Target::Vt52 => fl!("ai-import-vt52-size"),
+                Target::Ansi | Target::Rip => fl!("ai-import-rip-size"),
+            });
+        }
         ui.horizontal_wrapped(|ui| {
             ui.label(fl!("ai-import-fit"));
             for fit in [Fit::Crop, Fit::Contain, Fit::Stretch] {
                 ui.selectable_value(&mut self.options.fit, fit, fit.label());
             }
+            ui.separator();
             if ui.button(fl!("ai-import-reset-focus")).clicked() {
                 self.options.focus = Options::default().focus;
             }
-            ui.checkbox(&mut self.options.ice, fl!("ai-import-ice"));
-            ui.checkbox(&mut self.options.spacing, fl!("ai-import-spacing"));
-            ui.checkbox(&mut self.options.aspect, fl!("ai-import-aspect"));
-        });
-        ui.horizontal_wrapped(|ui| {
-            ui.label(fl!("ai-import-glyphs"));
-            for glyphs in [Glyphs::HalfBlocks, Glyphs::Blocks, Glyphs::Full, Glyphs::Ascii] {
-                if ui.selectable_value(&mut self.options.glyphs, glyphs, glyphs.label()).changed() {
-                    self.options.dither = glyphs == Glyphs::HalfBlocks;
-                    if glyphs == Glyphs::HalfBlocks {
-                        self.options.lightness_levels = 0;
-                    }
-                }
+            if self.options.target == Target::Ansi {
+                ui.checkbox(&mut self.options.ice, fl!("ai-import-ice"));
+                ui.checkbox(&mut self.options.spacing, fl!("ai-import-spacing"));
+                ui.checkbox(&mut self.options.aspect, fl!("ai-import-aspect"));
+            } else {
+                ui.checkbox(&mut self.options.dither, fl!("ai-import-dither"));
             }
         });
-        ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut self.options.hue_families, fl!("ai-import-hue-families"));
-            ui.checkbox(&mut self.options.dither, fl!("ai-import-dither"));
-        });
-        egui::CollapsingHeader::new(fl!("ai-import-tuning")).show(ui, |ui| {
-            ui.add(egui::Slider::new(&mut self.options.brightness, -0.25..=0.25).text(fl!("ai-import-brightness")));
-            ui.add(egui::Slider::new(&mut self.options.contrast, 0.5..=2.0).text(fl!("ai-import-contrast")));
-            ui.add(egui::Slider::new(&mut self.options.local_contrast, 0.0..=2.0).text(fl!("ai-import-local-contrast")));
-            ui.add(egui::Slider::new(&mut self.options.saturation, 0.0..=2.0).text(fl!("ai-import-saturation")));
-            ui.add(egui::Slider::new(&mut self.options.shade_penalty, 0.0..=2.0).text(fl!("ai-import-shading")));
-            ui.add(egui::Slider::new(&mut self.options.coherence, 0.0..=0.02).text(fl!("ai-import-coherence")));
-            ui.horizontal(|ui| {
-                let mut enabled = self.options.lightness_levels != 0;
-                if ui.checkbox(&mut enabled, fl!("ai-import-levels")).changed() {
-                    self.options.lightness_levels = if enabled { 5 } else { 0 };
-                }
-                if enabled {
-                    ui.add(egui::DragValue::new(&mut self.options.lightness_levels).range(2..=16));
+        if self.options.target == Target::Ansi {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(fl!("ai-import-glyphs"));
+                for glyphs in [Glyphs::HalfBlocks, Glyphs::Blocks, Glyphs::Full, Glyphs::Ascii] {
+                    if ui.selectable_value(&mut self.options.glyphs, glyphs, glyphs.label()).changed() {
+                        self.options.dither = glyphs == Glyphs::HalfBlocks;
+                        if glyphs == Glyphs::HalfBlocks {
+                            self.options.lightness_levels = 0;
+                        }
+                    }
                 }
             });
-        });
+            ui.horizontal_wrapped(|ui| {
+                ui.checkbox(&mut self.options.hue_families, fl!("ai-import-hue-families"));
+                ui.checkbox(&mut self.options.dither, fl!("ai-import-dither"));
+            });
+            egui::CollapsingHeader::new(fl!("ai-import-tuning")).show(ui, |ui| {
+                ui.add(egui::Slider::new(&mut self.options.brightness, -0.25..=0.25).text(fl!("ai-import-brightness")));
+                ui.add(egui::Slider::new(&mut self.options.contrast, 0.5..=2.0).text(fl!("ai-import-contrast")));
+                ui.add(egui::Slider::new(&mut self.options.local_contrast, 0.0..=2.0).text(fl!("ai-import-local-contrast")));
+                ui.add(egui::Slider::new(&mut self.options.saturation, 0.0..=2.0).text(fl!("ai-import-saturation")));
+                ui.add(egui::Slider::new(&mut self.options.shade_penalty, 0.0..=2.0).text(fl!("ai-import-shading")));
+                ui.add(egui::Slider::new(&mut self.options.coherence, 0.0..=0.02).text(fl!("ai-import-coherence")));
+                ui.horizontal(|ui| {
+                    let mut enabled = self.options.lightness_levels != 0;
+                    if ui.checkbox(&mut enabled, fl!("ai-import-levels")).changed() {
+                        self.options.lightness_levels = if enabled { 5 } else { 0 };
+                    }
+                    if enabled {
+                        ui.add(egui::DragValue::new(&mut self.options.lightness_levels).range(2..=16));
+                    }
+                });
+            });
+        }
     }
 
     fn source_preview(&mut self, ui: &mut egui::Ui, height: f32) {
@@ -630,14 +1033,14 @@ mod tests {
                 };
                 options.select_preset(preset);
                 let converted = convert(&source(), &options).unwrap();
-                assert_eq!(converted.buffer.size(), Size::new(8, 5));
-                assert_eq!(converted.buffer.buffer_type, icy_engine::BufferType::CP437);
+                assert_eq!(converted.ansi_buffer().size(), Size::new(8, 5));
+                assert_eq!(converted.ansi_buffer().buffer_type, icy_engine::BufferType::CP437);
                 assert_eq!(converted.preview.size, [64, 80]);
-                assert!(!converted.buffer.terminal_state.is_terminal_buffer);
+                assert!(!converted.ansi_buffer().terminal_state.is_terminal_buffer);
                 assert!(converted.preview.pixels.iter().any(|pixel| *pixel != egui::Color32::BLACK));
                 for row in 0..5 {
                     for column in 0..8 {
-                        let cell = converted.buffer.char_at(Position::new(column, row));
+                        let cell = converted.ansi_buffer().char_at(Position::new(column, row));
                         assert!(cell.attribute.foreground() < 16 && cell.attribute.background() < 8);
                         assert!(!cell.attribute.is_blinking());
                     }
@@ -691,7 +1094,7 @@ mod tests {
             )
             .unwrap();
             let bytes = icy_engine::formats::FileFormat::Ansi
-                .to_bytes(&result.buffer, &icy_engine::formats::SaveOptions::default())
+                .to_bytes(result.ansi_buffer(), &icy_engine::formats::SaveOptions::default())
                 .unwrap();
             std::fs::write(output.join(format!("{name}.ans")), bytes).unwrap();
             if glyphs == Glyphs::HalfBlocks {
@@ -742,7 +1145,7 @@ mod tests {
             let mut characters = 0;
             for y in 0..5 {
                 for x in 0..8 {
-                    let cell = result.buffer.char_at(Position::new(x, y));
+                    let cell = result.ansi_buffer().char_at(Position::new(x, y));
                     if glyphs == Glyphs::HalfBlocks {
                         assert!([32, 219, 220, 223].contains(&(cell.ch as u32)));
                         halves += usize::from(matches!(cell.ch as u32, 220 | 223) && cell.attribute.foreground() != cell.attribute.background());
@@ -769,9 +1172,146 @@ mod tests {
             let mut options = Options { rows, ..Default::default() };
             options.select_preset(preset);
             let result = convert(&source, &options).unwrap();
-            assert_eq!(result.buffer.size(), Size::new(80, rows));
+            assert_eq!(result.ansi_buffer().size(), Size::new(80, rows));
             assert_eq!(result.preview.size, [640, rows as usize * 16]);
             assert_eq!(result.preview.pixels.len(), 640 * rows as usize * 16);
+        }
+    }
+
+    #[test]
+    fn image_import_rip_uses_fixed_canvas_and_horizontal_palette_runs() {
+        let source = source();
+        let options = Options {
+            target: Target::Rip,
+            fit: Fit::Stretch,
+            ..Default::default()
+        };
+        let result = convert(&source, &options).unwrap();
+        assert_eq!(result.preview.size, [640, 350]);
+        let Imported::Rip(commands) = result.imported else {
+            panic!("expected RIP import")
+        };
+        assert!(!commands.is_empty());
+        assert!(commands.iter().all(|command| match command {
+            RipCommand::SetPalette { colors } => colors.len() == 16 && colors.iter().all(|color| *color < 64),
+            RipCommand::Color { c } => *c < 16,
+            RipCommand::Line { x0, y0, x1, y1 } => x0 <= x1 && *x1 < 640 && y0 == y1 && *y1 < 350,
+            _ => false,
+        }));
+        let mut document = RipDocument::new();
+        document.replace_editable(commands).unwrap();
+        assert_eq!(document.preview().unwrap().rgba().len(), 640 * 350 * 4);
+    }
+
+    #[test]
+    fn image_import_rip_adapts_palette_to_warm_photographic_colors() {
+        let image = image::RgbaImage::from_pixel(16, 16, image::Rgba([200, 150, 120, 255]));
+        let palette = rip_palette(&image);
+        let rgb: Vec<[f32; 3]> = palette
+            .iter()
+            .map(|index| {
+                let (r, g, b) = EGA_PALETTE[*index as usize].rgb();
+                [f32::from(r), f32::from(g), f32::from(b)]
+            })
+            .collect();
+        let indices = quantize(&image, &rgb, false);
+        let (red, green, blue) = EGA_PALETTE[palette[indices[0] as usize] as usize].rgb();
+        assert!(red != green || green != blue, "warm source color must not collapse to gray");
+    }
+
+    #[test]
+    fn image_import_igs_uses_low_resolution_adaptive_pens_and_line_runs() {
+        let source = source();
+        let options = Options {
+            target: Target::Igs,
+            fit: Fit::Stretch,
+            ..Default::default()
+        };
+        let result = convert(&source, &options).unwrap();
+        assert_eq!(result.preview.size, [320, 200]);
+        let Imported::Igs(commands) = result.imported else {
+            panic!("expected IGS import")
+        };
+        assert!(matches!(
+            commands[0],
+            IgsCommand::SetResolution {
+                resolution: TerminalResolution::Low,
+                ..
+            }
+        ));
+        let pens: Vec<_> = commands
+            .iter()
+            .filter_map(|command| match command {
+                IgsCommand::SetPenColor { pen, red, green, blue } => Some((*pen, [*red, *green, *blue])),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(pens.len(), 16);
+        assert!(pens.iter().all(|(pen, rgb)| *pen < 16 && rgb.iter().all(|level| *level < 8)));
+        assert!(
+            pens.iter().any(|(_, [red, green, blue])| red != green || green != blue),
+            "the warm portrait must keep chromatic pens"
+        );
+        let mut colors = Vec::new();
+        for command in &commands {
+            match command {
+                IgsCommand::ColorSet { pen: PenType::Line, color } => {
+                    assert!(*color > 0 && *color < 16, "pen 0 is the cleared background");
+                    colors.push(*color);
+                }
+                IgsCommand::Line { x1, y1, x2, y2 } => {
+                    let (IgsParameter::Value(x1), IgsParameter::Value(y1), IgsParameter::Value(x2), IgsParameter::Value(y2)) = (x1, y1, x2, y2) else {
+                        panic!("literal coordinates expected")
+                    };
+                    assert!(x1 <= x2 && *x2 < 320 && y1 == y2 && *y2 < 200);
+                }
+                IgsCommand::SetResolution { .. } | IgsCommand::SetPenColor { .. } | IgsCommand::ScreenClear { .. } => {}
+                other => panic!("unexpected command {other:?}"),
+            }
+        }
+        let mut unique = colors.clone();
+        unique.dedup();
+        assert_eq!(unique, colors, "each pen is selected once");
+        let mut document = IgsDocument::new(TerminalResolution::Low);
+        document.replace_items(commands.into_iter().map(IgsItem::from).collect()).unwrap();
+        assert_eq!(document.resolution(), TerminalResolution::Low);
+    }
+
+    #[test]
+    fn image_import_petscii_and_vt52_use_native_screens() {
+        let source = source();
+        for (target, buffer_type) in [
+            (Target::Petscii, icy_engine::BufferType::Petscii),
+            (Target::Vt52, icy_engine::BufferType::AtariSt),
+        ] {
+            let options = Options {
+                target,
+                fit: Fit::Stretch,
+                ..Default::default()
+            };
+            let result = convert(&source, &options).unwrap();
+            let buffer = match result.imported {
+                Imported::Petscii(buffer) if target == Target::Petscii => buffer,
+                Imported::Vt52(buffer) if target == Target::Vt52 => buffer,
+                _ => panic!("unexpected import for {target:?}"),
+            };
+            let expected = target.retro_buffer().unwrap();
+            assert_eq!(buffer.buffer_type, buffer_type);
+            assert_eq!(buffer.size(), expected.size());
+            let font = buffer.font_dimensions();
+            assert_eq!(
+                result.preview.size,
+                [(buffer.width() * font.width) as usize, (buffer.height() * font.height) as usize]
+            );
+            let mut colors = std::collections::HashSet::new();
+            for y in 0..buffer.height() {
+                for x in 0..buffer.width() {
+                    let cell = buffer.char_at(Position::new(x, y));
+                    colors.insert(cell.attribute.foreground());
+                    colors.insert(cell.attribute.background());
+                }
+            }
+            assert!(colors.len() > 1, "{target:?} must not be a blank screen");
         }
     }
 
@@ -899,7 +1439,7 @@ mod tests {
         assert!(dialog.error.is_none(), "{:?}", dialog.error);
         let expected = dialog.result.as_ref().unwrap().preview.clone();
         assert!(app.font_editor.is_some(), "conversion must not replace the live editor early");
-        click_text(&context, &mut app, size, &fl!("ai-import-accept"));
+        click_text(&context, &mut app, size, &fl!("ai-import-accept", format = "ANSI"));
         assert!(app.dialog.is_none() && app.font_editor.is_none());
         assert!(app.rip.is_none() && app.igs.is_none() && app.charfont.is_none() && app.animation.is_none());
         assert!(!app.show_start);
@@ -912,6 +1452,95 @@ mod tests {
         });
         app.document.type_text("X").unwrap();
         assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch), 'X');
+    }
+
+    #[test]
+    fn image_import_accept_switches_to_editable_rip() {
+        use_english();
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let source = source();
+        let options = Options {
+            target: Target::Rip,
+            fit: Fit::Stretch,
+            ..Default::default()
+        };
+        let converted = convert(&source, &options).unwrap();
+        let Imported::Rip(expected) = &converted.imported else {
+            panic!("expected RIP import")
+        };
+        let expected = expected.clone();
+        let mut app = DrawApp::new();
+        app.create(NewKind::BitmapFont, Size::new(80, 25));
+        app.dialog = Some(Dialog::AiImport(Box::new(ImportDialog {
+            source: Some(source),
+            options,
+            result: Some(Arc::new(converted)),
+            ..Default::default()
+        })));
+        let size = egui::vec2(1280.0, 900.0);
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        click_text(&context, &mut app, size, &fl!("ai-import-accept", format = "RIP"));
+        assert!(app.dialog.is_none() && app.font_editor.is_none());
+        assert!(app.igs.is_none() && app.charfont.is_none() && app.animation.is_none());
+        let editor = app.rip.as_ref().expect("RIP editor");
+        assert_eq!(editor.document.commands(), expected);
+        assert!(editor.modified());
+    }
+
+    fn accept(target: Target) -> DrawApp {
+        use_english();
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let source = source();
+        let options = Options {
+            target,
+            fit: Fit::Stretch,
+            ..Default::default()
+        };
+        let converted = convert(&source, &options).unwrap();
+        let mut app = DrawApp::new();
+        app.create(NewKind::BitmapFont, Size::new(80, 25));
+        app.dialog = Some(Dialog::AiImport(Box::new(ImportDialog {
+            source: Some(source),
+            options,
+            result: Some(Arc::new(converted)),
+            ..Default::default()
+        })));
+        let size = egui::vec2(1280.0, 900.0);
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        click_text(&context, &mut app, size, &fl!("ai-import-accept", format = target.label()));
+        assert!(app.dialog.is_none() && app.font_editor.is_none(), "{target:?}");
+        app
+    }
+
+    #[test]
+    fn image_import_accept_switches_to_editable_igs() {
+        let app = accept(Target::Igs);
+        assert!(app.rip.is_none() && app.charfont.is_none() && app.animation.is_none());
+        let editor = app.igs.as_ref().expect("IGS editor");
+        assert_eq!(editor.document.resolution(), TerminalResolution::Low);
+        assert!(editor.document.items().len() > 18);
+        assert!(editor.document.modified());
+    }
+
+    #[test]
+    fn image_import_accept_switches_to_native_petscii_and_vt52_editors() {
+        let app = accept(Target::Petscii);
+        assert!(app.petscii.is_some() && app.vt52.is_none() && app.rip.is_none() && app.igs.is_none());
+        assert!(app.new_kind == NewKind::Petscii);
+        assert!(app.document.modified());
+        assert_eq!(app.document.with_state(|state| state.get_buffer().buffer_type), icy_engine::BufferType::Petscii);
+
+        let app = accept(Target::Vt52);
+        assert!(app.vt52.is_some() && app.petscii.is_none() && app.rip.is_none() && app.igs.is_none());
+        assert!(app.new_kind == NewKind::Vt52);
+        assert!(app.document.modified());
+        assert_eq!(app.document.with_state(|state| state.get_buffer().buffer_type), icy_engine::BufferType::AtariSt);
     }
 
     #[test]
@@ -939,7 +1568,7 @@ mod tests {
             let context = egui::Context::default();
             let mut app = DrawApp::new();
             app.document.type_text("KEEP").unwrap();
-            let result = ready_dialog().result.unwrap().buffer.clone();
+            let result = ready_dialog().result.unwrap().ansi_buffer().clone();
             app.import_ansi(result);
             assert!(matches!(app.dialog, Some(Dialog::Close)));
             assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch), 'K');

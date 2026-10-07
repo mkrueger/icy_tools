@@ -1378,7 +1378,7 @@ impl IgsEditor {
         Ok(Self::from_document(IgsDocument::open(path).map_err(|error| error.to_string())?))
     }
 
-    fn from_document(document: IgsDocument) -> Self {
+    pub(super) fn from_document(document: IgsDocument) -> Self {
         let resolution = document.resolution();
         Self {
             document,

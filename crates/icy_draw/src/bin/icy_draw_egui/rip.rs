@@ -1115,7 +1115,7 @@ impl RipEditor {
         Ok(Self::from_document(RipDocument::open(path).map_err(|error| error.to_string())?))
     }
 
-    fn from_document(document: RipDocument) -> Self {
+    pub(super) fn from_document(document: RipDocument) -> Self {
         Self {
             document,
             selected: None,
