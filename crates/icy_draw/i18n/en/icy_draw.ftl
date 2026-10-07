@@ -1104,9 +1104,14 @@ font-import-xb-font-2=Font 2
 font-import-select-font=Select Font:
 font-import-image-info=Image will be converted to a 16×16 character grid
 font-import-dithering=Use Dithering
+font-import-ttf-info=TrueType/OpenType font will be rasterized using CP437 characters
+font-import-invalid-size=Width must be { $min }–{ $width } and height { $min }–{ $height } pixels.
+font-import-invalid-height=Font height must be 1–{ $max } pixels.
 
 # Font Export Dialog
 font-export-format=Format
+font-export-invalid-size=Font width must be 1–{ $width } and height 1–{ $height } pixels.
+font-export-ansi-file-info=Export a CTerm font upload sequence to an ANSI file.
 font-export-com-format=COM Type
 font-export-path=Export to
 font-export-no-path=No path selected

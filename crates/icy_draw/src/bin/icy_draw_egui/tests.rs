@@ -99,6 +99,393 @@ fn dirty_open_prompts_before_replacing() {
 }
 
 #[test]
+fn font_import_menu_picker_preview_and_import_open_a_new_font() {
+    use_english();
+    for bitmap in [false, true] {
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let mut app = DrawApp::new();
+        if bitmap {
+            app.create(NewKind::BitmapFont, Size::new(80, 25));
+        }
+        let size = egui::vec2(1000.0, 760.0);
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        click_text(&context, &mut app, size, "File");
+        click_text(&context, &mut app, size, &fl!("menu-import-font"));
+        assert!(matches!(app.dialog, Some(Dialog::FontImport(_))));
+        frame(&context, &mut app, size, vec![key_event(Key::Enter, egui::Modifiers::NONE)]);
+        assert!(matches!(app.dialog, Some(Dialog::FontImport(_))), "import without a preview is disabled");
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("import.psf");
+        let font = icy_engine::BitFont::from_sauce_name("IBM VGA 850").unwrap();
+        let bytes = font.to_psf2_bytes().unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        app.picker = true;
+        app.sender
+            .send(Picked {
+                action: FileAction::ImportFont,
+                path: Some(path.clone()),
+            })
+            .unwrap();
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        assert!(!app.picker);
+        let output = frame(&context, &mut app, size, vec![]);
+        assert!(text_position(&output, "import").is_some());
+        click_text(&context, &mut app, size, &fl!("font-import-button"));
+        assert!(app.dialog.is_none());
+        let editor = app.font_editor.as_ref().unwrap();
+        assert_eq!(editor.state.build_font().convert_to_u8_data(), font.convert_to_u8_data());
+        assert!(editor.path.is_none());
+        assert!(!editor.apply_target);
+        assert_eq!(std::fs::read(&path).unwrap(), bytes, "source is never overwritten");
+    }
+}
+
+#[test]
+fn font_export_menu_and_shortcut_preserve_the_font_save_state() {
+    use_english();
+    for shortcut in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let source = directory.path().join("source.psf");
+        let target = directory.path().join("sheet.png");
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let mut app = DrawApp::new();
+        app.create(NewKind::BitmapFont, Size::new(80, 25));
+        let editor = app.font_editor.as_mut().unwrap();
+        editor.save(&source, false).unwrap();
+        let source_bytes = std::fs::read(&source).unwrap();
+        let before = editor.state.get_glyph_pixels('A')[0][0];
+        editor.state.set_pixel('A', 0, 0, !before).unwrap();
+        let expected = editor.state.build_font();
+        let size = egui::vec2(1000.0, 760.0);
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        if shortcut {
+            frame(
+                &context,
+                &mut app,
+                size,
+                vec![key_event(Key::E, egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT))],
+            );
+        } else {
+            click_text(&context, &mut app, size, "File");
+            click_text(&context, &mut app, size, &fl!("menu-export-font"));
+        }
+        assert!(matches!(app.dialog, Some(Dialog::FontExport(_))));
+        app.picker = true;
+        app.sender
+            .send(Picked {
+                action: FileAction::ExportFont {
+                    file_name: "sheet.png".into(),
+                    extension: "png".into(),
+                },
+                path: Some(target.clone()),
+            })
+            .unwrap();
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        click_text(&context, &mut app, size, &fl!("font-export-button"));
+        assert!(app.dialog.is_none());
+        let exported = image::open(&target).unwrap().to_luma8();
+        assert_eq!(exported, icy_draw::font_export::image_export::font_image(&expected));
+        let editor = app.font_editor.as_ref().unwrap();
+        assert_eq!(editor.path.as_deref(), Some(source.as_path()));
+        assert!(editor.modified(), "export must not mark edits as saved");
+        assert_eq!(editor.state.build_font().convert_to_u8_data(), expected.convert_to_u8_data());
+        assert_eq!(std::fs::read(&source).unwrap(), source_bytes);
+    }
+}
+
+#[test]
+fn font_export_format_selection_and_overwrite_confirmation_are_wired() {
+    use_english();
+    let directory = tempfile::tempdir().unwrap();
+    let target = directory.path().join("export.psf");
+    std::fs::write(&target, b"KEEP").unwrap();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.create(NewKind::BitmapFont, Size::new(80, 25));
+    let expected = app.font_editor.as_ref().unwrap().state.build_font().convert_to_u8_data();
+    app.open_font_export();
+    let size = egui::vec2(1000.0, 760.0);
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    click_text(&context, &mut app, size, "PNG Image");
+    click_text(&context, &mut app, size, "PSF (Linux Console)");
+    if let Some(Dialog::FontExport(draft)) = &mut app.dialog {
+        assert_eq!(draft.extension(), "psf");
+        draft.set_path(&target);
+    }
+    click_text(&context, &mut app, size, &fl!("font-export-button"));
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    assert_eq!(std::fs::read(&target).unwrap(), b"KEEP");
+    click_text(&context, &mut app, size, &labels::cancel());
+    assert!(matches!(app.dialog, Some(Dialog::FontExport(_))));
+    assert_eq!(std::fs::read(&target).unwrap(), b"KEEP");
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    click_text(&context, &mut app, size, &fl!("font-export-button"));
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    click_text(&context, &mut app, size, &labels::overwrite());
+    assert!(app.dialog.is_none());
+    let loaded = icy_engine::BitFont::from_bytes("Export", &std::fs::read(&target).unwrap()).unwrap();
+    assert_eq!(loaded.convert_to_u8_data(), expected);
+    assert!(app.font_editor.as_ref().unwrap().path.is_none());
+}
+
+#[test]
+fn font_export_com_subformats_are_selectable_and_cancel_preserves_edits() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.create(NewKind::BitmapFont, Size::new(80, 25));
+    let editor = app.font_editor.as_mut().unwrap();
+    editor.apply_target = true;
+    let before = editor.state.get_glyph_pixels('A')[0][0];
+    editor.state.set_pixel('A', 0, 0, !before).unwrap();
+    app.open_font_export();
+    let size = egui::vec2(1000.0, 760.0);
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    click_text(&context, &mut app, size, "PNG Image");
+    click_text(&context, &mut app, size, "DOS COM Executable");
+    click_text(&context, &mut app, size, "Non-TSR (simple)");
+    click_text(&context, &mut app, size, "TSR (all modes)");
+    let output = frame(&context, &mut app, size, vec![]);
+    assert!(text_position(&output, "TSR (all modes)").is_some());
+    app.picker = true;
+    frame(&context, &mut app, size, vec![key_event(Key::Escape, egui::Modifiers::NONE)]);
+    assert!(matches!(app.dialog, Some(Dialog::FontExport(_))));
+    app.sender
+        .send(Picked {
+            action: FileAction::ExportFont {
+                file_name: "export.com".into(),
+                extension: "com".into(),
+            },
+            path: None,
+        })
+        .unwrap();
+    frame(&context, &mut app, size, vec![]);
+    assert!(!app.picker);
+    click_text(&context, &mut app, size, &labels::cancel());
+    assert!(app.dialog.is_none());
+    let editor = app.font_editor.as_ref().unwrap();
+    assert!(editor.apply_target);
+    assert!(editor.modified());
+    assert_eq!(editor.state.get_glyph_pixels('A')[0][0], !before);
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_font_export_dialog_renders_desktop_and_compact_layouts() {
+    use_english();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        app.create(NewKind::BitmapFont, Size::new(80, 25));
+        for format in [icy_draw::font_export::FontExportFormat::Png, icy_draw::font_export::FontExportFormat::Com] {
+            for size in [[1280, 820], [440, 700]] {
+                app.open_font_export();
+                if let Some(Dialog::FontExport(draft)) = &mut app.dialog {
+                    draft.set_format(format);
+                }
+                for _ in 0..3 {
+                    gpu.capture(&mut app, size, 1.0, vec![], "font-export-warmup");
+                }
+                let pixels = gpu.capture(&mut app, size, 1.0, vec![], &format!("font-export-{format:?}-{}", size[0]));
+                assert!(pixels.chunks_exact(4).any(|pixel| pixel[0] > 180 && pixel[1] > 180 && pixel[2] > 180));
+            }
+        }
+    });
+}
+
+#[test]
+fn font_import_cancel_and_discard_preserve_unsaved_edits_until_confirmed() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::vec2(1000.0, 760.0);
+    let mut app = DrawApp::new();
+    app.document.type_text("KEEP").unwrap();
+    let original = app.document.screen.clone();
+    app.import_font(icy_engine::BitFont::default());
+    assert!(matches!(app.dialog, Some(Dialog::Close)));
+    assert!(std::sync::Arc::ptr_eq(&original, &app.document.screen));
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    click_text(&context, &mut app, size, &labels::cancel());
+    assert!(app.pending_font.is_none());
+    assert!(std::sync::Arc::ptr_eq(&original, &app.document.screen));
+    assert!(app.font_editor.is_none());
+    app.import_font(icy_engine::BitFont::default());
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    click_text(&context, &mut app, size, &fl!("ask_close_file_dialog-dont_save_button"));
+    assert!(app.font_editor.is_some());
+    assert!(app.pending_font.is_none());
+    assert!(!std::sync::Arc::ptr_eq(&original, &app.document.screen));
+}
+
+#[test]
+fn font_import_save_completes_pending_import_and_protects_font_edits() {
+    let context = egui::Context::default();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("keep.icy");
+    let mut app = DrawApp::new();
+    app.document.type_text("KEEP").unwrap();
+    app.import_font(icy_engine::BitFont::default());
+    app.continue_after_save = true;
+    app.save_path(&context, path.clone(), false);
+    assert!(app.pending_font.is_none());
+    assert!(app.font_editor.is_some());
+    let saved = Document::load(&path).unwrap();
+    assert_eq!(saved.with_state(|state| state.get_buffer().char_at((0, 0).into()).ch), 'K');
+
+    let editor = app.font_editor.as_mut().unwrap();
+    editor.apply_target = true;
+    let before = editor.state.get_glyph_pixels('A')[0][0];
+    editor.state.set_pixel('A', 0, 0, !before).unwrap();
+    app.import_font(icy_engine::BitFont::default());
+    assert!(matches!(app.dialog, Some(Dialog::Close)));
+    assert_eq!(app.font_editor.as_ref().unwrap().state.get_glyph_pixels('A')[0][0], !before);
+}
+
+#[test]
+fn font_import_failed_or_cancelled_save_clears_pending_import() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.document.type_text("KEEP").unwrap();
+    app.import_font(icy_engine::BitFont::default());
+    app.continue_after_save = true;
+    app.save_path(&context, PathBuf::from("/nonexistent/icy-draw/keep.icy"), false);
+    assert!(matches!(app.dialog, Some(Dialog::Error(_))));
+    assert!(app.pending_font.is_none());
+    assert!(app.document.modified());
+    assert!(app.font_editor.is_none());
+
+    app.import_font(icy_engine::BitFont::default());
+    app.continue_after_save = true;
+    app.dialog = None;
+    app.picker = true;
+    app.sender
+        .send(Picked {
+            action: FileAction::Save,
+            path: None,
+        })
+        .unwrap();
+    frame(&context, &mut app, egui::vec2(1000.0, 760.0), vec![]);
+    assert!(app.pending_font.is_none());
+    assert!(app.document.modified());
+    assert!(app.font_editor.is_none());
+}
+
+#[test]
+fn font_import_cancelled_picker_and_escape_keep_the_document() {
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    let original = app.document.screen.clone();
+    app.dialog = Some(Dialog::FontImport(Box::default()));
+    app.picker = true;
+    app.sender
+        .send(Picked {
+            action: FileAction::ImportFont,
+            path: None,
+        })
+        .unwrap();
+    let size = egui::vec2(1000.0, 760.0);
+    frame(&context, &mut app, size, vec![]);
+    assert!(!app.picker);
+    assert!(matches!(app.dialog, Some(Dialog::FontImport(_))));
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    frame(&context, &mut app, size, vec![key_event(Key::Escape, egui::Modifiers::NONE)]);
+    assert!(app.dialog.is_none());
+    assert!(std::sync::Arc::ptr_eq(&original, &app.document.screen));
+}
+
+#[test]
+fn font_import_xbin_selection_imports_the_selected_font() {
+    use_english();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("two.xb");
+    let mut data = b"XBIN\x1A\x01\x00\x01\x00\x10\x12".to_vec();
+    data.extend(vec![0x80; 256 * 16]);
+    data.extend(vec![0x40; 256 * 16]);
+    data.extend([0, 7]);
+    std::fs::write(&path, data).unwrap();
+    for (label, expected) in [(fl!("font-import-xb-font-1"), 0x80), (fl!("font-import-xb-font-2"), 0x40)] {
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let mut app = DrawApp::new();
+        let mut draft = font_import::FontImportDialog::default();
+        draft.load(&path);
+        app.dialog = Some(Dialog::FontImport(Box::new(draft)));
+        let size = egui::vec2(1000.0, 760.0);
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        click_text(&context, &mut app, size, &label);
+        click_text(&context, &mut app, size, &fl!("font-import-button"));
+        assert!(app.dialog.is_none());
+        let data = app.font_editor.as_ref().unwrap().state.build_font().convert_to_u8_data();
+        assert_eq!(data.len(), 256 * 16);
+        assert!(data.iter().all(|byte| *byte == expected), "{label} must keep XBin slot order");
+    }
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_font_import_dialog_renders_empty_and_loaded_previews() {
+    use_english();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("sample.psf");
+        std::fs::write(&path, icy_engine::BitFont::default().to_psf2_bytes().unwrap()).unwrap();
+        for size in [[1280, 820], [440, 700]] {
+            app.dialog = Some(Dialog::FontImport(Box::default()));
+            for _ in 0..3 {
+                gpu.capture(&mut app, size, 1.0, vec![], "font-import-warmup");
+            }
+            let empty = gpu.capture(&mut app, size, 1.0, vec![], &format!("font-import-empty-{}", size[0]));
+            if let Some(Dialog::FontImport(draft)) = &mut app.dialog {
+                draft.load(&path);
+            }
+            for _ in 0..3 {
+                gpu.capture(&mut app, size, 1.0, vec![], "font-import-warmup");
+            }
+            let loaded = gpu.capture(&mut app, size, 1.0, vec![], &format!("font-import-preview-{}", size[0]));
+            let changed = empty
+                .chunks_exact(4)
+                .zip(loaded.chunks_exact(4))
+                .filter(|(before, after)| before != after)
+                .count();
+            assert!(changed > 500, "the loaded glyph sheet must be rendered at {size:?}");
+        }
+    });
+}
+
+#[test]
 fn pending_shape_is_committed_before_new_or_open() {
     for open in [false, true] {
         let mut app = DrawApp::new();

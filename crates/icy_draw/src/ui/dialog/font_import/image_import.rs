@@ -16,11 +16,11 @@ use quantette::{deps::palette::Srgb, dither::FloydSteinberg, Image, PaletteSize,
 /// When false, a simple threshold (50% brightness) is used for sharp edges.
 pub fn import_font_from_image(path: &Path, font_width: i32, font_height: i32, use_dithering: bool) -> Result<BitFont, String> {
     // Validate dimensions
-    if font_width < 1 {
-        return Err(format!("Font width must be positive, got {font_width}"));
+    if !(1..=8).contains(&font_width) {
+        return Err(format!("Font width must be 1-8, got {font_width}"));
     }
-    if font_height < 1 {
-        return Err(format!("Font height must be positive, got {font_height}"));
+    if !(1..=icy_engine_edit::bitfont::MAX_FONT_HEIGHT).contains(&font_height) {
+        return Err(format!("Font height must be 1-32, got {font_height}"));
     }
 
     // Load image

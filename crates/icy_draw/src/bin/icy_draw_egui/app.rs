@@ -29,6 +29,10 @@ mod chrome;
 mod collab;
 #[path = "file_settings.rs"]
 mod file_settings;
+#[path = "font_export.rs"]
+mod font_export;
+#[path = "font_import.rs"]
+mod font_import;
 #[path = "font_select.rs"]
 mod font_select;
 #[path = "mcp.rs"]
@@ -65,6 +69,8 @@ enum Dialog {
     Sauce(Box<file_settings::SauceDraft>),
     Export,
     FontSelect,
+    FontImport(Box<font_import::FontImportDialog>),
+    FontExport(Box<font_export::FontExportDialog>),
     TextArtFontSelect,
     Palette,
     Tags,
@@ -98,11 +104,16 @@ enum FileAction {
     SaveIgs,
     SaveSkypix,
     ExportAnimation(super::animation::ExportFormat),
+    ExportFont {
+        file_name: String,
+        extension: String,
+    },
     InsertImage,
     ReferenceImage,
     ImportPalette,
     ExportPalette,
     LoadFont,
+    ImportFont,
     /// A font for the ATASCII screen.
     LoadAtasciiFont,
     ImportTaglist,
@@ -314,6 +325,7 @@ pub struct DrawApp {
     sender: Sender<Picked>,
     receiver: Receiver<Picked>,
     pending: Option<PathBuf>,
+    pending_font: Option<icy_engine::BitFont>,
     pending_connect: bool,
     quitting: bool,
     allow_close: bool,
@@ -418,6 +430,7 @@ impl DrawApp {
             sender,
             receiver,
             pending: None,
+            pending_font: None,
             pending_connect: false,
             quitting: false,
             allow_close: false,
@@ -566,6 +579,7 @@ impl DrawApp {
     }
 
     pub fn open(&mut self, path: PathBuf) {
+        self.pending_font = None;
         self.document.finish();
         if let Some(editor) = &mut self.font_editor {
             editor.finish();
@@ -758,6 +772,12 @@ impl DrawApp {
                     .add_filter(fl!("set-font-filter-fonts"), font_select::FONT_EXTENSIONS)
                     .add_filter(fl!("set-font-filter-all"), &["*"])
                     .pick_file(),
+                FileAction::ImportFont => font_import::file_dialog(dialog).pick_file(),
+                FileAction::ExportFont { ref file_name, ref extension } => dialog
+                    .set_title(fl!("menu-export-font").trim_end_matches('…'))
+                    .set_file_name(file_name)
+                    .add_filter(fl!("file-dialog-filter-font-files"), &[extension.as_str()])
+                    .save_file(),
                 FileAction::LoadAtasciiFont => dialog
                     .add_filter(fl!("atascii-font-filter"), &["fnt", "fon", "set", "psf", "yaff"])
                     .add_filter(fl!("set-font-filter-all"), &["*"])
@@ -866,6 +886,7 @@ impl DrawApp {
             }
             Err(error) => {
                 self.continue_after_save = false;
+                self.pending_font = None;
                 self.dialog = Some(Dialog::Error(error));
             }
         }
@@ -878,12 +899,42 @@ impl DrawApp {
             context.send_viewport_cmd(egui::ViewportCommand::Close);
         } else if std::mem::take(&mut self.pending_connect) {
             self.show_connect_dialog();
+        } else if let Some(font) = self.pending_font.take() {
+            self.install_imported_font(font);
         } else if let Some(path) = self.pending.take() {
             self.load_path(path);
         } else {
             self.dialog = Some(Dialog::New);
         }
         self.quitting = false;
+    }
+
+    fn import_font(&mut self, font: icy_engine::BitFont) {
+        self.document.finish();
+        if let Some(editor) = &mut self.font_editor {
+            editor.finish();
+        }
+        self.pending = None;
+        self.pending_connect = false;
+        self.quitting = false;
+        if self.modified() || self.font_editor.as_ref().is_some_and(|editor| editor.modified()) {
+            self.pending_font = Some(font);
+            self.dialog = Some(Dialog::Close);
+        } else {
+            self.install_imported_font(font);
+        }
+    }
+
+    fn install_imported_font(&mut self, font: icy_engine::BitFont) {
+        self.replace(Document::new(Size::new(80, 25)));
+        self.font_editor = Some(super::font::FontEditor::new(font));
+    }
+
+    fn open_font_export(&mut self) {
+        if let Some(editor) = &mut self.font_editor {
+            editor.finish();
+            self.dialog = Some(Dialog::FontExport(Box::new(font_export::FontExportDialog::new(editor.state.build_font()))));
+        }
     }
 
     /// The export dialog for the document, starting with the last used folder and options.
@@ -2643,6 +2694,7 @@ impl DrawApp {
     fn request_new(&mut self) {
         self.document.finish();
         self.pending = None;
+        self.pending_font = None;
         self.pending_connect = false;
         self.quitting = false;
         self.dialog = Some(if self.modified() { Dialog::Close } else { Dialog::New });
@@ -3581,6 +3633,33 @@ impl DrawApp {
                 Some(font_select::Action::Cancel) => keep = false,
                 None => {}
             },
+            Dialog::FontImport(draft) => {
+                let mut draft = draft.clone();
+                keep = false;
+                match draft.show(context, self.picker) {
+                    Some(font_import::Action::Browse) => {
+                        self.dialog = Some(Dialog::FontImport(draft));
+                        self.choose(context, FileAction::ImportFont);
+                    }
+                    Some(font_import::Action::Import(font)) => self.import_font(*font),
+                    Some(font_import::Action::Cancel) => self.canvas_focus = true,
+                    None => self.dialog = Some(Dialog::FontImport(draft)),
+                }
+            }
+            Dialog::FontExport(draft) => {
+                let mut draft = draft.clone();
+                keep = false;
+                match draft.show(context, self.picker) {
+                    Some(font_export::Action::Browse) => {
+                        let file_name = draft.default_filename();
+                        let extension = draft.extension();
+                        self.dialog = Some(Dialog::FontExport(draft));
+                        self.choose(context, FileAction::ExportFont { file_name, extension });
+                    }
+                    Some(font_export::Action::Close) => self.canvas_focus = true,
+                    None => self.dialog = Some(Dialog::FontExport(draft)),
+                }
+            }
             Dialog::TextArtFontSelect => {
                 keep = self.text_art_font_dialog(context);
             }
@@ -3670,6 +3749,7 @@ impl DrawApp {
                     Some(Action::Cancel) | None => {
                         if response.action.is_some() || response.dismissed {
                             self.continue_after_save = false;
+                            self.pending_font = None;
                             keep = false;
                         }
                     }
@@ -3915,6 +3995,7 @@ impl DrawApp {
                         if response.action.is_some() || response.dismissed {
                             self.quitting = false;
                             self.pending = None;
+                            self.pending_font = None;
                             self.pending_connect = false;
                             self.continue_after_save = false;
                             keep = false;
@@ -4097,6 +4178,16 @@ impl DrawApp {
                             self.apply_font(font);
                         }
                     }
+                    FileAction::ImportFont => {
+                        if let Some(Dialog::FontImport(draft)) = &mut self.dialog {
+                            draft.load(&path);
+                        }
+                    }
+                    FileAction::ExportFont { .. } => {
+                        if let Some(Dialog::FontExport(draft)) = &mut self.dialog {
+                            draft.set_path(&path);
+                        }
+                    }
                     FileAction::ExportPalette => {
                         if path.extension().is_none() {
                             path.set_extension("gpl");
@@ -4107,6 +4198,7 @@ impl DrawApp {
                 }
             } else {
                 self.continue_after_save = false;
+                self.pending_font = None;
                 self.pending_connect = false;
             }
         }

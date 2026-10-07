@@ -440,7 +440,7 @@ impl FontSelector {
 }
 
 /// All 256 glyphs of `font` in a 16 × 16 grid, light gray on black.
-fn glyph_sheet(font: &BitFont) -> Option<egui::ColorImage> {
+pub(super) fn glyph_sheet(font: &BitFont) -> Option<egui::ColorImage> {
     let mut buffer = TextBuffer::new((16, 16));
     buffer.set_font(0, font.clone());
     for code in 0..256u32 {
@@ -528,10 +528,10 @@ pub fn load_fonts(path: &Path) -> Result<Vec<BitFont>, String> {
         .to_ascii_lowercase();
     if extension == "xb" || extension == "xbin" {
         let document = FileFormat::XBin.from_bytes(&data, None).map_err(|error| load_error(&error))?;
-        let fonts: Vec<_> = document
-            .screen
-            .buffer
-            .font_iter()
+        let mut slots: Vec<_> = document.screen.buffer.font_iter().collect();
+        slots.sort_by_key(|(slot, _)| **slot);
+        let fonts: Vec<_> = slots
+            .into_iter()
             .map(|(slot, font)| {
                 let mut font = font.clone();
                 if font.name().is_empty() || font.name() == "Font" {

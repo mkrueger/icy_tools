@@ -5,6 +5,8 @@ pub mod charfont;
 pub mod document;
 pub mod files;
 pub mod fill;
+pub mod font_export;
+pub mod font_import;
 #[path = "util/font_variants.rs"]
 pub mod font_variants;
 pub mod host;

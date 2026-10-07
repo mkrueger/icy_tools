@@ -357,6 +357,11 @@ impl DrawApp {
         if item(ui, &fl!("menu-open"), Some(&OPEN), true) {
             self.choose(context, FileAction::Open);
         }
+        if self.animation.is_none() && self.charfont.is_none() && self.rip.is_none() && self.igs.is_none() && self.skypix.is_none() {
+            if item(ui, &fl!("menu-import-font"), None, true) {
+                self.dialog = Some(Dialog::FontImport(Box::default()));
+            }
+        }
         let recent = self.settings.recent_files.files();
         ui.add_enabled_ui(!recent.is_empty(), |ui| {
             ui.menu_button(fl!("menu-open_recent"), |ui| {
@@ -383,6 +388,10 @@ impl DrawApp {
         if let Some(editor) = &mut self.animation {
             if item(ui, &fl!("menu-export"), Some(&EXPORT), true) {
                 editor.open_export_dialog();
+            }
+        } else if self.font_editor.is_some() {
+            if item(ui, &fl!("menu-export-font"), Some(&EXPORT), true) {
+                self.open_font_export();
             }
         } else if self.font_editor.is_none()
             && self.rip.is_none()
@@ -1064,6 +1073,7 @@ impl DrawApp {
             Key::N if shift => self.new_window(),
             Key::Q if !shift => context.send_viewport_cmd(egui::ViewportCommand::Close),
             Key::E if shift && self.animation.is_some() => self.animation.as_mut().unwrap().open_export_dialog(),
+            Key::E if shift && self.font_editor.is_some() => self.open_font_export(),
             Key::E if shift && !animation => self.dialog = Some(Dialog::Export),
             Key::Plus | Key::Equals if zoomable => self.zoom_step(1),
             Key::Minus if zoomable => self.zoom_step(-1),

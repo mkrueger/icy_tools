@@ -21,8 +21,8 @@ use icy_engine::BitFont;
 /// Uses CP437 character mapping for indices 0-255.
 pub fn import_font_from_ttf(path: &Path, font_width: i32, font_height: i32) -> Result<BitFont, String> {
     // Validate dimensions
-    if !(4..=16).contains(&font_width) {
-        return Err(format!("Font width must be 4-16, got {font_width}"));
+    if !(4..=8).contains(&font_width) {
+        return Err(format!("Font width must be 4-8, got {font_width}"));
     }
     if !(4..=32).contains(&font_height) {
         return Err(format!("Font height must be 4-32, got {font_height}"));

@@ -7,15 +7,13 @@
 //! - TTF/OTF files - rasterize TrueType/OpenType fonts to bitmap
 
 mod canvas;
-mod image_import;
-mod ttf_import;
 
 pub use canvas::*;
 
 use std::path::PathBuf;
 
+use icy_draw::font_import::{image_import, is_image_extension, is_native_font_extension, is_ttf_extension, parse_com_font, ttf_import};
 use icy_engine::BitFont;
-use icy_engine_edit::bitfont::MAX_FONT_HEIGHT;
 use icy_engine_gui::ui::{
     browse_button, button_row, dialog_area, dialog_title, left_label_small, modal_container, primary_button, secondary_button, separator, Dialog, DialogAction,
     DIALOG_SPACING, DIALOG_WIDTH_LARGE, TEXT_SIZE_NORMAL, TEXT_SIZE_SMALL,
@@ -125,6 +123,9 @@ impl FontImportDialog {
 
     /// Check if the dialog is ready for import
     fn can_import(&self) -> bool {
+        if self.error.is_some() {
+            return false;
+        }
         match &self.source_type {
             Some(FontSourceType::NativeFont) => self.preview_font.is_some(),
             Some(FontSourceType::XBin { .. }) => !self.xb_fonts.is_empty(),
@@ -253,6 +254,8 @@ impl FontImportDialog {
 
     /// Load a TTF/OTF file and rasterize to bitmap font
     fn load_ttf_file(&mut self, path: &std::path::Path) {
+        self.preview_font = None;
+        self.error = None;
         let width = self.parsed_font_width().unwrap_or(8);
         let height = self.parsed_font_height().unwrap_or(16);
 
@@ -268,6 +271,8 @@ impl FontImportDialog {
 
     /// Load an image file and convert to font preview
     fn load_image_file(&mut self, path: &std::path::Path) {
+        self.preview_font = None;
+        self.error = None;
         let width = self.parsed_font_width().unwrap_or(8);
         let height = self.parsed_font_height().unwrap_or(16);
 
@@ -611,103 +616,4 @@ impl FontImportDialog {
             None => Space::new().into(),
         }
     }
-}
-
-/// Check if extension is a native font format
-fn is_native_font_extension(ext: &str) -> bool {
-    matches!(
-        ext,
-        "yaff"
-            | "psf"
-            | "psfu"
-            | "f08"
-            | "f14"
-            | "f16"
-            | "f19"
-            | "f06"
-            | "f07"
-            | "f09"
-            | "f10"
-            | "f11"
-            | "f12"
-            | "f13"
-            | "f15"
-            | "f17"
-            | "f18"
-            | "f20"
-            | "f22"
-            | "f24"
-            | "f26"
-            | "f28"
-            | "f30"
-            | "f32"
-    )
-}
-
-/// Check if extension is a TTF/OTF font format
-fn is_ttf_extension(ext: &str) -> bool {
-    matches!(ext, "ttf" | "otf" | "ttc" | "otc")
-}
-
-/// Check if extension is an image format
-fn is_image_extension(ext: &str) -> bool {
-    matches!(ext, "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tga" | "tiff" | "ico")
-}
-
-/// Parse a DOS COM file containing font data
-///
-/// Supports multiple COM font formats used by various DOS font editors.
-fn parse_com_font(name: &str, data: &[u8]) -> Result<BitFont, String> {
-    if data.len() < 0x64 {
-        return Err("COM file too small to contain font data".to_string());
-    }
-
-    // Calculate checksum of first 16 bytes (like Fontraption does)
-    let checksum: u16 = data[0..16]
-        .chunks(2)
-        .map(|chunk| {
-            if chunk.len() == 2 {
-                u16::from_le_bytes([chunk[0], chunk[1]])
-            } else {
-                chunk[0] as u16
-            }
-        })
-        .fold(0u16, u16::wrapping_add);
-
-    // Try to detect the format
-    let (height, data_offset) = if checksum == 0x8696 {
-        // PCMag FontEdit .COM
-        let h = data[0x32];
-        (h, 0x63usize)
-    } else if checksum == 0xEF10 {
-        // Fontraption Non-TSR .COM
-        let h = data[0x15];
-        (h, 0x19usize)
-    } else if data.len() >= 0x2C && data[0x28] == b'V' && data[0x29] == b'I' && data[0x2A] == b'L' && data[0x2B] == b'E' {
-        // Fontraption TSR .COM (has 'VILE' signature)
-        let h = data[0x5D];
-        (h, 0x63usize)
-    } else {
-        return Err("Unknown COM font format (not PCMag FontEdit or Fontraption)".to_string());
-    };
-
-    // Validate height
-    if height == 0 || height as i32 > MAX_FONT_HEIGHT {
-        return Err(format!("Invalid font height: {height} (must be 1-{MAX_FONT_HEIGHT})"));
-    }
-
-    // Check if we have enough data
-    let font_size = 256 * height as usize;
-    if data.len() < data_offset + font_size {
-        return Err(format!(
-            "COM file too small: need {} bytes for font data, file has {}",
-            data_offset + font_size,
-            data.len()
-        ));
-    }
-
-    // Extract font data
-    let font_data = &data[data_offset..data_offset + font_size];
-
-    Ok(BitFont::create_8(name, 8, height, font_data))
 }

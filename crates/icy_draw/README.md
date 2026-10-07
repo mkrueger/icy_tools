@@ -30,6 +30,31 @@ cargo run -p icy_draw -- --mcp-port 8080
 cargo run -p icy_draw -- host --bind 127.0.0.1 --port 8000 art.icy
 ```
 
+### Importing bitmap fonts
+
+Choose **File → Import Font…** from the drawing or bitmap font editor to preview
+and import native bitmap fonts (PSF, YAFF, raw DOS fonts), embedded XBin fonts,
+or PCMag FontEdit/Fontraption DOS COM fonts. XBin files with two fonts let you
+select which one to import.
+
+You can also convert a 16×16 glyph-sheet image with optional dithering, or
+rasterize a TrueType/OpenType font using CP437 character mapping. Set the target
+glyph dimensions before importing; the bitmap editor supports widths up to
+8 pixels and heights up to 32 pixels (TrueType requires at least 4×4).
+The imported font opens as a new bitmap font document, without overwriting the
+source file. Unsaved edits in the current document require save/discard
+confirmation before it is replaced.
+
+### Exporting bitmap fonts
+
+In the bitmap font editor, choose **File → Export Font…** (Ctrl+Shift+E, or
+Cmd+Shift+E on macOS). The dialog previews the font and exports PNG/BMP
+16×16 glyph sheets, PSF, raw DOS bitmap fonts (`.fXX`, based on glyph height),
+YAFF, ANSI files containing a CTerm DCS font upload sequence, or Fontraption
+DOS COM fonts (non-TSR or TSR for 40-column, 80-column, or all text modes).
+Existing files require overwrite confirmation. Exporting does not change the
+font's save path or mark unsaved edits as saved; **Save** continues to use PSF.
+
 ### AI drawing assistant
 
 The **AI Assistant** button in the menu bar toggles a resizable chat panel in every
