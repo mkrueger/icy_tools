@@ -2347,6 +2347,7 @@ impl TerminalThread {
             }
             TerminalRequest::ExtendedDeviceAttributes => {
                 /*
+                    Reply: CSI < 0 ; Ps... c, one Ps per feature:
                     1 - Loadable fonts are availabe via Device Control Strings
                     2 - Bright Background (ie: DECSET 32) is supported
                     3 - Palette entries may be modified via an Operating System Command
@@ -2355,9 +2356,10 @@ impl TerminalThread {
                     5 - The current font may be selected via CSI Ps1 ; Ps2 sp D
                     6 - Extended palette is available
                     7 - Mouse is available
+                    8 - Physical key press/release reports are available
                 */
 
-                Some(b"\x1B[<1;2;3;4;5;6;7c".to_vec())
+                Some(b"\x1B[<0;1;2;3;4;5;6;7;8c".to_vec())
             }
             TerminalRequest::DeviceStatusReport => Some(b"\x1B[0n".to_vec()),
             TerminalRequest::CursorPositionReport => {
@@ -3129,6 +3131,15 @@ mod tests {
         process_chunks(&mut terminal, &[b"\x1b[25", b"5n\x1b[14", b"t\x1b[16t"]).await;
 
         assert_eq!(&*sent.lock(), b"\x1B[25;80R\x1B[4;400;640t\x1B[6;16;8t");
+    }
+
+    #[tokio::test]
+    async fn cterm_features_advertise_physical_key_reports() {
+        let (mut terminal, sent, _) = test_terminal();
+
+        process_chunks(&mut terminal, &[b"\x1b[<c"]).await;
+
+        assert_eq!(&*sent.lock(), b"\x1B[<0;1;2;3;4;5;6;7;8c");
     }
 
     #[tokio::test]

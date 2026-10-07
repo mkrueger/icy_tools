@@ -744,6 +744,10 @@ pub enum TerminalCommand {
         enabled: bool,
         forced: bool,
     },
+    /// CTerm physical key press/release reports: CSI = 1 h/l
+    CsiSetPhysicalKeyReports(bool),
+    /// CTerm suppression of translated key input: CSI = 2 h/l
+    CsiSetSuppressTranslatedKeys(bool),
 
     /// TBC - Tabulation Clear: ESC[0g (clear tab at current position)
     CsiClearTabulation,

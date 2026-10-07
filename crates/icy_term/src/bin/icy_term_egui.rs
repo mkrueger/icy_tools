@@ -42,6 +42,8 @@ mod navigation;
 mod overlays;
 #[path = "icy_term_egui/phonebook.rs"]
 mod phonebook;
+#[path = "icy_term_egui/physical_keys.rs"]
+mod physical_keys;
 #[path = "icy_term_egui/session.rs"]
 mod session;
 #[path = "icy_term_egui/settings.rs"]
@@ -108,6 +110,7 @@ struct TerminalApp {
     pending_link: Option<String>,
     cache_root: Option<PathBuf>,
     remote_focus: bool,
+    physical_keys: physical_keys::PhysicalKeys,
     styled: bool,
     icons: Option<dialing_directory::Icons>,
     about_open: bool,
@@ -165,6 +168,7 @@ impl TerminalApp {
             pending_link: None,
             cache_root: None,
             remote_focus: false,
+            physical_keys: Default::default(),
             styled: false,
             icons: None,
             about_open: false,
@@ -538,6 +542,7 @@ impl TerminalApp {
         self.connected = false;
         self.connecting = false;
         self.remote_focus = false;
+        self.physical_keys.clear();
         self.transfers
             .event(&icy_term::TerminalEvent::Disconnected(None), &self.dialing_directory.options);
         self.tools.event(&icy_term::TerminalEvent::Disconnected(None));
@@ -1359,6 +1364,15 @@ impl TerminalApp {
                     let _ = session.send(if remote_focus { b"\x1b[I".to_vec() } else { b"\x1b[O".to_vec() });
                 }
             }
+            // Key releases stop arriving once the terminal loses focus
+            if !remote_focus {
+                let released = self.physical_keys.release_all();
+                if self.connected && screen.terminal_state().physical_key_reports && !released.is_empty() {
+                    if let Some(session) = &self.session {
+                        let _ = session.send(released);
+                    }
+                }
+            }
         }
         if blocked_at_start || !focused || self.blocks_terminal() || !context.input(|input| input.focused) || context.will_discard() {
             return;
@@ -1389,14 +1403,39 @@ impl TerminalApp {
         }
         let bytes = {
             let screen = self.terminal.screen.lock();
+            let state = screen.terminal_state();
             context.input(|input| {
-                let mut bytes = input::encode_protocol_events(
-                    &input.events,
+                let mut bytes = if self.connected && state.physical_key_reports {
+                    self.physical_keys.encode(&input.events, input.modifiers)
+                } else {
+                    self.physical_keys.clear();
+                    Vec::new()
+                };
+                // CSI = 2 h: the host only wants the physical key reports, not the translated keys
+                let untranslated: Vec<egui::Event>;
+                let events = if self.connected && state.suppress_translated_keys {
+                    untranslated = input
+                        .events
+                        .iter()
+                        .filter(|event| {
+                            !matches!(
+                                event,
+                                egui::Event::Key { .. } | egui::Event::Text(_) | egui::Event::Ime(_) | egui::Event::Copy | egui::Event::Cut
+                            )
+                        })
+                        .cloned()
+                        .collect();
+                    &untranslated
+                } else {
+                    &input.events
+                };
+                bytes.extend(input::encode_protocol_events(
+                    events,
                     screen.buffer_type(),
-                    self.connected && screen.terminal_state().bracketed_paste_mode,
+                    self.connected && state.bracketed_paste_mode,
                     self.terminal_emulation,
-                    if self.connected { screen.terminal_state().kitty_keyboard.flags() } else { 0 },
-                );
+                    if self.connected { state.kitty_keyboard.flags() } else { 0 },
+                ));
                 if self.connected && self.terminal.scroll_x() == 0.0 && self.terminal.scroll_y() == 0.0 {
                     bytes.extend(input::encode_mouse_events(
                         input,

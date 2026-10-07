@@ -298,6 +298,24 @@ fn test_terminal_reset_preserves_only_forced_lcf() {
 }
 
 #[test]
+fn test_physical_key_report_modes_follow_the_host_and_reset() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    parser.parse(b"[=1h[=2h", &mut ScreenSink::new(&mut screen));
+    assert!(screen.terminal_state().physical_key_reports);
+    assert!(screen.terminal_state().suppress_translated_keys);
+
+    parser.parse(b"[=2l", &mut ScreenSink::new(&mut screen));
+    assert!(screen.terminal_state().physical_key_reports);
+    assert!(!screen.terminal_state().suppress_translated_keys);
+
+    parser.parse(b"[=2hc", &mut ScreenSink::new(&mut screen));
+    assert!(!screen.terminal_state().physical_key_reports);
+    assert!(!screen.terminal_state().suppress_translated_keys);
+}
+
+#[test]
 fn test_80x43_bottom_line_scrolls_without_corruption() {
     let mut screen = TextScreen::new(Size::new(80, 43));
     for row in 0..43 {
