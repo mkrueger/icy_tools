@@ -90,7 +90,7 @@ font's save path or mark unsaved edits as saved; **Save** continues to use PSF.
 
 ### AI drawing assistant
 
-The **AI Assistant** button in the menu bar toggles a resizable chat panel in every
+The right-sidebar icon at the far right of the menu bar toggles a resizable AI chat panel in every
 editor mode of `icy_draw` / `icy_draw_egui`, laid out like the VS Code chat: the
 conversation fills the panel and the message composer sits at the bottom. This first
 version gives advice only with OpenAI-compatible servers; with GitHub Copilot it can
@@ -103,9 +103,10 @@ For an OpenAI-compatible server, enter its API base URL (including `/v1`
 where required) and optionally an API key — for example
 `https://api.openai.com/v1`, or `http://localhost:11434/v1` for a local Ollama
 server — then choose **Connect**. On success the settings close and the chat is
-shown. Pick a model from the dropdown in the composer (or enter a model ID manually
+shown. Click the compact model name in the composer's bottom toolbar to open the
+model menu (or enter a model ID manually
 in the settings if discovery is unsupported); **Manage connection…** at the end of
-that dropdown returns to the settings. The server must support
+that menu returns to the settings. The server must support
 `POST /chat/completions` with non-streaming text responses; discovery uses
 `GET /models`. Remote connections require HTTPS; plain HTTP is limited to
 loopback addresses. Redirects are not followed.
@@ -203,6 +204,29 @@ Each editor contributes its own tools; the session registers all of them, every
 message tells Copilot which editor is open, and tools of other editors report which
 tools apply instead. SkyPix also has dedicated graphics/state draft tools.
 The OpenAI-compatible connection remains advice-only.
+
+#### TheDraw text-art font assistant
+
+The TDF editor has dedicated Copilot tools for the selected font:
+`icy_tdf_info`, `icy_read_tdf_glyphs`, `icy_write_tdf_glyphs` and
+`icy_preview_tdf`. Whole-glyph batch writes can generate all 94 printable slots
+(`!` through `~`); the metadata reports missing characters to verify coverage.
+This is character-cell artwork, not a bitmap font. A glyph is at most 30x12 cells.
+
+The automatically selected TheDraw reference explains Color, Block and Outline
+fonts, transparent spaces, the extra hard blank (`0xFF`), literal `~`, and the
+outline placeholder alphabet with its 19 rendering styles. Color artwork stores
+DOS foreground/background colors; Block and Outline use the caller's colors.
+Space is not an editable glyph slot; word spacing is a font setting.
+
+Contact-sheet previews show up to 32 labelled glyphs per page, covering the full
+font in three pages. The preview tool
+can select an outline style; image feedback requires an image-capable model and
+is limited to three previews per turn. The proposal card pages through the full
+font. Edits remain in a draft until Apply, and the entire batch is one font undo
+step. Applying refuses a changed target font and includes unsaved current-glyph
+edits without silently overwriting them. Other fonts in the collection are
+unchanged. OpenAI-compatible providers receive the reference but remain advice-only.
 
 #### ANSI drawing and picture conversion
 

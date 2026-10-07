@@ -101,6 +101,7 @@ ai-knowledge-instructions-hint = Zeichenpräferenzen, BBS-Konventionen, Farb- od
 ai-knowledge-limits = Grenzen: 8 KiB Anweisungen, 48 KiB Wissen insgesamt, 16 lokale Dateien.
 ai-knowledge-references = Referenzen
 ai-knowledge-presets = Skills
+ai-knowledge-tdf = TheDraw-Zeichenfonts, Leerzeichen und Konturstile
 ai-knowledge-files = Lokale Referenzdateien
 ai-knowledge-files-hint = UTF-8-Text/Konfiguration/Quellcode, .icy/.ans/.asc/.pcb-, PETSCII- (.pet/.seq), ATASCII- (.ata/.xep), VT52-Bildschirme (.vt52/.v52/.vt5) oder .rip-/.ig-Ströme importieren. Referenzen werden als schreibgeschützte Quellen oder Schnappschüsse geteilt, nicht als gerenderte Bilder. Entfernen beendet das Senden der Datei in zukünftigen Anfragen.
 ai-knowledge-preview = Inhalt anzeigen

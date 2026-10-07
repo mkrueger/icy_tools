@@ -41,6 +41,11 @@ impl CharSetUndoStack {
         self.redo_stack.push(op);
     }
 
+    /// Restore an undone operation without discarding the rest of the redo history.
+    pub fn restore_undo(&mut self, op: CharSetUndoOperation) {
+        self.undo_stack.push(op);
+    }
+
     /// Pop an operation from the redo stack
     pub fn pop_redo(&mut self) -> Option<CharSetUndoOperation> {
         self.redo_stack.pop()

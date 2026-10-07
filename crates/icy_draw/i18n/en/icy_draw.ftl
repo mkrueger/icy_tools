@@ -101,6 +101,7 @@ ai-knowledge-instructions-hint = Drawing preferences, BBS conventions, palette o
 ai-knowledge-limits = Limits: 8 KiB instructions, 48 KiB total knowledge, 16 local files.
 ai-knowledge-references = References
 ai-knowledge-presets = Skills
+ai-knowledge-tdf = TheDraw text-art fonts, blanks and outline styles
 ai-knowledge-files = Local reference files
 ai-knowledge-files-hint = Import UTF-8 text/configuration/source files, .icy/.ans/.asc/.pcb, PETSCII (.pet/.seq), ATASCII (.ata/.xep), VT52 (.vt52/.v52/.vt5) screens or .rip/.ig streams. References are shared as read-only source or snapshots, not rendered images. Remove a file to stop sending it in future requests.
 ai-knowledge-preview = Preview content

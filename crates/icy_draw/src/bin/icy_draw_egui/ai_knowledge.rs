@@ -57,12 +57,17 @@ impl Item {
             "igs-art" => fl!("ai-knowledge-igs-art"),
             "skypix" => fl!("ai-knowledge-skypix"),
             "skypix-art" => fl!("ai-knowledge-skypix-art"),
+            "tdf" => fl!("ai-knowledge-tdf"),
             _ => self.id.to_owned(),
         }
     }
 }
 
 pub const REFERENCES: &[Item] = &[
+    Item {
+        id: "tdf",
+        text: include_str!("../../../data/ai/references/tdf.md"),
+    },
     Item {
         id: "skypix",
         text: include_str!("../../../data/ai/references/skypix.md"),
@@ -176,6 +181,7 @@ pub enum EditorKnowledge {
     Rip,
     Igs,
     Skypix,
+    Tdf,
 }
 
 impl EditorKnowledge {
@@ -190,6 +196,7 @@ impl EditorKnowledge {
             Self::Rip => &["ripscrip", "rip-menu"],
             Self::Igs => &["igs", "igs-art"],
             Self::Skypix => &["skypix", "skypix-art"],
+            Self::Tdf => &["tdf"],
         }
     }
 }
@@ -519,12 +526,23 @@ mod tests {
             presets: PRESETS.iter().map(|item| item.id.into()).collect(),
             ..Default::default()
         };
-        let context = prepare(&settings, EditorKnowledge::None).unwrap();
-        assert!(context.contains("Use blue accents."));
+        assert!(prepare(&settings, EditorKnowledge::None).unwrap_err().contains("48 KiB"));
         for item in REFERENCES.iter().chain(PRESETS) {
+            let selected = AiKnowledgeSettings {
+                custom_instructions: settings.custom_instructions.clone(),
+                references: REFERENCES
+                    .iter()
+                    .filter(|reference| reference.id == item.id)
+                    .map(|reference| reference.id.into())
+                    .collect(),
+                presets: PRESETS.iter().filter(|preset| preset.id == item.id).map(|preset| preset.id.into()).collect(),
+                ..Default::default()
+            };
+            let context = prepare(&selected, EditorKnowledge::None).unwrap();
+            assert!(context.contains("Use blue accents."));
             assert!(context.contains(item.id));
+            assert!(context.len() < MAX_KNOWLEDGE_BYTES);
         }
-        assert!(context.len() < MAX_KNOWLEDGE_BYTES);
         settings.custom_instructions = "x".repeat(MAX_INSTRUCTION_BYTES + 1);
         assert!(prepare(&settings, EditorKnowledge::None).unwrap_err().contains("8 KiB"));
         settings.custom_instructions.clear();
@@ -581,6 +599,7 @@ mod tests {
             EditorKnowledge::Rip,
             EditorKnowledge::Igs,
             EditorKnowledge::Skypix,
+            EditorKnowledge::Tdf,
         ] {
             let context = prepare(&settings, editor).unwrap();
             for id in editor.items() {

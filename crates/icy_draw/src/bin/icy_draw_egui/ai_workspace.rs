@@ -3,13 +3,17 @@
 
 use serde_json::Value;
 
-use super::{animation_tools::AnimationDraft, canvas::Draft, font_tools::FontDraft, igs_tools::IgsDraft, rip_tools::RipDraft, skypix_tools::SkypixDraft};
+use super::{
+    animation_tools::AnimationDraft, canvas::Draft, font_tools::FontDraft, igs_tools::IgsDraft, rip_tools::RipDraft, skypix_tools::SkypixDraft,
+    tdf_tools::TdfDraft,
+};
 
 #[derive(Clone)]
 pub enum Workspace {
     Canvas(Box<Draft>),
     Animation(AnimationDraft),
     Font(FontDraft),
+    Tdf(TdfDraft),
     Rip(RipDraft),
     Igs(IgsDraft),
     Skypix(SkypixDraft),
@@ -21,6 +25,7 @@ impl Workspace {
             Self::Canvas(draft) => &draft.editor,
             Self::Animation(_) => "Lua animation",
             Self::Font(_) => "bitmap font",
+            Self::Tdf(_) => "TheDraw text-art font (TDF)",
             Self::Rip(_) => "RIP",
             Self::Igs(_) => "IGS",
             Self::Skypix(_) => "SkyPix",
@@ -32,6 +37,7 @@ impl Workspace {
             Self::Canvas(_) => super::canvas::tool_specs(),
             Self::Animation(_) => super::animation_tools::tool_specs(),
             Self::Font(_) => super::font_tools::tool_specs(),
+            Self::Tdf(_) => super::tdf_tools::tool_specs(),
             Self::Rip(_) => super::rip_tools::tool_specs(),
             Self::Igs(_) => super::igs_tools::tool_specs(),
             Self::Skypix(_) => super::skypix_tools::tool_specs(),
@@ -44,6 +50,7 @@ impl Workspace {
             Self::Canvas(draft) => !draft.changes().is_empty(),
             Self::Animation(draft) => draft.changed(),
             Self::Font(draft) => !draft.changed_codes().is_empty(),
+            Self::Tdf(draft) => !draft.changed_codes().is_empty(),
             Self::Rip(draft) => draft.changed(),
             Self::Igs(draft) => draft.changed(),
             Self::Skypix(draft) => draft.changed(),
@@ -62,6 +69,7 @@ impl Workspace {
             Self::Canvas(draft) => draft.call(tool, arguments),
             Self::Animation(draft) => draft.call(tool, arguments),
             Self::Font(draft) => draft.call(tool, arguments),
+            Self::Tdf(draft) => draft.call(tool, arguments),
             Self::Rip(draft) => draft.call(tool, arguments),
             Self::Igs(draft) => draft.call(tool, arguments),
             Self::Skypix(draft) => draft.call(tool, arguments),
@@ -74,6 +82,7 @@ pub fn tool_specs() -> Vec<(&'static str, &'static str, Value)> {
     let mut specs = super::canvas::tool_specs();
     specs.extend(super::animation_tools::tool_specs());
     specs.extend(super::font_tools::tool_specs());
+    specs.extend(super::tdf_tools::tool_specs());
     specs.extend(super::rip_tools::tool_specs());
     specs.extend(super::igs_tools::tool_specs());
     specs.extend(super::skypix_tools::tool_specs());
@@ -83,6 +92,13 @@ pub fn tool_specs() -> Vec<(&'static str, &'static str, Value)> {
 /// Prepended to the prompt so the model knows which tools apply.
 pub fn editor_hint(workspace: Option<&Workspace>) -> String {
     match workspace {
+        Some(Workspace::Tdf(_)) => format!(
+            "[icy_draw: the open editor is TheDraw text-art font (TDF). Read icy_tdf_info and \
+             icy_read_tdf_glyphs, then use icy_write_tdf_glyphs to generate a full font in batches. \
+             NOT bitmap pixel tools or ANSI canvas tools. Use icy_preview_tdf to inspect pages. \
+             Check missing_codes before claiming all 94 glyphs are complete. User Apply is required.]\n{}",
+            super::tdf_tools::GUIDANCE
+        ),
         Some(workspace @ Workspace::Canvas(draft)) => {
             let info = draft.info();
             let target = serde_json::json!({

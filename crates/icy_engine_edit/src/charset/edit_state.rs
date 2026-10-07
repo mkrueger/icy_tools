@@ -38,6 +38,31 @@ use retrofont::{
 
 use super::{load_tdf_fonts_from_file, CharSetUndoOperation, CharSetUndoStack};
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_glyph_groups_undo_and_redo_without_losing_later_history() {
+        let mut state = CharSetEditState::new();
+        state.set_glyph('A', Glyph::new(1, 1));
+        state.begin_atomic_undo();
+        state.set_glyph('B', Glyph::new(2, 1));
+        state.set_glyph('C', Glyph::new(3, 1));
+        state.end_atomic_undo();
+        state.set_glyph('D', Glyph::new(4, 1));
+        assert!(state.undo());
+        assert!(state.get_glyph('D').is_none());
+        assert!(state.undo());
+        assert!(state.get_glyph('B').is_none() && state.get_glyph('C').is_none());
+        assert!(state.get_glyph('A').is_some());
+        assert!(state.redo());
+        assert!(state.get_glyph('B').is_some() && state.get_glyph('C').is_some());
+        assert!(state.redo(), "redoing a group preserves later undone edits");
+        assert!(state.get_glyph('D').is_some());
+    }
+}
+
 /// Which panel currently has focus in the CharSet editor
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CharSetFocusedPanel {
@@ -639,8 +664,24 @@ impl CharSetEditState {
     /// Undo the last operation
     pub fn undo(&mut self) -> bool {
         if let Some(op) = self.undo_stack.pop_undo() {
+            let grouped = matches!(op, CharSetUndoOperation::AtomicEnd);
             self.apply_undo_operation(&op, true);
             self.undo_stack.push_redo(op);
+            if grouped {
+                let mut depth = 1;
+                while let Some(op) = self.undo_stack.pop_undo() {
+                    match op {
+                        CharSetUndoOperation::AtomicEnd => depth += 1,
+                        CharSetUndoOperation::AtomicStart => depth -= 1,
+                        _ => {}
+                    }
+                    self.apply_undo_operation(&op, true);
+                    self.undo_stack.push_redo(op);
+                    if depth == 0 {
+                        break;
+                    }
+                }
+            }
             true
         } else {
             false
@@ -650,8 +691,24 @@ impl CharSetEditState {
     /// Redo the last undone operation
     pub fn redo(&mut self) -> bool {
         if let Some(op) = self.undo_stack.pop_redo() {
+            let grouped = matches!(op, CharSetUndoOperation::AtomicStart);
             self.apply_undo_operation(&op, false);
-            self.undo_stack.push(op);
+            self.undo_stack.restore_undo(op);
+            if grouped {
+                let mut depth = 1;
+                while let Some(op) = self.undo_stack.pop_redo() {
+                    match op {
+                        CharSetUndoOperation::AtomicStart => depth += 1,
+                        CharSetUndoOperation::AtomicEnd => depth -= 1,
+                        _ => {}
+                    }
+                    self.apply_undo_operation(&op, false);
+                    self.undo_stack.restore_undo(op);
+                    if depth == 0 {
+                        break;
+                    }
+                }
+            }
             true
         } else {
             false

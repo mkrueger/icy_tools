@@ -23,6 +23,8 @@ mod igs_tools;
 mod rip_tools;
 #[path = "ai_skypix.rs"]
 mod skypix_tools;
+#[path = "ai_tdf.rs"]
+mod tdf_tools;
 #[path = "ai_workspace.rs"]
 mod workspace;
 use workspace::Workspace;
@@ -95,6 +97,7 @@ impl Proposal {
                 (diff.removed.max(diff.added), Some(diff))
             }
             Workspace::Font(draft) => (draft.changed_codes().len(), None),
+            Workspace::Tdf(draft) => (draft.changed_codes().len(), None),
             Workspace::Rip(draft) => (draft.changes(), None),
             Workspace::Igs(draft) => (draft.changes(), None),
             Workspace::Skypix(draft) => (draft.changes(), None),
@@ -681,28 +684,39 @@ impl Chat {
         ui.label(egui::RichText::new(fl!("ai-chat-copilot-login-hint")).small().weak());
     }
 
-    fn model_picker(&mut self, ui: &mut egui::Ui, width: f32) {
+    fn model_picker(&mut self, ui: &mut egui::Ui, width: f32) -> egui::Response {
         let selected = if self.model().is_empty() {
             fl!("ai-chat-select-model")
         } else {
             self.model().clone()
         };
         let width = width.min(ui.available_width());
+        let button = ui
+            .allocate_ui_with_layout(egui::vec2(width, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.add(
+                    egui::Button::new(egui::RichText::new(&selected).small().weak())
+                        .frame(false)
+                        .min_size(egui::vec2(0.0, 24.0))
+                        .truncate(),
+                )
+            })
+            .inner
+            .on_hover_text(format!("{}: {selected}", fl!("ai-chat-model")));
         let mut manage = false;
-        egui::ComboBox::from_id_salt("ai-model")
-            .selected_text(egui::RichText::new(selected).small())
-            .width(width)
-            .height(MODEL_MENU_HEIGHT)
-            .truncate()
-            .show_ui(ui, |ui| {
-                ui.set_max_width(width);
+        egui::Popup::menu(&button)
+            .id(egui::Id::new("ai-model-menu"))
+            .width(ui.ctx().content_rect().width().min(280.0))
+            .show(|ui| {
+                ui.set_max_width(ui.available_width());
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                 let mut chosen = None;
-                for model in &self.models {
-                    if ui.selectable_label(model == self.model(), model).clicked() {
-                        chosen = Some(model.clone());
+                egui::ScrollArea::vertical().max_height(MODEL_MENU_HEIGHT).show(ui, |ui| {
+                    for model in &self.models {
+                        if ui.selectable_label(model == self.model(), model).on_hover_text(model).clicked() {
+                            chosen = Some(model.clone());
+                        }
                     }
-                }
+                });
                 if let Some(model) = chosen {
                     *self.model_mut() = model;
                     self.persist = true;
@@ -715,6 +729,7 @@ impl Chat {
         if manage {
             self.settings_open = true;
         }
+        button
     }
 
     fn history(&mut self, ui: &mut egui::Ui, icons: &mut Icons) {
@@ -880,6 +895,48 @@ impl Chat {
                         script_diff(ui, diff);
                     }
                     (Workspace::Animation(_), None) => {}
+                    (Workspace::Tdf(draft), _) => {
+                        ui.label(appearance::bold(ui, fl!("ai-chat-proposal-font", count = proposal.changes)));
+                        let pages = 94_usize.div_ceil(tdf_tools::PAGE_SIZE);
+                        let old_page = proposal.glyph_page;
+                        ui.horizontal(|ui| {
+                            if ui.add_enabled(proposal.glyph_page > 0, egui::Button::new("<")).clicked() {
+                                proposal.glyph_page -= 1;
+                            }
+                            ui.label(format!("{}/{}", proposal.glyph_page + 1, pages));
+                            if ui.add_enabled(proposal.glyph_page + 1 < pages, egui::Button::new(">")).clicked() {
+                                proposal.glyph_page += 1;
+                            }
+                        });
+                        if old_page != proposal.glyph_page {
+                            proposal.preview = None;
+                            proposal.preview_error = None;
+                        }
+                        if proposal.preview.is_none() && proposal.preview_error.is_none() {
+                            let start = 33 + proposal.glyph_page * tdf_tools::PAGE_SIZE;
+                            let count = tdf_tools::PAGE_SIZE.min(127 - start);
+                            match draft.preview_buffer(&serde_json::json!({"start": start, "count": count})) {
+                                Ok(buffer) => {
+                                    let (size, pixels) =
+                                        buffer.render_to_rgba(&icy_engine::Rectangle::from(0, 0, buffer.width(), buffer.height()).into(), false);
+                                    let image = egui::ColorImage::from_rgba_unmultiplied([size.width as usize, size.height as usize], &pixels);
+                                    proposal.preview = Some(ui.ctx().load_texture("ai-tdf-proposal", image, egui::TextureOptions::NEAREST));
+                                }
+                                Err(error) => {
+                                    log::warn!("Cannot preview TDF proposal: {error}");
+                                    proposal.preview_error = Some(error);
+                                }
+                            }
+                        }
+                        if let Some(texture) = &proposal.preview {
+                            let size = texture.size_vec2();
+                            let scale = (ui.available_width() / size.x).min(1.0);
+                            ui.add(egui::Image::new((texture.id(), size * scale)));
+                        }
+                        if let Some(error) = &proposal.preview_error {
+                            ui.colored_label(ui.visuals().error_fg_color, error);
+                        }
+                    }
                     (Workspace::Font(draft), _) => {
                         ui.label(appearance::bold(ui, fl!("ai-chat-proposal-font", count = proposal.changes)));
                         ui.add_space(4.0);
@@ -988,7 +1045,12 @@ impl Chat {
             .fill(visuals.extreme_bg_color)
             .stroke(stroke)
             .corner_radius(8)
-            .inner_margin(egui::Margin::same(6))
+            .inner_margin(egui::Margin {
+                left: 6,
+                right: 6,
+                top: 2,
+                bottom: 0,
+            })
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 if let Some(attachment) = &self.attachment {
@@ -1111,13 +1173,16 @@ impl Chat {
                         egui::TextEdit::multiline(&mut self.input)
                             .id(prompt)
                             .frame(false)
-                            .desired_rows(2)
+                            .margin(egui::Margin::ZERO)
+                            .desired_rows(1)
                             .desired_width(f32::INFINITY)
                             .char_limit(32 * 1024)
                             .hint_text(fl!("ai-chat-prompt")),
                     );
                 });
                 ui.horizontal(|ui| {
+                    ui.spacing_mut().interact_size.y = 24.0;
+                    ui.spacing_mut().button_padding.y = 0.0;
                     let add = icons.button_sized(ui, "add", &fl!("ai-chat-add-menu"), false, 24.0);
                     egui::Popup::menu(&add)
                         .id(egui::Id::new("ai-add-menu"))
@@ -1656,7 +1721,7 @@ impl DrawApp {
             return Knowledge::Skypix;
         }
         if self.charfont.is_some() {
-            return Knowledge::None;
+            return Knowledge::Tdf;
         }
         if self.atascii.is_some() {
             return Knowledge::Atascii;
@@ -1710,6 +1775,13 @@ impl DrawApp {
                     (editor.state.font_width().max(0) as usize, editor.state.font_height().max(0) as usize) == (draft.width, draft.height)
                         && editor.state.get_all_glyph_data().len() == draft.glyphs.len()
                 }),
+                Workspace::Tdf(ref draft) => {
+                    !self.show_start
+                        && self
+                            .charfont
+                            .as_ref()
+                            .is_some_and(|editor| editor.state.selected_font_index() == draft.font_index)
+                }
             }
     }
 
@@ -1740,6 +1812,15 @@ impl DrawApp {
                 .map(|name| name.to_string_lossy().into_owned());
             let draft = animation_tools::AnimationDraft::new(&editor.source, file_name, status.frame_count, status.errors.first().cloned());
             return Some((Workspace::Animation(draft), document));
+        }
+        if !self.show_start {
+            if let Some(editor) = &self.charfont {
+                let font = tdf_tools::snapshot(editor, &self.document)?;
+                return Some((
+                    Workspace::Tdf(tdf_tools::TdfDraft::new(font, editor.state.selected_font_index(), editor.state.selected_char())),
+                    document,
+                ));
+            }
         }
         if let Some(editor) = self.rip.as_ref().filter(|_| !self.show_start) {
             return Some((Workspace::Rip(rip_tools::RipDraft::new(&editor.document)), document));
@@ -1780,6 +1861,7 @@ impl DrawApp {
                 _ => Err(fl!("ai-chat-apply-stale")),
             },
             Workspace::Font(draft) => self.apply_ai_glyphs(draft),
+            Workspace::Tdf(draft) => self.apply_ai_tdf(draft),
             Workspace::Rip(draft) => match &mut self.rip {
                 Some(editor) if draft.matches(&editor.document) => draft
                     .validate()
@@ -1799,6 +1881,25 @@ impl DrawApp {
             self.ai_chat.error = Some(error);
             self.ai_chat.proposal = Some(proposal);
         }
+    }
+
+    fn apply_ai_tdf(&mut self, draft: &tdf_tools::TdfDraft) -> Result<(), String> {
+        let editor = self.charfont.as_ref().ok_or_else(|| fl!("ai-chat-apply-stale-font"))?;
+        if !draft.matches(editor, &self.document)? {
+            return Err(fl!("ai-chat-apply-stale-font"));
+        }
+        let codes = draft.changed_codes();
+        self.change_charfont(|state| {
+            state.begin_atomic_undo();
+            for ch in codes {
+                match draft.font.glyph(ch) {
+                    Some(glyph) => state.set_glyph(ch, glyph.clone()),
+                    None => state.clear_glyph(ch),
+                }
+            }
+            state.end_atomic_undo();
+        });
+        Ok(())
     }
 
     fn apply_ai_glyphs(&mut self, draft: &font_tools::FontDraft) -> Result<(), String> {
@@ -2662,6 +2763,89 @@ mod tests {
     }
 
     #[test]
+    fn compact_model_label_opens_a_bounded_menu_and_preserves_selection() {
+        fn run(context: &egui::Context, chat: &mut Chat, click: Option<egui::Pos2>) -> (egui::FullOutput, egui::Rect) {
+            let events = click.map_or_else(Vec::new, |pos| {
+                vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ]
+            });
+            let mut rect = egui::Rect::NOTHING;
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 400.0))),
+                    events,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        rect = chat.model_picker(ui, COMPOSER_MODEL_WIDTH).rect;
+                    });
+                },
+            );
+            (output, rect)
+        }
+        fn text_rect(output: &egui::FullOutput, label: &str) -> egui::Rect {
+            output
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) if text.galley.text() == label => Some(egui::Rect::from_min_size(text.pos, text.galley.size())),
+                    _ => None,
+                })
+                .expect("menu label is visible")
+        }
+        let context = egui::Context::default();
+        let mut chat = Chat::new(AiChatSettings {
+            endpoint: "http://localhost:1234/v1".into(),
+            model: "local".into(),
+            ..Default::default()
+        });
+        chat.models = vec!["local".into(), "another-model".into(), "very-long-model-name-".repeat(20)];
+        let (output, button) = run(&context, &mut chat, None);
+        assert!(button.width() < COMPOSER_MODEL_WIDTH, "short names use only the space they need");
+        assert_eq!(button.height(), 24.0);
+        assert!(
+            !output
+                .shapes
+                .iter()
+                .any(|shape| { matches!(&shape.shape, egui::Shape::Rect(rect) if rect.rect == button && rect.fill != Color32::TRANSPARENT) }),
+            "the idle model label has no filled button background"
+        );
+
+        run(&context, &mut chat, Some(button.center()));
+        let (output, _) = run(&context, &mut chat, None);
+        let choice = text_rect(&output, "another-model");
+        let long = text_rect(&output, &chat.models[2]);
+        assert!(long.width() <= 280.0, "long model names cannot widen the popup");
+        run(&context, &mut chat, Some(choice.center()));
+        assert_eq!(chat.model(), "another-model");
+        assert!(chat.persist);
+        assert!(!egui::Popup::is_id_open(&context, egui::Id::new("ai-model-menu")));
+
+        *chat.model_mut() = chat.models[2].clone();
+        let (_, button) = run(&context, &mut chat, None);
+        assert!(button.width() <= COMPOSER_MODEL_WIDTH, "long selected names stay compact");
+        run(&context, &mut chat, Some(button.center()));
+        let (output, _) = run(&context, &mut chat, None);
+        let manage = text_rect(&output, &fl!("ai-chat-manage"));
+        run(&context, &mut chat, Some(manage.center()));
+        assert!(chat.settings_open);
+    }
+
+    #[test]
     fn compact_panel_keeps_history_and_composer_inside_the_window() {
         let mut app = DrawApp::new();
         app.ai_chat.visible = true;
@@ -2776,6 +2960,128 @@ mod tests {
         assert!(app.ai_chat.job.is_none());
         assert!(app.ai_chat.pending.is_none());
         assert_eq!(app.font_editor.as_ref().unwrap().state.get_all_glyph_data(), &original);
+    }
+
+    #[test]
+    fn composer_has_compact_top_and_bottom_padding() {
+        fn collect(shape: &egui::Shape, frames: &mut Vec<egui::Rect>, texts: &mut Vec<(String, egui::Rect)>) {
+            match shape {
+                egui::Shape::Rect(rect) if rect.stroke.width == 1.0 => frames.push(rect.rect),
+                egui::Shape::Text(text) => texts.push((text.galley.text().into(), text.visual_bounding_rect())),
+                egui::Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        collect(shape, frames, texts);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let mut chat = Chat::new(AiChatSettings {
+            model: "padding-test-model".into(),
+            ..Default::default()
+        });
+        let mut icons = Icons::default();
+        for input in ["", "First line\nSecond line"] {
+            chat.input = input.into();
+            let mut output = None;
+            for _ in 0..2 {
+                output = Some(context.run(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(600.0, 400.0))),
+                        ..Default::default()
+                    },
+                    |context| {
+                        egui::CentralPanel::default().show(context, |ui| {
+                            chat.composer(ui, &mut icons, true);
+                        });
+                    },
+                ));
+            }
+            let mut frames = Vec::new();
+            let mut texts = Vec::new();
+            for shape in output.unwrap().shapes {
+                collect(&shape.shape, &mut frames, &mut texts);
+            }
+            let prompt_text = if input.is_empty() { fl!("ai-chat-prompt") } else { input.into() };
+            let prompt = texts.iter().find(|(text, _)| text == &prompt_text).expect("prompt is rendered").1;
+            let model = texts.iter().find(|(text, _)| text == "padding-test-model").expect("model is rendered").1;
+            let frame = frames
+                .iter()
+                .find(|rect| rect.contains_rect(prompt) && rect.contains_rect(model))
+                .expect("composer frame surrounds prompt and controls");
+            let top = prompt.top() - frame.top();
+            let bottom = frame.bottom() - model.bottom();
+            assert!((0.0..=5.0).contains(&top), "top padding: {top}");
+            assert!((0.0..=10.0).contains(&bottom), "bottom padding: {bottom}");
+            assert!(model.top() >= prompt.bottom(), "multiline prompt does not overlap controls");
+        }
+    }
+
+    #[test]
+    fn tdf_full_font_proposals_preview_apply_undo_and_reject_stale_edits() {
+        let mut app = DrawApp::new();
+        app.create(NewKind::TheDraw, Size::new(80, 25));
+        app.charfont
+            .as_mut()
+            .unwrap()
+            .state
+            .fonts_mut()
+            .push(retrofont::tdf::TdfFont::new("Other", retrofont::tdf::TdfFontType::Block, 2));
+        assert_eq!(app.ai_editor_knowledge(), knowledge::EditorKnowledge::Tdf);
+        app.document.type_text("Original").unwrap();
+        let Some((mut workspace @ Workspace::Tdf(_), document)) = app.ai_draft() else {
+            panic!("TDF must expose whole-font tools, not a current-glyph canvas");
+        };
+        assert!(workspace::editor_hint(Some(&workspace)).contains("94 glyphs"));
+        assert!(workspace.call("icy_set_cells", &serde_json::json!({"cells": []})).is_err());
+        let glyphs: Vec<_> = (33..=126)
+            .map(|code| {
+                serde_json::json!({
+                    "code": code, "rows": [[{"char_code": 219, "fg": 15, "bg": 0}]]
+                })
+            })
+            .collect();
+        workspace.call("icy_write_tdf_glyphs", &serde_json::json!({"glyphs": glyphs})).unwrap();
+        assert_eq!(app.charfont.as_ref().unwrap().state.selected_font().unwrap().glyph_count(), 0);
+        assert!(app.document.modified());
+        app.ai_chat.pending_document = document;
+        app.ai_chat.handle(Ok(Response::Proposal("Full TDF font".into(), Box::new(workspace.clone()))));
+        let context = egui::Context::default();
+        let _ = context.run(egui::RawInput::default(), |context| {
+            egui::CentralPanel::default().show(context, |ui| app.ai_chat.proposal_card(ui));
+        });
+        assert!(app.ai_chat.proposal.as_ref().unwrap().preview.is_some());
+        app.accept_ai_proposal();
+        assert!(app.ai_chat.error.is_none(), "{:?}", app.ai_chat.error);
+        assert_eq!(app.charfont.as_ref().unwrap().state.selected_font().unwrap().glyph_count(), 94);
+        app.undo(false);
+        assert_eq!(app.charfont.as_ref().unwrap().state.selected_font().unwrap().glyph_count(), 1);
+        assert_eq!(
+            app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch),
+            'O',
+            "unsaved original glyph is preserved by undo"
+        );
+        app.undo(true);
+        let editor = app.charfont.as_mut().unwrap();
+        assert_eq!(editor.state.selected_font().unwrap().glyph_count(), 94);
+        assert_eq!(editor.state.fonts()[1].glyph_count(), 0, "other fonts are unchanged");
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("full.tdf");
+        editor.save(&mut app.document, &path).unwrap();
+        let loaded = icy_draw::charfont::CharFontDocument::load(&path).unwrap();
+        assert_eq!(loaded.state.selected_font().unwrap().glyph_count(), 94);
+
+        let Some((mut workspace, _)) = app.ai_draft() else { panic!("TDF draft") };
+        workspace
+            .call("icy_write_tdf_glyphs", &serde_json::json!({"glyphs": [{"code": 66, "rows": null}]}))
+            .unwrap();
+        app.document.type_text("User edit").unwrap();
+        let Workspace::Tdf(draft) = workspace else { panic!("TDF draft") };
+        assert!(app.apply_ai_tdf(&draft).is_err());
+        assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_some());
     }
 
     #[test]
