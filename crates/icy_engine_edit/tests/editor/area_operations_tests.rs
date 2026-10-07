@@ -1,7 +1,7 @@
 //! Tests for area operations (crop, flip, justify, scroll, erase)
 
 use icy_engine::{AttributedChar, Position, Rectangle, Selection, Shape, Size, TextAttribute, TextPane};
-use icy_engine_edit::EditState;
+use icy_engine_edit::{EditState, UndoState};
 
 /// Helper to create an EditState with a given size
 fn create_test_state(width: i32, height: i32) -> EditState {
@@ -87,7 +87,16 @@ fn test_crop_with_selection() {
 
     // Verify size is selection size
     assert_eq!(state.get_buffer().size(), Size::new(15, 8));
+    assert!(state.selection().is_none());
     assert_eq!(state.undo_stack_len(), initial_undo_len + 1);
+
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().size(), Size::new(40, 20));
+    assert_eq!(state.selection(), Some(rect_selection(10, 5, 15, 8)));
+
+    state.redo().unwrap();
+    assert_eq!(state.get_buffer().size(), Size::new(15, 8));
+    assert!(state.selection().is_none());
 }
 
 // ============================================================================

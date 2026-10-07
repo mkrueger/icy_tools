@@ -519,7 +519,8 @@ impl EditState {
     pub fn crop_rect(&mut self, rect: Rectangle) -> Result<()> {
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-crop"));
         self.crop_rect_art(rect)?;
-        self.place_tags(|tag| rect.contains_pt(tag.position).then(|| tag.position - rect.start))
+        self.place_tags(|tag| rect.contains_pt(tag.position).then(|| tag.position - rect.start))?;
+        self.deselect()
     }
 }
 
