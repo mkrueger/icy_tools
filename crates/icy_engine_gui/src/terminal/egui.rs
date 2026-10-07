@@ -19,7 +19,7 @@ impl CallbackTrait for TerminalCallback {
         resources: &mut CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
         let renderer = resources.get_mut::<TerminalShaderRenderer>().expect("terminal renderer initialized");
-        let previous_scale = self.frame.render_info.read().display_scale;
+        let previous = self.frame.render_info.read().clone();
         self.frame.prepare_frame(
             renderer,
             device,
@@ -32,8 +32,16 @@ impl CallbackTrait for TerminalCallback {
             info.bounds_x = self.bounds.min.x;
             info.bounds_y = self.bounds.min.y;
         }
-        // The frame was built with the previous scale, so a changed scale needs a corrected follow-up frame.
-        if previous_scale != self.frame.render_info.read().display_scale {
+        // Editor overlays use the previous render geometry and need a follow-up frame when it changes.
+        let current = self.frame.render_info.read();
+        if previous.display_scale != current.display_scale
+            || previous.bounds_x != current.bounds_x
+            || previous.bounds_y != current.bounds_y
+            || previous.viewport_x != current.viewport_x
+            || previous.viewport_y != current.viewport_y
+            || previous.viewport_width != current.viewport_width
+            || previous.viewport_height != current.viewport_height
+        {
             self.context.request_repaint();
         }
         Vec::new()

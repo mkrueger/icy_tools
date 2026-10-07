@@ -3603,6 +3603,7 @@ dependencies = [
  "parking_lot",
  "quantette",
  "rav1e",
+ "raw-window-handle",
  "rayon",
  "regex",
  "reqwest",
@@ -3624,7 +3625,9 @@ dependencies = [
  "tracing",
  "usvg 0.48.1",
  "walkdir",
+ "winit",
  "winres",
+ "x11rb",
 ]
 
 [[package]]

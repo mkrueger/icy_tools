@@ -130,10 +130,15 @@ rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
 axum = "0.8"
 schemars = "1.2"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { version = "0.30.13", optional = true, default-features = false, features = ["x11"] }
+x11rb = { version = "0.13.2", optional = true, default-features = false }
+raw-window-handle = { version = "0.6", optional = true }
+
 [features]
 default = ["egui"]
 legacy-ui = ["dep:icy_ui", "dep:rfd", "icy_engine_edit/legacy-ui", "icy_engine_gui/legacy-ui"]
-egui = ["dep:eframe", "dep:rfd", "dep:reqwest", "dep:github-copilot-sdk", "dep:async-trait", "icy_engine_gui/egui"]
+egui = ["dep:eframe", "dep:rfd", "dep:reqwest", "dep:github-copilot-sdk", "dep:async-trait", "dep:winit", "dep:x11rb", "dep:raw-window-handle", "icy_engine_gui/egui"]
 
 # Opt-in: enable rav1e's NASM-based assembly optimizations.
 rav1e-asm = ["rav1e/asm"]

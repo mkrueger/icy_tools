@@ -6,7 +6,7 @@ use crate::{
     reader::Reader,
 };
 
-fn packet(path: &Path, files: &[(String, Vec<u8>)]) {
+pub(crate) fn packet(path: &Path, files: &[(String, Vec<u8>)]) {
     let mut zip = zip::ZipWriter::new(File::create(path).unwrap());
     for (name, data) in files {
         zip.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
@@ -131,9 +131,9 @@ fn blue_wave_reader_search_and_personal_mail_accept_real_name_and_alias() {
 }
 
 #[test]
-fn blue_wave_rejects_incomplete_duplicate_mixed_and_invalid_body_packets() {
+fn blue_wave_rejects_incomplete_duplicate_and_mixed_packets() {
     let dir = TempDir::new();
-    for scenario in ["incomplete", "duplicate", "mixed", "marker"] {
+    for scenario in ["incomplete", "duplicate", "mixed"] {
         let mut files = crate::blue_wave::fixture_files(3, true);
         match scenario {
             "incomplete" => files.retain(|(name, _)| !name.ends_with(".MIX")),
@@ -142,12 +142,78 @@ fn blue_wave_rejects_incomplete_duplicate_mixed_and_invalid_body_packets() {
                 files.push(("CONTROL.DAT".into(), Vec::new()));
                 files.push(("MESSAGES.DAT".into(), Vec::new()));
             }
-            "marker" => files.iter_mut().find(|(name, _)| name.ends_with(".DAT")).unwrap().1[0] = b'X',
             _ => unreachable!(),
         }
         let path = dir.path().join(format!("{scenario}.zip"));
         packet(&path, &files);
         assert!(QwkPackage::load_from_file(&path).is_err(), "{scenario} packet must fail");
+    }
+}
+
+#[test]
+fn blue_wave_body_without_leading_marker_keeps_all_text() {
+    let dir = TempDir::new();
+    let mut files = crate::blue_wave::fixture_files(3, true);
+    files.iter_mut().find(|(name, _)| name.ends_with(".DAT")).unwrap().1[0] = b'X';
+    let path = dir.path().join("marker.zip");
+    packet(&path, &files);
+    let package = QwkPackage::load_from_file(&path).unwrap();
+    assert_eq!(package.read_message(0).unwrap().text.as_slice(), b"XHello\n\x82!");
+}
+
+#[test]
+fn blue_wave_reading_tolerates_unused_or_unusable_metadata_in_all_cache_modes() {
+    for scenario in [
+        "missing_login",
+        "long_login",
+        "invalid_alias",
+        "empty_tag",
+        "long_tag",
+        "duplicate_tag",
+        "cp437_tag",
+        "personal_count",
+        "empty_area_pointer",
+        "padded_area_number",
+    ] {
+        let dir = TempDir::new();
+        let mut files = crate::blue_wave::fixture_files(3, true);
+        match scenario {
+            "missing_login" => files[0].1[76..119].fill(0),
+            "long_login" => files[0].1[76..119].fill(b'A'),
+            "invalid_alias" => files[0].1[119] = b'\r',
+            "empty_tag" => files[0].1[1236..1257].fill(0),
+            "long_tag" => files[0].1[1236..1257].fill(b'A'),
+            "duplicate_tag" => {
+                let tag = files[0].1[1236..1257].to_vec();
+                files[0].1[1316..1337].copy_from_slice(&tag);
+            }
+            "cp437_tag" => files[0].1[1236] = 0x82,
+            "personal_count" => files[1].1[8..10].copy_from_slice(&u16::MAX.to_le_bytes()),
+            "empty_area_pointer" => files[1].1[24..28].copy_from_slice(&u32::MAX.to_le_bytes()),
+            "padded_area_number" => {
+                files[0].1[1230..1236].copy_from_slice(b"  12  ");
+                files[1].1[..6].copy_from_slice(b"  12  ");
+            }
+            _ => unreachable!(),
+        }
+        let path = dir.path().join(format!("{scenario}.zip"));
+        packet(&path, &files);
+        let cache = ExtractionCache::new(dir.path().join("cache"), 30);
+        let plain = QwkPackage::load_from_file(&path).unwrap();
+        let cold = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+        let warm = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+        assert_eq!(plain.infos, cold.infos, "{scenario}");
+        assert_eq!(cold.infos, warm.infos, "{scenario}");
+        for package in [&plain, &cold, &warm] {
+            assert_eq!(package.message_count(), 1, "{scenario}");
+            assert_eq!(package.read_message(0).unwrap().text.as_slice(), b"Hello\n\x82!", "{scenario}");
+            let posting = crate::blue_wave::posting_defaults(package.blue_wave.as_ref().unwrap(), 12);
+            assert_eq!(
+                posting.is_ok(),
+                matches!(scenario, "personal_count" | "empty_area_pointer" | "padded_area_number"),
+                "{scenario}"
+            );
+        }
     }
 }
 

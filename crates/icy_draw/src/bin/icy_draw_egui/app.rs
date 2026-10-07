@@ -214,9 +214,9 @@ fn filter_match_ranges(name: &str, filter: &str) -> Vec<std::ops::Range<usize>> 
 /// and 37 below. The screen takes up the canvas divided by this.
 const BORDER_SCALE: egui::Vec2 = egui::vec2(384.0 / 320.0, 272.0 / 200.0);
 
-/// Paints the border around `screen`, in the proportions of [`BORDER_SCALE`].
-fn paint_border(painter: &egui::Painter, screen: egui::Rect, color: Color32) {
-    let (horizontal, top, bottom) = (screen.width() * 32.0 / 320.0, screen.height() * 35.0 / 200.0, screen.height() * 37.0 / 200.0);
+/// Frames the visible screen, keeping border thickness proportional to the full screen at the current zoom.
+fn paint_border(painter: &egui::Painter, screen: egui::Rect, full_size: egui::Vec2, color: Color32) {
+    let (horizontal, top, bottom) = (full_size.x * 32.0 / 320.0, full_size.y * 35.0 / 200.0, full_size.y * 37.0 / 200.0);
     let outer = egui::Rect::from_min_max(screen.min - egui::vec2(horizontal, top), screen.max + egui::vec2(horizontal, bottom));
     for rect in [
         egui::Rect::from_min_max(outer.min, egui::pos2(outer.max.x, screen.min.y)),
@@ -380,6 +380,12 @@ pub struct DrawApp {
     script_output: String,
     mcp: Option<mcp::Bridge>,
     ai_chat: ai_chat::Chat,
+    #[cfg(target_os = "linux")]
+    native_drop: Option<super::native_drop::DropPointer>,
+    #[cfg(target_os = "linux")]
+    native_drop_error: Option<String>,
+    #[cfg(target_os = "linux")]
+    force_x11: bool,
     chrome: chrome::Chrome,
     pub persist_settings: bool,
     pub show_start: bool,
@@ -479,6 +485,12 @@ impl DrawApp {
             script_output: String::new(),
             mcp: None,
             ai_chat,
+            #[cfg(target_os = "linux")]
+            native_drop: None,
+            #[cfg(target_os = "linux")]
+            native_drop_error: None,
+            #[cfg(target_os = "linux")]
+            force_x11: false,
             chrome: chrome::Chrome::default(),
             persist_settings: false,
             show_start: false,
@@ -2284,14 +2296,15 @@ impl DrawApp {
             ) * info.display_scale;
         if let Some(color) = border {
             let size = self.document.with_state(|state| state.get_buffer().size());
-            let screen = egui::Rect::from_min_size(
-                origin,
-                egui::vec2(
-                    size.width as f32 * info.font_width,
-                    size.height as f32 * info.font_height * if info.scan_lines { 2.0 } else { 1.0 },
-                ) * info.display_scale,
+            let full_size = egui::vec2(
+                size.width as f32 * info.font_width,
+                size.height as f32 * info.font_height * if info.scan_lines { 2.0 } else { 1.0 },
+            ) * info.display_scale;
+            let visible = egui::Rect::from_min_size(
+                egui::pos2(info.bounds_x + info.viewport_x, info.bounds_y + info.viewport_y),
+                egui::vec2(info.viewport_width, info.viewport_height),
             );
-            paint_border(&ui.painter().with_clip_rect(outer), screen, color);
+            paint_border(&ui.painter().with_clip_rect(outer), visible, full_size, color);
         }
         let painter = ui.painter().with_clip_rect(response.rect);
         if self.show_grid && cell_size.x * info.display_scale >= 8.0 {
@@ -4009,6 +4022,30 @@ impl DrawApp {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    pub fn configure_native_drop(&mut self, creation: &eframe::CreationContext<'_>, force_x11: bool) {
+        self.force_x11 = force_x11;
+        match super::native_drop::DropPointer::new(creation) {
+            Ok(pointer) => {
+                self.native_drop = pointer;
+                self.native_drop_error = None;
+            }
+            Err(error) => {
+                self.ai_chat.native_drop_failed(error.clone());
+                self.native_drop_error = Some(error);
+            }
+        }
+    }
+
+    fn configure_window_command(&self, command: &mut std::process::Command) {
+        #[cfg(target_os = "linux")]
+        if self.force_x11 {
+            command.arg("--x11");
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = command;
+    }
+
     pub fn show(&mut self, context: &egui::Context) {
         if self.dialog.is_none() && !self.picker {
             if let Some(error) = self.autosave_error.take() {
@@ -4230,7 +4267,37 @@ impl DrawApp {
             self.finish_recovery();
         }
         let drop_blocked = self.dialog.is_some() || self.picker || self.layer_properties_open();
-        self.ai_chat.route_file_drop(context, drop_blocked);
+        #[cfg(not(target_os = "linux"))]
+        let native_position = None;
+        #[cfg(target_os = "linux")]
+        let native_position = {
+            let mut native_position = None;
+            if context.input(|input| !input.raw.hovered_files.is_empty() || !input.raw.dropped_files.is_empty()) {
+                if let Some(error) = &self.native_drop_error {
+                    native_position = Some(None);
+                    if context.input(|input| !input.raw.dropped_files.is_empty()) {
+                        self.ai_chat.native_drop_failed(error.clone());
+                        context.input_mut(|input| input.raw.dropped_files.clear());
+                    }
+                } else if let Some(pointer) = &self.native_drop {
+                    match pointer.position(context.pixels_per_point()) {
+                        Ok(position) => {
+                            native_position = Some(position);
+                            context.request_repaint_after(std::time::Duration::from_millis(33));
+                        }
+                        Err(error) => {
+                            self.ai_chat.native_drop_failed(error.clone());
+                            self.native_drop_error = Some(error);
+                            self.native_drop = None;
+                            native_position = Some(None);
+                            context.input_mut(|input| input.raw.dropped_files.clear());
+                        }
+                    }
+                }
+            }
+            native_position
+        };
+        self.ai_chat.route_file_drop(context, drop_blocked, native_position);
         if self.dialog.is_none() && !self.picker {
             for file in context.input(|input| input.raw.dropped_files.clone()) {
                 if let Some(path) = file.path {
@@ -4251,7 +4318,9 @@ impl DrawApp {
         if blocked {
             self.document.finish();
         }
-        self.menu(context);
+        if !self.show_start {
+            self.menu(context);
+        }
         self.ai_chat_panel(context, blocked);
         if let Some(editor) = &mut self.font_editor {
             let layout = super::font::Layout {
@@ -4340,7 +4409,13 @@ impl DrawApp {
         }
         if self.show_start {
             self.canvas_focus = false;
-            egui::CentralPanel::default().show(context, |ui| {
+            let style = context.style();
+            let mut frame = egui::Frame::central_panel(&style);
+            if style.visuals.dark_mode {
+                // Black like the logo.
+                frame = frame.fill(Color32::BLACK);
+            }
+            egui::CentralPanel::default().frame(frame).show(context, |ui| {
                 if blocked {
                     ui.disable();
                 }
@@ -4367,6 +4442,7 @@ impl DrawApp {
         } else {
             Color32::from_gray(212)
         };
+        *self.view.terminal.background_color.write() = well.to_array().map(|channel| f32::from(channel) / 255.0);
         if self.collab.active && self.collab.chat_visible {
             egui::TopBottomPanel::bottom("chat")
                 .resizable(true)

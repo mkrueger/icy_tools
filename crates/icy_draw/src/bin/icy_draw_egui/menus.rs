@@ -302,16 +302,8 @@ impl DrawApp {
             }
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button(menu_title(fl!("menu-file")), |ui| self.file_menu(ui, context));
-                if !self.show_start {
-                    ui.menu_button(menu_title(fl!("menu-edit")), |ui| self.edit_menu(ui, context));
-                }
-                if self.animation.is_none()
-                    && self.font_editor.is_none()
-                    && self.rip.is_none()
-                    && self.igs.is_none()
-                    && self.skypix.is_none()
-                    && !self.show_start
-                {
+                ui.menu_button(menu_title(fl!("menu-edit")), |ui| self.edit_menu(ui, context));
+                if self.animation.is_none() && self.font_editor.is_none() && self.rip.is_none() && self.igs.is_none() && self.skypix.is_none() {
                     ui.menu_button(menu_title(fl!("menu-selection")), |ui| self.selection_menu(ui));
                     // ATASCII screens have no per-character colors for the color menu and plugins to set.
                     if self.atascii.is_none() && self.vt52.is_none() && self.petscii.is_none() {
@@ -322,7 +314,7 @@ impl DrawApp {
                     if self.atascii.is_none() && self.vt52.is_none() && self.petscii.is_none() {
                         ui.menu_button(menu_title(fl!("menu-plugins")), |ui| self.extensions_menu(ui));
                     }
-                } else if (self.rip.is_some() || self.skypix.is_some()) && !self.show_start {
+                } else if self.rip.is_some() || self.skypix.is_some() {
                     ui.menu_button(menu_title(fl!("menu-view")), |ui| self.zoom_menu(ui));
                 }
                 ui.menu_button(menu_title(fl!("menu-help")), |ui| {
@@ -975,7 +967,11 @@ impl DrawApp {
 
     pub(super) fn new_window(&mut self) {
         let result = std::env::current_exe()
-            .and_then(|executable| std::process::Command::new(executable).spawn())
+            .and_then(|executable| {
+                let mut command = std::process::Command::new(executable);
+                self.configure_window_command(&mut command);
+                command.spawn()
+            })
             .map(|_| ())
             .map_err(|error| error.to_string());
         self.result(result);

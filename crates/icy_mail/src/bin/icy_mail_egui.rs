@@ -72,12 +72,17 @@ pub fn use_english() {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let log_level = if args.debug {
-        tracing_subscriber::filter::LevelFilter::DEBUG
-    } else {
-        tracing_subscriber::filter::LevelFilter::WARN
-    };
-    let _ = tracing_subscriber::fmt().with_max_level(log_level).try_init();
+    if let Err(error) = icy_mail::logging::init(args.debug) {
+        eprintln!("Could not initialize the logfile: {error}");
+        tracing_subscriber::fmt()
+            .with_max_level(if args.debug {
+                tracing_subscriber::filter::LevelFilter::DEBUG
+            } else {
+                tracing_subscriber::filter::LevelFilter::WARN
+            })
+            .try_init()
+            .map_err(anyhow::Error::from_boxed)?;
+    }
     eframe::run_native(
         // The application id (window class, storage), not a caption.
         "Icy Mail",

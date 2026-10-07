@@ -9,7 +9,11 @@ use serde::Serialize;
 pub const MAX_KNOWLEDGE_BYTES: usize = 48 * 1024;
 pub const MAX_INSTRUCTION_BYTES: usize = 8 * 1024;
 const MAX_FILE_BYTES: usize = 1024 * 1024;
-const MAX_REFERENCE_FILES: usize = 16;
+pub const MAX_REFERENCE_FILES: usize = 16;
+pub const REFERENCE_EXTENSIONS: &[&str] = &[
+    "txt", "md", "rst", "toml", "json", "jsonc", "yaml", "yml", "ini", "cfg", "conf", "log", "csv", "xml", "html", "htm", "css", "js", "jsx", "ts", "tsx",
+    "rs", "lua", "py", "c", "h", "cpp", "hpp", "sh", "sql", "pps", "ppl", "icy", "ans", "asc", "pcb",
+];
 const MAX_SCREEN_CELLS: i64 = 16 * 1024;
 const ICY_BOARD_GUIDANCE: &str = "Icy Board BBS conventions for the selected resources: Treat Icy Board as a first-class \
      target, not merely a historical PCBoard example. Icy Board, IcyBoard and icy_board name \
@@ -150,16 +154,29 @@ pub fn prepare(settings: &AiKnowledgeSettings) -> Result<String, String> {
     Ok(context)
 }
 
-pub fn read_reference(path: &Path) -> Result<String, String> {
+fn reference_format(path: &Path) -> Result<Option<FileFormat>, String> {
     let extension = path.extension().and_then(|extension| extension.to_str()).unwrap_or("").to_ascii_lowercase();
     let screen_format = match extension.as_str() {
         "icy" => Some(FileFormat::IcyDraw),
         "ans" => Some(FileFormat::Ansi),
         "asc" => Some(FileFormat::Ascii),
         "pcb" => Some(FileFormat::PCBoard),
-        "txt" | "md" | "rst" | "toml" | "json" => None,
-        _ => return Err("Supported references: UTF-8 txt/md/rst/toml/json and icy/ans/asc/pcb screens.".into()),
+        extension if extension.is_empty() || REFERENCE_EXTENSIONS.contains(&extension) => None,
+        _ => return Err("Supported references: UTF-8 text/config/source files and icy/ans/asc/pcb screens; images are separate attachments. PDF and binary documents are not supported.".into()),
     };
+    Ok(screen_format)
+}
+
+fn source_limit(format: Option<FileFormat>) -> usize {
+    if format == Some(FileFormat::IcyDraw) {
+        MAX_FILE_BYTES
+    } else {
+        MAX_KNOWLEDGE_BYTES
+    }
+}
+
+pub fn read_reference(path: &Path) -> Result<String, String> {
+    let screen_format = reference_format(path)?;
     if !std::fs::metadata(path).map_err(|error| error.to_string())?.is_file() {
         return Err("Reference must be a regular file.".into());
     }
@@ -167,23 +184,27 @@ pub fn read_reference(path: &Path) -> Result<String, String> {
     if !file.metadata().map_err(|error| error.to_string())?.is_file() {
         return Err("Reference must be a regular file.".into());
     }
-    let limit = if screen_format == Some(FileFormat::IcyDraw) {
-        MAX_FILE_BYTES
-    } else {
-        MAX_KNOWLEDGE_BYTES
-    };
+    let limit = source_limit(screen_format);
     let mut bytes = Vec::new();
     Read::by_ref(&mut file)
         .take((limit + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(|error| error.to_string())?;
+    reference_from_bytes(path, &bytes)
+}
+
+pub fn reference_from_bytes(path: &Path, bytes: &[u8]) -> Result<String, String> {
+    let screen_format = reference_format(path)?;
+    let limit = source_limit(screen_format);
     if bytes.len() > limit {
         return Err(format!("Reference file exceeds {} KiB.", limit / 1024));
     }
     let text = if let Some(format) = screen_format {
-        screen_reference(format, &bytes)?
+        screen_reference(format, bytes)?
     } else {
-        String::from_utf8(bytes).map_err(|_| "Text references must be UTF-8; use .asc for CP437 text.".to_owned())?
+        std::str::from_utf8(bytes)
+            .map_err(|_| "Text references must be UTF-8; use .asc for CP437 text.".to_owned())?
+            .to_owned()
     };
     if text.trim().is_empty() {
         return Err("Reference is empty.".into());

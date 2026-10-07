@@ -247,9 +247,22 @@ and can be copied.
 
 Nothing from the editor is attached automatically.
 
-#### Reference pictures
+#### Reference pictures and files
 
 You can also **drag a PNG, JPEG, BMP or WebP picture onto the visible chat panel**.
+Alternatively, use the composer's **Attach pictures or reference files** button
+(next to **+**) to select pictures or files. Both paths use the same validation,
+previews and import limits; cancelling the picker leaves the composer unchanged.
+The **+** button still attaches editor context.
+
+**Linux/Wayland:** the current windowing backend does not deliver native file
+drops on Wayland. The file picker works without changing backends. For native
+drag-and-drop, explicitly launch `icy_draw --x11` (or `icy_draw_egui --x11`);
+on a Wayland desktop this uses XWayland and requires a working X11 display.
+The default backend remains unchanged. New and recovery windows preserve the
+explicit `--x11` choice. X11 drops use the native window-relative pointer position
+and current UI scale to distinguish chat attachments from normal document drops.
+
 The highlighted drop target attaches one reference picture with a removable preview;
 dropping never submits a request or changes the document. Enter a prompt such as
 "Interpret this picture as 80x25 CP437 ANSI art using the current palette", then
@@ -274,8 +287,36 @@ New chat, provider/endpoint changes and closing the window clear them. Removing
 the pending picture does not remove pictures in earlier conversation turns.
 Copilot conversation replay resends the corresponding earlier pictures as inline
 blobs; CLI file access stays disabled. Drops outside the chat retain normal file
-opening behavior. Finish the current request/import or remove the pending picture
-before attaching another.
+opening behavior. Finish the current request/import before adding more attachments;
+remove the pending picture before attaching another picture.
+
+You can also **drop text, configuration or source files and `.icy`, `.ans`,
+`.asc`, `.pcb` screens onto the chat**. Common UTF-8 formats include Markdown,
+TOML/JSON/YAML, INI/CFG, CSV, Lua, Rust, Python, JavaScript/TypeScript, C/C++,
+HTML/CSS, shell scripts, SQL and PPL sources; extensionless text files such as
+README are accepted too. PDF and binary documents are not supported.
+
+Drop several files together, optionally with one picture. Each file gets a
+removable chip; click it to preview the exact read-only content that will be
+sent. Screens use the same bounded text, attributes, palette and tag snapshots
+as imported knowledge references; they are not opened as documents. An entire
+drop is validated before changing any attachments, so an invalid file does
+not partially attach a mixed batch. Existing picture and editor-snapshot
+attachments can coexist with file references.
+
+File references are **per-message snapshots**, not persistent knowledge
+selections: modifying the source afterward does not change the attached copy.
+Only basenames and decoded content are sent, never full source paths. Both
+providers receive the contents as untrusted reference data, not executable
+code or instructions. Up to 16 files and 48 KiB of combined encoded reference
+context can be attached per message; native `.icy` inputs retain their 1 MiB
+source limit, while other sources are limited to 48 KiB each. Oversized or
+unsupported files report an error without silently truncating or omitting them.
+Cancellation/failure restores the files; successful turns retain them in
+conversation history and Copilot replay. Removing a pending file does not
+erase earlier turns. New chat or a provider/endpoint change clears them.
+Dropping never sends automatically; attach, add a prompt, then Send. Do not
+attach confidential files unless you intend to share them with your provider.
 
 #### Editor snapshots
 

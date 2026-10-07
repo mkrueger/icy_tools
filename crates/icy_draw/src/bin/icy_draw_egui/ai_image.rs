@@ -3,7 +3,7 @@
 use std::{
     fs::File,
     io::{Cursor, Read},
-    sync::{mpsc, Arc},
+    sync::Arc,
 };
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -47,31 +47,7 @@ impl ReferenceImage {
     }
 }
 
-pub struct Import {
-    receiver: mpsc::Receiver<Result<ReferenceImage, String>>,
-}
-
-impl Import {
-    pub fn start(file: egui::DroppedFile, context: egui::Context) -> Self {
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            let result = read_drop(file);
-            let _ = sender.send(result);
-            context.request_repaint();
-        });
-        Self { receiver }
-    }
-
-    pub fn poll(&self) -> Option<Result<ReferenceImage, String>> {
-        match self.receiver.try_recv() {
-            Ok(result) => Some(result),
-            Err(mpsc::TryRecvError::Empty) => None,
-            Err(mpsc::TryRecvError::Disconnected) => Some(Err("Reference image worker disconnected.".into())),
-        }
-    }
-}
-
-fn read_drop(file: egui::DroppedFile) -> Result<ReferenceImage, String> {
+pub(super) fn read_drop(file: egui::DroppedFile) -> Result<ReferenceImage, String> {
     let name = file
         .path
         .as_ref()

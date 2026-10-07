@@ -28,6 +28,19 @@ The All Files filter remains available for other names.
 Incomplete, duplicate or mixed-format Blue Wave packets are rejected.
 Standalone reply archives are export files, not readable incoming packets.
 
+Recoverable Blue Wave quirks are logged instead of preventing reading: missing
+body markers, unusable login/alias metadata or echotags, inconsistent personal
+counts, and invalid pointers for empty areas. Space-padded area numbers are
+accepted. Original unrecognized dates are retained and logged. Reply composition
+and export still require valid posting metadata. Unsupported layouts, ambiguous
+message spans, overlaps, and out-of-bounds reads remain errors.
+
+Warnings and loading errors are written to `icy_mail.log` in the application's
+OS configuration directory (usually `~/.config/icy_mail/icy_mail.log` on Linux),
+as well as stderr. The egui frontend's `--debug` option includes debug diagnostics.
+Logs larger than 256 KiB are cleared on the next startup. If the logfile cannot
+be initialized, the error is reported to stderr and console logging is retained.
+
 Archive entries may expand to at most 10 GiB each; bulletin and screen files
 retain their separate 16 MiB limit. Cold extraction and disabled caching keep
 message data in memory; warm cache openings can show the first message before

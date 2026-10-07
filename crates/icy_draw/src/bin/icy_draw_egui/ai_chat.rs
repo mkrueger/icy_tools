@@ -22,6 +22,8 @@ mod workspace;
 use workspace::Workspace;
 #[path = "ai_connection.rs"]
 mod connection;
+#[path = "ai_attachment.rs"]
+mod file_attachment;
 #[path = "ai_image.rs"]
 mod image_attachment;
 #[path = "ai_knowledge.rs"]
@@ -41,12 +43,18 @@ struct Entry {
     text: String,
     attachment: Option<String>,
     image: Option<ReferenceImage>,
+    files: Option<file_attachment::FileReferences>,
 }
 
 impl Entry {
     fn message(&self) -> Message {
         if self.user {
-            Message::user(&self.text, self.attachment.as_deref()).with_image(self.image.clone())
+            let mut message = Message::user(&self.text, self.attachment.as_deref()).with_image(self.image.clone());
+            if let Some(files) = &self.files {
+                message.content.push_str("\n\n");
+                message.content.push_str(&files.context);
+            }
+            message
         } else {
             Message {
                 role: "assistant".into(),
@@ -112,7 +120,9 @@ pub(super) struct Chat {
     preview_attachment: bool,
     image: Option<ReferenceImage>,
     image_texture: Option<egui::TextureHandle>,
-    image_import: Option<image_attachment::Import>,
+    reference_import: Option<file_attachment::Import>,
+    files: Option<file_attachment::FileReferences>,
+    file_preview: Option<usize>,
     drop_hovered: bool,
     pending: Option<Entry>,
     job: Option<Job>,
@@ -146,15 +156,18 @@ impl Chat {
     }
 
     fn poll(&mut self) {
-        if let Some(result) = self.image_import.as_ref().and_then(image_attachment::Import::poll) {
-            self.image_import = None;
+        if let Some(result) = self.reference_import.as_ref().and_then(file_attachment::Import::poll) {
+            self.reference_import = None;
             match result {
-                Ok(image) => {
-                    self.image = Some(image);
-                    self.image_texture = None;
+                Ok(attachments) => {
+                    if let Some(image) = attachments.image {
+                        self.image = Some(image);
+                        self.image_texture = None;
+                    }
+                    self.files = attachments.files;
                 }
                 Err(error) => {
-                    log::warn!("Cannot attach reference picture: {error}");
+                    log::warn!("Cannot attach reference: {error}");
                     self.error = Some(error);
                 }
             }
@@ -199,6 +212,7 @@ impl Chat {
             text,
             attachment: None,
             image: None,
+            files: None,
         });
     }
 
@@ -214,6 +228,9 @@ impl Chat {
             if self.image.is_none() {
                 self.image = entry.image;
                 self.image_texture = None;
+            }
+            if self.files.is_none() {
+                self.files = entry.files;
             }
         }
     }
@@ -231,9 +248,11 @@ impl Chat {
         self.input.clear();
         self.attachment = None;
         self.preview_attachment = false;
+        self.files = None;
+        self.file_preview = None;
         self.image = None;
         self.image_texture = None;
-        self.image_import = None;
+        self.reference_import = None;
         self.drop_hovered = false;
         self.error = None;
         self.conversation += 1;
@@ -281,12 +300,12 @@ impl Chat {
     }
 
     fn can_send(&self) -> bool {
-        self.job.is_none() && self.image_import.is_none() && !self.input.trim().is_empty() && !self.model().trim().is_empty()
+        self.job.is_none() && self.reference_import.is_none() && !self.input.trim().is_empty() && !self.model().trim().is_empty()
     }
 
     /// `draft` is the drawing Copilot may edit and the document it belongs to.
     fn send(&mut self, context: &egui::Context, draft: Option<(Workspace, usize)>) {
-        if self.image_import.is_some() {
+        if self.reference_import.is_some() {
             self.error = Some(fl!("ai-chat-image-loading"));
             return;
         }
@@ -307,9 +326,11 @@ impl Chat {
             text: std::mem::take(&mut self.input).trim().to_owned(),
             attachment: self.attachment.take(),
             image: self.image.take(),
+            files: self.files.take(),
         };
         self.preview_attachment = false;
         self.image_texture = None;
+        self.file_preview = None;
         let mut messages: Vec<_> = self.entries.iter().map(Entry::message).collect();
         messages.push(entry.message());
         self.pending = Some(entry);
@@ -346,7 +367,8 @@ impl Chat {
     }
 
     /// Runs before the application's general file opener, using the visible panel's last layout.
-    pub(super) fn route_file_drop(&mut self, context: &egui::Context, blocked: bool) {
+    // The outer option distinguishes no native tracker from a tracked pointer on another screen.
+    pub(super) fn route_file_drop(&mut self, context: &egui::Context, blocked: bool, native_position: Option<Option<egui::Pos2>>) {
         let panel = self
             .visible
             .then(|| egui::containers::panel::PanelState::load(context, egui::Id::new("ai-chat")))
@@ -357,44 +379,63 @@ impl Chat {
         };
         let (position, hovering, dropping) = context.input(|input| {
             (
-                input.pointer.latest_pos(),
+                native_position.unwrap_or_else(|| input.pointer.latest_pos()),
                 !input.raw.hovered_files.is_empty(),
                 !input.raw.dropped_files.is_empty(),
             )
         });
-        if hovering {
+        if native_position == Some(None) {
+            self.drop_hovered = false;
+        } else if hovering {
             if let Some(position) = position {
                 self.drop_hovered = panel.rect.contains(position) && !blocked;
             }
         }
-        let target = position.map_or(self.drop_hovered, |position| panel.rect.contains(position));
+        let target = native_position != Some(None) && position.map_or(self.drop_hovered, |position| panel.rect.contains(position));
         if dropping && target {
             let files = context.input_mut(|input| std::mem::take(&mut input.raw.dropped_files));
             self.drop_hovered = false;
-            let error = if blocked {
-                Some(fl!("ai-chat-image-blocked"))
-            } else if self.job.is_some() || self.image_import.is_some() {
-                Some(fl!("ai-chat-image-busy"))
-            } else if files.len() != 1 {
-                Some(fl!("ai-chat-image-single"))
-            } else if self.image.is_some() {
-                Some(fl!("ai-chat-image-existing"))
-            } else {
-                None
-            };
-            if let Some(error) = error {
-                log::warn!("Reference picture drop rejected: {error}");
-                self.error = Some(error);
-            } else if let Some(file) = files.into_iter().next() {
-                self.error = None;
-                self.image_import = Some(image_attachment::Import::start(file, context.clone()));
-                if !self.needs_setup() {
-                    self.settings_open = false;
-                }
-            }
+            self.import_references(context, files, blocked);
         } else if !hovering && !dropping {
             self.drop_hovered = false;
         }
+    }
+
+    fn import_references(&mut self, context: &egui::Context, files: Vec<egui::DroppedFile>, blocked: bool) {
+        if files.is_empty() {
+            return;
+        }
+        let pictures = files.iter().filter(|file| file_attachment::is_picture(file)).count();
+        let file_count = self.files.as_ref().map_or(0, |files| files.files.len()) + files.len() - pictures;
+        let error = if blocked {
+            Some(fl!("ai-chat-image-blocked"))
+        } else if self.job.is_some() || self.reference_import.is_some() {
+            Some(fl!("ai-chat-image-busy"))
+        } else if pictures > 1 {
+            Some(fl!("ai-chat-image-single"))
+        } else if pictures > 0 && self.image.is_some() {
+            Some(fl!("ai-chat-image-existing"))
+        } else if file_count > knowledge::MAX_REFERENCE_FILES {
+            Some(fl!("ai-chat-files-limit"))
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            log::warn!("Reference import rejected: {error}");
+            self.error = Some(error);
+        } else {
+            self.error = None;
+            self.reference_import = Some(file_attachment::Import::start(files, self.files.clone(), context.clone()));
+            if !self.needs_setup() {
+                self.settings_open = false;
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn native_drop_failed(&mut self, error: String) {
+        log::warn!("Native reference drop tracking failed: {error}");
+        self.error = Some(fl!("ai-chat-native-drop-error", error = error));
     }
 
     fn header(&mut self, ui: &mut egui::Ui, icons: &mut Icons) {
@@ -560,7 +601,7 @@ impl Chat {
                 }
                 if ui.button(fl!("ai-knowledge-add-file")).clicked() {
                     if let Some(path) = rfd::FileDialog::new()
-                        .add_filter(fl!("ai-knowledge-files"), &["txt", "md", "rst", "toml", "json", "icy", "ans", "asc", "pcb"])
+                        .add_filter(fl!("ai-knowledge-files"), knowledge::REFERENCE_EXTENSIONS)
                         .pick_file()
                     {
                         match knowledge::read_reference(&path) {
@@ -929,7 +970,52 @@ impl Chat {
                         self.image_texture = None;
                     }
                 }
-                if self.image_import.is_some() {
+                let files_editable = self.reference_import.is_none();
+                if let Some(files) = &mut self.files {
+                    let mut remove = None;
+                    for (index, file) in files.files.iter().enumerate() {
+                        ui.push_id(("file-reference", index), |ui| {
+                            ui.horizontal(|ui| {
+                                let label = fl!("ai-chat-file-attached", name = file.name.clone());
+                                if ui
+                                    .add(egui::Button::new(label).selected(self.file_preview == Some(index)))
+                                    .on_hover_text(fl!("ai-chat-preview"))
+                                    .clicked()
+                                {
+                                    self.file_preview = if self.file_preview == Some(index) { None } else { Some(index) };
+                                }
+                                if ui
+                                    .add_enabled_ui(files_editable, |ui| {
+                                        icons.subtle_button(ui, "delete", &fl!("ai-chat-remove"), true, 20.0).clicked()
+                                    })
+                                    .inner
+                                {
+                                    remove = Some(index);
+                                }
+                            });
+                            if self.file_preview == Some(index) {
+                                egui::ScrollArea::both().id_salt("file-preview").max_height(120.0).show(ui, |ui| {
+                                    ui.add(
+                                        egui::Label::new(egui::RichText::new(&file.content).monospace().small())
+                                            .extend()
+                                            .selectable(true),
+                                    );
+                                });
+                            }
+                        });
+                    }
+                    if let Some(index) = remove {
+                        if let Err(error) = files.remove(index) {
+                            log::warn!("Cannot remove reference file: {error}");
+                            self.error = Some(error);
+                        }
+                        self.file_preview = None;
+                    }
+                    if files.files.is_empty() {
+                        self.files = None;
+                    }
+                }
+                if self.reference_import.is_some() {
                     ui.horizontal(|ui| {
                         ui.spinner();
                         ui.label(fl!("ai-chat-image-loading"));
@@ -959,7 +1045,27 @@ impl Chat {
                     ui.add_enabled_ui(can_attach && self.job.is_none(), |ui| {
                         attach = icons.button_sized(ui, "add", &fl!("ai-chat-attach"), false, 24.0).clicked();
                     });
-                    self.model_picker(ui, 180.0);
+                    ui.add_enabled_ui(self.job.is_none() && self.reference_import.is_none(), |ui| {
+                        if icons
+                            .button_sized(ui, "file_copy", &fl!("ai-chat-attach-files"), false, 24.0)
+                            .on_hover_text(fl!("ai-chat-attach-files-tip"))
+                            .clicked()
+                        {
+                            let files = rfd::FileDialog::new()
+                                .set_title(fl!("ai-chat-attach-files"))
+                                .pick_files()
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|path| egui::DroppedFile {
+                                    path: Some(path),
+                                    ..Default::default()
+                                })
+                                .collect();
+                            self.import_references(ui.ctx(), files, false);
+                        }
+                    });
+                    let model_width = (ui.available_width() - 24.0 - ui.spacing().item_spacing.x).clamp(0.0, 180.0);
+                    self.model_picker(ui, model_width);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if self.job.is_some() {
                             if icons.button_sized(ui, "stop", &fl!("ai-chat-cancel"), false, 24.0).clicked() {
@@ -1085,9 +1191,17 @@ fn user_bubble(ui: &mut egui::Ui, entry: &Entry) {
         .small()
         .weak()
     });
+    let file_notes: Vec<_> = entry.files.as_ref().map_or_else(Vec::new, |files| {
+        files
+            .files
+            .iter()
+            .map(|file| egui::RichText::new(fl!("ai-chat-file-attached", name = file.name.clone())).small().weak())
+            .collect()
+    });
     let width = measure(entry.text.clone().into())
         .max(note.clone().map_or(0.0, |note| measure(note.into())))
         .max(image_note.clone().map_or(0.0, |note| measure(note.into())))
+        .max(file_notes.iter().map(|note| measure(note.clone().into())).fold(0.0, f32::max))
         .ceil()
         + 1.0;
     ui.horizontal(|ui| {
@@ -1103,6 +1217,9 @@ fn user_bubble(ui: &mut egui::Ui, entry: &Entry) {
                         ui.label(note);
                     }
                     if let Some(note) = image_note {
+                        ui.label(note);
+                    }
+                    for note in file_notes {
                         ui.label(note);
                     }
                     ui.add(egui::Label::new(&entry.text).wrap().selectable(true));
@@ -1641,10 +1758,10 @@ mod tests {
         );
     }
 
-    fn wait_for_image(chat: &mut Chat) {
+    fn wait_for_references(chat: &mut Chat) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while chat.image_import.is_some() {
-            assert!(std::time::Instant::now() < deadline, "picture import did not finish");
+        while chat.reference_import.is_some() {
+            assert!(std::time::Instant::now() < deadline, "reference import did not finish");
             chat.poll();
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
@@ -1659,6 +1776,129 @@ mod tests {
         });
         app.ai_chat.visible = true;
         app
+    }
+
+    #[test]
+    fn native_drag_position_overrides_stale_or_missing_egui_pointer() {
+        let context = egui::Context::default();
+        let mut app = image_chat_app();
+        frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+        let panel = egui::containers::panel::PanelState::load(&context, egui::Id::new("ai-chat")).unwrap().rect;
+        let outside = panel.min - egui::vec2(30.0, 30.0);
+        for stale in [Some(outside), None] {
+            let _ = context.run(
+                egui::RawInput {
+                    events: vec![stale.map_or(egui::Event::PointerGone, egui::Event::PointerMoved)],
+                    hovered_files: vec![egui::HoveredFile::default()],
+                    ..Default::default()
+                },
+                |context| {
+                    app.ai_chat.route_file_drop(context, false, Some(Some(panel.center())));
+                    assert!(app.ai_chat.drop_hovered);
+                    app.ai_chat.route_file_drop(context, false, Some(Some(outside)));
+                    assert!(!app.ai_chat.drop_hovered);
+                },
+            );
+        }
+        // A stale pointer over chat must not consume a native drop outside chat.
+        let file = egui::DroppedFile {
+            name: "reference.txt".into(),
+            bytes: Some(b"reference".to_vec().into()),
+            ..Default::default()
+        };
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::PointerMoved(panel.center())],
+                dropped_files: vec![file.clone()],
+                ..Default::default()
+            },
+            |context| {
+                app.ai_chat.route_file_drop(context, false, Some(Some(outside)));
+                assert_eq!(context.input(|input| input.raw.dropped_files.len()), 1);
+                assert!(app.ai_chat.reference_import.is_none());
+                app.ai_chat.drop_hovered = true;
+                app.ai_chat.route_file_drop(context, false, Some(None));
+                assert!(!app.ai_chat.drop_hovered);
+                assert_eq!(context.input(|input| input.raw.dropped_files.len()), 1);
+            },
+        );
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::PointerGone],
+                dropped_files: vec![file],
+                ..Default::default()
+            },
+            |context| {
+                app.ai_chat.route_file_drop(context, false, Some(Some(panel.center())));
+                assert!(context.input(|input| input.raw.dropped_files.is_empty()));
+            },
+        );
+        wait_for_references(&mut app.ai_chat);
+        assert_eq!(app.ai_chat.files.as_ref().unwrap().files[0].content, "reference");
+        assert!(app.ai_chat.job.is_none());
+    }
+
+    #[test]
+    fn picker_import_reuses_validation_and_cancellation_preserves_composer() {
+        let context = egui::Context::default();
+        let mut app = image_chat_app();
+        let chat = &mut app.ai_chat;
+        chat.input = "Use this reference".into();
+        chat.attachment = Some("editor snapshot".into());
+        chat.image = Some(image_attachment::test_image());
+        chat.error = Some("previous error".into());
+        chat.import_references(&context, vec![], false);
+        assert_eq!(chat.error.as_deref(), Some("previous error"));
+        assert!(chat.image.is_some());
+        assert!(chat.reference_import.is_none());
+        let file = egui::DroppedFile {
+            name: "menu.toml".into(),
+            bytes: Some(b"title = 'Icy Board'".to_vec().into()),
+            ..Default::default()
+        };
+        chat.import_references(&context, vec![file.clone()], true);
+        assert_eq!(chat.error, Some(fl!("ai-chat-image-blocked")));
+        assert!(chat.reference_import.is_none());
+        let (pending, _sender) = file_attachment::Import::pending_for_test();
+        chat.reference_import = Some(pending);
+        chat.import_references(&context, vec![file.clone()], false);
+        assert_eq!(chat.error, Some(fl!("ai-chat-image-busy")));
+        chat.reference_import = None;
+        chat.import_references(&context, vec![file], false);
+        wait_for_references(chat);
+        assert!(chat.error.is_none(), "{:?}", chat.error);
+        assert!(chat.files.as_ref().unwrap().context.contains("Icy Board"));
+        assert_eq!(chat.input, "Use this reference");
+        assert_eq!(chat.attachment.as_deref(), Some("editor snapshot"));
+        assert!(chat.image.is_some());
+        assert!(chat.entries.is_empty());
+        assert!(chat.job.is_none());
+        assert!(!chat.send_requested);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn failed_native_tracking_does_not_fall_through_to_the_document_opener() {
+        let context = egui::Context::default();
+        let mut app = image_chat_app();
+        frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+        app.native_drop_error = Some("X11 connection unavailable".into());
+        let original = app.document.screen.clone();
+        let panel = egui::containers::panel::PanelState::load(&context, egui::Id::new("ai-chat")).unwrap().rect;
+        drop_frame(
+            &context,
+            &mut app,
+            Some(panel.center()),
+            vec![egui::DroppedFile {
+                path: Some(std::path::PathBuf::from("reference.png")),
+                ..Default::default()
+            }],
+            vec![],
+        );
+        assert!(app.ai_chat.error.as_ref().unwrap().contains("X11 connection unavailable"));
+        assert!(app.ai_chat.reference_import.is_none());
+        assert!(std::sync::Arc::ptr_eq(&original, &app.document.screen));
+        assert!(app.dialog.is_none());
     }
 
     #[test]
@@ -1689,12 +1929,208 @@ mod tests {
         assert!(app.ai_chat.job.is_none());
         assert!(!app.ai_chat.send_requested);
         assert_eq!(app.ai_chat.input, "Use blue shading");
-        wait_for_image(&mut app.ai_chat);
+        wait_for_references(&mut app.ai_chat);
         assert!(app.ai_chat.error.is_none(), "{:?}", app.ai_chat.error);
         assert_eq!(app.ai_chat.image, Some(image));
         frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
         assert!(app.ai_chat.image_texture.is_some());
         assert!(app.ai_chat.entries.is_empty());
+    }
+
+    #[test]
+    fn mixed_file_drops_preview_snapshots_without_opening_or_sending_documents() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("rules.lua");
+        std::fs::write(&path, "print('original reference')").unwrap();
+        let context = egui::Context::default();
+        let mut app = image_chat_app();
+        app.ai_chat.input = "Use these references".into();
+        app.ai_chat.attachment = Some("editor snapshot".into());
+        frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+        let panel = egui::containers::panel::PanelState::load(&context, egui::Id::new("ai-chat")).unwrap().rect;
+        let original = app.document.screen.clone();
+        let before = app.ai_editor_context();
+        let image = image_attachment::test_image();
+        let bytes = base64::engine::general_purpose::STANDARD.decode(&*image.data).unwrap();
+        drop_frame(
+            &context,
+            &mut app,
+            Some(panel.center()),
+            vec![
+                egui::DroppedFile {
+                    path: Some(path.clone()),
+                    ..Default::default()
+                },
+                egui::DroppedFile {
+                    name: "config.toml".into(),
+                    bytes: Some(b"color = 'blue'".to_vec().into()),
+                    ..Default::default()
+                },
+                egui::DroppedFile {
+                    name: image.name.clone(),
+                    bytes: Some(bytes.into()),
+                    ..Default::default()
+                },
+            ],
+            vec![],
+        );
+        wait_for_references(&mut app.ai_chat);
+        assert!(app.ai_chat.error.is_none(), "{:?}", app.ai_chat.error);
+        assert_eq!(app.ai_chat.image, Some(image));
+        assert_eq!(app.ai_chat.files.as_ref().unwrap().files.len(), 2);
+        assert_eq!(app.ai_chat.attachment.as_deref(), Some("editor snapshot"));
+        assert!(app.ai_chat.job.is_none());
+        assert!(app.ai_chat.pending.is_none());
+        assert_eq!(app.ai_chat.input, "Use these references");
+        assert!(std::sync::Arc::ptr_eq(&original, &app.document.screen));
+        assert_eq!(app.ai_editor_context(), before);
+        assert!(!app.ai_chat.files.as_ref().unwrap().context.contains(directory.path().to_str().unwrap()));
+        std::fs::write(&path, "modified after attaching").unwrap();
+        assert!(app.ai_chat.files.as_ref().unwrap().context.contains("original reference"));
+        assert!(!app.ai_chat.files.as_ref().unwrap().context.contains("modified after attaching"));
+
+        let output = frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
+        let position = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == "File: rules.lua" => Some(text.pos + text.galley.size() / 2.0),
+                _ => None,
+            })
+            .expect("reference preview chip is visible");
+        frame(
+            &context,
+            &mut app,
+            egui::vec2(1280.0, 820.0),
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        assert_eq!(app.ai_chat.file_preview, Some(0));
+
+        let previous = app.ai_chat.files.as_ref().unwrap().context.clone();
+        drop_frame(
+            &context,
+            &mut app,
+            Some(panel.center()),
+            vec![
+                egui::DroppedFile {
+                    name: "new.txt".into(),
+                    bytes: Some(b"new".to_vec().into()),
+                    ..Default::default()
+                },
+                egui::DroppedFile {
+                    name: "bad.rs".into(),
+                    bytes: Some(vec![0xff].into()),
+                    ..Default::default()
+                },
+            ],
+            vec![],
+        );
+        assert!(app.ai_chat.job.is_none(), "dropping references never starts a request");
+        wait_for_references(&mut app.ai_chat);
+        assert!(app.ai_chat.error.is_some());
+        assert_eq!(
+            app.ai_chat.files.as_ref().unwrap().context,
+            previous,
+            "a late invalid file leaves all previous references intact"
+        );
+        assert_eq!(app.ai_chat.input, "Use these references");
+        assert_eq!(app.ai_editor_context(), before);
+    }
+
+    #[test]
+    fn sending_is_blocked_while_reference_files_are_being_prepared() {
+        let mut chat = Chat::new(AiChatSettings {
+            model: "text-model".into(),
+            ..Default::default()
+        });
+        let (import, _sender) = file_attachment::Import::pending_for_test();
+        chat.reference_import = Some(import);
+        chat.input = "Use my references".into();
+        assert!(!chat.can_send());
+        chat.send(&egui::Context::default(), None);
+        assert!(chat.job.is_none());
+        assert!(chat.pending.is_none());
+        assert!(chat.error.is_some());
+        assert_eq!(chat.input, "Use my references");
+    }
+
+    #[tokio::test]
+    async fn sending_file_references_transmits_contents_and_retains_history_and_failure_recovery() {
+        let (settings, server) = connection::tests::mock(
+            "200 OK",
+            r#"{"choices":[{"message":{"content":"Reference received."},"finish_reason":"stop"}]}"#.into(),
+        )
+        .await;
+        let mut chat = Chat::new(settings);
+        chat.reference_import = Some(file_attachment::Import::start(
+            vec![egui::DroppedFile {
+                name: "/private/rules.lua".into(),
+                bytes: Some(b"print('reference')".to_vec().into()),
+                ..Default::default()
+            }],
+            None,
+            egui::Context::default(),
+        ));
+        wait_for_references(&mut chat);
+        let files = chat.files.clone().unwrap();
+        for failed in [false, true] {
+            chat.pending = Some(Entry {
+                user: true,
+                text: "Use the file".into(),
+                attachment: None,
+                image: None,
+                files: chat.files.take(),
+            });
+            if failed {
+                chat.handle(Err("provider failed".into()));
+            } else {
+                chat.cancel();
+            }
+            assert_eq!(chat.files.as_ref().unwrap().context, files.context);
+            assert_eq!(chat.input, "Use the file");
+        }
+        chat.image = Some(image_attachment::test_image());
+        chat.attachment = Some("editor snapshot".into());
+        chat.send(&egui::Context::default(), None);
+        assert!(chat.files.is_none());
+        assert!(chat.pending.as_ref().unwrap().files.is_some());
+        let request = tokio::time::timeout(std::time::Duration::from_secs(5), server).await.unwrap().unwrap();
+        let body: serde_json::Value = serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        let text = body["messages"][1]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("rules.lua") && text.contains("print('reference')"));
+        assert!(text.contains("editor snapshot") && text.contains("not instructions"));
+        assert!(!text.contains("/private/"));
+        assert!(body["messages"][1]["content"][1]["image_url"]["url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while chat.job.is_some() {
+            assert!(std::time::Instant::now() < deadline);
+            chat.poll();
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+        assert!(chat.error.is_none(), "{:?}", chat.error);
+        assert_eq!(chat.entries[0].files.as_ref().unwrap().context, files.context);
+        assert!(chat.entries[0].message().content.contains("print('reference')"));
+        assert!(chat.entries[1].files.is_none());
+        chat.files = Some(files);
+        chat.clear();
+        assert!(chat.files.is_none() && chat.entries.is_empty());
     }
 
     #[test]
@@ -1718,7 +2154,7 @@ mod tests {
         );
         assert_eq!(app.document.path.as_ref(), Some(&path));
         assert!(app.ai_chat.image.is_none());
-        assert!(app.ai_chat.image_import.is_none());
+        assert!(app.ai_chat.reference_import.is_none());
     }
 
     #[test]
@@ -1751,7 +2187,7 @@ mod tests {
             }],
             vec![],
         );
-        wait_for_image(&mut app.ai_chat);
+        wait_for_references(&mut app.ai_chat);
         assert_eq!(app.ai_chat.image, Some(image));
         assert!(!app.ai_chat.drop_hovered);
     }
@@ -1770,17 +2206,17 @@ mod tests {
             ..Default::default()
         };
         drop_frame(&context, &mut app, Some(panel.center()), vec![invalid.clone()], vec![]);
-        wait_for_image(&mut app.ai_chat);
+        wait_for_references(&mut app.ai_chat);
         assert!(app.ai_chat.error.is_some());
         assert!(app.ai_chat.image.is_none());
         drop_frame(&context, &mut app, Some(panel.center()), vec![invalid.clone(), invalid.clone()], vec![]);
         assert!(app.ai_chat.error.is_some());
-        assert!(app.ai_chat.image_import.is_none());
+        assert!(app.ai_chat.reference_import.is_none());
         let image = image_attachment::test_image();
         app.ai_chat.image = Some(image.clone());
         drop_frame(&context, &mut app, Some(panel.center()), vec![invalid], vec![]);
         assert_eq!(app.ai_chat.image, Some(image));
-        assert!(app.ai_chat.image_import.is_none());
+        assert!(app.ai_chat.reference_import.is_none());
         assert_eq!(app.ai_chat.input, "keep this prompt");
         assert_eq!(app.ai_editor_context(), before);
         assert!(app.ai_chat.job.is_none());
@@ -1796,6 +2232,7 @@ mod tests {
                 text: "Draw from this".into(),
                 attachment: Some("editor snapshot".into()),
                 image: Some(image.clone()),
+                files: None,
             });
             if failed {
                 chat.handle(Err("The selected model rejected image input".into()));
@@ -1812,6 +2249,7 @@ mod tests {
             text: "Picture".into(),
             attachment: None,
             image: Some(image.clone()),
+            files: None,
         });
         chat.push_reply("Draft ready".into());
         assert_eq!(chat.entries[0].message().image, Some(image));
@@ -1819,7 +2257,7 @@ mod tests {
         assert!(chat.entries.is_empty());
         assert!(chat.image.is_none());
         assert!(chat.image_texture.is_none());
-        assert!(chat.image_import.is_none());
+        assert!(chat.reference_import.is_none());
     }
 
     const MODES: [(NewKind, &str); 10] = [
@@ -1944,6 +2382,7 @@ mod tests {
             text: "previous".into(),
             attachment: None,
             image: None,
+            files: None,
         });
         chat.clear();
         assert!(chat.entries.is_empty());
@@ -1993,6 +2432,7 @@ mod tests {
             text: "Design an RPG font".into(),
             attachment: None,
             image: None,
+            files: None,
         });
         app.ai_chat.visible = true;
         app.ai_chat.settings_open = false;
@@ -2109,6 +2549,7 @@ mod tests {
             text: "private".into(),
             attachment: None,
             image: None,
+            files: None,
         });
         chat.models = vec!["local".into()];
         chat.connected = true;
@@ -2203,18 +2644,21 @@ mod tests {
                     text: "How can I make this logo look more metallic?".into(),
                     attachment: Some("snapshot".into()),
                     image: None,
+                    files: None,
                 },
                 Entry {
                     user: false,
                     text: "## Metallic shading\n\nUse a **vertical ramp** from bright to dark:\n\n- Top rows: `0xDB` in white\n- Middle: light gray with `0xB2`\n- Bottom: dark gray `0xB1`\n\n```\n\u{2588}\u{2593}\u{2592}\u{2591}\n```\nThat gives the classic chrome look.".into(),
                     attachment: None,
                     image: None,
+                    files: None,
                 },
                 Entry {
                     user: true,
                     text: "Thanks!".into(),
                     attachment: None,
                     image: None,
+                    files: None,
                 },
             ];
             app.ai_chat.attachment = Some("x".repeat(3000));

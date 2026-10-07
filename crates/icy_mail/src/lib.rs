@@ -4,6 +4,7 @@ pub mod blue_wave;
 mod blue_wave_tests;
 pub mod drafts;
 pub mod editor;
+pub mod logging;
 pub mod options;
 pub mod perf;
 pub mod qwk;

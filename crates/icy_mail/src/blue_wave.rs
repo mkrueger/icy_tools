@@ -11,8 +11,11 @@
 //! marker in FTI's length and others do not (MultiMail and ENiGMA document this
 //! interoperability difference). Adjacent offsets/the file end disambiguate
 //! contiguous spans; otherwise parsing fails rather than truncating a body.
-//! The caller must check that marker (this API receives only DAT's length),
-//! and normalize CRLF/CR to LF.
+//! The caller must skip that marker (this API receives only DAT's length) and
+//! normalize CRLF/CR to LF. Some doors (e.g. OLMS) omit the marker on a few
+//! messages, so a missing marker means the whole span is body text.
+//! Unusable posting identities/echotags and unused MIX fields are logged rather
+//! than blocking reading. Reply generation still validates posting metadata.
 //! Soft CR (0x8d) is optional wrapping, not a line ending. Bodies remain CP437.
 //! FTI dates have no specified timezone; recognized dates are interpreted as UTC.
 
@@ -156,6 +159,7 @@ fn packet_id(b: &[u8]) -> crate::Res<String> {
 
 fn number(b: &[u8]) -> crate::Res<u16> {
     let s = ascii(b, "area number")?;
+    let s = s.trim();
     if !s.bytes().all(|c| c.is_ascii_digit()) {
         return bad("Blue Wave area number is not decimal");
     }
@@ -237,18 +241,26 @@ pub fn parse(inf: &[u8], mix: &[u8], fti: &[u8], dat_len: u64) -> crate::Res<Pac
         messages: Vec::new(),
     };
     if packet.info.user_name.is_empty() {
-        return bad("Blue Wave INF has no login identity");
+        log::warn!("Blue Wave INF has no login identity; reading is available but replies are disabled");
     }
-    field(&packet.info.user_name, 42, "login identity")?;
-    field(&packet.info.alias, 42, "alias identity")?;
+    for (value, name) in [(&packet.info.user_name, "login identity"), (&packet.info.alias, "alias identity")] {
+        if let Err(error) = field(value, 42, name) {
+            log::warn!("{error}; retaining Blue Wave metadata for reading");
+        }
+    }
     let mut area_numbers = HashSet::new();
     let mut tags = HashSet::new();
     for a in records(inf, header_len, area_len)?.chunks_exact(area_len) {
         let number = number(&a[..6])?;
-        let echotag = ascii(&a[6..27], "echotag")?;
-        field(echotag.as_bytes(), 20, "echotag")?;
-        if !area_numbers.insert(number) || !tags.insert(echotag.to_ascii_lowercase()) {
-            return bad("Duplicate Blue Wave area number or echotag");
+        let echotag: String = text(&a[6..27]).into_iter().map(crate::editor::cp437_char).collect();
+        if !area_numbers.insert(number) {
+            return bad("Duplicate Blue Wave area number");
+        }
+        if let Err(error) = ascii(echotag.as_bytes(), "echotag").and_then(|_| field(echotag.as_bytes(), 20, "echotag")) {
+            log::warn!("Blue Wave area {number}: {error}; retaining area for reading");
+        }
+        if !tags.insert(echotag.to_ascii_lowercase()) {
+            log::warn!("Duplicate Blue Wave echotag {echotag:?} in area {number}; retaining area for reading");
         }
         packet.areas.push(Area {
             number,
@@ -270,9 +282,15 @@ pub fn parse(inf: &[u8], mix: &[u8], fti: &[u8], dat_len: u64) -> crate::Res<Pac
         }
         let count = word(m, 6) as usize;
         if word(m, 8) as usize > count {
-            return bad("Blue Wave personal count exceeds message count");
+            log::warn!("Blue Wave MIX area {area}: personal count exceeds message count; ignoring unused personal count");
         }
         let start = dword(m, 10) as usize;
+        if count == 0 {
+            if start > i32::MAX as usize || !start.is_multiple_of(fti_len) || start > fti.len() {
+                log::warn!("Blue Wave MIX area {area}: invalid unused FTI pointer {start}; ignoring pointer for empty area");
+            }
+            continue;
+        }
         if start > i32::MAX as usize || !start.is_multiple_of(fti_len) || start > fti.len() || count > (fti.len() - start) / fti_len {
             return bad("Blue Wave MIX header span is outside FTI");
         }
@@ -295,6 +313,12 @@ pub fn parse(inf: &[u8], mix: &[u8], fti: &[u8], dat_len: u64) -> crate::Res<Pac
             spans.push((ptr, len, packet.messages.len()));
             let raw = text(&h[144..164]);
             let parsed_date = date(&raw);
+            if parsed_date.is_none() && !raw.is_empty() {
+                log::warn!(
+                    "Blue Wave area {area} message {num}: unrecognized date {:?}; preserving original date",
+                    String::from_utf8_lossy(&raw)
+                );
+            }
             packet.messages.push(Message {
                 area,
                 number: num,
@@ -796,7 +820,9 @@ mod tests {
         assert!(parse(&b, &mix, &fti, dat.len() as u64).is_err());
         let mut b = inf.clone();
         b[1316..1322].copy_from_slice(b"local\0");
-        assert!(parse(&b, &mix, &fti, dat.len() as u64).is_err());
+        let p = parse(&b, &mix, &fti, dat.len() as u64).unwrap();
+        assert_eq!(p.messages.len(), 1);
+        assert!(validate_packet(&p).is_err());
         let mut b = mix.clone();
         b[14..16].copy_from_slice(b"12");
         assert!(parse(&inf, &b, &fti, dat.len() as u64).is_err());

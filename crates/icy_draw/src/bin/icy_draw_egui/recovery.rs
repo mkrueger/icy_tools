@@ -174,7 +174,11 @@ impl DrawApp {
         let id = offer.orphan.id().to_owned();
         // The new window claims the file once this one releases it.
         drop(offer);
-        let result = std::env::current_exe().and_then(|executable| std::process::Command::new(executable).arg("--recover").arg(&id).spawn());
+        let result = std::env::current_exe().and_then(|executable| {
+            let mut command = std::process::Command::new(executable);
+            self.configure_window_command(&mut command);
+            command.arg("--recover").arg(&id).spawn()
+        });
         if let Err(error) = result {
             if let Some(dir) = self.recovery.as_ref().map(|recovery| recovery.dir().to_path_buf()) {
                 if let Ok(orphan) = store::claim(&dir, &id) {

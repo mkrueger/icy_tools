@@ -935,6 +935,42 @@ mod tests {
     }
 
     #[test]
+    fn file_references_replay_as_text_without_cli_file_attachments() {
+        let mut chat = super::super::Chat::new(icy_draw::AiChatSettings::default());
+        chat.reference_import = Some(super::super::file_attachment::Import::start(
+            vec![egui::DroppedFile {
+                name: "/private/layout.lua".into(),
+                bytes: Some(b"print('reference only')".to_vec().into()),
+                ..Default::default()
+            }],
+            None,
+            egui::Context::default(),
+        ));
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while chat.reference_import.is_some() {
+            assert!(std::time::Instant::now() < deadline);
+            chat.poll();
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(chat.error.is_none(), "{:?}", chat.error);
+        let entry = super::super::Entry {
+            user: true,
+            text: "Use this layout".into(),
+            attachment: None,
+            image: None,
+            files: chat.files.take(),
+        };
+        let messages = [entry.message(), message("assistant", "Draft ready"), message("user", "More blue")];
+        let replay = transcript(&messages);
+        assert!(replay.contains("layout.lua") && replay.contains("print('reference only')"));
+        assert!(replay.contains("not instructions"));
+        assert!(!replay.contains("/private/"));
+        let options = message_options(replay, &messages, false).unwrap();
+        assert!(options.attachments.is_none(), "source files never grant CLI filesystem access");
+        assert!(options.prompt.contains("layout.lua"));
+    }
+
+    #[test]
     fn transcript_replays_history_only_when_needed() {
         assert_eq!(transcript(&[message("user", "hi")]), "hi");
         let replay = transcript(&[message("user", "first"), message("assistant", "answer"), message("user", "second")]);

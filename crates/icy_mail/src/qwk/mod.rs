@@ -273,16 +273,20 @@ impl QwkPackage {
     pub fn load_from_file(path: impl AsRef<Path>) -> Res<Self> {
         let _timer = crate::perf::Timer::new("qwk::load_from_file");
         let path = path.as_ref();
-        Self::from_extracted(path, Self::extract_packet(path)?)
+        Self::extract_packet(path)
+            .and_then(|extracted| Self::from_extracted(path, extracted))
+            .inspect_err(|error| log::error!("unable to load mail packet {}: {error}", path.display()))
     }
 
     pub fn load_from_file_cached(path: impl AsRef<Path>, cache: &ExtractionCache) -> Res<Self> {
         let _timer = crate::perf::Timer::new("qwk::load_from_file_cached");
         let path = path.as_ref();
-        let mut extracted = cache.load(path, || Self::extract_packet(path))?;
+        let mut extracted = cache
+            .load(path, || Self::extract_packet(path))
+            .inspect_err(|error| log::error!("unable to extract mail packet {}: {error}", path.display()))?;
         let identity = extracted.cache_identity.take();
         let indexed = extracted.metadata.is_some();
-        let mut package = Self::from_extracted(path, extracted)?;
+        let mut package = Self::from_extracted(path, extracted).inspect_err(|error| log::error!("unable to load mail packet {}: {error}", path.display()))?;
         if !indexed && identity.is_some() {
             let _timer = crate::perf::Timer::new("qwk::build_cached_threads");
             package.thread_rows = Some(Arc::new(crate::threading::build_threads(&package.infos.iter().collect::<Vec<_>>())));
@@ -849,11 +853,17 @@ fn blue_wave_body(data: &MessageData, message: &crate::blue_wave::Message) -> Re
     let offset = message.body_offset.checked_sub(1).ok_or("Invalid Blue Wave body offset")?;
     let length = message.body_len.checked_add(1).ok_or("Invalid Blue Wave body length")?;
     let bytes = data.read_range(offset, length)?;
+    // Some doors (e.g. OLMS) omit the marker for some messages; the span is then all body text.
     if bytes.first() != Some(&b' ') {
-        return Err("Blue Wave message body is missing its leading marker".into());
+        log::warn!(
+            "Blue Wave area {} message {} at DAT offset {offset}: missing leading marker; retaining entire body span",
+            message.area,
+            message.number
+        );
     }
-    let mut body = Vec::with_capacity(bytes.len() - 1);
-    let mut text = bytes[1..].iter().copied().peekable();
+    let bytes = bytes.strip_prefix(b" ").unwrap_or(&bytes);
+    let mut body = Vec::with_capacity(bytes.len());
+    let mut text = bytes.iter().copied().peekable();
     while let Some(byte) = text.next() {
         match byte {
             b'\r' => {

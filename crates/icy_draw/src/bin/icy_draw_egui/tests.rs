@@ -1,4 +1,25 @@
 use super::*;
+
+#[cfg(target_os = "linux")]
+#[test]
+fn additional_windows_preserve_only_the_explicit_x11_choice() {
+    let mut app = DrawApp::new();
+    for force in [false, true] {
+        app.force_x11 = force;
+        let mut command = std::process::Command::new("icy_draw");
+        app.configure_window_command(&mut command);
+        command.arg("--recover").arg("document-id");
+        let arguments: Vec<_> = command.get_args().map(|arg| arg.to_str().unwrap()).collect();
+        assert_eq!(
+            arguments,
+            if force {
+                vec!["--x11", "--recover", "document-id"]
+            } else {
+                vec!["--recover", "document-id"]
+            }
+        );
+    }
+}
 use eframe::{egui_wgpu, wgpu};
 use icy_engine_gui::TerminalShaderRenderer;
 
@@ -1911,6 +1932,66 @@ fn gpu_selection_mask_covers_the_same_cells_as_a_rectangle() {
 
 #[test]
 #[ignore = "requires a working wgpu adapter"]
+fn gpu_petscii_border_follows_the_visible_screen_when_resized() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let mut app = DrawApp::new();
+        app.create(NewKind::Petscii, Size::new(40, 25));
+        let index = app.petscii_border().unwrap();
+        let (red, green, blue) = app.document.with_state(|state| state.get_buffer().palette.rgb(index));
+        for mode in [ScalingMode::Manual(2.0), ScalingMode::Auto, ScalingMode::FitWidth] {
+            app.settings.monitor_settings.scaling_mode = mode;
+            for size in [[1280, 820], [900, 600], [800, 450], [1280, 820]] {
+                app.view.scroll_to = Some(egui::vec2(100.0, 80.0));
+                for _ in 0..3 {
+                    gpu.capture(&mut app, size, 1.0, vec![], "petscii-border-warmup");
+                }
+                let pixels = gpu.capture(&mut app, size, 1.0, vec![], "petscii-border");
+                let info = app.view.terminal.render_info.read();
+                let visible = egui::Rect::from_min_size(
+                    egui::pos2(info.bounds_x + info.viewport_x, info.bounds_y + info.viewport_y),
+                    egui::vec2(info.viewport_width, info.viewport_height),
+                );
+                for point in [
+                    visible.center_top() - egui::vec2(0.0, 3.0),
+                    visible.center_bottom() + egui::vec2(0.0, 3.0),
+                    visible.left_center() - egui::vec2(3.0, 0.0),
+                    visible.right_center() + egui::vec2(3.0, 0.0),
+                ] {
+                    let offset = (point.y as usize * size[0] as usize + point.x as usize) * 4;
+                    assert_eq!(&pixels[offset..offset + 4], &[red, green, blue, 255], "border at {point:?} in {size:?}");
+                }
+            }
+        }
+    });
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_petscii_canvas_background_matches_the_editor() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let size = [1280, 820];
+        let mut app = DrawApp::new();
+        app.create(NewKind::Petscii, Size::new(40, 25));
+        app.settings.monitor_settings.scaling_mode = ScalingMode::Manual(1.0);
+        let border = app.petscii_border();
+        assert!(border.is_some());
+        for (theme, gray) in [(egui::Theme::Dark, 22), (egui::Theme::Light, 212)] {
+            gpu.context.set_theme(theme);
+            gpu.capture(&mut app, size, 1.0, vec![], "petscii-background-warmup");
+            let pixels = gpu.capture(&mut app, size, 1.0, vec![], "petscii-background");
+            for point in [app.canvas_rect.min + egui::vec2(4.0, 4.0), app.canvas_rect.min - egui::vec2(4.0, 4.0)] {
+                let offset = (point.y as usize * size[0] as usize + point.x as usize) * 4;
+                assert_eq!(&pixels[offset..offset + 4], &[gray, gray, gray, 255], "{theme:?} background at {point:?}");
+            }
+            assert_eq!(app.petscii_border(), border);
+        }
+    });
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
 fn gpu_editor_modes_and_dialogs_render() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         let mut gpu = Gpu::new().await;
@@ -3474,6 +3555,41 @@ fn recovery_dialog_can_postpone_and_discard() {
     assert!(second.offers.is_empty());
     frame(&context, &mut second, size, vec![]);
     assert!(second.dialog.is_none());
+}
+
+#[test]
+fn compact_start_window_keeps_actions_and_recent_files_visible() {
+    use clap::Parser;
+
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::Vec2::from(crate::Args::parse_from(["icy_draw"]).initial_window_size());
+    let mut app = DrawApp::new();
+    app.show_start = true;
+    let directory = tempfile::tempdir().unwrap();
+    let paths: Vec<_> = (0..8).map(|index| directory.path().join(format!("recent-{index}.ans"))).collect();
+    for path in &paths {
+        std::fs::write(path, "").unwrap();
+    }
+    app.settings.recent_files = serde_json::from_value(serde_json::json!({ "files": paths })).unwrap();
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    let output = frame(&context, &mut app, size, vec![]);
+    for label in ["Open…", "Connect to Server…", "Settings…"] {
+        let position = text_position(&output, label).unwrap();
+        assert!(position.y < size.y - 30.0, "{label} is below the visible area: {position:?}");
+    }
+    let tiles_right = text_position(&output, &NewKind::Animation.name()).unwrap().x;
+    for index in 0..8 {
+        let position = text_position(&output, &format!("recent-{index}.ans")).unwrap();
+        assert!(position.x > tiles_right, "recent files should remain beside the three tile columns");
+        assert!(position.y < size.y - 30.0);
+    }
+    assert!(text_position(&output, "or drop a file anywhere in this window").is_none());
+    click_text(&context, &mut app, size, "Custom…");
+    assert!(matches!(app.dialog, Some(Dialog::New)));
 }
 
 #[test]
