@@ -3696,7 +3696,15 @@ fn tdf_font_selector_shows_type_icons_without_changing_names_in_both_layouts() {
         }
         let output = frame(&context, &mut app, size, vec![]);
         for label in ["1. New Font", "2. Blocks", selected] {
-            assert!(text_position(&output, label).is_some(), "missing font list entry: {label}");
+            assert!(
+                output.shapes.iter().any(|shape| match &shape.shape {
+                    egui::Shape::Text(text) if text.galley.text() == label => {
+                        shape.clip_rect.contains_rect(egui::Rect::from_min_size(text.pos, text.galley.size()))
+                    }
+                    _ => false,
+                }),
+                "font list entry is not fully visible: {label}"
+            );
         }
         for icon in ["paint_brush", "rectangle_filled", "rectangle_outline"] {
             assert!(app.icons.loaded(icon), "missing font type icon: {icon}");

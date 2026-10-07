@@ -1255,9 +1255,11 @@ impl DrawApp {
         egui::Popup::menu(&response).id(id).width(width).show(|ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
             let spacing = ui.spacing().item_spacing.y;
+            let visible_height = fonts.len().min(8) as f32 * (widgets::CONTROL_HEIGHT + spacing) - spacing;
             egui::ScrollArea::vertical()
                 .id_salt("tdf-font-list")
-                .max_height(8.0 * (widgets::CONTROL_HEIGHT + spacing) - spacing)
+                .min_scrolled_height(visible_height)
+                .max_height(visible_height)
                 .show(ui, |ui| {
                     let width = ui.available_width();
                     for (index, (label, kind)) in fonts.iter().enumerate() {
