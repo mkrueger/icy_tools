@@ -28,7 +28,7 @@ pub struct ReferenceImage {
 }
 
 impl ReferenceImage {
-    pub(super) fn pixels(&self) -> Result<image::RgbaImage, String> {
+    pub(in crate::app) fn pixels(&self) -> Result<image::RgbaImage, String> {
         image::RgbaImage::from_raw(self.width, self.height, self.rgba.to_vec()).ok_or_else(|| "Invalid reference image dimensions".into())
     }
 
@@ -51,7 +51,7 @@ impl ReferenceImage {
     }
 }
 
-pub(super) fn read_drop(file: egui::DroppedFile) -> Result<ReferenceImage, String> {
+pub(in crate::app) fn read_drop(file: egui::DroppedFile) -> Result<ReferenceImage, String> {
     let name = file
         .path
         .as_ref()

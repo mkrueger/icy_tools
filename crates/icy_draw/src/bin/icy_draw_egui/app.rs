@@ -21,6 +21,8 @@ use std::{
 use super::widgets::{self, Icons};
 #[path = "ai_chat.rs"]
 mod ai_chat;
+#[path = "ai_import.rs"]
+mod ai_import;
 #[path = "atascii.rs"]
 mod atascii;
 #[path = "chrome.rs"]
@@ -70,6 +72,7 @@ enum Dialog {
     Export,
     FontSelect,
     FontImport(Box<font_import::FontImportDialog>),
+    AiImport(Box<ai_import::ImportDialog>),
     FontExport(Box<font_export::FontExportDialog>),
     TextArtFontSelect,
     Palette,
@@ -114,6 +117,7 @@ enum FileAction {
     ExportPalette,
     LoadFont,
     ImportFont,
+    AiImport,
     /// A font for the ATASCII screen.
     LoadAtasciiFont,
     ImportTaglist,
@@ -235,6 +239,7 @@ const PREVIEW_OPACITY: f32 = 0.7;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum NewKind {
     Ansi,
+    AiImport,
     Atascii,
     Vt52,
     Petscii,
@@ -249,7 +254,7 @@ pub enum NewKind {
 impl NewKind {
     pub fn groups() -> [(String, &'static [NewKind]); 3] {
         [
-            (fl!("new-group-ansi"), &[Self::Ansi, Self::Animation, Self::Rip]),
+            (fl!("new-group-ansi"), &[Self::Ansi, Self::AiImport, Self::Animation, Self::Rip]),
             (fl!("new-group-retro"), &[Self::Atascii, Self::Vt52, Self::Igs, Self::Petscii, Self::Skypix]),
             (fl!("new-group-fonts"), &[Self::BitmapFont, Self::TheDraw]),
         ]
@@ -258,6 +263,7 @@ impl NewKind {
     pub fn name(self) -> String {
         match self {
             NewKind::Ansi => fl!("new-file-editor-ansi"),
+            NewKind::AiImport => fl!("menu-ai-import"),
             NewKind::Atascii => fl!("new-file-editor-atascii"),
             NewKind::Vt52 => fl!("new-file-editor-vt52"),
             NewKind::Petscii => fl!("new-file-editor-petscii"),
@@ -273,6 +279,7 @@ impl NewKind {
     pub fn description(self) -> String {
         match self {
             NewKind::Ansi => fl!("new-kind-ansi-description"),
+            NewKind::AiImport => fl!("ai-import-description"),
             NewKind::Atascii => fl!("new-kind-atascii-description"),
             NewKind::Vt52 => fl!("new-kind-vt52-description"),
             NewKind::Petscii => fl!("new-kind-petscii-description"),
@@ -288,6 +295,7 @@ impl NewKind {
     pub fn icon(self) -> &'static str {
         match self {
             NewKind::Ansi => "pencil",
+            NewKind::AiImport => "paint_brush",
             NewKind::Atascii => "text",
             NewKind::Vt52 => "cursor",
             NewKind::Petscii => "spray",
@@ -326,6 +334,7 @@ pub struct DrawApp {
     receiver: Receiver<Picked>,
     pending: Option<PathBuf>,
     pending_font: Option<icy_engine::BitFont>,
+    pending_import: Option<icy_engine::TextBuffer>,
     pending_connect: bool,
     quitting: bool,
     allow_close: bool,
@@ -437,6 +446,7 @@ impl DrawApp {
             receiver,
             pending: None,
             pending_font: None,
+            pending_import: None,
             pending_connect: false,
             quitting: false,
             allow_close: false,
@@ -519,6 +529,7 @@ impl DrawApp {
     /// Replaces the current document with a new, empty one of the given kind.
     pub(super) fn create(&mut self, kind: NewKind, size: Size) {
         match kind {
+            NewKind::AiImport => self.open_ai_import(),
             NewKind::Ansi => {
                 let document = Document::new(size);
                 let template = self.new_template;
@@ -592,6 +603,7 @@ impl DrawApp {
 
     pub fn open(&mut self, path: PathBuf) {
         self.pending_font = None;
+        self.pending_import = None;
         self.document.finish();
         if let Some(editor) = &mut self.font_editor {
             editor.finish();
@@ -785,6 +797,10 @@ impl DrawApp {
                     .add_filter(fl!("set-font-filter-all"), &["*"])
                     .pick_file(),
                 FileAction::ImportFont => font_import::file_dialog(dialog).pick_file(),
+                FileAction::AiImport => dialog
+                    .set_title(fl!("ai-import-title"))
+                    .add_filter(fl!("file-dialog-filter-images"), &["png", "jpg", "jpeg", "bmp", "webp"])
+                    .pick_file(),
                 FileAction::ExportFont { ref file_name, ref extension } => dialog
                     .set_title(fl!("menu-export-font").trim_end_matches('…'))
                     .set_file_name(file_name)
@@ -899,6 +915,7 @@ impl DrawApp {
             Err(error) => {
                 self.continue_after_save = false;
                 self.pending_font = None;
+                self.pending_import = None;
                 self.dialog = Some(Dialog::Error(error));
             }
         }
@@ -913,6 +930,8 @@ impl DrawApp {
             self.show_connect_dialog();
         } else if let Some(font) = self.pending_font.take() {
             self.install_imported_font(font);
+        } else if let Some(buffer) = self.pending_import.take() {
+            self.install_imported_ansi(buffer);
         } else if let Some(path) = self.pending.take() {
             self.load_path(path);
         } else {
@@ -927,6 +946,7 @@ impl DrawApp {
             editor.finish();
         }
         self.pending = None;
+        self.pending_import = None;
         self.pending_connect = false;
         self.quitting = false;
         if self.modified() || self.font_editor.as_ref().is_some_and(|editor| editor.modified()) {
@@ -940,6 +960,39 @@ impl DrawApp {
     fn install_imported_font(&mut self, font: icy_engine::BitFont) {
         self.replace(Document::new(Size::new(80, 25)));
         self.font_editor = Some(super::font::FontEditor::new(font));
+    }
+
+    fn open_ai_import(&mut self) {
+        self.document.finish();
+        if let Some(editor) = &mut self.font_editor {
+            editor.finish();
+        }
+        self.dialog = Some(Dialog::AiImport(Box::default()));
+    }
+
+    fn import_ansi(&mut self, buffer: icy_engine::TextBuffer) {
+        self.document.finish();
+        if let Some(editor) = &mut self.font_editor {
+            editor.finish();
+        }
+        self.pending = None;
+        self.pending_font = None;
+        self.pending_connect = false;
+        self.quitting = false;
+        if self.modified() {
+            self.pending_import = Some(buffer);
+            self.dialog = Some(Dialog::Close);
+        } else {
+            self.install_imported_ansi(buffer);
+        }
+    }
+
+    fn install_imported_ansi(&mut self, buffer: icy_engine::TextBuffer) {
+        let mut document = Document::from_state(icy_engine_edit::EditState::from_buffer(buffer));
+        document.metadata_dirty = true;
+        self.replace(document);
+        self.new_kind = NewKind::Ansi;
+        self.pending_import = None;
     }
 
     fn open_font_export(&mut self) {
@@ -2717,6 +2770,7 @@ impl DrawApp {
         self.document.finish();
         self.pending = None;
         self.pending_font = None;
+        self.pending_import = None;
         self.pending_connect = false;
         self.quitting = false;
         self.dialog = Some(if self.modified() { Dialog::Close } else { Dialog::New });
@@ -3668,6 +3722,19 @@ impl DrawApp {
                     None => self.dialog = Some(Dialog::FontImport(draft)),
                 }
             }
+            Dialog::AiImport(draft) => {
+                let mut draft = draft.clone();
+                keep = false;
+                match draft.show(context, self.picker) {
+                    Some(ai_import::Action::Browse) => {
+                        self.dialog = Some(Dialog::AiImport(draft));
+                        self.choose(context, FileAction::AiImport);
+                    }
+                    Some(ai_import::Action::Accept(buffer)) => self.import_ansi(*buffer),
+                    Some(ai_import::Action::Cancel) => self.canvas_focus = true,
+                    None => self.dialog = Some(Dialog::AiImport(draft)),
+                }
+            }
             Dialog::FontExport(draft) => {
                 let mut draft = draft.clone();
                 keep = false;
@@ -3772,6 +3839,7 @@ impl DrawApp {
                         if response.action.is_some() || response.dismissed {
                             self.continue_after_save = false;
                             self.pending_font = None;
+                            self.pending_import = None;
                             keep = false;
                         }
                     }
@@ -3933,6 +4001,8 @@ impl DrawApp {
                                     kinds(self, &mut columns[0]);
                                     if self.new_kind.has_size() {
                                         self.new_size_group(&mut columns[1], false, current);
+                                    } else if self.new_kind == NewKind::AiImport {
+                                        columns[1].label(fl!("ai-import-new-description"));
                                     } else if self.new_kind == NewKind::Igs {
                                         self.new_igs_group(&mut columns[1]);
                                     } else if self.new_kind == NewKind::Atascii {
@@ -3949,6 +4019,8 @@ impl DrawApp {
                                 kinds(self, ui);
                                 if self.new_kind.has_size() {
                                     self.new_size_group(ui, false, current);
+                                } else if self.new_kind == NewKind::AiImport {
+                                    ui.label(fl!("ai-import-new-description"));
                                 } else if self.new_kind == NewKind::Igs {
                                     self.new_igs_group(ui);
                                 } else if self.new_kind == NewKind::Atascii {
@@ -4018,6 +4090,7 @@ impl DrawApp {
                             self.quitting = false;
                             self.pending = None;
                             self.pending_font = None;
+                            self.pending_import = None;
                             self.pending_connect = false;
                             self.continue_after_save = false;
                             keep = false;
@@ -4229,6 +4302,11 @@ impl DrawApp {
                             draft.load(&path);
                         }
                     }
+                    FileAction::AiImport => {
+                        if let Some(Dialog::AiImport(draft)) = &mut self.dialog {
+                            draft.load(context, &path);
+                        }
+                    }
                     FileAction::ExportFont { .. } => {
                         if let Some(Dialog::FontExport(draft)) = &mut self.dialog {
                             draft.set_path(&path);
@@ -4245,6 +4323,7 @@ impl DrawApp {
             } else {
                 self.continue_after_save = false;
                 self.pending_font = None;
+                self.pending_import = None;
                 self.pending_connect = false;
             }
         }

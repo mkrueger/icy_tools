@@ -356,6 +356,9 @@ impl DrawApp {
         if item(ui, &fl!("menu-open"), Some(&OPEN), true) {
             self.choose(context, FileAction::Open);
         }
+        if item(ui, &fl!("menu-ai-import"), None, true) {
+            self.open_ai_import();
+        }
         if self.animation.is_none() && self.charfont.is_none() && self.rip.is_none() && self.igs.is_none() && self.skypix.is_none() {
             if item(ui, &fl!("menu-import-font"), None, true) {
                 self.dialog = Some(Dialog::FontImport(Box::default()));

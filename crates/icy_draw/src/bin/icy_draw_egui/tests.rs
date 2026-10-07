@@ -3777,7 +3777,7 @@ fn tdf_font_selector_shows_eight_rows_and_scrolls_to_more_fonts() {
     }
 }
 
-fn click_text(context: &egui::Context, app: &mut DrawApp, size: egui::Vec2, label: &str) {
+pub(super) fn click_text(context: &egui::Context, app: &mut DrawApp, size: egui::Vec2, label: &str) {
     let output = frame(context, app, size, vec![]);
     let position = text_position(&output, label).unwrap_or_else(|| panic!("no {label:?} on screen"));
     frame(context, app, size, vec![egui::Event::PointerMoved(position)]);

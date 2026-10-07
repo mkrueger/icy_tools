@@ -119,7 +119,7 @@ pub fn editor_hint(workspace: Option<&Workspace>) -> String {
                 "Use native glyph_codes/font_pages, not CP437 assumptions. char_code writes a screen glyph, \
                  not a terminal control. Preserve font pages and shared colors; PETSCII text follows the \
                  current bank, ATASCII inverse uses high-bit glyphs, VT52 uses Atari ST characters. \
-                 For local picture conversion use mode='full'."
+                 For local picture conversion use preset='faithful', mode='full'."
             } else {
                 super::canvas::ANSI_GUIDANCE
             };
@@ -129,11 +129,13 @@ pub fn editor_hint(workspace: Option<&Workspace>) -> String {
                  and read the target region, checking the current layer is visible and unlocked. \
                  For image conversion, read icy_read_canvas_glyphs for the active font pages and prefer \
                  icy_convert_reference_image for a local first pass using the attached picture. \
-                 Simplify the image to the available grid and actual glyph shapes, then refine with \
-                 icy_set_cells batches. A textual description alone does not create art. \
+                 For CP437 styled conversions, inspect the PNG and metrics, then use icy_refine_reference_image \
+                 with a specific visual critique and tuning changes; it retains only measured improvements. \
+                 Finish parameter trials before any icy_set_cells touch-ups. \
+                 A textual description alone does not create art. \
                  {guidance} \
                  Use icy_preview_canvas to inspect the actual rendered draft and correct defects; \
-                 no more than three preview/conversion passes per turn. Check cell data with icy_read_region; \
+                 no more than three previews and three conversion/refinement trials per turn. Check cell data with icy_read_region; \
                  only claim a draft was created if successful write calls actually changed it. \
                  If tools reject the edits or the draft remains unchanged, explain that explicitly.]",
                 workspace.editor(),

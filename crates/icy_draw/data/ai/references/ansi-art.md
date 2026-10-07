@@ -29,11 +29,24 @@ space; remove isolated speckles, accidental outlines and unreadable detail.
 Faces need readable feature spacing more than fine texture.
 
 For picture conversion, use icy_convert_reference_image as a local starting
-point: half_blocks for clean color masses, blocks for selected block/shade
+point. For CP437 choose preset scene for perceptual color matching, blended
+shades and edge-aware neighbor consistency; toon for simplified lightness and
+flat regions; pixel_art for nearest-neighbor resizing and literal glyph matching
+in perceptual color space. Faithful (the default) retains the original RGB
+pixel matcher and is required for native retro editors. Scene defaults to blocks;
+other CP437 presets default to half_blocks. An explicit mode always restricts
+the glyphs: half_blocks fits real block masks; half_pixels uses two independent
+area-sampled pixels per cell (styled CP437 with a horizontal half-block font);
+blocks for selected block/shade
 shapes, full for all real glyphs, ascii for codes 32..126 only. Default to
 contain (preserves the full picture) and no dithering. Crop only when the
-composition calls for it. A conversion is not automatically scene-style art:
-simplify and refine it. Use explicit layer-relative target bounds.
+composition calls for it; stretch distorts proportions and should only be used
+when explicitly desired. Optional hue_families guides chromatic hues while
+allowing neutral shade blenders and different hues on each side of a boundary.
+Half-pixel mode supports gentle lightness dithering without shifting hue.
+A conversion is not automatically scene-style art:
+simplify and refine it. Styles do not generate a new source image or guarantee
+hand-drawn quality. Use explicit layer-relative target bounds.
 
 For ASCII-only requests use printable characters and their visual weight;
 do not insert block/shade glyphs. For BBS menus prioritize alignment, hotkeys,
@@ -41,6 +54,26 @@ text contrast and functional empty space over decorative illustration.
 
 After drawing, call icy_preview_canvas to SEE the rendered draft with its
 actual palette, fonts and aspect ratio. Inspect the whole composition, then
-correct the most important defects. Use at most three preview/conversion
-passes per turn. Only claim changes backed by successful tool writes; the user
+correct the most important defects. For a CP437 scene/toon/pixel_art conversion,
+use the bounded critique loop: convert once, preview the entire converted region,
+describe the most important visible defect, and call icy_refine_reference_image
+with one or two tuning changes. Brightness and contrast adjust tone; saturation
+adjusts chroma; local_contrast emphasizes small lightness details before palette
+reduction; lightness_levels simplifies tone bands; shade_penalty controls
+Scene texture; coherence suppresses near-tie color speckles. Read the effective
+options and metrics instead of guessing the current settings.
+
+The refinement tool fixes the original source, target, fit, glyph mode and
+transparency background, and keeps a trial only when its source-relative
+objective improves. Rejected trials leave the best draft and its settings intact.
+Preview the retained result before the next trial. Do not repeatedly reconvert
+to bypass that protection. Stop if visually acceptable or the budget is exhausted;
+there are at most three conversion/refinement trials combined and three previews
+per turn. Metrics compare actual glyph colors at cell/quadrant scales and edges;
+they do not measure recognition, composition or artistic merit. Still inspect
+faces, contours and legibility. Do manual cell touch-ups after parameter trials:
+refinement refuses to overwrite edits inside the converted region. Faithful and
+native retro conversions use previews and manual corrections, not this tuner.
+
+Only claim changes backed by successful tool writes; the user
 must still Apply. A description of an image is not a drawing.

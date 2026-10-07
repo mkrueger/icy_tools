@@ -88,6 +88,52 @@ DOS COM fonts (non-TSR or TSR for 40-column, 80-column, or all text modes).
 Existing files require overwrite confirmation. Exporting does not change the
 font's save path or mark unsaved edits as saved; **Save** continues to use PSF.
 
+### AI image import
+
+Choose **File → AI Import…**, **AI Import…** in the New File dialog, or its
+welcome-page tile to convert a local picture into a new ANSI drawing. This
+workflow runs locally and needs no AI account or network connection.
+
+- **Scene** favors coherent hues with stronger tone/detail contrast; **Shaded**
+  uses eight tone bands and a stronger penalty against high-contrast shade
+  texture. Both emphasize color before ANSI palette reduction and use the
+  shared perceptual converter, not an image-generation model.
+- Start with **80 × 25** or **80 × 50**, or choose custom columns and rows
+  (up to 160 columns, 200 rows and 8,000 cells; full-glyph matching has an
+  additional work limit).
+- **Crop** fills the target, **Contain** preserves the selected picture with
+  margins, and **Stretch** fills it without preserving proportions. Drag on
+  the source to select a focus area; **Reset focus** restores the whole image.
+  The blue outline shows the actual converted area.
+- **Drawing** explicitly selects **Half blocks**, **Blocks and shades**,
+  **All CP437 glyphs**, or **ASCII**. ASCII uses only printable characters
+  (32–126), retaining ANSI colors and the Scene/Shaded and fit controls.
+  Half blocks use independent upper/lower colors, with no
+  shade or text glyphs. It area-samples a true columns × twice-rows pixel grid
+  in linear light, sharpens at that grid's scale and encodes each pair using
+  legal foreground/background colors. Selecting it disables tone banding and
+  enables optional, gentle Oklab-lightness dithering, without shifting hue.
+- Choose iCE colors, 9-pixel cells and DOS aspect ratio. Expand **Tone and style**
+  for brightness, contrast, detail contrast, saturation, shade texture, neighbor
+  consistency and tone intervals. Detail contrast enhances nearby lightness
+  differences before reducing to the ANSI palette.
+- Hue guidance allows gray/brown shade blends for skin and handles the two
+  sides of a color boundary separately. All-glyph conversion avoids decorative
+  glyphs in smooth areas, while preserving exact matches and edge detail.
+- Choose **Convert** to process in the background and compare the source with
+  the actual rendered ANSI result. Changing settings disables acceptance until
+  you convert again.
+
+**Accept and edit ANSI** opens the result as a new, unsaved ANSI document and
+leaves other editor modes. Existing unsaved work requires Save/Discard/Cancel
+confirmation. Cancelling the import leaves the current document untouched.
+
+Supported sources are PNG, JPEG, BMP and WebP, up to 20 MiB, 8,192 pixels per
+edge and 32 megapixels. EXIF orientation is applied. The source used for
+conversion is reduced to a maximum 1,024-pixel edge; the dialog reports when
+this happens. These controls improve experimentation, but do not guarantee
+hand-drawn quality or parity with AINSI.
+
 ### AI drawing assistant
 
 The right-sidebar icon at the far right of the menu bar toggles a resizable AI chat panel in every
@@ -126,7 +172,8 @@ automatically when it opens with Copilot selected.
 Copilot can draw in the character-based editors (ANSI/ASCII, ATASCII, PETSCII,
 VT52 and the text-art font glyph editor). There, its tools are icy_draw's drawing
 tools — `icy_canvas_info`, `icy_read_canvas_glyphs`, `icy_read_region`, `icy_draw_text`,
-`icy_fill_rect`, `icy_set_cells`, `icy_convert_reference_image` and `icy_preview_canvas` —
+`icy_fill_rect`, `icy_set_cells`, `icy_convert_reference_image`,
+`icy_refine_reference_image` and `icy_preview_canvas` —
 which work on a draft copy of the document using palette indices
 and the document's character encoding. When Copilot finishes, a card in the chat
 shows a preview of the changed area with **Apply** and **Discard**. Nothing changes
@@ -246,13 +293,38 @@ canvases, not Unicode canvases. Target coordinates are layer-relative; specify
 `layer`, `x`, `y`, `width`, `height` to preserve unrelated art. Omitting the
 rectangle converts the whole current layer.
 
-- `mode: "half_blocks"` (CP437 default): space, full and upper/lower half blocks.
+- `preset: "faithful"` (default): the original RGB pixel matcher, suitable for
+  reproducing existing artwork. Native retro editors require this preset.
+- `preset: "scene"` (CP437): perceptual Oklab matching, linear-light shade blends
+  with a texture penalty, and two edge-aware neighbor-consistency passes.
+  The blend coverage comes from the actual font, including ninth-column spacing.
+  Defaults to `mode: "blocks"`.
+- `preset: "toon"` (CP437): quantized lightness and stronger neighbor consistency
+  for simpler flat-color regions. Defaults to `mode: "half_blocks"`.
+- `preset: "pixel_art"` (CP437): nearest-neighbor resizing and perceptual
+  per-pixel matching, without blended shades or neighbor smoothing.
+  Defaults to `mode: "half_blocks"`.
+- `mode: "half_blocks"` (CP437 default except Scene): space, full and upper/lower half blocks.
+- `mode: "half_pixels"` (styled CP437 only): true two-pixels-per-cell processing,
+  as used by the import dialog's **Half blocks** drawing mode. Requires solid
+  horizontal half-block font glyphs. Unlike `half_blocks`, this does not fit
+  each font mask against the full-resolution picture.
 - `mode: "blocks"`: also left/right halves and the three shade patterns.
 - `mode: "full"`: match all 256 actual glyphs; required for native retro editors.
 - `mode: "ascii"`: printable CP437 ASCII codes 32–126 only.
 - `fit: "contain"` (default) preserves the whole picture; `"crop"` center-crops
   to fill the target. Both account for font/display cell proportions.
-- `dither: false` (default) avoids added noise; `true` uses mild ordered dithering.
+  `"stretch"` fills the target without preserving the source proportions.
+- `dither: false` (default) avoids added noise; `true` uses ordered dithering.
+  `half_pixels` gently dithers Oklab lightness on the half-pixel grid, preserving
+  black and white. Legacy `half_blocks` uses half-cell RGB dithering; other
+  modes use mild raster-pixel dithering.
+
+An explicit `mode` overrides the preset's glyph default, so `mode: "ascii"`
+never introduces block characters. These are local conversion presets, not new
+image-generation services; no additional connection is required. `faithful`
+remains the default for compatibility. The assistant is guided to choose `scene`
+for CP437 illustrations and always preview the result before proposing Apply.
 
 Matching uses real font bitmaps and legal palette combinations. CP437 is limited
 to 16 foreground colors, with 8 backgrounds in blink mode or 16 in iCE mode.
@@ -262,22 +334,58 @@ background (palette 0 on transparent cells), or the retro shared background.
 The converted region replaces previous glyphs and styling, including blink.
 All validation completes before any cells are written.
 
+Styled CP437 conversions also accept bounded tuning parameters: `brightness`
+(-0.25..0.25 lightness offset), `contrast` (0.5..2), `saturation` (0..2),
+`shade_penalty` (0..2, Scene only has blended shades), `coherence` (0..0.02),
+`lightness_levels` (0 disables quantization; 2..16 lightness intervals),
+`local_contrast` (0..2, default 0, enhances local lightness detail before
+palette fitting), and `hue_families` (default false, guides colors by source
+hue with neutral shade blenders and independent hues at boundaries).
+Detail enhancement preserves alpha and excludes hidden transparent colors;
+critique metrics still compare against the unprocessed reference.
+Omitted values use the preset defaults. Faithful conversion rejects tuning
+parameters rather than silently ignoring them.
+
 `icy_preview_canvas` returns an actual PNG tool result to an image-capable
 Copilot model, not a text approximation. It renders the combined draft with its
 fonts, palette, letter spacing and aspect ratio. Preview coordinates are
 document-relative. The model can inspect and correct the result before finishing.
 Known non-vision models receive an explicit error instead.
 
-Both tools are bounded to 8,000 cells and 4 megapixels; full-glyph matching also
-has a work limit and can require a smaller region. Each turn allows at most
-three conversions and three previews. Preview PNGs are normalized to at most
+**Measured critique loop:** after the initial styled CP437 conversion, the
+assistant previews the entire target, describes a visible problem, and calls
+`icy_refine_reference_image` with a `critique` and one or two tuning changes.
+The tool uses the original source and transparency background, never its own
+previous output as an input image. Target, fit, glyph mode, dither and preset
+stay fixed; omitted tuning parameters retain the best settings.
+
+Every conversion reports effective settings and a fixed source-relative score:
+`0.5 * color_error + 0.5 * detail_error + 0.25 * edge_error + excess_texture`.
+Color and detail compare Oklab cell and quadrant averages of actual glyph
+pixels; edge/texture terms compare neighboring cells against the source.
+This balances shading blends against lost contours and added speckles, but
+does **not** measure recognizable faces or artistic merit.
+
+A refinement replaces the draft only if that score improves. Otherwise it
+reports rejection and retains the previous cells and settings. The model must
+preview again before another trial, and is guided to stop when visually
+acceptable. Refinement refuses intervening edits in the target region; do
+manual cell touch-ups afterward. Same-image follow-up turns can continue from
+the best candidate; changing the attached image resets its comparison state.
+This uses the existing image-capable Copilot connection, not a separate critic
+service. Faithful and native retro conversions keep preview/manual refinement.
+
+The image tools are bounded to 8,000 cells and 4 megapixels; full-glyph matching
+also has a work limit and can require a smaller region. Each turn allows at most
+three conversion/refinement trials **combined** (including rejected trials)
+and three previews. Preview PNGs are normalized to at most
 1024 pixels per edge. This is a starting point, not a guarantee of artistic
 quality: scene-style art still benefits from simplification and refinement.
 
 To try it, select GitHub Copilot and an image-capable model, attach a picture,
-and ask: **"Convert this picture to ANSI using half blocks, preserve the full
-image, then inspect the rendered preview and improve it."** Review Apply/Discard.
-OpenAI-compatible connections remain advice-only and have neither tool.
+and ask: **"Convert this picture to ANSI using the scene preset, preserve the full
+image, then critique and refine it using the rendered previews."** Review Apply/Discard.
+OpenAI-compatible connections remain advice-only and have none of these tools.
 
 #### RIP assistant
 

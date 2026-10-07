@@ -14,7 +14,7 @@ use super::{
 #[path = "ai_animation.rs"]
 mod animation_tools;
 #[path = "ai_canvas.rs"]
-mod canvas;
+pub(super) mod canvas;
 #[path = "ai_font.rs"]
 mod font_tools;
 #[path = "ai_igs.rs"]
@@ -33,7 +33,7 @@ mod connection;
 #[path = "ai_attachment.rs"]
 mod file_attachment;
 #[path = "ai_image.rs"]
-mod image_attachment;
+pub(super) mod image_attachment;
 #[path = "ai_knowledge.rs"]
 mod knowledge;
 use connection::{Job, Message, Request, Response};
@@ -3526,18 +3526,35 @@ mod tests {
 
     #[test]
     fn converted_images_preview_apply_and_undo_without_touching_the_live_canvas_early() {
-        for kind in [NewKind::Ansi, NewKind::Atascii] {
+        for (kind, preset) in [
+            (NewKind::Ansi, "faithful"),
+            (NewKind::Ansi, "scene"),
+            (NewKind::Ansi, "toon"),
+            (NewKind::Ansi, "pixel_art"),
+            (NewKind::Atascii, "faithful"),
+        ] {
             let mut app = image_chat_app();
             app.create(kind, Size::new(40, 24));
             let (mut workspace, document) = app.ai_draft().unwrap();
             let Workspace::Canvas(draft) = &mut workspace else { panic!("canvas") };
             draft.begin_turn(Some(image_attachment::test_image()));
             let result = draft
-                .call("icy_convert_reference_image", &serde_json::json!({"width": 4, "height": 3}))
+                .call("icy_convert_reference_image", &serde_json::json!({"width": 4, "height": 3, "preset": preset}))
                 .unwrap();
             assert!(serde_json::from_str::<serde_json::Value>(&result).unwrap()["changed_cells"].as_u64().unwrap() > 0);
             let preview = draft.preview_image(&serde_json::json!({"width": 4, "height": 3})).unwrap();
             assert!(preview.color_image().pixels.iter().any(|pixel| pixel.a() == 255));
+            if preset != "faithful" {
+                let trial = draft
+                    .call(
+                        "icy_refine_reference_image",
+                        &serde_json::json!({
+                            "critique": "Reduce overly strong colors while preserving the silhouette.", "saturation": 0.9,
+                        }),
+                    )
+                    .unwrap();
+                assert!(serde_json::from_str::<serde_json::Value>(&trial).unwrap()["accepted"].is_boolean());
+            }
             assert!(!app.document.modified());
             let expected = draft.changes();
             assert!(!expected.is_empty());

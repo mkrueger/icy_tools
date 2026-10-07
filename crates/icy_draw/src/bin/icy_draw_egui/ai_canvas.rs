@@ -95,6 +95,7 @@ pub struct Draft {
     pub preview_enabled: bool,
     preview_calls: usize,
     conversion_calls: usize,
+    conversion_review: Option<raster::Review>,
 }
 
 /// A cell the assistant changed: layer, layer position and new content.
@@ -112,10 +113,14 @@ impl Draft {
             preview_enabled: true,
             preview_calls: 0,
             conversion_calls: 0,
+            conversion_review: None,
         }
     }
 
     pub fn begin_turn(&mut self, image: Option<super::image_attachment::ReferenceImage>) {
+        if self.reference_image != image {
+            self.conversion_review = None;
+        }
         self.reference_image = image;
         self.preview_calls = 0;
         self.conversion_calls = 0;
@@ -144,6 +149,7 @@ impl Draft {
             "icy_canvas_info" => Ok(self.info().to_string()),
             "icy_read_canvas_glyphs" => self.read_glyphs(arguments),
             "icy_convert_reference_image" => self.convert_image(arguments),
+            "icy_refine_reference_image" => self.refine_image(arguments),
             "icy_read_region" => self.read_region(arguments),
             "icy_draw_text" => self.draw_text(arguments),
             "icy_fill_rect" => self.fill_rect(arguments),
@@ -219,11 +225,13 @@ impl Draft {
                 "change_global_colors": false,
                 "render_preview": self.preview_enabled,
                 "convert_attached_image": self.reference_image.is_some(),
+                "refine_conversion": self.can_refine_image(),
             },
             "reference_image": self.reference_image.as_ref().map(|image| json!({
                 "name": image.name, "width": image.width, "height": image.height,
                 "note": "Most recent explicitly attached picture in this conversation. No local files are accessible.",
             })),
+            "conversion_feedback": self.image_feedback(),
             "notes": "Coordinates are layer-relative, (0,0) is the top-left cell. Colors are palette indices. \
                       Characters are Unicode and converted to the document encoding; retro editors reject unmappable text. \
                       Use char_code for exact native byte glyphs, never terminal escapes. \
