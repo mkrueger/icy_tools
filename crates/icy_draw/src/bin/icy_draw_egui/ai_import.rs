@@ -852,8 +852,7 @@ impl ImportDialog {
 
     /// The local preview is outdated and will be recomputed without further input.
     fn updating(&self) -> bool {
-        self.converting
-            || (self.source.is_some() && self.result.is_none() && self.ai_job.is_none() && self.error.is_none() && self.options.validate().is_ok())
+        self.converting || (self.source.is_some() && self.result.is_none() && self.ai_job.is_none() && self.error.is_none() && self.options.validate().is_ok())
     }
 
     pub fn show(&mut self, context: &egui::Context, blocked: bool) -> Option<Action> {
@@ -1162,7 +1161,13 @@ impl ImportDialog {
         };
         let border = rect.shrink(1.0);
         ui.painter().extend(egui::Shape::dashed_line(
-            &[border.left_top(), border.right_top(), border.right_bottom(), border.left_bottom(), border.left_top()],
+            &[
+                border.left_top(),
+                border.right_top(),
+                border.right_bottom(),
+                border.left_bottom(),
+                border.left_top(),
+            ],
             egui::Stroke::new(1.5, color),
             6.0,
             4.0,
@@ -1173,8 +1178,19 @@ impl ImportDialog {
         }
         let center = rect.center();
         paint_picture_icon(ui.painter(), center - egui::vec2(0.0, 52.0), color);
-        let title = if dragging_files { fl!("ai-import-drop-release") } else { fl!("ai-import-drop") };
-        centered_text(ui, center - egui::vec2(0.0, 6.0), &title, 16.0, ui.visuals().strong_text_color(), rect.width() - 32.0);
+        let title = if dragging_files {
+            fl!("ai-import-drop-release")
+        } else {
+            fl!("ai-import-drop")
+        };
+        centered_text(
+            ui,
+            center - egui::vec2(0.0, 6.0),
+            &title,
+            16.0,
+            ui.visuals().strong_text_color(),
+            rect.width() - 32.0,
+        );
         centered_text(
             ui,
             center + egui::vec2(0.0, 18.0),
@@ -1243,11 +1259,7 @@ impl ImportDialog {
             self.options.focus = Options::default().focus;
         }
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            let error = self
-                .error
-                .clone()
-                .or_else(|| self.ai_error.clone())
-                .or_else(|| self.options.validate().err());
+            let error = self.error.clone().or_else(|| self.ai_error.clone()).or_else(|| self.options.validate().err());
             if let Some(error) = error.filter(|_| !locked) {
                 ui.add(egui::Label::new(egui::RichText::new(error).color(icy_engine_gui::egui::dialog::DANGER)).wrap());
             } else if self.source.is_some() {
@@ -1451,11 +1463,7 @@ fn scrolling(ui: &mut egui::Ui, id: &str, height: f32, add: impl FnOnce(&mut egu
 
 fn pane_header(ui: &mut egui::Ui, rect: egui::Rect, title: &str, meta: &str, tooltip: Option<&str>, add_right: impl FnOnce(&mut egui::Ui)) {
     let header = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), PANE_HEADER - 6.0));
-    let mut ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(header)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
+    let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(header).layout(egui::Layout::left_to_right(egui::Align::Center)));
     let title = appearance::bold(&ui, title);
     ui.label(title);
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1495,12 +1503,8 @@ fn paint_preview(ui: &egui::Ui, texture: &egui::TextureHandle, area: egui::Rect,
     // Whole steps keep enlarged character cells crisp.
     let scale = if scale >= 1.0 { scale.floor() } else { scale.max(0.01) };
     let rect = egui::Rect::from_center_size(area.center(), size * scale);
-    ui.painter().image(
-        texture.id(),
-        rect,
-        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-        tint,
-    );
+    ui.painter()
+        .image(texture.id(), rect, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), tint);
 }
 
 /// A spinner and caption over the dimmed previous preview, if there is one.
@@ -1519,8 +1523,7 @@ fn centered_text(ui: &egui::Ui, center: egui::Pos2, text: &str, size: f32, color
     let mut job = egui::text::LayoutJob::simple(text.to_owned(), egui::FontId::proportional(size), color, wrap_width.max(40.0));
     job.halign = egui::Align::Center;
     let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
-    ui.painter()
-        .galley(egui::pos2(center.x, center.y - galley.size().y / 2.0), galley, color);
+    ui.painter().galley(egui::pos2(center.x, center.y - galley.size().y / 2.0), galley, color);
 }
 
 /// Framed landscape pictogram for the empty source pane.
@@ -1570,10 +1573,7 @@ fn slider_field(ui: &mut egui::Ui, label: &str, value: &mut f64, range: std::ops
         ui.label(label);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let speed = f64::from(range.end() - range.start()) / 200.0;
-            ui.add_sized(
-                [56.0, 22.0],
-                egui::DragValue::new(&mut shown).range(range.clone()).max_decimals(2).speed(speed),
-            );
+            ui.add_sized([56.0, 22.0], egui::DragValue::new(&mut shown).range(range.clone()).max_decimals(2).speed(speed));
         });
     });
     let width = ui.available_width();
@@ -2499,7 +2499,10 @@ mod tests {
         assert!(dialog.converting && dialog.worker.is_some() && dialog.changed_at.is_none());
         dialog.options.rows = 6;
         dialog.invalidate();
-        assert!(dialog.worker.is_none() && !dialog.converting, "a conversion of outdated settings must not arrive");
+        assert!(
+            dialog.worker.is_none() && !dialog.converting,
+            "a conversion of outdated settings must not arrive"
+        );
         dialog.ai_available = true;
         dialog.ai_job = Some(Arc::new(Mutex::new(None)));
         run(&mut dialog, 5.0, vec![]);

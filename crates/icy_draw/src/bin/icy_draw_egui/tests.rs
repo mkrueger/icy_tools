@@ -4023,7 +4023,7 @@ fn new_document_groups_cover_all_editors_in_the_same_order() {
     let mut app = DrawApp::new();
     app.show_start = true;
     let groups = NewKind::groups();
-    assert!(groups[0].1 == [NewKind::Ansi, NewKind::Animation, NewKind::Rip]);
+    assert!(groups[0].1 == [NewKind::Ansi, NewKind::AiImport, NewKind::Animation, NewKind::Rip]);
     assert!(groups[1].1 == [NewKind::Atascii, NewKind::Vt52, NewKind::Igs, NewKind::Petscii, NewKind::Skypix]);
     assert!(groups[2].1 == [NewKind::BitmapFont, NewKind::TheDraw]);
     let welcome = frame(&context, &mut app, size, vec![]);

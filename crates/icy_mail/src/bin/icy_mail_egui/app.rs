@@ -1987,11 +1987,11 @@ impl MailApp {
 /// File name (`<conference>-<number>.ans` or `.txt`) and header plus content of a saved message.
 pub fn message_file(package: &icy_mail::qwk::QwkPackage, index: usize, utf8: bool) -> Result<(String, Vec<u8>), String> {
     let message = package.get_message(index).map_err(|error| error.to_string())?;
-    let info = package
-        .infos
-        .get(index)
-        .ok_or_else(|| fl!(LANGUAGE_LOADER, "app-message-unavailable"))?;
-    let header = format!("{}------------------------------------------------------------------------\n", icy_mail::transcript::message_header(info));
+    let info = package.infos.get(index).ok_or_else(|| fl!(LANGUAGE_LOADER, "app-message-unavailable"))?;
+    let header = format!(
+        "{}------------------------------------------------------------------------\n",
+        icy_mail::transcript::message_header(info)
+    );
     let (data, extension) = if utf8 {
         let mut data = header.into_bytes();
         data.extend_from_slice(icy_mail::text::to_utf8(&message.text).as_bytes());

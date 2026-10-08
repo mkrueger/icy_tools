@@ -373,10 +373,7 @@ pub fn segmented_grid<T: PartialEq + Copy, S: AsRef<str>>(ui: &mut egui::Ui, cur
     let rows = options.len().div_ceil(columns);
     let inset = 2.0;
     let cell_height = CONTROL_HEIGHT - inset * 2.0;
-    let (track, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), cell_height * rows as f32 + inset * 2.0),
-        egui::Sense::hover(),
-    );
+    let (track, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), cell_height * rows as f32 + inset * 2.0), egui::Sense::hover());
     let visuals = ui.visuals().clone();
     ui.painter().rect_filled(track, 7, visuals.extreme_bg_color);
     ui.painter()
