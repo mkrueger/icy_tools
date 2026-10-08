@@ -1,7 +1,19 @@
 use std::{io::Write, path::Path};
 
-use crate::{drafts::atomic_write, qwk::QwkPackage, LANGUAGE_LOADER};
+use crate::{
+    drafts::atomic_write,
+    qwk::{MessageInfo, QwkPackage},
+    LANGUAGE_LOADER,
+};
 use i18n_embed_fl::fl;
+
+#[must_use]
+pub fn message_header(info: &MessageInfo) -> String {
+    format!(
+        "From: {}\nTo: {}\nSubject: {}\nDate: {}\nConference: {}\nMessage: {}\n",
+        info.from, info.to, info.subject, info.date_str, info.conference, info.number
+    )
+}
 
 pub fn save_transcript(package: &QwkPackage, indices: &[usize], source: &Path, destination: &Path) -> crate::Res<()> {
     if indices.is_empty() {
@@ -14,10 +26,8 @@ pub fn save_transcript(package: &QwkPackage, indices: &[usize], source: &Path, d
     for &index in indices {
         let info = package.infos.get(index).ok_or_else(|| fl!(LANGUAGE_LOADER, "app-message-unavailable"))?;
         let message = package.get_message(index)?;
-        transcript.push_str(&format!(
-            "From: {}\nTo: {}\nSubject: {}\nDate: {}\nConference: {}\nMessage: {}\n\n",
-            info.from, info.to, info.subject, info.date_str, info.conference, info.number
-        ));
+        transcript.push_str(&message_header(info));
+        transcript.push('\n');
         transcript.push_str(&crate::text::to_utf8(&message.text));
         if !transcript.ends_with('\n') {
             transcript.push('\n');

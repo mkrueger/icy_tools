@@ -201,11 +201,12 @@ draft and composer previews still render locally.
   fixed width) and its size are set there too; Ctrl+mouse wheel over the text
   changes the size. The setting applies everywhere text is shown: messages,
   bulletins and the outbox preview.
-- **Message ▸ Save Message…** stores the shown message's text exactly as it is
-  in the packet (`<conference>-<number>.ans`), **Save Message as UTF-8…** as a
-  `.txt` with CP437 characters converted and ANSI codes kept; both are also in
-  the reader header's **⋯** menu. Handy for other viewers or to report a
-  display problem.
+- **Message ▸ Save Message…** stores the shown message with a header containing
+  its sender, recipient, subject, date, conference and message number, followed
+  by a dashed separator and the original packet body (`<conference>-<number>.ans`).
+  **Save Message as UTF-8…** writes the same structure as `.txt`, with CP437
+  characters converted and ANSI codes kept; both are also in the reader
+  header's **⋯** menu. Handy for other viewers or to report a display problem.
 - **Message ▸ Save Messages** saves a UTF-8 transcript with message headers:
   the current folder/search results (including collapsed thread replies), all
   starred messages across the packet, or the entire selected conference.

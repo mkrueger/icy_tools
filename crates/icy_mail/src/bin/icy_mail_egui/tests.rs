@@ -4104,18 +4104,27 @@ fn gpu_modern_reading_mode() {
 }
 
 #[test]
-fn messages_are_saved_as_written_or_as_utf8() {
+fn messages_are_saved_with_headers_as_packet_bytes_or_utf8() {
     let context = egui::Context::default();
     let (_dir, mail) = loaded(&context);
     let package = mail.reader.package.clone().unwrap();
     let index = mail.reader.selected_message.unwrap();
     let info = &package.infos[index];
+    let body = package.get_message(index).unwrap();
     let (name, original) = app::message_file(&package, index, false).unwrap();
     assert_eq!(name, format!("{}-{}.ans", info.conference, info.number));
-    assert_eq!(original, package.get_message(index).unwrap().text.to_vec(), "the original bytes are kept");
+    let separator = b"\r\n------------------------------------------------------------------------\r\n";
+    let body_start = original.windows(separator.len()).position(|window| window == separator).unwrap() + separator.len();
+    assert!(String::from_utf8_lossy(&original[..body_start]).starts_with(&format!("From: {}\r\nTo: {}\r\nSubject: {}\r\n", info.from, info.to, info.subject)));
+    let packet_body: &[u8] = body.text.as_ref();
+    assert_eq!(&original[body_start..], packet_body, "the packet body bytes are kept");
     let (name, utf8) = app::message_file(&package, index, true).unwrap();
     assert!(name.ends_with(".txt"));
-    assert!(String::from_utf8(utf8).unwrap().contains("line 0"));
+    let utf8 = String::from_utf8(utf8).unwrap();
+    assert!(utf8.starts_with(&format!("From: {}\nTo: {}\nSubject: {}\n", info.from, info.to, info.subject)));
+    assert!(utf8.contains("\nDate: "));
+    assert!(utf8.contains(&format!("\nConference: {}\nMessage: {}\n", info.conference, info.number)));
+    assert!(utf8.contains("\n------------------------------------------------------------------------\nline 0"));
 }
 
 #[test]

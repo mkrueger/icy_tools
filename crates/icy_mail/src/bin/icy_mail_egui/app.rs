@@ -1636,8 +1636,8 @@ impl MailApp {
         }
     }
 
-    /// Saves the shown message's text as it is in the packet (`.ans`), or converted to UTF-8 (`.txt`),
-    /// e.g. to look at it in another viewer or to report a display problem.
+    /// Saves the shown message with its header and packet text (`.ans`), or converted to UTF-8
+    /// (`.txt`), e.g. to look at it in another viewer or to report a display problem.
     pub fn save_message(&mut self, context: &egui::Context, utf8: bool) {
         let Some(index) = self.reader.selected_message.filter(|_| self.message_selected()) else {
             return;
@@ -1984,14 +1984,29 @@ impl MailApp {
     }
 }
 
-/// File name (`<conference>-<number>.ans` or `.txt`) and content of a saved message.
+/// File name (`<conference>-<number>.ans` or `.txt`) and header plus content of a saved message.
 pub fn message_file(package: &icy_mail::qwk::QwkPackage, index: usize, utf8: bool) -> Result<(String, Vec<u8>), String> {
     let message = package.get_message(index).map_err(|error| error.to_string())?;
-    let info = &package.infos[index];
+    let info = package
+        .infos
+        .get(index)
+        .ok_or_else(|| fl!(LANGUAGE_LOADER, "app-message-unavailable"))?;
+    let header = format!("{}------------------------------------------------------------------------\n", icy_mail::transcript::message_header(info));
     let (data, extension) = if utf8 {
-        (icy_mail::text::to_utf8(&message.text).into_bytes(), "txt")
+        let mut data = header.into_bytes();
+        data.extend_from_slice(icy_mail::text::to_utf8(&message.text).as_bytes());
+        (data, "txt")
     } else {
-        (message.text.to_vec(), "ans")
+        let header = header.replace('\n', "\r\n");
+        let mut data = header
+            .chars()
+            .map(|character| {
+                icy_mail::editor::cp437_byte(character)
+                    .ok_or_else(|| format!("Message header character U+{:04X} cannot be saved as CP437", u32::from(character)))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        data.extend_from_slice(&message.text);
+        (data, "ans")
     };
     Ok((format!("{}-{}.{extension}", info.conference, info.number), data))
 }
