@@ -3,8 +3,12 @@ use icy_engine::{char_set::TdfBufferRenderer, AttributedChar, Position, Size, Te
 use icy_engine_edit::charset::{CharSetEditState, TdfFontType};
 use retrofont::{Glyph, GlyphPart, RenderOptions};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 
 pub struct CharFontDocument {
+    id: u64,
     pub state: CharSetEditState,
     pub path: Option<PathBuf>,
     baseline: Vec<u8>,
@@ -17,6 +21,7 @@ impl CharFontDocument {
         state.select_char('A');
         let baseline = state.get_autosave_bytes().unwrap_or_default();
         Self {
+            id: NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed),
             state,
             path: None,
             baseline,
@@ -31,11 +36,17 @@ impl CharFontDocument {
         state.select_char('A');
         let baseline = state.get_autosave_bytes()?;
         Ok(Self {
+            id: NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed),
             state,
             path: Some(path.to_path_buf()),
             baseline,
             disk_bytes: Some(bytes),
         })
+    }
+
+    /// Identifies the font collection independently of the current glyph's editing canvas.
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     pub fn modified(&self) -> bool {
@@ -69,6 +80,7 @@ impl CharFontDocument {
         let mut state = CharSetEditState::with_fonts(fonts, snapshot.path.clone());
         state.select_char('A');
         Ok(Self {
+            id: NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed),
             state,
             path: snapshot.path.clone(),
             baseline: Vec::new(),

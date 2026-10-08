@@ -88,9 +88,9 @@ DOS COM fonts (non-TSR or TSR for 40-column, 80-column, or all text modes).
 Existing files require overwrite confirmation. Exporting does not change the
 font's save path or mark unsaved edits as saved; **Save** continues to use PSF.
 
-### AI image import
+### Image import
 
-Choose **File → AI Import…**, **AI Import…** in the New File dialog, or its
+Choose **File → Import…**, **Import…** in the New File dialog, or its
 welcome-page tile to convert a picture into a new ANSI, RIP, IGS, PETSCII or
 VT52 drawing. Local conversion needs no AI account or network connection.
 
@@ -182,8 +182,8 @@ and on Windows the WinGet and npm locations. Connecting starts the CLI in the
 background and lists the models your plan allows; the panel also connects
 automatically when it opens with Copilot selected.
 
-Copilot can draw in the character-based editors (ANSI/ASCII, ATASCII, PETSCII,
-VT52 and the text-art font glyph editor). There, its tools are icy_draw's drawing
+Copilot can draw in the character-based editors (ANSI/ASCII, ATASCII, PETSCII
+and VT52). There, its tools are icy_draw's drawing
 tools — `icy_canvas_info`, `icy_read_canvas_glyphs`, `icy_read_region`, `icy_draw_text`,
 `icy_fill_rect`, `icy_set_cells`, `icy_convert_reference_image`,
 `icy_refine_reference_image` and `icy_preview_canvas` —
@@ -243,11 +243,13 @@ For example, this batch writes two 8×2 glyphs:
 ```
 
 These transformations operate on draft pixels, not the live editor's undo
-operations. `icy_preview_font_text` checks representative words. The proposal
-card shows current glyphs in gray above proposed glyphs in white, with pages of
-up to 64 changed glyphs so the entire font can be inspected. Applying all changes
-is still one undo step. A proposal is refused if the font was resized or a
-changed glyph was edited after it was made.
+operations. `icy_preview_font_text` checks representative words. Successful
+font drafts apply automatically when the turn completes, even with the chat
+panel closed; no preview or Apply click is required. All glyph changes form
+one undo step, and the chat confirms application. Applying is refused if the
+font was resized or a changed glyph was edited after the draft was made.
+Conflicting drafts remain available for review or discard, with pages of up
+to 64 changed glyphs showing current pixels in gray and proposed pixels in white.
 
 Copilot requests can run for up to **10 minutes**, but stop after **120 seconds
 without meaningful progress**. Streaming response/reasoning/tool-input data and
@@ -282,10 +284,12 @@ Space is not an editable glyph slot; word spacing is a font setting.
 Contact-sheet previews show up to 32 labelled glyphs per page, covering the full
 font in three pages. The preview tool
 can select an outline style; image feedback requires an image-capable model and
-is limited to three previews per turn. The proposal card pages through the full
-font. Edits remain in a draft until Apply, and the entire batch is one font undo
-step. Applying refuses a changed target font and includes unsaved current-glyph
-edits without silently overwriting them. Other fonts in the collection are
+is limited to three previews per turn. Successful font drafts apply automatically
+at turn completion as one font undo step; missing or oversized previews do not
+block application. Switching glyphs in the same font does not discard the draft.
+Applying refuses a changed target font and includes unsaved current-glyph
+edits without silently overwriting them. Failed or cancelled turns never apply
+partial changes. Other fonts in the collection are
 unchanged. OpenAI-compatible providers receive the reference but remain advice-only.
 
 #### ANSI drawing and picture conversion

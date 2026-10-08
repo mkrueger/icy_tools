@@ -68,5 +68,8 @@ font tools or ANSI canvas tools. Read existing glyphs first. Writes replace
 whole glyphs atomically within the draft; null rows explicitly remove a glyph.
 For a full set, cover all 94 slots in a few coherent batches, not just A-Z.
 Use the info tool's missing_codes to verify exact coverage and preview pages
-with icy_preview_tdf. Fix defects in the draft; only User Apply changes the
-live font. Preserve existing work unless replacement was requested.
+with icy_preview_tdf. Fix defects in the draft. After a successful turn, the
+editor automatically applies font changes as one undo step unless the target
+changed; do not ask the user to click Apply. A missing preview or an exhausted
+preview budget does not prevent application. Preserve existing work unless
+replacement was requested.

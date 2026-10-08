@@ -102,7 +102,9 @@ pub fn editor_hint(workspace: Option<&Workspace>) -> String {
             "[icy_draw: the open editor is TheDraw text-art font (TDF). Read icy_tdf_info and \
              icy_read_tdf_glyphs, then use icy_write_tdf_glyphs to generate a full font in batches. \
              NOT bitmap pixel tools or ANSI canvas tools. Use icy_preview_tdf to inspect pages. \
-             Check missing_codes before claiming all 94 glyphs are complete. User Apply is required.]\n{}",
+             Check missing_codes before claiming all 94 glyphs are complete. Successful font drafts are \
+             automatically applied at turn completion as one undo step, unless the target changed. \
+             Do not ask the user to click Apply.]\n{}",
             super::tdf_tools::GUIDANCE
         ),
         Some(workspace @ Workspace::Canvas(draft)) => {
@@ -186,7 +188,9 @@ pub fn editor_hint(workspace: Option<&Workspace>) -> String {
         Some(workspace @ Workspace::Font(_)) => format!(
             "[icy_draw: the open editor is \"bitmap font\"; its tools are {}. \
              Use icy_transform_glyphs for mechanical font-wide changes. Otherwise prefer \
-             format='hex' and icy_write_glyphs batches, not one write per glyph.]",
+             format='hex' and icy_write_glyphs batches, not one write per glyph. Successful font drafts \
+             are automatically applied at turn completion as one undo step, unless the target changed. \
+             Do not ask the user to click Apply.]",
             workspace.tool_names().join(", ")
         ),
         Some(workspace) => format!(

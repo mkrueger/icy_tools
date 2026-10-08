@@ -79,11 +79,19 @@ impl Entry {
     }
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum DocumentId {
+    #[default]
+    None,
+    Canvas(usize),
+    Tdf(u64),
+}
+
 /// Changes the assistant made on a draft of the open editor's document.
 struct Proposal {
     workspace: Workspace,
     /// Identifies the document the draft was taken from.
-    document: usize,
+    document: DocumentId,
     /// Changed cells of a drawing; changed lines of a script.
     changes: usize,
     script_diff: Option<animation_tools::Diff>,
@@ -93,7 +101,7 @@ struct Proposal {
 }
 
 impl Proposal {
-    fn new(workspace: Workspace, document: usize) -> Self {
+    fn new(workspace: Workspace, document: DocumentId) -> Self {
         let (changes, script_diff) = match &workspace {
             Workspace::Canvas(draft) => (draft.changes().len(), None),
             Workspace::Animation(draft) => {
@@ -160,8 +168,9 @@ pub(super) struct Chat {
     auto_connected: bool,
     proposal: Option<Proposal>,
     proposal_action: Option<ProposalAction>,
+    auto_apply_font: bool,
     /// The document a pending request draws on.
-    pending_document: usize,
+    pending_document: DocumentId,
     /// Send was requested; the app adds the drawing draft and sends.
     send_requested: bool,
     /// Knowledge implied by the open editor, refreshed every frame the panel is visible.
@@ -218,9 +227,38 @@ impl Chat {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn finish_connection_for_test(&mut self, result: Result<Response, String>) {
+        self.auto_connected = true;
+        self.handle(result);
+    }
+
     /// Only Copilot sessions get drawing tools; OpenAI-compatible endpoints answer in text.
     pub(super) fn can_edit_drawings(&self) -> bool {
         self.connection.provider == AiProvider::Copilot
+    }
+
+    pub(super) fn prepare_image_import(&mut self, context: &egui::Context) -> Result<(), String> {
+        self.poll();
+        self.auto_connect(context);
+        self.image_import_ready()
+    }
+
+    fn image_import_ready(&self) -> Result<(), String> {
+        if !self.can_edit_drawings() {
+            return Err(fl!("ai-import-ai-setup"));
+        }
+        if !self.connected {
+            return Err(if self.job.is_some() {
+                fl!("ai-import-ai-connecting")
+            } else {
+                self.error.clone().unwrap_or_else(|| fl!("ai-import-refine-unavailable"))
+            });
+        }
+        if self.model().trim().is_empty() {
+            return Err(fl!("ai-import-ai-setup"));
+        }
+        Ok(())
     }
 
     pub(super) fn start_image_import(&mut self, context: &egui::Context, request: super::ai_import::AiRequest) -> Result<ImportJob, String> {
@@ -231,9 +269,7 @@ impl Chat {
     }
 
     fn image_import_command(&mut self, request: super::ai_import::AiRequest) -> Result<copilot::Command, String> {
-        if !self.can_edit_drawings() || self.model().trim().is_empty() {
-            return Err(fl!("ai-import-ai-setup"));
-        }
+        self.image_import_ready()?;
         if self.job.is_some() {
             return Err(fl!("ai-import-ai-busy"));
         }
@@ -304,6 +340,7 @@ impl Chat {
             Ok(Response::Unchanged(text)) => self.push_reply(format!("{}\n\n{text}", fl!("ai-chat-no-draft-changes"))),
             Ok(Response::Proposal(text, workspace)) => {
                 self.push_reply(text);
+                self.auto_apply_font = matches!(&*workspace, Workspace::Font(_) | Workspace::Tdf(_));
                 self.proposal = Some(Proposal::new(*workspace, self.pending_document));
             }
             Err(error) => {
@@ -367,6 +404,8 @@ impl Chat {
         self.error = None;
         self.conversation += 1;
         self.proposal = None;
+        self.proposal_action = None;
+        self.auto_apply_font = false;
     }
 
     fn model(&self) -> &String {
@@ -402,6 +441,8 @@ impl Chat {
     }
 
     fn connect(&mut self, context: &egui::Context) {
+        self.connected = false;
+        self.account = None;
         self.error = None;
         self.job = Some(match self.connection.provider {
             AiProvider::OpenAiCompatible => Job::start(self.connection.clone(), self.key.clone(), Request::Models, context.clone()),
@@ -409,12 +450,18 @@ impl Chat {
         });
     }
 
+    fn auto_connect(&mut self, context: &egui::Context) {
+        if self.can_edit_drawings() && !self.connected && self.job.is_none() && !std::mem::replace(&mut self.auto_connected, true) {
+            self.connect(context);
+        }
+    }
+
     fn can_send(&self) -> bool {
         self.job.is_none() && self.reference_import.is_none() && !self.input.trim().is_empty() && !self.model().trim().is_empty()
     }
 
     /// `draft` is the drawing Copilot may edit and the document it belongs to.
-    fn send(&mut self, context: &egui::Context, draft: Option<(Workspace, usize)>) {
+    fn send(&mut self, context: &egui::Context, draft: Option<(Workspace, DocumentId)>) {
         if self.reference_import.is_some() {
             self.error = Some(fl!("ai-chat-image-loading"));
             return;
@@ -1691,6 +1738,9 @@ fn inline(ui: &egui::Ui, line: &str) -> egui::text::LayoutJob {
 impl DrawApp {
     pub(super) fn ai_chat_panel(&mut self, context: &egui::Context, blocked: bool) {
         self.ai_chat.poll();
+        if !blocked && std::mem::take(&mut self.ai_chat.auto_apply_font) {
+            self.accept_ai_proposal();
+        }
         let opened = self.ai_chat.visible && !self.ai_chat.was_visible;
         self.ai_chat.was_visible = self.ai_chat.visible;
         if !self.ai_chat.visible {
@@ -1701,9 +1751,7 @@ impl DrawApp {
         }
         self.ai_chat.editor_knowledge = self.ai_editor_knowledge();
         let chat = &mut self.ai_chat;
-        if chat.connection.provider == AiProvider::Copilot && !chat.connected && chat.job.is_none() && !std::mem::replace(&mut chat.auto_connected, true) {
-            chat.connect(context);
-        }
+        chat.auto_connect(context);
         let focused_before = chat_has_focus(context);
         let can_attach = !self.show_start;
         let mut attach = false;
@@ -1789,8 +1837,12 @@ impl DrawApp {
         }
     }
 
-    fn ai_document_id(&self) -> usize {
-        std::sync::Arc::as_ptr(&self.document.screen) as *const () as usize
+    fn ai_document_id(&self) -> DocumentId {
+        if let Some(font) = &self.charfont {
+            DocumentId::Tdf(font.id())
+        } else {
+            DocumentId::Canvas(std::sync::Arc::as_ptr(&self.document.screen) as *const () as usize)
+        }
     }
 
     /// Bundled knowledge that fits the open editor; `.pcb` files and screens with display
@@ -1860,10 +1912,13 @@ impl DrawApp {
                 Workspace::Rip(_) => self.rip.is_some() && self.font_editor.is_none() && self.animation.is_none() && !self.show_start,
                 Workspace::Igs(_) => self.igs.is_some() && self.font_editor.is_none() && self.animation.is_none() && !self.show_start,
                 Workspace::Skypix(_) => self.skypix.is_some() && self.font_editor.is_none() && self.animation.is_none() && !self.show_start,
-                Workspace::Font(ref draft) => self.font_editor.as_ref().is_some_and(|editor| {
-                    (editor.state.font_width().max(0) as usize, editor.state.font_height().max(0) as usize) == (draft.width, draft.height)
-                        && editor.state.get_all_glyph_data().len() == draft.glyphs.len()
-                }),
+                Workspace::Font(ref draft) => {
+                    !self.show_start
+                        && self.font_editor.as_ref().is_some_and(|editor| {
+                            (editor.state.font_width().max(0) as usize, editor.state.font_height().max(0) as usize) == (draft.width, draft.height)
+                                && editor.state.get_all_glyph_data().len() == draft.glyphs.len()
+                        })
+                }
                 Workspace::Tdf(ref draft) => {
                     !self.show_start
                         && self
@@ -1876,7 +1931,7 @@ impl DrawApp {
 
     /// The draft the assistant's tools work on: the open proposal, so requests refine it, or a copy
     /// of the open editor's document. `None` for editors without assistant tools.
-    fn ai_draft(&self) -> Option<(Workspace, usize)> {
+    fn ai_draft(&self) -> Option<(Workspace, DocumentId)> {
         let document = self.ai_document_id();
         if let Some(proposal) = self.ai_chat.proposal.as_ref().filter(|proposal| self.ai_proposal_fits(proposal)) {
             return Some((proposal.workspace.clone(), document));
@@ -1933,10 +1988,14 @@ impl DrawApp {
 
     /// Applies the assistant's changes as one undo step.
     fn accept_ai_proposal(&mut self) {
+        self.ai_chat.auto_apply_font = false;
         let Some(proposal) = self.ai_chat.proposal.take() else {
             return;
         };
         if !self.ai_proposal_fits(&proposal) {
+            if matches!(&proposal.workspace, Workspace::Font(_) | Workspace::Tdf(_)) {
+                self.ai_chat.error = Some(fl!("ai-chat-font-target-changed"));
+            }
             return;
         }
         let result = match &proposal.workspace {
@@ -1969,6 +2028,8 @@ impl DrawApp {
         if let Err(error) = result {
             self.ai_chat.error = Some(error);
             self.ai_chat.proposal = Some(proposal);
+        } else if matches!(&proposal.workspace, Workspace::Font(_) | Workspace::Tdf(_)) {
+            self.ai_chat.push_reply(fl!("ai-chat-font-applied", count = proposal.changes));
         }
     }
 
@@ -2404,6 +2465,7 @@ mod tests {
         let mut app = image_chat_app();
         app.ai_chat.connection.provider = AiProvider::Copilot;
         app.ai_chat.connection.copilot_model = "vision-model".into();
+        app.ai_chat.connected = true;
         app.ai_chat.visible = false;
         app.ai_chat.input = "old draft".into();
         let image = image_attachment::test_image();
@@ -2447,6 +2509,68 @@ mod tests {
         assert_eq!(chat.connection.knowledge, knowledge_before);
         assert!(std::sync::Arc::ptr_eq(&screen, &app.document.screen));
         assert!(app.petscii.is_none());
+    }
+
+    #[test]
+    fn image_import_requires_a_verified_connection_and_model() {
+        let mut chat = Chat::new(AiChatSettings::default());
+        assert_eq!(chat.image_import_ready().unwrap_err(), fl!("ai-import-ai-setup"));
+        chat.connection.provider = AiProvider::Copilot;
+        chat.connection.copilot_model = "vision-model".into();
+        assert_eq!(chat.image_import_ready().unwrap_err(), fl!("ai-import-refine-unavailable"));
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let (cancel, _) = tokio::sync::oneshot::channel();
+        chat.job = Some(Job::from_parts(receiver, cancel));
+        assert_eq!(chat.image_import_ready().unwrap_err(), fl!("ai-import-ai-connecting"));
+        sender.send(Err(fl!("ai-chat-copilot-login"))).unwrap();
+        chat.poll();
+        assert_eq!(chat.image_import_ready().unwrap_err(), fl!("ai-chat-copilot-login"));
+        let conversation = chat.conversation;
+        assert!(matches!(
+            chat.image_import_command(super::super::ai_import::AiRequest {
+                image: image_attachment::test_image(),
+                format: "ANSI",
+                buffer: icy_engine::TextBuffer::new((2, 1)),
+            }),
+            Err(error) if error == fl!("ai-chat-copilot-login")
+        ));
+        assert_eq!(chat.conversation, conversation);
+        chat.handle(Ok(Response::Models {
+            models: vec!["vision-model".into()],
+            account: None,
+        }));
+        assert!(chat.image_import_ready().is_ok(), "authentication need not include an account name");
+        chat.connection.copilot_model = " ".into();
+        assert_eq!(chat.image_import_ready().unwrap_err(), fl!("ai-import-ai-setup"));
+        chat.connection.copilot_model = "vision-model".into();
+        chat.disconnect();
+        assert!(chat.image_import_ready().is_err());
+    }
+
+    #[test]
+    fn image_import_checks_copilot_once_with_the_chat_closed_and_exposes_connection_failures() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut chat = Chat::new(AiChatSettings {
+            provider: AiProvider::Copilot,
+            copilot_path: directory.path().join("missing-copilot").display().to_string(),
+            copilot_model: "vision-model".into(),
+            ..Default::default()
+        });
+        let context = egui::Context::default();
+        assert!(chat.prepare_image_import(&context).is_err());
+        assert!(chat.job.is_some() && !chat.visible);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while chat.job.is_some() {
+            assert!(std::time::Instant::now() < deadline);
+            chat.poll();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(chat.prepare_image_import(&context).unwrap_err(), fl!("ai-chat-copilot-missing"));
+        assert!(chat.job.is_none(), "failed connections must not be retried every frame");
+        chat.connected = true;
+        chat.account = Some("old-account".into());
+        chat.connect(&context);
+        assert!(!chat.connected && chat.account.is_none(), "reconnecting must not retain stale authentication");
     }
 
     #[test]
@@ -3160,7 +3284,7 @@ mod tests {
     }
 
     #[test]
-    fn tdf_full_font_proposals_preview_apply_undo_and_reject_stale_edits() {
+    fn tdf_full_font_proposals_auto_apply_without_preview_undo_and_reject_stale_edits() {
         let mut app = DrawApp::new();
         app.create(NewKind::TheDraw, Size::new(80, 25));
         app.charfont
@@ -3179,22 +3303,23 @@ mod tests {
         let glyphs: Vec<_> = (33..=126)
             .map(|code| {
                 serde_json::json!({
-                    "code": code, "rows": [[{"char_code": 219, "fg": 15, "bg": 0}]]
+                    "code": code, "rows": vec![vec![serde_json::json!({"char_code": 219, "fg": 15, "bg": 0}); 20]; 10]
                 })
             })
             .collect();
-        workspace.call("icy_write_tdf_glyphs", &serde_json::json!({"glyphs": glyphs})).unwrap();
+        for batch in glyphs.chunks(8) {
+            workspace.call("icy_write_tdf_glyphs", &serde_json::json!({"glyphs": batch})).unwrap();
+        }
         assert_eq!(app.charfont.as_ref().unwrap().state.selected_font().unwrap().glyph_count(), 0);
         assert!(app.document.modified());
         app.ai_chat.pending_document = document;
         app.ai_chat.handle(Ok(Response::Proposal("Full TDF font".into(), Box::new(workspace.clone()))));
-        let context = egui::Context::default();
-        let _ = context.run(egui::RawInput::default(), |context| {
-            egui::CentralPanel::default().show(context, |ui| app.ai_chat.proposal_card(ui));
-        });
-        assert!(app.ai_chat.proposal.as_ref().unwrap().preview.is_some());
-        app.accept_ai_proposal();
+        assert!(app.ai_chat.proposal.as_ref().unwrap().preview.is_none());
+        app.ai_chat.proposal.as_mut().unwrap().preview_error = Some("Preview unavailable".into());
+        app.ai_chat_panel(&egui::Context::default(), false);
+        assert!(app.ai_chat.proposal.is_none());
         assert!(app.ai_chat.error.is_none(), "{:?}", app.ai_chat.error);
+        assert_eq!(app.ai_chat.entries.last().unwrap().text, fl!("ai-chat-font-applied", count = 94));
         assert_eq!(app.charfont.as_ref().unwrap().state.selected_font().unwrap().glyph_count(), 94);
         app.undo(false);
         assert_eq!(app.charfont.as_ref().unwrap().state.selected_font().unwrap().glyph_count(), 1);
@@ -3221,6 +3346,81 @@ mod tests {
         let Workspace::Tdf(draft) = workspace else { panic!("TDF draft") };
         assert!(app.apply_ai_tdf(&draft).is_err());
         assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_some());
+    }
+
+    fn propose_tdf_glyph(app: &mut DrawApp) {
+        let (mut workspace, document) = app.ai_draft().unwrap();
+        workspace
+            .call(
+                "icy_write_tdf_glyphs",
+                &serde_json::json!({"glyphs": [{"code": 66, "rows": [[{"char_code": 219, "fg": 15, "bg": 0}]]}]}),
+            )
+            .unwrap();
+        app.ai_chat.pending_document = document;
+        app.ai_chat.handle(Ok(Response::Proposal("TDF draft".into(), Box::new(workspace))));
+    }
+
+    #[test]
+    fn tdf_auto_apply_survives_glyph_switches_and_waits_for_dialogs() {
+        let mut app = DrawApp::new();
+        app.create(NewKind::TheDraw, Size::new(80, 25));
+        propose_tdf_glyph(&mut app);
+        app.change_charfont(|state| state.select_char('B'));
+        assert!(app.ai_proposal_fits(app.ai_chat.proposal.as_ref().unwrap()));
+        let context = egui::Context::default();
+        app.ai_chat_panel(&context, true);
+        assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_none());
+        assert!(app.ai_chat.auto_apply_font);
+        app.ai_chat_panel(&context, false);
+        assert!(app.ai_chat.error.is_none());
+        assert!(app.ai_chat.proposal.is_none());
+        assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_some());
+        app.undo(false);
+        assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_none());
+        app.ai_chat_panel(&context, false);
+        assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_none(), "must not reapply after undo");
+        app.undo(true);
+        assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_some());
+    }
+
+    #[test]
+    fn tdf_auto_apply_refuses_switched_or_edited_targets() {
+        for case in 0..4 {
+            let mut app = DrawApp::new();
+            app.create(NewKind::TheDraw, Size::new(80, 25));
+            propose_tdf_glyph(&mut app);
+            match case {
+                0 => app.create(NewKind::TheDraw, Size::new(80, 25)),
+                1 => app.change_charfont(|state| {
+                    state
+                        .fonts_mut()
+                        .push(retrofont::tdf::TdfFont::new("Other", retrofont::tdf::TdfFontType::Block, 2));
+                    state.select_font(1);
+                }),
+                2 => app.document.type_text("User edit").unwrap(),
+                _ => app.show_start = true,
+            }
+            app.ai_chat_panel(&egui::Context::default(), false);
+            assert!(app.ai_chat.error.is_some(), "target conflict must be reported: {case}");
+            assert!(!app.ai_chat.auto_apply_font);
+            assert!(app.charfont.as_ref().unwrap().state.fonts().iter().all(|font| font.glyph('B').is_none()));
+            assert_eq!(app.ai_chat.entries.last().unwrap().text, "TDF draft", "must not claim application succeeded");
+            if case == 2 {
+                assert!(app.ai_chat.proposal.is_some(), "conflicting draft remains available for discarding");
+                assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch), 'U');
+            }
+        }
+    }
+
+    #[test]
+    fn clearing_chat_cancels_queued_font_application() {
+        let mut app = DrawApp::new();
+        app.create(NewKind::TheDraw, Size::new(80, 25));
+        propose_tdf_glyph(&mut app);
+        app.ai_chat.clear();
+        app.ai_chat_panel(&egui::Context::default(), false);
+        assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_none());
+        assert!(app.ai_chat.entries.is_empty());
     }
 
     #[test]
@@ -3976,6 +4176,7 @@ mod tests {
         workspace.call("icy_transform_glyphs", &serde_json::json!({"operation": "invert"})).unwrap();
         app.ai_chat.pending_document = document;
         app.ai_chat.handle(Ok(Response::Proposal("Full font".into(), Box::new(workspace))));
+        app.ai_chat.auto_apply_font = false;
         let pages = app.ai_chat.proposal.as_ref().unwrap().changes.div_ceil(FONT_PREVIEW_GLYPHS);
         assert!(pages > 1);
         app.ai_chat.visible = true;
@@ -4048,7 +4249,7 @@ mod tests {
         app.ai_chat.handle(Ok(Response::Proposal("Full font".into(), Box::new(workspace))));
         assert_eq!(app.ai_chat.proposal.as_ref().unwrap().changes, original.len());
         assert_eq!(app.font_editor.as_ref().unwrap().state.get_all_glyph_data(), &original);
-        app.accept_ai_proposal();
+        app.ai_chat_panel(&egui::Context::default(), false);
         assert!(app.ai_chat.proposal.is_none());
         let editor = app.font_editor.as_mut().unwrap();
         assert_eq!(editor.state.get_all_glyph_data(), &expected);
@@ -4067,9 +4268,10 @@ mod tests {
             .set_pixel(last, 0, 0, !original[original.len() - 1][0][0])
             .unwrap();
         let before_accept = app.font_editor.as_ref().unwrap().state.get_all_glyph_data().clone();
-        app.accept_ai_proposal();
+        app.ai_chat_panel(&egui::Context::default(), false);
         assert!(app.ai_chat.proposal.is_some());
         assert!(app.ai_chat.error.is_some());
+        assert!(!app.ai_chat.auto_apply_font, "failed application must not retry every frame");
         assert_eq!(
             app.font_editor.as_ref().unwrap().state.get_all_glyph_data(),
             &before_accept,
@@ -4117,7 +4319,7 @@ mod tests {
     }
 
     #[test]
-    fn glyph_proposals_preview_apply_as_one_undo_step_and_refuse_stale_glyphs() {
+    fn glyph_proposals_auto_apply_as_one_undo_step_and_refuse_stale_glyphs() {
         use icy_engine_edit::bitfont::BitFontUndoState;
         let mut app = DrawApp::new();
         app.create(NewKind::BitmapFont, Size::new(80, 25));
@@ -4136,9 +4338,7 @@ mod tests {
         app.ai_chat.visible = true;
         app.ai_chat.settings_open = false;
         frame(&egui::Context::default(), &mut app, egui::vec2(1280.0, 820.0), vec![]);
-        assert!(app.ai_chat.proposal.as_ref().unwrap().preview.is_some(), "the card renders the glyphs");
-        assert_eq!(app.font_editor.as_ref().unwrap().state.get_glyph_pixels('A'), &original, "nothing applied yet");
-        app.accept_ai_proposal();
+        assert!(app.ai_chat.proposal.is_none(), "the completed font applies without a preview card");
         let editor = app.font_editor.as_mut().unwrap();
         assert!(editor.state.get_glyph_pixels('A').iter().flatten().all(|&set| set));
         editor.state.undo().unwrap();
@@ -4150,7 +4350,7 @@ mod tests {
         app.ai_chat.pending_document = document;
         app.ai_chat.handle(Ok(Response::Proposal("Glyph".into(), Box::new(workspace))));
         app.font_editor.as_mut().unwrap().state.set_pixel('A', 0, 0, !original[0][0]).unwrap();
-        app.accept_ai_proposal();
+        frame(&egui::Context::default(), &mut app, egui::vec2(1280.0, 820.0), vec![]);
         assert!(app.ai_chat.proposal.is_some(), "a stale proposal is kept for discarding");
         assert!(app.ai_chat.error.is_some());
     }

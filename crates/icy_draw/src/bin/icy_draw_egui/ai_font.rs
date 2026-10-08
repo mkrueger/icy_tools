@@ -304,7 +304,7 @@ impl FontDraft {
         let glyph = self.parse_glyph(arguments, RowFormat::parse(arguments)?)?;
         self.glyphs[code] = glyph;
         Ok(format!(
-            "Updated glyph {code} ({}) in the draft. The user previews the changed glyphs before applying them.",
+            "Updated glyph {code} ({}) in the draft. Successful font drafts are automatically applied at turn completion as one undo step, unless the target changed.",
             character(code as u32)
         ))
     }
@@ -408,7 +408,7 @@ impl FontDraft {
         json!({
             "targeted_count": count, "changed_count": changed.len(), "changed_codes": changed,
             "clipped_source_pixels": clipped,
-            "note": "Draft only. The user previews all changed glyphs before applying them as one undo step.",
+            "note": "Draft only until successful turn completion, then automatically applied as one undo step unless the target changed.",
         })
         .to_string()
     }
