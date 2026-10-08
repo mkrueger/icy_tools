@@ -464,13 +464,18 @@ pub trait EditableScreen: Screen {
             // lf needs to be in margins, if there are some.
             caret_pos.x = last_col;
             if self.terminal_state_mut().auto_wrap_mode == crate::AutoWrapMode::AutoWrap {
-                // Loaded documents and DECLRMM use VT delayed autowrap. An immediate LF here would
-                // add another row when a full-width line is followed by an explicit newline.
-                if !self.terminal_state().is_terminal_buffer
-                    || self.terminal_state().last_column_flag_mode
-                    || self.terminal_state().margins_left_right().is_some()
-                {
+                // DECLRMM uses VT delayed autowrap. Loaded documents defer the wrap as well, so a
+                // full-width line followed by a bare line feed does not add another row. The
+                // 8-bit machines and Viewdata wrap immediately, so a full row and RETURN leave a gap.
+                let delayed = self.terminal_state().last_column_flag_mode || self.terminal_state().margins_left_right().is_some();
+                let deferred = !self.terminal_state().is_terminal_buffer
+                    && !matches!(
+                        self.buffer_type(),
+                        crate::BufferType::Petscii | crate::BufferType::Atascii | crate::BufferType::Viewdata
+                    );
+                if delayed || deferred {
                     self.terminal_state_mut().wrap_pending = true;
+                    self.terminal_state_mut().wrap_deferred = !delayed;
                     self.set_caret_position(caret_pos);
                 } else {
                     self.lf();
@@ -557,6 +562,14 @@ pub trait EditableScreen: Screen {
     // Caret positioning
     fn set_caret_position(&mut self, pos: Position) {
         self.caret_mut().set_position(pos);
+    }
+
+    /// Performs the deferred wrap of a loaded document before anything but a line feed.
+    fn resolve_deferred_wrap(&mut self) {
+        let state = self.terminal_state_mut();
+        if std::mem::take(&mut state.wrap_deferred) && state.wrap_pending {
+            self.lf();
+        }
     }
 
     // Terminal control sequences

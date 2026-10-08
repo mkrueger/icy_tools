@@ -598,6 +598,14 @@ impl CommandSink for ScreenSink<'_> {
         if !matches!(&cmd, TerminalCommand::CsiSelectGraphicRendition(_) | TerminalCommand::Bell) {
             self.screen.end_grapheme();
         }
+        let line_feed = match cmd {
+            TerminalCommand::LineFeed => true,
+            TerminalCommand::CarriageReturn => self.screen.terminal_state().cr_is_if,
+            _ => false,
+        };
+        if !line_feed {
+            self.screen.resolve_deferred_wrap();
+        }
         match cmd {
             // Basic control characters
             TerminalCommand::CarriageReturn => {
@@ -1048,18 +1056,22 @@ impl CommandSink for ScreenSink<'_> {
     }
 
     fn emit_rip(&mut self, cmd: RipCommand) {
+        self.screen.resolve_deferred_wrap();
         self.screen.handle_rip_command(cmd);
     }
 
     fn emit_skypix(&mut self, cmd: SkypixCommand) {
+        self.screen.resolve_deferred_wrap();
         self.screen.handle_skypix_command(cmd);
     }
 
     fn emit_igs(&mut self, cmd: IgsCommand) {
+        self.screen.resolve_deferred_wrap();
         self.screen.handle_igs_command(cmd);
     }
 
     fn emit_view_data(&mut self, cmd: ViewDataCommand) {
+        self.screen.resolve_deferred_wrap();
         let current_row = self.screen.caret_position().y;
         if current_row != self.screen.terminal_state_mut().vd_last_row {
             // For Viewdata, default foreground is white (color 7), not black
@@ -1165,6 +1177,7 @@ impl CommandSink for ScreenSink<'_> {
     }
 
     fn device_control(&mut self, dcs: DeviceControlString) {
+        self.screen.resolve_deferred_wrap();
         // DCS handling for font loading and sixel
         match dcs {
             DeviceControlString::LoadFont(slot, data) => {

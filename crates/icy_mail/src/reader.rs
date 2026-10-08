@@ -765,19 +765,13 @@ fn render_file_page_width(data: &[u8], page: usize, width: i32) -> Res<TextScree
 }
 
 fn render_with(data: &[u8], parser: &mut dyn icy_parser_core::CommandParser, width: i32) -> Res<TextScreen> {
-    let mut normalized = Vec::with_capacity(data.len() + data.len() / 8);
-    let mut previous = 0;
-    for byte in data {
-        if *byte == b'\n' && previous != b'\r' {
-            normalized.push(b'\r');
-        }
-        normalized.push(*byte);
-        previous = *byte;
-    }
-    let height = normalized.iter().filter(|byte| **byte == b'\n').count().max(24) + 1;
+    let height = data.iter().filter(|byte| **byte == b'\n').count().max(24) + 1;
     let mut screen = TextScreen::new(Size::new(width, height as i32));
     screen.terminal_state_mut().is_terminal_buffer = false;
-    icy_engine::load_with_parser(&mut screen, parser, &normalized, true, -1)?;
+    // Bare line feeds also return to the first column (LNM). They are not turned into CRLF, as only
+    // a bare line feed after a full-width row continues on the next row without an empty one.
+    screen.terminal_state_mut().lf_expand = true;
+    icy_engine::load_with_parser(&mut screen, parser, data, true, -1)?;
     screen.update_hyperlinks();
     screen.caret_mut().visible = false;
     Ok(screen)

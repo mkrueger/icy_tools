@@ -272,6 +272,40 @@ fn test_loaded_document_delays_wrap_until_after_explicit_line_feed() {
 }
 
 #[test]
+fn test_loaded_document_wraps_before_cursor_movement_after_a_full_row() {
+    let mut screen = TextScreen::new(Size::new(3, 3));
+    screen.terminal_state_mut().is_terminal_buffer = false;
+    let mut parser = AnsiParser::new();
+    parser.parse(b"ABC\x1b[1CD\x1b[0mE", &mut ScreenSink::new(&mut screen));
+
+    assert_eq!(screen.char_at(Position::new(1, 1)).ch, 'D');
+    assert_eq!(screen.char_at(Position::new(2, 1)).ch, 'E');
+    assert_eq!(screen.char_at(Position::new(2, 0)).ch, 'C');
+}
+
+#[test]
+fn test_loaded_document_line_feed_replaces_the_wrap_but_crlf_keeps_the_empty_row() {
+    for (data, row) in [(&b"ABC\nD"[..], 1), (&b"ABC\r\nD"[..], 2)] {
+        let mut screen = TextScreen::new(Size::new(3, 4));
+        screen.terminal_state_mut().is_terminal_buffer = false;
+        AnsiParser::new().parse(data, &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.char_at(Position::new(0, row)).ch, 'D', "{data:?}");
+    }
+}
+
+#[test]
+fn test_loaded_petscii_wraps_immediately_like_the_c64() {
+    let mut screen = TextScreen::new(Size::new(3, 3));
+    screen.buffer.buffer_type = icy_engine::BufferType::Petscii;
+    screen.terminal_state_mut().is_terminal_buffer = false;
+    for ch in "ABC".chars() {
+        screen.print_char(AttributedChar::new(ch, TextAttribute::default()));
+    }
+    assert_eq!(screen.caret_position(), Position::new(0, 1));
+    assert!(!screen.terminal_state().wrap_pending);
+}
+
+#[test]
 fn test_carriage_return_cancels_pending_wrap() {
     let mut screen = TextScreen::new(Size::new(3, 2));
     screen.terminal_state_mut().last_column_flag_mode = true;

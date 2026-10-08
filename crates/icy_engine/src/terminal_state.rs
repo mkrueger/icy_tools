@@ -162,6 +162,9 @@ pub struct TerminalState {
     pub last_column_flag_mode: bool,
     pub last_column_flag_forced: bool,
     pub wrap_pending: bool,
+    /// The pending wrap of a loaded document: a line feed takes the place of the wrap, anything
+    /// else (including CR) wraps first, like the immediate autowrap of DOS ANSI viewers.
+    pub wrap_deferred: bool,
     margins_top_bottom: Option<(i32, i32)>,
     margins_left_right: Option<(i32, i32)>,
     saved_text_window: Option<SavedTextWindow>,
@@ -263,6 +266,7 @@ impl TerminalState {
             last_column_flag_mode: false,
             last_column_flag_forced: false,
             wrap_pending: false,
+            wrap_deferred: false,
             mouse_state: MouseState::default(),
             kitty_keyboard: KittyKeyboardState::default(),
             physical_key_reports: false,
@@ -549,6 +553,7 @@ impl TerminalState {
         self.auto_wrap_mode = AutoWrapMode::AutoWrap;
         self.bracketed_paste_mode = false;
         self.wrap_pending = false;
+        self.wrap_deferred = false;
         self.viewdata = icy_parser_core::ViewdataState::default();
         self.vd_last_row = 0;
         self.kitty_keyboard.reset();
