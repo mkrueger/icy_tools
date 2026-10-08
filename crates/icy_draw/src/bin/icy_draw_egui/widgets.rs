@@ -366,6 +366,65 @@ pub fn segmented<T: PartialEq + Copy, S: AsRef<str>>(ui: &mut egui::Ui, current:
     changed
 }
 
+/// [`segmented`] control that fills the available width with equally wide options, wrapping
+/// into rows of `columns`. Returns true when the selection changed.
+pub fn segmented_grid<T: PartialEq + Copy, S: AsRef<str>>(ui: &mut egui::Ui, current: &mut T, options: &[(T, S, S)], columns: usize) -> bool {
+    let columns = columns.clamp(1, options.len().max(1));
+    let rows = options.len().div_ceil(columns);
+    let inset = 2.0;
+    let cell_height = CONTROL_HEIGHT - inset * 2.0;
+    let (track, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), cell_height * rows as f32 + inset * 2.0),
+        egui::Sense::hover(),
+    );
+    let visuals = ui.visuals().clone();
+    ui.painter().rect_filled(track, 7, visuals.extreme_bg_color);
+    ui.painter()
+        .rect_stroke(track, 7, visuals.widgets.noninteractive.bg_stroke, egui::StrokeKind::Inside);
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let cell_width = (track.width() - inset * 2.0) / columns as f32;
+    let enabled = ui.is_enabled();
+    let mut changed = false;
+    for (index, (value, label, tooltip)) in options.iter().enumerate() {
+        let min = track.min + egui::vec2(inset + (index % columns) as f32 * cell_width, inset + (index / columns) as f32 * cell_height);
+        let rect = egui::Rect::from_min_size(min, egui::vec2(cell_width, cell_height));
+        let response = ui.interact(rect, ui.id().with(("segment", label.as_ref())), egui::Sense::click());
+        let selected = *current == *value;
+        let fill = if selected {
+            Some(PRIMARY)
+        } else if enabled && response.hovered() {
+            Some(visuals.widgets.hovered.weak_bg_fill)
+        } else {
+            None
+        };
+        if let Some(fill) = fill {
+            ui.painter().rect_filled(rect, 5, fill);
+        }
+        let color = if selected {
+            Color32::WHITE
+        } else if enabled {
+            visuals.text_color()
+        } else {
+            visuals.weak_text_color()
+        };
+        let galley = ui.fonts_mut(|fonts| fonts.layout_no_wrap(label.as_ref().to_owned(), font.clone(), color));
+        ui.painter()
+            .with_clip_rect(rect.shrink(2.0))
+            .galley(rect.center() - galley.size() / 2.0, galley, color);
+        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, enabled, selected, label.as_ref()));
+        let response = if tooltip.as_ref().is_empty() {
+            response
+        } else {
+            response.on_hover_text(tooltip.as_ref())
+        };
+        if response.clicked() && !selected {
+            *current = *value;
+            changed = true;
+        }
+    }
+    changed
+}
+
 /// On/off chip for boolean tool options, accent filled while on.
 pub fn toggle(ui: &mut egui::Ui, label: &str, value: &mut bool, tooltip: &str) -> Response {
     let font = egui::TextStyle::Button.resolve(ui.style());

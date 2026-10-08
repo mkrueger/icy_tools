@@ -3779,7 +3779,7 @@ impl DrawApp {
             }
             Dialog::AiImport(draft) => {
                 let mut draft = draft.clone();
-                draft.ai_available = self.ai_chat.can_edit_drawings();
+                draft.set_ai_availability(self.ai_chat.prepare_image_import(context));
                 keep = false;
                 match draft.show(context, self.picker) {
                     Some(ai_import::Action::Browse) => {

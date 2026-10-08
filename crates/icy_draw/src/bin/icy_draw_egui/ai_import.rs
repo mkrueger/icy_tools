@@ -90,6 +90,37 @@ impl Target {
     fn refinable(self) -> bool {
         matches!(self, Self::Ansi | Self::Petscii | Self::Vt52)
     }
+
+    fn description(self) -> String {
+        match self {
+            Self::Ansi => fl!("ai-import-ansi-size"),
+            Self::Rip => fl!("ai-import-rip-size"),
+            Self::Igs => fl!("ai-import-igs-size"),
+            Self::Petscii => fl!("ai-import-petscii-size"),
+            Self::Vt52 => fl!("ai-import-vt52-size"),
+        }
+    }
+
+    /// Columns and rows plus pixel size of the native screen of PETSCII and VT52. Cached, since
+    /// building the screen loads its font and the dialog asks every frame.
+    fn retro_geometry(self) -> Option<((i32, i32), egui::Vec2)> {
+        static GEOMETRY: std::sync::OnceLock<[((i32, i32), egui::Vec2); 2]> = std::sync::OnceLock::new();
+        let geometry = GEOMETRY.get_or_init(|| {
+            [Self::Petscii, Self::Vt52].map(|target| {
+                let buffer = target.retro_buffer().unwrap();
+                let font = buffer.font_dimensions();
+                (
+                    (buffer.width(), buffer.height()),
+                    egui::vec2((buffer.width() * font.width) as f32, (buffer.height() * font.height) as f32),
+                )
+            })
+        });
+        match self {
+            Self::Petscii => Some(geometry[0]),
+            Self::Vt52 => Some(geometry[1]),
+            Self::Ansi | Self::Rip | Self::Igs => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -242,9 +273,8 @@ impl Options {
             Target::Rip => f64::from(RIP_SIZE.0) / f64::from(RIP_SIZE.1),
             Target::Igs => f64::from(IGS_SIZE.0) / f64::from(IGS_SIZE.1),
             Target::Petscii | Target::Vt52 => {
-                let buffer = self.target.retro_buffer().unwrap();
-                let font = buffer.font_dimensions();
-                f64::from(buffer.width() * font.width) / f64::from(buffer.height() * font.height)
+                let (_, pixels) = self.target.retro_geometry().unwrap();
+                f64::from(pixels.x) / f64::from(pixels.y)
             }
         }
     }
@@ -635,23 +665,58 @@ enum Completed {
 
 type Worker = Arc<Mutex<mpsc::Receiver<Result<Completed, String>>>>;
 
+/// Settings must rest this long before the local preview is recomputed.
+const PREVIEW_DELAY: f64 = 0.2;
+/// Below this body width the previews and settings share one scrolling column.
+const STACK_WIDTH: f32 = 760.0;
+const SIDEBAR_WIDTH: f32 = 360.0;
+const PANE_HEADER: f32 = 30.0;
+const STATUS_HEIGHT: f32 = 44.0;
+const CANVAS_PADDING: f32 = 12.0;
+/// Crisp when enlarged, smooth when a large character screen is reduced to fit.
+const PREVIEW_TEXTURE: egui::TextureOptions = egui::TextureOptions {
+    magnification: egui::TextureFilter::Nearest,
+    minification: egui::TextureFilter::Linear,
+    wrap_mode: egui::TextureWrapMode::ClampToEdge,
+    mipmap_mode: None,
+};
+
 #[derive(Clone, Default)]
 pub struct ImportDialog {
     source: Option<ReferenceImage>,
     source_texture: Option<egui::TextureHandle>,
     result: Option<Arc<Converted>>,
     result_texture: Option<egui::TextureHandle>,
+    /// The previous preview, shown dimmed while the preview of changed settings is computed.
+    stale_texture: Option<egui::TextureHandle>,
     options: Options,
     worker: Option<Worker>,
+    /// The worker computes a preview rather than loading the source, so changed settings discard it.
+    converting: bool,
+    /// When the settings last changed; the local preview follows once they rest.
+    changed_at: Option<f64>,
     error: Option<String>,
     drag_start: Option<egui::Pos2>,
-    /// The AI chat can edit drawings, i.e. uses the Copilot connection.
-    pub ai_available: bool,
-    refine: bool,
+    /// Copilot is connected and a model has been selected.
+    ai_available: bool,
+    ai_unavailable_reason: Option<String>,
     ai_job: Option<Arc<Mutex<Option<super::ai_chat::ImportJob>>>>,
+    /// The result was drawn by the AI rather than converted locally.
+    ai_result: bool,
+    /// Why the last AI drawing failed. Unlike `error` it does not stop the local preview.
+    ai_error: Option<String>,
 }
 
 impl ImportDialog {
+    pub fn set_ai_availability(&mut self, availability: Result<(), String>) {
+        self.ai_available = availability.is_ok();
+        self.ai_unavailable_reason = availability.err();
+        if !self.ai_available && self.ai_job.is_some() {
+            self.cancel_ai();
+            self.ai_error = self.ai_unavailable_reason.clone();
+        }
+    }
+
     fn start(&mut self, context: &egui::Context, work: impl FnOnce() -> Result<Completed, String> + Send + 'static) {
         self.invalidate();
         let (sender, receiver) = mpsc::channel();
@@ -664,24 +729,48 @@ impl ImportDialog {
     }
 
     pub fn load(&mut self, context: &egui::Context, path: &Path) {
+        self.load_file(
+            context,
+            egui::DroppedFile {
+                path: Some(path.to_path_buf()),
+                ..Default::default()
+            },
+        );
+    }
+
+    fn load_file(&mut self, context: &egui::Context, file: egui::DroppedFile) {
         self.source = None;
         self.source_texture = None;
+        self.changed_at = None;
+        self.ai_error = None;
         self.options.focus = Options::default().focus;
         self.drag_start = None;
-        let path = path.to_path_buf();
-        self.start(context, move || {
-            image_attachment::read_drop(egui::DroppedFile {
-                path: Some(path),
-                ..Default::default()
-            })
-            .map(Completed::Source)
-        });
+        self.start(context, move || image_attachment::read_drop(file).map(Completed::Source));
+        self.stale_texture = None;
+    }
+
+    /// Loads an image dropped anywhere on the window, as the dialog covers the whole application.
+    fn take_drop(&mut self, context: &egui::Context) {
+        if self.ai_job.is_some() {
+            return;
+        }
+        let files = context.input_mut(|input| std::mem::take(&mut input.raw.dropped_files));
+        if let Some(file) = files.into_iter().find(|file| file.path.is_some() || file.bytes.is_some()) {
+            self.load_file(context, file);
+        }
     }
 
     fn invalidate(&mut self) {
         self.cancel_ai();
+        if self.converting {
+            self.worker = None;
+            self.converting = false;
+        }
+        if let Some(texture) = self.result_texture.take() {
+            self.stale_texture = Some(texture);
+        }
         self.result = None;
-        self.result_texture = None;
+        self.ai_result = false;
         self.error = None;
     }
 
@@ -691,10 +780,13 @@ impl ImportDialog {
             if let Some(message) = message {
                 self.cancel_ai();
                 match message.and_then(|buffer| self.converted_buffer(buffer)) {
-                    Ok(result) => self.result = Some(Arc::new(result)),
+                    Ok(result) => {
+                        self.result = Some(Arc::new(result));
+                        self.ai_result = true;
+                    }
                     Err(error) => {
                         log::warn!("AI image import failed: {error}");
-                        self.error = Some(error);
+                        self.ai_error = Some(error);
                     }
                 }
             }
@@ -707,6 +799,7 @@ impl ImportDialog {
             Err(mpsc::TryRecvError::Disconnected) => Err(fl!("ai-import-worker-failed")),
         };
         self.worker = None;
+        self.converting = false;
         match result {
             Ok(Completed::Source(source)) => self.source = Some(source),
             Ok(Completed::Result(result)) => self.result = Some(Arc::new(result)),
@@ -728,101 +821,107 @@ impl ImportDialog {
         }
         let options = self.options.clone();
         self.start(context, move || convert(&source, &options).map(Completed::Result));
+        self.converting = true;
+    }
+
+    /// Starts the local preview once the settings rest; AI drawings are only requested explicitly.
+    fn update_preview(&mut self, context: &egui::Context) {
+        if self.source.is_none()
+            || self.result.is_some()
+            || self.worker.is_some()
+            || self.ai_job.is_some()
+            || self.error.is_some()
+            || self.options.validate().is_err()
+        {
+            return;
+        }
+        // Slider drags convert once on release rather than for every intermediate value.
+        if context.input(|input| input.pointer.any_down()) {
+            return;
+        }
+        if let Some(changed) = self.changed_at {
+            let remaining = changed + PREVIEW_DELAY - context.input(|input| input.time);
+            if remaining > 0.0 {
+                context.request_repaint_after_secs(remaining as f32);
+                return;
+            }
+        }
+        self.changed_at = None;
+        self.start_conversion(context);
+    }
+
+    /// The local preview is outdated and will be recomputed without further input.
+    fn updating(&self) -> bool {
+        self.converting
+            || (self.source.is_some() && self.result.is_none() && self.ai_job.is_none() && self.error.is_none() && self.options.validate().is_ok())
     }
 
     pub fn show(&mut self, context: &egui::Context, blocked: bool) -> Option<Action> {
         #[derive(Clone, Copy)]
         enum Button {
-            Convert,
+            Generate,
+            Stop,
             Accept,
             Cancel,
         }
         self.poll();
-        let busy = self.worker.is_some() || self.ai_job.is_some();
+        if !blocked {
+            self.take_drop(context);
+        }
         let before = self.options.clone();
-        let before_refine = self.refine;
         let mut browse = false;
         let response = appearance::Dialog::new("ai-import")
             .title(fl!("ai-import-title"))
+            .subtitle(fl!("ai-import-description"))
             .size(DialogSize::Width(1120.0))
-            .fixed_height(900.0)
+            .fixed_height(820.0)
+            .scroll(false)
             .show(context, |dialog| {
+                let height = dialog.body_height();
                 dialog.content(|ui| {
-                    ui.add_enabled_ui(!blocked && !busy, |ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            browse = ui.button(fl!("ai-import-browse")).clicked();
-                            if let Some(source) = &self.source {
-                                ui.label(format!("{} ({} x {})", source.name, source.width, source.height));
-                                if source.original_size != (source.width, source.height) {
-                                    ui.weak(fl!("ai-import-normalized", width = source.original_size.0, height = source.original_size.1));
-                                }
-                            } else {
-                                ui.weak(fl!("ai-import-select-source"));
-                            }
-                        });
-                        ui.weak(if self.refines() { fl!("ai-import-ai-info") } else { fl!("ai-import-local") });
-                        ui.separator();
-                        self.controls(ui);
-                    });
-                    ui.separator();
-                    let controls_height = ui.cursor().top() - ui.max_rect().top();
-                    let height = (ui.clip_rect().height() - controls_height - 64.0).clamp(80.0, 450.0);
-                    ui.columns(2, |columns| {
-                        columns[0].label(fl!("ai-import-source"));
-                        columns[1].label(fl!("ai-import-result", format = self.options.target.label()));
-                        columns[0].add_enabled_ui(!blocked && !busy, |ui| self.source_preview(ui, height));
-                        self.result_preview(&mut columns[1], height);
-                    });
-                    if self.source.is_some() {
-                        ui.weak(fl!("ai-import-focus-hint"));
+                    if blocked {
+                        ui.disable();
                     }
-                    if busy {
-                        ui.horizontal(|ui| {
-                            ui.spinner();
-                            ui.label(if self.ai_job.is_some() {
-                                fl!("ai-import-ai-working")
-                            } else {
-                                fl!("ai-import-working")
-                            });
-                        });
-                    } else if let Some(error) = &self.error {
-                        ui.colored_label(icy_engine_gui::egui::dialog::DANGER, error);
-                    } else if let Err(error) = self.options.validate() {
-                        ui.colored_label(icy_engine_gui::egui::dialog::DANGER, error);
-                    }
+                    browse = self.body(ui, height);
                 });
-                if self.options != before || self.refine != before_refine {
+                if self.options != before {
                     self.invalidate();
+                    self.ai_error = None;
+                    self.changed_at = Some(context.input(|input| input.time));
                 }
-                dialog.buttons([
-                    DialogButton::secondary(fl!("ai-import-convert"), Button::Convert)
-                        .leading()
-                        .enabled(!blocked && !busy && self.source.is_some() && self.options.validate().is_ok()),
-                    DialogButton::cancel(labels::cancel(), Button::Cancel).enabled(!blocked),
+                let idle = self.worker.is_none() && self.ai_job.is_none();
+                let mut buttons = Vec::new();
+                if self.ai_job.is_some() {
+                    buttons.push(DialogButton::secondary(fl!("ai-import-stop"), Button::Stop).leading().enabled(!blocked));
+                } else if self.options.target.refinable() {
+                    let mut tooltip = fl!("ai-import-refine-hint");
+                    if let Some(reason) = self.ai_unavailable_reason.as_ref().filter(|_| !self.ai_available) {
+                        tooltip = format!("{tooltip}\n\n{reason}");
+                    }
+                    let loading = self.worker.is_some() && !self.converting;
+                    buttons.push(
+                        DialogButton::secondary(fl!("ai-import-generate"), Button::Generate)
+                            .leading()
+                            .enabled(!blocked && !loading && self.source.is_some() && self.options.validate().is_ok())
+                            .tooltip(tooltip),
+                    );
+                }
+                buttons.push(DialogButton::cancel(labels::cancel(), Button::Cancel).enabled(!blocked));
+                buttons.push(
                     DialogButton::primary(fl!("ai-import-accept", format = self.options.target.label()), Button::Accept)
-                        .enabled(!blocked && !busy && self.result.is_some()),
-                ]);
+                        .enabled(!blocked && idle && self.result.is_some()),
+                );
+                dialog.buttons(buttons);
             });
         if blocked {
             return None;
         }
-        match response.action {
-            Some(Button::Accept) if !busy => self.accepted().map(Action::Accept),
-            Some(Button::Convert) if !busy => {
-                if self.refines() {
-                    return match self.ai_request() {
-                        Ok(request) => {
-                            self.invalidate();
-                            Some(Action::Generate(Box::new(request)))
-                        }
-                        Err(error) => {
-                            log::warn!("Cannot prepare AI image import: {error}");
-                            self.error = Some(error);
-                            None
-                        }
-                    };
-                }
-                self.start_conversion(context);
+        let idle = self.worker.is_none() && self.ai_job.is_none();
+        let action = match response.action {
+            Some(Button::Accept) if idle => self.accepted().map(Action::Accept),
+            Some(Button::Generate) if self.ai_job.is_none() => self.generate(),
+            Some(Button::Stop) => {
+                self.cancel_ai();
                 None
             }
             Some(Button::Cancel) => {
@@ -833,13 +932,36 @@ impl ImportDialog {
                 self.cancel_ai();
                 Some(Action::Cancel)
             }
-            _ if browse && !busy => Some(Action::Browse),
+            _ if browse && self.ai_job.is_none() => Some(Action::Browse),
             _ => None,
+        };
+        if action.is_none() {
+            self.update_preview(context);
         }
+        action
     }
 
-    fn refines(&self) -> bool {
-        self.refine && self.ai_available && self.options.target.refinable()
+    /// Asks the AI to draw the picture, or explains why it cannot; the local preview is kept then.
+    fn generate(&mut self) -> Option<Action> {
+        if !self.options.target.refinable() {
+            return None;
+        }
+        if !self.ai_available {
+            self.ai_error = Some(self.ai_unavailable_reason.clone().unwrap_or_else(|| fl!("ai-import-refine-unavailable")));
+            return None;
+        }
+        match self.ai_request() {
+            Ok(request) => {
+                self.invalidate();
+                self.ai_error = None;
+                Some(Action::Generate(Box::new(request)))
+            }
+            Err(error) => {
+                log::warn!("Cannot prepare AI image import: {error}");
+                self.ai_error = Some(error);
+                None
+            }
+        }
     }
 
     fn accepted(&mut self) -> Option<Box<Accepted>> {
@@ -895,105 +1017,354 @@ impl ImportDialog {
         Ok(Converted { imported, preview })
     }
 
-    fn controls(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(fl!("ai-import-target"));
-            for target in Target::ALL {
-                ui.selectable_value(&mut self.options.target, target, target.label());
-            }
-        });
-        if self.options.target.refinable() {
-            let response = ui
-                .add_enabled(self.ai_available, egui::Checkbox::new(&mut self.refine, fl!("ai-import-refine")))
-                .on_hover_text(fl!("ai-import-refine-hint"));
-            if !self.ai_available {
-                response.on_disabled_hover_text(fl!("ai-import-refine-unavailable"));
-            }
-        }
-        if self.options.target == Target::Ansi {
-            ui.horizontal_wrapped(|ui| {
-                if !self.refines() {
-                    ui.label(fl!("ai-import-style"));
-                    for preset in [Preset::Scene, Preset::Shaded] {
-                        if ui.selectable_label(self.options.preset == preset, preset.label()).clicked() {
-                            self.options.select_preset(preset);
-                        }
-                    }
-                    ui.separator();
-                }
-                for (columns, rows) in [(80, 25), (80, 50)] {
-                    if ui
-                        .selectable_label((self.options.columns, self.options.rows) == (columns, rows), format!("{columns} x {rows}"))
-                        .clicked()
-                    {
-                        self.options.columns = columns;
-                        self.options.rows = rows;
-                    }
-                }
-                ui.label(fl!("ai-import-columns"));
-                ui.add(egui::DragValue::new(&mut self.options.columns).range(1..=160));
-                ui.label(fl!("ai-import-rows"));
-                ui.add(egui::DragValue::new(&mut self.options.rows).range(1..=200));
-            });
-        } else {
-            ui.weak(match self.options.target {
-                Target::Igs => fl!("ai-import-igs-size"),
-                Target::Petscii => fl!("ai-import-petscii-size"),
-                Target::Vt52 => fl!("ai-import-vt52-size"),
-                Target::Ansi | Target::Rip => fl!("ai-import-rip-size"),
-            });
-        }
-        ui.horizontal_wrapped(|ui| {
-            ui.label(fl!("ai-import-fit"));
-            for fit in [Fit::Crop, Fit::Contain, Fit::Stretch] {
-                ui.selectable_value(&mut self.options.fit, fit, fit.label());
-            }
-            ui.separator();
-            if ui.button(fl!("ai-import-reset-focus")).clicked() {
-                self.options.focus = Options::default().focus;
-            }
-            if self.options.target == Target::Ansi {
-                ui.checkbox(&mut self.options.ice, fl!("ai-import-ice"));
-                ui.checkbox(&mut self.options.spacing, fl!("ai-import-spacing"));
-                ui.checkbox(&mut self.options.aspect, fl!("ai-import-aspect"));
-            } else if !self.refines() {
-                ui.checkbox(&mut self.options.dither, fl!("ai-import-dither"));
-            }
-        });
-        if self.options.target == Target::Ansi && !self.refines() {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(fl!("ai-import-glyphs"));
-                for glyphs in [Glyphs::HalfBlocks, Glyphs::Blocks, Glyphs::Full, Glyphs::Ascii] {
-                    if ui.selectable_value(&mut self.options.glyphs, glyphs, glyphs.label()).changed() {
-                        self.options.dither = glyphs == Glyphs::HalfBlocks;
-                        if glyphs == Glyphs::HalfBlocks {
-                            self.options.lightness_levels = 0;
-                        }
-                    }
-                }
-            });
-            ui.horizontal_wrapped(|ui| {
-                ui.checkbox(&mut self.options.hue_families, fl!("ai-import-hue-families"));
-                ui.checkbox(&mut self.options.dither, fl!("ai-import-dither"));
-            });
-            egui::CollapsingHeader::new(fl!("ai-import-tuning")).show(ui, |ui| {
-                ui.add(egui::Slider::new(&mut self.options.brightness, -0.25..=0.25).text(fl!("ai-import-brightness")));
-                ui.add(egui::Slider::new(&mut self.options.contrast, 0.5..=2.0).text(fl!("ai-import-contrast")));
-                ui.add(egui::Slider::new(&mut self.options.local_contrast, 0.0..=2.0).text(fl!("ai-import-local-contrast")));
-                ui.add(egui::Slider::new(&mut self.options.saturation, 0.0..=2.0).text(fl!("ai-import-saturation")));
-                ui.add(egui::Slider::new(&mut self.options.shade_penalty, 0.0..=2.0).text(fl!("ai-import-shading")));
-                ui.add(egui::Slider::new(&mut self.options.coherence, 0.0..=0.02).text(fl!("ai-import-coherence")));
-                ui.horizontal(|ui| {
-                    let mut enabled = self.options.lightness_levels != 0;
-                    if ui.checkbox(&mut enabled, fl!("ai-import-levels")).changed() {
-                        self.options.lightness_levels = if enabled { 5 } else { 0 };
-                    }
-                    if enabled {
-                        ui.add(egui::DragValue::new(&mut self.options.lightness_levels).range(2..=16));
-                    }
+    /// Previews beside a settings column, or everything in one scrolling column when narrow.
+    /// Returns whether a new source image was requested.
+    fn body(&mut self, ui: &mut egui::Ui, height: f32) -> bool {
+        let mut browse = false;
+        if ui.available_width() >= STACK_WIDTH {
+            ui.horizontal_top(|ui| {
+                let gap = 20.0;
+                let stage_width = (ui.available_width() - SIDEBAR_WIDTH - gap).max(0.0);
+                ui.allocate_ui_with_layout(egui::vec2(stage_width, height), egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.set_min_size(egui::vec2(stage_width, height));
+                    browse = self.stage(ui, height);
+                });
+                ui.add_space(gap - ui.spacing().item_spacing.x);
+                ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), height), egui::Layout::top_down(egui::Align::Min), |ui| {
+                    scrolling(ui, "ai-import-settings", height, |ui| self.settings(ui));
                 });
             });
+        } else {
+            scrolling(ui, "ai-import-body", height, |ui| {
+                let stage = (ui.available_width() * 1.25).clamp(360.0, 640.0);
+                browse = self.stage(ui, stage);
+                ui.add_space(8.0);
+                self.settings(ui);
+            });
         }
+        browse
+    }
+
+    /// Source and result side by side, or stacked when that shows them larger, above a status line.
+    fn stage(&mut self, ui: &mut egui::Ui, height: f32) -> bool {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), height), egui::Sense::hover());
+        let panes = egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), rect.bottom() - STATUS_HEIGHT));
+        let gap = 12.0;
+        let source_size = self
+            .source
+            .as_ref()
+            .map_or(egui::vec2(4.0, 3.0), |source| egui::vec2(source.width as f32, source.height as f32));
+        let result_size = self.preview_size();
+        let shown = |pane: egui::Vec2| -> f32 {
+            let canvas = pane - egui::vec2(CANVAS_PADDING * 2.0, PANE_HEADER + CANVAS_PADDING * 2.0);
+            [source_size, result_size]
+                .into_iter()
+                .map(|size| {
+                    let fitted = fit_preview(size, canvas.max(egui::Vec2::splat(1.0)));
+                    fitted.x * fitted.y
+                })
+                .sum()
+        };
+        let side = egui::vec2((panes.width() - gap) / 2.0, panes.height());
+        let stacked = egui::vec2(panes.width(), (panes.height() - gap) / 2.0);
+        let (source_rect, result_rect) = if shown(stacked) > shown(side) {
+            (
+                egui::Rect::from_min_size(panes.min, stacked),
+                egui::Rect::from_min_max(egui::pos2(panes.left(), panes.bottom() - stacked.y), panes.max),
+            )
+        } else {
+            (
+                egui::Rect::from_min_size(panes.min, side),
+                egui::Rect::from_min_max(egui::pos2(panes.right() - side.x, panes.top()), panes.max),
+            )
+        };
+        let browse = self.source_pane(ui, source_rect);
+        self.result_pane(ui, result_rect);
+        self.status_line(ui, egui::Rect::from_min_max(egui::pos2(rect.left(), panes.bottom()), rect.max));
+        browse
+    }
+
+    fn preview_size(&self) -> egui::Vec2 {
+        if let Some(result) = &self.result {
+            return egui::vec2(result.preview.size[0] as f32, result.preview.size[1] as f32);
+        }
+        match self.options.target.retro_geometry() {
+            Some((_, pixels)) => pixels,
+            None => egui::vec2(self.options.target_aspect() as f32, 1.0),
+        }
+    }
+
+    /// Size of the result in characters or pixels, as shown above the preview.
+    fn output_size(&self) -> (i32, i32) {
+        match self.options.target {
+            Target::Ansi => (self.options.columns, self.options.rows),
+            Target::Rip => (RIP_SIZE.0 as i32, RIP_SIZE.1 as i32),
+            Target::Igs => (IGS_SIZE.0 as i32, IGS_SIZE.1 as i32),
+            Target::Petscii | Target::Vt52 => self.options.target.retro_geometry().map_or((0, 0), |(cells, _)| cells),
+        }
+    }
+
+    fn source_pane(&mut self, ui: &mut egui::Ui, rect: egui::Rect) -> bool {
+        let mut browse = false;
+        let locked = self.ai_job.is_some();
+        let (meta, tooltip) = match &self.source {
+            Some(source) => (
+                format!("{}  ·  {} × {}", source.name, source.width, source.height),
+                (source.original_size != (source.width, source.height))
+                    .then(|| fl!("ai-import-normalized", width = source.original_size.0, height = source.original_size.1)),
+            ),
+            None => (String::new(), None),
+        };
+        let loaded = self.source.is_some();
+        pane_header(ui, rect, &fl!("ai-import-source"), &meta, tooltip.as_deref(), |ui| {
+            if loaded {
+                browse = ui.add_enabled(!locked, egui::Button::new(fl!("ai-import-browse")).small()).clicked();
+            }
+        });
+        let canvas = canvas_rect(rect);
+        let dragging_files = !locked && ui.input(|input| !input.raw.hovered_files.is_empty());
+        if loaded {
+            let stroke = if dragging_files {
+                egui::Stroke::new(2.0, appearance::PRIMARY)
+            } else {
+                canvas_stroke(ui)
+            };
+            paint_canvas(ui, canvas, stroke);
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(canvas.shrink(CANVAS_PADDING))
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            let height = child.available_height();
+            self.source_preview(&mut child, height);
+        } else {
+            browse |= self.drop_zone(ui, canvas, dragging_files, locked);
+        }
+        browse
+    }
+
+    /// Empty source pane that loads an image when clicked or when a file is dropped on the dialog.
+    fn drop_zone(&self, ui: &mut egui::Ui, rect: egui::Rect, dragging_files: bool, locked: bool) -> bool {
+        let loading = self.worker.is_some();
+        let sense = if locked || loading { egui::Sense::hover() } else { egui::Sense::click() };
+        let response = ui.interact(rect, ui.id().with("ai-import-drop"), sense);
+        let active = dragging_files || (response.hovered() && ui.is_enabled() && !loading);
+        let fill = if dragging_files {
+            appearance::PRIMARY.gamma_multiply(0.12)
+        } else {
+            canvas_fill(ui)
+        };
+        ui.painter().rect_filled(rect, 8, fill);
+        let color = if active {
+            appearance::PRIMARY
+        } else {
+            ui.visuals().weak_text_color().gamma_multiply(0.6)
+        };
+        let border = rect.shrink(1.0);
+        ui.painter().extend(egui::Shape::dashed_line(
+            &[border.left_top(), border.right_top(), border.right_bottom(), border.left_bottom(), border.left_top()],
+            egui::Stroke::new(1.5, color),
+            6.0,
+            4.0,
+        ));
+        if loading {
+            busy_indicator(ui, rect, &fl!("ai-import-working"), None);
+            return false;
+        }
+        let center = rect.center();
+        paint_picture_icon(ui.painter(), center - egui::vec2(0.0, 52.0), color);
+        let title = if dragging_files { fl!("ai-import-drop-release") } else { fl!("ai-import-drop") };
+        centered_text(ui, center - egui::vec2(0.0, 6.0), &title, 16.0, ui.visuals().strong_text_color(), rect.width() - 32.0);
+        centered_text(
+            ui,
+            center + egui::vec2(0.0, 18.0),
+            &fl!("ai-import-select-source"),
+            12.5,
+            ui.visuals().weak_text_color(),
+            rect.width() - 32.0,
+        );
+        let button = egui::Rect::from_center_size(center + egui::vec2(0.0, 60.0), egui::vec2(150.0, 30.0));
+        // A detached child, since `Ui::put` would move the cursor of the surrounding layout back up.
+        let clicked = ui
+            .new_child(
+                egui::UiBuilder::new()
+                    .max_rect(button)
+                    .layout(egui::Layout::centered_and_justified(egui::Direction::TopDown)),
+            )
+            .button(fl!("ai-import-browse"))
+            .clicked();
+        let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+        !locked && (clicked || response.clicked())
+    }
+
+    fn result_pane(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+        let (width, height) = self.output_size();
+        let meta = format!("{}  ·  {} × {}", self.options.target.label(), width, height);
+        let ai_result = self.ai_result && self.result.is_some();
+        pane_header(ui, rect, &fl!("ai-import-preview"), &meta, None, |ui| {
+            if ai_result {
+                appearance::status_badge(ui, &fl!("ai-import-ai-result"), appearance::PRIMARY);
+            }
+        });
+        let canvas = canvas_rect(rect);
+        paint_canvas(ui, canvas, canvas_stroke(ui));
+        let inner = canvas.shrink(CANVAS_PADDING);
+        if let Some(result) = &self.result {
+            self.stale_texture = None;
+            let texture = self
+                .result_texture
+                .get_or_insert_with(|| ui.ctx().load_texture("import-result", result.preview.clone(), PREVIEW_TEXTURE));
+            paint_preview(ui, texture, inner, egui::Color32::WHITE);
+        } else if self.ai_job.is_some() {
+            busy_indicator(ui, inner, &fl!("ai-import-ai-working"), self.stale_texture.as_ref());
+        } else if self.updating() {
+            busy_indicator(ui, inner, &fl!("ai-import-working"), self.stale_texture.as_ref());
+        } else {
+            let text = if self.source.is_none() {
+                fl!("ai-import-preview-empty")
+            } else {
+                fl!("ai-import-preview-unavailable")
+            };
+            centered_text(ui, inner.center(), &text, 13.0, ui.visuals().weak_text_color(), inner.width().min(340.0));
+        }
+    }
+
+    fn status_line(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+        let mut ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect.shrink2(egui::vec2(2.0, 6.0)))
+                .layout(egui::Layout::right_to_left(egui::Align::Center)),
+        );
+        let locked = self.ai_job.is_some();
+        if self.source.is_some()
+            && self.options.focus != Options::default().focus
+            && ui.add_enabled(!locked, egui::Button::new(fl!("ai-import-reset-focus")).small()).clicked()
+        {
+            self.options.focus = Options::default().focus;
+        }
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            let error = self
+                .error
+                .clone()
+                .or_else(|| self.ai_error.clone())
+                .or_else(|| self.options.validate().err());
+            if let Some(error) = error.filter(|_| !locked) {
+                ui.add(egui::Label::new(egui::RichText::new(error).color(icy_engine_gui::egui::dialog::DANGER)).wrap());
+            } else if self.source.is_some() {
+                ui.add(egui::Label::new(egui::RichText::new(fl!("ai-import-focus-hint")).weak()).wrap());
+            }
+        });
+    }
+
+    fn settings(&mut self, ui: &mut egui::Ui) {
+        let locked = self.ai_job.is_some();
+        ui.add_enabled_ui(!locked, |ui| {
+            self.output_settings(ui);
+            self.conversion_settings(ui);
+            if self.options.target == Target::Ansi {
+                self.tone_settings(ui);
+            }
+        });
+    }
+
+    fn output_settings(&mut self, ui: &mut egui::Ui) {
+        appearance::group(ui, &fl!("ai-import-output"), |ui| {
+            caption(ui, &fl!("ai-import-target"));
+            let targets = Target::ALL.map(|target| (target, target.label(), ""));
+            crate::widgets::segmented_grid(ui, &mut self.options.target, &targets, targets.len());
+            ui.add(egui::Label::new(egui::RichText::new(self.options.target.description()).weak().size(12.0)).wrap());
+            let ansi = self.options.target == Target::Ansi;
+            if ansi {
+                ui.add_space(4.0);
+                caption(ui, &fl!("ai-import-canvas"));
+                let mut size = (self.options.columns, self.options.rows);
+                let sizes = [(80, 25), (80, 50)].map(|(columns, rows)| ((columns, rows), format!("{columns} × {rows}"), String::new()));
+                if crate::widgets::segmented_grid(ui, &mut size, &sizes, sizes.len()) {
+                    (self.options.columns, self.options.rows) = size;
+                }
+                ui.horizontal(|ui| {
+                    ui.label(fl!("ai-import-columns"));
+                    ui.add(egui::DragValue::new(&mut self.options.columns).range(1..=160));
+                    ui.add_space(12.0);
+                    ui.label(fl!("ai-import-rows"));
+                    ui.add(egui::DragValue::new(&mut self.options.rows).range(1..=200));
+                });
+            }
+            ui.add_space(4.0);
+            caption(ui, &fl!("ai-import-fit"));
+            let fits = [Fit::Crop, Fit::Contain, Fit::Stretch].map(|fit| (fit, fit.label(), String::new()));
+            crate::widgets::segmented_grid(ui, &mut self.options.fit, &fits, fits.len());
+            if ansi {
+                ui.horizontal_wrapped(|ui| {
+                    crate::widgets::toggle(ui, &fl!("ai-import-ice"), &mut self.options.ice, "");
+                    crate::widgets::toggle(ui, &fl!("ai-import-spacing"), &mut self.options.spacing, "");
+                    crate::widgets::toggle(ui, &fl!("ai-import-aspect"), &mut self.options.aspect, "");
+                });
+            }
+        });
+    }
+
+    fn conversion_settings(&mut self, ui: &mut egui::Ui) {
+        appearance::group(ui, &fl!("ai-import-conversion"), |ui| {
+            if self.options.target != Target::Ansi {
+                ui.horizontal_wrapped(|ui| {
+                    crate::widgets::toggle(ui, &fl!("ai-import-dither"), &mut self.options.dither, "");
+                });
+                return;
+            }
+            caption(ui, &fl!("ai-import-style"));
+            let mut preset = self.options.preset;
+            let presets = [Preset::Scene, Preset::Shaded].map(|preset| (preset, preset.label(), String::new()));
+            if crate::widgets::segmented_grid(ui, &mut preset, &presets, presets.len()) {
+                self.options.select_preset(preset);
+            }
+            ui.add_space(4.0);
+            caption(ui, &fl!("ai-import-glyphs"));
+            let glyphs = [Glyphs::HalfBlocks, Glyphs::Blocks, Glyphs::Full, Glyphs::Ascii].map(|glyphs| (glyphs, glyphs.label(), String::new()));
+            if crate::widgets::segmented_grid(ui, &mut self.options.glyphs, &glyphs, 2) {
+                self.options.dither = self.options.glyphs == Glyphs::HalfBlocks;
+                if self.options.glyphs == Glyphs::HalfBlocks {
+                    self.options.lightness_levels = 0;
+                }
+            }
+            ui.horizontal_wrapped(|ui| {
+                crate::widgets::toggle(ui, &fl!("ai-import-hue-families"), &mut self.options.hue_families, "");
+                crate::widgets::toggle(ui, &fl!("ai-import-dither"), &mut self.options.dither, "");
+            });
+        });
+    }
+
+    fn tone_settings(&mut self, ui: &mut egui::Ui) {
+        appearance::group(ui, "", |ui| {
+            egui::CollapsingHeader::new(appearance::bold(ui, fl!("ai-import-tuning")))
+                .id_salt("ai-import-tuning")
+                .show(ui, |ui| {
+                    let options = &mut self.options;
+                    slider_field(ui, &fl!("ai-import-brightness"), &mut options.brightness, -0.25..=0.25, 1.0);
+                    slider_field(ui, &fl!("ai-import-contrast"), &mut options.contrast, 0.5..=2.0, 1.0);
+                    slider_field(ui, &fl!("ai-import-local-contrast"), &mut options.local_contrast, 0.0..=2.0, 1.0);
+                    slider_field(ui, &fl!("ai-import-saturation"), &mut options.saturation, 0.0..=2.0, 1.0);
+                    slider_field(ui, &fl!("ai-import-shading"), &mut options.shade_penalty, 0.0..=2.0, 1.0);
+                    // Shown in thousandths, which the slider's two decimals can still resolve.
+                    slider_field(ui, &fl!("ai-import-coherence"), &mut options.coherence, 0.0..=0.02, 1000.0);
+                    ui.add_space(4.0);
+                    let mut levels = options.lightness_levels != 0;
+                    if toggle_row(ui, &fl!("ai-import-levels"), &mut levels).changed() {
+                        options.lightness_levels = if levels { 5 } else { 0 };
+                    }
+                    if levels {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(fl!("ai-import-levels-count")).weak());
+                            ui.add(egui::DragValue::new(&mut options.lightness_levels).range(2..=16));
+                        });
+                    }
+                    ui.add_space(4.0);
+                    if ui.button(labels::restore_defaults()).clicked() {
+                        let preset = options.preset;
+                        options.select_preset(preset);
+                    }
+                });
+        });
     }
 
     fn source_preview(&mut self, ui: &mut egui::Ui, height: f32) {
@@ -1004,8 +1375,10 @@ impl ImportDialog {
         let texture = self
             .source_texture
             .get_or_insert_with(|| ui.ctx().load_texture("import-source", source.color_image(), egui::TextureOptions::LINEAR));
-        let size = fit_preview(texture.size_vec2(), egui::vec2(ui.available_width(), height));
-        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::drag());
+        let (area, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), height), egui::Sense::hover());
+        let rect = egui::Rect::from_center_size(area.center(), fit_preview(texture.size_vec2(), area.size()));
+        let sense = if self.ai_job.is_some() { egui::Sense::hover() } else { egui::Sense::drag() };
+        let response = ui.interact(rect, ui.id().with("import-focus"), sense);
         egui::Image::new(&*texture).paint_at(ui, rect);
         let normalize = |point: egui::Pos2| {
             let delta = (point - rect.min) / rect.size();
@@ -1026,31 +1399,187 @@ impl ImportDialog {
         }
         let focus = dragging.unwrap_or(self.options.focus);
         let project = |focus: egui::Rect| egui::Rect::from_min_max(rect.min + focus.min.to_vec2() * rect.size(), rect.min + focus.max.to_vec2() * rect.size());
-        ui.painter()
-            .rect_stroke(project(focus), 0, egui::Stroke::new(1.0, egui::Color32::WHITE), egui::StrokeKind::Inside);
         if self.options.validate().is_ok() {
             let (x, y, width, height) = self.options.crop(source);
-            let rect = egui::Rect::from_min_max(
+            let converted = project(egui::Rect::from_min_max(
                 egui::pos2(x as f32 / source.width as f32, y as f32 / source.height as f32),
                 egui::pos2((x + width) as f32 / source.width as f32, (y + height) as f32 / source.height as f32),
-            );
+            ));
+            // Darkening what is left out makes the converted area readable at a glance.
+            let shade = egui::Color32::from_black_alpha(150);
+            for part in [
+                egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), converted.top())),
+                egui::Rect::from_min_max(egui::pos2(rect.left(), converted.bottom()), rect.max),
+                egui::Rect::from_min_max(egui::pos2(rect.left(), converted.top()), converted.left_bottom()),
+                egui::Rect::from_min_max(converted.right_top(), egui::pos2(rect.right(), converted.bottom())),
+            ] {
+                if part.is_positive() {
+                    ui.painter().rect_filled(part, 0, shade);
+                }
+            }
             ui.painter()
-                .rect_stroke(project(rect), 0, egui::Stroke::new(2.0, appearance::PRIMARY), egui::StrokeKind::Inside);
+                .rect_stroke(converted, 0, egui::Stroke::new(2.0, appearance::PRIMARY), egui::StrokeKind::Inside);
+        }
+        if dragging.is_some() || self.options.focus != Options::default().focus {
+            ui.painter()
+                .rect_stroke(project(focus), 0, egui::Stroke::new(1.0, egui::Color32::WHITE), egui::StrokeKind::Inside);
+        }
+        if self.ai_job.is_none() {
+            response.on_hover_cursor(egui::CursorIcon::Crosshair);
         }
     }
+}
 
-    fn result_preview(&mut self, ui: &mut egui::Ui, height: f32) {
-        if let Some(result) = &self.result {
-            let texture = self
-                .result_texture
-                .get_or_insert_with(|| ui.ctx().load_texture("import-result", result.preview.clone(), egui::TextureOptions::NEAREST));
-            let size = fit_preview(texture.size_vec2(), egui::vec2(ui.available_width(), height));
-            ui.add(egui::Image::new(&*texture).fit_to_exact_size(size));
-        } else {
-            ui.allocate_ui(egui::vec2(ui.available_width(), height), |ui| {
-                ui.centered_and_justified(|ui| ui.weak(fl!("ai-import-preview-hint")));
-            });
+fn scrolling(ui: &mut egui::Ui, id: &str, height: f32, add: impl FnOnce(&mut egui::Ui)) {
+    egui::ScrollArea::vertical()
+        .id_salt(id)
+        .auto_shrink([false, false])
+        .max_height(height)
+        .show(ui, |ui| {
+            // Keeps the controls clear of the floating scroll bar.
+            egui::Frame::new()
+                .inner_margin(egui::Margin {
+                    right: 12,
+                    ..Default::default()
+                })
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    add(ui);
+                });
+        });
+}
+
+fn pane_header(ui: &mut egui::Ui, rect: egui::Rect, title: &str, meta: &str, tooltip: Option<&str>, add_right: impl FnOnce(&mut egui::Ui)) {
+    let header = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), PANE_HEADER - 6.0));
+    let mut ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(header)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    let title = appearance::bold(&ui, title);
+    ui.label(title);
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        add_right(ui);
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            let label = ui.add(egui::Label::new(egui::RichText::new(meta).weak()).truncate());
+            if let Some(tooltip) = tooltip {
+                label.on_hover_text(tooltip);
+            }
+        });
+    });
+}
+
+fn canvas_rect(pane: egui::Rect) -> egui::Rect {
+    egui::Rect::from_min_max(egui::pos2(pane.left(), pane.top() + PANE_HEADER), pane.max)
+}
+
+fn canvas_fill(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        egui::Color32::from_gray(16)
+    } else {
+        egui::Color32::from_gray(228)
+    }
+}
+
+fn canvas_stroke(ui: &egui::Ui) -> egui::Stroke {
+    egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
+}
+
+fn paint_canvas(ui: &egui::Ui, rect: egui::Rect, stroke: egui::Stroke) {
+    ui.painter().rect(rect, 8, canvas_fill(ui), stroke, egui::StrokeKind::Inside);
+}
+
+fn paint_preview(ui: &egui::Ui, texture: &egui::TextureHandle, area: egui::Rect, tint: egui::Color32) {
+    let size = texture.size_vec2();
+    let scale = (area.width() / size.x).min(area.height() / size.y);
+    // Whole steps keep enlarged character cells crisp.
+    let scale = if scale >= 1.0 { scale.floor() } else { scale.max(0.01) };
+    let rect = egui::Rect::from_center_size(area.center(), size * scale);
+    ui.painter().image(
+        texture.id(),
+        rect,
+        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        tint,
+    );
+}
+
+/// A spinner and caption over the dimmed previous preview, if there is one.
+fn busy_indicator(ui: &egui::Ui, area: egui::Rect, text: &str, previous: Option<&egui::TextureHandle>) {
+    if let Some(previous) = previous {
+        paint_preview(ui, previous, area, egui::Color32::WHITE.gamma_multiply(0.3));
+    }
+    let center = area.center();
+    egui::Spinner::new()
+        .size(24.0)
+        .paint_at(ui, egui::Rect::from_center_size(center - egui::vec2(0.0, 14.0), egui::Vec2::splat(24.0)));
+    centered_text(ui, center + egui::vec2(0.0, 18.0), text, 13.0, ui.visuals().text_color(), area.width() - 16.0);
+}
+
+fn centered_text(ui: &egui::Ui, center: egui::Pos2, text: &str, size: f32, color: egui::Color32, wrap_width: f32) {
+    let mut job = egui::text::LayoutJob::simple(text.to_owned(), egui::FontId::proportional(size), color, wrap_width.max(40.0));
+    job.halign = egui::Align::Center;
+    let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+    ui.painter()
+        .galley(egui::pos2(center.x, center.y - galley.size().y / 2.0), galley, color);
+}
+
+/// Framed landscape pictogram for the empty source pane.
+fn paint_picture_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
+    let frame = egui::Rect::from_center_size(center, egui::vec2(46.0, 36.0));
+    let stroke = egui::Stroke::new(1.8, color);
+    painter.rect_stroke(frame, 5, stroke, egui::StrokeKind::Inside);
+    let at = |x: f32, y: f32| frame.min + egui::vec2(x, y) * frame.size();
+    painter.circle_stroke(at(0.7, 0.32), 3.5, stroke);
+    painter.add(egui::Shape::line(
+        vec![at(0.1, 0.84), at(0.38, 0.5), at(0.58, 0.72), at(0.72, 0.58), at(0.9, 0.84)],
+        stroke,
+    ));
+}
+
+fn caption(ui: &mut egui::Ui, text: &str) {
+    ui.label(egui::RichText::new(text).weak().size(12.0));
+}
+
+/// Caption with a check box at the end of the row; clicking the caption toggles it as well.
+fn toggle_row(ui: &mut egui::Ui, label: &str, value: &mut bool) -> egui::Response {
+    ui.horizontal(|ui| {
+        let width = (ui.available_width() - 18.0 - ui.spacing().item_spacing.x).max(0.0);
+        let caption = ui
+            .allocate_ui_with_layout(egui::vec2(width, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_width(width);
+                ui.add(egui::Label::new(label).wrap().sense(egui::Sense::click()))
+            })
+            .inner;
+        let check = appearance::check(ui, value);
+        let mut response = check | caption.clone();
+        if caption.clicked() {
+            *value = !*value;
+            response.mark_changed();
         }
+        response
+    })
+    .inner
+}
+
+/// Caption and value above a full-width slider, which suits the narrow settings column.
+fn slider_field(ui: &mut egui::Ui, label: &str, value: &mut f64, range: std::ops::RangeInclusive<f64>, scale: f64) {
+    let mut shown = (*value * scale) as f32;
+    let before = shown;
+    let range = (*range.start() * scale) as f32..=(*range.end() * scale) as f32;
+    ui.horizontal(|ui| {
+        ui.label(label);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let speed = f64::from(range.end() - range.start()) / 200.0;
+            ui.add_sized(
+                [56.0, 22.0],
+                egui::DragValue::new(&mut shown).range(range.clone()).max_decimals(2).speed(speed),
+            );
+        });
+    });
+    let width = ui.available_width();
+    appearance::slider(ui, &mut shown, range, width);
+    if shown != before {
+        *value = f64::from(shown) / scale;
     }
 }
 
@@ -1113,6 +1642,22 @@ mod tests {
         }
         for _ in 0..3 {
             frame(context, app, size, vec![]);
+        }
+    }
+
+    /// Runs frames until the debounced local preview has finished.
+    fn wait_for_preview(app: &mut DrawApp, context: &egui::Context, size: egui::Vec2) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            frame(context, app, size, vec![]);
+            let Some(Dialog::AiImport(dialog)) = &app.dialog else {
+                panic!("import dialog closed")
+            };
+            if dialog.result.is_some() || dialog.error.is_some() {
+                break;
+            }
+            assert!(Instant::now() < deadline, "preview did not finish");
+            std::thread::sleep(Duration::from_millis(5));
         }
     }
 
@@ -1260,8 +1805,7 @@ mod tests {
             assert_eq!(dialog.options.glyphs, glyphs);
             assert_eq!(dialog.options.dither, glyphs == Glyphs::HalfBlocks);
             assert!(dialog.result.is_none());
-            click_text(&context, &mut app, size, &fl!("ai-import-convert"));
-            wait(&mut app, &context, size);
+            wait_for_preview(&mut app, &context, size);
             let Some(Dialog::AiImport(dialog)) = &app.dialog else {
                 panic!("import dialog")
             };
@@ -1459,20 +2003,26 @@ mod tests {
                         preview: result.preview.clone(),
                     })),
                     ai_available,
-                    refine: true,
+                    ai_unavailable_reason: (!ai_available).then(|| fl!("ai-chat-copilot-login")),
                     ..Default::default()
                 };
-                let expected = ai_available && target.refinable();
-                assert_eq!(dialog.refines(), expected, "{target:?}, AI available: {ai_available}");
-                if expected {
-                    let request = dialog.ai_request().unwrap();
-                    assert_eq!(request.format, target.label());
-                    assert!(request.image.width > 0 && request.image.height > 0);
-                    assert!(super::super::ai_chat::canvas::Draft::new(request.format, request.buffer, 0, None)
-                        .changes()
-                        .is_empty());
+                match dialog.generate() {
+                    Some(Action::Generate(request)) => {
+                        assert!(ai_available && target.refinable(), "{target:?}, AI available: {ai_available}");
+                        assert_eq!(request.format, target.label());
+                        assert!(request.image.width > 0 && request.image.height > 0);
+                        assert!(super::super::ai_chat::canvas::Draft::new(request.format, request.buffer, 0, None)
+                            .changes()
+                            .is_empty());
+                        assert!(dialog.accepted().is_none(), "the local preview must not stand in for the AI drawing");
+                    }
+                    None => {
+                        assert!(!ai_available || !target.refinable(), "{target:?}, AI available: {ai_available}");
+                        assert_eq!(dialog.ai_error.is_some(), target.refinable(), "{target:?}: the reason must be shown");
+                        assert!(dialog.accepted().is_some(), "an unavailable AI must keep the local preview");
+                    }
+                    Some(_) => panic!("unexpected action"),
                 }
-                assert!(dialog.accepted().is_some());
             }
         }
         assert!(!Target::Rip.refinable() && !Target::Igs.refinable());
@@ -1488,7 +2038,6 @@ mod tests {
                 ..Default::default()
             },
             ai_available: true,
-            refine: true,
             ..Default::default()
         };
         let request = dialog.ai_request().unwrap();
@@ -1508,7 +2057,8 @@ mod tests {
             .send(Ok(Response::Proposal("drawn".into(), Box::new(Workspace::Canvas(Box::new(draft))))))
             .unwrap();
         dialog.poll();
-        assert!(dialog.ai_job.is_none() && dialog.error.is_none());
+        assert!(dialog.ai_job.is_none() && dialog.error.is_none() && dialog.ai_error.is_none());
+        assert!(dialog.ai_result);
         assert_eq!(dialog.result.as_ref().unwrap().preview, expected.preview);
         let Imported::Petscii(buffer) = dialog.accepted().unwrap().imported else {
             panic!("wrong target")
@@ -1525,7 +2075,7 @@ mod tests {
             dialog.begin_ai(Ok(job));
             sender.send(response).unwrap();
             dialog.poll();
-            assert!(dialog.error.is_some());
+            assert!(dialog.ai_error.is_some() && !dialog.ai_result);
             assert!(dialog.accepted().is_none());
         }
         let (job, sender) = ImportJob::pending();
@@ -1535,6 +2085,23 @@ mod tests {
         assert!(clone.ai_job.unwrap().lock().is_none());
         assert!(sender.send(Ok(Response::Reply("stale".into()))).is_err());
         assert!(dialog.result.is_none() && dialog.ai_job.is_none());
+    }
+
+    #[test]
+    fn image_import_losing_the_connection_cancels_the_ai_drawing_and_reports_why() {
+        let mut dialog = ready_dialog();
+        dialog.set_ai_availability(Ok(()));
+        assert!(matches!(dialog.generate(), Some(Action::Generate(_))));
+        let (job, sender) = super::super::ai_chat::ImportJob::pending();
+        dialog.begin_ai(Ok(job));
+        dialog.set_ai_availability(Err(fl!("ai-chat-copilot-login")));
+        assert!(!dialog.ai_available);
+        assert!(dialog.ai_job.is_none() && dialog.accepted().is_none());
+        assert_eq!(dialog.ai_error.as_deref(), Some(fl!("ai-chat-copilot-login").as_str()));
+        assert!(dialog.error.is_none(), "the local preview must resume");
+        assert!(sender.send(Err("stale".into())).is_err());
+        dialog.set_ai_availability(Ok(()));
+        assert!(dialog.ai_available && dialog.ai_job.is_none(), "reconnection must not start a drawing");
     }
 
     #[test]
@@ -1652,11 +2219,8 @@ mod tests {
         assert!(dialog.source.is_some());
         dialog.options.columns = 8;
         dialog.options.rows = 5;
-        for _ in 0..3 {
-            frame(&context, &mut app, size, vec![]);
-        }
-        click_text(&context, &mut app, size, &fl!("ai-import-convert"));
-        wait(&mut app, &context, size);
+        dialog.invalidate();
+        wait_for_preview(&mut app, &context, size);
         let Some(Dialog::AiImport(dialog)) = &app.dialog else { panic!("import") };
         assert!(dialog.error.is_none(), "{:?}", dialog.error);
         let expected = dialog.result.as_ref().unwrap().preview.clone();
@@ -1783,8 +2347,15 @@ mod tests {
         assert!(!app.document.modified());
     }
 
+    fn shows_text(output: &egui::FullOutput, text: &str) -> bool {
+        output
+            .shapes
+            .iter()
+            .any(|shape| matches!(&shape.shape, egui::Shape::Text(shape) if shape.galley.text() == text))
+    }
+
     #[test]
-    fn image_import_ai_checkbox_invalidates_the_local_preview_without_changing_the_document() {
+    fn image_import_offers_draw_with_ai_for_character_formats_without_changing_the_document() {
         use_english();
         let context = egui::Context::default();
         let mut app = DrawApp::new();
@@ -1793,16 +2364,56 @@ mod tests {
             copilot_model: "vision-model".into(),
             ..Default::default()
         });
+        app.ai_chat.finish_connection_for_test(Ok(super::super::ai_chat::ImportResponse::Models {
+            models: vec!["vision-model".into()],
+            account: Some("octocat".into()),
+        }));
         let original = app.document.screen.clone();
-        app.dialog = Some(Dialog::AiImport(Box::new(ready_dialog())));
         let size = egui::vec2(1280.0, 900.0);
-        frame(&context, &mut app, size, vec![]);
-        click_text(&context, &mut app, size, &fl!("ai-import-refine"));
-        let Some(Dialog::AiImport(dialog)) = &mut app.dialog else { panic!("import") };
-        assert!(dialog.refines());
-        assert!(dialog.result.is_none() && dialog.accepted().is_none());
-        assert!(dialog.worker.is_none() && dialog.ai_job.is_none());
+        for target in Target::ALL {
+            let mut dialog = ready_dialog();
+            dialog.options.target = target;
+            app.dialog = Some(Dialog::AiImport(Box::new(dialog)));
+            frame(&context, &mut app, size, vec![]);
+            let output = frame(&context, &mut app, size, vec![]);
+            assert_eq!(shows_text(&output, &fl!("ai-import-generate")), target.refinable(), "{target:?}");
+            let Some(Dialog::AiImport(dialog)) = &app.dialog else { panic!("import") };
+            assert!(dialog.ai_available && dialog.ai_job.is_none(), "showing the button must not start a request");
+        }
         assert!(Arc::ptr_eq(&original, &app.document.screen));
+    }
+
+    #[test]
+    fn image_import_draw_with_ai_reports_connection_errors_without_blocking_local_conversion() {
+        use_english();
+        for reason in [
+            fl!("ai-chat-copilot-login"),
+            fl!("ai-chat-copilot-missing"),
+            "Copilot CLI: connection refused".into(),
+        ] {
+            let context = egui::Context::default();
+            let mut app = DrawApp::new();
+            app.ai_chat = super::super::ai_chat::Chat::new(icy_draw::AiChatSettings {
+                provider: icy_draw::AiProvider::Copilot,
+                copilot_model: "vision-model".into(),
+                ..Default::default()
+            });
+            app.ai_chat.finish_connection_for_test(Err(reason.clone()));
+            app.dialog = Some(Dialog::AiImport(Box::new(ready_dialog())));
+            let size = egui::vec2(1280.0, 900.0);
+            frame(&context, &mut app, size, vec![]);
+            click_text(&context, &mut app, size, &fl!("ai-import-generate"));
+            let output = frame(&context, &mut app, size, vec![]);
+            assert!(shows_text(&output, &reason), "{reason} must be visible even when the chat is closed");
+            let Some(Dialog::AiImport(dialog)) = &mut app.dialog else { panic!("import") };
+            assert!(!dialog.ai_available && dialog.ai_job.is_none());
+            assert!(dialog.result.is_some(), "an unavailable AI must keep the local preview");
+            click_text(&context, &mut app, size, &fl!("ai-import-shaded"));
+            wait_for_preview(&mut app, &context, size);
+            let Some(Dialog::AiImport(dialog)) = &mut app.dialog else { panic!("import") };
+            assert!(dialog.result.is_some() && dialog.error.is_none() && dialog.ai_job.is_none());
+            assert!(dialog.ai_error.is_none(), "changing a setting clears the old AI error");
+        }
     }
 
     #[test]
@@ -1857,6 +2468,73 @@ mod tests {
                 assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch), 'K');
             }
         }
+    }
+
+    #[test]
+    fn image_import_live_preview_waits_for_settings_to_rest_and_discards_outdated_conversions() {
+        let context = egui::Context::default();
+        let run = |dialog: &mut ImportDialog, time: f64, events: Vec<egui::Event>| {
+            let _ = context.run(
+                egui::RawInput {
+                    time: Some(time),
+                    events,
+                    ..Default::default()
+                },
+                |context| dialog.update_preview(context),
+            );
+        };
+        let mut dialog = ImportDialog {
+            source: Some(source()),
+            options: Options {
+                columns: 8,
+                rows: 5,
+                ..Default::default()
+            },
+            changed_at: Some(1.0),
+            ..Default::default()
+        };
+        run(&mut dialog, 1.0 + PREVIEW_DELAY / 2.0, vec![]);
+        assert!(dialog.worker.is_none(), "settings that are still changing must not convert");
+        run(&mut dialog, 1.0 + PREVIEW_DELAY, vec![]);
+        assert!(dialog.converting && dialog.worker.is_some() && dialog.changed_at.is_none());
+        dialog.options.rows = 6;
+        dialog.invalidate();
+        assert!(dialog.worker.is_none() && !dialog.converting, "a conversion of outdated settings must not arrive");
+        dialog.ai_available = true;
+        dialog.ai_job = Some(Arc::new(Mutex::new(None)));
+        run(&mut dialog, 5.0, vec![]);
+        assert!(dialog.worker.is_none(), "an AI drawing in progress must not be replaced by a local preview");
+        dialog.ai_job = None;
+        dialog.load(&context, Path::new("/nonexistent/icy-import-test.png"));
+        dialog.invalidate();
+        assert!(dialog.worker.is_some(), "setting changes must not abort loading the source");
+    }
+
+    #[test]
+    fn image_import_loads_images_dropped_on_the_dialog() {
+        use_english();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("dropped.png");
+        source().pixels().unwrap().save(&path).unwrap();
+        let context = egui::Context::default();
+        let mut app = DrawApp::new();
+        app.dialog = Some(Dialog::AiImport(Box::default()));
+        let size = egui::vec2(1280.0, 900.0);
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                dropped_files: vec![egui::DroppedFile {
+                    path: Some(path),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            |context| app.show(context),
+        );
+        wait(&mut app, &context, size);
+        let Some(Dialog::AiImport(dialog)) = &app.dialog else { panic!("import") };
+        assert_eq!(dialog.source.as_ref().map(|source| source.name.as_str()), Some("dropped.png"));
+        assert!(app.document.path.is_none(), "a dropped image must not be opened as a document");
     }
 
     #[test]

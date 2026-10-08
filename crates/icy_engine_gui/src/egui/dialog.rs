@@ -413,12 +413,18 @@ impl<A: Clone> DialogUi<'_, A> {
         self.page = pages.iter().position(|(page, _)| page == current).unwrap_or_default();
     }
 
+    /// Height left for the body above the button row, for bodies that lay themselves out
+    /// with [`Dialog::scroll`] off.
+    pub fn body_height(&self) -> f32 {
+        (self.height - (self.ui.cursor().top() - self.top) - self.footer_height).max(0.0)
+    }
+
     /// The dialog body; it scrolls when it does not fit unless [`Dialog::scroll`] is off.
     pub fn content<R>(&mut self, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
         if !self.scroll {
             return add(self.ui);
         }
-        let max_height = (self.height - (self.ui.cursor().top() - self.top) - self.footer_height).max(0.0);
+        let max_height = self.body_height();
         let scrolls_id = self.id.with(("body-scrolls", self.page));
         let scrolls = self.ui.data(|data| data.get_temp::<bool>(scrolls_id)).unwrap_or(false);
         let output = egui::ScrollArea::vertical()

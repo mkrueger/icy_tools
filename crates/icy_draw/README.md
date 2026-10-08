@@ -92,18 +92,27 @@ font's save path or mark unsaved edits as saved; **Save** continues to use PSF.
 
 Choose **File → Import…**, **Import…** in the New File dialog, or its
 welcome-page tile to convert a picture into a new ANSI, RIP, IGS, PETSCII or
-VT52 drawing. Local conversion needs no AI account or network connection.
+VT52 drawing. Choose an image or drop one onto the dialog. The source and the
+rendered result are shown side by side (or stacked when that shows them
+larger) next to the settings. Local conversion needs no AI account or network
+connection.
 
-For ANSI, PETSCII and VT52, **Draw the picture with AI** switches **Convert**
-to semantic character-art authoring using the configured Copilot model.
-The selected crop and fit are sent as a picture alongside the native editor's
-drawing guidance and face/composition skills. The AI starts on a blank native
-canvas; local pixel-matching tools are disabled for this request. Its rendered
-result appears in the import dialog before **Accept**, not afterward in chat.
-The current document and chat conversation remain untouched. Cancellation
-cancels the request; errors or replies without a drawing do not fall back to
-local conversion. This option requires Copilot and a selected model, uses an
-AI request, and generated artistic quality varies by model and source.
+For ANSI, PETSCII and VT52, **Draw with AI** asks the configured Copilot model
+to author semantic character art instead of matching pixels; **Stop** cancels
+the request. The selected crop and fit are sent as a picture alongside the
+native editor's drawing guidance and face/composition skills. The AI starts on a
+blank native canvas; local pixel-matching tools are disabled for this request.
+Its rendered result replaces the preview, marked **AI drawing**, before
+**Accept**, not afterward in chat. The current document and chat conversation
+remain untouched. If the request fails or returns no drawing, the error is shown
+and the preview returns to the local conversion without the AI marker. Changing
+a setting discards an AI drawing in favor of a new local preview. This requires
+Copilot and a selected model, uses an AI request, and generated artistic
+quality varies by model and source. Opening the import dialog checks Copilot
+once in the background; if Copilot is not ready, **Draw with AI** explains why
+(missing CLI, sign-in or connection errors). If sign-in is missing, run
+`copilot login` in a terminal and reconnect in the AI chat settings. Local
+conversion remains available without Copilot.
 
 Local-conversion controls:
 
@@ -117,7 +126,7 @@ Local-conversion controls:
 - **Crop** fills the target, **Contain** preserves the selected picture with
   margins, and **Stretch** fills it without preserving proportions. Drag on
   the source to select a focus area; **Reset focus** restores the whole image.
-  The blue outline shows the actual converted area.
+  The blue outline shows the actual converted area and the rest is dimmed.
 - **Drawing** explicitly selects **Half blocks**, **Blocks and shades**,
   **All CP437 glyphs**, or **ASCII**. ASCII uses only printable characters
   (32–126), retaining ANSI colors and the Scene/Shaded and fit controls.
@@ -133,9 +142,9 @@ Local-conversion controls:
 - Hue guidance allows gray/brown shade blends for skin and handles the two
   sides of a color boundary separately. All-glyph conversion avoids decorative
   glyphs in smooth areas, while preserving exact matches and edge detail.
-- Choose **Convert** to process in the background and compare the source with
-  the actual rendered ANSI result. Changing settings disables acceptance until
-  you convert again.
+- The preview updates in the background shortly after settings stop changing,
+  showing the actual rendered result. While it is recomputed the previous
+  preview stays dimmed and cannot be accepted.
 
 **Accept and edit ANSI** opens the result as a new, unsaved ANSI document and
 leaves other editor modes. Existing unsaved work requires Save/Discard/Cancel
