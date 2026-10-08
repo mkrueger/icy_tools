@@ -254,6 +254,24 @@ fn test_last_column_flag_delays_wrap_until_next_character() {
 }
 
 #[test]
+fn test_loaded_document_delays_wrap_until_after_explicit_line_feed() {
+    let mut screen = TextScreen::new(Size::new(3, 3));
+    screen.terminal_state_mut().is_terminal_buffer = false;
+
+    for ch in "ABC".chars() {
+        screen.print_char(AttributedChar::new(ch, TextAttribute::default()));
+    }
+    assert_eq!(screen.caret_position(), Position::new(2, 0));
+    assert!(screen.terminal_state().wrap_pending);
+
+    screen.lf();
+    screen.print_char(AttributedChar::new('D', TextAttribute::default()));
+
+    assert_eq!(screen.char_at(Position::new(0, 1)).ch, 'D');
+    assert_eq!(screen.char_at(Position::new(0, 2)).ch, ' ');
+}
+
+#[test]
 fn test_carriage_return_cancels_pending_wrap() {
     let mut screen = TextScreen::new(Size::new(3, 2));
     screen.terminal_state_mut().last_column_flag_mode = true;

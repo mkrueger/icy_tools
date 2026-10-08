@@ -1204,6 +1204,20 @@ mod tests {
     }
 
     #[test]
+    fn full_width_ansi_rows_do_not_add_blank_lines() {
+        let mut body = vec![b'A'; 40];
+        body.extend_from_slice(b"\n\x1b[A\x1b[40C");
+        body.extend(std::iter::repeat_n(b'B', 40));
+        body.extend_from_slice(b"\nNEXT");
+
+        let screen = render_body(&body).unwrap();
+        assert!((0..40).all(|column| screen.char_at(Position::new(column, 0)).ch == 'A'));
+        assert!((40..80).all(|column| screen.char_at(Position::new(column, 0)).ch == 'B'));
+        assert_eq!(screen.char_at(Position::new(0, 1)).ch, 'N');
+        assert_eq!(screen.char_at(Position::new(0, 2)).ch, ' ');
+    }
+
+    #[test]
     fn packet_files_translate_pcboard_colors_and_stop_at_end_of_file() {
         let screen = render_file(b"@X0EDEMO@X07 me@home.net\r\n\x1aSAUCE").unwrap();
         assert_eq!(screen.char_at(Position::new(0, 0)).ch, 'D');
