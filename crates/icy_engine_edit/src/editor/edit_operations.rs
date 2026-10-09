@@ -283,6 +283,7 @@ impl EditState {
     /// This function will return an error if .
     pub fn resize_buffer(&mut self, resize_layer: bool, size: impl Into<Size>) -> Result<()> {
         if resize_layer {
+            self.require_cell_layers()?;
             let size = size.into();
             let rect = Rectangle::from_min_size(Position::default(), size);
             let old_size = self.get_buffer().size();

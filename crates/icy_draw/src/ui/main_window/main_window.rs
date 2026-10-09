@@ -3125,6 +3125,7 @@ impl MainWindow {
                         let role = match layer.role {
                             icy_engine::Role::Normal => "normal",
                             icy_engine::Role::Image => "image",
+                            icy_engine::Role::Text => "text",
                         };
                         LayerInfo {
                             index,

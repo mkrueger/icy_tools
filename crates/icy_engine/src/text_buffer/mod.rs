@@ -19,6 +19,12 @@ pub use unicode::MAX_GRAPHEME_BYTES;
 pub mod layer;
 pub use layer::*;
 
+mod layer_effects;
+pub use layer_effects::*;
+
+mod live_text;
+pub use live_text::*;
+
 mod buffer_type;
 pub use buffer_type::*;
 
@@ -316,7 +322,7 @@ impl TextBuffer {
         }
         self.layers.iter().rev().find_map(|layer| {
             let local = pos - layer.offset();
-            if !layer.is_visible() || local.x < 0 || local.y < 0 || local.x >= layer.width() || local.y >= layer.height() {
+            if !layer.is_visible() || local.x < 0 || local.y < 0 || local.x >= layer.width() || local.y >= layer.height() || layer.effects.is_masked(local) {
                 return None;
             }
             let character = layer.char_at(local);
@@ -475,7 +481,10 @@ impl TextBuffer {
     }
 
     fn merge_layer_char(&self, found_char: &mut AttributedChar, cur_layer: &Layer, pos: Position) {
-        let cur_char = cur_layer.char_at(pos);
+        if cur_layer.effects.is_masked(pos) {
+            return;
+        }
+        let cur_char = cur_layer.display_char_at(pos);
         match cur_layer.properties.mode {
             crate::Mode::Normal => {
                 let underlying_char = *found_char;

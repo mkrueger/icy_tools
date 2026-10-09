@@ -437,6 +437,11 @@ pub enum EditorUndoOp {
     ShowTags {
         show: bool,
     },
+    ReplaceLayer {
+        index: usize,
+        layer: Box<Layer>,
+        description: String,
+    },
 }
 
 impl EditorUndoOp {
@@ -444,7 +449,7 @@ impl EditorUndoOp {
     pub fn get_description(&self) -> String {
         use i18n_embed_fl::fl;
         match self {
-            EditorUndoOp::Atomic { description, .. } => description.clone(),
+            EditorUndoOp::Atomic { description, .. } | EditorUndoOp::ReplaceLayer { description, .. } => description.clone(),
             EditorUndoOp::SetChar { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_char"),
             EditorUndoOp::SwapChar { .. } => String::new(),
             EditorUndoOp::AddLayer { .. } => fl!(crate::LANGUAGE_LOADER, "undo-add_layer"),
@@ -548,6 +553,16 @@ impl EditorUndoOp {
                 for op in operations.iter_mut().rev() {
                     op.undo(edit_state)?;
                 }
+                Ok(())
+            }
+            EditorUndoOp::ReplaceLayer { index, layer, .. } => {
+                let current = edit_state
+                    .get_buffer_mut()
+                    .layers
+                    .get_mut(*index)
+                    .ok_or_else(|| EngineError::Generic(format!("Invalid layer index: {index}")))?;
+                std::mem::swap(current, layer);
+                edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
             EditorUndoOp::SetChar {
@@ -1032,6 +1047,16 @@ impl EditorUndoOp {
     /// Perform the redo operation
     pub fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         match self {
+            EditorUndoOp::ReplaceLayer { index, layer, .. } => {
+                let current = edit_state
+                    .get_buffer_mut()
+                    .layers
+                    .get_mut(*index)
+                    .ok_or_else(|| EngineError::Generic(format!("Invalid layer index: {index}")))?;
+                std::mem::swap(current, layer);
+                edit_state.get_buffer_mut().mark_dirty();
+                Ok(())
+            }
             EditorUndoOp::Atomic { operations, .. } => {
                 for op in operations.iter_mut() {
                     op.redo(edit_state)?;
@@ -1679,6 +1704,7 @@ mod collab_mapping {
                 | EditorUndoOp::RemoveFont { .. }
                 | EditorUndoOp::ChangeFontSlot { .. }
                 | EditorUndoOp::UpdateLayerProperties { .. }
+                | EditorUndoOp::ReplaceLayer { .. }
                 | EditorUndoOp::SetUseAspectRatio { .. }
                 | EditorUndoOp::SetFontDimensions { .. }
                 | EditorUndoOp::SetBorderColor { .. }

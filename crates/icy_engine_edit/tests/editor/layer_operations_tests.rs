@@ -9,6 +9,242 @@ fn create_test_state(width: i32, height: i32) -> EditState {
     EditState::from_buffer(buffer)
 }
 
+#[test]
+fn live_text_edit_bake_duplicate_and_merge_are_undoable() {
+    use icy_engine_edit::UndoState;
+    use retrofont::{
+        tdf::{TdfFont, TdfFontType},
+        Glyph, GlyphPart,
+    };
+    let mut font = TdfFont::new("Live test", TdfFontType::Block, 1);
+    let mut glyph = Glyph::new(1, 1);
+    glyph.parts = vec![GlyphPart::Char('X')];
+    font.add_glyph('A', glyph);
+    let mut source = icy_engine::LiveText::new(&font, TextAttribute::new(4, 1)).unwrap();
+    source.text = "A".into();
+    let mut state = create_test_state(10, 3);
+    state.add_live_text(source.clone(), Position::new(2, 1)).unwrap();
+    assert_eq!(state.get_buffer().layers[1].role, Role::Text);
+    assert_eq!(state.get_current_layer().unwrap(), 1);
+    let mut remap = icy_engine::PaletteRemap::default();
+    remap.colors[4] = 2;
+    state
+        .set_layer_effects(
+            1,
+            icy_engine::LayerEffects {
+                remap: Some(remap),
+                mask: None,
+            },
+        )
+        .unwrap();
+    let original = state.get_buffer().layers.clone();
+    assert!(state.set_char(Position::default(), AttributedChar::from_char('!')).is_err());
+    assert!(state.clear_layer(1).is_err());
+    assert!(state.flip_x().is_err());
+    assert!(state.scroll_area_left().is_err());
+    assert!(state.set_layer_size(1, (8, 2)).is_err());
+    let caret = state.get_caret().attribute;
+    assert!(state.set_ice_mode(icy_engine::IceMode::Ice).is_err());
+    assert!(state.replace_font_usage(0, 1).is_err());
+    assert!(state.change_font_slot(0, 1).is_err());
+    assert!(state.remove_font(0).is_err());
+    assert!(state.resize_buffer(true, (4, 2)).is_err());
+    assert_eq!(state.get_caret().attribute, caret);
+    let mut properties = state.get_buffer().layers[1].properties.clone();
+    properties.is_locked = false;
+    assert!(state.update_layer_properties(1, properties).is_err());
+    assert_eq!(state.get_buffer().layers, original);
+    source.text = "AA".into();
+    state.update_live_text(1, source.clone()).unwrap();
+    assert_eq!(state.get_buffer().layers[1].width(), 2);
+    assert_eq!(state.get_buffer().layers[1].offset(), Position::new(2, 1));
+    assert_eq!(state.get_buffer().layers[1].effects, original[1].effects);
+    assert_eq!(state.get_buffer().char_at(Position::new(2, 1)).attribute.foreground(), 2);
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers, original);
+    state.redo().unwrap();
+    state.duplicate_layer(1).unwrap();
+    assert_eq!(state.get_buffer().layers[2].live_text(), Some(&source));
+    state.undo().unwrap();
+    state.set_current_layer(1);
+    state.bake_live_text(1).unwrap();
+    assert!(!state.get_buffer().layers[1].properties.is_locked);
+    assert!(state.get_buffer().layers[1].live_text().is_none());
+    assert_eq!(state.get_buffer().layers[1].role, Role::Normal);
+    assert_eq!(state.get_buffer().layers[1].effects, original[1].effects);
+    state.set_char(Position::default(), AttributedChar::from_char('!')).unwrap();
+    state.undo().unwrap();
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers[1].live_text(), Some(&source));
+    let before = state.get_buffer().layers.clone();
+    state.merge_layer_down(1).unwrap();
+    assert!(state.get_buffer().layers[0].live_text().is_none());
+    assert_eq!(state.get_buffer().layers[0].role, Role::Normal);
+    assert_eq!(state.get_buffer().char_at(Position::new(2, 1)).ch, 'X');
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers, before);
+    state.crop_rect(icy_engine::Rectangle::from(3, 1, 4, 2)).unwrap();
+    assert_eq!(state.get_buffer().layers[1].offset(), Position::new(-1, 0));
+    assert_eq!(state.get_buffer().layers[1].live_text(), Some(&source));
+    assert_eq!(state.get_buffer().layers[1].width(), 2);
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers, before);
+}
+
+#[test]
+fn layer_effects_apply_duplicate_and_merge_are_undoable() {
+    use icy_engine::{LayerEffects, PaletteRemap, Rectangle, Selection};
+    use icy_engine_edit::UndoState;
+    let mut state = create_test_state(4, 1);
+    for x in 0..4 {
+        state.get_buffer_mut().layers[0].set_char((x, 0), AttributedChar::new('B', TextAttribute::new(7, 1)));
+    }
+    state.add_new_layer(0).unwrap();
+    for x in 0..4 {
+        state.get_buffer_mut().layers[1].set_char((x, 0), AttributedChar::new('A', TextAttribute::new(4, 0)));
+    }
+    state.set_selection(Selection::from(Rectangle::from(1, 0, 2, 1))).unwrap();
+    let original = state.get_buffer().layers.clone();
+    let mut remap = PaletteRemap::default();
+    remap.colors[4] = 2;
+    let mask = state.layer_mask_from_selection(1, true).unwrap();
+    let effects = LayerEffects {
+        remap: Some(remap),
+        mask: Some(mask),
+    };
+    let before = state.undo_stack_len();
+    state.set_layer_effects(1, effects.clone()).unwrap();
+    assert_eq!(state.undo_stack_len(), before + 1);
+    assert_eq!(state.get_buffer().layers[1].lines, original[1].lines);
+    assert_eq!(state.get_buffer().char_at((1, 0).into()).ch, 'B');
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers, original);
+    state.redo().unwrap();
+    assert_eq!(state.get_buffer().layers[1].effects, effects);
+    state.duplicate_layer(1).unwrap();
+    assert_eq!(state.get_buffer().layers[2].effects, effects);
+    state.undo().unwrap();
+    let visible = |state: &EditState| (0..4).map(|x| state.get_buffer().char_at((x, 0).into())).collect::<Vec<_>>();
+    let pixels = visible(&state);
+    let layers = state.get_buffer().layers.clone();
+    let before = state.undo_stack_len();
+    state.merge_layer_down(1).unwrap();
+    assert_eq!(state.undo_stack_len(), before + 1);
+    assert_eq!(state.get_buffer().layers.len(), 1);
+    assert!(state.get_buffer().layers[0].effects.is_empty());
+    assert_eq!(visible(&state), pixels);
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers, layers);
+    state.redo().unwrap();
+    assert_eq!(visible(&state), pixels);
+}
+
+#[test]
+fn layer_effects_merge_validation_does_not_partially_bake_the_destination() {
+    use icy_engine::{LayerEffects, PaletteRemap};
+    let mut state = create_test_state(2, 1);
+    state.add_new_layer(0).unwrap();
+    state
+        .set_layer_effects(
+            0,
+            LayerEffects {
+                remap: Some(PaletteRemap::default()),
+                mask: None,
+            },
+        )
+        .unwrap();
+    let mut invalid = PaletteRemap::default();
+    invalid.colors[0] = 16;
+    state.get_buffer_mut().layers[1].effects.remap = Some(invalid);
+    let layers = state.get_buffer().layers.clone();
+    let undo = state.undo_stack_len();
+    assert!(state.merge_layer_down(1).is_err());
+    assert_eq!(state.get_buffer().layers, layers);
+    assert_eq!(state.undo_stack_len(), undo);
+}
+
+#[test]
+fn layer_effects_masks_follow_flips_and_offset_crops_even_when_disabled() {
+    use icy_engine::{LayerEffects, LayerMask, Rectangle};
+    use icy_engine_edit::UndoState;
+    let mut state = create_test_state(8, 3);
+    state.get_buffer_mut().layers[0].set_size((4, 2));
+    state.get_buffer_mut().layers[0].set_offset((2, 1));
+    for x in 0..4 {
+        state.get_buffer_mut().layers[0].set_char((x, 0), AttributedChar::new(char::from(b'A' + x as u8), TextAttribute::new(4, 0)));
+    }
+    let mut mask = LayerMask::new(Size::new(4, 2)).unwrap();
+    mask.set_hidden(Position::new(1, 0), true);
+    mask.enabled = false;
+    state.set_layer_effects(0, LayerEffects { remap: None, mask: Some(mask) }).unwrap();
+    let original = state.get_buffer().layers[0].clone();
+    state.flip_x().unwrap();
+    let mut mask = state.get_buffer().layers[0].effects.mask.clone().unwrap();
+    assert!(!mask.enabled);
+    mask.enabled = true;
+    assert!(mask.is_hidden(Position::new(2, 0)));
+    assert!(!mask.is_hidden(Position::new(1, 0)));
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers[0], original);
+    state.crop_rect(Rectangle::from(3, 1, 2, 1)).unwrap();
+    let cropped = &state.get_buffer().layers[0];
+    assert_eq!(cropped.char_at(Position::default()).ch, 'B');
+    let mut mask = cropped.effects.mask.clone().unwrap();
+    assert!(!mask.enabled);
+    mask.enabled = true;
+    assert!(mask.is_hidden(Position::default()));
+    assert!(!mask.is_hidden(Position::new(1, 0)));
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers[0], original);
+}
+
+#[test]
+fn layer_effects_appearance_selection_matches_remapped_colors_not_source_slots() {
+    use icy_engine::{AddType, LayerEffects, PaletteRemap};
+    use icy_engine_edit::{CellMatchMode, SelectionOptions};
+    let mut state = create_test_state(3, 1);
+    for x in 0..3 {
+        state.get_buffer_mut().layers[0].set_char((x, 0), AttributedChar::new(' ', TextAttribute::new(7, x as u32 + 1)));
+    }
+    let mut remap = PaletteRemap::default();
+    remap.colors[1] = 8;
+    remap.colors[2] = 8;
+    state
+        .set_layer_effects(
+            0,
+            LayerEffects {
+                remap: Some(remap),
+                mask: None,
+            },
+        )
+        .unwrap();
+    state
+        .select_matching(Position::default(), CellMatchMode::Appearance, SelectionOptions::default(), AddType::Default)
+        .unwrap();
+    assert!(state.is_selected(Position::new(0, 0)));
+    assert!(state.is_selected(Position::new(1, 0)));
+    assert!(!state.is_selected(Position::new(2, 0)));
+}
+
+#[test]
+fn layer_effects_masks_use_layer_coordinates_and_locked_layers_reject_edits() {
+    use icy_engine::{LayerEffects, Rectangle, Selection};
+    let mut state = create_test_state(8, 3);
+    state.get_buffer_mut().layers[0].set_offset((2, 1));
+    state.set_selection(Selection::from(Rectangle::from(3, 1, 1, 1))).unwrap();
+    let hide = state.layer_mask_from_selection(0, true).unwrap();
+    assert!(hide.is_hidden(Position::new(1, 0)));
+    assert!(!hide.is_hidden(Position::default()));
+    let keep = state.layer_mask_from_selection(0, false).unwrap();
+    assert!(!keep.is_hidden(Position::new(1, 0)));
+    assert!(keep.is_hidden(Position::default()));
+    state.get_buffer_mut().layers[0].properties.is_locked = true;
+    let before = state.undo_stack_len();
+    assert!(state.set_layer_effects(0, LayerEffects { remap: None, mask: Some(hide) }).is_err());
+    assert_eq!(state.undo_stack_len(), before);
+    assert!(state.get_buffer().layers[0].effects.is_empty());
+}
+
 // ============================================================================
 // Add Layer Tests
 // ============================================================================

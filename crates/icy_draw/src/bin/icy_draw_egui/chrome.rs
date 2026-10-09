@@ -4,7 +4,7 @@
 use super::{widgets, Dialog, DrawApp};
 use eframe::egui::{self, Color32};
 use icy_draw::fl;
-use icy_engine::{LayerProperties, Position, Rectangle, RenderOptions, Role, TextBuffer, TextPane};
+use icy_engine::{LayerEffects, LayerProperties, PaletteRemap, Position, Rectangle, RenderOptions, Role, TextBuffer, TextPane};
 use icy_engine_edit::tools::{Tool, ToolPair};
 use icy_engine_gui::egui::appearance::{self, labels, Dialog as SharedDialog, DialogButton, DialogSize, PRIMARY};
 use icy_engine_gui::egui::screen::ScreenView;
@@ -43,14 +43,28 @@ pub struct Chrome {
     previews: Vec<Option<(u64, Option<egui::TextureHandle>)>>,
     /// Layer index, the edited properties and the edited layer size.
     layer_properties: Option<(usize, LayerProperties, icy_engine::Size)>,
+    layer_effects: Option<LayerEffectsDialog>,
     /// Rendered outline font for the preview beside the canvas, keyed by buffer signature and style.
     outline_preview: Option<(u64, usize, ScreenView)>,
     pub(super) outline_style: usize,
+    /// The text layer (`None` before its first character) whose colors the drawing colors
+    /// show with the font tool, and the drawing colors last synchronized.
+    text_colors: Option<(Option<usize>, icy_engine::TextAttribute)>,
+}
+
+struct LayerEffectsDialog {
+    index: usize,
+    effects: LayerEffects,
+    preview: Option<egui::TextureHandle>,
+    error: Option<String>,
 }
 
 enum LayerAction {
     Select(usize),
     Properties(usize),
+    Effects(usize),
+    LiveText(usize),
+    BakeText(usize),
     Visibility(usize),
     Lock(usize),
     Add(usize),
@@ -246,6 +260,10 @@ impl MinimapLayout {
 }
 
 fn layer_preview(buffer: &TextBuffer, index: usize) -> Option<egui::ColorImage> {
+    layer_preview_sized(buffer, index, LAYER_PREVIEW[0] * 2)
+}
+
+fn layer_preview_sized(buffer: &TextBuffer, index: usize, max_width: usize) -> Option<egui::ColorImage> {
     let layer = buffer.layers.get(index)?;
     let size = layer.size();
     if size.width <= 0 || size.height <= 0 {
@@ -258,7 +276,8 @@ fn layer_preview(buffer: &TextBuffer, index: usize) -> Option<egui::ColorImage> 
     preview.set_use_letter_spacing(buffer.use_letter_spacing());
     preview.set_use_aspect_ratio(buffer.use_aspect_ratio());
     let mut copy = layer.clone();
-    copy.set_offset(Position::default());
+    copy.properties.offset = Position::default();
+    copy.set_preview_offset(None);
     copy.set_is_visible(true);
     preview.layers.clear();
     preview.layers.push(copy);
@@ -268,7 +287,7 @@ fn layer_preview(buffer: &TextBuffer, index: usize) -> Option<egui::ColorImage> 
     let dimensions = preview.font_dimensions();
     let region = Rectangle::from(0, 0, columns * (dimensions.width + 1), rows * dimensions.height * 2);
     let (pixels, rgba) = preview.render_region_to_rgba(region, &options, false);
-    downsample(pixels.width.max(0) as usize, pixels.height.max(0) as usize, &rgba, LAYER_PREVIEW[0] * 2)
+    downsample(pixels.width.max(0) as usize, pixels.height.max(0) as usize, &rgba, max_width)
 }
 
 /// Largest layer width or height the layer dialog accepts.
@@ -442,6 +461,10 @@ impl DrawApp {
             return;
         }
         self.document.finish();
+        if tool != Tool::Font || self.document.tool != Tool::Font {
+            let result = self.document.finish_text_edit();
+            self.result(result);
+        }
         self.document.tool = tool;
         self.canvas_focus = true;
         if tool == Tool::Font && self.text_fonts.is_none() {
@@ -874,13 +897,16 @@ impl DrawApp {
                 .collect::<Vec<_>>()
         });
         let mut action = None;
-        let current_unlocked = rows.get(current).is_some_and(|(properties, _, _)| !properties.is_locked);
+        let live = self
+            .document
+            .with_state(|state| state.get_buffer().layers.iter().map(|layer| layer.is_text()).collect::<Vec<_>>());
+        let current_unlocked = rows.get(current).is_some_and(|(properties, _, _)| !properties.is_locked || live[current]);
         let can_merge = |index: usize| {
             index > 0
                 && rows
                     .get(index)
-                    .is_some_and(|(properties, _, role)| !properties.is_locked && *role != Role::Image)
-                && !rows[index - 1].0.is_locked
+                    .is_some_and(|(properties, _, role)| (!properties.is_locked || live[index]) && *role != Role::Image)
+                && (!rows[index - 1].0.is_locked || live[index - 1])
         };
         egui::Frame::new().inner_margin(egui::Margin::symmetric(SECTION_MARGIN, 0)).show(ui, |ui| {
             widgets::section_header(ui, &fl!("layer_tool_title"), |ui| {
@@ -1030,27 +1056,67 @@ impl DrawApp {
                                 let lock = self.icons.subtle_button(
                                     ui,
                                     if properties.is_locked { "lock" } else { "lock_open" },
-                                    &if properties.is_locked { fl!("layer-unlock") } else { fl!("layer-lock") },
+                                    &if live[index] {
+                                        fl!("live-text-edit")
+                                    } else if properties.is_locked {
+                                        fl!("layer-unlock")
+                                    } else {
+                                        fl!("layer-lock")
+                                    },
                                     !properties.is_locked,
                                     lock_width,
                                 );
                                 if lock.clicked() {
-                                    action = Some(LayerAction::Lock(index));
+                                    action = Some(if live[index] {
+                                        LayerAction::LiveText(index)
+                                    } else {
+                                        LayerAction::Lock(index)
+                                    });
                                 }
                             },
                         );
                     });
                     if response.double_clicked() {
-                        action = Some(LayerAction::Properties(index));
+                        action = Some(if live[index] {
+                            LayerAction::LiveText(index)
+                        } else {
+                            LayerAction::Properties(index)
+                        });
                     } else if response.clicked() && action.is_none() {
                         action = Some(LayerAction::Select(index));
                     }
                     response.context_menu(|ui| {
+                        if live[index] {
+                            if ui.button(fl!("live-text-edit")).clicked() {
+                                action = Some(LayerAction::LiveText(index));
+                                ui.close();
+                            }
+                            if ui.button(fl!("live-text-bake")).clicked() {
+                                action = Some(LayerAction::BakeText(index));
+                                ui.close();
+                            }
+                        }
                         if ui.button(fl!("layer-properties-menu")).clicked() {
                             action = Some(LayerAction::Properties(index));
                             ui.close();
                         }
-                        if ui.button(if properties.is_locked { fl!("layer-unlock") } else { fl!("layer-lock") }).clicked() {
+                        if ui
+                            .add_enabled(
+                                (!properties.is_locked || live[index]) && rows[index].2 != Role::Image,
+                                egui::Button::new(fl!("layer-effects-title")),
+                            )
+                            .clicked()
+                        {
+                            action = Some(LayerAction::Effects(index));
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(
+                                !live[index],
+                                egui::Button::new(if properties.is_locked { fl!("layer-unlock") } else { fl!("layer-lock") }),
+                            )
+                            .clicked()
+                        {
                             action = Some(LayerAction::Lock(index));
                             ui.close();
                         }
@@ -1071,7 +1137,10 @@ impl DrawApp {
                             ui.close();
                         }
                         if ui
-                            .add_enabled(!properties.is_locked && rows.len() > 1, egui::Button::new(fl!("layer_tool_menu_delete_layer")))
+                            .add_enabled(
+                                (!properties.is_locked || live[index]) && rows.len() > 1,
+                                egui::Button::new(fl!("layer_tool_menu_delete_layer")),
+                            )
                             .clicked()
                         {
                             action = Some(LayerAction::Remove(index));
@@ -1102,11 +1171,16 @@ impl DrawApp {
 
     fn layer_action(&mut self, action: LayerAction) {
         self.document.finish();
+        // Layer indices stay valid: an emptied text layer is kept rather than removed here.
+        self.document.text_edit = None;
         match action {
             LayerAction::Select(index) => {
                 self.document.with_state(|state| state.set_current_layer(index));
             }
             LayerAction::Properties(index) => self.open_layer_properties(index),
+            LayerAction::Effects(index) => self.open_layer_effects(index),
+            LayerAction::LiveText(index) => self.edit_text_layer(index),
+            LayerAction::BakeText(index) => self.edit(|state| state.bake_live_text(index)),
             LayerAction::Visibility(index) => self.edit(|state| state.toggle_layer_visibility(index)),
             LayerAction::Lock(index) => self.edit(|state| {
                 let mut properties = state.get_buffer().layers[index].properties.clone();
@@ -1135,14 +1209,299 @@ impl DrawApp {
     }
 
     pub(super) fn layer_properties_open(&self) -> bool {
-        self.chrome.layer_properties.is_some()
+        self.chrome.layer_properties.is_some() || self.chrome.layer_effects.is_some()
+    }
+
+    pub(super) fn open_layer_effects(&mut self, index: usize) {
+        let effects = self.document.with_state(|state| {
+            state
+                .get_buffer()
+                .layers
+                .get(index)
+                .filter(|layer| (!layer.properties.is_locked || layer.is_text()) && layer.role != Role::Image)
+                .map(|layer| layer.effects.clone())
+        });
+        if let Some(effects) = effects {
+            self.document.finish();
+            self.chrome.layer_effects = Some(LayerEffectsDialog {
+                index,
+                effects,
+                preview: None,
+                error: None,
+            });
+            self.canvas_focus = false;
+        } else {
+            self.result(Err(fl!("layer-effects-unavailable")));
+        }
+    }
+
+    fn layer_effects_dialog(&mut self, context: &egui::Context) {
+        let Some(mut draft) = self.chrome.layer_effects.take() else { return };
+        #[derive(Clone, Copy)]
+        enum Action {
+            Cancel,
+            Apply,
+            Bake,
+        }
+        let palette = self.document.with_state(|state| state.get_buffer().palette.clone());
+        let selected = self.document.with_state(|state| state.is_something_selected());
+        let mut changed = false;
+        let response = SharedDialog::new("layer-effects")
+            .size(DialogSize::Large)
+            .fixed_height(600.0)
+            .show(context, |dialog| {
+                dialog.content(|ui| {
+                    ui.label(appearance::bold(ui, fl!("layer-effects-title")).size(18.0));
+                    ui.label(fl!("layer-effects-hint"));
+                    ui.add_space(8.0);
+                    let mut remap_enabled = draft.effects.remap.as_ref().is_some_and(|remap| remap.enabled);
+                    if ui.checkbox(&mut remap_enabled, fl!("layer-effects-remap")).changed() {
+                        draft.effects.remap.get_or_insert_with(PaletteRemap::default).enabled = remap_enabled;
+                        changed = true;
+                    }
+                    if let Some(remap) = &mut draft.effects.remap {
+                        ui.add_enabled_ui(remap.enabled, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                if ui.button(fl!("layer-effects-reset")).clicked() {
+                                    remap.colors = PaletteRemap::default().colors;
+                                    changed = true;
+                                }
+                                if ui.button(fl!("layer-effects-greyscale")).clicked() {
+                                    remap.colors = std::array::from_fn(|i| match i {
+                                        1..=6 => 8,
+                                        9..=14 => 7,
+                                        _ => i as u8,
+                                    });
+                                    changed = true;
+                                }
+                                if ui.button(fl!("layer-effects-rotate")).clicked() {
+                                    let hues = [4, 6, 2, 3, 1, 5];
+                                    remap.colors = PaletteRemap::default().colors;
+                                    for i in 0..hues.len() {
+                                        remap.colors[hues[i]] = hues[(i + 1) % hues.len()] as u8;
+                                        remap.colors[hues[i] + 8] = remap.colors[hues[i]] + 8;
+                                    }
+                                    changed = true;
+                                }
+                                if ui.button(fl!("layer-effects-random")).clicked() {
+                                    let mut hues = [1u8, 2, 3, 4, 5, 6];
+                                    fastrand::shuffle(&mut hues);
+                                    remap.colors = PaletteRemap::default().colors;
+                                    for (i, hue) in hues.into_iter().enumerate() {
+                                        remap.colors[i + 1] = hue;
+                                        remap.colors[i + 9] = hue + 8;
+                                    }
+                                    changed = true;
+                                }
+                            });
+                            egui::Grid::new("layer-remap-colors").num_columns(8).show(ui, |ui| {
+                                for (source, target) in remap.colors.iter_mut().enumerate() {
+                                    let (r, g, b) = palette.rgb(source as u32);
+                                    ui.label(egui::RichText::new(format!("{source:2}")).background_color(Color32::from_rgb(r, g, b)).color(
+                                        if u32::from(r) + u32::from(g) + u32::from(b) > 380 {
+                                            Color32::BLACK
+                                        } else {
+                                            Color32::WHITE
+                                        },
+                                    ));
+                                    egui::ComboBox::from_id_salt(("layer-remap", source))
+                                        .width(46.0)
+                                        .selected_text(target.to_string())
+                                        .show_ui(ui, |ui| {
+                                            for color in 0..16 {
+                                                changed |= ui.selectable_value(target, color, color.to_string()).changed();
+                                            }
+                                        });
+                                    if source % 4 == 3 {
+                                        ui.end_row();
+                                    }
+                                }
+                            });
+                        });
+                    }
+                    ui.separator();
+                    ui.label(appearance::bold(ui, fl!("layer-effects-mask")));
+                    ui.horizontal_wrapped(|ui| {
+                        for (hide, label) in [(true, fl!("layer-effects-hide-selection")), (false, fl!("layer-effects-keep-selection"))] {
+                            if ui.add_enabled(selected, egui::Button::new(label)).clicked() {
+                                match self.document.with_state(|state| state.layer_mask_from_selection(draft.index, hide)) {
+                                    Ok(mask) => {
+                                        draft.effects.mask = Some(mask);
+                                        draft.error = None;
+                                        changed = true;
+                                    }
+                                    Err(error) => draft.error = Some(error.to_string()),
+                                }
+                            }
+                        }
+                    });
+                    let mut remove_mask = false;
+                    if let Some(mask) = &mut draft.effects.mask {
+                        ui.horizontal(|ui| {
+                            changed |= ui.checkbox(&mut mask.enabled, fl!("layer-effects-mask-enabled")).changed();
+                            remove_mask = ui.button(fl!("layer-effects-remove-mask")).clicked();
+                        });
+                    }
+                    if remove_mask {
+                        draft.effects.mask = None;
+                        changed = true;
+                    }
+                    if ui.button(fl!("layer-effects-clear")).clicked() {
+                        draft.effects = LayerEffects::default();
+                        changed = true;
+                    }
+                    if changed || draft.preview.is_none() {
+                        let image = self.document.with_state(|state| {
+                            let mut buffer = state.get_buffer().clone();
+                            buffer.layers.get_mut(draft.index)?.effects = draft.effects.clone();
+                            layer_preview_sized(&buffer, draft.index, 480)
+                        });
+                        if let Some(image) = image {
+                            draft.preview = Some(context.load_texture("layer-effects-preview", image, egui::TextureOptions::NEAREST));
+                        }
+                    }
+                    if let Some(preview) = &draft.preview {
+                        ui.add(egui::Image::new(preview).max_height(180.0).shrink_to_fit());
+                    }
+                    if let Some(error) = &draft.error {
+                        ui.colored_label(icy_engine_gui::egui::dialog::DANGER, error);
+                    }
+                    ui.label(fl!("layer-effects-preview-hint"));
+                });
+                dialog.buttons([
+                    DialogButton::cancel(labels::cancel(), Action::Cancel),
+                    DialogButton::secondary(fl!("layer-effects-bake"), Action::Bake),
+                    DialogButton::primary(labels::ok(), Action::Apply),
+                ]);
+            });
+        match response.action {
+            Some(Action::Apply | Action::Bake) => {
+                let bake = matches!(response.action, Some(Action::Bake));
+                self.edit(|state| {
+                    let _undo = state.begin_atomic_undo(fl!("layer-effects-title"));
+                    state.set_layer_effects(draft.index, draft.effects)?;
+                    if bake {
+                        state.bake_layer_effects(draft.index)?;
+                    }
+                    Ok(())
+                });
+                self.canvas_focus = true;
+            }
+            Some(Action::Cancel) => self.canvas_focus = true,
+            None if !response.dismissed => self.chrome.layer_effects = Some(draft),
+            None => self.canvas_focus = true,
+        }
+    }
+
+    /// Whether the font tool edits live text layers: not while collaborating, pasting or
+    /// editing a TheDraw font.
+    pub(super) fn live_text_available(&self) -> bool {
+        !self.collab.active && !self.document.paste_active() && self.charfont.is_none()
+    }
+
+    /// Settings for a new text layer: the font tool's TheDraw font and the drawing colors.
+    pub(super) fn new_text_source(&self) -> Option<icy_engine::LiveText> {
+        let library = self.text_fonts.as_ref()?.read();
+        let Some(retrofont::Font::Tdf(font)) = library.get_font(self.text_font) else {
+            return None;
+        };
+        let attribute = self.document.with_state(|state| state.get_caret().attribute);
+        let mut source = icy_engine::LiveText::new(font, attribute).ok()?;
+        source.outline_style = self.settings.font_outline_style.min(widgets::OUTLINE_STYLES - 1) as u8;
+        Some(source)
+    }
+
+    /// Starts editing text at `position`, in the text layer there when `reuse` allows it.
+    /// Returns false when the font tool types into the cells instead (FIGlet fonts).
+    pub(super) fn start_text_edit(&mut self, position: Position, reuse: bool) -> bool {
+        if !self.live_text_available() {
+            return false;
+        }
+        let source = self.new_text_source();
+        match self.document.begin_text_edit(position, source, reuse) {
+            Ok(started) => started,
+            Err(error) => {
+                self.result(Err(error));
+                true
+            }
+        }
+    }
+
+    /// With the font tool, the drawing colors show the selected text layer's colors, and
+    /// changing them recolors the layer. Color fonts keep their own glyph colors.
+    pub(super) fn sync_text_colors(&mut self) {
+        let source = (self.document.tool == Tool::Font && self.live_text_available())
+            .then(|| self.document.text_source())
+            .flatten()
+            .filter(|source| source.font().is_ok_and(|font| font.font_type() != retrofont::tdf::TdfFontType::Color));
+        let Some(source) = source else {
+            self.chrome.text_colors = None;
+            return;
+        };
+        let layer = self.document.text_layer();
+        let caret = self.document.with_state(|state| state.get_caret().attribute);
+        match self.chrome.text_colors {
+            Some((synced, colors)) if synced == layer => {
+                if source.attribute != colors {
+                    self.document.with_state(|state| state.set_caret_attribute(source.attribute));
+                    self.chrome.text_colors = Some((layer, source.attribute));
+                } else if caret != colors {
+                    let result = self.document.modify_text(|text| text.attribute = caret);
+                    let colors = if result.is_ok() {
+                        caret
+                    } else {
+                        self.document.with_state(|state| state.set_caret_attribute(source.attribute));
+                        source.attribute
+                    };
+                    self.result(result);
+                    self.chrome.text_colors = Some((layer, colors));
+                }
+            }
+            _ => {
+                if layer.is_some() && caret != source.attribute {
+                    self.document.with_state(|state| state.set_caret_attribute(source.attribute));
+                }
+                self.chrome.text_colors = Some((layer, self.document.with_state(|state| state.get_caret().attribute)));
+            }
+        }
+    }
+
+    pub(super) fn edit_text_layer(&mut self, index: usize) {
+        if !self.live_text_available() {
+            self.result(Err(fl!("live-text-unavailable")));
+            return;
+        }
+        self.select_tool(Tool::Font);
+        let result = self.document.edit_text_layer(index).map(|_| ());
+        self.result(result);
+    }
+
+    /// Applies the font tool's TheDraw font to the edited or selected text layer.
+    pub(super) fn apply_text_font(&mut self) {
+        if self.document.text_source().is_none() {
+            return;
+        }
+        let font_data = self.text_fonts.as_ref().and_then(|library| match library.read().get_font(self.text_font) {
+            Some(retrofont::Font::Tdf(font)) => Some(font.to_bytes().map_err(|error| error.to_string())),
+            _ => None,
+        });
+        let result = match font_data {
+            Some(Ok(data)) => self.document.modify_text(|source| source.font_data = data),
+            Some(Err(error)) => Err(error),
+            None => Err(fl!("live-text-select-tdf")),
+        };
+        self.result(result);
     }
 
     /// Layer settings like the classic editor: name, size, offset, flags and mode.
     pub(super) fn layer_properties_dialog(&mut self, context: &egui::Context) {
+        self.layer_effects_dialog(context);
         let Some((index, mut properties, mut size)) = self.chrome.layer_properties.take() else {
             return;
         };
+        let live = self
+            .document
+            .with_state(|state| state.get_buffer().layers.get(index).is_some_and(|layer| layer.is_text()));
         #[derive(Clone, Copy)]
         enum Action {
             Cancel,
@@ -1164,10 +1523,14 @@ impl DrawApp {
                             egui::DragValue::new(value).range(range).speed(0.25)
                         }
                         appearance::form_row(ui, &fl!("edit-canvas-size-width-label"), |ui| {
-                            ui.add_sized([80.0, 28.0], number(&mut size.width, 1..=MAX_LAYER_SIZE));
+                            ui.add_enabled_ui(!live, |ui| {
+                                ui.add_sized([80.0, 28.0], number(&mut size.width, 1..=MAX_LAYER_SIZE));
+                            });
                         });
                         appearance::form_row(ui, &fl!("edit-canvas-size-height-label"), |ui| {
-                            ui.add_sized([80.0, 28.0], number(&mut size.height, 1..=MAX_LAYER_SIZE));
+                            ui.add_enabled_ui(!live, |ui| {
+                                ui.add_sized([80.0, 28.0], number(&mut size.height, 1..=MAX_LAYER_SIZE));
+                            });
                         });
                         ui.add_space(6.0);
                         appearance::form_row(ui, &fl!("edit-layer-dialog-is-x-offset-label"), |ui| {
@@ -1179,7 +1542,9 @@ impl DrawApp {
                         ui.add_space(6.0);
                         ui.columns(2, |columns| {
                             appearance::check_row(&mut columns[0], &fl!("edit-layer-dialog-is-visible-checkbox"), &mut properties.is_visible);
-                            appearance::check_row(&mut columns[0], &fl!("edit-layer-dialog-is-edit-locked-checkbox"), &mut properties.is_locked);
+                            columns[0].add_enabled_ui(!live, |ui| {
+                                appearance::check_row(ui, &fl!("edit-layer-dialog-is-edit-locked-checkbox"), &mut properties.is_locked);
+                            });
                             appearance::check_row(
                                 &mut columns[0],
                                 &fl!("edit-layer-dialog-is-position-locked-checkbox"),

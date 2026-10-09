@@ -249,7 +249,8 @@ impl TextArtFontLibrary {
         self.preview_cache.get(&index)
     }
 
-    fn render_preview_for_font(font: &Font) -> Option<FontPreview> {
+    /// A preview of `font`, which need not be in the library (e.g. embedded in a text layer).
+    pub fn render_preview_for_font(font: &Font) -> Option<FontPreview> {
         Self::render_preview_for_font_with_text(font, PREVIEW_TEXT)
     }
 

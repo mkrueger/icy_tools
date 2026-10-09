@@ -8,6 +8,168 @@ use crate::{AttributedChar, Layer, LayerProperties, Position, Result, Role, Size
 use super::{undo_operation::EditorUndoOp, EditState};
 
 impl EditState {
+    pub fn add_live_text(&mut self, source: icy_engine::LiveText, position: Position) -> Result<()> {
+        let mut layer = source.render(self.get_buffer().buffer_type)?;
+        layer.set_offset(position);
+        let index = (self.screen.current_layer + 1).min(self.get_buffer().layers.len());
+        self.push_undo_action(EditorUndoOp::AddLayer { index, layer: Box::new(layer) })?;
+        self.screen.current_layer = index;
+        Ok(())
+    }
+
+    pub fn update_live_text(&mut self, index: usize, source: icy_engine::LiveText) -> Result<()> {
+        let Some(layer) = self.rendered_live_text(index, &source)? else {
+            return Ok(());
+        };
+        self.push_undo_action(EditorUndoOp::ReplaceLayer {
+            index,
+            layer: Box::new(layer),
+            description: fl!(crate::LANGUAGE_LOADER, "undo-live-text"),
+        })
+    }
+
+    /// Changes the text of a live text layer while typing. With `continue_typing`, it extends the
+    /// undo step of the previous change when that is still the last, unsaved one.
+    pub fn type_live_text(&mut self, index: usize, source: icy_engine::LiveText, continue_typing: bool) -> Result<()> {
+        let Some(layer) = self.rendered_live_text(index, &source)? else {
+            return Ok(());
+        };
+        let description = fl!(crate::LANGUAGE_LOADER, "undo-type-live-text");
+        let extend = continue_typing
+            && {
+                let stack = self.undo_stack.lock().unwrap();
+                stack.is_modified()
+                    && stack.redo_len() == 0
+                    && matches!(stack.undo_stack().last(), Some(EditorUndoOp::ReplaceLayer { index: last, description: text, .. }) if *last == index && *text == description)
+            };
+        if extend {
+            // The stored layer is the one before typing started, so undo still restores it.
+            self.screen.buffer.layers[index] = layer;
+            self.screen.buffer.mark_dirty();
+            return Ok(());
+        }
+        self.push_undo_action(EditorUndoOp::ReplaceLayer {
+            index,
+            layer: Box::new(layer),
+            description,
+        })
+    }
+
+    /// The live text layer at `index` rendered from `source`, keeping its properties and
+    /// effects; `None` when `source` is unchanged.
+    fn rendered_live_text(&self, index: usize, source: &icy_engine::LiveText) -> Result<Option<Layer>> {
+        let original = self
+            .get_buffer()
+            .layers
+            .get(index)
+            .ok_or_else(|| crate::EngineError::Generic("Invalid live text layer".into()))?;
+        if !original.is_text() {
+            return Err(crate::EngineError::Generic("This is not a live text layer".into()));
+        }
+        if original.live_text() == Some(source) {
+            return Ok(None);
+        }
+        let mut layer = source.render(self.get_buffer().buffer_type)?;
+        layer.properties = original.properties.clone();
+        layer.properties.is_locked = true;
+        layer.effects = original.effects.clone();
+        Ok(Some(layer))
+    }
+
+    pub fn bake_live_text(&mut self, index: usize) -> Result<()> {
+        let mut layer = self
+            .get_buffer()
+            .layers
+            .get(index)
+            .ok_or_else(|| crate::EngineError::Generic("Invalid live text layer".into()))?
+            .clone();
+        if !layer.is_text() {
+            return Ok(());
+        }
+        layer.set_live_text(None);
+        layer.properties.is_locked = false;
+        self.push_undo_action(EditorUndoOp::ReplaceLayer {
+            index,
+            layer: Box::new(layer),
+            description: fl!(crate::LANGUAGE_LOADER, "undo-bake-live-text"),
+        })
+    }
+
+    pub(crate) fn require_cell_layer(&self, index: usize) -> Result<()> {
+        if self.get_buffer().layers.get(index).is_some_and(|layer| layer.is_text()) {
+            return Err(crate::EngineError::Generic(fl!(crate::LANGUAGE_LOADER, "live-text-bake-required")));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn require_cell_layers(&self) -> Result<()> {
+        for index in 0..self.get_buffer().layers.len() {
+            self.require_cell_layer(index)?;
+        }
+        Ok(())
+    }
+
+    pub fn set_layer_effects(&mut self, index: usize, effects: icy_engine::LayerEffects) -> Result<()> {
+        effects.validate()?;
+        let layer = self
+            .get_buffer()
+            .layers
+            .get(index)
+            .ok_or_else(|| crate::EngineError::Generic(format!("Invalid layer index: {index}")))?;
+        if (layer.properties.is_locked && !layer.is_text()) || layer.role == Role::Image {
+            return Err(crate::EngineError::Generic("Layer effects require an unlocked text layer".into()));
+        }
+        if layer.effects == effects {
+            return Ok(());
+        }
+        let mut changed = layer.clone();
+        changed.effects = effects;
+        self.push_undo_action(EditorUndoOp::ReplaceLayer {
+            index,
+            layer: Box::new(changed),
+            description: fl!(crate::LANGUAGE_LOADER, "undo-layer-effects"),
+        })
+    }
+
+    pub fn layer_mask_from_selection(&self, index: usize, hide_selected: bool) -> Result<icy_engine::LayerMask> {
+        if !self.is_something_selected() {
+            return Err(crate::EngineError::Generic("Select an area before creating a layer mask".into()));
+        }
+        let layer = self
+            .get_buffer()
+            .layers
+            .get(index)
+            .ok_or_else(|| crate::EngineError::Generic(format!("Invalid layer index: {index}")))?;
+        let mut mask = icy_engine::LayerMask::new(layer.size())?;
+        for y in 0..layer.height() {
+            for x in 0..layer.width() {
+                let local = Position::new(x, y);
+                mask.set_hidden(local, self.is_selected(local + layer.offset()) == hide_selected);
+            }
+        }
+        Ok(mask)
+    }
+
+    pub fn bake_layer_effects(&mut self, index: usize) -> Result<()> {
+        let source = self
+            .get_buffer()
+            .layers
+            .get(index)
+            .ok_or_else(|| crate::EngineError::Generic(format!("Invalid layer index: {index}")))?;
+        if source.effects.is_empty() {
+            return Ok(());
+        }
+        if (source.properties.is_locked && !source.is_text()) || source.role == Role::Image {
+            return Err(crate::EngineError::Generic("Baking effects requires an unlocked text layer".into()));
+        }
+        let layer = self.get_buffer().layer_with_baked_effects(index)?;
+        self.push_undo_action(EditorUndoOp::ReplaceLayer {
+            index,
+            layer: Box::new(layer),
+            description: fl!(crate::LANGUAGE_LOADER, "undo-bake-layer-effects"),
+        })
+    }
+
     pub fn add_new_layer(&mut self, layer: usize) -> Result<()> {
         let size = self.screen.buffer.size();
         let mut new_layer = Layer::new(fl!(crate::LANGUAGE_LOADER, "layer-new-name"), size);
@@ -112,6 +274,9 @@ impl EditState {
         if matches!(role, Role::Image) {
             return Err(crate::EngineError::Generic("Cannot anchor image layer".to_string()));
         }
+        if floating_idx > 0 {
+            self.require_cell_layer(floating_idx - 1)?;
+        }
 
         // PastePreview layers are merged down
         let _op = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "layer-anchor"));
@@ -159,8 +324,8 @@ impl EditState {
         }
         println!("3");
 
-        let base_layer = &self.screen.buffer.layers[layer - 1];
-        let cur_layer = &self.screen.buffer.layers[layer];
+        let base_layer = self.screen.buffer.layer_with_baked_effects(layer - 1)?;
+        let cur_layer = self.screen.buffer.layer_with_baked_effects(layer)?;
 
         let start: Position = Position::new(base_layer.offset().x.min(cur_layer.offset().x), base_layer.offset().y.min(cur_layer.offset().y));
 
@@ -279,7 +444,10 @@ impl EditState {
         if layer_idx == 0 {
             return Err(crate::EngineError::Generic("Cannot stamp down base layer".to_string()));
         }
+        self.require_cell_layer(layer_idx - 1)?;
 
+        let source = self.get_buffer().layer_with_baked_effects(layer_idx)?;
+        self.bake_layer_effects(layer_idx - 1)?;
         let (src_offset, src_size) = {
             let src = self
                 .screen
@@ -304,7 +472,11 @@ impl EditState {
             for x in 0..src_size.width {
                 let src_local = Position::new(x, y);
                 old_chars[y as usize][x as usize] = self.screen.buffer.layers[layer_idx - 1].char_at(target_pos + src_local);
-                new_chars[y as usize][x as usize] = self.screen.buffer.layers[layer_idx].char_at(src_local);
+                new_chars[y as usize][x as usize] = if self.screen.buffer.layers[layer_idx].effects.is_masked(src_local) {
+                    old_chars[y as usize][x as usize]
+                } else {
+                    source.char_at(src_local)
+                };
                 println!(
                     "  At {:?}: old={:?}, new={:?}",
                     src_local, old_chars[y as usize][x as usize].ch, new_chars[y as usize][x as usize].ch
@@ -324,6 +496,7 @@ impl EditState {
     /// Rotate the floating paste layer 90° clockwise.
     /// This is only used in paste mode and generates collaboration ROTATE command.
     pub fn paste_rotate(&mut self) -> Result<()> {
+        self.require_cell_layer(self.get_current_layer()?)?;
         let current_layer = self.screen.current_layer;
         let font_dims = self.get_buffer().font_dimensions();
         if let Some(layer) = self.get_buffer_mut().layers.get_mut(current_layer) {
@@ -422,6 +595,7 @@ impl EditState {
     /// Flip the floating paste layer horizontally.
     /// This is only used in paste mode and generates collaboration FLIP_X command.
     pub fn paste_flip_x(&mut self) -> Result<()> {
+        self.require_cell_layer(self.get_current_layer()?)?;
         let current_layer = self.screen.current_layer;
         let mut flip_tables = std::collections::HashMap::new();
         self.screen.buffer.font_iter().for_each(|(page, font)| {
@@ -448,6 +622,7 @@ impl EditState {
     /// Flip the floating paste layer vertically.
     /// This is only used in paste mode and generates collaboration FLIP_Y command.
     pub fn paste_flip_y(&mut self) -> Result<()> {
+        self.require_cell_layer(self.get_current_layer()?)?;
         let current_layer = self.screen.current_layer;
         let mut flip_tables = std::collections::HashMap::new();
         self.screen.buffer.font_iter().for_each(|(page, font)| {
@@ -501,6 +676,7 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn make_layer_transparent(&mut self) -> Result<()> {
+        self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-make_transparent"));
         let layer_idx = self.screen.current_layer;
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -564,6 +740,9 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn update_layer_properties(&mut self, layer: usize, new_properties: LayerProperties) -> Result<()> {
+        if !new_properties.is_locked {
+            self.require_cell_layer(layer)?;
+        }
         let op = EditorUndoOp::UpdateLayerProperties {
             index: layer,
             old_properties: self.screen.buffer.layers[layer].properties.clone(),

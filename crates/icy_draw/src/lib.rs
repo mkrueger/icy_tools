@@ -33,6 +33,7 @@ pub mod skypix_document;
 pub mod tag_replacements;
 #[path = "util/tdf_font_library.rs"]
 pub mod text_art_fonts;
+pub mod text_edit;
 pub use settings::*;
 
 pub static VERSION: std::sync::LazyLock<semver::Version> = std::sync::LazyLock::new(|| semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap());

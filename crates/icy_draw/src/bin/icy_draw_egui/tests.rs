@@ -1392,6 +1392,374 @@ fn canvas_context_menu_opens_for_text_and_selection_tools() {
 }
 
 #[test]
+fn font_tool_typing_after_structural_undo_creates_a_new_layer() {
+    use retrofont::{
+        tdf::{TdfFont, TdfFontType},
+        Glyph, GlyphPart,
+    };
+    let mut font = TdfFont::new("Undo", TdfFontType::Block, 1);
+    let mut glyph = Glyph::new(1, 1);
+    glyph.parts = vec![GlyphPart::Char('X')];
+    font.add_glyph('A', glyph.clone());
+    font.add_glyph('B', glyph);
+    let source = icy_engine::LiveText::new(&font, icy_engine::TextAttribute::default()).unwrap();
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.document.tool = Tool::Font;
+    app.canvas_focus = true;
+    app.document.with_state(|state| {
+        let mut existing = source.clone();
+        existing.text = "B".into();
+        state.add_live_text(existing, Position::new(10, 0)).unwrap();
+        state.set_current_layer(0);
+    });
+    app.document.begin_text_edit(Position::default(), Some(source), false).unwrap();
+    app.document.text_edit_insert("A").unwrap();
+    let _ = context.run(
+        egui::RawInput {
+            events: vec![key_event(Key::Z, egui::Modifiers::COMMAND), egui::Event::Text("A".into())],
+            ..Default::default()
+        },
+        |context| app.keys(context),
+    );
+    app.document.with_state(|state| {
+        assert_eq!(state.get_buffer().layers.len(), 3);
+        assert_eq!(state.get_buffer().layers[1].live_text().unwrap().text, "B");
+        assert_eq!(state.get_buffer().layers[2].live_text().unwrap().text, "A");
+        assert_eq!(state.get_buffer().layers[2].offset(), Position::default());
+    });
+}
+
+#[test]
+fn inline_text_caret_scrolls_with_its_full_height() {
+    use retrofont::{
+        tdf::{TdfFont, TdfFontType},
+        Glyph, GlyphPart,
+    };
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.document = icy_draw::document::Document::new(Size::new(80, 50));
+    app.document.tool = Tool::Font;
+    app.canvas_focus = true;
+    app.canvas_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(32.0, 48.0));
+    app.view.zoom = 1.0;
+    app.view.offset = egui::Vec2::ZERO;
+    app.view.max_offset = egui::vec2(600.0, 750.0);
+    {
+        let mut info = app.view.terminal.render_info.write();
+        info.font_width = 8.0;
+        info.font_height = 16.0;
+        info.scan_lines = false;
+    }
+    let mut font = TdfFont::new("Scroll", TdfFontType::Block, 1);
+    let mut glyph = Glyph::new(2, 2);
+    glyph.parts = vec![
+        GlyphPart::Char('X'),
+        GlyphPart::Char('X'),
+        GlyphPart::NewLine,
+        GlyphPart::Char('X'),
+        GlyphPart::Char('X'),
+    ];
+    font.add_glyph('A', glyph);
+    let source = icy_engine::LiveText::new(&font, icy_engine::TextAttribute::default()).unwrap();
+    app.document.begin_text_edit(Position::new(3, 2), Some(source), false).unwrap();
+    let keys = |app: &mut DrawApp, events| {
+        let _ = context.run(egui::RawInput { events, ..Default::default() }, |context| app.keys(context));
+    };
+    keys(&mut app, vec![egui::Event::Text("A".into())]);
+    assert_eq!(app.document.text_caret(), Some((Position::new(5, 2), 2)));
+    assert_eq!(app.view.scroll_to, Some(egui::vec2(16.0, 16.0)));
+    app.view.offset = app.view.scroll_to.take().unwrap();
+    keys(&mut app, vec![key_event(Key::Enter, egui::Modifiers::NONE)]);
+    assert_eq!(app.document.text_caret(), Some((Position::new(3, 4), 2)));
+    assert_eq!(app.view.scroll_to, Some(egui::vec2(16.0, 48.0)));
+    app.view.offset = app.view.scroll_to.take().unwrap();
+    keys(&mut app, vec![key_event(Key::ArrowUp, egui::Modifiers::NONE)]);
+    assert_eq!(app.view.scroll_to, Some(egui::vec2(16.0, 32.0)));
+    app.view.offset = egui::Vec2::ZERO;
+    app.view.scroll_to = None;
+    app.reveal_caret(Position::new(3, 2), 10);
+    assert_eq!(app.view.scroll_to, Some(egui::vec2(0.0, 32.0)), "an oversized caret keeps its top visible");
+
+    app.document.finish_text_edit().unwrap();
+    app.document.tool = Tool::Click;
+    app.document.with_state(|state| state.set_caret_from_document_position(Position::default()));
+    assert_eq!(app.active_caret(), (Position::default(), 1));
+    app.view.offset = egui::Vec2::ZERO;
+    app.view.scroll_to = None;
+    app.reveal_caret(Position::new(5, 3), 1);
+    assert_eq!(app.view.scroll_to, Some(egui::vec2(16.0, 16.0)));
+}
+
+#[test]
+fn font_tool_edits_text_layers_in_place() {
+    use retrofont::{
+        tdf::{TdfFont, TdfFontType},
+        Glyph, GlyphPart,
+    };
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.document = icy_draw::document::Document::new(Size::new(20, 6));
+    let font = |name: &str, part: char| {
+        let mut font = TdfFont::new(name, TdfFontType::Block, 1);
+        for character in ['A', 'B'] {
+            let mut glyph = Glyph::new(1, 2);
+            glyph.parts = vec![GlyphPart::Char(part), GlyphPart::NewLine, GlyphPart::Char(part)];
+            font.add_glyph(character, glyph);
+        }
+        retrofont::Font::Tdf(Box::new(font))
+    };
+    app.text_fonts = Some(icy_draw::text_art_fonts::TextArtFontLibrary::with_fonts(vec![
+        font("First", 'X'),
+        font("Second", 'Y'),
+    ]));
+    app.select_tool(Tool::Font);
+    let size = egui::vec2(1280.0, 820.0);
+    frame(&context, &mut app, size, vec![]);
+    {
+        let mut info = app.view.terminal.render_info.write();
+        info.display_scale = 2.0;
+        info.viewport_width = app.canvas_rect.width();
+        info.viewport_height = app.canvas_rect.height();
+        info.font_width = 8.0;
+        info.font_height = 16.0;
+        info.bounds_x = app.canvas_rect.left();
+        info.bounds_y = app.canvas_rect.top();
+    }
+    let info = app.view.terminal.render_info.read().clone();
+    let cell = |x: f32, y: f32| {
+        egui::pos2(
+            info.bounds_x + info.viewport_x + info.font_width * info.display_scale * (x + 0.5),
+            info.bounds_y + info.viewport_y + info.font_height * info.display_scale * (y + 0.5),
+        )
+    };
+    let click = |app: &mut DrawApp, position: egui::Pos2| {
+        frame(&context, app, size, vec![egui::Event::PointerMoved(position)]);
+        for pressed in [true, false] {
+            frame(&context, app, size, pointer(position, pressed));
+        }
+    };
+    let layers = |app: &DrawApp| app.document.with_state(|state| state.get_buffer().layers.len());
+    let text = |app: &DrawApp| app.document.text_source().map(|source| source.text);
+
+    click(&mut app, cell(3.0, 1.0));
+    assert!(app.document.text_edit.is_some(), "a click on a cell layer starts a new text there");
+    assert_eq!(layers(&app), 1, "the layer is made by the first character");
+    frame(&context, &mut app, size, vec![egui::Event::Text("ab?".into())]);
+    assert_eq!(layers(&app), 2);
+    assert_eq!(text(&app).as_deref(), Some("ab"));
+    assert_eq!(app.document.with_state(|state| state.get_buffer().layers[1].offset()), Position::new(3, 1));
+    assert_eq!(app.document.text_caret(), Some((Position::new(5, 1), 2)));
+    assert!(!app.document.can_paint(), "the text layer is not painted on");
+    frame(
+        &context,
+        &mut app,
+        size,
+        vec![
+            key_event(Key::ArrowLeft, egui::Modifiers::NONE),
+            key_event(Key::Backspace, egui::Modifiers::NONE),
+        ],
+    );
+    assert_eq!(text(&app).as_deref(), Some("b"));
+    frame(
+        &context,
+        &mut app,
+        size,
+        vec![
+            key_event(Key::End, egui::Modifiers::NONE),
+            key_event(Key::Enter, egui::Modifiers::NONE),
+            egui::Event::Text("A".into()),
+        ],
+    );
+    assert_eq!(text(&app).as_deref(), Some("b\nA"));
+    // Changing the drawing colors recolors the text layer; the preview shows its font.
+    app.document.with_state(|state| state.set_caret_foreground(2));
+    frame(&context, &mut app, size, vec![]);
+    assert_eq!(app.document.text_source().unwrap().attribute.foreground(), 2);
+    assert_eq!(
+        app.document
+            .with_state(|state| state.get_buffer().char_at(Position::new(3, 1)).attribute.foreground()),
+        2
+    );
+    assert!(app.text_preview.is_some());
+
+    app.document.with_state(|state| state.set_caret_background(3));
+    frame(&context, &mut app, size, vec![]);
+    assert_eq!(app.document.text_source().unwrap().attribute.background(), 3);
+    for (redo, background) in [(false, 0), (true, 3), (false, 0)] {
+        app.undo(redo);
+        frame(&context, &mut app, size, vec![]);
+        let attribute = app.document.text_source().unwrap().attribute;
+        assert_eq!(attribute.background(), background);
+        assert_eq!(app.document.with_state(|state| state.get_caret().attribute), attribute);
+    }
+    app.document.with_state(|state| state.set_caret_foreground(6));
+    frame(&context, &mut app, size, vec![]);
+    let attribute = app.document.text_source().unwrap().attribute;
+    assert_eq!(attribute.foreground(), 6);
+    assert_eq!(attribute.background(), 0, "changing foreground must not restore an undone background");
+    app.undo(false);
+    frame(&context, &mut app, size, vec![]);
+    assert_eq!(app.document.text_source().unwrap().attribute.foreground(), 2);
+
+    // Choosing another font changes the selected text layer.
+    app.text_font_pending = 1;
+    app.dialog = Some(Dialog::TextArtFontSelect);
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    click_text(&context, &mut app, size, &icy_engine_gui::egui::appearance::labels::ok());
+    assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(3, 1)).ch), 'Y');
+    let output = frame(&context, &mut app, size, vec![]);
+    assert!(text_position(&output, "Second").is_some(), "the toolbar shows the font of the text layer");
+
+    frame(&context, &mut app, size, vec![key_event(Key::Escape, egui::Modifiers::NONE)]);
+    assert!(app.document.text_edit.is_none());
+    assert!(app.attribute_picker.is_none(), "Escape ends editing first");
+
+    // A click into the text edits it again at the clicked glyph.
+    click(&mut app, cell(3.0, 3.0));
+    assert_eq!(app.document.text_edit.as_ref().map(|edit| (edit.layer, edit.cursor)), Some((Some(1), 2)));
+    frame(&context, &mut app, size, vec![egui::Event::Text("B".into())]);
+    assert_eq!(text(&app).as_deref(), Some("b\nBA"));
+
+    // New text layer starts another text at the caret instead of editing this one.
+    click(&mut app, cell(12.0, 4.0));
+    assert_eq!(layers(&app), 2);
+    click_text(&context, &mut app, size, "New text layer");
+    frame(&context, &mut app, size, vec![egui::Event::Text("A".into())]);
+    assert_eq!(layers(&app), 3);
+    app.document.with_state(|state| state.set_caret_foreground(6));
+    frame(&context, &mut app, size, vec![]);
+    assert_eq!(app.document.text_source().unwrap().attribute.foreground(), 6);
+    // Selecting a text layer shows its colors as the drawing colors.
+    click(&mut app, cell(3.0, 3.0));
+    frame(&context, &mut app, size, vec![]);
+    assert_eq!(app.document.with_state(|state| state.get_caret().attribute.foreground()), 2);
+    assert_eq!(app.document.text_source().unwrap().attribute.foreground(), 2);
+    // Selecting another tool ends editing; a text left empty is removed.
+    app.edit_text_layer(2);
+    frame(
+        &context,
+        &mut app,
+        size,
+        vec![key_event(Key::End, egui::Modifiers::NONE), key_event(Key::Backspace, egui::Modifiers::NONE)],
+    );
+    assert_eq!(text(&app).as_deref(), Some(""));
+    app.select_tool(Tool::Pencil);
+    assert!(app.document.text_edit.is_none());
+    assert_eq!(layers(&app), 2);
+
+    let restored = icy_draw::document::Document::from_recovery(&app.document.recovery_snapshot().unwrap()).unwrap();
+    assert_eq!(
+        restored.with_state(|state| state.get_buffer().layers[1].live_text().unwrap().text.clone()),
+        "b\nBA"
+    );
+}
+
+#[test]
+fn layer_effects_dialog_previews_cancels_applies_and_bakes_undoably() {
+    use icy_engine_gui::egui::appearance::labels;
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.document = icy_draw::document::Document::new(Size::new(4, 1));
+    app.document.with_state(|state| {
+        for x in 0..4 {
+            state.get_buffer_mut().layers[0].set_char((x, 0), icy_engine::AttributedChar::new('A', icy_engine::TextAttribute::new(4, 0)));
+        }
+        state.set_selection(Selection::from(icy_engine::Rectangle::from(1, 0, 2, 1))).unwrap();
+    });
+    let original = app.document.with_state(|state| state.get_buffer().layers[0].clone());
+    let size = egui::vec2(1280.0, 900.0);
+    let configure = |app: &mut DrawApp| {
+        app.open_layer_effects(0);
+        for _ in 0..3 {
+            frame(&context, app, size, vec![]);
+        }
+        click_text(&context, app, size, "Palette remap");
+        let output = frame(&context, app, size, vec![]);
+        assert!(
+            text_position(&output, "Grayscale").is_some(),
+            "Missing remap controls: {:?}",
+            output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) => Some(text.galley.text()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        );
+        click_text(&context, app, size, "Grayscale");
+        click_text(&context, app, size, "Hide selection");
+    };
+    configure(&mut app);
+    assert_eq!(app.document.with_state(|state| state.get_buffer().layers[0].clone()), original);
+    click_text(&context, &mut app, size, &labels::cancel());
+    assert!(!app.layer_properties_open());
+    assert_eq!(app.document.with_state(|state| state.get_buffer().layers[0].clone()), original);
+
+    configure(&mut app);
+    let before = app.document.with_state(|state| state.undo_stack_len());
+    click_text(&context, &mut app, size, &labels::ok());
+    assert!(!app.layer_properties_open());
+    assert_eq!(app.document.with_state(|state| state.undo_stack_len()), before + 1);
+    app.document.with_state(|state| {
+        assert_eq!(state.get_buffer().layers[0].lines, original.lines);
+        assert_eq!(state.get_buffer().char_at((0, 0).into()).attribute.foreground(), 8);
+        assert!(!state.get_buffer().char_at((1, 0).into()).is_visible());
+    });
+    let effected = app.document.with_state(|state| state.get_buffer().layers[0].clone());
+    app.document.undo().unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_buffer().layers[0].clone()), original);
+    app.document.redo().unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_buffer().layers[0].clone()), effected);
+    app.open_layer_effects(0);
+    click_text(&context, &mut app, size, "Bake into cells");
+    app.document.with_state(|state| {
+        assert!(state.get_buffer().layers[0].effects.is_empty());
+        assert_eq!(state.get_buffer().layers[0].char_at((0, 0).into()).attribute.foreground(), 8);
+        assert!(!state.get_buffer().layers[0].char_at((1, 0).into()).is_visible());
+    });
+    app.document.undo().unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_buffer().layers[0].clone()), effected);
+}
+
+#[test]
+fn selection_toolbar_exposes_appearance_and_sampling_options() {
+    use icy_draw::document::SelectionMode;
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.document.tool = Tool::Select;
+    let size = egui::vec2(1600.0, 900.0);
+    assert_eq!(app.document.selection_mode, SelectionMode::Rectangle);
+    assert_eq!(app.document.selection_options, icy_engine_edit::SelectionOptions::default());
+    let output = frame(&context, &mut app, size, vec![]);
+    assert!(text_position(&output, "Matching").is_none());
+    click_text(&context, &mut app, size, "Look");
+    assert_eq!(app.document.selection_mode, SelectionMode::Appearance);
+    click_text(&context, &mut app, size, "Matching");
+    click_text(&context, &mut app, size, "Connected only");
+    assert!(app.document.selection_options.connected);
+    click_text(&context, &mut app, size, "Matching");
+    click_text(&context, &mut app, size, "Sample merged");
+    assert!(app.document.selection_options.sample_merged);
+    click_text(&context, &mut app, size, "Character");
+    assert_eq!(app.document.selection_mode, SelectionMode::Character);
+    assert!(app.document.selection_options.connected && app.document.selection_options.sample_merged);
+    click_text(&context, &mut app, size, "Rectangle");
+    let output = frame(&context, &mut app, size, vec![]);
+    assert!(text_position(&output, "Matching").is_none());
+    assert!(!app.document.modified(), "selection settings do not change the artwork");
+}
+
+#[test]
 fn select_tool_shows_handle_cursors_and_the_add_mode() {
     use_english();
     let context = egui::Context::default();

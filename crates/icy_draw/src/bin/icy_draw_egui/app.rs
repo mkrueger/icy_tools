@@ -373,7 +373,8 @@ pub struct DrawApp {
     font_selection_target: Option<FontSelectionTarget>,
     text_fonts: Option<icy_draw::text_art_fonts::SharedFontLibrary>,
     text_font: usize,
-    text_preview: Option<(usize, egui::TextureHandle)>,
+    /// The font tool's preview and the hash of the font it shows.
+    text_preview: Option<(u64, egui::TextureHandle)>,
     text_font_filter: String,
     text_font_types: [bool; 4],
     text_font_pending: usize,
@@ -1578,10 +1579,24 @@ impl DrawApp {
                 (SelectionMode::Attribute, fl!("tool-select-attribute"), fl!("select-mode-attribute-tooltip")),
                 (SelectionMode::Foreground, fl!("tool-select-foreground"), fl!("select-mode-foreground-tooltip")),
                 (SelectionMode::Background, fl!("tool-select-background"), fl!("select-mode-background-tooltip")),
+                (SelectionMode::Appearance, fl!("tool-select-appearance"), fl!("select-mode-appearance-tooltip")),
             ],
         ) {
             self.document.finish();
             self.document.selection_mode = mode;
+        }
+        if mode != SelectionMode::Rectangle {
+            let mut options = self.document.selection_options;
+            ui.menu_button(fl!("select-matching-options"), |ui| {
+                ui.checkbox(&mut options.connected, fl!("select-connected"))
+                    .on_hover_text(fl!("select-connected-tooltip"));
+                ui.checkbox(&mut options.sample_merged, fl!("select-sample-merged"))
+                    .on_hover_text(fl!("select-sample-merged-tooltip"));
+            });
+            if options != self.document.selection_options {
+                self.document.finish();
+                self.document.selection_options = options;
+            }
         }
         widgets::divider(ui);
         let selected = self.document.with_state(|state| state.is_something_selected());
@@ -1866,11 +1881,15 @@ impl DrawApp {
                 }
             }
             Tool::Font => {
-                if let Some(library) = &self.text_fonts {
-                    let font_name = library
-                        .read()
-                        .font_name(self.text_font)
-                        .map_or_else(|| fl!("font-tool-no_fonts"), str::to_owned);
+                // A selected text layer shows and changes its own settings.
+                let text = self.document.text_source().filter(|_| self.live_text_available());
+                if let Some(library) = self.text_fonts.clone() {
+                    let font_name = text
+                        .as_ref()
+                        .and_then(|source| source.font().ok())
+                        .map(|font| font.name)
+                        .or_else(|| library.read().font_name(self.text_font).map(str::to_owned))
+                        .unwrap_or_else(|| fl!("font-tool-no_fonts"));
                     if ui
                         .add_sized([290.0, widgets::CONTROL_HEIGHT], egui::Button::new(font_name).truncate())
                         .on_hover_text(fl!("font-tool-select_font"))
@@ -1882,23 +1901,75 @@ impl DrawApp {
                     }
                     widgets::divider(ui);
                     ui.weak(fl!("tdf-font-selector-type_outline"));
-                    let style = &mut self.settings.font_outline_style;
-                    widgets::outline_style_picker(ui, style);
-                    let mut library = library.write();
-                    if self.text_preview.as_ref().is_none_or(|(index, _)| *index != self.text_font) {
-                        if let Some(preview) = library.generate_preview(self.text_font) {
+                    let mut style = text
+                        .as_ref()
+                        .map_or(self.settings.font_outline_style, |source| usize::from(source.outline_style));
+                    let previous = style;
+                    widgets::outline_style_picker(ui, &mut style);
+                    if style != previous {
+                        self.settings.font_outline_style = style;
+                        if text.is_some() {
+                            let result = self.document.modify_text(|source| source.outline_style = style as u8);
+                            self.result(result);
+                        }
+                    }
+                    // The preview shows the selected text layer's embedded font, or else the tool's font.
+                    let key = {
+                        use std::hash::{Hash, Hasher};
+                        let mut hasher = std::hash::DefaultHasher::new();
+                        match &text {
+                            Some(source) => source.font_data.hash(&mut hasher),
+                            None => self.text_font.hash(&mut hasher),
+                        }
+                        hasher.finish()
+                    };
+                    if self.text_preview.as_ref().is_none_or(|(shown, _)| *shown != key) {
+                        let preview = match &text {
+                            Some(source) => source
+                                .font()
+                                .ok()
+                                .and_then(|font| icy_draw::text_art_fonts::TextArtFontLibrary::render_preview_for_font(&retrofont::Font::Tdf(Box::new(font)))),
+                            None => library.write().generate_preview(self.text_font).cloned(),
+                        };
+                        if let Some(preview) = preview {
                             let texture = context.load_texture(
                                 "text-art-preview",
                                 egui::ColorImage::from_rgba_unmultiplied([preview.width as usize, preview.height as usize], &preview.rgba),
                                 egui::TextureOptions::NEAREST,
                             );
-                            self.text_preview = Some((self.text_font, texture));
+                            self.text_preview = Some((key, texture));
                         }
                     }
                     if let Some((_, preview)) = &self.text_preview {
                         widgets::divider(ui);
                         ui.add(egui::Image::new(preview).max_height(32.0).max_width(240.0));
                     }
+                }
+                if let Some(source) = &text {
+                    widgets::divider(ui);
+                    ui.weak(fl!("live-text-letter-spacing"));
+                    let mut letter_spacing = source.letter_spacing;
+                    if ui.add(egui::DragValue::new(&mut letter_spacing).range(0..=32)).changed() {
+                        let result = self.document.modify_text(|source| source.letter_spacing = letter_spacing);
+                        self.result(result);
+                    }
+                    ui.weak(fl!("live-text-line-spacing"));
+                    let mut line_spacing = source.line_spacing;
+                    if ui.add(egui::DragValue::new(&mut line_spacing).range(0..=32)).changed() {
+                        let result = self.document.modify_text(|source| source.line_spacing = line_spacing);
+                        self.result(result);
+                    }
+                }
+                widgets::divider(ui);
+                if ui
+                    .add_enabled(self.live_text_available(), egui::Button::new(fl!("live-text-new-layer")))
+                    .clicked()
+                {
+                    let position = self.document.with_state(|state| state.layer_to_document_position(state.get_caret().position()));
+                    if !self.start_text_edit(position, false) {
+                        self.result(Err(fl!("live-text-select-tdf")));
+                    }
+                    self.canvas_focus = true;
                 }
                 context.request_repaint_after(std::time::Duration::from_millis(250));
             }
@@ -2280,8 +2351,10 @@ impl DrawApp {
 
     fn canvas(&mut self, ui: &mut egui::Ui, blocked: bool) {
         self.view.terminal.has_focus = self.canvas_focus && !blocked;
-        self.document
-            .with_state(|state| state.set_caret_visible(!self.document.paste_active() && matches!(self.document.tool, Tool::Click | Tool::Font)));
+        self.document.with_state(|state| {
+            state
+                .set_caret_visible(!self.document.paste_active() && self.document.text_edit.is_none() && matches!(self.document.tool, Tool::Click | Tool::Font))
+        });
         if let Some(mode) =
             icy_engine_gui::egui::zoom::mouse_wheel(ui, !blocked, self.view.zoom, self.settings.monitor_settings.use_integer_scaling, 0.25..=8.0)
         {
@@ -2353,6 +2426,19 @@ impl DrawApp {
                     painter.line_segment([center - egui::vec2(0.0, 3.5), center + egui::vec2(0.0, 3.5)], stroke);
                 }
             }
+        }
+        if self.document.tool == Tool::Font && !blocked && self.live_text_available() && response.hovered() && !self.document.stroke_active() {
+            let modifiers = ui.input(|input| input.modifiers);
+            let over_text = response
+                .hover_pos()
+                .and_then(|point| self.position(point))
+                .and_then(|position| self.document.live_text_at(position))
+                .is_some();
+            ui.ctx().set_cursor_icon(if (modifiers.ctrl || modifiers.mac_cmd) && over_text {
+                egui::CursorIcon::Move
+            } else {
+                egui::CursorIcon::Text
+            });
         }
         if self.document.tool == Tool::Pipette && !blocked {
             let modifiers = ui.input(|input| input.modifiers);
@@ -2527,6 +2613,24 @@ impl DrawApp {
             }
         }
         let step = egui::vec2(info.font_width, info.font_height * if info.scan_lines { 2.0 } else { 1.0 }) * info.display_scale;
+        if self.document.tool == Tool::Font {
+            let to_screen = |position: Position| origin + egui::vec2(position.x as f32 * step.x, position.y as f32 * step.y);
+            if let Some(frame) = self.document.text_frame() {
+                let rect = egui::Rect::from_min_max(
+                    to_screen(frame.start),
+                    to_screen(frame.start + Position::new(frame.size.width, frame.size.height)),
+                );
+                let corners = [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom(), rect.left_top()];
+                let editing = self.document.text_edit.is_some();
+                let stroke = egui::Stroke::new(if editing { 1.5 } else { 1.0 }, ui.visuals().selection.stroke.color);
+                painter.extend(egui::Shape::dashed_line(&corners, stroke, 4.0, 3.0));
+            }
+            if let Some((caret, height)) = self.document.text_caret() {
+                let rect = egui::Rect::from_min_size(to_screen(caret) - egui::vec2(1.0, 0.0), egui::vec2(2.0, height as f32 * step.y));
+                painter.rect_filled(rect.expand(1.0), 0, Color32::BLACK);
+                painter.rect_filled(rect, 0, Color32::WHITE);
+            }
+        }
         self.remote_cursors(ui.ctx(), &painter, origin, step);
         if self.show_line_numbers {
             self.line_numbers(ui, &painter, response.rect, origin, step);
@@ -2572,6 +2676,12 @@ impl DrawApp {
                             }
                         });
                     }
+                } else if self.document.tool == Tool::Font
+                    && pointer.button_pressed(egui::PointerButton::Primary)
+                    && !ui.input(|input| input.modifiers.ctrl || input.modifiers.mac_cmd || input.modifiers.shift)
+                    && self.start_text_edit(position, true)
+                {
+                    // The click placed the text caret.
                 } else {
                     let button = if pointer.button_pressed(egui::PointerButton::Secondary) {
                         icy_engine::MouseButton::Right
@@ -2579,6 +2689,12 @@ impl DrawApp {
                         icy_engine::MouseButton::Left
                     };
                     let modifiers = ui.input(|input| input.modifiers);
+                    if self.document.tool == Tool::Font && (modifiers.ctrl || modifiers.mac_cmd) {
+                        // Ctrl/Cmd-drag moves the text layer under the pointer.
+                        if let Some(index) = self.document.live_text_at(position) {
+                            self.document.with_state(|state| state.set_current_layer(index));
+                        }
+                    }
                     self.document.begin_with_modifiers(
                         position,
                         button,
@@ -2834,7 +2950,8 @@ impl DrawApp {
     /// Escape first ends what is going on (pasting, a stroke, a selection); only then does it open
     /// the attribute picker, like in Moebius.
     fn escape_opens_attribute_picker(&self) -> bool {
-        !self.document.paste_active()
+        self.document.text_edit.is_none()
+            && !self.document.paste_active()
             && !self.document.stroke_active()
             && self.document.selected_tags.is_empty()
             && !self.document.with_state(|state| state.is_something_selected())
@@ -2886,7 +3003,7 @@ impl DrawApp {
         if self.dialog.is_some() || self.picker || self.layer_properties_open() || self.attribute_picker.is_some() {
             return;
         }
-        let before = self.document.with_state(|state| state.layer_to_document_position(state.get_caret().position()));
+        let before = self.active_caret();
         let events = context.input(|input| input.events.clone());
         let hard_blank = events.iter().any(|event| {
             matches!(event, egui::Event::Key {
@@ -2900,6 +3017,13 @@ impl DrawApp {
                 continue;
             }
             match event {
+                egui::Event::Key {
+                    key, pressed: true, modifiers, ..
+                } if self.text_edit_key(key, modifiers) => {}
+                egui::Event::Paste(text) if self.canvas_focus && self.document.tool == Tool::Font && self.document.text_edit.is_some() => {
+                    let result = self.document.text_edit_insert(&text);
+                    self.result(result);
+                }
                 egui::Event::Key {
                     key: Key::Escape,
                     pressed: true,
@@ -2966,9 +3090,9 @@ impl DrawApp {
                 break;
             }
         }
-        let after = self.document.with_state(|state| state.layer_to_document_position(state.get_caret().position()));
+        let after = self.active_caret();
         if after != before {
-            self.reveal_caret(after);
+            self.reveal_caret(after.0, after.1);
         }
     }
 
@@ -2996,12 +3120,24 @@ impl DrawApp {
         true
     }
 
-    fn reveal_caret(&mut self, position: Position) {
+    fn active_caret(&self) -> (Position, i32) {
+        if self.document.tool == Tool::Font {
+            if let Some(caret) = self.document.text_caret() {
+                return caret;
+            }
+        }
+        (
+            self.document.with_state(|state| state.layer_to_document_position(state.get_caret().position())),
+            1,
+        )
+    }
+
+    fn reveal_caret(&mut self, position: Position, height: i32) {
         let info = self.view.terminal.render_info.read();
         let cell = egui::vec2(info.font_width, info.font_height * if info.scan_lines { 2.0 } else { 1.0 }) * self.view.zoom;
         let start = egui::vec2(position.x as f32, position.y as f32) * cell;
-        let end = start + cell;
         let viewport = self.canvas_rect.size();
+        let end = start + egui::vec2(cell.x, cell.y * height as f32).min(viewport);
         let mut offset = self.view.offset;
         for axis in 0..2 {
             if start[axis] < offset[axis] {
@@ -3016,7 +3152,39 @@ impl DrawApp {
         }
     }
 
+    /// Keys that edit the text layer being typed in; returns whether the key was used.
+    fn text_edit_key(&mut self, key: Key, modifiers: egui::Modifiers) -> bool {
+        use icy_draw::text_edit::TextKey;
+        if !self.canvas_focus || self.document.tool != Tool::Font || self.document.text_edit.is_none() || modifiers.command || modifiers.alt {
+            return false;
+        }
+        let result = match key {
+            Key::Escape => self.document.finish_text_edit(),
+            Key::Enter => self.document.text_edit_insert("\n"),
+            Key::Backspace => self.document.text_edit_key(TextKey::Backspace),
+            Key::Delete => self.document.text_edit_key(TextKey::Delete),
+            Key::ArrowLeft => self.document.text_edit_key(TextKey::Left),
+            Key::ArrowRight => self.document.text_edit_key(TextKey::Right),
+            Key::ArrowUp => self.document.text_edit_key(TextKey::Up),
+            Key::ArrowDown => self.document.text_edit_key(TextKey::Down),
+            Key::Home => self.document.text_edit_key(TextKey::Home),
+            Key::End => self.document.text_edit_key(TextKey::End),
+            _ => return false,
+        };
+        self.result(result);
+        true
+    }
+
+    /// Types font tool text: into a live text layer for TheDraw fonts, starting one at the
+    /// caret if needed, and into the cells for FIGlet fonts.
     fn type_art_text(&mut self, text: &str) -> Result<(), String> {
+        if self.document.text_edit.is_none() {
+            let position = self.document.with_state(|state| state.layer_to_document_position(state.get_caret().position()));
+            self.start_text_edit(position, true);
+        }
+        if self.document.text_edit.is_some() {
+            return self.document.text_edit_insert(text);
+        }
         let Some(library) = &self.text_fonts else {
             return Ok(());
         };
@@ -3429,6 +3597,7 @@ impl DrawApp {
         if apply {
             self.text_font = self.text_font_pending;
             self.text_preview = None;
+            self.apply_text_font();
             return false;
         }
         true
@@ -4656,6 +4825,7 @@ impl DrawApp {
                 self.attribute_picker(context);
             }
         }
+        self.sync_text_colors();
         self.sync_collaboration();
         self.font_slots_window(context, blocked || self.dialog.is_some());
         self.layer_properties_dialog(context);

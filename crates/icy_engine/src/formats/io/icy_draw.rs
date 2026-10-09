@@ -9,6 +9,16 @@
 //! Unsupported versions, fields and IDs are rejected rather than silently lost on resave.
 //! Future layouts or additional fields require a new SCREEN version; the ICED header
 //! version and reserved bytes are unchanged. Older readers can ignore the entire record.
+//!
+//! Documents with live TheDraw text require ICED v4. A `LIVETEXT` record following
+//! a `LAYER` makes it a text layer (`Role::Text`): u8 version 1, outline style,
+//! letter and line spacing, the attribute for colorless glyphs, then the u32-length
+//! UTF-8 text and u32-length embedded single-font TDF data. The `LAYER` record still
+//! contains the rendered cells; they are regenerated from the source on load.
+//! Documents with layer effects require ICED v3. An `EFFECTS` record follows its
+//! text `LAYER` (and its `LIVETEXT`, if any): u16 version 1, optional remap (presence, enabled,
+//! 16 palette indices), optional mask (presence, enabled, i32 width/height,
+//! row-major packed hidden bits, low bit first). Flags are bytes 0 or 1.
 
 use std::fmt::Alignment;
 use std::io::Cursor;
@@ -22,6 +32,8 @@ use super::super::{LoadData, SauceBuilder, SaveOptions};
 mod constants {
     pub const ICED_VERSION: u16 = 1;
     pub const ICED_CUSTOM_PALETTE_VERSION: u16 = 2;
+    pub const ICED_LAYER_EFFECTS_VERSION: u16 = 3;
+    pub const ICED_LIVE_TEXT_VERSION: u16 = 4;
     pub const ICED_HEADER_SIZE: usize = 19; // Version(2) + Type(3) + Modes(4) + Size(8) + FontDims(2)
 
     /// Compression methods for ICED format (stored in first byte of Type field)
@@ -315,7 +327,7 @@ fn process_icy_draw_v1_decoded_chunk(
             }
 
             let version = u16::from_le_bytes([bytes[0], bytes[1]]);
-            if version != constants::ICED_VERSION && version != constants::ICED_CUSTOM_PALETTE_VERSION {
+            if !(constants::ICED_VERSION..=constants::ICED_LIVE_TEXT_VERSION).contains(&version) {
                 return Err(IcedError::UnsupportedVersion(version));
             }
             if bytes.len() < constants::ICED_HEADER_SIZE {
@@ -591,9 +603,39 @@ fn process_icy_draw_v1_decoded_chunk(
             layer.properties.mode = mode;
             layer.properties.color = color;
             decode_layer_flags(flags, &mut layer.properties);
-            layer.set_offset((offset_x, offset_y));
+            layer.properties.offset = Position::new(offset_x, offset_y);
 
             result.layers.push(layer);
+        }
+
+        "LIVETEXT" => {
+            let layer = result
+                .layers
+                .last_mut()
+                .ok_or_else(|| IcedError::InvalidRecord("LIVETEXT without a layer".into()))?;
+            if layer.role != crate::Role::Normal {
+                return Err(IcedError::InvalidRecord("duplicate or non-text LIVETEXT".into()));
+            }
+            let source = crate::LiveText::decode(bytes).map_err(|error| IcedError::InvalidRecord(error.to_string()))?;
+            let mut rendered = source.render(result.buffer_type).map_err(|error| IcedError::InvalidRecord(error.to_string()))?;
+            rendered.properties = layer.properties.clone();
+            rendered.properties.is_locked = true;
+            rendered.effects = layer.effects.clone();
+            *layer = rendered;
+        }
+
+        "EFFECTS" => {
+            let layer = result
+                .layers
+                .last_mut()
+                .ok_or_else(|| IcedError::InvalidRecord("EFFECTS without a layer".into()))?;
+            if layer.role == crate::Role::Image || !layer.effects.is_empty() {
+                return Err(IcedError::InvalidRecord("duplicate or non-text layer EFFECTS".into()));
+            }
+            layer.effects = crate::LayerEffects::decode(bytes).map_err(|error| IcedError::InvalidRecord(error.to_string()))?;
+            if layer.effects.is_empty() {
+                return Err(IcedError::InvalidRecord("empty EFFECTS record".into()));
+            }
         }
 
         "SIXEL" => {
@@ -672,6 +714,19 @@ fn process_icy_draw_v1_decoded_chunk(
 }
 
 pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+    for layer in &buf.layers {
+        layer.effects.validate()?;
+        layer.validate_role()?;
+        if let Some(source) = layer.live_text() {
+            source.font()?;
+            if layer.role == crate::Role::Image || !layer.properties.is_locked {
+                return Err(IcedError::InvalidRecord("Live text requires a read-only text layer".into()).into());
+            }
+        }
+        if layer.role == crate::Role::Image && !layer.effects.is_empty() {
+            return Err(IcedError::InvalidRecord("Layer effects are only supported on text layers".into()).into());
+        }
+    }
     let mut png_bytes = Vec::new();
 
     let mut first_line = 0;
@@ -751,7 +806,11 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                         .any(|ch| ch.attribute.requires_custom_palette_encoding())
                 })
             });
-        let version = if custom_palette {
+        let version = if buf.layers.iter().any(|layer| layer.is_text()) {
+            constants::ICED_LIVE_TEXT_VERSION
+        } else if buf.layers.iter().any(|layer| !layer.effects.is_empty()) {
+            constants::ICED_LAYER_EFFECTS_VERSION
+        } else if custom_palette {
             constants::ICED_CUSTOM_PALETTE_VERSION
         } else {
             constants::ICED_VERSION
@@ -887,6 +946,12 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
             }
 
             write_compressed_chunk(&mut writer, "LAYER", file_compression, &layer_data)?;
+            if let Some(source) = layer.live_text() {
+                write_compressed_chunk(&mut writer, "LIVETEXT", file_compression, &source.encode()?)?;
+            }
+            if !layer.effects.is_empty() {
+                write_compressed_chunk(&mut writer, "EFFECTS", file_compression, &layer.effects.encode()?)?;
+            }
         }
     }
 

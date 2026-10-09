@@ -324,7 +324,7 @@ fn uses_ice_colors(buf: &TextBuffer) -> bool {
     for layer in &buf.layers {
         for y in 0..layer.height() {
             for x in 0..layer.width() {
-                let ch = layer.char_at((x, y).into());
+                let ch = layer.display_char_at((x, y).into());
                 let bg = ch.attribute.background();
                 if (8..16).contains(&bg) {
                     return true;

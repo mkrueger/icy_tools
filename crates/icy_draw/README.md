@@ -34,6 +34,112 @@ Changing a color, tool, or function-key character set keeps keyboard input on
 the drawing canvas, so you can continue typing without clicking it again.
 Text and numeric entry fields temporarily take keyboard input while focused.
 
+### Selecting matching cells
+
+The **Select** tool retains its Rectangle, Character, Attribute, Foreground and
+Background modes and adds **Look**. Click a cell in Look mode to select cells
+displaying the same solid color: a space on black, a black full block, and
+black-on-black text can match even though their stored characters differ.
+Matching uses the document's bitmap fonts, font slots, palette and 8/9-pixel
+spacing, rather than assuming CP437 glyph shapes. Cells that are not a solid
+color, styled cells, and Unicode text use exact character-and-attribute matching.
+Transparent cells are not treated as opaque black.
+
+For any matching mode, open **Matching** in the tool options:
+
+- **Connected only** limits the selection to edge-connected matches; diagonal
+  contact does not connect regions. Off selects matches everywhere.
+- **Sample merged** samples the visible text composite, including layer offsets
+  and transparency. Off samples the current layer. This does not select pixels
+  in Sixel images, and subsequent drawing still edits only the current layer.
+
+Both options are off by default, preserving the existing literal selection
+behavior. Shift-click adds matches, Ctrl/Cmd-click removes them, and a plain
+click replaces the selection. Each click is one undo/redo step; selections
+continue to constrain drawing, filling, copying and deletion.
+
+### Non-destructive layer effects
+
+Right-click an unlocked layer (including a text layer) and choose **Layer Effects**:
+
+- **Palette remap** maps each of the 16 standard palette slots to another slot
+  on that layer. Use individual mappings, Grayscale, Rotate hues, or Random hues.
+  Hue presets preserve dark/bright pairs and leave black and neutral colors
+  alone. Direct RGB and extended-palette colors are unchanged.
+- **Hide selection** creates a mask hiding selected cells; **Keep selection only**
+  hides everything else in the layer. Both replace the previous mask. Masks use
+  layer-local coordinates, so they move with the layer; flips and cropping also
+  transform them.
+- Disable the remap or mask to see the original again, or remove the effects.
+  The preview does not change the document until **OK**. **Cancel** discards it.
+- **Bake into cells** commits the current effect into ordinary cells and removes
+  its editable settings. This is undoable. Merging layers bakes their effects;
+  stamping bakes the destination's effects but retains the source's settings.
+  Copy/paste transfers the selected layer's affected cells, not its effect recipe.
+
+Drawing continues to change the source cells under these effects. A mask does
+not erase hidden content or replace the drawing selection. Sixel image layers
+do not support these cell-based effects. **Look** selection uses the affected
+appearance; literal character and color matching still use the source cells
+unless **Sample merged** is enabled.
+
+Save as **`.icy`** to retain the original cells, mappings and masks (including
+disabled effects). Documents using effects require native format version 3;
+older readers reject them instead of silently dropping the effects. Documents
+without effects retain their existing format version. Flat exports such as ANSI
+and XBin carry the rendered result, not the editable effects.
+
+### Text layers
+
+With a TheDraw font in the **Font** tool, text is typed into editable text
+layers, as in the text tool of an image editor:
+
+- Click outside a text layer to place a caret as tall as the font; the first
+  typed character creates a text layer there. **New text layer** in the tool bar
+  starts one at the caret, even on top of an existing text layer.
+- Click inside a text layer to edit it, with the caret placed at the clicked glyph.
+  Type, paste, press Enter for a new line, and use Backspace, Delete, the arrow
+  keys, Home and End. Characters without a glyph in the font are left out;
+  opposite-case glyphs are used when available. The view follows the inline
+  caret, including its font height. Input exceeding the text or layout limits
+  leaves the previous text unchanged.
+- Escape, another tool, or a click elsewhere ends editing. A text layer left
+  empty is then removed.
+- A dashed frame marks the text layer the tool settings apply to. Ctrl/Cmd-drag
+  moves the text layer under the pointer.
+
+While a text layer is selected, the tool bar shows its font (with a preview of
+the embedded font), outline style, letter and line spacing. Changing them, or
+choosing a font in the font dialog, changes that layer. Without a selected text
+layer, the preview shows the tool's font. Block and outline fonts are drawn in
+the drawing colors: selecting such a text layer with the Font tool shows its
+colors as the drawing colors, and choosing other colors recolors it. Color fonts
+keep their glyph colors. A typing session is one undo step; creating the layer
+and each settings or color change are steps of their own. Undo/redo refreshes the
+drawing colors. Undo/redo changes to the layer stack end editing of the current
+layer and leave a new, empty draft at the same position, so further typing cannot
+target a different layer accidentally. FIGlet fonts still type directly into the cells.
+
+Double-click a text layer in the layer panel, or right-click it and choose
+**Edit text**, to edit it. The font is embedded in the document, so editing does
+not depend on the original font file still existing.
+
+Text layers are read-only for ordinary painting. Duplicate, reorder, mask and
+recolor them like other layers, or move them with Ctrl/Cmd-drag or the layer
+properties. Choose **Bake into cells** in the layer menu before painting or
+transforming their cells. Baking text retains layer effects; baking effects or
+merging layers also flattens the text. Baking supports undo/redo.
+Cropping the canvas moves text layers with the cropped origin without deleting
+their text. Resize-with-layer-clipping and global cell conversions require
+baking first.
+
+Save as **`.icy`** to keep the editable text and embedded font. Text layers use
+native format version **4**, which older readers reject. Flat exports and
+clipboard copies contain the rendered cells. Crash recovery retains text layers.
+They are unavailable during collaboration, floating paste, or TheDraw font
+editing, where the Font tool types into the cells. Text is limited to 64 KiB, a
+1 MiB embedded font, and a 1000-by-20000-cell layout; spacing accepts 0–32 cells.
+
 ### Editing bitmap fonts
 
 Bitmap font operations respect the active panel. With the character set focused,

@@ -29,7 +29,9 @@ fn get_area(sel: Option<Selection>, layer: Rectangle) -> Rectangle {
 
 impl EditState {
     fn flip_x_art(&mut self) -> Result<()> {
+        self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-x"));
+        self.flip_layer_mask(true)?;
         let sel = self.selection();
         let mut flip_tables = HashMap::new();
 
@@ -55,7 +57,9 @@ impl EditState {
     }
 
     fn flip_y_art(&mut self) -> Result<()> {
+        self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-y"));
+        self.flip_layer_mask(false)?;
         let sel = self.selection();
 
         let mut flip_tables = HashMap::new();
@@ -81,6 +85,24 @@ impl EditState {
         }
     }
 
+    fn flip_layer_mask(&mut self, horizontal: bool) -> Result<()> {
+        let index = self.get_current_layer()?;
+        let layer = &self.get_buffer().layers[index];
+        let Some(mask) = &layer.effects.mask else { return Ok(()) };
+        let area = get_area(self.selection(), layer.rectangle());
+        let mut effects = layer.effects.clone();
+        effects.mask = Some(mask.transformed(layer.size(), |pos| {
+            if !area.contains_pt(pos) {
+                pos
+            } else if horizontal {
+                Position::new(area.left() + area.right() - 1 - pos.x, pos.y)
+            } else {
+                Position::new(pos.x, area.top() + area.bottom() - 1 - pos.y)
+            }
+        })?);
+        self.set_layer_effects(index, effects)
+    }
+
     pub fn crop(&mut self) -> Result<()> {
         if let Some(sel) = self.selection() {
             let sel = sel.as_rectangle();
@@ -92,14 +114,15 @@ impl EditState {
 
     fn crop_rect_art(&mut self, rect: Rectangle) -> Result<()> {
         let old_size = self.get_buffer().size();
-        let mut old_layers = Vec::new();
-        mem::swap(&mut self.get_buffer_mut().layers, &mut old_layers);
-
-        self.get_buffer_mut().set_size(rect.size);
-        self.get_buffer_mut().layers.clear();
-
-        for old_layer in &old_layers {
+        let mut cropped = Vec::new();
+        for old_layer in &self.get_buffer().layers {
             let mut new_layer = old_layer.clone();
+            if new_layer.is_text() {
+                new_layer.properties.offset = old_layer.offset() - rect.start;
+                new_layer.set_preview_offset(None);
+                cropped.push(new_layer);
+                continue;
+            }
             new_layer.lines.clear();
             let new_rectangle = old_layer.rectangle().intersect(&rect);
             if new_rectangle.is_empty() {
@@ -108,15 +131,21 @@ impl EditState {
 
             new_layer.set_offset(new_rectangle.start - rect.start);
             new_layer.set_size(new_rectangle.size);
+            let source_start = new_rectangle.start - old_layer.offset();
+            if let Some(mask) = &old_layer.effects.mask {
+                new_layer.effects.mask = Some(mask.transformed(new_rectangle.size, |pos| pos + source_start)?);
+            }
 
             for y in 0..new_rectangle.height() {
                 for x in 0..new_rectangle.width() {
-                    let ch = old_layer.char_at((x + new_rectangle.left(), y + new_rectangle.top()).into());
+                    let ch = old_layer.char_at(Position::new(x, y) + source_start);
                     new_layer.set_char((x, y), ch);
                 }
             }
-            self.get_buffer_mut().layers.push(new_layer);
+            cropped.push(new_layer);
         }
+        let old_layers = mem::replace(&mut self.get_buffer_mut().layers, cropped);
+        self.get_buffer_mut().set_size(rect.size);
         let op = EditorUndoOp::Crop {
             orig_size: old_size,
             size: rect.size(),
@@ -193,6 +222,7 @@ impl EditState {
     }
 
     fn scroll_area_up_art(&mut self) -> Result<()> {
+        self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -241,6 +271,7 @@ impl EditState {
     }
 
     fn scroll_area_down_art(&mut self) -> Result<()> {
+        self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -288,6 +319,7 @@ impl EditState {
     }
 
     fn scroll_area_left_art(&mut self) -> Result<()> {
+        self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -318,6 +350,7 @@ impl EditState {
     }
 
     fn scroll_area_right_art(&mut self) -> Result<()> {
+        self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();
         if let Some(layer) = self.get_cur_layer_mut() {
@@ -388,6 +421,7 @@ impl EditState {
     /// row's content is its visible characters and the tags starting in it, so a tag keeps its
     /// place next to the art.
     fn justify_rows(&mut self, justify: Justify, label: String) -> Result<()> {
+        self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(label);
         let Some((area, document_area)) = self.operation_area() else {
             return Err(crate::EngineError::Generic("Current layer is invalid".to_string()));

@@ -22,6 +22,7 @@ pub use area_operations::{generate_flipx_table, generate_flipy_table};
 mod edit_operations;
 mod font_operations;
 mod selection_operations;
+pub use selection_operations::SelectionOptions;
 mod tag_operations;
 
 mod tdf_renderer;
@@ -710,6 +711,29 @@ impl EditState {
 
     /// Push and execute an undo operation
     pub(crate) fn push_undo_action(&mut self, mut op: EditorUndoOp) -> Result<()> {
+        match &op {
+            EditorUndoOp::SetChar { layer, .. }
+            | EditorUndoOp::SwapChar { layer, .. }
+            | EditorUndoOp::LayerChange { layer, .. }
+            | EditorUndoOp::DeleteRow { layer, .. }
+            | EditorUndoOp::InsertRow { layer, .. }
+            | EditorUndoOp::DeleteColumn { layer, .. }
+            | EditorUndoOp::InsertColumn { layer, .. }
+            | EditorUndoOp::ScrollWholeLayerUp { layer }
+            | EditorUndoOp::ScrollWholeLayerDown { layer }
+            | EditorUndoOp::PasteRotate { layer, .. }
+            | EditorUndoOp::PasteFlipX { layer, .. }
+            | EditorUndoOp::PasteFlipY { layer, .. } => self.require_cell_layer(*layer)?,
+            EditorUndoOp::SetLayerSize { index, .. } => self.require_cell_layer(*index)?,
+            EditorUndoOp::ClearLayer { layer_index, .. } => self.require_cell_layer(*layer_index)?,
+            EditorUndoOp::SwitchPalette { .. }
+            | EditorUndoOp::SetIceMode { .. }
+            | EditorUndoOp::ReplaceFontUsage { .. }
+            | EditorUndoOp::ChangeFontSlot { .. } => {
+                self.require_cell_layers()?;
+            }
+            _ => {}
+        }
         op.redo(self)?;
         self.push_plain_undo(op)
     }

@@ -4,7 +4,7 @@ use std::{
 };
 
 use icy_engine::{AddType, FileFormat, KeyModifiers, MouseButton, Position, Rectangle, Screen, Selection, Size, TextBuffer, TextPane};
-use icy_engine_edit::{tools::Tool, AtomicUndoGuard, EditState, UndoState};
+use icy_engine_edit::{tools::Tool, AtomicUndoGuard, CellMatchMode, EditState, SelectionOptions, UndoState};
 use parking_lot::Mutex;
 
 use crate::{
@@ -42,6 +42,20 @@ pub enum SelectionMode {
     Attribute,
     Foreground,
     Background,
+    Appearance,
+}
+
+impl SelectionMode {
+    fn match_mode(self) -> Option<CellMatchMode> {
+        match self {
+            Self::Rectangle => None,
+            Self::Character => Some(CellMatchMode::Character),
+            Self::Attribute => Some(CellMatchMode::Attribute),
+            Self::Foreground => Some(CellMatchMode::Foreground),
+            Self::Background => Some(CellMatchMode::Background),
+            Self::Appearance => Some(CellMatchMode::Appearance),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -142,6 +156,7 @@ pub struct Document {
     pub box_style: BoxStyle,
     pub tool: Tool,
     pub selection_mode: SelectionMode,
+    pub selection_options: SelectionOptions,
     pub outline_font: bool,
     pub selected_tags: Vec<usize>,
     /// Where a tag tool drag along one row asks for a new tag, and its width.
@@ -168,6 +183,8 @@ pub struct Document {
     /// Whether the pencil and shapes make characters reverse (left button) or normal (right
     /// button), on screens that keep reverse in the character (ATASCII, PETSCII).
     pub reverse_pen: bool,
+    /// The live text layer edited in place with the font tool.
+    pub text_edit: Option<crate::text_edit::TextEdit>,
 }
 
 impl Document {
@@ -218,6 +235,7 @@ impl Document {
             box_style: BoxStyle::default(),
             tool: Tool::Click,
             selection_mode: SelectionMode::default(),
+            selection_options: SelectionOptions::default(),
             outline_font: false,
             selected_tags: Vec::new(),
             new_tag_request: None,
@@ -231,6 +249,7 @@ impl Document {
             inverse: false,
             quarter_blocks: false,
             reverse_pen: false,
+            text_edit: None,
         }
     }
 
@@ -628,7 +647,7 @@ impl Document {
             self.tool = Tool::Click;
             return;
         }
-        if matches!(self.tool, Tool::Click | Tool::Font) && button != MouseButton::Left {
+        if matches!(self.tool, Tool::Click | Tool::Font | Tool::Select) && button != MouseButton::Left {
             return;
         }
         if !matches!(self.tool, Tool::Click | Tool::Select | Tool::Font | Tool::Tag) && !self.can_paint() {
@@ -690,33 +709,21 @@ impl Document {
             state
                 .get_cur_layer()
                 .filter(|layer| {
-                    self.tool == Tool::Click
+                    (self.tool == Tool::Click || (self.tool == Tool::Font && layer.is_text()))
                         && button == MouseButton::Left
                         && (self.paste_active() || modifiers.ctrl || modifiers.meta || layer.role == icy_engine::Role::Image)
                         && !layer.properties.is_position_locked
-                        && !layer.properties.is_locked
+                        && (!layer.properties.is_locked || layer.is_text())
                 })
                 .map(|layer| layer.offset())
         });
-        if self.tool == Tool::Select && self.selection_mode != SelectionMode::Rectangle {
-            self.with_state(|state| {
-                let sample = state.get_cur_layer().map(|layer| layer.char_at(position - layer.offset())).unwrap_or_default();
-                state.enumerate_selections(|_, character, _| {
-                    let matches = match self.selection_mode {
-                        SelectionMode::Character => character.ch == sample.ch,
-                        SelectionMode::Attribute => character.attribute == sample.attribute,
-                        SelectionMode::Foreground => character.attribute.foreground_color() == sample.attribute.foreground_color(),
-                        SelectionMode::Background => character.attribute.background_color() == sample.attribute.background_color(),
-                        SelectionMode::Rectangle => false,
-                    };
-                    match add_type {
-                        AddType::Default => Some(matches),
-                        AddType::Add => matches.then_some(true),
-                        AddType::Subtract => matches.then_some(false),
-                    }
-                });
-            });
-            return;
+        if self.tool == Tool::Select {
+            if let Some(mode) = self.selection_mode.match_mode() {
+                if let Err(error) = self.with_state(|state| state.select_matching(position, mode, self.selection_options, add_type)) {
+                    log::error!("Could not select matching cells: {error}");
+                }
+                return;
+            }
         }
         let mut selection_drag = SelectionDrag::None;
         let mut selection_rect = None;
@@ -859,6 +866,32 @@ impl Document {
             }
         }
         self.stroke.as_mut().unwrap().last = position;
+        let cells = std::mem::take(&mut self.preview_cells);
+        self.preview_cells = self.preview_with_layer_effects(cells);
+    }
+
+    fn preview_with_layer_effects(&self, cells: Vec<(Position, icy_engine::AttributedChar)>) -> Vec<(Position, icy_engine::AttributedChar)> {
+        if cells.is_empty() {
+            return cells;
+        }
+        self.with_state(|state| {
+            if state.get_cur_layer().is_none_or(|layer| layer.effects.is_empty()) {
+                return cells;
+            }
+            let mut scratch = state.scratch_copy();
+            let layer = scratch.get_cur_layer_mut().unwrap();
+            let offset = layer.offset();
+            for (position, cell) in &cells {
+                layer.set_char(*position - offset, *cell);
+            }
+            cells
+                .into_iter()
+                .filter_map(|(position, _)| {
+                    let shown = scratch.get_buffer().char_at(position);
+                    (shown != state.get_buffer().char_at(position)).then_some((position, shown))
+                })
+                .collect()
+        })
     }
 
     /// The characters of a box line (as Unicode) with their colors, joined with the box characters
@@ -1151,7 +1184,10 @@ impl Document {
             return self.paste_action(PasteAction::Cancel);
         }
         self.finish();
-        self.edit_tags(|state| state.undo()).map_err(|error| error.to_string())
+        self.prepare_text_history(false);
+        let result = self.edit_tags(|state| state.undo()).map_err(|error| error.to_string());
+        self.valid_text_edit();
+        result
     }
 
     pub fn redo(&mut self) -> DrawResult<()> {
@@ -1159,7 +1195,10 @@ impl Document {
             return Ok(());
         }
         self.finish();
-        self.edit_tags(|state| state.redo()).map_err(|error| error.to_string())
+        self.prepare_text_history(true);
+        let result = self.edit_tags(|state| state.redo()).map_err(|error| error.to_string());
+        self.valid_text_edit();
+        result
     }
 
     /// Runs an edit that may add or remove tags. The selected tags are indices, which a removal
@@ -1777,6 +1816,153 @@ mod tests {
         document.begin(Position::new(20, 5), MouseButton::Left);
         document.finish();
         assert!(document.with_state(|state| !state.is_something_selected()));
+    }
+
+    #[test]
+    fn layer_effects_survive_document_recovery() {
+        let document = Document::new(Size::new(4, 1));
+        document.with_state(|state| {
+            let mut remap = icy_engine::PaletteRemap::default();
+            remap.colors[4] = 2;
+            let mut mask = icy_engine::LayerMask::new(Size::new(4, 1)).unwrap();
+            mask.set_hidden(Position::new(1, 0), true);
+            state.get_buffer_mut().layers[0].set_char((0, 0), icy_engine::AttributedChar::new('A', icy_engine::TextAttribute::new(4, 0)));
+            state
+                .set_layer_effects(
+                    0,
+                    icy_engine::LayerEffects {
+                        remap: Some(remap),
+                        mask: Some(mask),
+                    },
+                )
+                .unwrap();
+        });
+        let restored = Document::from_recovery(&document.recovery_snapshot().unwrap()).unwrap();
+        let source = document.with_state(|state| state.get_buffer().layers[0].clone());
+        restored.with_state(|state| {
+            assert_eq!(state.get_buffer().layers[0].effects, source.effects);
+            assert_eq!(state.get_buffer().layers[0].char_at(Position::default()), source.char_at(Position::default()));
+            assert_eq!(state.get_buffer().char_at(Position::default()).attribute.foreground(), 2);
+        });
+    }
+
+    #[test]
+    fn layer_effects_shape_previews_match_committed_cells_and_hide_masked_strokes() {
+        for box_line in [false, true] {
+            let mut document = Document::new(Size::new(4, 1));
+            document.brush.primary = BrushPrimaryMode::Char;
+            document.brush.paint_char = 'C';
+            document.tool = Tool::Line;
+            if box_line {
+                document.box_line = Some(document.box_style);
+            }
+            document.with_state(|state| {
+                state.set_caret_foreground(4);
+                for x in 0..4 {
+                    state.get_buffer_mut().layers[0].set_char((x, 0), icy_engine::AttributedChar::from_char('A'));
+                }
+                let mut remap = icy_engine::PaletteRemap::default();
+                remap.colors[4] = 2;
+                let mut mask = icy_engine::LayerMask::new(Size::new(4, 1)).unwrap();
+                mask.set_hidden(Position::new(1, 0), true);
+                state
+                    .set_layer_effects(
+                        0,
+                        icy_engine::LayerEffects {
+                            remap: Some(remap),
+                            mask: Some(mask),
+                        },
+                    )
+                    .unwrap();
+            });
+            document.begin(Position::default(), MouseButton::Left);
+            document.update(Position::new(3, 0));
+            let preview = document.preview_cells.clone();
+            assert_eq!(preview.len(), 3);
+            assert!(preview.iter().all(|(pos, cell)| pos.x != 1 && cell.attribute.foreground() == 2));
+            document.finish();
+            for (position, cell) in preview {
+                assert_eq!(document.with_state(|state| state.get_buffer().char_at(position)), cell);
+            }
+        }
+    }
+
+    #[test]
+    fn appearance_selection_dispatches_options_and_constrains_edits() {
+        use icy_engine::{AttributedChar, TextAttribute};
+        let mut document = Document::new(Size::new(5, 1));
+        let original = [
+            AttributedChar::new(' ', TextAttribute::new(7, 0)),
+            AttributedChar::new('\u{00db}', TextAttribute::new(0, 4)),
+            AttributedChar::new('A', TextAttribute::new(0, 0)),
+            AttributedChar::new('B', TextAttribute::new(7, 0)),
+            AttributedChar::new(' ', TextAttribute::new(7, 0)),
+        ];
+        document.with_state(|state| {
+            for (x, cell) in original.iter().enumerate() {
+                state.get_buffer_mut().layers[0].set_char(Position::new(x as i32, 0), *cell);
+            }
+        });
+        let selected = |document: &Document| document.with_state(|state| (0..5).filter(|x| state.is_selected(Position::new(*x, 0))).collect::<Vec<_>>());
+        document.tool = Tool::Select;
+        document.selection_mode = SelectionMode::Appearance;
+        document.selection_options.connected = true;
+        document.begin(Position::default(), MouseButton::Left);
+        assert!(!document.stroke_active());
+        assert_eq!(selected(&document), [0, 1, 2]);
+        document.undo().unwrap();
+        assert!(selected(&document).is_empty());
+        document.redo().unwrap();
+        assert_eq!(selected(&document), [0, 1, 2]);
+        document.begin(Position::new(4, 0), MouseButton::Right);
+        assert_eq!(selected(&document), [0, 1, 2], "right-click must not change the selection");
+
+        document.begin_with_shift(Position::new(4, 0), MouseButton::Left, true);
+        assert_eq!(selected(&document), [0, 1, 2, 4]);
+        document.begin_with_modifiers(
+            Position::default(),
+            MouseButton::Left,
+            KeyModifiers {
+                meta: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(selected(&document), [4]);
+        document.undo().unwrap();
+        document.undo().unwrap();
+        assert_eq!(selected(&document), [0, 1, 2]);
+
+        document.brush.primary = BrushPrimaryMode::Char;
+        document.brush.paint_char = 'X';
+        document.tool = Tool::Pencil;
+        document.begin(Position::new(1, 0), MouseButton::Left);
+        document.finish();
+        document.begin(Position::new(3, 0), MouseButton::Left);
+        document.finish();
+        document.with_state(|state| {
+            assert_eq!(state.get_buffer().char_at(Position::new(1, 0)).ch, 'X');
+            assert_eq!(state.get_buffer().char_at(Position::new(3, 0)), original[3]);
+        });
+        document.undo().unwrap();
+        document.fill_selection().unwrap();
+        assert_eq!(
+            document.with_state(|state| (0..5).map(|x| state.get_buffer().char_at(Position::new(x, 0)).ch).collect::<String>()),
+            "\u{00db}\u{00db}\u{00db}B "
+        );
+        document.undo().unwrap();
+        document.with_state(|state| state.erase_selection()).unwrap();
+        document.with_state(|state| {
+            let layer = state.get_cur_layer().unwrap();
+            assert!((0..3).all(|x| !layer.char_at(Position::new(x, 0)).is_visible()));
+            assert_eq!(layer.char_at(Position::new(3, 0)), original[3]);
+            assert_eq!(layer.char_at(Position::new(4, 0)), original[4]);
+        });
+        document.undo().unwrap();
+        document.with_state(|state| {
+            for (x, cell) in original.iter().enumerate() {
+                assert_eq!(state.get_cur_layer().unwrap().char_at(Position::new(x as i32, 0)), *cell);
+            }
+        });
     }
 
     #[test]

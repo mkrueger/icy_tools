@@ -18,6 +18,8 @@ pub enum Role {
     #[default]
     Normal,
     Image,
+    /// A live text layer; its source is in [`Layer::live_text`] and its cells are a render cache.
+    Text,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
@@ -37,6 +39,10 @@ pub struct LayerProperties {
 pub struct Layer {
     pub role: Role,
     pub properties: LayerProperties,
+    #[serde(default)]
+    pub effects: super::LayerEffects,
+    #[serde(default)]
+    live_text: Option<super::LiveText>,
 
     preview_offset: Option<Position>,
     size: Size,
@@ -138,6 +144,48 @@ impl TextPane for Layer {
 }
 
 impl Layer {
+    /// Whether this is a live text layer; its source is [`Self::live_text`].
+    pub fn is_text(&self) -> bool {
+        self.role == Role::Text
+    }
+
+    /// The source of a live text layer.
+    pub fn live_text(&self) -> Option<&super::LiveText> {
+        self.live_text.as_ref()
+    }
+
+    /// Makes this a live text layer of `source`, or with `None` an ordinary layer keeping
+    /// the rendered cells. The role follows, so both always agree.
+    pub fn set_live_text(&mut self, source: Option<super::LiveText>) {
+        if source.is_some() {
+            self.role = Role::Text;
+        } else if self.role == Role::Text {
+            self.role = Role::Normal;
+        }
+        self.live_text = source;
+    }
+
+    /// Checks that the role and the live text source agree.
+    pub fn validate_role(&self) -> crate::Result<()> {
+        if self.is_text() != self.live_text.is_some() {
+            return Err(crate::EngineError::Generic(format!(
+                "Layer '{}' has a text role without text or text without the text role",
+                self.properties.title
+            )));
+        }
+        Ok(())
+    }
+
+    /// The layer's own cells after effects, without inheriting colors from lower layers.
+    /// Editing and native storage use `char_at` to retain the unmodified source.
+    pub fn display_char_at(&self, pos: Position) -> AttributedChar {
+        if self.effects.is_masked(pos) {
+            AttributedChar::invisible()
+        } else {
+            self.effects.remap_char(self.char_at(pos))
+        }
+    }
+
     pub fn new(title: impl Into<String>, size: impl Into<Size>) -> Self {
         let size = size.into();
 

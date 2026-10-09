@@ -265,6 +265,7 @@ impl EditState {
     }
 
     pub fn set_ice_mode(&mut self, mode: IceMode) -> Result<()> {
+        self.require_cell_layers()?;
         let old_layers = self.get_buffer().layers.clone();
         let old_mode = self.get_buffer().ice_mode;
 
@@ -320,6 +321,7 @@ impl EditState {
     }
 
     pub fn replace_font_usage(&mut self, from: u8, to: u8) -> Result<()> {
+        self.require_cell_layers()?;
         let old_layers = self.get_buffer().layers.clone();
         let old_font_page = self.get_caret().font_page();
         if old_font_page == from {
@@ -346,6 +348,7 @@ impl EditState {
     }
 
     pub fn change_font_slot(&mut self, from: u8, to: u8) -> Result<()> {
+        self.require_cell_layers()?;
         let mut undo_action = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-change_font_slot"));
         let res = {
             let op = EditorUndoOp::ChangeFontSlot { from, to };
@@ -358,6 +361,7 @@ impl EditState {
     }
 
     pub fn remove_font(&mut self, font: u8) -> Result<()> {
+        self.require_cell_layers()?;
         let mut undo_action = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-remove_font"));
         let res = {
             let _ = self.replace_font_usage(font, 0);

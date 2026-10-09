@@ -7,6 +7,131 @@ const ICYD_RECORD_VERSION: u8 = 1;
 const ZSTD_FRAME_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
 #[test]
+fn live_text_round_trips_embedded_font_and_effects_in_native_v4() {
+    use retrofont::{
+        tdf::{TdfFont, TdfFontType},
+        Glyph, GlyphPart,
+    };
+    let mut font = TdfFont::new("Embedded", TdfFontType::Block, 1);
+    let mut glyph = Glyph::new(1, 1);
+    glyph.parts = vec![GlyphPart::Char('X')];
+    font.add_glyph('A', glyph);
+    let mut source = icy_engine::LiveText::new(&font, TextAttribute::new(4, 0)).unwrap();
+    source.text = "AA".into();
+    let mut buffer = TextBuffer::new((4, 1));
+    let mut layer = source.render(buffer.buffer_type).unwrap();
+    layer.set_offset((1, 0));
+    layer.properties.is_position_locked = true;
+    let mut remap = icy_engine::PaletteRemap::default();
+    remap.colors[4] = 2;
+    layer.effects.remap = Some(remap);
+    buffer.layers.push(layer);
+    for compress in [false, true] {
+        let options = SaveOptions {
+            format: icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+                skip_thumbnail: false,
+                compress,
+            }),
+            ..Default::default()
+        };
+        let bytes = FileFormat::IcyDraw.to_bytes(&buffer, &options).unwrap();
+        let records = extract_png_chunks_by_type(&bytes, ICYD_CHUNK_TYPE);
+        let (_, header) = parse_icyd_record(&records[0]);
+        assert_eq!(u16::from_le_bytes(header[..2].try_into().unwrap()), 4);
+        let loaded = FileFormat::IcyDraw.from_bytes(&bytes, None).unwrap().screen.buffer;
+        assert_eq!(loaded.layers[1].live_text(), Some(&source));
+        assert_eq!(loaded.layers[1].role, Role::Text);
+        assert_eq!(loaded.layers[1].effects, buffer.layers[1].effects);
+        assert!(loaded.layers[1].properties.is_locked);
+        assert_eq!(loaded.layers[1].offset(), Position::new(1, 0));
+        for x in 0..4 {
+            assert_eq!(loaded.char_at((x, 0).into()), buffer.char_at((x, 0).into()));
+        }
+    }
+    let mut inconsistent = buffer.clone();
+    inconsistent.layers[1].role = Role::Normal;
+    assert!(
+        FileFormat::IcyDraw.to_bytes(&inconsistent, &SaveOptions::default()).is_err(),
+        "text without the text role"
+    );
+    inconsistent.layers[1].set_live_text(None);
+    inconsistent.layers[0].role = Role::Text;
+    assert!(
+        FileFormat::IcyDraw.to_bytes(&inconsistent, &SaveOptions::default()).is_err(),
+        "text role without text"
+    );
+    for format in [FileFormat::Ansi, FileFormat::XBin] {
+        let bytes = format.to_bytes(&buffer, &SaveOptions::default()).unwrap();
+        let loaded = format.from_bytes(&bytes, None).unwrap().screen.buffer;
+        assert!(loaded.layers.iter().all(|layer| layer.live_text().is_none()));
+        assert!(loaded.layers.iter().all(|layer| layer.role != Role::Text));
+        assert_eq!(loaded.char_at(Position::new(1, 0)).ch, 'X');
+        assert_eq!(loaded.char_at(Position::new(1, 0)).attribute.foreground(), 2);
+    }
+}
+
+#[test]
+fn layer_effects_round_trip_source_masks_and_preview_in_native_v3() {
+    use icy_engine::{LayerEffects, LayerMask, PaletteRemap};
+    for compress in [false, true] {
+        for enabled in [false, true] {
+            let mut buffer = TextBuffer::new((3, 1));
+            for x in 0..3 {
+                buffer.layers[0].set_char((x, 0), AttributedChar::new('B', TextAttribute::new(7, 1)));
+            }
+            let mut layer = Layer::new("Title", (2, 1));
+            layer.set_offset((1, 0));
+            for x in 0..2 {
+                layer.set_char((x, 0), AttributedChar::new('A', TextAttribute::new(4, 0)));
+            }
+            let mut remap = PaletteRemap::default();
+            remap.enabled = enabled;
+            remap.colors[4] = 2;
+            let mut mask = LayerMask::new(layer.size()).unwrap();
+            mask.set_hidden(Position::default(), true);
+            mask.enabled = enabled;
+            layer.effects = LayerEffects {
+                remap: Some(remap),
+                mask: Some(mask),
+            };
+            buffer.layers.push(layer);
+            let options = SaveOptions {
+                format: icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+                    skip_thumbnail: false,
+                    compress,
+                }),
+                ..Default::default()
+            };
+            let bytes = FileFormat::IcyDraw.to_bytes(&buffer, &options).unwrap();
+            let records = extract_png_chunks_by_type(&bytes, ICYD_CHUNK_TYPE);
+            let (_, header) = parse_icyd_record(&records[0]);
+            assert_eq!(u16::from_le_bytes(header[..2].try_into().unwrap()), 3);
+            let loaded = FileFormat::IcyDraw.from_bytes(&bytes, None).unwrap().screen.buffer;
+            assert_eq!(loaded.layers[1].effects, buffer.layers[1].effects);
+            assert_eq!(loaded.layers[1].offset(), buffer.layers[1].offset());
+            assert_eq!(loaded.layers[1].char_at(Position::default()), buffer.layers[1].char_at(Position::default()));
+            let render = |buffer: &TextBuffer| buffer.render_to_rgba(&icy_engine::Rectangle::from(0, 0, 3, 1).into(), false);
+            assert_eq!(render(&loaded), render(&buffer));
+            for format in [FileFormat::XBin, FileFormat::Ansi] {
+                let exported = format.to_bytes(&buffer, &SaveOptions::default()).unwrap();
+                let flattened = format.from_bytes(&exported, None).unwrap().screen.buffer;
+                for x in 0..3 {
+                    assert_eq!(flattened.char_at((x, 0).into()).ch, buffer.char_at((x, 0).into()).ch);
+                    assert_eq!(
+                        flattened.char_at((x, 0).into()).attribute.foreground(),
+                        buffer.char_at((x, 0).into()).attribute.foreground()
+                    );
+                    assert_eq!(
+                        flattened.char_at((x, 0).into()).attribute.background(),
+                        buffer.char_at((x, 0).into()).attribute.background()
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn border_color_round_trips() {
     for compress in [false, true] {
         let mut buffer = TextBuffer::new((40, 25));
