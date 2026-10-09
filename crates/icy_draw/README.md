@@ -58,6 +58,40 @@ behavior. Shift-click adds matches, Ctrl/Cmd-click removes them, and a plain
 click replaces the selection. Each click is one undo/redo step; selections
 continue to constrain drawing, filling, copying and deletion.
 
+### Layer groups
+
+Select a layer and click the **Group layer** folder button below the layer list,
+or choose it in the layer's context menu. This wraps the layer without merging
+it; group an existing group to nest it. Groups support up to 64 nesting levels.
+
+**Drag and drop** rows in the layer panel to reorder layers and groups; a group
+moves with its contents. A line shows where the item will land. Dropping on the
+middle of a group row (highlighted with a frame) puts the item at the top of
+that group. Below the lowest item of a group, move the pointer left of its
+indentation to drop after the group instead of inside it. Escape cancels a drag.
+**Move into group** and **Move out of group** in the context menu do the same.
+
+- The triangle or a double-click collapses/expands a group. Connector lines show
+  the nesting, like the threads in IcyMail.
+- The eye hides the entire subtree without changing children's visibility.
+- **Properties** of a group edit its name, offset, visibility and position lock.
+- Select a group and Ctrl/Cmd-drag on the canvas to move its members together,
+  or change its offset in **Properties**. A position-locked member prevents
+  moving the group.
+- Raise/lower reorders complete subtrees among siblings. Duplicate copies the
+  subtree; delete removes it. **Ungroup** keeps the children and their current
+  appearance. A hidden group's children remain hidden when ungrouped.
+- Adding or pasting a layer while a group is selected puts it inside that group.
+  Select a child layer for painting, text editing or layer effects.
+- Group operations, including every drop, support undo/redo. Groups are
+  pass-through containers: they do not isolate blending or apply group-wide effects.
+
+Save as **`.icy`** to preserve groups, membership and collapsed state. Grouped
+documents use native format version **5**; older readers reject them. Flat
+exports use the visible composite. Creating groups, dragging layers and moving
+them between groups is unavailable during collaboration, floating paste or font
+editing; edit-locked layers cannot be dragged.
+
 ### Non-destructive layer effects
 
 Right-click an unlocked layer (including a text layer) and choose **Layer Effects**:

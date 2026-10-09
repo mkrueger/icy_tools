@@ -6,6 +6,7 @@ use eframe::egui::{self, Color32};
 use icy_draw::fl;
 use icy_engine::{LayerEffects, LayerProperties, PaletteRemap, Position, Rectangle, RenderOptions, Role, TextBuffer, TextPane};
 use icy_engine_edit::tools::{Tool, ToolPair};
+use icy_engine_edit::LayerDrop;
 use icy_engine_gui::egui::appearance::{self, labels, Dialog as SharedDialog, DialogButton, DialogSize, PRIMARY};
 use icy_engine_gui::egui::screen::ScreenView;
 
@@ -20,6 +21,101 @@ pub const STATUS_HEIGHT: f32 = 28.0;
 const TOOL_ICON: f32 = 36.0;
 const LAYER_PREVIEW: [usize; 2] = [56, 36];
 const LAYER_ROW_HEIGHT: f32 = 48.0;
+/// Width of one group level in the layer panel's tree, drawn like icy_mail's threads.
+const LAYER_TREE_STEP: f32 = 18.0;
+/// Deeper layers share the last level, so nesting does not push titles out of view.
+const LAYER_TREE_MAX_DEPTH: usize = 6;
+
+fn layer_tree_width(depth: usize) -> f32 {
+    (depth.min(LAYER_TREE_MAX_DEPTH) + 1) as f32 * LAYER_TREE_STEP
+}
+
+/// Place of a layer panel row in the group tree.
+#[derive(Debug, PartialEq)]
+struct LayerTree {
+    depth: usize,
+    /// Whether no sibling follows below this row, so its connector ends here.
+    last: bool,
+    /// Bit `n` is set when the enclosing group at depth `n + 1` has a sibling below,
+    /// so that group's connector continues through this row.
+    guides: u64,
+    /// For a group, whether it is collapsed.
+    collapsed: Option<bool>,
+    has_children: bool,
+}
+
+/// The tree place of every layer, by stack index.
+fn layer_trees(buffer: &TextBuffer) -> Vec<LayerTree> {
+    // In stack order the first layer seen with a parent is the bottom-most, the last row shown.
+    let mut seen = std::collections::HashSet::new();
+    let last: Vec<bool> = buffer.layers.iter().map(|layer| seen.insert(layer.parent_group)).collect();
+    (0..buffer.layers.len())
+        .map(|index| {
+            // Nearest first: the group at depth `d` is `ancestors[depth - 1 - d]`.
+            let ancestors: Vec<usize> = buffer.layer_ancestors(index).collect();
+            let depth = ancestors.len();
+            let guides = (0..depth.saturating_sub(1).min(u64::BITS as usize))
+                .filter(|level| !last[ancestors[depth - 2 - level]])
+                .fold(0u64, |bits, level| bits | 1 << level);
+            LayerTree {
+                depth,
+                last: last[index],
+                guides,
+                collapsed: buffer.layers[index].group.as_ref().map(|group| group.collapsed),
+                has_children: buffer.layer_subtree(index).len() > 1,
+            }
+        })
+        .collect()
+}
+
+/// The disclosure triangle of a group row at `depth`, its tree starting at `left`.
+fn layer_twisty(painter: &egui::Painter, left: f32, middle: f32, depth: usize) -> egui::Rect {
+    let x = painter.round_to_pixel_center(left + depth.min(LAYER_TREE_MAX_DEPTH) as f32 * LAYER_TREE_STEP + LAYER_TREE_STEP / 2.0);
+    egui::Rect::from_center_size(egui::pos2(x, painter.round_to_pixel_center(middle)), egui::Vec2::splat(9.0))
+}
+
+/// Draws the connector lines of a layer panel row and a group's disclosure triangle, like
+/// the threads of icy_mail. `rows` is the vertical range the lines span.
+fn paint_layer_tree(painter: &egui::Painter, left: f32, rows: egui::Rangef, middle: f32, tree: &LayerTree, line: Color32, triangle: Color32) {
+    let depth = tree.depth.min(LAYER_TREE_MAX_DEPTH);
+    let center = |level: usize| painter.round_to_pixel_center(left + level as f32 * LAYER_TREE_STEP + LAYER_TREE_STEP / 2.0);
+    let middle = painter.round_to_pixel_center(middle);
+    let stroke = egui::Stroke::new(1.0, line);
+    for level in 0..depth.saturating_sub(1) {
+        if level < u64::BITS as usize && tree.guides & (1 << level) != 0 {
+            painter.vline(center(level), rows, stroke);
+        }
+    }
+    let twisty = layer_twisty(painter, left, middle, depth);
+    if depth > 0 {
+        let x = center(depth - 1);
+        painter.vline(x, rows.min..=if tree.last { middle } else { rows.max }, stroke);
+        let end = if tree.collapsed.is_some() {
+            twisty.left() - 2.0
+        } else {
+            left + layer_tree_width(depth) + 2.0
+        };
+        painter.hline(x..=end, middle, stroke);
+    }
+    let Some(collapsed) = tree.collapsed else {
+        return;
+    };
+    let points = if collapsed || !tree.has_children {
+        vec![
+            twisty.left_top() + egui::vec2(1.5, 0.0),
+            twisty.right_center(),
+            twisty.left_bottom() + egui::vec2(1.5, 0.0),
+        ]
+    } else {
+        painter.vline(center(depth), twisty.bottom() + 1.0..=rows.max, stroke);
+        vec![
+            twisty.left_top() + egui::vec2(0.0, 1.5),
+            twisty.right_top() + egui::vec2(0.0, 1.5),
+            twisty.center_bottom(),
+        ]
+    };
+    painter.add(egui::Shape::convex_polygon(points, triangle, egui::Stroke::NONE));
+}
 const MINIMAP_PIXELS: usize = 512;
 /// Horizontal padding of the right sidebar sections.
 const SECTION_MARGIN: i8 = 12;
@@ -50,6 +146,8 @@ pub struct Chrome {
     /// The text layer (`None` before its first character) whose colors the drawing colors
     /// show with the font tool, and the drawing colors last synchronized.
     text_colors: Option<(Option<usize>, icy_engine::TextAttribute)>,
+    /// The layer (with its subtree) being dragged in the layer panel.
+    layer_drag: Option<usize>,
 }
 
 struct LayerEffectsDialog {
@@ -60,6 +158,10 @@ struct LayerEffectsDialog {
 }
 
 enum LayerAction {
+    Group(usize),
+    Ungroup(usize),
+    Collapse(usize),
+    Drop(usize, LayerDrop),
     Select(usize),
     Properties(usize),
     Effects(usize),
@@ -276,6 +378,7 @@ fn layer_preview_sized(buffer: &TextBuffer, index: usize, max_width: usize) -> O
     preview.set_use_letter_spacing(buffer.use_letter_spacing());
     preview.set_use_aspect_ratio(buffer.use_aspect_ratio());
     let mut copy = layer.clone();
+    copy.parent_group = None;
     copy.properties.offset = Position::default();
     copy.set_preview_offset(None);
     copy.set_is_visible(true);
@@ -301,6 +404,46 @@ fn apply_layer_settings(state: &mut icy_engine_edit::EditState, index: usize, pr
         state.set_layer_size(index, size)?;
     }
     Ok(())
+}
+
+/// Where a layer dropped on the panel row of `index` lands. `fraction` is the pointer's
+/// position within the row; `x` its distance from where unindented row content starts.
+/// The middle of a group row drops into the group. Below the lowest layer of a group,
+/// moving the pointer left of that layer's indentation drops it after the group instead.
+#[allow(clippy::too_many_arguments)]
+fn layer_drop_target(
+    index: usize,
+    fraction: egui::Vec2,
+    x: f32,
+    groups: &[Option<icy_engine::LayerGroup>],
+    parents: &[Option<u64>],
+    depths: &[usize],
+    subtrees: &[std::ops::Range<usize>],
+    group_index: impl Fn(u64) -> Option<usize>,
+) -> LayerDrop {
+    let group = groups[index].as_ref();
+    if group.is_some() && (0.25..0.75).contains(&fraction.y) {
+        return LayerDrop::Into(index);
+    }
+    if fraction.y < 0.5 {
+        return LayerDrop::Above(index);
+    }
+    if group.is_some_and(|group| !group.collapsed) {
+        // Directly below an expanded group's row is the top of its contents.
+        return LayerDrop::Into(index);
+    }
+    let wanted = (x / LAYER_TREE_STEP).floor().max(0.0) as usize;
+    let mut target = index;
+    while depths[target] > wanted {
+        let Some(parent) = parents[target].and_then(&group_index) else {
+            break;
+        };
+        if subtrees[parent].start != subtrees[target].start {
+            break;
+        }
+        target = parent;
+    }
+    LayerDrop::Below(target)
 }
 
 impl DrawApp {
@@ -900,9 +1043,35 @@ impl DrawApp {
         let live = self
             .document
             .with_state(|state| state.get_buffer().layers.iter().map(|layer| layer.is_text()).collect::<Vec<_>>());
-        let current_unlocked = rows.get(current).is_some_and(|(properties, _, _)| !properties.is_locked || live[current]);
+        let (groups, parents, visible, shown, depths) = self.document.with_state(|state| {
+            let buffer = state.get_buffer();
+            (
+                buffer.layers.iter().map(|layer| layer.group.clone()).collect::<Vec<_>>(),
+                buffer.layers.iter().map(|layer| layer.parent_group).collect::<Vec<_>>(),
+                (0..buffer.layers.len()).map(|index| buffer.layer_is_visible(index)).collect::<Vec<_>>(),
+                buffer.visible_layer_rows(),
+                (0..buffer.layers.len()).map(|index| buffer.layer_ancestors(index).count()).collect::<Vec<_>>(),
+            )
+        });
+        let group_index = |id: u64| groups.iter().position(|group| group.as_ref().is_some_and(|group| group.id == id));
+        let has_groups = groups.iter().any(Option::is_some);
+        let trees = self.document.with_state(|state| layer_trees(state.get_buffer()));
+        let grouping = !self.collab.active && !self.collab.connecting && !self.document.paste_active() && self.charfont.is_none();
+        let subtrees = self
+            .document
+            .with_state(|state| (0..rows.len()).map(|index| state.get_buffer().layer_subtree(index)).collect::<Vec<_>>());
+        let can_raise = (current + 1..rows.len()).any(|index| parents[index] == parents[current]);
+        let can_lower = (0..current).any(|index| parents[index] == parents[current]);
+        let can_remove = |index: usize| subtrees[index].len() < rows.len();
+        let current_unlocked = rows
+            .get(current)
+            .is_some_and(|(properties, _, _)| !properties.is_locked || live[current] || groups[current].is_some());
+        let movable = |index: usize| !rows[index].0.is_locked || live[index] || groups[index].is_some();
         let can_merge = |index: usize| {
             index > 0
+                && groups[index].is_none()
+                && groups[index - 1].is_none()
+                && parents[index] == parents[index - 1]
                 && rows
                     .get(index)
                     .is_some_and(|(properties, _, role)| (!properties.is_locked || live[index]) && *role != Role::Image)
@@ -925,12 +1094,17 @@ impl DrawApp {
                     if self.icons.button(ui, "file_copy", &fl!("layer_tool_menu_duplicate_layer"), false).clicked() {
                         action = Some(LayerAction::Duplicate(current));
                     }
-                    ui.add_enabled_ui(current_unlocked && current + 1 < rows.len(), |ui| {
+                    ui.add_enabled_ui(grouping, |ui| {
+                        if self.icons.button(ui, "create_new_folder", &fl!("layer-group-new"), false).clicked() {
+                            action = Some(LayerAction::Group(current));
+                        }
+                    });
+                    ui.add_enabled_ui(current_unlocked && can_raise, |ui| {
                         if self.icons.button(ui, "move_up", &fl!("move_layer_up_tooltip"), false).clicked() {
                             action = Some(LayerAction::Raise(current));
                         }
                     });
-                    ui.add_enabled_ui(current_unlocked && current > 0, |ui| {
+                    ui.add_enabled_ui(current_unlocked && can_lower, |ui| {
                         if self.icons.button(ui, "move_down", &fl!("move_layer_down_tooltip"), false).clicked() {
                             action = Some(LayerAction::Lower(current));
                         }
@@ -942,7 +1116,7 @@ impl DrawApp {
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
-                        ui.add_enabled_ui(current_unlocked && rows.len() > 1, |ui| {
+                        ui.add_enabled_ui(current_unlocked && can_remove(current), |ui| {
                             if self.icons.button(ui, "delete", &fl!("delete_layer_tooltip"), false).clicked() {
                                 action = Some(LayerAction::Remove(current));
                             }
@@ -954,22 +1128,34 @@ impl DrawApp {
                 });
             });
         self.chrome.previews.resize_with(rows.len(), || None);
+        if self.chrome.layer_drag.is_some_and(|index| index >= rows.len() || !grouping) || ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+            self.chrome.layer_drag = None;
+        }
+        let dragging = self.chrome.layer_drag;
+        let pointer = ui.ctx().pointer_latest_pos();
+        let mut drop_target = None;
         let row_pitch = LAYER_ROW_HEIGHT + 2.0;
         egui::ScrollArea::vertical()
             .id_salt("layers")
             .auto_shrink([false, false])
-            .show_rows(ui, row_pitch, rows.len(), |ui, range| {
+            .show_rows(ui, row_pitch, shown.len(), |ui, range| {
                 ui.spacing_mut().item_spacing.y = 2.0;
                 for row in range {
-                    let index = rows.len() - row - 1;
+                    let (index, depth) = shown[row];
                     let (properties, dimensions, _) = &rows[index];
                     self.ensure_layer_preview(ui.ctx(), index, signature);
                     let selected = index == current;
-                    let (outer, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), LAYER_ROW_HEIGHT), egui::Sense::click());
+                    let dragged = dragging.is_some_and(|source| subtrees[source].contains(&index));
+                    let (outer, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), LAYER_ROW_HEIGHT), egui::Sense::click_and_drag());
+                    if response.drag_started() && grouping && movable(index) {
+                        self.chrome.layer_drag = Some(index);
+                    }
                     let rect = outer.shrink2(egui::vec2(6.0, 0.0));
+                    // Where indented content starts, after the visibility toggle.
+                    let content_x = rect.left() + 4.0 + 26.0 + 6.0;
                     let fill = if selected {
                         ui.visuals().selection.bg_fill
-                    } else if response.hovered() {
+                    } else if response.hovered() && dragging.is_none() {
                         ui.visuals().widgets.hovered.weak_bg_fill
                     } else {
                         Color32::TRANSPARENT
@@ -981,7 +1167,40 @@ impl DrawApp {
                         ui.visuals().text_color()
                     };
                     let muted = text_color.gamma_multiply(0.65);
-                    let faded = !properties.is_visible;
+                    let faded = !visible[index] || dragged;
+                    // The twisty is clicked before the row, which would otherwise take the click.
+                    let twisty = (has_groups && groups[index].is_some()).then(|| {
+                        let area = layer_twisty(ui.painter(), content_x, outer.center().y, depth).expand(5.0);
+                        (area, ui.interact(area, ui.id().with(("layer-twisty", index)), egui::Sense::click()))
+                    });
+                    if has_groups {
+                        // Lines bridge the spacing between rows so connectors stay continuous.
+                        let line = ui.visuals().weak_text_color().gamma_multiply(0.6);
+                        let triangle = if twisty.as_ref().is_some_and(|(_, response)| response.hovered()) {
+                            text_color
+                        } else {
+                            muted
+                        };
+                        paint_layer_tree(
+                            ui.painter(),
+                            content_x,
+                            egui::Rangef::new(outer.top() - 1.0, outer.bottom() + 1.0),
+                            outer.center().y,
+                            &trees[index],
+                            line,
+                            triangle,
+                        );
+                    }
+                    if let Some((_, response)) = twisty {
+                        let label = if groups[index].as_ref().is_some_and(|group| group.collapsed) {
+                            fl!("layer-group-expand")
+                        } else {
+                            fl!("layer-group-collapse")
+                        };
+                        if response.on_hover_text(label).clicked() {
+                            action = Some(LayerAction::Collapse(index));
+                        }
+                    }
                     ui.push_id(index, |ui| {
                         ui.scope_builder(
                             egui::UiBuilder::new()
@@ -1003,34 +1222,48 @@ impl DrawApp {
                                 {
                                     action = Some(LayerAction::Visibility(index));
                                 }
-                                let preview = egui::vec2(LAYER_PREVIEW[0] as f32, LAYER_PREVIEW[1] as f32);
-                                let (preview_rect, _) = ui.allocate_exact_size(preview, egui::Sense::hover());
-                                let painter = ui.painter().with_clip_rect(preview_rect.intersect(ui.clip_rect()));
-                                for checker_row in 0..(LAYER_PREVIEW[1] / 6) {
-                                    for column in 0..(LAYER_PREVIEW[0] / 6 + 1) {
-                                        let cell = egui::Rect::from_min_size(
-                                            preview_rect.min + egui::vec2(column as f32 * 6.0, checker_row as f32 * 6.0),
-                                            egui::Vec2::splat(6.0),
-                                        );
-                                        painter.rect_filled(cell, 0, Color32::from_gray(if (checker_row + column) % 2 == 0 { 48 } else { 64 }));
-                                    }
+                                if has_groups {
+                                    // Room for the tree painted above; the triangle is its own click target.
+                                    ui.allocate_exact_size(egui::vec2(layer_tree_width(depth), 1.0), egui::Sense::hover());
                                 }
-                                if let Some((_, Some(texture))) = &self.chrome.previews[index] {
-                                    let [width, height] = texture.size();
-                                    let scale = (preview.x / width as f32).min(preview.y / height as f32);
-                                    painter.image(
-                                        texture.id(),
-                                        egui::Rect::from_center_size(preview_rect.center(), egui::vec2(width as f32, height as f32) * scale),
-                                        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                                        if faded { Color32::from_white_alpha(90) } else { Color32::WHITE },
+                                if groups[index].is_some() {
+                                    let preview = egui::vec2(LAYER_PREVIEW[0] as f32, LAYER_PREVIEW[1] as f32);
+                                    let (preview_rect, _) = ui.allocate_exact_size(preview, egui::Sense::hover());
+                                    let tint = if faded { muted } else { text_color };
+                                    self.icons
+                                        .image(ui, "folder", 28.0)
+                                        .tint(tint)
+                                        .paint_at(ui, egui::Rect::from_center_size(preview_rect.center(), egui::Vec2::splat(28.0)));
+                                } else {
+                                    let preview = egui::vec2(LAYER_PREVIEW[0] as f32, LAYER_PREVIEW[1] as f32);
+                                    let (preview_rect, _) = ui.allocate_exact_size(preview, egui::Sense::hover());
+                                    let painter = ui.painter().with_clip_rect(preview_rect.intersect(ui.clip_rect()));
+                                    for checker_row in 0..(LAYER_PREVIEW[1] / 6) {
+                                        for column in 0..(LAYER_PREVIEW[0] / 6 + 1) {
+                                            let cell = egui::Rect::from_min_size(
+                                                preview_rect.min + egui::vec2(column as f32 * 6.0, checker_row as f32 * 6.0),
+                                                egui::Vec2::splat(6.0),
+                                            );
+                                            painter.rect_filled(cell, 0, Color32::from_gray(if (checker_row + column) % 2 == 0 { 48 } else { 64 }));
+                                        }
+                                    }
+                                    if let Some((_, Some(texture))) = &self.chrome.previews[index] {
+                                        let [width, height] = texture.size();
+                                        let scale = (preview.x / width as f32).min(preview.y / height as f32);
+                                        painter.image(
+                                            texture.id(),
+                                            egui::Rect::from_center_size(preview_rect.center(), egui::vec2(width as f32, height as f32) * scale),
+                                            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                                            if faded { Color32::from_white_alpha(90) } else { Color32::WHITE },
+                                        );
+                                    }
+                                    ui.painter().rect_stroke(
+                                        preview_rect,
+                                        3,
+                                        egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+                                        egui::StrokeKind::Outside,
                                     );
                                 }
-                                ui.painter().rect_stroke(
-                                    preview_rect,
-                                    3,
-                                    egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
-                                    egui::StrokeKind::Outside,
-                                );
                                 let lock_width = 26.0;
                                 let text_width = (ui.available_width() - lock_width - 6.0).max(0.0);
                                 ui.allocate_ui_with_layout(egui::vec2(text_width, LAYER_ROW_HEIGHT), egui::Layout::top_down(egui::Align::Min), |ui| {
@@ -1042,10 +1275,14 @@ impl DrawApp {
                                         .on_hover_text(&properties.title);
                                     ui.add(
                                         egui::Label::new(
-                                            egui::RichText::new(format!(
-                                                "{} × {}  ·  {}, {}",
-                                                dimensions.width, dimensions.height, properties.offset.x, properties.offset.y
-                                            ))
+                                            egui::RichText::new(if groups[index].is_some() {
+                                                fl!("layer-group-label", count = subtrees[index].len().saturating_sub(1))
+                                            } else {
+                                                format!(
+                                                    "{} × {}  ·  {}, {}",
+                                                    dimensions.width, dimensions.height, properties.offset.x, properties.offset.y
+                                                )
+                                            })
                                             .size(11.0)
                                             .color(muted),
                                         )
@@ -1053,6 +1290,10 @@ impl DrawApp {
                                         .selectable(false),
                                     );
                                 });
+                                if groups[index].is_some() {
+                                    ui.allocate_space(egui::vec2(lock_width, 24.0));
+                                    return;
+                                }
                                 let lock = self.icons.subtle_button(
                                     ui,
                                     if properties.is_locked { "lock" } else { "lock_open" },
@@ -1076,8 +1317,43 @@ impl DrawApp {
                             },
                         );
                     });
+                    if let (Some(source), Some(position)) = (dragging, pointer.filter(|position| outer.contains(*position))) {
+                        let target = layer_drop_target(
+                            index,
+                            (position - outer.min) / outer.size(),
+                            position.x - content_x,
+                            &groups,
+                            &parents,
+                            &depths,
+                            &subtrees,
+                            group_index,
+                        );
+                        if !subtrees[source].contains(&target.index()) {
+                            let tree = if has_groups { 6.0 } else { 0.0 };
+                            let indent = |index: usize| content_x + if has_groups { layer_tree_width(depths[index]) } else { 0.0 } + tree;
+                            let stroke = egui::Stroke::new(2.0, PRIMARY);
+                            match target {
+                                LayerDrop::Into(_) => {
+                                    ui.painter().rect_stroke(rect, 6, stroke, egui::StrokeKind::Inside);
+                                }
+                                LayerDrop::Above(other) | LayerDrop::Below(other) => {
+                                    let y = if matches!(target, LayerDrop::Above(_)) {
+                                        outer.top() - 1.0
+                                    } else {
+                                        outer.bottom() + 1.0
+                                    };
+                                    let start = egui::pos2(indent(other), y);
+                                    ui.painter().line_segment([start, egui::pos2(rect.right() - 4.0, y)], stroke);
+                                    ui.painter().circle_stroke(start, 3.0, stroke);
+                                }
+                            }
+                            drop_target = Some(target);
+                        }
+                    }
                     if response.double_clicked() {
-                        action = Some(if live[index] {
+                        action = Some(if groups[index].is_some() {
+                            LayerAction::Collapse(index)
+                        } else if live[index] {
                             LayerAction::LiveText(index)
                         } else {
                             LayerAction::Properties(index)
@@ -1086,6 +1362,42 @@ impl DrawApp {
                         action = Some(LayerAction::Select(index));
                     }
                     response.context_menu(|ui| {
+                        ui.add_enabled_ui(grouping, |ui| {
+                            if ui.button(fl!("layer-group-new")).clicked() {
+                                action = Some(LayerAction::Group(index));
+                                ui.close();
+                            }
+                            if groups[index].is_some() && ui.button(fl!("layer-group-ungroup")).clicked() {
+                                action = Some(LayerAction::Ungroup(index));
+                                ui.close();
+                            }
+                            let targets: Vec<_> = groups
+                                .iter()
+                                .enumerate()
+                                .filter(|(target, group)| {
+                                    group.is_some() && !subtrees[index].contains(target) && parents[index] != groups[*target].as_ref().map(|group| group.id)
+                                })
+                                .map(|(target, _)| target)
+                                .collect();
+                            ui.add_enabled_ui(!targets.is_empty(), |ui| {
+                                ui.menu_button(fl!("layer-group-move-to"), |ui| {
+                                    for target in targets {
+                                        let label = format!("{}{}", "  ".repeat(depths[target]), rows[target].0.title);
+                                        if ui.button(label).clicked() {
+                                            action = Some(LayerAction::Drop(index, LayerDrop::Into(target)));
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                            });
+                            if let Some(parent) = parents[index].and_then(group_index) {
+                                if ui.button(fl!("layer-group-move-out")).clicked() {
+                                    action = Some(LayerAction::Drop(index, LayerDrop::Above(parent)));
+                                    ui.close();
+                                }
+                            }
+                        });
+                        ui.separator();
                         if live[index] {
                             if ui.button(fl!("live-text-edit")).clicked() {
                                 action = Some(LayerAction::LiveText(index));
@@ -1102,7 +1414,7 @@ impl DrawApp {
                         }
                         if ui
                             .add_enabled(
-                                (!properties.is_locked || live[index]) && rows[index].2 != Role::Image,
+                                (!properties.is_locked || live[index]) && !matches!(rows[index].2, Role::Image | Role::Group),
                                 egui::Button::new(fl!("layer-effects-title")),
                             )
                             .clicked()
@@ -1112,7 +1424,7 @@ impl DrawApp {
                         }
                         if ui
                             .add_enabled(
-                                !live[index],
+                                !live[index] && groups[index].is_none(),
                                 egui::Button::new(if properties.is_locked { fl!("layer-unlock") } else { fl!("layer-lock") }),
                             )
                             .clicked()
@@ -1138,7 +1450,7 @@ impl DrawApp {
                         }
                         if ui
                             .add_enabled(
-                                (!properties.is_locked || live[index]) && rows.len() > 1,
+                                (!properties.is_locked || live[index] || groups[index].is_some()) && can_remove(index),
                                 egui::Button::new(fl!("layer_tool_menu_delete_layer")),
                             )
                             .clicked()
@@ -1155,7 +1467,41 @@ impl DrawApp {
                         }
                     });
                 }
+                // Scroll while dragging near the ends of the list.
+                if let (Some(_), Some(position)) = (dragging, pointer) {
+                    let clip = ui.clip_rect();
+                    if clip.x_range().contains(position.x) {
+                        if position.y < clip.top() + 24.0 {
+                            ui.scroll_with_delta(egui::vec2(0.0, 8.0));
+                        } else if position.y > clip.bottom() - 24.0 {
+                            ui.scroll_with_delta(egui::vec2(0.0, -8.0));
+                        }
+                    }
+                }
             });
+        if let Some(source) = dragging {
+            if ui.input(|input| !input.pointer.any_down()) {
+                self.chrome.layer_drag = None;
+                if let Some(target) = drop_target {
+                    action = Some(LayerAction::Drop(source, target));
+                }
+            } else {
+                ui.ctx().set_cursor_icon(if drop_target.is_some() {
+                    egui::CursorIcon::Grabbing
+                } else {
+                    egui::CursorIcon::NoDrop
+                });
+                if let Some(position) = pointer {
+                    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("layer-drag")));
+                    let galley = painter.layout_no_wrap(rows[source].0.title.clone(), egui::FontId::proportional(13.0), ui.visuals().text_color());
+                    let label = egui::Rect::from_min_size(position + egui::vec2(14.0, 6.0), galley.size()).expand2(egui::vec2(8.0, 4.0));
+                    painter.rect_filled(label, 6, ui.visuals().window_fill.gamma_multiply(0.95));
+                    painter.rect_stroke(label, 6, egui::Stroke::new(1.0, PRIMARY), egui::StrokeKind::Inside);
+                    painter.galley(label.min + egui::vec2(8.0, 4.0), galley, ui.visuals().text_color());
+                }
+                ui.ctx().request_repaint();
+            }
+        }
         if let Some(action) = action {
             self.layer_action(action);
         }
@@ -1170,10 +1516,24 @@ impl DrawApp {
     }
 
     fn layer_action(&mut self, action: LayerAction) {
+        if matches!(action, LayerAction::Group(_) | LayerAction::Ungroup(_) | LayerAction::Drop(..))
+            && (self.collab.active || self.collab.connecting || self.document.paste_active() || self.charfont.is_some())
+        {
+            self.result(Err(fl!("layer-group-unavailable")));
+            return;
+        }
         self.document.finish();
         // Layer indices stay valid: an emptied text layer is kept rather than removed here.
         self.document.text_edit = None;
         match action {
+            LayerAction::Group(index) => self.edit(|state| state.group_layer(index)),
+            LayerAction::Ungroup(index) => self.edit(|state| state.ungroup_layer(index)),
+            LayerAction::Collapse(index) => self.edit(|state| {
+                state.toggle_group_collapsed(index)?;
+                state.set_current_layer(index);
+                Ok(())
+            }),
+            LayerAction::Drop(index, target) => self.edit(|state| state.drop_layer(index, target)),
             LayerAction::Select(index) => {
                 self.document.with_state(|state| state.set_current_layer(index));
             }
@@ -1501,7 +1861,10 @@ impl DrawApp {
         };
         let live = self
             .document
-            .with_state(|state| state.get_buffer().layers.get(index).is_some_and(|layer| layer.is_text()));
+            .with_state(|state| state.get_buffer().layers.get(index).is_some_and(|layer| layer.is_text() || layer.is_group()));
+        let group = self
+            .document
+            .with_state(|state| state.get_buffer().layers.get(index).is_some_and(|layer| layer.is_group()));
         #[derive(Clone, Copy)]
         enum Action {
             Cancel,
@@ -1512,7 +1875,12 @@ impl DrawApp {
             .confirm_on_enter(true)
             .show(context, |dialog| {
                 dialog.content(|ui| {
-                    ui.label(appearance::bold(ui, fl!("edit-layer-dialog-title")).size(18.0));
+                    let title = if group {
+                        fl!("edit-group-dialog-title")
+                    } else {
+                        fl!("edit-layer-dialog-title")
+                    };
+                    ui.label(appearance::bold(ui, title).size(18.0));
                     ui.add_space(8.0);
                     appearance::group(ui, "", |ui| {
                         appearance::form_row(ui, &fl!("edit-layer-dialog-name-label"), |ui| {
@@ -1522,17 +1890,20 @@ impl DrawApp {
                         fn number(value: &mut i32, range: std::ops::RangeInclusive<i32>) -> egui::DragValue<'_> {
                             egui::DragValue::new(value).range(range).speed(0.25)
                         }
-                        appearance::form_row(ui, &fl!("edit-canvas-size-width-label"), |ui| {
-                            ui.add_enabled_ui(!live, |ui| {
-                                ui.add_sized([80.0, 28.0], number(&mut size.width, 1..=MAX_LAYER_SIZE));
+                        // A group has no cells: only its name, position and visibility apply.
+                        if !group {
+                            appearance::form_row(ui, &fl!("edit-canvas-size-width-label"), |ui| {
+                                ui.add_enabled_ui(!live, |ui| {
+                                    ui.add_sized([80.0, 28.0], number(&mut size.width, 1..=MAX_LAYER_SIZE));
+                                });
                             });
-                        });
-                        appearance::form_row(ui, &fl!("edit-canvas-size-height-label"), |ui| {
-                            ui.add_enabled_ui(!live, |ui| {
-                                ui.add_sized([80.0, 28.0], number(&mut size.height, 1..=MAX_LAYER_SIZE));
+                            appearance::form_row(ui, &fl!("edit-canvas-size-height-label"), |ui| {
+                                ui.add_enabled_ui(!live, |ui| {
+                                    ui.add_sized([80.0, 28.0], number(&mut size.height, 1..=MAX_LAYER_SIZE));
+                                });
                             });
-                        });
-                        ui.add_space(6.0);
+                            ui.add_space(6.0);
+                        }
                         appearance::form_row(ui, &fl!("edit-layer-dialog-is-x-offset-label"), |ui| {
                             ui.add_sized([80.0, 28.0], number(&mut properties.offset.x, -MAX_LAYER_SIZE..=MAX_LAYER_SIZE));
                         });
@@ -1540,6 +1911,11 @@ impl DrawApp {
                             ui.add_sized([80.0, 28.0], number(&mut properties.offset.y, -MAX_LAYER_SIZE..=MAX_LAYER_SIZE));
                         });
                         ui.add_space(6.0);
+                        if group {
+                            appearance::check_row(ui, &fl!("edit-layer-dialog-is-visible-checkbox"), &mut properties.is_visible);
+                            appearance::check_row(ui, &fl!("edit-layer-dialog-is-position-locked-checkbox"), &mut properties.is_position_locked);
+                            return;
+                        }
                         ui.columns(2, |columns| {
                             appearance::check_row(&mut columns[0], &fl!("edit-layer-dialog-is-visible-checkbox"), &mut properties.is_visible);
                             columns[0].add_enabled_ui(!live, |ui| {
@@ -1853,6 +2229,298 @@ pub(super) fn status_separator(ui: &mut egui::Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nested_group_panel_actions_and_canvas_drag() {
+        use super::super::tests::{frame, use_english};
+        use icy_engine::{AttributedChar, KeyModifiers, MouseButton, Size};
+        use_english();
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let mut app = DrawApp::new();
+        app.document = icy_draw::document::Document::new(Size::new(20, 10));
+        app.layer_action(LayerAction::Add(0));
+        app.document.with_state(|state| state.set_char((0, 0), AttributedChar::from_char('A')).unwrap());
+        let size = egui::vec2(1280.0, 820.0);
+        frame(&context, &mut app, size, vec![]);
+        app.layer_action(LayerAction::Group(1));
+        assert!(app.document.with_state(|state| state.get_buffer().layers[2].is_group()));
+        app.layer_action(LayerAction::Group(2));
+        app.layer_action(LayerAction::Collapse(3));
+        assert_eq!(app.document.with_state(|state| state.get_buffer().visible_layer_rows()), [(3, 0), (0, 0)]);
+        app.document
+            .with_state(|state| state.get_buffer_mut().layers[3].properties.title = "Outer".into());
+        let output = frame(&context, &mut app, size, vec![]);
+        // Double-clicking a group row expands it.
+        let group = super::super::tests::text_position(&output, "Outer").unwrap();
+        frame(&context, &mut app, size, vec![egui::Event::PointerMoved(group)]);
+        let button = |pressed| egui::Event::PointerButton {
+            pos: group,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(&context, &mut app, size, vec![button(true), button(false), button(true), button(false)]);
+        assert_eq!(
+            app.document.with_state(|state| state.get_buffer().visible_layer_rows()),
+            [(3, 0), (2, 1), (1, 2), (0, 0)]
+        );
+        // The disclosure triangle of the topmost group collapses it again.
+        let output = frame(&context, &mut app, size, vec![]);
+        let triangle = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Path(path) if path.closed && path.points.len() == 3 => {
+                    let bounds = egui::Rect::from_points(&path.points);
+                    (bounds.left() > size.x - PANEL_WIDTH && bounds.width() < 12.0).then(|| bounds.center())
+                }
+                _ => None,
+            })
+            .expect("a group row has a disclosure triangle");
+        frame(&context, &mut app, size, vec![egui::Event::PointerMoved(triangle)]);
+        for pressed in [true, false] {
+            frame(
+                &context,
+                &mut app,
+                size,
+                vec![egui::Event::PointerButton {
+                    pos: triangle,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        }
+        assert_eq!(app.document.with_state(|state| state.get_buffer().visible_layer_rows()), [(3, 0), (0, 0)]);
+        app.layer_action(LayerAction::Collapse(3));
+        app.layer_action(LayerAction::Select(3));
+        assert!(!app.document.can_paint());
+        app.document.tool = Tool::Font;
+        app.document.begin_with_modifiers(
+            Position::new(1, 1),
+            MouseButton::Left,
+            KeyModifiers {
+                ctrl: true,
+                ..Default::default()
+            },
+        );
+        app.document.update(Position::new(4, 3));
+        app.document.finish();
+        assert_eq!(app.document.with_state(|state| state.get_buffer().layers[1].offset()), Position::new(3, 2));
+        assert_eq!(app.document.with_state(|state| state.get_buffer().layers[0].offset()), Position::default());
+        app.document.undo().unwrap();
+        assert_eq!(app.document.with_state(|state| state.get_buffer().layers[1].offset()), Position::default());
+        app.layer_action(LayerAction::Visibility(3));
+        assert!(!app.document.with_state(|state| state.get_buffer().layer_is_visible(1)));
+        assert!(app.document.with_state(|state| state.get_buffer().layers[1].is_visible()));
+        app.layer_action(LayerAction::Select(1));
+        assert!(!app.document.can_paint(), "children of hidden groups are not painted");
+        app.layer_action(LayerAction::Visibility(3));
+        assert!(app.document.can_paint());
+        app.layer_action(LayerAction::Ungroup(2));
+        app.document.with_state(|state| state.get_buffer().validate_layer_groups().unwrap());
+        app.layer_action(LayerAction::Drop(1, LayerDrop::Above(2)));
+        app.document.with_state(|state| state.get_buffer().validate_layer_groups().unwrap());
+        assert_eq!(app.document.with_state(|state| state.get_buffer().layers[2].parent_group), None);
+    }
+
+    #[test]
+    fn layer_panel_drags_layers_into_and_out_of_groups() {
+        use super::super::tests::{frame, use_english};
+        use icy_engine::Size;
+        use_english();
+        let context = egui::Context::default();
+        appearance::apply(&context);
+        let mut app = DrawApp::new();
+        app.document = icy_draw::document::Document::new(Size::new(20, 10));
+        app.layer_action(LayerAction::Add(0));
+        app.layer_action(LayerAction::Group(1));
+        app.layer_action(LayerAction::Group(2));
+        app.document.with_state(|state| {
+            for (index, title) in ["Base", "Child", "Inner", "Outer"].into_iter().enumerate() {
+                state.get_buffer_mut().layers[index].properties.title = title.into();
+            }
+            state.get_buffer_mut().mark_dirty();
+        });
+        let size = egui::vec2(1280.0, 820.0);
+        let title = |app: &mut DrawApp, label: &str| {
+            let output = frame(&context, app, size, vec![]);
+            super::super::tests::text_position(&output, label).unwrap_or_else(|| panic!("no {label:?} in the layer panel"))
+        };
+        let drag = |app: &mut DrawApp, from: egui::Pos2, to: egui::Pos2| {
+            let button = |position, pressed| egui::Event::PointerButton {
+                pos: position,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            frame(&context, app, size, vec![egui::Event::PointerMoved(from)]);
+            frame(&context, app, size, vec![button(from, true)]);
+            for step in 1..=4 {
+                frame(&context, app, size, vec![egui::Event::PointerMoved(from.lerp(to, step as f32 / 4.0))]);
+            }
+            frame(&context, app, size, vec![button(to, false)]);
+            frame(&context, app, size, vec![]);
+        };
+        let order = |app: &DrawApp| {
+            app.document.with_state(|state| {
+                state.get_buffer().validate_layer_groups().unwrap();
+                state
+                    .get_buffer()
+                    .layers
+                    .iter()
+                    .map(|layer| (layer.properties.title.clone(), layer.parent_group))
+                    .collect::<Vec<_>>()
+            })
+        };
+        frame(&context, &mut app, size, vec![]);
+        assert!(app.icons.loaded("folder"), "groups show a folder");
+
+        // The middle of a group row drops into the group, at its top.
+        let (base, inner) = (title(&mut app, "Base"), title(&mut app, "Inner"));
+        drag(&mut app, base, inner + egui::vec2(0.0, 8.0));
+        assert!(app.chrome.layer_drag.is_none());
+        let inner_id = app.document.with_state(|state| state.get_buffer().layers[2].group.as_ref().unwrap().id);
+        app.document.with_state(|state| {
+            let layers = &state.get_buffer().layers;
+            assert_eq!(layers[1].properties.title, "Base");
+            assert_eq!(layers[1].parent_group, Some(inner_id));
+            assert_eq!(state.get_current_layer().unwrap(), 1, "the dropped layer is selected");
+        });
+        app.document.undo().unwrap();
+        assert_eq!(
+            order(&app).iter().map(|(title, _)| title.as_str()).collect::<Vec<_>>(),
+            ["Base", "Child", "Inner", "Outer"]
+        );
+
+        // The upper edge of a row drops above it, here leaving all groups.
+        let (child, outer) = (title(&mut app, "Child"), title(&mut app, "Outer"));
+        drag(&mut app, child, outer - egui::vec2(0.0, 8.0));
+        app.document.with_state(|state| {
+            let layers = &state.get_buffer().layers;
+            assert_eq!(layers[3].properties.title, "Child");
+            assert_eq!(layers[3].parent_group, None);
+        });
+
+        // Escape cancels a drag without moving anything.
+        let before = order(&app);
+        let (base, outer) = (title(&mut app, "Base"), title(&mut app, "Outer"));
+        frame(&context, &mut app, size, vec![egui::Event::PointerMoved(base)]);
+        frame(
+            &context,
+            &mut app,
+            size,
+            vec![egui::Event::PointerButton {
+                pos: base,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        frame(&context, &mut app, size, vec![egui::Event::PointerMoved(outer)]);
+        assert!(app.chrome.layer_drag.is_some());
+        frame(
+            &context,
+            &mut app,
+            size,
+            vec![egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert!(app.chrome.layer_drag.is_none());
+        frame(
+            &context,
+            &mut app,
+            size,
+            vec![egui::Event::PointerButton {
+                pos: outer,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert_eq!(order(&app), before);
+    }
+
+    #[test]
+    fn layer_trees_mark_last_siblings_and_continuing_guides() {
+        use icy_engine::Layer;
+        // Shown top to bottom: outer ▸ (inner ▸ (a, b), c), root.
+        let mut buffer = TextBuffer::new((4, 2));
+        buffer.layers[0].properties.title = "root".into();
+        let layer = |title: &str, parent| {
+            let mut layer = Layer::new(title, (1, 1));
+            layer.parent_group = parent;
+            layer
+        };
+        buffer.layers.push(layer("c", Some(2)));
+        buffer.layers.push(layer("b", Some(1)));
+        buffer.layers.push(layer("a", Some(1)));
+        let mut inner = Layer::new_group("inner", 1);
+        inner.parent_group = Some(2);
+        buffer.layers.push(inner);
+        buffer.layers.push(Layer::new_group("outer", 2));
+        buffer.validate_layer_groups().unwrap();
+        let trees = layer_trees(&buffer);
+        let summary: Vec<_> = trees
+            .iter()
+            .map(|tree| (tree.depth, tree.last, tree.guides, tree.collapsed, tree.has_children))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                (0, true, 0, None, false),
+                (1, true, 0, None, false),
+                (2, true, 0b1, None, false),
+                (2, false, 0b1, None, false),
+                (1, false, 0, Some(false), true),
+                (0, false, 0, Some(false), true),
+            ],
+            "inner has c below it, so its line continues past a and b"
+        );
+    }
+
+    #[test]
+    fn layer_drop_zones_follow_rows_and_indentation() {
+        use icy_engine::LayerGroup;
+        // Stack (bottom first): base, child in inner, inner in outer, outer.
+        let groups = [
+            None,
+            None,
+            Some(LayerGroup { id: 1, collapsed: false }),
+            Some(LayerGroup { id: 2, collapsed: false }),
+        ];
+        let parents = [None, Some(1), Some(2), None];
+        let depths = [0, 2, 1, 0];
+        let subtrees = [0..1, 1..2, 1..3, 1..4];
+        let group_index = |id: u64| groups.iter().position(|group| group.as_ref().is_some_and(|group| group.id == id));
+        let target = |index, y: f32, x: f32| layer_drop_target(index, egui::vec2(0.5, y), x, &groups, &parents, &depths, &subtrees, group_index);
+        assert_eq!(target(0, 0.1, 50.0), LayerDrop::Above(0));
+        assert_eq!(target(0, 0.9, 50.0), LayerDrop::Below(0));
+        assert_eq!(target(2, 0.5, 50.0), LayerDrop::Into(2));
+        assert_eq!(target(2, 0.1, 50.0), LayerDrop::Above(2));
+        assert_eq!(target(2, 0.9, 50.0), LayerDrop::Into(2), "below an expanded group's row is inside it");
+        // Below the lowest child, the pointer's indentation selects the level.
+        assert_eq!(target(1, 0.9, 2.0 * LAYER_TREE_STEP + 1.0), LayerDrop::Below(1));
+        assert_eq!(target(1, 0.9, LAYER_TREE_STEP + 1.0), LayerDrop::Below(2));
+        assert_eq!(target(1, 0.9, -10.0), LayerDrop::Below(3));
+        let collapsed = [
+            None,
+            None,
+            Some(LayerGroup { id: 1, collapsed: true }),
+            Some(LayerGroup { id: 2, collapsed: false }),
+        ];
+        let collapsed_index = |id: u64| collapsed.iter().position(|group| group.as_ref().is_some_and(|group| group.id == id));
+        assert_eq!(
+            layer_drop_target(2, egui::vec2(0.5, 0.9), 50.0, &collapsed, &parents, &depths, &subtrees, collapsed_index),
+            LayerDrop::Below(2)
+        );
+    }
 
     #[test]
     fn minimap_fills_width_and_follows_tall_documents() {

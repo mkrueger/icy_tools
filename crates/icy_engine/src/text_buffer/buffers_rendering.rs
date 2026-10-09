@@ -1050,7 +1050,10 @@ impl TextBuffer {
         }
 
         let font_dims = font_size;
-        for layer in &self.layers {
+        for (index, layer) in self.layers.iter().enumerate() {
+            if !self.layer_is_visible(index) {
+                continue;
+            }
             for sixel in &layer.sixels {
                 // Calculate sixel position in character coordinates
                 let sx_char = layer.offset().x + sixel.position.x;

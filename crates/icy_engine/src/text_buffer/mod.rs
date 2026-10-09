@@ -22,6 +22,9 @@ pub use layer::*;
 mod layer_effects;
 pub use layer_effects::*;
 
+mod layer_groups;
+pub use layer_groups::*;
+
 mod live_text;
 pub use live_text::*;
 
@@ -320,9 +323,16 @@ impl TextBuffer {
         if self.show_tags && self.tags.iter().any(|tag| tag.is_enabled && tag.contains(pos)) {
             return None;
         }
-        self.layers.iter().rev().find_map(|layer| {
+        self.layers.iter().enumerate().rev().find_map(|(index, layer)| {
             let local = pos - layer.offset();
-            if !layer.is_visible() || local.x < 0 || local.y < 0 || local.x >= layer.width() || local.y >= layer.height() || layer.effects.is_masked(local) {
+            if layer.is_group()
+                || !self.layer_is_visible(index)
+                || local.x < 0
+                || local.y < 0
+                || local.x >= layer.width()
+                || local.y >= layer.height()
+                || layer.effects.is_masked(local)
+            {
                 return None;
             }
             let character = layer.char_at(local);
@@ -1181,7 +1191,7 @@ impl TextPane for TextBuffer {
         }
         for i in 0..self.layers.len() {
             let cur_layer = &self.layers[i];
-            if cur_layer.properties.is_visible {
+            if !cur_layer.is_group() && self.layer_is_visible(i) {
                 let pos: Position = pos - cur_layer.offset();
                 if pos.x >= 0 && pos.y >= 0 && pos.x < cur_layer.width() && pos.y < cur_layer.height() {
                     self.merge_layer_char(&mut found_char, cur_layer, pos);

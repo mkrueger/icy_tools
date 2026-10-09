@@ -807,6 +807,7 @@ about-dialog-created_by =
     Help & testing: NuSkooler, Grymmjack
 
 edit-layer-dialog-title=Layer properties
+edit-group-dialog-title=Group properties
 edit-layer-dialog-name-label=Name
 edit-layer-dialog-is-visible-checkbox=Visible
 edit-layer-dialog-is-edit-locked-checkbox=Edit locked
@@ -833,6 +834,17 @@ select-font-dialog-preview-text=HELLO
 select-font-dialog-edit-button=Edit font…
 
 layer_tool_title=Layers
+layer-group-new=Group layer
+layer-group-label = { $count ->
+    [one] Group · 1 item
+   *[other] Group · { $count } items
+}
+layer-group-ungroup=Ungroup
+layer-group-move-to=Move into group
+layer-group-move-out=Move out of group
+layer-group-collapse=Collapse group
+layer-group-expand=Expand group
+layer-group-unavailable=Layer groups are unavailable during collaboration, floating paste or font editing.
 layer_tool_menu_layer_properties=Layer properties
 layer_tool_menu_resize_layer=Resize layer
 layer_tool_menu_new_layer=New layer

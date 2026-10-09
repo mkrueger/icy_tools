@@ -19,6 +19,10 @@
 //! text `LAYER` (and its `LIVETEXT`, if any): u16 version 1, optional remap (presence, enabled,
 //! 16 palette indices), optional mask (presence, enabled, i32 width/height,
 //! row-major packed hidden bits, low bit first). Flags are bytes 0 or 1.
+//! Nested groups require ICED v5. `GROUP` follows a layer's other records:
+//! u8 version 1, u64 parent ID (0 for root), u64 group ID (0 for a leaf),
+//! and a boolean collapsed byte. Group markers follow their contiguous children;
+//! member offsets remain document-relative and groups compose in pass-through mode.
 
 use std::fmt::Alignment;
 use std::io::Cursor;
@@ -34,6 +38,7 @@ mod constants {
     pub const ICED_CUSTOM_PALETTE_VERSION: u16 = 2;
     pub const ICED_LAYER_EFFECTS_VERSION: u16 = 3;
     pub const ICED_LIVE_TEXT_VERSION: u16 = 4;
+    pub const ICED_LAYER_GROUP_VERSION: u16 = 5;
     pub const ICED_HEADER_SIZE: usize = 19; // Version(2) + Type(3) + Modes(4) + Size(8) + FontDims(2)
 
     /// Compression methods for ICED format (stored in first byte of Type field)
@@ -327,7 +332,7 @@ fn process_icy_draw_v1_decoded_chunk(
             }
 
             let version = u16::from_le_bytes([bytes[0], bytes[1]]);
-            if !(constants::ICED_VERSION..=constants::ICED_LIVE_TEXT_VERSION).contains(&version) {
+            if !(constants::ICED_VERSION..=constants::ICED_LAYER_GROUP_VERSION).contains(&version) {
                 return Err(IcedError::UnsupportedVersion(version));
             }
             if bytes.len() < constants::ICED_HEADER_SIZE {
@@ -608,6 +613,30 @@ fn process_icy_draw_v1_decoded_chunk(
             result.layers.push(layer);
         }
 
+        "GROUP" => {
+            if bytes.len() != 18 || bytes[0] != 1 || bytes[17] > 1 {
+                return Err(IcedError::InvalidRecord("Invalid GROUP record".into()));
+            }
+            let parent = u64::from_le_bytes(bytes[1..9].try_into().unwrap());
+            let id = u64::from_le_bytes(bytes[9..17].try_into().unwrap());
+            let layer = result
+                .layers
+                .last_mut()
+                .ok_or_else(|| IcedError::InvalidRecord("GROUP without a layer".into()))?;
+            if layer.parent_group.is_some() || layer.group.is_some() || (id == 0 && (parent == 0 || bytes[17] != 0)) {
+                return Err(IcedError::InvalidRecord("Duplicate or empty GROUP record".into()));
+            }
+            layer.parent_group = (parent != 0).then_some(parent);
+            if id != 0 {
+                if layer.role != crate::Role::Normal {
+                    return Err(IcedError::InvalidRecord("Invalid group marker role".into()));
+                }
+                layer.role = crate::Role::Group;
+                layer.group = Some(crate::LayerGroup { id, collapsed: bytes[17] != 0 });
+                layer.properties.is_locked = true;
+            }
+        }
+
         "LIVETEXT" => {
             let layer = result
                 .layers
@@ -621,6 +650,7 @@ fn process_icy_draw_v1_decoded_chunk(
             rendered.properties = layer.properties.clone();
             rendered.properties.is_locked = true;
             rendered.effects = layer.effects.clone();
+            rendered.parent_group = layer.parent_group;
             *layer = rendered;
         }
 
@@ -714,6 +744,7 @@ fn process_icy_draw_v1_decoded_chunk(
 }
 
 pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+    buf.validate_layer_groups()?;
     for layer in &buf.layers {
         layer.effects.validate()?;
         layer.validate_role()?;
@@ -806,7 +837,9 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                         .any(|ch| ch.attribute.requires_custom_palette_encoding())
                 })
             });
-        let version = if buf.layers.iter().any(|layer| layer.is_text()) {
+        let version = if buf.layers.iter().any(|layer| layer.is_group()) {
+            constants::ICED_LAYER_GROUP_VERSION
+        } else if buf.layers.iter().any(|layer| layer.is_text()) {
             constants::ICED_LIVE_TEXT_VERSION
         } else if buf.layers.iter().any(|layer| !layer.effects.is_empty()) {
             constants::ICED_LAYER_EFFECTS_VERSION
@@ -953,6 +986,13 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                 write_compressed_chunk(&mut writer, "EFFECTS", file_compression, &layer.effects.encode()?)?;
             }
         }
+        if layer.parent_group.is_some() || layer.group.is_some() {
+            let mut data = vec![1];
+            data.extend(layer.parent_group.unwrap_or(0).to_le_bytes());
+            data.extend(layer.group.as_ref().map_or(0, |group| group.id).to_le_bytes());
+            data.push(u8::from(layer.group.as_ref().is_some_and(|group| group.collapsed)));
+            write_compressed_chunk(&mut writer, "GROUP", file_compression, &data)?;
+        }
     }
 
     if !buf.tags.is_empty() {
@@ -1092,12 +1132,14 @@ fn load_icy_draw_v1_binary_chunks(data: &[u8]) -> Result<Option<(TextScreen, Opt
         }
     }
 
+    result.validate_layer_groups()?;
+
     // Some legacy files contain layers that are smaller than the declared canvas size.
     // In the editor this shows up as a checkerboard area that cannot be edited even though
     // the buffer/canvas is larger. Normalize by ensuring the base layer matches the buffer.
     let buf_size = result.size();
     if let Some(base_layer) = result.layers.get_mut(0) {
-        if base_layer.role == crate::Role::Normal && base_layer.base_offset() == Position::default() {
+        if base_layer.role == crate::Role::Normal && base_layer.parent_group.is_none() && base_layer.base_offset() == Position::default() {
             let layer_size = base_layer.size();
             if layer_size.width < buf_size.width || layer_size.height < buf_size.height {
                 base_layer.set_size(buf_size);

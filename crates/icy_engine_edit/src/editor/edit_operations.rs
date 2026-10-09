@@ -295,6 +295,10 @@ impl EditState {
 
             for old_layer in &old_layers {
                 let mut new_layer = old_layer.clone();
+                if old_layer.is_group() {
+                    self.get_buffer_mut().layers.push(new_layer);
+                    continue;
+                }
                 new_layer.lines.clear();
                 let new_rectangle = old_layer.rectangle().intersect(&rect);
                 if new_rectangle.is_empty() {

@@ -423,7 +423,7 @@ fn process_icy_draw_v0_decoded_chunk(
                 let layer = &mut result.layers[layer_num];
                 match layer.role {
                     // Legacy files have no text layers; their cells continue like normal ones.
-                    crate::Role::Normal | crate::Role::Text => {
+                    crate::Role::Normal | crate::Role::Text | crate::Role::Group => {
                         let mut o = 0;
                         let start_y = *layer_resume_y.get(&layer_num).unwrap_or(&layer.line_count());
                         let mut y = start_y;

@@ -1,4 +1,10 @@
 undo-add_layer=Ebene hinzufügen
+layer-new-group=Gruppe
+layer-group-select-child=Zum Bearbeiten eine Ebene innerhalb der Gruppe auswählen.
+undo-group-layers=Ebenen gruppieren
+undo-ungroup-layers=Gruppe auflösen
+undo-move-layer-group=Ebenengruppe verschieben
+undo-collapse-group=Gruppe ein- oder ausklappen
 undo-remove_layer=Ebene entfernen
 undo-raise_layer=Ebene anheben
 undo-lower_layer=Ebene absenken

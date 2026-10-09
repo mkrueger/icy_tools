@@ -2689,7 +2689,10 @@ impl DrawApp {
                         icy_engine::MouseButton::Left
                     };
                     let modifiers = ui.input(|input| input.modifiers);
-                    if self.document.tool == Tool::Font && (modifiers.ctrl || modifiers.mac_cmd) {
+                    if self.document.tool == Tool::Font
+                        && (modifiers.ctrl || modifiers.mac_cmd)
+                        && !self.document.with_state(|state| state.get_cur_layer().is_some_and(|layer| layer.is_group()))
+                    {
                         // Ctrl/Cmd-drag moves the text layer under the pointer.
                         if let Some(index) = self.document.live_text_at(position) {
                             self.document.with_state(|state| state.set_current_layer(index));

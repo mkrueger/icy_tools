@@ -7,6 +7,63 @@ const ICYD_RECORD_VERSION: u8 = 1;
 const ZSTD_FRAME_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
 #[test]
+fn nested_layer_groups_round_trip_in_native_v5() {
+    let mut buffer = TextBuffer::new((4, 2));
+    buffer.layers[0].set_char((0, 0), AttributedChar::from_char('B'));
+    let mut child = Layer::new("Child", (2, 1));
+    child.set_char((0, 0), AttributedChar::from_char('A'));
+    child.parent_group = Some(1);
+    buffer.layers.push(child);
+    let mut inner = Layer::new_group("Inner", 1);
+    inner.parent_group = Some(2);
+    inner.group.as_mut().unwrap().collapsed = true;
+    buffer.layers.push(inner);
+    let mut image = Layer::new("Image", (1, 1));
+    image.role = Role::Image;
+    image.parent_group = Some(2);
+    image.sixels.push(Sixel::from_data((1, 1), 1, 1, vec![255, 0, 0, 255]));
+    buffer.layers.push(image);
+    let mut outer = Layer::new_group("Outer", 2);
+    outer.properties.is_visible = false;
+    buffer.layers.push(outer);
+    for compress in [false, true] {
+        let options = SaveOptions {
+            format: icy_engine::FormatOptions::IcyDraw(icy_engine::IcyDrawFormatOptions {
+                skip_thumbnail: false,
+                compress,
+            }),
+            ..Default::default()
+        };
+        let bytes = FileFormat::IcyDraw.to_bytes(&buffer, &options).unwrap();
+        let records = extract_png_chunks_by_type(&bytes, ICYD_CHUNK_TYPE);
+        let (_, header) = parse_icyd_record(&records[0]);
+        assert_eq!(u16::from_le_bytes(header[..2].try_into().unwrap()), 5);
+        let loaded = FileFormat::IcyDraw.from_bytes(&bytes, None).unwrap().screen.buffer;
+        loaded.validate_layer_groups().unwrap();
+        for (before, after) in buffer.layers.iter().zip(&loaded.layers) {
+            assert_eq!(before.group, after.group);
+            assert_eq!(before.parent_group, after.parent_group);
+            assert_eq!(before.role, after.role);
+            assert_eq!(before.properties.is_visible, after.properties.is_visible);
+        }
+        assert_eq!(loaded.char_at(Position::default()).ch, 'B');
+        assert_eq!(loaded.layers[1].char_at(Position::default()).ch, 'A');
+        assert_eq!(loaded.layers[3].sixels.len(), 1);
+    }
+    for format in [FileFormat::Ansi, FileFormat::XBin] {
+        let bytes = format.to_bytes(&buffer, &SaveOptions::default()).unwrap();
+        let loaded = format.from_bytes(&bytes, None).unwrap().screen.buffer;
+        assert_eq!(loaded.char_at(Position::default()).ch, 'B');
+        assert!(loaded
+            .layers
+            .iter()
+            .all(|layer| layer.group.is_none() && layer.parent_group.is_none() && layer.sixels.is_empty()));
+    }
+    buffer.layers[1].parent_group = Some(99);
+    assert!(FileFormat::IcyDraw.to_bytes(&buffer, &SaveOptions::default()).is_err());
+}
+
+#[test]
 fn live_text_round_trips_embedded_font_and_effects_in_native_v4() {
     use retrofont::{
         tdf::{TdfFont, TdfFontType},

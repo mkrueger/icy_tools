@@ -60,6 +60,7 @@ impl Document {
                 | EditorUndoOp::MergeLayerDown { .. }
                 | EditorUndoOp::Paste { .. }
                 | EditorUndoOp::Crop { .. } => true,
+                EditorUndoOp::ReplaceLayers { .. } => true,
                 _ => false,
             }
         }
@@ -101,7 +102,9 @@ impl Document {
                 .get_buffer()
                 .layers
                 .iter()
-                .rposition(|layer| layer.is_text() && layer.is_visible() && layer.rectangle().contains_pt(position))
+                .enumerate()
+                .rfind(|(index, layer)| layer.is_text() && state.get_buffer().layer_is_visible(*index) && layer.rectangle().contains_pt(position))
+                .map(|(index, _)| index)
         })
     }
 

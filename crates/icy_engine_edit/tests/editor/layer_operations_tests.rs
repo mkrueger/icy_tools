@@ -10,6 +10,175 @@ fn create_test_state(width: i32, height: i32) -> EditState {
 }
 
 #[test]
+fn grouped_live_text_and_canvas_operations_keep_membership() {
+    use icy_engine::{LiveText, Rectangle};
+    use icy_engine_edit::UndoState;
+    use retrofont::{
+        tdf::{TdfFont, TdfFontType},
+        Glyph, GlyphPart,
+    };
+    let mut font = TdfFont::new("Group", TdfFontType::Block, 1);
+    let mut glyph = Glyph::new(1, 1);
+    glyph.parts = vec![GlyphPart::Char('X')];
+    font.add_glyph('A', glyph);
+    let mut source = LiveText::new(&font, TextAttribute::default()).unwrap();
+    source.text = "A".into();
+    let mut state = create_test_state(12, 8);
+    state.add_live_text(source.clone(), Position::new(2, 2)).unwrap();
+    state.group_layer(1).unwrap();
+    source.text = "AA".into();
+    state.update_live_text(1, source).unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    assert_eq!(
+        state.get_buffer().layers[1].parent_group,
+        state.get_buffer().layers[2].group.as_ref().map(|group| group.id)
+    );
+    state.crop_rect(Rectangle::from(1, 1, 6, 4)).unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    assert_eq!(state.get_buffer().layers[1].offset(), Position::new(1, 1));
+    state.undo().unwrap();
+    state.bake_live_text(1).unwrap();
+    state.resize_buffer(true, (8, 4)).unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    assert!(state.get_buffer().layers[2].is_group());
+    state.set_ice_mode(icy_engine::IceMode::Ice).unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+}
+
+#[test]
+fn dropping_layers_reorders_subtrees_and_changes_membership() {
+    use icy_engine_edit::{LayerDrop, UndoState};
+    let mut state = create_test_state(12, 8);
+    state.add_new_layer(0).unwrap();
+    state.add_new_layer(1).unwrap();
+    for (index, title) in ["A", "B", "C"].into_iter().enumerate() {
+        state.get_buffer_mut().layers[index].properties.title = title.into();
+    }
+    state.group_layer(1).unwrap();
+    let group = state.get_buffer().layers[2].group.as_ref().unwrap().id;
+    let titles = |state: &EditState| {
+        state.get_buffer().validate_layer_groups().unwrap();
+        state
+            .get_buffer()
+            .layers
+            .iter()
+            .map(|layer| (layer.properties.title.clone(), layer.parent_group))
+            .collect::<Vec<_>>()
+    };
+    let start = titles(&state);
+    let undo = state.undo_stack_len();
+    // Dropping a layer onto itself, where it already is, or a group into itself changes nothing.
+    state.drop_layer(1, LayerDrop::Above(1)).unwrap();
+    state.drop_layer(0, LayerDrop::Below(0)).unwrap();
+    state.drop_layer(3, LayerDrop::Above(2)).unwrap();
+    assert!(state.drop_layer(2, LayerDrop::Into(2)).is_err());
+    assert!(state.drop_layer(2, LayerDrop::Into(0)).is_err(), "only groups take layers in");
+    assert_eq!(state.undo_stack_len(), undo);
+
+    state.drop_layer(0, LayerDrop::Into(2)).unwrap();
+    assert_eq!(titles(&state)[..2], [("B".to_string(), Some(group)), ("A".to_string(), Some(group))]);
+    assert_eq!(state.get_current_layer().unwrap(), 1);
+    state.drop_layer(3, LayerDrop::Below(1)).unwrap();
+    assert_eq!(
+        titles(&state)[..3],
+        [("B".to_string(), Some(group)), ("C".to_string(), Some(group)), ("A".to_string(), Some(group))]
+    );
+    state.drop_layer(2, LayerDrop::Above(3)).unwrap();
+    assert_eq!(titles(&state)[3], ("A".to_string(), None));
+    assert_eq!(state.undo_stack_len(), undo + 3);
+    for _ in 0..3 {
+        state.undo().unwrap();
+    }
+    assert_eq!(titles(&state), start);
+}
+
+#[test]
+fn nested_group_moves_previews_visibility_and_duplication_are_undoable() {
+    use icy_engine_edit::UndoState;
+    let mut state = create_test_state(12, 8);
+    state.add_new_layer(0).unwrap();
+    state.set_char((0, 0), AttributedChar::from_char('A')).unwrap();
+    state.group_layer(1).unwrap();
+    let outer = state.get_buffer().layers[2].group.as_ref().unwrap().id;
+    state.group_layer(1).unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    let index = state.get_buffer().group_index(outer).unwrap();
+    state.set_current_layer(index);
+    let before = state.get_buffer().layers.clone();
+    state.set_layer_preview_offset(Some(Position::new(3, 2)));
+    assert_eq!(state.get_buffer().layers[1].offset(), Position::new(3, 2));
+    state.set_layer_preview_offset(None);
+    assert_eq!(state.get_buffer().layers, before);
+    state.move_layer(Position::new(3, 2)).unwrap();
+    assert_eq!(state.get_buffer().layers[0].offset(), Position::default());
+    assert!(state.get_buffer().layers[1..].iter().all(|layer| layer.offset() == Position::new(3, 2)));
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers, before);
+    state.redo().unwrap();
+    state.undo().unwrap();
+    state.get_buffer_mut().layers[1].properties.is_position_locked = true;
+    assert!(state.move_layer(Position::new(3, 2)).is_err());
+    assert_eq!(state.get_buffer().layers[index].offset(), Position::default());
+    state.get_buffer_mut().layers[1].properties.is_position_locked = false;
+    state.toggle_layer_visibility(index).unwrap();
+    assert!(!state.get_buffer().layer_is_visible(1));
+    assert!(state.get_buffer().layers[1].is_visible());
+    state.toggle_layer_visibility(1).unwrap();
+    state.toggle_layer_visibility(index).unwrap();
+    assert!(!state.get_buffer().layer_is_visible(1));
+    let before = state.get_buffer().layers.clone();
+    state.duplicate_layer(index).unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    assert_eq!(state.get_buffer().layers.len(), 7);
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers, before);
+    state.redo().unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    state.remove_layer(state.get_current_layer().unwrap()).unwrap();
+    assert_eq!(state.get_buffer().layers, before);
+}
+
+#[test]
+fn group_membership_reordering_paste_and_ungroup_preserve_structure() {
+    use icy_engine_edit::UndoState;
+    let mut state = create_test_state(12, 8);
+    state.add_new_layer(0).unwrap();
+    state.group_layer(1).unwrap();
+    let group = state.get_buffer().layers[2].group.as_ref().unwrap().id;
+    state.move_layer_to_group(0, Some(group)).unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    assert!(state.get_buffer().layers[..2].iter().all(|layer| layer.parent_group == Some(group)));
+    state.group_layer(1).unwrap();
+    let inner = state.get_buffer().layers[2].group.as_ref().unwrap().id;
+    assert!(state.move_layer_to_group(3, Some(inner)).is_err());
+    state.set_current_layer(2);
+    state.paste_text("Hello").unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    assert_eq!(state.get_buffer().layers[2].parent_group, Some(inner));
+    state.undo().unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    state.raise_layer(0).unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    assert_eq!(state.get_buffer().layers[1].group.as_ref().unwrap().id, inner);
+    state.lower_layer(2).unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    assert_eq!(state.get_buffer().layers[2].group.as_ref().unwrap().id, inner);
+    state.ungroup_layer(2).unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    assert_eq!(state.get_buffer().layers.len(), 3);
+    state.toggle_layer_visibility(2).unwrap();
+    state.ungroup_layer(2).unwrap();
+    assert!(state
+        .get_buffer()
+        .layers
+        .iter()
+        .all(|layer| layer.parent_group.is_none() && !layer.is_visible()));
+    state.undo().unwrap();
+    state.get_buffer().validate_layer_groups().unwrap();
+    assert!(state.get_buffer().layers[2].is_group());
+}
+
+#[test]
 fn live_text_edit_bake_duplicate_and_merge_are_undoable() {
     use icy_engine_edit::UndoState;
     use retrofont::{

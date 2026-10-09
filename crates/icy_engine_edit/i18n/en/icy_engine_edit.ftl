@@ -1,4 +1,10 @@
 undo-add_layer=Add layer
+layer-new-group=Group
+layer-group-select-child=Select a layer inside the group to edit its cells.
+undo-group-layers=Group layers
+undo-ungroup-layers=Ungroup layers
+undo-move-layer-group=Move layer group
+undo-collapse-group=Collapse or expand group
 undo-remove_layer=Remove layer
 undo-raise_layer=Raise layer
 undo-lower_layer=Lower layer

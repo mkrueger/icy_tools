@@ -1254,7 +1254,10 @@ impl StringGeneratorV2 {
 
     fn add_sixels(&mut self, buf: &TextBuffer) {
         let encode_options = self.options.sixel_settings.to_encode_options();
-        for layer in &buf.layers {
+        for (index, layer) in buf.layers.iter().enumerate() {
+            if !buf.layer_is_visible(index) {
+                continue;
+            }
             for sixel in &layer.sixels {
                 match icy_sixel::sixel_encode(&sixel.picture_data, sixel.width() as usize, sixel.height() as usize, &encode_options) {
                     Err(err) => log::error!("{err}"),

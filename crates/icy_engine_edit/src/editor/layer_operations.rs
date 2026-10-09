@@ -11,7 +11,13 @@ impl EditState {
     pub fn add_live_text(&mut self, source: icy_engine::LiveText, position: Position) -> Result<()> {
         let mut layer = source.render(self.get_buffer().buffer_type)?;
         layer.set_offset(position);
-        let index = (self.screen.current_layer + 1).min(self.get_buffer().layers.len());
+        let current = self.get_cur_layer().ok_or_else(|| crate::EngineError::Generic("Invalid layer index".into()))?;
+        layer.parent_group = current.group.as_ref().map(|group| group.id).or(current.parent_group);
+        let index = if current.is_group() {
+            self.screen.current_layer
+        } else {
+            self.screen.current_layer + 1
+        };
         self.push_undo_action(EditorUndoOp::AddLayer { index, layer: Box::new(layer) })?;
         self.screen.current_layer = index;
         Ok(())
@@ -73,6 +79,7 @@ impl EditState {
         layer.properties = original.properties.clone();
         layer.properties.is_locked = true;
         layer.effects = original.effects.clone();
+        layer.parent_group = original.parent_group;
         Ok(Some(layer))
     }
 
@@ -96,6 +103,9 @@ impl EditState {
     }
 
     pub(crate) fn require_cell_layer(&self, index: usize) -> Result<()> {
+        if self.get_buffer().layers.get(index).is_some_and(|layer| layer.is_group()) {
+            return Err(crate::EngineError::Generic(fl!(crate::LANGUAGE_LOADER, "layer-group-select-child")));
+        }
         if self.get_buffer().layers.get(index).is_some_and(|layer| layer.is_text()) {
             return Err(crate::EngineError::Generic(fl!(crate::LANGUAGE_LOADER, "live-text-bake-required")));
         }
@@ -104,7 +114,9 @@ impl EditState {
 
     pub(crate) fn require_cell_layers(&self) -> Result<()> {
         for index in 0..self.get_buffer().layers.len() {
-            self.require_cell_layer(index)?;
+            if !self.get_buffer().layers[index].is_group() {
+                self.require_cell_layer(index)?;
+            }
         }
         Ok(())
     }
@@ -116,7 +128,7 @@ impl EditState {
             .layers
             .get(index)
             .ok_or_else(|| crate::EngineError::Generic(format!("Invalid layer index: {index}")))?;
-        if (layer.properties.is_locked && !layer.is_text()) || layer.role == Role::Image {
+        if (layer.properties.is_locked && !layer.is_text()) || matches!(layer.role, Role::Image | Role::Group) {
             return Err(crate::EngineError::Generic("Layer effects require an unlocked text layer".into()));
         }
         if layer.effects == effects {
@@ -174,7 +186,13 @@ impl EditState {
         let size = self.screen.buffer.size();
         let mut new_layer = Layer::new(fl!(crate::LANGUAGE_LOADER, "layer-new-name"), size);
         new_layer.properties.has_alpha_channel = true;
-        let idx = (layer + 1).clamp(0, self.screen.buffer.layers.len());
+        let current = self
+            .get_buffer()
+            .layers
+            .get(layer)
+            .ok_or_else(|| crate::EngineError::Generic("Invalid layer index".into()))?;
+        new_layer.parent_group = current.group.as_ref().map(|group| group.id).or(current.parent_group);
+        let idx = if current.is_group() { layer } else { layer + 1 };
         let op = EditorUndoOp::AddLayer {
             index: idx,
             layer: Box::new(new_layer),
@@ -188,6 +206,12 @@ impl EditState {
         if layer >= self.screen.buffer.layers.len() {
             return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
+        if self.get_buffer().layers[layer].is_group() {
+            let mut layers = self.get_buffer().layers.clone();
+            layers.drain(self.get_buffer().layer_subtree(layer));
+            let current = layer.saturating_sub(1).min(layers.len().saturating_sub(1));
+            return self.replace_layer_stack(layers, current, fl!(crate::LANGUAGE_LOADER, "undo-remove_layer"));
+        }
         let removed = self.screen.buffer.layers[layer].clone();
         let op = EditorUndoOp::RemoveLayer {
             layer_index: layer,
@@ -197,6 +221,9 @@ impl EditState {
     }
 
     pub fn raise_layer(&mut self, layer: usize) -> Result<()> {
+        if self.get_buffer().layers.iter().any(Layer::is_group) {
+            return self.reorder_grouped_layer(layer, true);
+        }
         if layer + 1 >= self.screen.buffer.layers.len() {
             return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
@@ -207,6 +234,9 @@ impl EditState {
     }
 
     pub fn lower_layer(&mut self, layer: usize) -> Result<()> {
+        if self.get_buffer().layers.iter().any(Layer::is_group) {
+            return self.reorder_grouped_layer(layer, false);
+        }
         if layer == 0 {
             return Ok(());
         }
@@ -223,6 +253,9 @@ impl EditState {
     pub fn duplicate_layer(&mut self, layer: usize) -> Result<()> {
         if layer >= self.screen.buffer.layers.len() {
             return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
+        }
+        if self.get_buffer().layers[layer].is_group() {
+            return self.duplicate_group(layer);
         }
         let mut new_layer = self.screen.buffer.layers[layer].clone();
         new_layer.properties.title = fl!(crate::LANGUAGE_LOADER, "layer-duplicate-name", name = new_layer.properties.title);
@@ -318,6 +351,12 @@ impl EditState {
             return Err(crate::EngineError::Generic(format!("Invalid layer index: {layer}")));
         }
         println!("2");
+        if self.get_buffer().layers[layer].is_group()
+            || self.get_buffer().layers[layer - 1].is_group()
+            || self.get_buffer().layers[layer].parent_group != self.get_buffer().layers[layer - 1].parent_group
+        {
+            return Err(crate::EngineError::Generic("Merge requires two layers in the same group".into()));
+        }
         let role: Role = self.screen.buffer.layers[layer].role;
         if matches!(role, Role::Image) {
             return Err(crate::EngineError::Generic("Cannot merge down image layer".to_string()));
@@ -394,6 +433,10 @@ impl EditState {
 
     pub fn move_layer(&mut self, to: Position) -> Result<()> {
         let i = self.screen.current_layer;
+        if self.get_buffer().layers.get(i).is_some_and(Layer::is_group) {
+            self.set_layer_preview_offset(None);
+            return self.move_group(i, to);
+        }
         let Some(cur_layer) = self.get_cur_layer_mut() else {
             return Ok(());
         };
@@ -408,6 +451,18 @@ impl EditState {
 
     /// Set preview offset on the current layer (for drag preview without undo)
     pub fn set_layer_preview_offset(&mut self, offset: Option<Position>) {
+        let index = self.screen.current_layer;
+        if self.get_buffer().layers.get(index).is_some_and(Layer::is_group) {
+            let range = self.get_buffer().layer_subtree(index);
+            let delta = offset.map(|offset| offset - self.get_buffer().layers[index].base_offset());
+            if offset.is_none() || self.can_move_layer(index) {
+                for layer in &mut self.get_buffer_mut().layers[range] {
+                    layer.set_preview_offset(delta.map(|delta| layer.base_offset() + delta));
+                }
+            }
+            self.screen.buffer.mark_dirty();
+            return;
+        }
         if let Some(layer) = self.get_cur_layer_mut() {
             layer.set_preview_offset(offset);
         }
@@ -443,6 +498,11 @@ impl EditState {
         println!("Stamping layer {} down", layer_idx);
         if layer_idx == 0 {
             return Err(crate::EngineError::Generic("Cannot stamp down base layer".to_string()));
+        }
+        if self.get_buffer().layers[layer_idx].is_group()
+            || self.get_buffer().layers[layer_idx].parent_group != self.get_buffer().layers[layer_idx - 1].parent_group
+        {
+            return Err(crate::EngineError::Generic("Stamp requires two layers in the same group".into()));
         }
         self.require_cell_layer(layer_idx - 1)?;
 
@@ -740,6 +800,20 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn update_layer_properties(&mut self, layer: usize, new_properties: LayerProperties) -> Result<()> {
+        if self.get_buffer().layers.get(layer).is_some_and(Layer::is_group) {
+            let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-move-layer-group"));
+            if new_properties.offset != self.get_buffer().layers[layer].base_offset() {
+                self.move_group(layer, new_properties.offset)?;
+            }
+            let mut changed = self.get_buffer().layers[layer].clone();
+            changed.properties = new_properties;
+            changed.properties.is_locked = true;
+            return self.push_undo_action(EditorUndoOp::ReplaceLayer {
+                index: layer,
+                layer: Box::new(changed),
+                description: fl!(crate::LANGUAGE_LOADER, "undo-move-layer-group"),
+            });
+        }
         if !new_properties.is_locked {
             self.require_cell_layer(layer)?;
         }

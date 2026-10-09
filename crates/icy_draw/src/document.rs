@@ -709,11 +709,11 @@ impl Document {
             state
                 .get_cur_layer()
                 .filter(|layer| {
-                    (self.tool == Tool::Click || (self.tool == Tool::Font && layer.is_text()))
+                    (self.tool == Tool::Click || (self.tool == Tool::Font && (layer.is_text() || layer.is_group())))
                         && button == MouseButton::Left
                         && (self.paste_active() || modifiers.ctrl || modifiers.meta || layer.role == icy_engine::Role::Image)
-                        && !layer.properties.is_position_locked
-                        && (!layer.properties.is_locked || layer.is_text())
+                        && state.get_current_layer().is_ok_and(|index| state.can_move_layer(index))
+                        && (!layer.properties.is_locked || layer.is_text() || layer.is_group())
                 })
                 .map(|layer| layer.offset())
         });
@@ -1275,9 +1275,11 @@ impl Document {
     pub fn can_paint(&self) -> bool {
         !self.paste_active()
             && self.with_state(|state| {
-                state
-                    .get_cur_layer()
-                    .is_some_and(|layer| !layer.properties.is_locked && layer.is_visible() && layer.role != icy_engine::Role::Image)
+                state.get_cur_layer().is_some_and(|layer| {
+                    !layer.properties.is_locked
+                        && !matches!(layer.role, icy_engine::Role::Image | icy_engine::Role::Group)
+                        && state.get_current_layer().is_ok_and(|index| state.get_buffer().layer_is_visible(index))
+                })
             })
     }
 
@@ -1816,6 +1818,24 @@ mod tests {
         document.begin(Position::new(20, 5), MouseButton::Left);
         document.finish();
         assert!(document.with_state(|state| !state.is_something_selected()));
+    }
+
+    #[test]
+    fn layer_groups_survive_recovery_with_children_and_visibility() {
+        let document = Document::new(Size::new(4, 2));
+        document.with_state(|state| {
+            state.group_layer(0).unwrap();
+            state.group_layer(1).unwrap();
+            state.toggle_group_collapsed(1).unwrap();
+            state.toggle_layer_visibility(2).unwrap();
+        });
+        let restored = Document::from_recovery(&document.recovery_snapshot().unwrap()).unwrap();
+        let layers = document.with_state(|state| state.get_buffer().layers.clone());
+        restored.with_state(|state| {
+            state.get_buffer().validate_layer_groups().unwrap();
+            assert_eq!(state.get_buffer().layers, layers);
+            assert!(!state.get_buffer().layer_is_visible(0));
+        });
     }
 
     #[test]

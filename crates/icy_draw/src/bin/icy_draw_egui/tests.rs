@@ -3079,6 +3079,74 @@ fn pointer(position: egui::Pos2, pressed: bool) -> Vec<egui::Event> {
 
 #[test]
 #[ignore = "requires a working wgpu adapter"]
+fn gpu_layer_panel_shows_groups_and_drag_targets() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        use_english();
+        let mut gpu = Gpu::new().await;
+        let setup = |app: &mut DrawApp| {
+            app.replace(Document::new(Size::new(80, 25)));
+            app.document.with_state(|state| {
+                state.add_new_layer(0).unwrap();
+                state.add_new_layer(1).unwrap();
+                state.group_layer(1).unwrap();
+                state.group_layer(2).unwrap();
+                state.add_new_layer(4).unwrap();
+                for (index, title) in ["Background", "Logo", "Logo parts", "Header", "Title", "Credits"].into_iter().enumerate() {
+                    state.get_buffer_mut().layers[index].properties.title = title.into();
+                }
+                // Header ▸ (Logo parts ▸ Logo, Title), so a connector runs past the nested group.
+                state.drop_layer(4, icy_engine_edit::LayerDrop::Below(2)).unwrap();
+                state.get_buffer_mut().mark_dirty();
+            });
+        };
+        let mut app = DrawApp::new();
+        setup(&mut app);
+        let size = [1280, 820];
+        let headless = egui::Context::default();
+        appearance::apply(&headless);
+        let mut probe = DrawApp::new();
+        setup(&mut probe);
+        let output = frame(&headless, &mut probe, egui::vec2(1280.0, 820.0), vec![]);
+        let (logo, title, header) = (
+            text_position(&output, "Logo").unwrap(),
+            text_position(&output, "Title").unwrap(),
+            text_position(&output, "Header").unwrap(),
+        );
+        gpu.capture(&mut app, size, 1.0, vec![], "layer-groups-warmup");
+        gpu.capture(&mut app, size, 1.0, vec![], "layer-groups");
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        gpu.capture(&mut app, size, 1.0, vec![egui::Event::PointerMoved(logo)], "layer-drag-warmup");
+        gpu.capture(&mut app, size, 1.0, vec![button(logo, true)], "layer-drag-warmup");
+        for step in 1..=3 {
+            let to = logo.lerp(header + egui::vec2(0.0, 8.0), step as f32 / 3.0);
+            gpu.capture(&mut app, size, 1.0, vec![egui::Event::PointerMoved(to)], "layer-drag-warmup");
+        }
+        gpu.capture(&mut app, size, 1.0, vec![], "layer-drag-into-group");
+        gpu.capture(
+            &mut app,
+            size,
+            1.0,
+            vec![egui::Event::PointerMoved(title - egui::vec2(0.0, 8.0))],
+            "layer-drag-above",
+        );
+        gpu.capture(&mut app, size, 1.0, vec![button(title - egui::vec2(0.0, 8.0), false)], "layer-dropped");
+        gpu.capture(&mut app, size, 1.0, vec![], "layer-dropped");
+        let header = app
+            .document
+            .with_state(|state| state.get_buffer().layers.iter().position(|layer| layer.properties.title == "Header").unwrap());
+        app.open_layer_properties(header);
+        gpu.capture(&mut app, size, 1.0, vec![], "group-properties-warmup");
+        gpu.capture(&mut app, size, 1.0, vec![], "group-properties");
+    });
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
 fn gpu_canvas_draws_at_pointer_and_scrolls() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         let mut gpu = Gpu::new().await;
@@ -3612,7 +3680,7 @@ fn flush_recovery(app: &DrawApp) {
     app.recovery.as_ref().unwrap().flush();
 }
 
-fn text_position(output: &egui::FullOutput, label: &str) -> Option<egui::Pos2> {
+pub(super) fn text_position(output: &egui::FullOutput, label: &str) -> Option<egui::Pos2> {
     output.shapes.iter().find_map(|shape| match &shape.shape {
         egui::Shape::Text(text) if text.galley.text() == label => Some(text.pos + text.galley.size() / 2.0),
         _ => None,

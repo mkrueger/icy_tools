@@ -698,6 +698,7 @@ about-dialog-created_by =
     Erstellt von { $authors }
     Help & testing: NuSkooler, Grymmjack
 edit-layer-dialog-title=Ebene bearbeiten
+edit-group-dialog-title=Gruppe bearbeiten
 edit-layer-dialog-name-label=Name
 edit-layer-dialog-is-visible-checkbox=Sichtbar
 edit-layer-dialog-is-edit-locked-checkbox=Edit gesperrt
@@ -723,6 +724,17 @@ select-font-dialog-preview-text=HALLO
 select-font-dialog-edit-button=Font bearbeiten…
 
 layer_tool_title=Ebenen
+layer-group-new=Ebene gruppieren
+layer-group-label = { $count ->
+    [one] Gruppe · 1 Element
+   *[other] Gruppe · { $count } Elemente
+}
+layer-group-ungroup=Gruppe auflösen
+layer-group-move-to=In Gruppe verschieben
+layer-group-move-out=Aus Gruppe verschieben
+layer-group-collapse=Gruppe einklappen
+layer-group-expand=Gruppe ausklappen
+layer-group-unavailable=Ebenengruppen sind während Zusammenarbeit, schwebendem Einfügen oder Schriftbearbeitung nicht verfügbar.
 layer_tool_menu_layer_properties=Ebeneneigenschaften…
 layer_tool_menu_resize_layer=Ebenengröße…
 layer_tool_menu_new_layer=Neue Ebene

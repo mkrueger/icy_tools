@@ -17,8 +17,10 @@ mod terminal_input;
 mod layer_operations;
 pub use layer_operations::*;
 mod area_operations;
+mod group_operations;
 pub(crate) use area_operations::{flip_layer_x, flip_layer_y};
 pub use area_operations::{generate_flipx_table, generate_flipy_table};
+pub use group_operations::LayerDrop;
 mod edit_operations;
 mod font_operations;
 mod selection_operations;
@@ -711,6 +713,19 @@ impl EditState {
 
     /// Push and execute an undo operation
     pub(crate) fn push_undo_action(&mut self, mut op: EditorUndoOp) -> Result<()> {
+        if let EditorUndoOp::Paste { layer, current_layer } = &mut op {
+            let current = self
+                .get_buffer()
+                .layers
+                .get(*current_layer)
+                .ok_or_else(|| crate::EngineError::Generic("Invalid layer index".into()))?;
+            layer.parent_group = current.group.as_ref().map(|group| group.id).or(current.parent_group);
+            if current.is_group() {
+                let mut layers = self.get_buffer().layers.clone();
+                layers.insert(*current_layer, (**layer).clone());
+                return self.replace_layer_stack(layers, *current_layer, i18n_embed_fl::fl!(crate::LANGUAGE_LOADER, "undo-paste"));
+            }
+        }
         match &op {
             EditorUndoOp::SetChar { layer, .. }
             | EditorUndoOp::SwapChar { layer, .. }

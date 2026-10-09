@@ -20,6 +20,7 @@ pub enum Role {
     Image,
     /// A live text layer; its source is in [`Layer::live_text`] and its cells are a render cache.
     Text,
+    Group,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
@@ -43,6 +44,10 @@ pub struct Layer {
     pub effects: super::LayerEffects,
     #[serde(default)]
     live_text: Option<super::LiveText>,
+    #[serde(default)]
+    pub parent_group: Option<u64>,
+    #[serde(default)]
+    pub group: Option<super::LayerGroup>,
 
     preview_offset: Option<Position>,
     size: Size,
@@ -144,6 +149,19 @@ impl TextPane for Layer {
 }
 
 impl Layer {
+    pub fn is_group(&self) -> bool {
+        self.role == Role::Group
+    }
+
+    pub fn new_group(title: impl Into<String>, id: u64) -> Self {
+        let mut layer = Self::new(title, (1, 1));
+        layer.role = Role::Group;
+        layer.group = Some(super::LayerGroup { id, collapsed: false });
+        layer.properties.has_alpha_channel = true;
+        layer.properties.is_locked = true;
+        layer
+    }
+
     /// Whether this is a live text layer; its source is [`Self::live_text`].
     pub fn is_text(&self) -> bool {
         self.role == Role::Text
@@ -167,6 +185,12 @@ impl Layer {
 
     /// Checks that the role and the live text source agree.
     pub fn validate_role(&self) -> crate::Result<()> {
+        if self.is_group() != self.group.is_some() {
+            return Err(crate::EngineError::Generic("Layer group role and metadata disagree".into()));
+        }
+        if self.is_group() && (!self.effects.is_empty() || self.live_text.is_some() || !self.sixels.is_empty() || self.line_count() != 0) {
+            return Err(crate::EngineError::Generic("Layer groups cannot contain cells or effects".into()));
+        }
         if self.is_text() != self.live_text.is_some() {
             return Err(crate::EngineError::Generic(format!(
                 "Layer '{}' has a text role without text or text without the text role",

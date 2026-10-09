@@ -3126,6 +3126,7 @@ impl MainWindow {
                             icy_engine::Role::Normal => "normal",
                             icy_engine::Role::Image => "image",
                             icy_engine::Role::Text => "text",
+                            icy_engine::Role::Group => "group",
                         };
                         LayerInfo {
                             index,

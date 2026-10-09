@@ -117,7 +117,7 @@ impl EditState {
         let mut cropped = Vec::new();
         for old_layer in &self.get_buffer().layers {
             let mut new_layer = old_layer.clone();
-            if new_layer.is_text() {
+            if new_layer.is_text() || new_layer.is_group() {
                 new_layer.properties.offset = old_layer.offset() - rect.start;
                 new_layer.set_preview_offset(None);
                 cropped.push(new_layer);

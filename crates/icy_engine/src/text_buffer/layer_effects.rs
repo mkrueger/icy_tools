@@ -22,6 +22,10 @@ impl TextBuffer {
         let needs_background = !source.properties.has_alpha_channel && source.effects.mask.as_ref().is_some_and(|mask| mask.enabled);
         let composite = if needs_background {
             let mut buffer = self.clone();
+            for (index, layer) in buffer.layers.iter_mut().enumerate() {
+                layer.properties.is_visible = self.layer_is_visible(index);
+                layer.parent_group = None;
+            }
             buffer.layers.truncate(index + 1);
             buffer.layers[index].properties.is_visible = true;
             buffer.show_tags = false;

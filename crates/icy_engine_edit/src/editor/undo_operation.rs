@@ -442,6 +442,11 @@ pub enum EditorUndoOp {
         layer: Box<Layer>,
         description: String,
     },
+    ReplaceLayers {
+        layers: Vec<Layer>,
+        current_layer: usize,
+        description: String,
+    },
 }
 
 impl EditorUndoOp {
@@ -449,7 +454,9 @@ impl EditorUndoOp {
     pub fn get_description(&self) -> String {
         use i18n_embed_fl::fl;
         match self {
-            EditorUndoOp::Atomic { description, .. } | EditorUndoOp::ReplaceLayer { description, .. } => description.clone(),
+            EditorUndoOp::Atomic { description, .. } | EditorUndoOp::ReplaceLayer { description, .. } | EditorUndoOp::ReplaceLayers { description, .. } => {
+                description.clone()
+            }
             EditorUndoOp::SetChar { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_char"),
             EditorUndoOp::SwapChar { .. } => String::new(),
             EditorUndoOp::AddLayer { .. } => fl!(crate::LANGUAGE_LOADER, "undo-add_layer"),
@@ -549,6 +556,7 @@ impl EditorUndoOp {
     /// Perform the undo operation
     pub fn undo(&mut self, edit_state: &mut EditState) -> Result<()> {
         match self {
+            EditorUndoOp::ReplaceLayers { .. } => self.redo(edit_state),
             EditorUndoOp::Atomic { operations, .. } => {
                 for op in operations.iter_mut().rev() {
                     op.undo(edit_state)?;
@@ -1047,6 +1055,14 @@ impl EditorUndoOp {
     /// Perform the redo operation
     pub fn redo(&mut self, edit_state: &mut EditState) -> Result<()> {
         match self {
+            EditorUndoOp::ReplaceLayers { layers, current_layer, .. } => {
+                let old = edit_state.get_current_layer()?;
+                std::mem::swap(&mut edit_state.get_buffer_mut().layers, layers);
+                edit_state.set_current_layer(*current_layer);
+                *current_layer = old;
+                edit_state.get_buffer_mut().mark_dirty();
+                Ok(())
+            }
             EditorUndoOp::ReplaceLayer { index, layer, .. } => {
                 let current = edit_state
                     .get_buffer_mut()
@@ -1705,6 +1721,7 @@ mod collab_mapping {
                 | EditorUndoOp::ChangeFontSlot { .. }
                 | EditorUndoOp::UpdateLayerProperties { .. }
                 | EditorUndoOp::ReplaceLayer { .. }
+                | EditorUndoOp::ReplaceLayers { .. }
                 | EditorUndoOp::SetUseAspectRatio { .. }
                 | EditorUndoOp::SetFontDimensions { .. }
                 | EditorUndoOp::SetBorderColor { .. }
