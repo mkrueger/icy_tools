@@ -291,6 +291,6 @@ fn icy_rejects_truncated_tag_attributes() {
 
 #[test]
 fn icy_rejects_future_binary_version() {
-    let bytes = png_with_record(3, "TAG", &[0, 0], false);
+    let bytes = png_with_record(u16::MAX, "TAG", &[0, 0], false);
     assert!(FileFormat::IcyDraw.from_bytes(&bytes, None).is_err());
 }
