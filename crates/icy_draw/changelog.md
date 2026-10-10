@@ -1,6 +1,6 @@
 # IcyDraw Changelog
 
-## 0.6.0 - Unreleased
+## 0.6.0 - 2026-10-10
 
 Changes since 0.5.1.
 

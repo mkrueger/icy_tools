@@ -1,6 +1,6 @@
 # IcyTerm Changelog
 
-## 0.9.0 - Unreleased
+## 0.9.0 - 2026-10-10
 
 Changes since 0.8.4.
 

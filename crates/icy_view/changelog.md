@@ -1,6 +1,6 @@
 # IcyView Changelog
 
-## 0.9.9 - Unreleased
+## 0.9.9 - 2026-10-10
 
 Changes since 0.9.1.
 
