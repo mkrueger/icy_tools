@@ -2,16 +2,20 @@
 
 A modern terminal program for BBS systems.
 
-- Written in pure rust - fast & secure
+- Written in pure rust
 - Multi platform Windows, OSX, Linux
-- X/Y/Z Modem + variants
-- 3D accelerated
-- Copy & Paste
-- IEMSI support
-- Supports CP437, PETSCII, ATASCII,
-  VIEWDATA, RIPSCRIPT and SkyPix
+- Telnet, SSH, RLogin, TCP & WebSocket
+- Modems & SOCKS5 proxies (Tor/I2P)
+- ANSI, PETSCII, ATASCII, VIEWDATA,
+  Atari ST VT52/IGS, RIPscrip & SkyPix
+- X/Y/Z Modem transfers, including ZModem 8k
+- Dialing directory & IEMSI login
+- Scrollback, search, capture & replay
 - SyncTERM doors: cached JXL, Audio
-  APC/Opus, Kitty keys, pixel mouse
+  APC/Opus, Kitty keys & pixel mouse
+- Lua scripting & MCP automation
+- 3D accelerated with CRT effects
+- Copy & Paste
 
 For latest builds/development visit:
 GitHub https://github.com/mkrueger/icy_tools

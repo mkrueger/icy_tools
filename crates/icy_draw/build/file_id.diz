@@ -1,26 +1,24 @@
          -* ICY DRAW #VERSION *-
 
-ANSI drawing tool.
+A modern text and retro graphics art editor.
 
 - Written in pure rust
-- Own new file fomat: .icy 
-  based on .png (previews in file browser)
-- Supports Ansi, Ascii, Artworx ADF,
-  Avatar, BIN, XBIN, PCBoard, iCE, 
-  Tundra Draw, CtrlA & Renegade files
 - Multi platform Windows, OSX, Linux
-- Supports multiple drawing layers
-- Brushes, fills, rectangles, halfblock support
-- Palette support
-- Multi window
-- 3D accelerated
-- Own animation system + animated GIF output
-- TheDraw Font support
-- Multiple Bitfont support
-- PNG export
-- Sauce
-- Color modes from classic to full RGB/iCE
-- Plugin support
+- ANSI/ASCII, RIPscrip, IGS & SkyPix editors
+- PETSCII, ATASCII & Atari ST VT52 editors
+- Layers, nested groups & editable effects
+- Brushes, fills, shapes & halfblock drawing
+- Editable TheDraw text & bitmap fonts
+- AI drawing assistant & image import
+- Moebius-compatible collaboration
+- Autosave & crash recovery
+- PNG-based .icy files with embedded previews
+- ANSI, XBIN, ADF, Avatar, PCBoard, iCE,
+  Tundra Draw, CtrlA & Renegade formats
+- Palettes, RGB/iCE colors & SAUCE metadata
+- Animation, GIF & PNG export
+- Lua plugins & MCP automation
+- 3D accelerated, Copy & Paste
 
-Development
+For latest builds/development visit:
 GitHub https://github.com/mkrueger/icy_tools
