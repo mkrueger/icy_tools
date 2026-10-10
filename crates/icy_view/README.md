@@ -2,6 +2,8 @@
 
 ANSI, ASCII and text-art viewer with a native egui frontend and the existing wgpu CRT renderer.
 
+See the [changelog](changelog.md) for release changes.
+
 ## Running From Source
 
 The regular binary now uses egui:

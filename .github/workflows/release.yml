@@ -1,9 +1,9 @@
 # Draft GitHub releases for the three GUI tools.
 #
 # Push a version tag (or run this workflow by hand with that tag):
-#   IcyTerm0.8.3
-#   IcyDraw0.5.1
-#   IcyView0.9.1
+#   IcyTerm0.9.0
+#   IcyDraw0.6.0
+#   IcyView0.9.9
 #
 # Only that one crate is packaged. Review the draft, then publish it.
 
@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to build (IcyTerm0.8.3, IcyDraw0.5.1, IcyView0.9.1)
+        description: Tag to build (IcyTerm0.9.0, IcyDraw0.6.0, IcyView0.9.9)
         required: true
 
 permissions:

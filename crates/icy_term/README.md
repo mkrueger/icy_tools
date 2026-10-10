@@ -4,6 +4,8 @@ A modern BBS terminal for connecting to nostalgic and contemporary bulletin boar
 
 Visit [Telnet BBS Guide](https://www.telnetbbsguide.com/) to explore active BBSes worldwide.
 
+See the [changelog](changelog.md) for release changes.
+
 ## Features
 
 ### 🌐 Connectivity

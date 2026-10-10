@@ -18,6 +18,8 @@
 
 ## Frontend Migration
 
+See the [changelog](changelog.md) for release changes.
+
 The normal `icy_draw` binary now uses egui/eframe with the shared wgpu terminal
 renderer used by IcyTerm, IcyView, and IcyMail. The `icy_draw_egui` alias is also
 available. Original drawing icons, bitmap glyphs, painting helpers, document

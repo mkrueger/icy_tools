@@ -3561,7 +3561,7 @@ dependencies = [
 
 [[package]]
 name = "icy_draw"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3918,7 +3918,7 @@ dependencies = [
 
 [[package]]
 name = "icy_term"
-version = "0.8.4"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -4237,7 +4237,7 @@ dependencies = [
 
 [[package]]
 name = "icy_view"
-version = "0.9.1"
+version = "0.9.9"
 dependencies = [
  "ab_glyph",
  "anyhow",
