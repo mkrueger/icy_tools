@@ -1,13 +1,25 @@
          -* ICY VIEW #VERSION *-
 
-A cross platform ansi art viewer.
+A modern text art and retro media viewer.
 
-- Supports Ansi, Ascii, Artworx ADF,
-  Avatar, BIN, XBIN, PCBoard, iCE, 
-  Tundra Draw, RipScript, C64 SEQ,
-  IcyDraw
-- Various picture formats
-- Can open zip files directly
+- Written in pure rust
+- Multi platform Windows, OSX, Linux
+- ANSI, ASCII, ADF, Avatar, BIN, XBIN,
+  PCBoard, iCE, Tundra Draw, RIPscrip,
+  C64 SEQ, IcyDraw & REXPaint formats
+- Images, Sixel, PCX, Amiga IFF & BSAVE
+- TheDraw, FIGlet & bitmap font previews
+- Windows, Amiga & BGI font specimens
+- MOD, S3M, XM, IT & RAD tracker playback
+- MP3, Ogg, FLAC, WAV & AAC/M4A audio
+- Browse folders & nested archives
+- Browse & download Sixteen Colors art
+- Thumbnail grid, search, sorting & ratings
+- Slideshows & simulated baud playback
+- Zoom, panning, minimap & auto-scroll
+- SAUCE inspection & format-aware export
+- 3D accelerated with CRT effects
+- Copy & Paste
 
-For latest builds
+For latest builds/development visit:
 GitHub https://github.com/mkrueger/icy_tools
