@@ -11,5 +11,7 @@ match sys.argv[1]:
         print("Icy Draw")
     case "icy_view":
         print("Icy View")
+    case "icy_mail":
+        print("Icy Mail")
     case _:
         print("UNKNOWN APP")

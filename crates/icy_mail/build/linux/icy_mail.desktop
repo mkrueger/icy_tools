@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Icy Mail
+Comment=An offline QWK and Blue Wave mail reader
+Categories=Network;Utility;
+Icon=icy_mail
+Exec=/usr/bin/icy_mail
+StartupWMClass=icy_mail
+Terminal=false

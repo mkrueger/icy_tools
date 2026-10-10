@@ -7,6 +7,9 @@ frontend.
 
 See the [changelog](changelog.md) for release changes.
 
+Release tags such as `IcyMail0.1.0` trigger the shared release workflow, which
+attaches Linux, Windows and universal macOS packages to a draft GitHub release.
+
 ## Run
 
 ```sh

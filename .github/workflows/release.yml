@@ -1,9 +1,10 @@
-# Draft GitHub releases for the three GUI tools.
+# Draft GitHub releases for the four GUI tools.
 #
 # Push a version tag (or run this workflow by hand with that tag):
 #   IcyTerm0.9.0
 #   IcyDraw0.6.0
 #   IcyView0.9.9
+#   IcyMail0.1.0
 #
 # Only that one crate is packaged. Review the draft, then publish it.
 
@@ -15,10 +16,11 @@ on:
       - "IcyTerm*"
       - "IcyDraw*"
       - "IcyView*"
+      - "IcyMail*"
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to build (IcyTerm0.9.0, IcyDraw0.6.0, IcyView0.9.9)
+        description: Tag to build (IcyTerm0.9.0, IcyDraw0.6.0, IcyView0.9.9, IcyMail0.1.0)
         required: true
 
 permissions:
@@ -45,8 +47,9 @@ jobs:
             IcyTerm*) APP=icy_term ;;
             IcyDraw*) APP=icy_draw ;;
             IcyView*) APP=icy_view ;;
+            IcyMail*) APP=icy_mail ;;
             *)
-              echo "Tag must start with IcyTerm, IcyDraw, or IcyView: $TAG"
+              echo "Tag must start with IcyTerm, IcyDraw, IcyView, or IcyMail: $TAG"
               exit 1
               ;;
           esac
