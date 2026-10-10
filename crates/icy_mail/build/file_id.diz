@@ -1,15 +1,17 @@
-         -* ICY TERM #VERSION *-
+         -* ICY MAIL #VERSION *-
 
-A modern terminal program for BBS systems.
+A modern offline mail reader for BBS systems.
 
-- Written in pure rust - fast & secure
+- Written in pure rust
 - Multi platform Windows, OSX, Linux
-- X/Y/Z Modem + variants
+- Reads QWK and Blue Wave mail packets
+- Writes REP and NEW reply packets
+- Threaded messages, search & unread filters
+- ANSI and modern message display
+- Replies, drafts, taglines & address book
+- Opens compressed packets directly
 - 3D accelerated
 - Copy & Paste
-- IEMSI support
-- Supports CP437, PETSCII, ATASCII, 
-  VIEWDATA, RIPSCRIPT and SkyPix
 
 For latest builds/development visit:
 GitHub https://github.com/mkrueger/icy_tools

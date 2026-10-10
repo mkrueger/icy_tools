@@ -5,6 +5,8 @@ egui with the existing wgpu ANSI renderer. Packet parsing, header indexing, lazy
 body loading, caching and reply threading remain shared with the previous
 frontend.
 
+See the [changelog](changelog.md) for release changes.
+
 ## Run
 
 ```sh
