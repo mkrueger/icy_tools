@@ -952,22 +952,11 @@ impl DrawApp {
             self.plugins = None;
         }
         let paint = self.document.can_paint();
-        let mut run = None;
         let plugins = self.plugins.get_or_insert_with(icy_draw::plugins::Plugin::read_plugin_directory);
         if !plugins.is_empty() {
             ui.separator();
         }
-        for plugin in plugins.iter() {
-            let label = plugin.path.iter().cloned().chain([plugin.title.clone()]).collect::<Vec<_>>().join(" / ");
-            if ui
-                .add_enabled(paint, egui::Button::new(label))
-                .on_hover_text(format!("{}\n{}", plugin.description, plugin.author))
-                .clicked()
-            {
-                run = Some(plugin.clone());
-                ui.close();
-            }
-        }
+        let run = plugin_menu(ui, plugins, paint).map(|index| plugins[index].clone());
         if let Some(plugin) = run {
             self.document.finish();
             let result = plugin.run_plugin(&self.document.screen).map_err(|error| error.to_string());
@@ -1493,8 +1482,153 @@ impl DrawApp {
     }
 }
 
+fn plugin_menu(ui: &mut egui::Ui, plugins: &[icy_draw::plugins::Plugin], enabled: bool) -> Option<usize> {
+    let mut run = None;
+    for (group, items) in icy_draw::plugins::Plugin::group_by_path(plugins) {
+        if group.is_empty() {
+            run = plugin_menu_items(ui, &items, enabled).or(run);
+        } else {
+            ui.menu_button(group, |ui| {
+                run = plugin_menu_items(ui, &items, enabled).or(run);
+            });
+        }
+    }
+    run
+}
+
+fn plugin_menu_items(ui: &mut egui::Ui, items: &[(usize, &icy_draw::plugins::Plugin)], enabled: bool) -> Option<usize> {
+    for (index, plugin) in items {
+        if ui
+            .add_enabled(enabled, egui::Button::new(&plugin.title))
+            .on_hover_text(format!("{}\n{}", plugin.description, plugin.author))
+            .clicked()
+        {
+            ui.close();
+            return Some(*index);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
+    use eframe::egui;
+    use icy_draw::plugins::Plugin;
+
+    fn plugin(title: &str, path: &[&str]) -> Plugin {
+        Plugin {
+            title: title.into(),
+            path: path.iter().map(|part| (*part).into()).collect(),
+            description: "Plugin description".into(),
+            author: "Plugin author".into(),
+            text: String::new(),
+        }
+    }
+
+    fn plugin_frame(context: &egui::Context, plugins: &[Plugin], enabled: bool, events: Vec<egui::Event>) -> (egui::FullOutput, Option<usize>) {
+        let mut selected = None;
+        let output = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))),
+                events,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    selected = super::plugin_menu(ui, plugins, enabled);
+                });
+            },
+        );
+        (output, selected)
+    }
+
+    fn label_position(output: &egui::FullOutput, label: &str) -> Option<egui::Pos2> {
+        output.shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.text() == label => Some(text.pos + text.galley.size() / 2.0),
+            _ => None,
+        })
+    }
+
+    fn click_plugin_label(context: &egui::Context, plugins: &[Plugin], enabled: bool, label: &str) -> Option<usize> {
+        let (output, _) = plugin_frame(context, plugins, enabled, vec![]);
+        let position = label_position(&output, label).unwrap_or_else(|| panic!("Missing menu label: {label}"));
+        plugin_frame(
+            context,
+            plugins,
+            enabled,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        plugin_frame(
+            context,
+            plugins,
+            enabled,
+            vec![egui::Event::PointerButton {
+                pos: position,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        )
+        .1
+    }
+
+    #[test]
+    fn plugins_menu_shows_sorted_categories_and_root_plugins() {
+        let context = egui::Context::default();
+        let plugins = vec![
+            plugin("Zebra", &[]),
+            plugin("Gradient", &["Patterns"]),
+            plugin("Frame", &["Borders"]),
+            plugin("Alpha", &[]),
+        ];
+        let (output, selected) = plugin_frame(&context, &plugins, true, vec![]);
+        let borders = label_position(&output, "Borders").unwrap();
+        let patterns = label_position(&output, "Patterns").unwrap();
+        let alpha = label_position(&output, "Alpha").unwrap();
+        let zebra = label_position(&output, "Zebra").unwrap();
+        assert!(borders.y < patterns.y && patterns.y < alpha.y && alpha.y < zebra.y);
+        assert!(label_position(&output, "Gradient").is_none());
+        assert!(label_position(&output, "Frame").is_none());
+        assert!(label_position(&output, "Patterns / Gradient").is_none());
+        assert_eq!(selected, None);
+        assert_eq!(click_plugin_label(&context, &plugins, true, "Alpha"), Some(3));
+    }
+
+    #[test]
+    fn plugins_submenu_sorts_titles_and_selects_original_plugin_index() {
+        let context = egui::Context::default();
+        let plugins = vec![plugin("Zebra", &["Patterns"]), plugin("Root", &[]), plugin("Alpha", &["Patterns"])];
+        assert_eq!(click_plugin_label(&context, &plugins, true, "Patterns"), None);
+        let (output, _) = plugin_frame(&context, &plugins, true, vec![]);
+        assert!(label_position(&output, "Alpha").unwrap().y < label_position(&output, "Zebra").unwrap().y);
+        assert_eq!(click_plugin_label(&context, &plugins, true, "Alpha"), Some(2));
+    }
+
+    #[test]
+    fn plugins_menu_disables_root_and_submenu_actions_when_not_paintable() {
+        let context = egui::Context::default();
+        let plugins = vec![plugin("Root", &[]), plugin("Gradient", &["Patterns"])];
+        assert_eq!(click_plugin_label(&context, &plugins, false, "Root"), None);
+        assert_eq!(click_plugin_label(&context, &plugins, false, "Patterns"), None);
+        assert_eq!(click_plugin_label(&context, &plugins, false, "Gradient"), None);
+    }
+
+    #[test]
+    fn plugins_menu_handles_no_plugins() {
+        let context = egui::Context::default();
+        let (output, selected) = plugin_frame(&context, &[], true, vec![]);
+        assert!(output.shapes.iter().all(|shape| !matches!(&shape.shape, egui::Shape::Text(_))));
+        assert_eq!(selected, None);
+    }
+
     #[test]
     fn assistant_uses_a_persistent_material_sidebar_icon() {
         let context = eframe::egui::Context::default();

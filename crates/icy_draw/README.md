@@ -36,6 +36,16 @@ Changing a color, tool, or function-key character set keeps keyboard input on
 the drawing canvas, so you can continue typing without clicking it again.
 Text and numeric entry fields temporarily take keyboard input while focused.
 
+### Lua plugins
+
+The **Plugins** menu groups scripts into alphabetized submenus using the first
+component of their `-- Path:` metadata, matching the legacy UI. Plugins without
+a path appear directly in the menu after the categories. Within each category,
+plugins are sorted by title; hover over a plugin to see its description and author.
+Plugin actions are disabled when the current document cannot be painted.
+**Reload Plugins** refreshes the scripts and categories from the plugin directory,
+and **Run Lua Script...** remains available above the plugin entries.
+
 ### Selecting matching cells
 
 The **Select** tool retains its Rectangle, Character, Attribute, Foreground and
