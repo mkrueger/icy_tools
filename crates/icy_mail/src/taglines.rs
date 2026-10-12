@@ -1,12 +1,13 @@
 //! Taglines, the one-line sayings BBS mail readers put below a message as `... text`.
 //!
-//! They are kept in `taglines.txt` in the user data directory, one per line like
-//! A plain-text tagline file, so existing collections can be copied over.
+//! They are kept in `taglines.txt` in the user data directory, a UTF-8 text file with one
+//! tagline per line, so existing collections can be copied over.
 
 use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
 use crate::{drafts::atomic_write, editor};
@@ -20,6 +21,18 @@ const PREFIX: &str = "... ";
 pub struct Taglines {
     path: PathBuf,
     pub lines: Vec<String>,
+    /// The file as last read or written, to notice changes made by other programs.
+    stamp: Option<Stamp>,
+}
+
+/// Modification time and size of the tagline file.
+type Stamp = (SystemTime, u64);
+
+/// What [`Taglines::import`] did.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ImportResult {
+    pub added: usize,
+    pub duplicates: usize,
 }
 
 impl Taglines {
@@ -29,8 +42,9 @@ impl Taglines {
 
     pub fn open_in(directory: &Path) -> crate::Res<Self> {
         let path = directory.join(FILE_NAME);
+        let stamp = stamp(&path);
         let lines = read(&path)?;
-        Ok(Self { path, lines })
+        Ok(Self { path, lines, stamp })
     }
 
     pub fn path(&self) -> &Path {
@@ -39,20 +53,52 @@ impl Taglines {
 
     /// Picks up changes made by another window.
     pub fn reload(&mut self) -> crate::Res<()> {
+        self.stamp = stamp(&self.path);
         self.lines = read(&self.path)?;
         Ok(())
     }
 
-    pub fn save(&self) -> crate::Res<()> {
+    /// Whether the file was changed since it was last read or written here, e.g. in a text editor.
+    pub fn changed_on_disk(&self) -> bool {
+        stamp(&self.path) != self.stamp
+    }
+
+    pub fn save(&mut self) -> crate::Res<()> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let content: String = self.lines.iter().map(|line| format!("{line}\n")).collect();
+        let content = self.content();
         atomic_write(&self.path, |file| {
             file.write_all(content.as_bytes())?;
             Ok(())
         })?;
+        self.stamp = stamp(&self.path);
         Ok(())
+    }
+
+    /// Adds the taglines of another UTF-8 tagline file, one per line, skipping those already known.
+    /// The list is not saved.
+    pub fn import(&mut self, path: &Path) -> crate::Res<ImportResult> {
+        let mut result = ImportResult::default();
+        for line in read(path)? {
+            if self.lines.contains(&line) {
+                result.duplicates += 1;
+            } else {
+                self.lines.push(line);
+                result.added += 1;
+            }
+        }
+        Ok(result)
+    }
+
+    /// Writes the taglines to `path` as a UTF-8 text file, one per line.
+    pub fn export(&self, path: &Path) -> crate::Res<()> {
+        fs::write(path, self.content())?;
+        Ok(())
+    }
+
+    fn content(&self) -> String {
+        self.lines.iter().map(|line| format!("{line}\n")).collect()
     }
 
     /// Adds `text` unless it is empty; returns the index of the new or already present tagline.
@@ -94,16 +140,16 @@ impl Taglines {
     }
 }
 
+fn stamp(path: &Path) -> Option<Stamp> {
+    let metadata = fs::metadata(path).ok()?;
+    Some((metadata.modified().ok()?, metadata.len()))
+}
+
 fn read(path: &Path) -> crate::Res<Vec<String>> {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => return Err(error.into()),
-    };
-    // Tagline files from DOS readers are CP437.
-    let text = match String::from_utf8(bytes) {
-        Ok(text) => text,
-        Err(error) => error.into_bytes().iter().map(|&byte| editor::cp437_char(byte)).collect(),
     };
     let mut lines: Vec<String> = Vec::new();
     for line in text.lines() {
@@ -179,12 +225,42 @@ mod tests {
             fs::read_to_string(dir.path().join(FILE_NAME)).unwrap(),
             "Stay a while, stay forever!\nChanged\n"
         );
-        fs::write(dir.path().join(FILE_NAME), b"One\r\n\r\nTwo\tparts\nOne\n\xe1eta\n").unwrap();
+        fs::write(dir.path().join(FILE_NAME), "One\r\n\r\nTwo\tparts\nOne\n\u{df}eta\n").unwrap();
         taglines.reload().unwrap();
         assert_eq!(taglines.lines, ["One", "Two parts", "\u{df}eta"]);
         assert!(taglines.lines.contains(&taglines.random().unwrap().to_string()));
         taglines.remove(0);
         assert_eq!(taglines.lines, ["Two parts", "\u{df}eta"]);
+    }
+
+    #[test]
+    fn imports_exports_and_notices_outside_changes() {
+        let dir = crate::qwk::tests::TempDir::new();
+        let mut taglines = Taglines::open_in(dir.path()).unwrap();
+        assert!(!taglines.changed_on_disk());
+        taglines.add("Known");
+        taglines.save().unwrap();
+        assert!(!taglines.changed_on_disk());
+
+        let other = dir.path().join("other.tag");
+        fs::write(&other, "... Known\r\nNew one\n\nAnother\u{df}\nNew one\n").unwrap();
+        let result = taglines.import(&other).unwrap();
+        assert_eq!(result, ImportResult { added: 2, duplicates: 1 });
+        assert_eq!(taglines.lines, ["Known", "New one", "Another\u{df}"]);
+        // Data files are UTF-8 only; a CP437 file is refused instead of guessed.
+        fs::write(&other, b"Stra\xe1e\n").unwrap();
+        assert!(taglines.import(&other).is_err());
+        assert_eq!(taglines.lines.len(), 3);
+
+        let exported = dir.path().join("export.txt");
+        taglines.export(&exported).unwrap();
+        assert_eq!(fs::read_to_string(&exported).unwrap(), "Known\nNew one\nAnother\u{df}\n");
+
+        fs::write(taglines.path(), "Edited elsewhere\n").unwrap();
+        assert!(taglines.changed_on_disk());
+        taglines.reload().unwrap();
+        assert!(!taglines.changed_on_disk());
+        assert_eq!(taglines.lines, ["Edited elsewhere"]);
     }
 
     #[test]

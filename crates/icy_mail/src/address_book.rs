@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{drafts::atomic_write, editor};
+use crate::drafts::atomic_write;
 
 const FILE_NAME: &str = "addressbook.txt";
 /// Longest name or address kept; QWK headers themselves hold 25 characters.
@@ -131,14 +131,10 @@ fn sort(contacts: &mut [Contact]) {
 }
 
 fn read(path: &Path) -> crate::Res<Vec<Contact>> {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => return Err(error.into()),
-    };
-    let text = match String::from_utf8(bytes) {
-        Ok(text) => text,
-        Err(error) => error.into_bytes().iter().map(|&byte| editor::cp437_char(byte)).collect(),
     };
     let mut contacts: Vec<Contact> = Vec::new();
     let mut lines = text.lines().map(str::trim);

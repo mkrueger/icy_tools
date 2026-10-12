@@ -349,9 +349,9 @@ rather than claiming a live subscription status.
 
 ## Taglines
 
-Taglines are kept in `taglines.txt` in the user data directory, one per line
-(a plain-text format, so an existing list can be
-copied over). A tagline is sent below the message as `... text`, up to 76
+Taglines are kept in `taglines.txt` in the user data directory, a UTF-8 text
+file with one tagline per line (so an existing list can be copied over; convert
+CP437 files from DOS readers to UTF-8 first). A tagline is sent below the message as `... text`, up to 76
 characters.
 
 - New messages get a random tagline; this can be switched off in Settings
@@ -363,11 +363,15 @@ characters.
   message (its last `... ` line) to the list.
 - Ctrl/Cmd+Shift+T or **Tools ▸ Taglines…** manages the list: add, edit
   (Enter) and delete (Delete) entries.
+- The **⋯** menu of the tagline list imports tagline files from other readers
+  (UTF-8 text, one per line; duplicates are skipped), exports
+  the list as a UTF-8 text file and opens `taglines.txt` in the system's text
+  editor. Changes saved there show up in the open list right away.
 
 ## Address book
 
 Contacts are stored in `addressbook.txt` in the user data directory in
-a plain-text address book format (name line, address line, blank line; Internet
+a UTF-8 plain-text address book format (name line, address line, blank line; Internet
 addresses are recognized by their `@`).
 
 - **A** or **Tools ▸ Address Book…** opens it: filter, add, edit and delete

@@ -1,10 +1,12 @@
 //! The tagline list: pick the tagline of the message being written, or manage the collection.
 
+use std::{path::PathBuf, sync::mpsc, time::Duration};
+
 use eframe::egui::{self, Key};
 use i18n_embed_fl::fl;
 use icy_engine_gui::egui::appearance;
 use icy_mail::{
-    taglines::{Taglines, TAGLINE_LENGTH},
+    taglines::{ImportResult, Taglines, TAGLINE_LENGTH},
     LANGUAGE_LOADER,
 };
 
@@ -23,11 +25,31 @@ pub struct TaglineDialog {
     filter: String,
     /// Index into the tagline list.
     selected: Option<usize>,
-    /// Tagline being written: `None` adds a new one, otherwise the index being changed.
-    edit: Option<(Option<usize>, String)>,
+    edit: Option<Edit>,
     focus: Option<&'static str>,
     reveal: bool,
     error: Option<String>,
+    status: Option<String>,
+    /// A file dialog for importing or exporting is open.
+    picking: bool,
+    sender: mpsc::Sender<FileEvent>,
+    receiver: mpsc::Receiver<FileEvent>,
+    /// The tagline file was opened in an external editor, so look for its changes even when idle.
+    watching: bool,
+}
+
+/// Tagline being written.
+struct Edit {
+    /// `None` adds a new tagline, otherwise the index being changed.
+    index: Option<usize>,
+    /// The tagline as it was, to find it again when the file changes meanwhile.
+    original: String,
+    text: String,
+}
+
+enum FileEvent {
+    Imported(Option<Result<ImportResult, String>>),
+    Exported(Option<(PathBuf, Result<(), String>)>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -41,6 +63,9 @@ enum Action {
     Delete,
     Save,
     CancelEdit,
+    Import,
+    Export,
+    OpenExternal,
 }
 
 impl MailApp {
@@ -65,6 +90,7 @@ impl MailApp {
         let selected = current
             .and_then(|current| lines.iter().position(|line| line == current))
             .or((!lines.is_empty()).then_some(0));
+        let (sender, receiver) = mpsc::channel();
         self.tagline_dialog = Some(TaglineDialog {
             pick,
             filter: String::new(),
@@ -73,6 +99,11 @@ impl MailApp {
             focus: Some(FILTER_ID),
             reveal: true,
             error: None,
+            status: None,
+            picking: false,
+            sender,
+            receiver,
+            watching: false,
         });
         self.modal = Some(Modal::Taglines);
     }
@@ -83,6 +114,15 @@ impl MailApp {
             self.tagline_dialog = None;
             return true;
         };
+        while let Ok(event) = dialog.receiver.try_recv() {
+            dialog.file_event(event);
+        }
+        if taglines.changed_on_disk() {
+            dialog.reload(taglines);
+        }
+        if dialog.watching {
+            context.request_repaint_after(Duration::from_secs(1));
+        }
         let filter = dialog.filter.trim().to_lowercase();
         let visible: Vec<usize> = taglines
             .lines
@@ -133,7 +173,7 @@ impl MailApp {
             .show(context, |frame| {
                 let ui = frame.ui();
                 let focus = dialog.focus.take();
-                if let Some((index, text)) = &mut dialog.edit {
+                if let Some(Edit { index, text, .. }) = &mut dialog.edit {
                     ui.label(
                         egui::RichText::new(if index.is_some() {
                             fl!(LANGUAGE_LOADER, "taglines-edit-heading")
@@ -176,7 +216,7 @@ impl MailApp {
                         let edit = appearance::text_edit(&mut dialog.filter)
                             .id(egui::Id::new(FILTER_ID))
                             .hint_text(fl!(LANGUAGE_LOADER, "taglines-filter-hint"))
-                            .desired_width((ui.available_width() - 130.0).max(120.0));
+                            .desired_width((ui.available_width() - 170.0).max(120.0));
                         let response = ui.add(edit);
                         if focus == Some(FILTER_ID) {
                             response.request_focus();
@@ -186,6 +226,31 @@ impl MailApp {
                             dialog.reveal = true;
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let more = icons.button(ui, Icon::More, &fl!(LANGUAGE_LOADER, "taglines-more-tooltip"), true);
+                            egui::Popup::menu(&more).show(|ui| {
+                                if ui
+                                    .add_enabled(!dialog.picking, egui::Button::new(fl!(LANGUAGE_LOADER, "taglines-import")))
+                                    .on_hover_text(fl!(LANGUAGE_LOADER, "taglines-import-tooltip"))
+                                    .clicked()
+                                {
+                                    action = Some(Action::Import);
+                                }
+                                if ui
+                                    .add_enabled(!dialog.picking && count > 0, egui::Button::new(fl!(LANGUAGE_LOADER, "taglines-export")))
+                                    .on_hover_text(fl!(LANGUAGE_LOADER, "taglines-export-tooltip"))
+                                    .clicked()
+                                {
+                                    action = Some(Action::Export);
+                                }
+                                ui.separator();
+                                if ui
+                                    .button(fl!(LANGUAGE_LOADER, "taglines-open-external"))
+                                    .on_hover_text(fl!(LANGUAGE_LOADER, "taglines-open-external-tooltip"))
+                                    .clicked()
+                                {
+                                    action = Some(Action::OpenExternal);
+                                }
+                            });
                             if ui
                                 .button(fl!(LANGUAGE_LOADER, "taglines-new-button"))
                                 .on_hover_text(fl!(LANGUAGE_LOADER, "taglines-new-tooltip"))
@@ -198,6 +263,8 @@ impl MailApp {
                 }
                 if let Some(error) = &dialog.error {
                     ui.colored_label(ui.visuals().error_fg_color, error);
+                } else if let Some(status) = &dialog.status {
+                    ui.label(egui::RichText::new(status).weak());
                 }
                 ui.add_space(6.0);
                 let reveal = std::mem::take(&mut dialog.reveal);
@@ -267,6 +334,9 @@ impl MailApp {
                 }
             });
         let action = action.or(response.action).or(response.dismissed.then_some(Action::Close));
+        if action.is_some() {
+            dialog.status = None;
+        }
         let selected = dialog.selected;
         let chosen = match action {
             Some(Action::Close) => return self.close_taglines(),
@@ -274,13 +344,21 @@ impl MailApp {
             Some(Action::Random) => taglines.random().map(str::to_string),
             Some(Action::NoTagline) => Some(String::new()),
             Some(Action::New) => {
-                dialog.edit = Some((None, String::new()));
+                dialog.edit = Some(Edit {
+                    index: None,
+                    original: String::new(),
+                    text: String::new(),
+                });
                 dialog.focus = Some(EDIT_ID);
                 return false;
             }
             Some(Action::Edit) => {
                 if let Some(index) = selected {
-                    dialog.edit = Some((Some(index), taglines.lines[index].clone()));
+                    dialog.edit = Some(Edit {
+                        index: Some(index),
+                        original: taglines.lines[index].clone(),
+                        text: taglines.lines[index].clone(),
+                    });
                     dialog.focus = Some(EDIT_ID);
                 }
                 return false;
@@ -308,12 +386,12 @@ impl MailApp {
                 return false;
             }
             Some(Action::Save) => {
-                let Some((index, text)) = dialog.edit.clone() else {
+                let Some(Edit { index, text, .. }) = &dialog.edit else {
                     return false;
                 };
-                let stored = match index {
-                    Some(index) => taglines.set(index, &text).then_some(index),
-                    None => taglines.add(&text),
+                let stored = match *index {
+                    Some(index) => taglines.set(index, text).then_some(index),
+                    None => taglines.add(text),
                 };
                 if let Some(index) = stored {
                     dialog.edit = None;
@@ -330,6 +408,18 @@ impl MailApp {
                 }
                 return false;
             }
+            Some(Action::Import) => {
+                dialog.pick_import(taglines.clone(), context);
+                return false;
+            }
+            Some(Action::Export) => {
+                dialog.pick_export(taglines.clone(), context);
+                return false;
+            }
+            Some(Action::OpenExternal) => {
+                dialog.open_external(taglines);
+                return false;
+            }
             None => return false,
         };
         if let (Some(tagline), Some(composer)) = (chosen, &mut self.composer) {
@@ -344,5 +434,134 @@ impl MailApp {
             composer.editor.request_focus();
         }
         true
+    }
+}
+
+impl TaglineDialog {
+    /// Re-reads the tagline file after it was changed elsewhere, keeping the selection and edit.
+    fn reload(&mut self, taglines: &mut Taglines) {
+        let selected = self.selected.and_then(|index| taglines.lines.get(index).cloned());
+        if let Err(error) = taglines.reload() {
+            self.error = Some(fl!(LANGUAGE_LOADER, "taglines-read-error", error = error.to_string()));
+            return;
+        }
+        let find = |text: &str| taglines.lines.iter().position(|line| line == text);
+        self.selected = selected.and_then(|text| find(&text));
+        self.reveal = true;
+        if let Some(edit) = &mut self.edit {
+            // A tagline that is gone is stored as a new one.
+            edit.index = edit.index.and_then(|_| find(&edit.original));
+        }
+    }
+
+    fn file_event(&mut self, event: FileEvent) {
+        self.picking = false;
+        match event {
+            FileEvent::Imported(Some(Ok(result))) => {
+                // The import was saved to the tagline file; it is read again with the next frame.
+                self.status = Some(fl!(LANGUAGE_LOADER, "taglines-imported", added = result.added, duplicates = result.duplicates));
+                self.error = None;
+            }
+            FileEvent::Imported(Some(Err(error))) => self.error = Some(error),
+            FileEvent::Exported(Some((path, Ok(())))) => {
+                self.status = Some(fl!(LANGUAGE_LOADER, "taglines-exported", path = path.display().to_string()));
+                self.error = None;
+            }
+            FileEvent::Exported(Some((path, Err(error)))) => {
+                self.error = Some(fl!(LANGUAGE_LOADER, "taglines-export-error", path = path.display().to_string(), error = error));
+            }
+            FileEvent::Imported(None) | FileEvent::Exported(None) => {}
+        }
+    }
+
+    /// Asks for tagline files and adds their taglines to the list on disk.
+    fn pick_import(&mut self, mut taglines: Taglines, context: &egui::Context) {
+        if self.picking {
+            return;
+        }
+        self.picking = true;
+        let sender = self.sender.clone();
+        let context = context.clone();
+        std::thread::spawn(move || {
+            let paths = rfd::FileDialog::new()
+                .set_title(fl!(LANGUAGE_LOADER, "taglines-import-title"))
+                .add_filter(fl!(LANGUAGE_LOADER, "taglines-filter-text"), &["txt", "tag", "tgl"])
+                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-all"), &["*"])
+                .pick_files();
+            let result = paths.map(|paths| {
+                // Start from the file as it is now, so nothing changed meanwhile is lost.
+                taglines
+                    .reload()
+                    .map_err(|error| fl!(LANGUAGE_LOADER, "taglines-read-error", error = error.to_string()))?;
+                let mut total = ImportResult::default();
+                for path in paths {
+                    let result = taglines.import(&path).map_err(|error| {
+                        fl!(
+                            LANGUAGE_LOADER,
+                            "taglines-import-error",
+                            path = path.display().to_string(),
+                            error = error.to_string()
+                        )
+                    })?;
+                    total.added += result.added;
+                    total.duplicates += result.duplicates;
+                }
+                if total.added > 0 {
+                    taglines
+                        .save()
+                        .map_err(|error| fl!(LANGUAGE_LOADER, "taglines-save-error", error = error.to_string()))?;
+                }
+                Ok(total)
+            });
+            let _ = sender.send(FileEvent::Imported(result));
+            context.request_repaint();
+        });
+    }
+
+    fn pick_export(&mut self, taglines: Taglines, context: &egui::Context) {
+        if self.picking {
+            return;
+        }
+        self.picking = true;
+        let sender = self.sender.clone();
+        let context = context.clone();
+        std::thread::spawn(move || {
+            let path = rfd::FileDialog::new()
+                .set_title(fl!(LANGUAGE_LOADER, "taglines-export-title"))
+                .add_filter(fl!(LANGUAGE_LOADER, "taglines-filter-text"), &["txt"])
+                .set_file_name("taglines.txt")
+                .save_file();
+            let result = path.map(|path| {
+                let result = taglines.export(&path).map_err(|error| error.to_string());
+                (path, result)
+            });
+            let _ = sender.send(FileEvent::Exported(result));
+            context.request_repaint();
+        });
+    }
+
+    /// Opens the tagline file in the system's text editor; its changes show up in the list.
+    fn open_external(&mut self, taglines: &mut Taglines) {
+        if !taglines.path().exists() {
+            if let Err(error) = taglines.save() {
+                self.error = Some(fl!(LANGUAGE_LOADER, "taglines-save-error", error = error.to_string()));
+                return;
+            }
+        }
+        match open::that_detached(taglines.path()) {
+            Ok(()) => {
+                self.watching = true;
+                self.error = None;
+                self.status = Some(fl!(LANGUAGE_LOADER, "taglines-external-opened"));
+            }
+            Err(error) => {
+                self.error = Some(fl!(
+                    LANGUAGE_LOADER,
+                    "taglines-open-external-error",
+                    path = taglines.path().display().to_string(),
+                    error = error.to_string()
+                ));
+            }
+        }
     }
 }

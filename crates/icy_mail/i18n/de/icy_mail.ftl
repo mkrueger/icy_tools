@@ -612,6 +612,29 @@ taglines-random-tooltip = Zufällige Tagline aus der Liste auswählen
 taglines-no-tagline = Keine Tagline
 taglines-use = Tagline verwenden
 taglines-close = Schließen
+taglines-more-tooltip = Weitere Tagline-Aktionen
+taglines-import = Importieren…
+taglines-import-tooltip = Taglines aus anderen Tagline-Dateien hinzufügen, eine pro Zeile
+taglines-import-title = Taglines importieren
+taglines-imported = { $added ->
+    [one] 1 Tagline hinzugefügt
+   *[other] { $added } Taglines hinzugefügt
+}{ $duplicates ->
+    [0] {""}
+    [one] , 1 war schon in der Liste
+   *[other] , { $duplicates } waren schon in der Liste
+}
+taglines-import-error = „{ $path }“ konnte nicht importiert werden: { $error }
+taglines-export = Exportieren…
+taglines-export-tooltip = Taglines als Textdatei speichern, eine pro Zeile
+taglines-export-title = Taglines exportieren
+taglines-exported = Taglines gespeichert unter { $path }
+taglines-export-error = „{ $path }“ konnte nicht gespeichert werden: { $error }
+taglines-filter-text = Tagline-Dateien
+taglines-open-external = Im Texteditor öffnen
+taglines-open-external-tooltip = Die Tagline-Datei im Texteditor des Systems bearbeiten
+taglines-external-opened = Im Texteditor geöffnet. Gespeicherte Änderungen erscheinen hier.
+taglines-open-external-error = „{ $path }“ konnte nicht geöffnet werden: { $error }
 
 # Address book
 

@@ -1,5 +1,18 @@
 # IcyMail Changelog
 
+## Unreleased
+
+### Added
+
+- The tagline list can import tagline files (one per line, duplicates skipped),
+  export the list and open `taglines.txt` in a text editor; changes made outside
+  IcyMail show up in the open list.
+
+### Changed
+
+- `taglines.txt` and `addressbook.txt` are read as UTF-8 only, like all other
+  data files; CP437 is used only for message text in packets.
+
 ## 0.1.0 - 2026-10-10
 
 First release.

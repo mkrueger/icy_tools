@@ -842,6 +842,9 @@ fn composer_picks_taglines_and_recipients_from_the_lists() {
         std::fs::read_to_string(dir.path().join("taglines.txt")).unwrap(),
         "First saying\nSecond saying\nFresh one\n"
     );
+    // Changes made in a text editor show up while the list is open, keeping the selection.
+    std::fs::write(dir.path().join("taglines.txt"), "Edited outside\nFirst saying\nSecond saying\nFresh one\n").unwrap();
+    label(&settle(&context, &mut mail, size), "... Edited outside");
     frame(&context, &mut mail, size, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
     assert!(mail.modal.is_none(), "Enter uses the selected tagline");
     assert_eq!(mail.composer.as_ref().unwrap().draft.tagline, "Fresh one");
