@@ -15,6 +15,10 @@
 
 ### Changed
 
+- The contact form of the address book uses the full dialog width, keeps its
+  buttons together on the right and tells whether the address is FidoNet netmail
+  or an Internet address. FidoNet addresses with a `@domain` are no longer saved
+  as Internet addresses.
 - `taglines.txt` and `addressbook.txt` are read as UTF-8 only, like all other
   data files; CP437 is used only for message text in packets.
 - FidoNet hidden lines are no longer shown in messages, quotes, search or

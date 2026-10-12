@@ -4,7 +4,7 @@ use eframe::egui::{self, Key};
 use i18n_embed_fl::fl;
 use icy_engine_gui::egui::appearance;
 use icy_mail::{
-    address_book::{AddressBook, Contact, FIELD_LENGTH},
+    address_book::{self, AddressBook, AddressKind, Contact, FIELD_LENGTH},
     LANGUAGE_LOADER,
 };
 
@@ -170,54 +170,14 @@ impl MailApp {
                 let ui = frame.ui();
                 let focus = dialog.focus.take();
                 if let Some((index, contact)) = &mut dialog.edit {
-                    ui.label(
-                        egui::RichText::new(if index.is_some() {
-                            fl!(LANGUAGE_LOADER, "address-edit-heading")
-                        } else {
-                            fl!(LANGUAGE_LOADER, "address-new-heading")
-                        })
-                        .weak(),
-                    );
-                    let mut enter = false;
-                    egui::Grid::new("address-edit").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-                        let width = (ui.available_width() - 80.0).max(160.0);
-                        ui.label(fl!(LANGUAGE_LOADER, "address-name-label"));
-                        let name = ui.add(
-                            appearance::text_edit(&mut contact.name)
-                                .id(egui::Id::new(NAME_ID))
-                                .hint_text(fl!(LANGUAGE_LOADER, "address-name-hint"))
-                                .char_limit(FIELD_LENGTH)
-                                .desired_width(width),
-                        );
-                        if focus == Some(NAME_ID) {
-                            name.request_focus();
-                        }
-                        ui.end_row();
-                        ui.label(fl!(LANGUAGE_LOADER, "address-address-label"));
-                        let address = ui.add(
-                            appearance::text_edit(&mut contact.address)
-                                .hint_text(fl!(LANGUAGE_LOADER, "address-address-hint"))
-                                .char_limit(FIELD_LENGTH)
-                                .desired_width(width),
-                        );
-                        ui.end_row();
-                        enter = (name.lost_focus() || address.lost_focus()) && ui.input(|input| input.key_pressed(Key::Enter));
-                    });
-                    ui.horizontal(|ui| {
-                        if ui
-                            .add_enabled(
-                                !contact.name.trim().is_empty(),
-                                appearance::primary_button(fl!(LANGUAGE_LOADER, "address-save")),
-                            )
-                            .clicked()
-                            || enter
-                        {
-                            action = Some(Action::Save);
-                        }
-                        if ui.button(fl!(LANGUAGE_LOADER, "address-cancel")).clicked() {
-                            action = Some(Action::CancelEdit);
-                        }
-                    });
+                    let heading = if index.is_some() {
+                        fl!(LANGUAGE_LOADER, "address-edit-heading")
+                    } else {
+                        fl!(LANGUAGE_LOADER, "address-new-heading")
+                    };
+                    if let Some(form_action) = contact_form(ui, &heading, contact, &mut dialog.error, focus == Some(NAME_ID)) {
+                        action = Some(form_action);
+                    }
                 } else {
                     ui.horizontal(|ui| {
                         let edit = appearance::text_edit(&mut dialog.filter)
@@ -243,7 +203,7 @@ impl MailApp {
                         });
                     });
                 }
-                if let Some(error) = &dialog.error {
+                if let (Some(error), None) = (&dialog.error, &dialog.edit) {
                     ui.colored_label(ui.visuals().error_fg_color, error);
                 }
                 ui.add_space(6.0);
@@ -421,4 +381,99 @@ impl MailApp {
         }
         true
     }
+}
+
+/// The form for adding or changing a contact; returns [`Action::Save`] or [`Action::CancelEdit`].
+/// `error` is shown below the name and goes away once the name is changed.
+fn contact_form(ui: &mut egui::Ui, heading: &str, contact: &mut Contact, error: &mut Option<String>, focus: bool) -> Option<Action> {
+    let mut action = None;
+    appearance::group(ui, heading, |ui| {
+        let name_label = fl!(LANGUAGE_LOADER, "address-name-label");
+        let address_label = fl!(LANGUAGE_LOADER, "address-address-label");
+        let font = egui::TextStyle::Body.resolve(ui.style());
+        let label_width = [&name_label, &address_label]
+            .iter()
+            .map(|label| ui.painter().layout_no_wrap((*label).clone(), font.clone(), egui::Color32::WHITE).size().x)
+            .fold(0.0, f32::max)
+            + 16.0;
+        let name = field_row(ui, label_width, &name_label, |ui| {
+            ui.add(
+                appearance::text_edit(&mut contact.name)
+                    .id(egui::Id::new(NAME_ID))
+                    .hint_text(fl!(LANGUAGE_LOADER, "address-name-hint"))
+                    .char_limit(FIELD_LENGTH)
+                    .desired_width(ui.available_width()),
+            )
+        });
+        if focus {
+            name.request_focus();
+        }
+        if name.changed() {
+            *error = None;
+        }
+        if let Some(error) = error {
+            note(
+                ui,
+                label_width,
+                egui::RichText::new(error.as_str()).size(12.0).color(ui.visuals().error_fg_color),
+            );
+        }
+        ui.add_space(4.0);
+        let address = field_row(ui, label_width, &address_label, |ui| {
+            ui.add(
+                appearance::text_edit(&mut contact.address)
+                    .hint_text(fl!(LANGUAGE_LOADER, "address-address-hint"))
+                    .char_limit(FIELD_LENGTH)
+                    .desired_width(ui.available_width()),
+            )
+        });
+        let (kind, color) = match address_book::address_kind(&contact.address) {
+            AddressKind::None => (fl!(LANGUAGE_LOADER, "address-kind-none"), ui.visuals().weak_text_color()),
+            AddressKind::Netmail => (fl!(LANGUAGE_LOADER, "address-kind-netmail"), ui.visuals().weak_text_color()),
+            AddressKind::Internet => (fl!(LANGUAGE_LOADER, "address-kind-internet"), ui.visuals().weak_text_color()),
+            AddressKind::Unknown => (fl!(LANGUAGE_LOADER, "address-kind-unknown"), ui.visuals().warn_fg_color),
+        };
+        note(ui, label_width, egui::RichText::new(kind).size(12.0).color(color));
+        let enter = (name.lost_focus() || address.lost_focus()) && ui.input(|input| input.key_pressed(Key::Enter));
+        ui.add_space(6.0);
+        let row = egui::vec2(ui.available_width(), ui.spacing().interact_size.y);
+        ui.allocate_ui_with_layout(row, egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add_enabled(
+                    !contact.name.trim().is_empty(),
+                    appearance::primary_button(fl!(LANGUAGE_LOADER, "address-save")),
+                )
+                .clicked()
+                || enter
+            {
+                action = Some(Action::Save);
+            }
+            if ui.button(fl!(LANGUAGE_LOADER, "address-cancel")).clicked() {
+                action = Some(Action::CancelEdit);
+            }
+        });
+    });
+    action
+}
+
+/// A caption in a column of `label_width` and its field filling the rest of the row.
+fn field_row(ui: &mut egui::Ui, label_width: f32, label: &str, field: impl FnOnce(&mut egui::Ui) -> egui::Response) -> egui::Response {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let height = ui.spacing().interact_size.y.max(30.0);
+        ui.allocate_ui_with_layout(egui::vec2(label_width, height), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.set_min_size(egui::vec2(label_width, height));
+            ui.label(label);
+        });
+        field(ui)
+    })
+    .inner
+}
+
+/// A line of help below a field, lined up with the field rather than its caption.
+fn note(ui: &mut egui::Ui, label_width: f32, text: egui::RichText) {
+    ui.horizontal(|ui| {
+        ui.add_space(label_width);
+        ui.add(egui::Label::new(text).wrap());
+    });
 }

@@ -387,10 +387,13 @@ lines are never treated as hidden.
 
 Contacts are stored in `addressbook.txt` in the user data directory in
 a UTF-8 plain-text address book format (name line, address line, blank line; Internet
-addresses are recognized by their `@`).
+addresses are recognized by their `@`, while FidoNet addresses with a domain such as
+`21:1/100@fsxnet` stay netmail).
 
 - **A** or **Tools ▸ Address Book…** opens it: filter, add, edit and delete
   contacts, or **Write Message** to start a new message to the selected one.
+  The contact form tells whether the address is FidoNet netmail, an Internet
+  address or an unknown format.
 - **Shift+A** or the reader header's **⋯** menu adds the author of the
   shown message.
 - While writing, Ctrl+B or the contacts button next to **To** picks the

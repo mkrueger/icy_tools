@@ -30,7 +30,7 @@ impl Contact {
     }
 
     pub fn is_internet(&self) -> bool {
-        self.address.contains('@')
+        self.address.contains('@') && address_kind(&self.address) != AddressKind::Netmail
     }
 
     /// Whether the name or the address contains `filter`, ignoring case.
@@ -38,6 +38,57 @@ impl Contact {
         let filter = filter.trim().to_lowercase();
         filter.is_empty() || self.name.to_lowercase().contains(&filter) || self.address.to_lowercase().contains(&filter)
     }
+}
+
+/// What kind of address a contact has, as far as its form tells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AddressKind {
+    None,
+    /// FidoNet style `zone:net/node[.point][@domain]`.
+    Netmail,
+    /// `name@host.domain`.
+    Internet,
+    Unknown,
+}
+
+pub fn address_kind(address: &str) -> AddressKind {
+    let address = address.trim();
+    if address.is_empty() {
+        return AddressKind::None;
+    }
+    if is_netmail(address) {
+        return AddressKind::Netmail;
+    }
+    let internet = address.split_once('@').is_some_and(|(local, host)| {
+        !local.is_empty()
+            && !host.contains('@')
+            && host.split('.').count() >= 2
+            && host.split('.').all(|part| !part.is_empty())
+            && !address.contains(char::is_whitespace)
+    });
+    if internet {
+        AddressKind::Internet
+    } else {
+        AddressKind::Unknown
+    }
+}
+
+fn is_netmail(address: &str) -> bool {
+    let number = |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
+    let (address, domain) = address.split_once('@').unwrap_or((address, "x"));
+    let Some((zone, rest)) = address.split_once(':') else {
+        return false;
+    };
+    let Some((net, node)) = rest.split_once('/') else {
+        return false;
+    };
+    let (node, point) = node.split_once('.').unwrap_or((node, "0"));
+    number(zone)
+        && number(net)
+        && number(node)
+        && number(point)
+        && !domain.is_empty()
+        && domain.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '.')
 }
 
 #[derive(Clone, Debug)]
@@ -197,5 +248,26 @@ mod tests {
         assert!(book.contacts[0].matches("aar"));
         assert!(book.contacts[1].matches("1:2"));
         assert!(!book.contacts[1].matches("carol"));
+    }
+
+    #[test]
+    fn recognizes_address_kinds() {
+        for (address, kind) in [
+            ("", AddressKind::None),
+            ("  ", AddressKind::None),
+            ("1:234/5", AddressKind::Netmail),
+            ("2:240/1.3", AddressKind::Netmail),
+            ("21:1/100@fsxnet", AddressKind::Netmail),
+            ("walt@example.com", AddressKind::Internet),
+            ("walt@localhost", AddressKind::Unknown),
+            ("zed@@example.com", AddressKind::Unknown),
+            ("1:234", AddressKind::Unknown),
+            ("a:b/c", AddressKind::Unknown),
+            ("Somewhere BBS", AddressKind::Unknown),
+        ] {
+            assert_eq!(address_kind(address), kind, "{address:?}");
+        }
+        assert!(Contact::new("Walt", "walt@example.com").is_internet());
+        assert!(!Contact::new("Zed", "21:1/100@fsxnet").is_internet());
     }
 }
