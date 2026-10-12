@@ -325,6 +325,35 @@ fn index_extracts_extended_subjects_for_the_message_list() {
 }
 
 #[test]
+fn message_bodies_keep_hidden_lines_until_they_are_read() {
+    let mut body = b"\x01PID: Other 1\xE3\x01MSGID: 1:2/3 4\xE3Hello\xE3\x01hBright\xE3".to_vec();
+    body.resize(128, b' ');
+    let mut messages = vec![b' '; 128];
+    messages.extend(header(b' ', 1, "01-05-2600:00", "ALL", "erin", "Kludges", 0, 2, 1));
+    messages.extend(body);
+
+    let dir = TempDir::new();
+    let path = dir.path().join("KLUDGE.QWK");
+    let file = std::fs::File::create(&path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    zip.start_file("CONTROL.DAT", options).unwrap();
+    zip.write_all(&control_dat()).unwrap();
+    zip.start_file("MESSAGES.DAT", options).unwrap();
+    zip.write_all(&messages).unwrap();
+    zip.finish().unwrap();
+
+    let package = QwkPackage::load_from_file(&path).unwrap();
+    let text = package.get_message(0).unwrap().text;
+    assert!(text.starts_with(b"\x01PID: Other 1\n"), "the stored message keeps its hidden lines");
+    assert!(package.readable_text(&text, false).starts_with(b"Hello\n "), "every Ctrl-A line is hidden");
+    assert!(package.readable_text(&text, true).starts_with(b"\x1b[0;36mPID: Other 1\x1b[0m\n"));
+    let mut synchronet = package.clone();
+    synchronet.capabilities.synchronet = true;
+    assert_eq!(synchronet.readable_text(&text, false).as_ref(), text.as_slice());
+}
+
+#[test]
 fn reply_keeps_ref_number_and_shares_the_subject_key() {
     let (_dir, package) = load();
     let reply = &package.infos[1];

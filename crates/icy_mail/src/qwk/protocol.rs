@@ -19,6 +19,9 @@ pub struct Capabilities {
     pub qwke: bool,
     pub subscription_support: bool,
     pub control_name: Option<String>,
+    /// The packet comes from Synchronet, which uses Ctrl-A for color codes rather than
+    /// FidoNet hidden lines.
+    pub synchronet: bool,
     pub(crate) subscription_format: SubscriptionFormat,
 }
 
@@ -94,6 +97,7 @@ impl Capabilities {
             SubscriptionFormat::None
         };
         result.subscription_support = result.subscription_format != SubscriptionFormat::None;
+        result.synchronet = door == "SYNCHRONET";
         result
     }
 }
@@ -116,5 +120,8 @@ mod tests {
         assert!(!parse(b"CONTROLNAME=BAD\0\nCONTROLTYPE=QWKE").subscription_support);
         assert!(!parse(b"CONTROLNAME=ONE\nCONTROLNAME=TWO\nCONTROLTYPE=QWKE").subscription_support);
         assert!(!parse(&vec![b' '; 65_537]).qwke);
+        assert!(parse(b"DOOR = Synchronet\r\nVERSION = 3.20\r\n").synchronet);
+        assert!(!parse(b"DOOR = Synchronet BBS\r\n").synchronet);
+        assert!(!parse(b"DOOR = MKQWK\r\n").synchronet);
     }
 }

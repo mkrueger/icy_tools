@@ -21,7 +21,7 @@ use parking_lot::Mutex;
 use super::{
     address_dialog::AddressDialog,
     composer::Composer,
-    loading::{BodySource, Event, Loader},
+    loading::{BodySource, BodyStyle, Event, Loader},
     mark_writer::{MarkKind, MarkWriter},
     modern_view::{Document, Item},
     settings::SettingsDialog,
@@ -165,6 +165,8 @@ pub struct MailApp {
     pub modern_font: ModernFont,
     pub modern_font_size: f32,
     pub modern_art_images: bool,
+    /// FidoNet hidden (Ctrl-A) lines are shown in the message, toggled with X as in MultiMail.
+    pub show_hidden_lines: bool,
     pub extraction_cache_days: u32,
     /// The shown message as text and rendered art for the modern reading mode, built on first use
     /// and keyed by the packet and message they came from.
@@ -279,6 +281,7 @@ impl MailApp {
             modern_font: options.modern_font,
             modern_font_size: options.modern_font_size,
             modern_art_images: options.modern_art_images,
+            show_hidden_lines: false,
             extraction_cache_days: options.extraction_cache_days,
             modern_items: None,
             modern_layout_pending: false,
@@ -372,8 +375,7 @@ impl MailApp {
                 Event::Body(request, result)
                     if request.generation == self.loader.body_generation
                         && Some(request) == self.loader.body_request
-                        && request.mode == self.reading_mode
-                        && request.art_images == self.modern_art_images
+                        && request.style() == self.body_style()
                         && match request.source {
                             BodySource::Message(index) => self.folder.holds_messages() && self.reader.selected_message == Some(index),
                             BodySource::File(index, page) => {
@@ -620,10 +622,7 @@ impl MailApp {
             if self.rendered_file == Some(index)
                 && self.rendered_file_page == self.selected_file_page
                 && self.rendered_draft.is_none()
-                && self
-                    .loader
-                    .body_request
-                    .is_some_and(|request| request.mode == self.reading_mode && request.art_images == self.modern_art_images)
+                && self.loader.body_request.is_some_and(|request| request.style() == self.body_style())
             {
                 return;
             }
@@ -638,23 +637,15 @@ impl MailApp {
             self.last_reader_click = None;
             self.reveal_message = true;
             self.body_loading = true;
-            self.loader.body(
-                package.clone(),
-                BodySource::File(index, self.selected_file_page),
-                self.reading_mode,
-                self.modern_art_images,
-                context,
-            );
+            let style = self.body_style();
+            self.loader
+                .body(package.clone(), BodySource::File(index, self.selected_file_page), style, context);
             return;
         }
         if self.rendered == self.reader.selected_message
             && self.rendered_draft.is_none()
             && self.rendered_file.is_none()
-            && (self.reader.selected_message.is_none()
-                || self
-                    .loader
-                    .body_request
-                    .is_some_and(|request| request.mode == self.reading_mode && request.art_images == self.modern_art_images))
+            && (self.reader.selected_message.is_none() || self.loader.body_request.is_some_and(|request| request.style() == self.body_style()))
         {
             return;
         }
@@ -667,8 +658,8 @@ impl MailApp {
         self.reveal_message = true;
         if let (Some(package), Some(index)) = (&self.reader.package, self.reader.selected_message) {
             self.body_loading = true;
-            self.loader
-                .body(package.clone(), BodySource::Message(index), self.reading_mode, self.modern_art_images, context);
+            let style = self.body_style();
+            self.loader.body(package.clone(), BodySource::Message(index), style, context);
         } else {
             self.loader.cancel_preload();
             self.loader.body_request = None;
@@ -1045,6 +1036,20 @@ impl MailApp {
         self.reveal_message = true;
     }
 
+    /// How message bodies are currently shown.
+    pub fn body_style(&self) -> BodyStyle {
+        BodyStyle {
+            mode: self.reading_mode,
+            art_images: self.modern_art_images,
+            hidden_lines: self.show_hidden_lines,
+        }
+    }
+
+    /// Shows or hides FidoNet hidden lines; the shown message is rendered again.
+    pub fn toggle_hidden_lines(&mut self) {
+        self.show_hidden_lines = !self.show_hidden_lines;
+    }
+
     pub fn set_unread_only(&mut self, unread_only: bool) {
         self.reader.unread_only = unread_only;
         self.reader.rebuild_messages();
@@ -1155,7 +1160,8 @@ impl MailApp {
                 return;
             }
         };
-        let quotes = match quotes(info, &message.text, &self.quote_header, package.blue_wave.is_some()) {
+        let text = package.readable_text(&message.text, false);
+        let quotes = match quotes(info, &text, &self.quote_header, package.blue_wave.is_some()) {
             Ok(quotes) => quotes,
             Err(error) => {
                 self.error = Some(fl!(LANGUAGE_LOADER, "app-quote-header-failed", error = error.to_string()));
@@ -1163,7 +1169,7 @@ impl MailApp {
             }
         };
         if forward {
-            let text = editor::strip_codes(&editor::decode_message(&message.text));
+            let text = editor::strip_codes(&editor::decode_message(&text));
             let quoted: String = text.trim_end().lines().map(|line| format!("> {line}\n")).collect();
             let header = fl!(
                 LANGUAGE_LOADER,
@@ -1595,7 +1601,7 @@ impl MailApp {
         let tagline = package
             .get_message(index)
             .ok()
-            .and_then(|message| taglines::find(&editor::strip_codes(&editor::decode_message(&message.text))));
+            .and_then(|message| taglines::find(&editor::strip_codes(&editor::decode_message(&package.readable_text(&message.text, false)))));
         self.tagline_cache = Some((key, tagline.clone()));
         tagline
     }
@@ -1890,6 +1896,9 @@ impl MailApp {
         }
         if key(context, Key::T, false, false) {
             self.save_tagline(context);
+        }
+        if key(context, Key::X, false, false) {
+            self.toggle_hidden_lines();
         }
         if key(context, Key::A, false, false) {
             self.open_address_book(false);

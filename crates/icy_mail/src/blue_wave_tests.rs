@@ -1,4 +1,9 @@
-use std::{fs::File, io::Write, path::Path, sync::Arc};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+    sync::Arc,
+};
 
 use crate::{
     drafts::{Compose, DraftField, DraftStore},
@@ -94,6 +99,11 @@ fn blue_wave_reply_export_and_import_use_native_headers_and_keep_local_drafts() 
         let header = if uses_upl { "TEST.UPL" } else { "TEST.UPI" };
         assert!(zip.by_name(header).is_ok());
         assert!(zip.by_name("TEST.MSG").is_err(), "Blue Wave must never export lossy QWK records");
+        let mut body = Vec::new();
+        zip.by_name("R000001.MSG").unwrap().read_to_end(&mut body).unwrap();
+        assert!(!body.contains(&0x01), "the door adds the tear line; no hidden lines are added");
+        assert!(!body.windows(3).any(|window| window == b"---"));
+        drop(zip);
         let imported = store.read_rep(&destination).unwrap();
         assert_eq!(imported.len(), 1);
         assert_eq!(imported[0].subject, draft.subject);

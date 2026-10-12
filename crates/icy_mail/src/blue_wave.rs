@@ -34,6 +34,9 @@ pub const UPI_HEADER_LEN: usize = 55;
 pub const UPI_REC_LEN: usize = 184;
 pub const NET_REC_LEN: usize = 232;
 
+/// Reader name and abbreviated tear line name in UPL reply headers.
+pub const READER_NAME: &str = "IcyMail";
+
 pub const INF_ALIAS_NAME: u16 = 0x0002;
 pub const INF_ANY_NAME: u16 = 0x0004;
 pub const INF_NETMAIL: u16 = 0x0010;
@@ -497,18 +500,22 @@ pub fn reply_files(packet: &Packet, replies: &[Reply]) -> crate::Res<Vec<(String
         (UPI_HEADER_LEN, UPI_REC_LEN, "UPI")
     };
     let mut index = vec![0; head];
+    // Blue Wave doors name the reader in the tear line they add; the version is stored with 10
+    // added to every byte, as the format requires.
+    let version: Vec<u8> = env!("CARGO_PKG_VERSION").bytes().map(|byte| byte + 10).collect();
     if upl {
-        copy(&mut index, 10, &b"icy_mail 0.1".iter().map(|c| c + 10).collect::<Vec<_>>());
-        copy(&mut index, 32, b"icy_mail");
-        index[31] = 1;
-        copy(&mut index, 204, b"icy_mail");
+        copy(&mut index, 10, &version[..version.len().min(19)]);
+        index[30] = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
+        index[31] = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
+        copy(&mut index, 32, READER_NAME.as_bytes());
         put_word(&mut index, 112, head as u16);
         put_word(&mut index, 114, stride as u16);
         copy(&mut index, 116, &packet.info.user_name);
         copy(&mut index, 160, &packet.info.alias);
+        copy(&mut index, 204, READER_NAME.as_bytes());
         index[222] = 1;
     } else {
-        copy(&mut index, 9, &b"icy_mail 0.1".iter().map(|c| c + 10).collect::<Vec<_>>());
+        copy(&mut index, 9, &version[..version.len().min(12)]);
     }
     let mut files = Vec::new();
     for (i, reply) in replies.iter().enumerate() {
@@ -745,8 +752,18 @@ mod tests {
         assert_eq!(files[0].0, "TEST.UPL");
         assert_eq!(index.len(), 576);
         assert_eq!(&index[112..116], &[0, 1, 64, 1]);
-        assert_eq!(index[31], 1);
-        assert_eq!(&index[10..22], &b"icy_mail 0.1".iter().map(|c| c + 10).collect::<Vec<_>>());
+        let version = env!("CARGO_PKG_VERSION");
+        assert_eq!(
+            (index[30], index[31]),
+            (
+                env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
+                env!("CARGO_PKG_VERSION_MINOR").parse().unwrap()
+            )
+        );
+        assert_eq!(&index[10..10 + version.len()], &version.bytes().map(|c| c + 10).collect::<Vec<_>>());
+        assert_eq!(index[10 + version.len()], 0);
+        assert_eq!(&index[32..40], b"IcyMail\0");
+        assert_eq!(&index[204..212], b"IcyMail\0", "doors build their tear line from this name");
         assert_eq!(&index[116..121], b"Alice");
         assert_eq!(&index[160..164], b"Ally");
         assert_eq!(&index[256 + 152..256 + 154], &[34, 0]);

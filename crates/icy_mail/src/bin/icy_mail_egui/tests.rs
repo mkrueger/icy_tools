@@ -875,6 +875,30 @@ fn composer_picks_taglines_and_recipients_from_the_lists() {
 }
 
 #[test]
+fn x_toggles_fidonet_hidden_lines_and_renders_the_message_again() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    assert!(mail.message_selected());
+    assert!(!mail.show_hidden_lines, "hidden lines are hidden by default");
+    let before = mail.loader.body_request.unwrap();
+    assert!(!before.hidden_lines);
+
+    frame(&context, &mut mail, size, vec![key(egui::Key::X, egui::Modifiers::NONE)]);
+    settle(&context, &mut mail, size);
+    assert!(mail.show_hidden_lines);
+    let shown = mail.loader.body_request.unwrap();
+    assert!(shown.hidden_lines && shown.source == before.source && shown.generation != before.generation);
+
+    frame(&context, &mut mail, size, vec![key(egui::Key::X, egui::Modifiers::NONE)]);
+    settle(&context, &mut mail, size);
+    assert!(!mail.show_hidden_lines);
+    assert!(!mail.loader.body_request.unwrap().hidden_lines);
+}
+
+#[test]
 fn reader_keeps_authors_and_taglines_and_writes_to_contacts() {
     let context = egui::Context::default();
     appearance::apply(&context);
@@ -1751,6 +1775,7 @@ fn stale_package_and_body_results_cannot_replace_current_mail() {
                 source: loading::BodySource::Message(0),
                 mode: mail.reading_mode,
                 art_images: mail.modern_art_images,
+                hidden_lines: mail.show_hidden_lines,
             },
             Err("stale body failure".into()),
         ))
@@ -1894,6 +1919,7 @@ fn selection_change_and_empty_filter_drop_old_body_results() {
                 source: loading::BodySource::Message(3),
                 mode: mail.reading_mode,
                 art_images: mail.modern_art_images,
+                hidden_lines: mail.show_hidden_lines,
             },
             Err("stale body failure".into()),
         ))

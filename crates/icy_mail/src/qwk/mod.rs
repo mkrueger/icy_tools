@@ -787,6 +787,17 @@ impl QwkPackage {
         QWKMessage::read(&mut cursor, true)
     }
 
+    /// Message text as it is read: FidoNet hidden lines are left out, or with `show_hidden`
+    /// shown in their own color. Synchronet packets keep Ctrl-A, which there marks color codes.
+    #[must_use]
+    pub fn readable_text<'a>(&self, text: &'a [u8], show_hidden: bool) -> std::borrow::Cow<'a, [u8]> {
+        if self.capabilities.synchronet {
+            std::borrow::Cow::Borrowed(text)
+        } else {
+            crate::text::hidden_lines(text, show_hidden)
+        }
+    }
+
     /// Whether any file-backed raw-body chunks have yet to be loaded into RAM.
     pub fn needs_preload(&self) -> bool {
         self.messages_data.needs_preload()

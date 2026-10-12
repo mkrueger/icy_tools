@@ -184,6 +184,50 @@ pub fn to_utf8(bytes: &[u8]) -> String {
     }
 }
 
+/// Color of FidoNet hidden lines while they are shown.
+const HIDDEN_LINE_COLOR: &[u8] = b"\x1b[0;36m";
+
+/// Message text with its FidoNet hidden lines, lines starting with Ctrl-A such as `^APID: …`
+/// or `^AMSGID: …`, removed. With `show`, they are kept in a separate color instead, without
+/// their Ctrl-A marker, like MultiMail's hidden line toggle.
+///
+/// Synchronet uses Ctrl-A for color codes, so its packets must not be passed here.
+#[must_use]
+pub fn hidden_lines(bytes: &[u8], show: bool) -> std::borrow::Cow<'_, [u8]> {
+    if !bytes.contains(&0x01) {
+        return std::borrow::Cow::Borrowed(bytes);
+    }
+    let mut text = Vec::with_capacity(bytes.len());
+    let mut start = 0;
+    while start < bytes.len() {
+        let end = bytes[start..]
+            .iter()
+            .position(|&byte| matches!(byte, b'\n' | b'\r'))
+            .map_or(bytes.len(), |offset| {
+                let end = start + offset + 1;
+                if bytes[end - 1] == b'\r' && bytes.get(end) == Some(&b'\n') {
+                    end + 1
+                } else {
+                    end
+                }
+            });
+        let line = &bytes[start..end];
+        if let Some(hidden) = line.strip_prefix(b"\x01") {
+            if show {
+                let content = hidden.len() - hidden.iter().rev().take_while(|&&byte| matches!(byte, b'\n' | b'\r')).count();
+                text.extend_from_slice(HIDDEN_LINE_COLOR);
+                text.extend_from_slice(&hidden[..content]);
+                text.extend_from_slice(b"\x1b[0m");
+                text.extend_from_slice(&hidden[content..]);
+            }
+        } else {
+            text.extend_from_slice(line);
+        }
+        start = end;
+    }
+    std::borrow::Cow::Owned(text)
+}
+
 fn decode_unstyled(bytes: &[u8]) -> String {
     match std::str::from_utf8(bytes) {
         Ok(text) => text.to_owned(),
@@ -317,6 +361,18 @@ fn has_style(span: &StyledSpan) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_lines_are_removed_or_shown_in_their_own_color() {
+        let text = b"\x01PID: Other 1\n\x01MSGID: 1:2/3 abc\r\n\x01INTL 1:2/3 1:4/5\rHello \x01 there\n\x01TID: X 1";
+        assert_eq!(hidden_lines(text, false).as_ref(), b"Hello \x01 there\n");
+        assert_eq!(
+            hidden_lines(text, true).as_ref(),
+            b"\x1b[0;36mPID: Other 1\x1b[0m\n\x1b[0;36mMSGID: 1:2/3 abc\x1b[0m\r\n\x1b[0;36mINTL 1:2/3 1:4/5\x1b[0m\rHello \x01 there\n\x1b[0;36mTID: X 1\x1b[0m"
+        );
+        assert!(matches!(hidden_lines(b"plain\n", false), std::borrow::Cow::Borrowed(_)));
+        assert_eq!(hidden_lines(b"", true).as_ref(), b"");
+    }
 
     #[test]
     fn detects_web_links_with_unicode_and_surrounding_punctuation() {

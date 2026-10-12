@@ -420,6 +420,12 @@ impl MailApp {
             self.set_unread_only(!unread_only);
             ui.close();
         }
+        let hidden =
+            egui::Button::selectable(self.show_hidden_lines, fl!(LANGUAGE_LOADER, "menu-show-hidden-lines")).shortcut_text(egui::RichText::new("X").weak());
+        if ui.add(hidden).clicked() {
+            self.toggle_hidden_lines();
+            ui.close();
+        }
         let threads = self.reader.package.is_some() && self.reader.view_mode == ViewMode::Threads;
         if item(
             ui,

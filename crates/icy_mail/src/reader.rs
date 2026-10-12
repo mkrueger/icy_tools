@@ -696,7 +696,7 @@ impl Reader {
 
     pub fn selected_screen(&self) -> Res<TextScreen> {
         match (&self.package, self.selected_message) {
-            (Some(package), Some(index)) => render_body(&package.get_message(index)?.text),
+            (Some(package), Some(index)) => render_body(&package.readable_text(&package.get_message(index)?.text, false)),
             _ => render_body(&[]),
         }
     }

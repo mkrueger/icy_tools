@@ -452,7 +452,7 @@ impl DraftStore {
                 net_tag: b' ',
                 text: body.into(),
             };
-            write_reply(&message, &mut data, self.capabilities.qwke)?;
+            write_reply(&message, &mut data, self.capabilities.qwke, true)?;
         }
         let mut todoor = String::new();
         for (&conference, &subscribe) in &self.subscriptions {
@@ -477,7 +477,7 @@ impl DraftStore {
                 net_tag: b' ',
                 text: if config { format!("{command} {conference}\n") } else { "\n".into() }.into(),
             };
-            write_reply(&message, &mut data, false)?;
+            write_reply(&message, &mut data, false, false)?;
         }
         atomic_write(destination, |file| {
             let mut zip = zip::ZipWriter::new(file);
@@ -803,7 +803,7 @@ impl DraftStore {
                 to: recipient,
                 from: decode(&message.from),
                 subject,
-                body: decode_text(&body),
+                body: without_tear_line(&decode_text(&body)),
                 conference,
                 ref_number: message.ref_msg_number,
                 private: matches!(message.status, b'*' | b'+' | b'~' | b'`'),
@@ -864,8 +864,10 @@ fn validate_subscriptions(allowed: &BTreeSet<u16>, capabilities: &Capabilities, 
 
 /// The codec truncates fixed headers and emits QWKE kludges, but writes a
 /// header-only record for an empty body. REP records need at least one body block.
-fn write_reply(message: &QWKMessage, data: &mut Vec<u8>, extended: bool) -> Result<()> {
+/// Messages written by the user end with the [`TEAR_LINE`].
+fn write_reply(message: &QWKMessage, data: &mut Vec<u8>, extended: bool, tear_line: bool) -> Result<()> {
     let mut message = message.clone();
+    let mut prefix = Vec::new();
     if extended
         && [&message.to, &message.from, &message.subj].iter().all(|field| field.len() <= 25)
         && [b"To: ".as_slice(), b"From: ", b"Subject: "]
@@ -874,14 +876,23 @@ fn write_reply(message: &QWKMessage, data: &mut Vec<u8>, extended: bool) -> Resu
     {
         // Disambiguate author text from protocol kludges, even when all real
         // headers fit QWK. A blank separator ends the kludge section.
-        let mut text = Vec::new();
-        for (prefix, value) in [(b"To: ".as_slice(), &message.to), (b"From: ", &message.from), (b"Subject: ", &message.subj)] {
-            text.extend(prefix);
-            text.extend(value.as_slice());
-            text.push(b'\n');
+        for (field, value) in [(b"To: ".as_slice(), &message.to), (b"From: ", &message.from), (b"Subject: ", &message.subj)] {
+            prefix.extend(field);
+            prefix.extend(value.as_slice());
+            prefix.push(b'\n');
         }
+        prefix.push(b'\n');
+    }
+    if !prefix.is_empty() {
+        prefix.extend(message.text.as_slice());
+        message.text = prefix.into();
+    }
+    if tear_line {
+        // Always one separator, so that importing can remove exactly what was added.
+        let mut text = message.text.to_vec();
         text.push(b'\n');
-        text.extend(message.text.as_slice());
+        text.extend(TEAR_LINE.as_bytes());
+        text.push(b'\n');
         message.text = text.into();
     }
     if message.text.is_empty() {
@@ -893,6 +904,20 @@ fn write_reply(message: &QWKMessage, data: &mut Vec<u8>, extended: bool) -> Resu
         return Err(invalid("body", "QWK block count exceeds six digits"));
     }
     Ok(())
+}
+
+/// Names IcyMail at the end of QWK replies, below the tagline, as MultiMail does. Blue Wave
+/// doors build the tear line themselves from the reply packet's reader name.
+const TEAR_LINE: &str = concat!("--- IcyMail v", env!("CARGO_PKG_VERSION"));
+
+/// `text` without the [`TEAR_LINE`] that exporting added, so that importing a reply packet
+/// and exporting it again does not repeat it.
+fn without_tear_line(text: &str) -> String {
+    let line = text.strip_suffix('\n').unwrap_or(text);
+    line.strip_suffix(TEAR_LINE)
+        .and_then(|rest| rest.strip_suffix('\n'))
+        .unwrap_or(text)
+        .to_string()
 }
 
 fn strict_number(bytes: &[u8], empty_allowed: bool) -> Result<u32> {
@@ -1367,7 +1392,9 @@ mod tests {
         assert_eq!(msg.ref_msg_number, 11);
         assert_eq!(msg.status, b'*');
         assert_eq!(msg.to.as_slice(), b"Andr\x82");
-        assert!(msg.text.starts_with(b"Caf\x82\nNext"));
+        assert!(msg
+            .text
+            .starts_with(&[b"Caf\x82\nNext\n\n... Bye\n".as_slice(), TEAR_LINE.as_bytes(), b"\n"].concat()));
         assert!(bytes.windows(18).any(|w| w == b"Caf\x82\xE3Next\xE3\xE3... Bye"));
         let next = QWKMessage::read(&mut cursor, false).unwrap();
         assert_eq!(next.ref_msg_number, 0);
@@ -1436,8 +1463,47 @@ mod tests {
         zip.by_name("TEST.MSG").unwrap().read_to_end(&mut data).unwrap();
         let message = QWKMessage::read(Cursor::new(&data[128..]), false).unwrap();
         assert_eq!(message.msg_number, 2);
-        assert!(message.text.starts_with(b"\n\nText\n"));
+        assert!(message.text.starts_with(format!("\n\nText\n\n{TEAR_LINE}\n").as_bytes()));
         assert!(data.windows(7).any(|w| w == b"\xE3\xE3Text\xE3"));
+    }
+
+    #[test]
+    fn qwk_tear_line_follows_the_tagline_and_is_not_repeated_on_reimport() {
+        assert_eq!(TEAR_LINE, format!("--- IcyMail v{}", env!("CARGO_PKG_VERSION")));
+        let (dir, package) = crate::qwk::tests::load();
+        for qwke in [false, true] {
+            let package = if qwke {
+                capable_package(&package, b"CONTROLTYPE=QWKE")
+            } else {
+                package.clone()
+            };
+            let mut store = DraftStore::load(&dir.path().join("TEST.QWK"), &package).unwrap();
+            assert_eq!(store.capabilities.qwke, qwke);
+            let mut draft = reply();
+            draft.body = "To: author text\nBody".into();
+            draft.to = if qwke { "A recipient whose name is long".into() } else { "All".into() };
+            store.drafts.push(draft.clone());
+            let rep = dir.path().join(if qwke { "QWKE.REP" } else { "PLAIN.REP" });
+            store.export(&rep).unwrap();
+            let tear = |bytes: &[u8]| bytes.windows(TEAR_LINE.len()).filter(|window| *window == TEAR_LINE.as_bytes()).count();
+            let bytes = rep_bytes(&rep);
+            assert_eq!(tear(&bytes), 1, "qwke: {qwke}");
+            let below_tagline = [b"... Bye\xE3".as_slice(), TEAR_LINE.as_bytes(), b"\xE3"].concat();
+            assert!(bytes.windows(below_tagline.len()).any(|window| window == below_tagline));
+            assert!(!bytes.windows(4).any(|window| window == b"\x01PID"), "no hidden product identifier is added");
+            let imported = store.read_rep(&rep).unwrap();
+            assert_eq!(imported.len(), 1);
+            assert_eq!(imported[0].to, draft.to);
+            assert_eq!(imported[0].body, draft.text(), "qwke: {qwke}");
+            store.drafts = imported;
+            store.drafts[0].id = 1;
+            store.export(&rep).unwrap();
+            assert_eq!(tear(&rep_bytes(&rep)), 1);
+        }
+        assert_eq!(without_tear_line(&format!("Text\n\n{TEAR_LINE}\n")), "Text\n");
+        assert_eq!(without_tear_line(&format!("Text\n{TEAR_LINE}")), "Text");
+        assert_eq!(without_tear_line(TEAR_LINE), TEAR_LINE, "a tear line alone is the author's text");
+        assert_eq!(without_tear_line("Text\n--- Other v1\n"), "Text\n--- Other v1\n");
     }
 
     fn capable_package(package: &QwkPackage, advertisement: &[u8]) -> QwkPackage {

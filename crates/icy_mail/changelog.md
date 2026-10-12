@@ -4,6 +4,11 @@
 
 ### Added
 
+- QWK replies end with an `--- IcyMail v<version>` tear line below the tagline,
+  as in MultiMail. Blue Wave reply headers name IcyMail and its version so the
+  door can build its tear line.
+- **View ▸ Show Hidden Lines** (X) shows FidoNet hidden (Ctrl-A) lines in their
+  own color.
 - The tagline list can import tagline files (one per line, duplicates skipped),
   export the list and open `taglines.txt` in a text editor; changes made outside
   IcyMail show up in the open list.
@@ -12,6 +17,8 @@
 
 - `taglines.txt` and `addressbook.txt` are read as UTF-8 only, like all other
   data files; CP437 is used only for message text in packets.
+- FidoNet hidden lines are no longer shown in messages, quotes, search or
+  tagline detection unless shown with X. Synchronet packets keep Ctrl-A color codes.
 
 ## 0.1.0 - 2026-10-10
 

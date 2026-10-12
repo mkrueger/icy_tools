@@ -48,6 +48,26 @@ pub struct BodyRequest {
     pub source: BodySource,
     pub mode: ReadingMode,
     pub art_images: bool,
+    /// FidoNet hidden (Ctrl-A) lines are shown.
+    pub hidden_lines: bool,
+}
+
+/// How a body is to be shown; a body prepared differently is rendered again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BodyStyle {
+    pub mode: ReadingMode,
+    pub art_images: bool,
+    pub hidden_lines: bool,
+}
+
+impl BodyRequest {
+    pub fn style(&self) -> BodyStyle {
+        BodyStyle {
+            mode: self.mode,
+            art_images: self.art_images,
+            hidden_lines: self.hidden_lines,
+        }
+    }
 }
 
 pub struct PreparedBody {
@@ -55,12 +75,14 @@ pub struct PreparedBody {
     pub modern: Option<Vec<PreparedItem>>,
 }
 
-fn prepare_body(package: &QwkPackage, source: BodySource, mode: ReadingMode, art_images: bool) -> icy_mail::Res<PreparedBody> {
+fn prepare_body(package: &QwkPackage, request: BodyRequest) -> icy_mail::Res<PreparedBody> {
+    let BodyRequest { source, mode, art_images, .. } = request;
     let (classic, wide) = match source {
         BodySource::Message(index) => {
             let message = package.get_message(index)?;
-            let classic = render_body(&message.text)?;
-            let wide = (mode == ReadingMode::Modern).then(|| render_body_wide(&message.text)).transpose()?;
+            let text = package.readable_text(&message.text, request.hidden_lines);
+            let classic = render_body(&text)?;
+            let wide = (mode == ReadingMode::Modern).then(|| render_body_wide(&text)).transpose()?;
             (classic, wide)
         }
         BodySource::File(index, page) => {
@@ -112,7 +134,7 @@ impl BodySearch {
                     let message = package
                         .read_message(info.index)
                         .map_err(|error| SearchError::Message(fl!(LANGUAGE_LOADER, "search-message-error", number = info.number, error = error.to_string())))?;
-                    *cached = Some(icy_mail::reader::body_search_text(&message.text));
+                    *cached = Some(icy_mail::reader::body_search_text(&package.readable_text(&message.text, false)));
                 }
                 Ok(cached.as_ref().is_some_and(|text| text.contains(query)).then_some(info.index))
             })
@@ -158,7 +180,7 @@ impl Default for Loader {
             Some(Event::Package(generation, path, result))
         });
         let bodies = latest_worker(sender.clone(), |(request, package): (BodyRequest, Arc<QwkPackage>)| {
-            let result = prepare_body(&package, request.source, request.mode, request.art_images).map_err(|error| error.to_string());
+            let result = prepare_body(&package, request).map_err(|error| error.to_string());
             Some(Event::Body(request, result))
         });
         let preload_generation = Arc::new(AtomicU64::new(0));
@@ -234,14 +256,15 @@ impl Loader {
             .send(((self.package_generation, path, cache_directory, retention_days), context.clone()));
     }
 
-    pub fn body(&mut self, package: Arc<QwkPackage>, source: BodySource, mode: ReadingMode, art_images: bool, context: &egui::Context) {
+    pub fn body(&mut self, package: Arc<QwkPackage>, source: BodySource, style: BodyStyle, context: &egui::Context) {
         self.cancel_preload();
         self.body_generation = self.body_generation.wrapping_add(1);
         let request = BodyRequest {
             generation: self.body_generation,
             source,
-            mode,
-            art_images,
+            mode: style.mode,
+            art_images: style.art_images,
+            hidden_lines: style.hidden_lines,
         };
         self.body_request = Some(request);
         if let Err(error) = self.bodies.send(((request, package), context.clone())) {
@@ -451,7 +474,12 @@ mod tests {
         Arc::make_mut(&mut package.files)[0].data = b"\x1b[31m\xdb\xdb\xdb\r\n\xdb\xdb\xdb\x1b[0m".to_vec();
         let context = egui::Context::default();
         let mut loader = Loader::default();
-        loader.body(Arc::new(package), BodySource::File(0, 0), ReadingMode::Modern, false, &context);
+        let style = BodyStyle {
+            mode: ReadingMode::Modern,
+            art_images: false,
+            hidden_lines: false,
+        };
+        loader.body(Arc::new(package), BodySource::File(0, 0), style, &context);
         let Event::Body(request, Ok(prepared)) = loader.receiver.recv_timeout(std::time::Duration::from_secs(10)).unwrap() else {
             panic!("body worker failed to prepare Unicode art");
         };
@@ -476,7 +504,12 @@ mod tests {
         for source in [BodySource::Message(2), BodySource::File(0, 0)] {
             for mode in [ReadingMode::Classic, ReadingMode::Modern] {
                 let previous_preload = loader.preload_generation();
-                loader.body(package.clone(), source, mode, true, &context);
+                let style = BodyStyle {
+                    mode,
+                    art_images: true,
+                    hidden_lines: false,
+                };
+                loader.body(package.clone(), source, style, &context);
                 assert_ne!(
                     loader.preload_generation(),
                     previous_preload,

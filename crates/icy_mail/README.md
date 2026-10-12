@@ -354,6 +354,21 @@ file with one tagline per line (so an existing list can be copied over; convert
 CP437 files from DOS readers to UTF-8 first). A tagline is sent below the message as `... text`, up to 76
 characters.
 
+IcyMail does not advertise itself in taglines. Like MultiMail, it identifies
+itself where each reply format expects it:
+
+- **QWK** replies end with a tear line, `--- IcyMail v<version>`, below the
+  tagline. Reply-packet import removes it, so re-exporting does not repeat it.
+- **Blue Wave** replies add nothing to the message text. The reply packet's
+  header names IcyMail and its version, and the door builds its tear line from
+  that.
+
+FidoNet hidden lines, lines starting with Ctrl-A such as `^APID:`, `^ATID:` or
+`^AMSGID:`, are not shown. **View ▸ Show Hidden Lines** (or **X**) shows them in
+their own color. Quotes, search and taglines always ignore them; saving a message
+keeps them. Synchronet uses Ctrl-A for color codes, so in Synchronet packets these
+lines are never treated as hidden.
+
 - New messages get a random tagline; this can be switched off in Settings
   (General → Writing). The **Tagline** bar below the editor shows it and offers
   choosing, shuffling and removing it.

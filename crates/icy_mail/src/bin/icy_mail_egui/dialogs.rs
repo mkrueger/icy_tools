@@ -223,6 +223,7 @@ impl MailApp {
                     (command(Key::F), fl!(LANGUAGE_LOADER, "shortcuts-reading-search-messages")),
                     (command(Key::T), fl!(LANGUAGE_LOADER, "shortcuts-reading-switch-list-threads")),
                     ("T".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-save-message-tagline")),
+                    ("X".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-show-hidden-lines")),
                     ("A".into(), fl!(LANGUAGE_LOADER, "shortcuts-reading-address-book")),
                     (
                         shortcut(context, Modifiers::SHIFT, Key::A),
