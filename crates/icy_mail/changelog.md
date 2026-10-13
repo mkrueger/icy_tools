@@ -1,6 +1,6 @@
 # IcyMail Changelog
 
-## Unreleased
+## 0.1.1 - 2026-10-13
 
 ### Added
 
@@ -23,6 +23,16 @@
   data files; CP437 is used only for message text in packets.
 - FidoNet hidden lines are no longer shown in messages, quotes, search or
   tagline detection unless shown with X. Synchronet packets keep Ctrl-A color codes.
+
+### Fixed
+
+- QWK packets containing password-marked messages or comments to the sysop
+  no longer hang or mistake message bodies for headers. Deleted messages are
+  skipped by their full block lengths, and invalid block counts report a
+  loading error.
+- QWK conference lists accept both count-minus-one and actual-count conventions,
+  retaining the last conference and screen names, including numeric welcome
+  screens. Cached message indexes are rebuilt for the corrected parser.
 
 ## 0.1.0 - 2026-10-10
 
