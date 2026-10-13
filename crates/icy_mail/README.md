@@ -34,6 +34,7 @@ Incomplete, duplicate or mixed-format Blue Wave packets are rejected.
 Standalone reply archives are export files, not readable incoming packets.
 
 QWK reading includes password-marked messages and comments to the sysop.
+Both the standard `0xE1` and Mystic's `0xFF` active-message flags are accepted.
 Deleted messages are skipped using their full block lengths; invalid, zero-length
 or out-of-bounds message spans report a loading error rather than scanning body
 text as headers. Conference lists accept both the standard count-minus-one field

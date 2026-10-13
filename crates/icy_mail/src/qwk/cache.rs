@@ -20,8 +20,8 @@ const PENDING_PREFIX: &str = ".pending-v1-";
 const MANIFEST: &str = "manifest.toml";
 const MAX_MANIFEST_SIZE: u64 = 1024 * 1024;
 const DAY: u64 = 24 * 60 * 60;
-const INDEX_FILE: &str = "index-v5.bin";
-const INDEX_VERSION: u32 = 5;
+const INDEX_FILE: &str = "index-v6.bin";
+const INDEX_VERSION: u32 = 6;
 const MAX_INDEX_SIZE: u64 = 1024 * 1024 * 1024;
 const INDEX_CHUNK_MESSAGES: usize = 4096;
 
@@ -903,6 +903,28 @@ mod tests {
         let mut output = crc32fast::hash(&payload).to_le_bytes().to_vec();
         output.extend(payload);
         fs::write(directory.join(INDEX_FILE), output).unwrap();
+    }
+
+    #[test]
+    fn empty_version_five_index_is_rebuilt_without_reextracting_messages() {
+        let (_dir, path, cache) = fixture();
+        let original = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+        let directory = entry(&cache, &path);
+        let raw_modified = fs::metadata(directory.join("1.dat")).unwrap().modified().unwrap();
+        rewrite_metadata(&directory, |record| {
+            record.version = 5;
+            record.index.chunks.clear();
+        });
+        fs::rename(directory.join(INDEX_FILE), directory.join("index-v5.bin")).unwrap();
+
+        let extracted = cache.load(&path, || panic!("old index must not require reextraction")).unwrap();
+        assert!(extracted.metadata.is_none(), "the empty version-five index must not be reused");
+        let rebuilt = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+        assert_eq!(rebuilt.infos, original.infos);
+        assert_eq!(rebuilt.conferences(), original.conferences());
+        assert_eq!(fs::metadata(directory.join("1.dat")).unwrap().modified().unwrap(), raw_modified);
+        let warm = cache.load(&path, || panic!("rebuilt index must reuse extraction")).unwrap();
+        assert_eq!(warm.metadata.unwrap().infos, original.infos);
     }
 
     #[test]

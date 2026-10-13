@@ -145,6 +145,151 @@ fn all_qwk_statuses_open_without_scanning_bodies_as_headers() {
     }
 }
 
+const MYSTIC_CONFERENCE_COUNTS: &[(u16, usize)] = &[
+    (2, 1),
+    (10, 1),
+    (12, 2),
+    (15, 3),
+    (21, 83),
+    (24, 1),
+    (25, 1),
+    (26, 1),
+    (27, 2),
+    (32, 1),
+    (46, 8),
+    (48, 1),
+    (50, 1),
+    (51, 1),
+    (58, 1),
+    (87, 17),
+    (147, 2),
+    (165, 3),
+    (166, 3),
+    (167, 4),
+    (168, 3),
+    (187, 17),
+    (190, 4),
+    (193, 2),
+    (198, 7),
+    (209, 1),
+    (212, 1),
+    (253, 2),
+    (261, 39),
+    (287, 1),
+    (311, 1),
+    (353, 3),
+    (381, 5),
+    (391, 2),
+    (392, 2),
+    (395, 2),
+];
+
+fn mystic_conference_name(number: u16) -> String {
+    match number {
+        2 => "localz.generalzZz".into(),
+        21 => "fsx.InterBBS Data".into(),
+        261 => "tqw.General Tech News".into(),
+        391 => "piNet.BBS Ads".into(),
+        _ => format!("Area {number}"),
+    }
+}
+
+#[test]
+fn mystic_packet_keeps_messages_and_conferences_uncached_cold_and_warm() {
+    // Reproduce BEERS24.1: lowercase members, 289 areas, 229 messages in 36
+    // populated areas, missing screens, and Mystic's 0xFF active-message flag.
+    let mut control = b"TEST BBS\r\n\r\n\r\nSysop\r\n0,TEST\r\n09/28/26,07:26\r\nUSER\r\n\r\n0\r\n229\r\n288\r\n".to_vec();
+    let mut areas: Vec<u16> = MYSTIC_CONFERENCE_COUNTS
+        .iter()
+        .map(|(number, _)| *number)
+        .filter(|number| *number != 391)
+        .collect();
+    areas.extend(1000..1253);
+    areas.push(391);
+    assert_eq!(areas.len(), 289);
+    for number in areas {
+        control.extend(format!("{number}\r\n{}\r\n", mystic_conference_name(number)).as_bytes());
+    }
+    control.extend(b"20welcome\r\n20news\r\n20goodbye\r\n");
+    let mut messages = vec![b' '; 128];
+    let mut number = 0;
+    for (conference, count) in MYSTIC_CONFERENCE_COUNTS {
+        for _ in 0..*count {
+            number += 1;
+            let mut entry = header(b' ', number, "09-28-2607:26", "ALL", "AUTHOR", "Mystic", 0, 2, *conference);
+            entry[122] = 0xFF;
+            messages.extend(entry);
+            messages.extend([b' '; 128]);
+        }
+    }
+    let dir = TempDir::new();
+    let path = dir.path().join("MYSTIC.QWK");
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    let options = zip::write::SimpleFileOptions::default();
+    zip.start_file("control.dat", options).unwrap();
+    zip.write_all(&control).unwrap();
+    zip.start_file("messages.dat", options).unwrap();
+    zip.write_all(&messages).unwrap();
+    zip.start_file("door.id", options).unwrap();
+    zip.write_all(b"DOOR = Mystic BBS\r\nVERSION = 1.12 A49\r\n").unwrap();
+    zip.finish().unwrap();
+
+    let cache = crate::qwk::ExtractionCache::new(dir.path().join("cache"), 30);
+    let uncached = QwkPackage::load_from_file(&path).unwrap();
+    let cold = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    let warm = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    assert!(warm.cached_threads().is_some());
+    let expected: Vec<_> = MYSTIC_CONFERENCE_COUNTS
+        .iter()
+        .map(|(number, count)| (*number, mystic_conference_name(*number), *count))
+        .collect();
+    for package in [&uncached, &cold, &warm] {
+        assert_eq!(package.message_count(), 229);
+        assert_eq!(package.control_file.conferences.len(), 289);
+        assert_eq!(package.control_file.conferences.last().unwrap().name, "piNet.BBS Ads");
+        assert_eq!(package.control_file.welcome_screen, "20welcome");
+        assert_eq!(package.control_file.news_screen, "20news");
+        assert_eq!(package.control_file.logoff_screen, "20goodbye");
+        assert_eq!(package.conferences(), expected);
+        assert_eq!(package.infos, uncached.infos);
+        for index in 0..229 {
+            assert_eq!(package.read_message(index).unwrap().active_flag, 0xFF);
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires ICY_MAIL_BEERS24_PACKET pointing to BEERS24.1.qwk"]
+fn beers24_packet_keeps_all_populated_conferences() {
+    let path = std::env::var_os("ICY_MAIL_BEERS24_PACKET").expect("set ICY_MAIL_BEERS24_PACKET to BEERS24.1.qwk");
+    let dir = TempDir::new();
+    let cache = crate::qwk::ExtractionCache::new(dir.path().join("cache"), 30);
+    let uncached = QwkPackage::load_from_file(&path).unwrap();
+    let cold = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    let warm = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    assert!(warm.cached_threads().is_some());
+    for package in [&uncached, &cold, &warm] {
+        assert_eq!(package.message_count(), 229);
+        assert_eq!(package.control_file.conferences.len(), 289);
+        let conferences = package.conferences();
+        assert_eq!(conferences.len(), 36);
+        assert_eq!(
+            conferences.iter().map(|(number, _, count)| (*number, *count)).collect::<Vec<_>>(),
+            MYSTIC_CONFERENCE_COUNTS
+        );
+        for number in [2, 21, 261, 391] {
+            assert_eq!(
+                conferences.iter().find(|(area, _, _)| *area == number).unwrap().1,
+                mystic_conference_name(number)
+            );
+        }
+        assert_eq!(package.infos, uncached.infos);
+        for index in 0..229 {
+            assert_eq!(package.read_message(index).unwrap().text, uncached.read_message(index).unwrap().text);
+        }
+    }
+}
+
 /// Screens and bulletins next to the messages; `DOOR.ID` and the index are no bulletins.
 fn packet_files() -> &'static [(&'static str, &'static [u8])] {
     &[

@@ -697,7 +697,8 @@ impl QwkPackage {
 
             // Status describes privacy/read/password state; deletion is a separate flag.
             // Even deleted messages must be skipped by their complete block count.
-            if header_data[122] == MSG_ACTIVE {
+            // Mystic writes 0xFF instead of the standard 0xE1 for active messages.
+            if matches!(header_data[122], MSG_ACTIVE | 0xFF) {
                 let msg_number = parse_qwk_number(&header_data[1..8]).map_err(|error| format!("Invalid QWK message number at byte {pos}: {error}"))?;
                 let conference = u16::from_le_bytes([header_data[123], header_data[124]]);
                 headers.push(MessageDescriptor {

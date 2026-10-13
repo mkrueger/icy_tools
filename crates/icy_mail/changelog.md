@@ -1,5 +1,13 @@
 # IcyMail Changelog
 
+## Unreleased
+
+### Fixed
+
+- Mystic QWK packets using `0xFF` for active messages retain all messages and
+  populated conferences instead of appearing empty. Existing metadata indexes
+  are rebuilt so an empty cached index cannot hide the corrected messages.
+
 ## 0.1.1 - 2026-10-13
 
 ### Added
