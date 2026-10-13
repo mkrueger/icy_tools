@@ -2156,6 +2156,7 @@ fn outbox_lists_drafts_and_edits_or_deletes_them_from_the_keyboard() {
     }
     mail.select_folder(app::Folder::All);
     settle(&context, &mut mail, size);
+    wait(&mut mail, &context);
     assert_eq!(
         mail.screen.terminal.screen.lock().char_at((0, 0).into()).ch,
         message,
