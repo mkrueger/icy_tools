@@ -20,8 +20,8 @@ const PENDING_PREFIX: &str = ".pending-v1-";
 const MANIFEST: &str = "manifest.toml";
 const MAX_MANIFEST_SIZE: u64 = 1024 * 1024;
 const DAY: u64 = 24 * 60 * 60;
-const INDEX_FILE: &str = "index-v4.bin";
-const INDEX_VERSION: u32 = 4;
+const INDEX_FILE: &str = "index-v5.bin";
+const INDEX_VERSION: u32 = 5;
 const MAX_INDEX_SIZE: u64 = 1024 * 1024 * 1024;
 const INDEX_CHUNK_MESSAGES: usize = 4096;
 

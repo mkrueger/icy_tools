@@ -33,6 +33,14 @@ The All Files filter remains available for other names.
 Incomplete, duplicate or mixed-format Blue Wave packets are rejected.
 Standalone reply archives are export files, not readable incoming packets.
 
+QWK reading includes password-marked messages and comments to the sysop.
+Deleted messages are skipped using their full block lengths; invalid, zero-length
+or out-of-bounds message spans report a loading error rather than scanning body
+text as headers. Conference lists accept both the standard count-minus-one field
+and the actual-count convention used by some writers.
+Numeric welcome-screen names are matched against archive members (including
+extension/prefix matching) before interpreting them as an extra conference.
+
 Recoverable Blue Wave quirks are logged instead of preventing reading: missing
 body markers, unusable login/alias metadata or echotags, inconsistent personal
 counts, and invalid pointers for empty areas. Space-padded area numbers are

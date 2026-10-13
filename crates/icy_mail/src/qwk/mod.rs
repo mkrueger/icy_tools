@@ -210,12 +210,7 @@ pub fn packet_files(control: &ControlDat, mut files: Vec<(String, Vec<u8>)>) -> 
         if wanted.is_empty() {
             continue;
         }
-        // Exact names first; otherwise the first file starting with it.
-        let position = files
-            .iter()
-            .position(|(name, _)| name.to_uppercase() == wanted)
-            .or_else(|| files.iter().position(|(name, _)| name.to_uppercase().starts_with(&wanted)));
-        if let Some(position) = position {
+        if let Some(position) = packet_screen_position(&files, &wanted) {
             let (name, data) = files.remove(position);
             picked.push(PacketFile::new(name, kind, data));
         }
@@ -234,6 +229,14 @@ pub fn packet_files(control: &ControlDat, mut files: Vec<(String, Vec<u8>)>) -> 
     // Stable, so files of one kind keep their natural name order.
     picked.sort_by_key(|file| file.kind);
     picked
+}
+
+fn packet_screen_position(files: &[(String, Vec<u8>)], wanted: &str) -> Option<usize> {
+    // Exact names first; otherwise the first file starting with it.
+    files
+        .iter()
+        .position(|(name, _)| name.to_uppercase() == wanted)
+        .or_else(|| files.iter().position(|(name, _)| name.to_uppercase().starts_with(wanted)))
 }
 
 /// Orders `BLT-0.2` before `BLT-0.10`.
@@ -417,7 +420,7 @@ impl QwkPackage {
         } = extracted;
         // Parse CONTROL.DAT
         let control_file =
-            ControlDat::read(&control).map_err(|error| fl!(LANGUAGE_LOADER, "packet-error-control-dat-parse-failed", error = format!("{error:?}")))?;
+            read_control_dat(&control, &others).map_err(|error| fl!(LANGUAGE_LOADER, "packet-error-control-dat-parse-failed", error = format!("{error:?}")))?;
 
         // Use BBS name from control file if we don't have one yet
         if !control_file.bbs_name.is_empty() && bbs_id.is_empty() {
@@ -428,7 +431,7 @@ impl QwkPackage {
         let (headers, infos, thread_rows) = match metadata {
             Some(index) => (index.descriptors, index.infos, Some(Arc::new(index.threads))),
             None => {
-                let headers = Self::parse_headers(&messages);
+                let headers = Self::parse_headers(&messages)?;
                 let infos = Self::build_index(&messages, &headers);
                 (headers, infos, None)
             }
@@ -675,7 +678,7 @@ impl QwkPackage {
             .collect()
     }
 
-    fn parse_headers(data: &[u8]) -> Vec<MessageDescriptor> {
+    fn parse_headers(data: &[u8]) -> Res<Vec<MessageDescriptor>> {
         const HEADER_SIZE: usize = 128;
         let _timer = crate::perf::Timer::new("qwk::parse_headers");
         let mut headers = Vec::with_capacity(data.len() / 256); // Pre-allocate estimated capacity
@@ -685,31 +688,28 @@ impl QwkPackage {
         while pos + HEADER_SIZE <= data.len() {
             let header_data = &data[pos..pos + HEADER_SIZE];
 
-            let status = header_data[0];
-            if status != 225 && status != b' ' && status != b'+' && status != b'-' && status != b'*' {
-                pos += HEADER_SIZE;
-                continue; // Skip deleted/invalid messages
+            let block_count = parse_qwk_number(&header_data[116..122]).map_err(|error| format!("Invalid QWK block count at byte {pos}: {error}"))?;
+            if block_count == 0 || u64::from(block_count) > ((data.len() - pos) / HEADER_SIZE) as u64 {
+                return Err(format!("Invalid QWK message span at byte {pos}: {block_count} blocks").into());
             }
 
-            let msg_number: u32 = parse_qwk_number(&header_data[1..8]).unwrap_or(0);
-
-            let block_count = parse_qwk_number(&header_data[116..122]).unwrap_or(1);
-
-            let conference = u16::from_le_bytes([header_data[123], header_data[124]]);
-
-            headers.push(MessageDescriptor {
-                number: msg_number,
-                conference,
-                offset: pos as u64,
-                block_count,
-                body_len: None,
-            });
-
-            // Skip to next message (header + content blocks)
+            // Status describes privacy/read/password state; deletion is a separate flag.
+            // Even deleted messages must be skipped by their complete block count.
+            if header_data[122] == MSG_ACTIVE {
+                let msg_number = parse_qwk_number(&header_data[1..8]).map_err(|error| format!("Invalid QWK message number at byte {pos}: {error}"))?;
+                let conference = u16::from_le_bytes([header_data[123], header_data[124]]);
+                headers.push(MessageDescriptor {
+                    number: msg_number,
+                    conference,
+                    offset: pos as u64,
+                    block_count,
+                    body_len: None,
+                });
+            }
             pos += HEADER_SIZE * block_count as usize;
         }
 
-        headers
+        Ok(headers)
     }
 
     /// Load a specific message on demand with caching
@@ -854,6 +854,29 @@ impl QwkPackage {
         list.sort_by_key(|(number, _, _)| *number);
         list
     }
+}
+
+fn read_control_dat(data: &[u8], files: &[(String, Vec<u8>)]) -> Res<ControlDat> {
+    let mut control = ControlDat::read(data)?;
+    // QWK stores the last conference index (count minus one). jamjam reads an
+    // actual count; also accept packets written using that convention.
+    if let Some(number) = control.welcome_screen.to_str().ok().and_then(|text| text.trim().parse::<u16>().ok()) {
+        let wanted = control.welcome_screen.to_str_lossy().trim().to_uppercase();
+        // Numeric screen names are valid. Prefer an existing screen, and do not
+        // consume an extra conference unless all three screen fields follow it.
+        if packet_screen_position(files, &wanted).is_some() || data.lines().skip(11 + control.conferences.len() * 2).take(5).count() < 5 {
+            return Ok(control);
+        }
+        control.conferences.push(Conference {
+            number,
+            name: control.news_screen.clone(),
+        });
+        let mut screens = data.lines().skip(11 + control.conferences.len() * 2);
+        control.welcome_screen = screens.next().unwrap_or_default().into();
+        control.news_screen = screens.next().unwrap_or_default().into();
+        control.logoff_screen = screens.next().unwrap_or_default().into();
+    }
+    Ok(control)
 }
 
 fn blue_wave_member(name: &str) -> bool {

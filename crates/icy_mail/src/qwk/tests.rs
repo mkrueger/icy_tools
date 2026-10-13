@@ -99,6 +99,118 @@ fn control_dat() -> Vec<u8> {
     out.into_bytes()
 }
 
+#[test]
+fn control_conference_counts_preserve_the_last_area_and_screens() {
+    for count in [1, 2] {
+        let data = String::from_utf8(control_dat())
+            .unwrap()
+            .replacen("4\r\n2\r\n", &format!("4\r\n{count}\r\n"), 1);
+        let control = super::read_control_dat(data.as_bytes(), &[]).unwrap();
+        assert_eq!(control.conferences.len(), 2);
+        assert_eq!(control.conferences[1].number, 2);
+        assert_eq!(control.conferences[1].name, "Retro");
+        assert_eq!(control.welcome_screen, "HELLO");
+        assert_eq!(control.news_screen, "NEWS");
+        assert_eq!(control.logoff_screen, "GOODBYE");
+    }
+
+    let data = b"TEST\r\n\r\n\r\nSysop\r\n0,TEST\r\n01-01-2600:00\r\nUSER\r\n\r\n0\r\n0\r\n0\r\n0\r\nMain\r\nHELLO\r\nNEWS\r\nGOODBYE\r\n";
+    let control = super::read_control_dat(data, &[]).unwrap();
+    assert_eq!(control.conferences.len(), 1);
+    assert_eq!(control.conferences[0].number, 0);
+    assert_eq!(control.welcome_screen, "HELLO");
+}
+
+#[test]
+fn numeric_welcome_screens_preserve_actual_count_conferences() {
+    for name in ["123", "123.ans"] {
+        for optional in ["", "0\r\n2\r\nUSER\r\nFirst\r\n"] {
+            let data = format!("{}{optional}", String::from_utf8(control_dat()).unwrap().replace("HELLO\r\n", "123\r\n"));
+            let files = vec![
+                (name.to_owned(), b"Welcome".to_vec()),
+                ("NEWS".to_owned(), b"News".to_vec()),
+                ("GOODBYE".to_owned(), b"Goodbye".to_vec()),
+            ];
+            let control = super::read_control_dat(data.as_bytes(), &files).unwrap();
+            assert_eq!(control.conferences.len(), 2);
+            assert_eq!(control.conferences[1].name, "Retro");
+            assert_eq!(control.welcome_screen, "123");
+            assert_eq!(control.news_screen, "NEWS");
+            assert_eq!(control.logoff_screen, "GOODBYE");
+            let screens = super::packet_files(&control, files);
+            assert_eq!(screens.len(), 3);
+            assert_eq!(screens[0].name, name);
+            assert_eq!(screens[0].kind, super::PacketFileKind::Welcome);
+            assert_eq!(screens[1].name, "NEWS");
+            assert_eq!(screens[2].name, "GOODBYE");
+        }
+    }
+    let data = String::from_utf8(control_dat()).unwrap().replace("HELLO\r\n", "123\r\n");
+    let control = super::read_control_dat(data.as_bytes(), &[]).unwrap();
+    assert_eq!(control.conferences.len(), 2, "a missing numeric screen is not an extra conference");
+    assert_eq!(control.welcome_screen, "123");
+    assert_eq!(control.news_screen, "NEWS");
+    assert_eq!(control.logoff_screen, "GOODBYE");
+}
+
+#[test]
+fn all_qwk_statuses_open_without_scanning_bodies_as_headers() {
+    let statuses = b" -*+~`%^!#$";
+    let mut messages = vec![b' '; 128];
+    for (index, status) in statuses.iter().enumerate() {
+        messages.extend(header(*status, index as u32 + 1, "10-12-2618:14", "ALL", "AUTHOR", "Status", 0, 3, 2));
+        // A body block that looks like a header must never become a message.
+        messages.extend(header(b' ', 999, "10-12-2618:14", "ALL", "BODY", "Not a message", 0, 1, 1));
+        messages.extend([b' '; 128]);
+    }
+    let mut deleted = header(b' ', 100, "10-12-2618:14", "ALL", "AUTHOR", "Deleted", 0, 3, 1);
+    deleted[122] = jamjam::qwk::qwk_message::MSG_INACTIVE;
+    messages.extend(deleted);
+    messages.extend(header(b' ', 998, "10-12-2618:14", "ALL", "BODY", "Also not a message", 0, 1, 1));
+    messages.extend([b' '; 128]);
+    message(&mut messages, 101, "10-12-2618:14", "AUTHOR", "After deleted", 0, 1, 1);
+
+    let dir = TempDir::new();
+    let path = dir.path().join("STATUSES.QWK");
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    let options = zip::write::SimpleFileOptions::default();
+    zip.start_file("CONTROL.DAT", options).unwrap();
+    let control = String::from_utf8(control_dat()).unwrap().replacen("4\r\n2\r\n", "12\r\n1\r\n", 1);
+    zip.write_all(control.as_bytes()).unwrap();
+    zip.start_file("MESSAGES.DAT", options).unwrap();
+    zip.write_all(&messages).unwrap();
+    zip.finish().unwrap();
+
+    let cache = super::ExtractionCache::new(dir.path().join("cache"), 30);
+    let uncached = QwkPackage::load_from_file(&path).unwrap();
+    let cold = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    let warm = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    assert!(warm.cached_threads().is_some());
+    for package in [&uncached, &cold, &warm] {
+        assert_eq!(package.message_count(), statuses.len() + 1);
+        assert_eq!(package.infos, uncached.infos);
+        assert_eq!(package.control_file.conferences[1].name, "Retro");
+        for (index, status) in statuses.iter().enumerate() {
+            let message = package.read_message(index).unwrap();
+            assert_eq!(message.status, *status);
+            assert_eq!(message.msg_number, index as u32 + 1);
+        }
+        assert_eq!(package.read_message(statuses.len()).unwrap().msg_number, 101);
+    }
+}
+
+#[test]
+fn invalid_qwk_block_counts_report_errors() {
+    for count in [b"0     ", b"      ", b"broken", b"999999", b"2     "] {
+        let mut messages = vec![b' '; 128];
+        let mut invalid = header(b' ', 1, "10-12-2618:14", "ALL", "AUTHOR", "Invalid", 0, 1, 1);
+        invalid[116..122].copy_from_slice(count);
+        messages.extend(invalid);
+        let error = QwkPackage::parse_headers(&messages).unwrap_err().to_string();
+        assert!(error.contains("byte 128"), "{error}");
+    }
+}
+
 /// Screens and bulletins next to the messages; `DOOR.ID` and the index are no bulletins.
 fn packet_files() -> &'static [(&'static str, &'static [u8])] {
     &[
@@ -271,7 +383,10 @@ fn large_packet_cache_roundtrip() {
     let cold = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
     println!("cold extraction and cache write: {:?}", start.elapsed());
     let count = cold.infos.len();
+    println!("indexed {count} messages");
     assert!(count > 0);
+    let uncached = QwkPackage::load_from_file(&path).unwrap();
+    assert_eq!(cold.infos, uncached.infos);
     let first = cold.read_message(0).unwrap();
     let last = cold.read_message(count - 1).unwrap();
     let subjects = [cold.infos[0].subject.as_str().to_owned(), cold.infos[count - 1].subject.as_str().to_owned()];
@@ -286,6 +401,9 @@ fn large_packet_cache_roundtrip() {
         assert_eq!(warm.read_message(count - 1).unwrap().text, last.text);
         assert_eq!(warm.infos[0].subject.as_str(), subjects[0]);
         assert_eq!(warm.infos[count - 1].subject.as_str(), subjects[1]);
+        for index in 0..count {
+            assert_eq!(warm.read_message(index).unwrap().text, uncached.read_message(index).unwrap().text);
+        }
     }
 }
 
