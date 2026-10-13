@@ -45,6 +45,8 @@ pub fn packet_extensions() -> Vec<String> {
 }
 
 #[cfg(test)]
+mod parser_tests;
+#[cfg(test)]
 pub mod tests;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
