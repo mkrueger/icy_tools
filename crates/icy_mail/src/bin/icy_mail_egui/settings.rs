@@ -5,6 +5,7 @@ use icy_engine_gui::{
     ScalingMode,
 };
 use icy_mail::{
+    ignore::{IgnoreField, IgnoreList, IgnoreMode, IgnoreRule},
     options::{ModernFont, Options, ReadingMode, ReadingPane, Theme, MODERN_FONT_SIZES},
     writing::validate_quote_header,
     LANGUAGE_LOADER,
@@ -94,6 +95,7 @@ impl MailApp {
     pub fn current_options(&self, context: &egui::Context) -> Options {
         Options {
             reading_encodings: self.loader.encodings.persistent(),
+            ignore: self.ignore.clone(),
             theme: match context.options(|options| options.theme_preference) {
                 egui::ThemePreference::System => Theme::System,
                 egui::ThemePreference::Light => Theme::Light,
@@ -103,6 +105,7 @@ impl MailApp {
             random_tagline: self.random_tagline,
             signature: self.signature.clone(),
             quote_header: self.quote_header.clone(),
+            quote_reflow: self.quote_reflow,
             view_mode: self.reader.view_mode,
             reading_pane: self.reading_pane,
             conferences_unread_only: self.conferences_unread_only,
@@ -122,12 +125,17 @@ impl MailApp {
             self.loader.encodings.conferences = options.reading_encodings.conferences.clone();
             self.encodings_changed();
         }
+        if self.ignore != options.ignore {
+            self.ignore = options.ignore.clone();
+            self.apply_ignore();
+        }
         self.settings = options.monitor_settings.clone();
         self.random_tagline = options.random_tagline;
         self.signature = options.signature.clone();
         if validate_quote_header(&options.quote_header).is_ok() {
             self.quote_header = options.quote_header.clone();
         }
+        self.quote_reflow = options.quote_reflow;
         self.reading_pane = options.reading_pane;
         self.conferences_unread_only = options.conferences_unread_only;
         self.reading_mode = options.reading_mode;
@@ -198,6 +206,7 @@ impl MailApp {
         }
         let pages = [
             (0, fl!(LANGUAGE_LOADER, "settings-page-general")),
+            (3, fl!(LANGUAGE_LOADER, "settings-page-filters")),
             (1, fl!(LANGUAGE_LOADER, "settings-page-monitor")),
             (2, fl!(LANGUAGE_LOADER, "settings-section-cache")),
         ];
@@ -211,6 +220,7 @@ impl MailApp {
                     match dialog.page {
                         0 => general(ui, &mut dialog.draft),
                         1 => monitor::fields(ui, &mut dialog.draft.monitor_settings),
+                        3 => filters(ui, &mut dialog.draft.ignore),
                         _ => cache(ui, &mut dialog.draft),
                     }
                     if let Err(error) = validate_quote_header(&dialog.draft.quote_header) {
@@ -236,6 +246,7 @@ impl MailApp {
                 dialog.draft.random_tagline = defaults.random_tagline;
                 dialog.draft.signature = defaults.signature;
                 dialog.draft.quote_header = defaults.quote_header;
+                dialog.draft.quote_reflow = defaults.quote_reflow;
                 dialog.draft.reading_pane = defaults.reading_pane;
                 dialog.draft.reading_mode = defaults.reading_mode;
                 dialog.draft.modern_font = defaults.modern_font;
@@ -245,6 +256,7 @@ impl MailApp {
                 dialog.draft.reading_encodings.default = defaults.reading_encodings.default;
             }
             Some(Footer::Restore) if dialog.page == 2 => dialog.draft.extraction_cache_days = defaults.extraction_cache_days,
+            Some(Footer::Restore) if dialog.page == 3 => dialog.draft.ignore = defaults.ignore,
             Some(Footer::Restore) => {
                 let zoom = dialog.draft.monitor_settings.scaling_mode;
                 dialog.draft.monitor_settings = defaults.monitor_settings;
@@ -252,6 +264,7 @@ impl MailApp {
             }
             Some(Footer::Save) => {
                 if validate_quote_header(&dialog.draft.quote_header).is_ok() {
+                    dialog.draft.ignore = std::mem::take(&mut dialog.draft.ignore).without_empty();
                     close = Some(true);
                 }
             }
@@ -352,6 +365,69 @@ fn general(ui: &mut egui::Ui, options: &mut Options) {
                 .desired_width(f32::INFINITY),
         );
         ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "settings-quote-header-hint")).weak().small());
+        appearance::check_row(ui, &fl!(LANGUAGE_LOADER, "settings-quote-reflow"), &mut options.quote_reflow);
+        ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "settings-quote-reflow-hint")).weak().small());
+    });
+}
+
+fn ignore_field_name(field: IgnoreField) -> String {
+    match field {
+        IgnoreField::Author => fl!(LANGUAGE_LOADER, "settings-ignore-field-author"),
+        IgnoreField::Recipient => fl!(LANGUAGE_LOADER, "settings-ignore-field-recipient"),
+        IgnoreField::Subject => fl!(LANGUAGE_LOADER, "settings-ignore-field-subject"),
+    }
+}
+
+fn ignore_mode_name(mode: IgnoreMode) -> String {
+    match mode {
+        IgnoreMode::Hide => fl!(LANGUAGE_LOADER, "settings-ignore-mode-hide"),
+        IgnoreMode::Collapse => fl!(LANGUAGE_LOADER, "settings-ignore-mode-collapse"),
+    }
+}
+
+/// Ignore rules: one row per author, recipient or subject pattern.
+fn filters(ui: &mut egui::Ui, ignore: &mut IgnoreList) {
+    appearance::group(ui, &fl!(LANGUAGE_LOADER, "settings-section-ignore"), |ui| {
+        let mode = &mut ignore.mode;
+        appearance::combo_row(ui, &fl!(LANGUAGE_LOADER, "settings-ignore-mode-label"), ignore_mode_name(*mode), |ui| {
+            for choice in [IgnoreMode::Hide, IgnoreMode::Collapse] {
+                ui.selectable_value(mode, choice, ignore_mode_name(choice));
+            }
+        });
+        ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "settings-ignore-help")).weak().small());
+        ui.add_space(4.0);
+        let mut remove = None;
+        for (index, rule) in ignore.rules.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_salt(("ignore-field", index))
+                    .width(110.0)
+                    .selected_text(ignore_field_name(rule.field))
+                    .show_ui(ui, |ui| {
+                        for field in IgnoreField::ALL {
+                            ui.selectable_value(&mut rule.field, field, ignore_field_name(field));
+                        }
+                    });
+                let width = (ui.available_width() - 32.0).max(80.0);
+                ui.add(
+                    appearance::text_edit(&mut rule.pattern)
+                        .id_salt(("ignore-pattern", index))
+                        .hint_text(fl!(LANGUAGE_LOADER, "settings-ignore-pattern-hint"))
+                        .desired_width(width),
+                );
+                if ui.button("\u{2715}").on_hover_text(fl!(LANGUAGE_LOADER, "settings-ignore-remove")).clicked() {
+                    remove = Some(index);
+                }
+            });
+        }
+        if let Some(index) = remove {
+            ignore.rules.remove(index);
+        }
+        if ignore.rules.is_empty() {
+            ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "settings-ignore-empty")).weak());
+        }
+        if ui.button(fl!(LANGUAGE_LOADER, "settings-ignore-add")).clicked() {
+            ignore.rules.push(IgnoreRule::default());
+        }
     });
 }
 

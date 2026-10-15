@@ -2,7 +2,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     sync::{LazyLock, Mutex},
 };
 
@@ -357,21 +357,82 @@ impl Charset {
     }
 }
 
+/// Where the encoding a message is read in came from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CharsetSource {
+    /// Chosen for this message with Read Message As.
+    Override,
+    /// Named by the message's CHRS, CHARSET or CODEPAGE kludge.
+    Declared,
+    /// The conference's default encoding.
+    Conference,
+    /// The global default encoding.
+    #[default]
+    Default,
+}
+
+/// How a message body becomes text: its encoding and whether `|nn` pipe codes are colors.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BodyFormat {
+    pub charset: Charset,
+    /// Renegade/Telegard `|00`–`|31` color codes are rendered rather than shown as text.
+    pub pipe_codes: bool,
+}
+
+impl From<Charset> for BodyFormat {
+    fn from(charset: Charset) -> Self {
+        Self { charset, pipe_codes: false }
+    }
+}
+
+impl BodyFormat {
+    /// The ANSI parser for this body; pipe codes wrap it in the Renegade parser.
+    pub(crate) fn parser(self, utf8: bool) -> Box<dyn icy_parser_core::CommandParser> {
+        if self.pipe_codes {
+            Box::new(icy_parser_core::RenegadeParser::new())
+        } else {
+            let mut parser = icy_parser_core::AnsiParser::new();
+            parser.utf8 = utf8;
+            Box::new(parser)
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DecodeOptions {
     pub default: Charset,
+    /// Whether `default` is the conference's own or the global one.
+    pub default_source: CharsetSource,
     pub override_charset: Option<Charset>,
+    pub pipe_codes: bool,
 }
 
 impl DecodeOptions {
     pub fn detect(self, bytes: &[u8]) -> Charset {
-        self.override_charset.or_else(|| declared(bytes)).unwrap_or(self.default)
+        self.resolve(bytes).0
+    }
+
+    pub fn resolve(self, bytes: &[u8]) -> (Charset, CharsetSource) {
+        if let Some(charset) = self.override_charset {
+            return (charset, CharsetSource::Override);
+        }
+        match declared(bytes) {
+            Some(charset) => (charset, CharsetSource::Declared),
+            None => (self.default, self.default_source),
+        }
+    }
+
+    pub fn format(self, bytes: &[u8]) -> BodyFormat {
+        BodyFormat {
+            charset: self.detect(bytes),
+            pipe_codes: self.pipe_codes,
+        }
     }
 }
 
 /// Decode only printable runs: ISO 646 replaces punctuation also used by ANSI syntax.
 pub(crate) struct CharsetParser {
-    pub parser: icy_parser_core::AnsiParser,
+    pub parser: Box<dyn icy_parser_core::CommandParser>,
     pub charset: Charset,
 }
 
@@ -467,6 +528,8 @@ pub struct ReadingEncodings {
     pub default: Charset,
     /// Keys include the board identity so conference numbers cannot leak between boards.
     pub conferences: BTreeMap<String, Charset>,
+    /// Conferences, by [`ReadingEncodings::conference_key`], whose messages use Renegade pipe codes.
+    pub pipe_codes: BTreeSet<String>,
     #[serde(skip)]
     pub messages: BTreeMap<usize, Charset>,
 }
@@ -477,6 +540,7 @@ impl ReadingEncodings {
         Self {
             default: self.default,
             conferences: self.conferences.clone(),
+            pipe_codes: self.pipe_codes.clone(),
             messages: BTreeMap::new(),
         }
     }
@@ -491,15 +555,17 @@ impl ReadingEncodings {
     }
 
     pub fn options(&self, package: &crate::qwk::QwkPackage, index: usize) -> DecodeOptions {
-        let default = package
-            .infos
-            .get(index)
-            .and_then(|info| self.conferences.get(&Self::conference_key(package, info.conference)))
-            .copied()
-            .unwrap_or(self.default);
+        let key = package.infos.get(index).map(|info| Self::conference_key(package, info.conference));
+        let conference = key.as_ref().and_then(|key| self.conferences.get(key)).copied();
         DecodeOptions {
-            default,
+            default: conference.unwrap_or(self.default),
+            default_source: if conference.is_some() {
+                CharsetSource::Conference
+            } else {
+                CharsetSource::Default
+            },
             override_charset: self.messages.get(&index).copied(),
+            pipe_codes: key.is_some_and(|key| self.pipe_codes.contains(&key)),
         }
     }
 }
@@ -601,6 +667,47 @@ mod tests {
     }
 
     #[test]
+    fn pipe_codes_color_text_and_leave_search_text_clean_in_every_encoding() {
+        let text = |screen: &icy_engine::TextScreen| -> String { crate::text::styled_lines(screen).iter().flatten().map(|span| span.text.as_str()).collect() };
+        for (charset, bytes, expected) in [
+            (Charset::Cp437, b"|04Red|07 \x82 |x |99".as_slice(), "Red é |x |99"),
+            (Charset::Utf8, "|04Red|07 é |x |99".as_bytes(), "Red é |x |99"),
+            (Charset::Latin1, b"|04Red|07 \xe9 |x |99", "Red é |x |99"),
+        ] {
+            let format = BodyFormat { charset, pipe_codes: true };
+            let screen = crate::reader::render_body_encoded(bytes, format, 80).unwrap();
+            assert_eq!(text(&screen), expected, "{}", charset.name());
+            let lines = crate::text::styled_lines(&screen);
+            assert!(
+                lines[0][0].text == "Red" && lines[0][0].foreground.is_some(),
+                "|04 colors the following text in {}",
+                charset.name()
+            );
+            assert_eq!(crate::reader::body_search_text_encoded(bytes, format), expected.to_lowercase());
+            let plain = crate::reader::render_body_encoded(bytes, charset, 80).unwrap();
+            assert!(text(&plain).starts_with("|04Red|07"), "without the option pipe codes stay text");
+        }
+    }
+
+    #[test]
+    fn resolve_reports_where_the_encoding_came_from() {
+        let options = DecodeOptions::default();
+        assert_eq!(options.resolve(b"plain"), (Charset::Cp437, CharsetSource::Default));
+        assert_eq!(options.resolve(b"\x01CHRS: UTF-8 4\n"), (Charset::Utf8, CharsetSource::Declared));
+        let conference = DecodeOptions {
+            default: Charset::Cp866,
+            default_source: CharsetSource::Conference,
+            ..options
+        };
+        assert_eq!(conference.resolve(b"plain"), (Charset::Cp866, CharsetSource::Conference));
+        let manual = DecodeOptions {
+            override_charset: Some(Charset::Koi8R),
+            ..conference
+        };
+        assert_eq!(manual.resolve(b"\x01CHRS: UTF-8 4\n"), (Charset::Koi8R, CharsetSource::Override));
+    }
+
+    #[test]
     fn incomplete_trailing_utf8_is_trimmed_and_valid_text_kept() {
         assert_eq!(trim_incomplete_utf8("Лип".as_bytes()), "Лип".as_bytes());
         assert_eq!(trim_incomplete_utf8(b"Lip\xd0"), b"Lip");
@@ -667,7 +774,7 @@ mod tests {
         assert_eq!(
             DecodeOptions {
                 default: Charset::Utf8,
-                override_charset: None
+                ..options
             }
             .detect(b"\x01CHRS: IBM437 2\n"),
             Charset::Cp437

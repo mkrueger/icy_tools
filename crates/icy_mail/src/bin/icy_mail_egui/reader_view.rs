@@ -8,6 +8,7 @@ use icy_engine_gui::{
 use icy_mail::{
     drafts::{Draft, DraftKind},
     editor,
+    ignore::IgnoreField,
     options::ReadingMode,
     reader::{NavigateDirection, Pane},
     LANGUAGE_LOADER,
@@ -280,12 +281,14 @@ impl MailApp {
                         people(ui);
                         ui.add_space(10.0);
                         open_parent = details(ui);
+                        self.charset_badge(ui);
                     });
                 } else {
                     ui.horizontal(people);
                     ui.horizontal(|ui| {
                         ui.add_space(26.0);
                         open_parent = details(ui);
+                        self.charset_badge(ui);
                     });
                 }
             });
@@ -301,6 +304,21 @@ impl MailApp {
                 self.reader.select_message(index);
                 self.reveal_message = true;
             }
+        }
+        if self.is_collapsed_ignored(info.index) {
+            ui.vertical_centered(|ui| {
+                ui.add_space(((ui.available_height() - 110.0) / 2.0).max(8.0));
+                let image = self.icons.image(&context, Icon::Close, 36.0);
+                ui.add(image.tint(ui.visuals().weak_text_color()));
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "reader-ignored-title")).size(15.0));
+                ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "reader-ignored-detail")).size(12.0).weak());
+                ui.add_space(6.0);
+                if ui.button(fl!(LANGUAGE_LOADER, "reader-ignored-show")).clicked() {
+                    self.revealed.insert(info.index);
+                }
+            });
+            return;
         }
         if self.body_loading || self.rendered != self.reader.selected_message {
             ui.centered_and_justified(|ui| {
@@ -335,6 +353,32 @@ impl MailApp {
             }
         });
         self.modern_context_menu_open = modern && response.context_menu_opened();
+    }
+
+    /// The encoding the shown message was read in; clicking it offers Read Message As.
+    fn charset_badge(&mut self, ui: &mut egui::Ui) {
+        let Some((charset, source)) = self
+            .body_charset
+            .filter(|_| !self.body_loading && self.rendered == self.reader.selected_message)
+        else {
+            return;
+        };
+        use icy_mail::charset::CharsetSource;
+        let text = match source {
+            CharsetSource::Declared => charset.name().to_string(),
+            CharsetSource::Override => fl!(LANGUAGE_LOADER, "charset-badge-override", charset = charset.name()),
+            CharsetSource::Conference => fl!(LANGUAGE_LOADER, "charset-badge-conference", charset = charset.name()),
+            CharsetSource::Default => fl!(LANGUAGE_LOADER, "charset-badge-default", charset = charset.name()),
+        };
+        ui.label(egui::RichText::new("\u{00b7}").weak().size(12.0));
+        let response = ui
+            .add(egui::Label::new(egui::RichText::new(text).weak().size(12.0)).sense(egui::Sense::click()))
+            .on_hover_text(chrome::charset_description(charset, source))
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        egui::Popup::menu(&response).show(|ui| {
+            ui.set_min_width(220.0);
+            self.read_as_menu(ui);
+        });
     }
 
     /// Less frequent message actions behind the header's "more" button.
@@ -386,6 +430,16 @@ impl MailApp {
         let shortcut = chrome::shortcut(&context, Modifiers::SHIFT, Key::A);
         if entry(ui, add, fl!(LANGUAGE_LOADER, "reader-menu-add-author"), shortcut, true, None) {
             self.add_sender(&context);
+        }
+        ui.separator();
+        for (field, label) in [
+            (IgnoreField::Author, fl!(LANGUAGE_LOADER, "reader-menu-ignore-author")),
+            (IgnoreField::Subject, fl!(LANGUAGE_LOADER, "reader-menu-ignore-subject")),
+        ] {
+            let image = self.icons.image(&context, Icon::Close, 16.0);
+            if entry(ui, image, label, String::new(), true, Some(fl!(LANGUAGE_LOADER, "reader-menu-ignore-tooltip"))) {
+                self.ignore_selected(&context, field);
+            }
         }
         ui.separator();
         let saving = !self.loader.save_picking;

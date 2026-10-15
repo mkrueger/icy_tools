@@ -427,49 +427,17 @@ impl MailApp {
             ui.close();
         }
         ui.add_enabled_ui(self.message_selected(), |ui| {
-            ui.menu_button(fl!(LANGUAGE_LOADER, "menu-read-as"), |ui| {
-                if let Some(index) = self.reader.selected_message {
-                    let mut choice = self.loader.encodings.messages.get(&index).copied();
-                    let previous = choice;
-                    ui.selectable_value(&mut choice, None, fl!(LANGUAGE_LOADER, "charset-automatic"));
-                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                        for charset in icy_mail::charset::Charset::ALL {
-                            ui.selectable_value(&mut choice, Some(charset), charset.name());
-                        }
-                    });
-                    if choice != previous {
-                        if let Some(charset) = choice {
-                            self.loader.encodings.messages.insert(index, charset);
-                        } else {
-                            self.loader.encodings.messages.remove(&index);
-                        }
-                        self.encodings_changed();
-                        ui.close();
-                    }
-                }
-            });
-            ui.menu_button(fl!(LANGUAGE_LOADER, "menu-conference-charset"), |ui| {
-                if let Some((package, info)) = self.reader.package.as_ref().zip(self.selected_info()) {
-                    let key = icy_mail::charset::ReadingEncodings::conference_key(package, info.conference);
-                    let mut choice = self.loader.encodings.conferences.get(&key).copied();
-                    let previous = choice;
-                    ui.selectable_value(&mut choice, None, fl!(LANGUAGE_LOADER, "charset-use-default"));
-                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                        for charset in icy_mail::charset::Charset::ALL {
-                            ui.selectable_value(&mut choice, Some(charset), charset.name());
-                        }
-                    });
-                    if choice != previous {
-                        if let Some(charset) = choice {
-                            self.loader.encodings.conferences.insert(key, charset);
-                        } else {
-                            self.loader.encodings.conferences.remove(&key);
-                        }
-                        self.encodings_changed();
-                        ui.close();
-                    }
-                }
-            });
+            ui.menu_button(fl!(LANGUAGE_LOADER, "menu-read-as"), |ui| self.read_as_menu(ui));
+            ui.menu_button(fl!(LANGUAGE_LOADER, "menu-conference-charset"), |ui| self.conference_charset_menu(ui));
+            let pipe_codes = self.conference_pipe_codes();
+            if ui
+                .add(egui::Button::selectable(pipe_codes, fl!(LANGUAGE_LOADER, "menu-pipe-codes")))
+                .on_hover_text(fl!(LANGUAGE_LOADER, "menu-pipe-codes-tooltip"))
+                .clicked()
+            {
+                self.set_conference_pipe_codes(!pipe_codes);
+                ui.close();
+            }
         });
         let threads = self.reader.package.is_some() && self.reader.view_mode == ViewMode::Threads;
         if item(
@@ -626,6 +594,97 @@ impl MailApp {
                 }
             });
         });
+    }
+}
+
+/// How each message is decoded, shared by the View menu and the reader header.
+impl MailApp {
+    fn selected_conference_key(&self) -> Option<String> {
+        let package = self.reader.package.as_ref()?;
+        let info = self.selected_info()?;
+        Some(icy_mail::charset::ReadingEncodings::conference_key(package, info.conference))
+    }
+
+    /// The encoding of the selected message: automatic, or one chosen for it until the packet is reopened.
+    pub fn read_as_menu(&mut self, ui: &mut egui::Ui) {
+        let Some(index) = self.reader.selected_message else {
+            return;
+        };
+        if let Some((charset, source)) = self.body_charset {
+            ui.label(egui::RichText::new(charset_description(charset, source)).weak());
+            ui.separator();
+        }
+        let mut choice = self.loader.encodings.messages.get(&index).copied();
+        let previous = choice;
+        ui.selectable_value(&mut choice, None, fl!(LANGUAGE_LOADER, "charset-automatic"));
+        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+            for charset in icy_mail::charset::Charset::ALL {
+                ui.selectable_value(&mut choice, Some(charset), charset.name());
+            }
+        });
+        if choice != previous {
+            match choice {
+                Some(charset) => self.loader.encodings.messages.insert(index, charset),
+                None => self.loader.encodings.messages.remove(&index),
+            };
+            self.encodings_changed();
+            ui.close();
+        }
+    }
+
+    /// The default encoding of the selected message's conference, remembered for its board.
+    pub fn conference_charset_menu(&mut self, ui: &mut egui::Ui) {
+        let Some(key) = self.selected_conference_key() else {
+            return;
+        };
+        let mut choice = self.loader.encodings.conferences.get(&key).copied();
+        let previous = choice;
+        ui.selectable_value(&mut choice, None, fl!(LANGUAGE_LOADER, "charset-use-default"));
+        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+            for charset in icy_mail::charset::Charset::ALL {
+                ui.selectable_value(&mut choice, Some(charset), charset.name());
+            }
+        });
+        if choice != previous {
+            match choice {
+                Some(charset) => self.loader.encodings.conferences.insert(key, charset),
+                None => self.loader.encodings.conferences.remove(&key),
+            };
+            self.encodings_changed();
+            ui.close();
+        }
+    }
+
+    /// Whether the selected message's conference renders Renegade `|nn` pipe codes as colors.
+    pub fn conference_pipe_codes(&self) -> bool {
+        self.selected_conference_key()
+            .is_some_and(|key| self.loader.encodings.pipe_codes.contains(&key))
+    }
+
+    pub fn set_conference_pipe_codes(&mut self, enabled: bool) {
+        let Some(key) = self.selected_conference_key() else {
+            return;
+        };
+        let changed = if enabled {
+            self.loader.encodings.pipe_codes.insert(key)
+        } else {
+            self.loader.encodings.pipe_codes.remove(&key)
+        };
+        if changed {
+            self.encodings_changed();
+        }
+    }
+}
+
+/// "UTF-8, declared by the message" and similar, for the reader header and the Read As menu.
+pub fn charset_description(charset: icy_mail::charset::Charset, source: icy_mail::charset::CharsetSource) -> String {
+    use icy_mail::charset::CharsetSource;
+    let name = charset.name();
+    match source {
+        CharsetSource::Declared => fl!(LANGUAGE_LOADER, "charset-source-declared", charset = name),
+        CharsetSource::Override => fl!(LANGUAGE_LOADER, "charset-source-override", charset = name),
+        CharsetSource::Conference => fl!(LANGUAGE_LOADER, "charset-source-conference", charset = name),
+        CharsetSource::Default => fl!(LANGUAGE_LOADER, "charset-source-default", charset = name),
     }
 }
 

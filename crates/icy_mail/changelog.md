@@ -1,18 +1,40 @@
 # IcyMail Changelog
 
-## 0.1.1 - 2026-10-13
+## Unreleased
 
 ### Added
 
 - Message reading supports all FTS-5003.001 character sets, including national
   ISO 646 variants, DOS and Windows code pages, Macintosh, Latin and UTF-8, plus
-  KOI8-R, KOI8-U and ISO-8859-5.
-  Declared encodings also decode message headers; obsolete aliases and
-  IBMPC/CODEPAGE combinations are recognized. Conversion tables are bundled,
-  without depending on the system's iconv availability.
-- Message reading honors charset kludges before hiding them, with CP437
-  defaults, persistent conference defaults and a per-message read-as override.
-  Rendering, body search, quotes, taglines and UTF-8 exports share the encoding.
+  KOI8-R, KOI8-U and ISO-8859-5. The encoding comes from the message's CHRS,
+  CHARSET or CODEPAGE kludge, with a CP437 default that can be changed globally,
+  per conference or per message (**View ▸ Read Message As**). Declared encodings
+  also decode message headers. Conversion tables are bundled, without depending
+  on the system's iconv availability.
+- The reader header shows the message's encoding and whether the message
+  declared it, a conference or the default chose it, or it was chosen by hand;
+  clicking it offers **Read Message As**.
+- **View ▸ Pipe Color Codes in Conference** renders Renegade/Telegard `|00`–`|31`
+  color codes in a conference's messages, remembered per conference.
+- Ignore rules hide or collapse messages by author, recipient or subject, with
+  `*` and `?` wildcards; subjects match whole threads. **Ignore Author** and
+  **Ignore Subject** are in the reader header's **⋯** menu, the rules in
+  **Settings ▸ Ignore**. Hidden messages leave the lists and unread counts;
+  messages addressed to you are only collapsed.
+- Quoting rejoins paragraphs the original editor hard-wrapped and wraps them at
+  the reply's margin, keeping lists, tables, indented text, signatures and art
+  as they stand (**Settings ▸ Writing**, on by default).
+
+### Fixed
+
+- Large ANSI art in modern reading mode is split into GPU-safe textures instead
+  of crashing when a picture exceeds the graphics device's texture size limit.
+  Art retains its full resolution, size and zoom.
+- Long requoted lines keep their quote prefix on every wrapped line.
+
+## 0.1.1 - 2026-10-13
+
+### Added
 
 - QWK replies end with an `--- IcyMail v<version>` tear line below the tagline,
   as in MultiMail. Blue Wave reply headers name IcyMail and its version so the
@@ -30,15 +52,12 @@
   or an Internet address. FidoNet addresses with a `@domain` are no longer saved
   as Internet addresses.
 - `taglines.txt` and `addressbook.txt` are read as UTF-8 only, like all other
-  data files; packet message text uses its selected reading encoding.
+  data files; CP437 is used only for message text in packets.
 - FidoNet hidden lines are no longer shown in messages, quotes, search or
   tagline detection unless shown with X. Synchronet packets keep Ctrl-A color codes.
 
 ### Fixed
 
-- Large ANSI art in modern reading mode is split into GPU-safe textures instead
-  of crashing when a picture exceeds the graphics device's texture size limit.
-  Art retains its full resolution, size and zoom.
 - Mystic QWK packets using `0xFF` for active messages retain all messages and
   populated conferences instead of appearing empty. Existing metadata indexes
   are rebuilt so an empty cached index cannot hide the corrected messages.

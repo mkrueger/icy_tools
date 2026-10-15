@@ -1,6 +1,20 @@
 # Icy Mail Benutzeroberfläche (Deutsch)
 
 dialog-close_button = Schließen
+menu-read-as = Nachricht lesen als
+menu-conference-charset = Standardkodierung der Konferenz
+charset-automatic = Automatisch (Angabe oder Standard)
+charset-use-default = Globalen Standard verwenden
+settings-default-charset = Standardkodierung für Nachrichten
+menu-pipe-codes = Pipe-Farbcodes in der Konferenz
+menu-pipe-codes-tooltip = Renegade/Telegard-Farbcodes |00–|31 in den Nachrichten dieser Konferenz als Farben anzeigen
+charset-source-declared = { $charset }, von der Nachricht angegeben
+charset-source-override = { $charset }, für diese Nachricht gewählt
+charset-source-conference = { $charset }, Standardkodierung der Konferenz
+charset-source-default = { $charset }, Standardkodierung (die Nachricht gibt keine an)
+charset-badge-override = { $charset } (manuell)
+charset-badge-conference = { $charset } (Konferenz)
+charset-badge-default = { $charset } (Standard)
 
 # Toolbar
 toolbar-open = Öffnen
@@ -200,6 +214,19 @@ notice-text-copied = Text in die Zwischenablage kopiert
 # Settings
 settings-title = Einstellungen
 settings-page-general = Allgemein
+settings-page-filters = Ignorieren
+settings-section-ignore = Ignorierte Nachrichten
+settings-ignore-mode-label = Ignorierte Nachrichten werden
+settings-ignore-mode-hide = in Listen und Ungelesen-Zählern ausgeblendet
+settings-ignore-mode-collapse = abgeblendet gelistet und nur auf Wunsch angezeigt
+settings-ignore-help = Ein Muster muss das ganze Feld treffen, Groß-/Kleinschreibung zählt nicht; * steht für beliebigen Text, ? für ein Zeichen. Betreffs werden ohne Re:-Präfixe verglichen. An dich gerichtete Nachrichten werden nie ausgeblendet, nur eingeklappt.
+settings-ignore-field-author = Absender
+settings-ignore-field-recipient = Empfänger
+settings-ignore-field-subject = Betreff
+settings-ignore-pattern-hint = Name oder Betreff, z. B. *politik*
+settings-ignore-remove = Diese Regel entfernen
+settings-ignore-empty = Niemand wird ignoriert.
+settings-ignore-add = Regel hinzufügen
 settings-page-monitor = Monitor
 settings-section-appearance = Erscheinungsbild
 settings-theme-label = Design
@@ -232,6 +259,8 @@ settings-signature = Signatur
 settings-signature-hint = Wird neuen Nachrichten, Antworten und Weiterleitungen hinzugefügt.
 settings-quote-header = Zitat-Einleitung
 settings-quote-header-hint = Für die integrierte Zitat-Einleitung leer lassen. Unterstützte Platzhalter: { "{author}" }, { "{subject}" }, { "{date}" }.
+settings-quote-reflow = Umbrochene Absätze beim Zitieren zusammenfügen
+settings-quote-reflow-hint = Fließtext mit einem anderen Zeilenumbruch wird absatzweise zitiert; Listen, Tabellen, eingerückter Text und Grafiken behalten ihre Zeilen.
 settings-quote-header-invalid = Ungültige Zitat-Einleitung: { $error }
 writing-quote-header-unsupported = Nicht unterstützter Platzhalter: { $placeholder }
 writing-quote-header-unclosed = Nicht geschlossener Platzhalter in der Zitat-Einleitung.
@@ -265,6 +294,8 @@ app-import-drafts-failed = Antworten konnten nicht importiert werden: { $error }
 app-import-no-packet = Öffne zuerst ein Paket, bevor du Antworten importierst oder Abonnements änderst.
 app-subscription-failed = Die Konferenzanfrage konnte nicht gespeichert werden: { $error }
 notice-subscription-updated = Konferenzanfragen lokal gespeichert. Exportiere und übertrage ein Antwortpaket, um sie anzuwenden.
+notice-ignoring-author = Nachrichten von { $name } werden ignoriert. Ignorierte Nachrichten verwaltest du unter Einstellungen ▸ Ignorieren.
+notice-ignoring-subject = Nachrichten zu „{ $subject }“ werden ignoriert. Ignorierte Nachrichten verwaltest du unter Einstellungen ▸ Ignorieren.
 subscriptions-title = Konferenzabonnements
 subscriptions-help = Anfragen werden lokal gespeichert und in exportierte Antwortpakete aufgenommen. Lade die .REP-Datei hoch, um sie anzuwenden.
 subscriptions-unsupported = Dieses Paket kündigt keine unterstützten Befehle zum Abonnieren oder Abbestellen an.
@@ -472,6 +503,9 @@ editor-color-white = Weiß
 
 # Reader view
 reader-no-message-selected = Keine Nachricht ausgewählt
+reader-ignored-title = Ignorierte Nachricht
+reader-ignored-detail = Absender, Empfänger oder Betreff passen zu einer Ignorieren-Regel.
+reader-ignored-show = Nachricht anzeigen
 reader-pick-message-detail = Eine Nachricht aus der Liste auswählen, um sie hier zu lesen.
 reader-next-message = Nächste Nachricht
 reader-previous-message = Vorherige Nachricht
@@ -488,6 +522,9 @@ reader-more-actions = Weitere Aktionen
 reader-menu-copy-message-text = Nachrichtentext kopieren
 reader-menu-save-tagline = Tagline speichern
 reader-menu-add-author = Absender zum Adressbuch hinzufügen
+reader-menu-ignore-author = Absender ignorieren
+reader-menu-ignore-subject = Betreff ignorieren
+reader-menu-ignore-tooltip = Fügt eine Ignorieren-Regel hinzu; die Regeln verwaltest du unter Einstellungen ▸ Ignorieren
 reader-mark-as-read-short = Als gelesen markieren (M)
 reader-star-short = Markieren (S)
 reader-unstar-short = Markierung entfernen (S)

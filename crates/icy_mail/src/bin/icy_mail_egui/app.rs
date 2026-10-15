@@ -9,6 +9,7 @@ use icy_mail::{
     address_book::AddressBook,
     drafts::{Compose, Draft, DraftStore},
     editor,
+    ignore::{IgnoreField, IgnoreList, Ignored},
     options::{ModernFont, Options, ReadingMode, ReadingPane},
     qwk::MessageInfo,
     reader::{NavigateDirection, Pane, Reader, ViewMode},
@@ -159,6 +160,7 @@ pub struct MailApp {
     pub random_tagline: bool,
     pub signature: String,
     pub quote_header: String,
+    pub quote_reflow: bool,
     pub reading_pane: ReadingPane,
     pub conferences_unread_only: bool,
     pub reading_mode: ReadingMode,
@@ -167,6 +169,14 @@ pub struct MailApp {
     pub modern_art_images: bool,
     /// FidoNet hidden (Ctrl-A) lines are shown in the message, toggled with X as in MultiMail.
     pub show_hidden_lines: bool,
+    /// The encoding the shown message was read in and where it came from.
+    pub body_charset: Option<(icy_mail::charset::Charset, icy_mail::charset::CharsetSource)>,
+    /// Authors, recipients and subjects to ignore, and how.
+    pub ignore: IgnoreList,
+    /// Per package index, whether and how the message is ignored.
+    pub ignored: Vec<Option<Ignored>>,
+    /// Collapsed ignored messages the reader chose to show anyway in this packet.
+    pub revealed: std::collections::HashSet<usize>,
     pub extraction_cache_days: u32,
     /// The shown message as text and rendered art for the modern reading mode, built on first use
     /// and keyed by the packet and message they came from.
@@ -275,6 +285,7 @@ impl MailApp {
             random_tagline: options.random_tagline,
             signature: options.signature.clone(),
             quote_header: options.quote_header.clone(),
+            quote_reflow: options.quote_reflow,
             reading_pane: options.reading_pane,
             conferences_unread_only: options.conferences_unread_only,
             reading_mode: options.reading_mode,
@@ -282,6 +293,10 @@ impl MailApp {
             modern_font_size: options.modern_font_size,
             modern_art_images: options.modern_art_images,
             show_hidden_lines: false,
+            body_charset: None,
+            ignore: options.ignore.clone(),
+            ignored: Vec::new(),
+            revealed: std::collections::HashSet::new(),
             extraction_cache_days: options.extraction_cache_days,
             modern_items: None,
             modern_layout_pending: false,
@@ -396,6 +411,7 @@ impl MailApp {
                                 ((package, document), super::modern_view::upload(context, items))
                             });
                             self.open_quotes.clear();
+                            self.body_charset = prepared.charset;
                             self.screen = ScreenView::new(prepared.classic);
                             if self.folder == Folder::Bulletins && self.file_page_scroll_to_end {
                                 self.screen.scroll_to = Some(egui::vec2(0.0, f32::MAX));
@@ -585,8 +601,9 @@ impl MailApp {
         if !reload {
             self.selected_file = None;
             self.selected_file_page = 0;
+            self.revealed.clear();
         }
-        self.refresh_counts();
+        self.apply_ignore();
         if reload {
             self.reader.view_mode = previous.2;
             self.reader.message_sort = previous.3;
@@ -719,6 +736,9 @@ impl MailApp {
         let user = self.user_name();
         if let Some(package) = &self.reader.package {
             for info in &package.infos {
+                if self.reader.is_hidden(info.index) {
+                    continue;
+                }
                 let unread = !self.reader.is_read(info.index);
                 let personal = package.matches_personal(&info.to, &user);
                 if self.reader.is_starred(info.index) {
@@ -857,7 +877,7 @@ impl MailApp {
         }
         let user = self.user_name();
         for info in infos {
-            if !self.reader.set_read(info.index, read) {
+            if !self.reader.set_read(info.index, read) || self.reader.is_hidden(info.index) {
                 continue;
             }
             let personal = package.matches_personal(&info.to, &user);
@@ -1058,6 +1078,47 @@ impl MailApp {
         self.show_hidden_lines = !self.show_hidden_lines;
     }
 
+    /// Classifies the packet's messages by the ignore rules: hidden ones leave the lists and counts.
+    pub fn apply_ignore(&mut self) {
+        let user = self.user_name();
+        self.ignored = self
+            .reader
+            .package
+            .as_ref()
+            .map(|package| self.ignore.classify(package, &user))
+            .unwrap_or_default();
+        let hidden = self.ignored.iter().map(|class| *class == Some(Ignored::Hidden)).collect();
+        self.reader.set_hidden(hidden);
+        self.refresh_counts();
+        self.reveal_message = true;
+    }
+
+    /// An ignored message shown only as a notice until it is revealed.
+    pub fn is_collapsed_ignored(&self, index: usize) -> bool {
+        self.ignored.get(index).copied().flatten() == Some(Ignored::Collapsed) && !self.revealed.contains(&index)
+    }
+
+    /// Ignores the selected message's author or subject, remembered in the settings.
+    pub fn ignore_selected(&mut self, context: &egui::Context, field: IgnoreField) {
+        let Some(info) = self.selected_info() else {
+            return;
+        };
+        let pattern = match field {
+            IgnoreField::Author => info.from.trim().to_string(),
+            IgnoreField::Recipient => info.to.trim().to_string(),
+            IgnoreField::Subject => info.subject[icy_mail::qwk::reply_prefix_len(&info.subject)..].trim().to_string(),
+        };
+        if !self.ignore.add(field, &pattern) {
+            return;
+        }
+        self.apply_ignore();
+        let text = match field {
+            IgnoreField::Subject => fl!(LANGUAGE_LOADER, "notice-ignoring-subject", subject = pattern.as_str()),
+            _ => fl!(LANGUAGE_LOADER, "notice-ignoring-author", name = pattern.as_str()),
+        };
+        self.notify(context, NoticeKind::Info, text);
+    }
+
     pub fn encodings_changed(&mut self) {
         self.loader.cancel_search();
         self.reader.set_body_matches(String::new(), Default::default());
@@ -1189,7 +1250,7 @@ impl MailApp {
         };
         let text = package.readable_text(&bytes, false);
         let decoded = charset.message_text(&text);
-        let quotes = match quotes_decoded(info, &decoded, &self.quote_header, package.blue_wave.is_some()) {
+        let quotes = match quotes_decoded(info, &decoded, &self.quote_header, self.quote_reflow, package.blue_wave.is_some()) {
             Ok(quotes) => quotes,
             Err(error) => {
                 self.error = Some(fl!(LANGUAGE_LOADER, "app-quote-header-failed", error = error.to_string()));
@@ -1281,6 +1342,7 @@ impl MailApp {
             &package.infos[index],
             &charset.message_text(&text),
             &self.quote_header,
+            self.quote_reflow,
             package.blue_wave.is_some(),
         )
     }
@@ -2089,7 +2151,7 @@ fn message_origin(info: &MessageInfo) -> String {
 }
 
 /// The attribution and quoted lines offered in the editor's quote panel.
-fn quotes_decoded(info: &MessageInfo, text: &str, template: &str, blue_wave: bool) -> icy_mail::Res<Vec<String>> {
+fn quotes_decoded(info: &MessageInfo, text: &str, template: &str, reflow: bool, blue_wave: bool) -> icy_mail::Res<Vec<String>> {
     let attribution = if template.is_empty() {
         fl!(LANGUAGE_LOADER, "app-quote-attribution", date = info.date_str.as_str(), name = info.from.trim())
     } else {
@@ -2102,7 +2164,7 @@ fn quotes_decoded(info: &MessageInfo, text: &str, template: &str, blue_wave: boo
         return Err(fl!(LANGUAGE_LOADER, "app-quote-character-invalid", code = format!("{:04X}", u32::from(character))).into());
     }
     let mut lines = vec![attribution];
-    lines.extend(editor::quote_lines(&info.from, text, editor::WRAP_WIDTH));
+    lines.extend(editor::quote_lines(&info.from, text, editor::WRAP_WIDTH, reflow));
     Ok(lines)
 }
 

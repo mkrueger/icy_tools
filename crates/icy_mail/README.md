@@ -173,8 +173,8 @@ draft and composer previews still render locally.
   queries reuse it instead of reparsing every message. This cache uses additional
   memory and is released when another packet is opened or the window is closed.
   A spinner indicates an ongoing text search. Changing or clearing the query
-  cancels the previous search. ANSI formatting is ignored and CP437 characters
-  are decoded for searching. Malformed ANSI formatting is logged without
+  cancels the previous search. ANSI formatting is ignored and text is decoded
+  in each message's encoding for searching. Malformed ANSI formatting is logged without
   aborting the search; message-loading failures are logged and abort the search
   with an error, including unrecoverable file-backed cache reads. Failed searches
   never publish successful, incomplete body matches.
@@ -194,7 +194,9 @@ draft and composer previews still render locally.
   CP437 is the default for undeclared messages; change it in Settings, or use
   **View ▸ Conference Default Encoding** for one board's conference.
   **View ▸ Read Message As** overrides the declaration for the current message
-  until the packet is reopened. All encodings listed in
+  until the packet is reopened. The reader header shows the encoding in use —
+  `UTF-8` when the message declares it, otherwise marked *(default)*,
+  *(conference)* or *(manual)* — and clicking it offers the same choices. All encodings listed in
   [FTS-5003.001](http://ftsc.org/docs/fts-5003.001) are supported: the seven-bit
   national variants, CP437/850/852/866/848, Windows-1250/1251/1252,
   Macintosh Roman/Central European/Cyrillic, Latin-1/2/5/9 and UTF-8, plus
@@ -212,6 +214,18 @@ draft and composer previews still render locally.
   an 80-column, fixed-width application-font grid instead of the CP437 bitmap
   font. CP437 retains its original bitmap rendering. Composing and reply-packet
   export remain CP437-only.
+- **View ▸ Pipe Color Codes in Conference** renders Renegade/Telegard pipe codes
+  (`|00`–`|15` foreground, `|16`–`|31` background) in the selected message's
+  conference, remembered per conference. Off by default, since `|` followed by
+  digits can be ordinary text; search and quotes leave the codes out either way.
+- **Ignoring** (twits): **Ignore Author** or **Ignore Subject** in the reader
+  header's **⋯** menu adds a rule; **Settings ▸ Ignore** lists the rules by
+  author, recipient or subject. A pattern matches the whole field, ignoring case,
+  with `*` for any text and `?` for one character; subjects match without `Re:`
+  prefixes, so a whole thread is caught. Ignored messages are either hidden from
+  the lists and unread counts, or listed dimmed with a notice in place of their
+  text and **Show Message** to read one anyway. Messages addressed to you are
+  never hidden, only collapsed. Rules are kept with the settings.
 - **Modern message display** (the default; Settings ▸ Messages ▸ Message
   display switches to the classic BBS terminal): messages are shown as
   selectable text, in the fixed-width font unless the proportional one is
@@ -305,7 +319,11 @@ terminal are regular panels, reachable from the toolbar above it or by keyboard:
   pasted.
 - **Quoting** (Ctrl+Q): a reply starts empty with the quote panel open below the
   text. It lists an attribution line and the original quoted with the author's
-  initials (` JD> `, requoting ` JD>` lines as ` JD>>`). The arrows select a
+  initials (` JD> `, requoting ` JD>` lines as ` JD>>`). Paragraphs the original
+  editor hard-wrapped are joined and rewrapped at the reply's margin, so text
+  written to a wider or narrower margin is not quoted ragged; lists, tables,
+  indented text, signatures and art keep their lines (**Settings ▸ Writing ▸
+  Rejoin wrapped paragraphs when quoting**). The arrows select a
   line, Enter or **Quote Line** inserts it, Ctrl+A or **Quote Rest** inserts it
   and everything after it, and double-clicking inserts a line. Typing or Escape
   closes the panel. Forwards include the original quoted in full.

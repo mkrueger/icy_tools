@@ -61,6 +61,8 @@ pub enum ModernFont {
 #[serde(default)]
 pub struct Options {
     pub reading_encodings: crate::charset::ReadingEncodings,
+    /// Authors, recipients and subjects whose messages are hidden or collapsed.
+    pub ignore: crate::ignore::IgnoreList,
     pub theme: Theme,
     /// Monitor emulation and zoom of the message terminal.
     pub monitor_settings: MonitorSettings,
@@ -70,6 +72,8 @@ pub struct Options {
     pub signature: String,
     /// Quote attribution template using original message metadata; empty uses the localized default.
     pub quote_header: String,
+    /// Paragraphs the original editor hard-wrapped are joined before they are quoted.
+    pub quote_reflow: bool,
     /// Message list shown flat or as threads.
     pub view_mode: ViewMode,
     pub reading_pane: ReadingPane,
@@ -90,6 +94,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             reading_encodings: Default::default(),
+            ignore: Default::default(),
             theme: Theme::default(),
             // Mail is mostly read at fit width, where integer steps leave large margins.
             monitor_settings: MonitorSettings {
@@ -100,6 +105,7 @@ impl Default for Options {
             random_tagline: true,
             signature: String::new(),
             quote_header: DEFAULT_QUOTE_HEADER.to_string(),
+            quote_reflow: true,
             view_mode: ViewMode::default(),
             reading_pane: ReadingPane::default(),
             conferences_unread_only: false,
@@ -172,6 +178,9 @@ mod tests {
         options.extraction_cache_days = 0;
         options.signature = "Regards,\nJörg".to_string();
         options.quote_header = "On {date}, {author} wrote about {subject}:".to_string();
+        options.quote_reflow = false;
+        options.ignore.mode = crate::ignore::IgnoreMode::Collapse;
+        options.ignore.add(crate::ignore::IgnoreField::Subject, "*politics*");
         options.save_in(dir.path()).unwrap();
         assert_eq!(Options::load_in(dir.path()).unwrap(), options);
         fs::write(dir.path().join(FILE_NAME), "theme = \"Light\"\n").unwrap();
@@ -181,6 +190,8 @@ mod tests {
         assert!(partial.random_tagline);
         assert!(partial.signature.is_empty());
         assert_eq!(partial.quote_header, DEFAULT_QUOTE_HEADER);
+        assert!(partial.quote_reflow, "older settings rewrap quoted paragraphs");
+        assert_eq!(partial.ignore, crate::ignore::IgnoreList::default(), "older settings ignore nobody");
         assert_eq!(partial.view_mode, ViewMode::List);
         assert_eq!(partial.reading_pane, ReadingPane::Automatic);
         assert_eq!(partial.reading_mode, ReadingMode::Modern, "new installations read in the modern mode");

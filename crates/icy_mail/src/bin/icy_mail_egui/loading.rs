@@ -76,19 +76,27 @@ impl BodyRequest {
 pub struct PreparedBody {
     pub classic: TextScreen,
     pub modern: Option<Vec<PreparedItem>>,
+    /// The encoding a message was read in and where it came from; `None` for bulletin files.
+    pub charset: Option<(icy_mail::charset::Charset, icy_mail::charset::CharsetSource)>,
 }
 
 fn prepare_body(package: &QwkPackage, request: BodyRequest) -> icy_mail::Res<PreparedBody> {
     let BodyRequest { source, mode, art_images, .. } = request;
+    let mut resolved = None;
     let (classic, wide) = match source {
         BodySource::Message(index) => {
             let message = package.get_message(index)?;
-            let charset = request.encoding.detect(&message.text);
+            let (charset, origin) = request.encoding.resolve(&message.text);
+            resolved = Some((charset, origin));
+            let format = icy_mail::charset::BodyFormat {
+                charset,
+                pipe_codes: request.encoding.pipe_codes,
+            };
             let bytes = package.text_for_charset(&message, index, charset)?;
             let text = package.readable_text(&bytes, request.hidden_lines);
-            let classic = icy_mail::reader::render_body_encoded(&text, charset, 80)?;
+            let classic = icy_mail::reader::render_body_encoded(&text, format, 80)?;
             let wide = (mode == ReadingMode::Modern)
-                .then(|| icy_mail::reader::render_body_encoded(&text, charset, icy_mail::reader::WIDE_COLUMNS))
+                .then(|| icy_mail::reader::render_body_encoded(&text, format, icy_mail::reader::WIDE_COLUMNS))
                 .transpose()?;
             (classic, wide)
         }
@@ -117,7 +125,11 @@ fn prepare_body(package: &QwkPackage, request: BodyRequest) -> icy_mail::Res<Pre
     } else {
         wide.map(|wide| modern_view::prepare_items(&classic, modern_view::blocks(&classic, &wide), art_images && !unicode))
     };
-    Ok(PreparedBody { classic, modern })
+    Ok(PreparedBody {
+        classic,
+        modern,
+        charset: resolved,
+    })
 }
 
 enum SearchJob {
@@ -160,11 +172,11 @@ impl BodySearch {
                     let message = package
                         .read_message(info.index)
                         .map_err(|error| SearchError::Message(fl!(LANGUAGE_LOADER, "search-message-error", number = info.number, error = error.to_string())))?;
-                    let charset = self.encodings.options(package, info.index).detect(&message.text);
+                    let format = self.encodings.options(package, info.index).format(&message.text);
                     let bytes = package
-                        .text_for_charset(&message, info.index, charset)
+                        .text_for_charset(&message, info.index, format.charset)
                         .map_err(|error| SearchError::Message(error.to_string()))?;
-                    *cached = Some(icy_mail::reader::body_search_text_encoded(&package.readable_text(&bytes, false), charset));
+                    *cached = Some(icy_mail::reader::body_search_text_encoded(&package.readable_text(&bytes, false), format));
                 }
                 Ok(cached.as_ref().is_some_and(|text| text.contains(query)).then_some(info.index))
             })

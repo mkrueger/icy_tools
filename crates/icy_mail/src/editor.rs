@@ -1043,20 +1043,31 @@ pub fn wrap_body(body: &str) -> String {
 }
 
 /// Quote lines for a reply, re-quoting existing quotes (`" AB> "` becomes `" AB>> "`) and wrapping long lines.
-pub fn quote_lines(author: &str, text: &str, width: usize) -> Vec<String> {
+/// With `reflow`, paragraphs the original editor hard-wrapped are joined first (see [`unwrap_runs`]).
+pub fn quote_lines(author: &str, text: &str, width: usize, reflow: bool) -> Vec<String> {
     let prefix = format!(" {}> ", initials(author));
     let text = strip_codes(text);
+    let source: Vec<&str> = text.lines().collect();
+    let logical = if reflow {
+        unwrap_runs(&source)
+    } else {
+        source.iter().map(|line| (*line).to_string()).collect()
+    };
     let mut lines: Vec<String> = Vec::new();
-    for line in text.lines() {
+    for line in &logical {
         let line = line.trim_end();
-        if line.trim().is_empty() {
-            lines.push(prefix.trim_end().to_string());
-            continue;
-        }
-        if let Some(requoted) = requote(line) {
-            lines.extend(wrap_text(&requoted, width, ""));
-        } else {
-            lines.extend(wrap_text(line, width, &prefix));
+        match QuotePrefix::parse(line) {
+            Some(quote) => {
+                let deeper = format!(" {}{} ", quote.initials, ">".repeat(quote.level + 1));
+                let rest = line[quote.len..].trim_start();
+                if rest.is_empty() {
+                    lines.push(deeper.trim_end().to_string());
+                } else {
+                    lines.extend(wrap_text(rest, width, &deeper));
+                }
+            }
+            None if line.trim().is_empty() => lines.push(prefix.trim_end().to_string()),
+            None => lines.extend(wrap_text(line, width, &prefix)),
         }
     }
     while lines.last().is_some_and(|line| line.trim() == prefix.trim()) {
@@ -1065,14 +1076,121 @@ pub fn quote_lines(author: &str, text: &str, width: usize) -> Vec<String> {
     lines
 }
 
-fn requote(line: &str) -> Option<String> {
-    let trimmed = line.trim_start();
-    let letters = trimmed.chars().take_while(char::is_ascii_uppercase).count();
-    if letters > 3 || trimmed.chars().nth(letters) != Some('>') {
-        return None;
+/// The quote marker a line starts with: up to three initials, an optional `-` (as in QWK
+/// gateways' `-> `) and one or more `>`.
+#[derive(Debug, PartialEq, Eq)]
+struct QuotePrefix<'a> {
+    initials: &'a str,
+    level: usize,
+    /// Bytes of the line the prefix takes, including one space after the markers.
+    len: usize,
+}
+
+impl<'a> QuotePrefix<'a> {
+    fn parse(line: &'a str) -> Option<Self> {
+        let start = line.len() - line.trim_start().len();
+        let rest = &line[start..];
+        let initials_len: usize = rest.chars().take_while(|ch| ch.is_uppercase()).take(4).map(char::len_utf8).sum();
+        if rest[..initials_len].chars().count() > 3 {
+            return None;
+        }
+        let mut position = start + initials_len;
+        if line[position..].starts_with("->") {
+            position += 1;
+        }
+        let level = line[position..].chars().take_while(|&ch| ch == '>').count();
+        if level == 0 {
+            return None;
+        }
+        position += level;
+        if line[position..].starts_with(' ') {
+            position += 1;
+        }
+        Some(Self {
+            initials: &rest[..initials_len],
+            level,
+            len: position,
+        })
     }
-    let (marker, rest) = trimmed.split_at(letters);
-    Some(format!(" {marker}>{rest}"))
+
+    /// Lines continue one paragraph only under the same writer at the same depth.
+    fn key(line: &'a str) -> Option<(&'a str, usize)> {
+        Self::parse(line).map(|prefix| (prefix.initials, prefix.level))
+    }
+}
+
+/// The text of a line after its quote prefix.
+fn quoted_text(line: &str) -> &str {
+    QuotePrefix::parse(line).map_or(line, |prefix| &line[prefix.len..])
+}
+
+/// Indented, tabbed or spaced into columns: joining it would lose the layout. Two spaces are
+/// still prose, as many people end sentences that way.
+fn is_laid_out(text: &str) -> bool {
+    text.starts_with([' ', '\t']) || text.contains('\t') || text.contains("   ")
+}
+
+/// A bullet or numbered point starts a paragraph of its own.
+fn starts_item(text: &str) -> bool {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some('-' | '*' | '+' | '\u{00b7}' | '\u{2022}') => chars.next() == Some(' '),
+        Some(first) if first.is_ascii_digit() => {
+            let rest = text.trim_start_matches(|ch: char| ch.is_ascii_digit());
+            rest.starts_with(". ") || rest.starts_with(") ")
+        }
+        _ => false,
+    }
+}
+
+/// Lines narrower than this were made short on purpose, so their breaks are kept.
+const MIN_FILL_WIDTH: usize = 40;
+
+/// Joins lines that a paragraph was hard-wrapped into, so quotes are wrapped at the reply's margin
+/// instead of keeping the original editor's breaks (as AmberEdit's `quote_unwrap`).
+///
+/// A run is the lines with text under one quote prefix; blank lines, other depths or initials end
+/// it. Its longest line approximates the original margin, and a line continues the one above when
+/// that line had no room left for its first word. Laid-out text and list items are never joined, so
+/// tables, signatures and ASCII art are quoted as they stand.
+fn unwrap_runs(lines: &[&str]) -> Vec<String> {
+    let has_text = |line: &str| !quoted_text(line).trim().is_empty();
+    let mut out = Vec::with_capacity(lines.len());
+    let mut at = 0;
+    while at < lines.len() {
+        if !has_text(lines[at]) {
+            out.push(lines[at].to_string());
+            at += 1;
+            continue;
+        }
+        let key = QuotePrefix::key(lines[at]);
+        let end = (at + 1..lines.len())
+            .find(|&index| QuotePrefix::key(lines[index]) != key || !has_text(lines[index]))
+            .unwrap_or(lines.len());
+        let width = lines[at..end].iter().map(|line| line.trim_end().chars().count()).max().unwrap_or(0);
+        let mut current = lines[at].trim_end().to_string();
+        let mut previous = lines[at].trim_end();
+        for line in &lines[at + 1..end] {
+            let line = line.trim_end();
+            let text = quoted_text(line);
+            let first_word = text.split_whitespace().next().unwrap_or("");
+            let continues = width >= MIN_FILL_WIDTH
+                && previous.chars().count() + 1 + first_word.chars().count() > width
+                && !is_laid_out(quoted_text(previous))
+                && !is_laid_out(text)
+                && !starts_item(text);
+            if continues {
+                current.push(' ');
+                current.push_str(text);
+            } else {
+                out.push(std::mem::replace(&mut current, line.to_string()));
+            }
+            previous = line;
+        }
+        out.push(current);
+        at = end;
+    }
+    out
 }
 
 fn wrap_text(line: &str, width: usize, prefix: &str) -> Vec<String> {
@@ -1262,10 +1380,64 @@ mod tests {
     #[test]
     fn quote_lines_use_initials_requote_and_strip_codes() {
         let text = "Hello |07there\x1b[1;31m!\n\n XY> older\n> plain\n\n";
-        let lines = quote_lines("John Doe", text, WRAP_WIDTH);
+        let lines = quote_lines("John Doe", text, WRAP_WIDTH, false);
         assert_eq!(lines, vec![" JD> Hello there!", " JD>", " XY>> older", " >> plain"]);
-        let long = quote_lines("alice", &"word ".repeat(30), WRAP_WIDTH);
+        let long = quote_lines("alice", &"word ".repeat(30), WRAP_WIDTH, false);
         assert!(long.len() == 2 && long.iter().all(|line| line.starts_with(" A> ") && line.len() <= WRAP_WIDTH));
         assert_eq!(decode_message(b"a\x1b[1m\x01\xb0\n"), "a\x1b[1m\u{2591}\n");
+    }
+
+    #[test]
+    fn wrapped_requotes_keep_their_prefix_on_every_line() {
+        let long = format!(" XY> {}", "word ".repeat(30));
+        let lines = quote_lines("John Doe", &long, WRAP_WIDTH, false);
+        assert!(lines.len() > 1);
+        assert!(
+            lines.iter().all(|line| line.starts_with(" XY>> ") && line.chars().count() <= WRAP_WIDTH),
+            "{lines:#?}"
+        );
+        assert_eq!(quote_lines("A B", "-> gateway quote", WRAP_WIDTH, false), [" >> gateway quote"]);
+        assert_eq!(quote_lines("A B", "ДЛ> Привет", WRAP_WIDTH, false), [" ДЛ>> Привет"]);
+        assert_eq!(quote_lines("A B", "HELLO> no quote", WRAP_WIDTH, false), [" AB> HELLO> no quote"]);
+    }
+
+    #[test]
+    fn reflow_joins_hard_wrapped_prose_and_keeps_layout() {
+        // Written to a 60 column margin; quoting rewraps it at the reply's width instead.
+        let prose = "The quick brown fox jumps over the lazy dog and then keeps\n\
+                     running across the field until it reaches the river bank\n\
+                     where it finally stops.\n";
+        let joined = quote_lines("John Doe", prose, WRAP_WIDTH, true);
+        assert_eq!(
+            joined,
+            [
+                " JD> The quick brown fox jumps over the lazy dog and then keeps running across",
+                " JD> the field until it reaches the river bank where it finally stops.",
+            ]
+        );
+        assert_eq!(quote_lines("John Doe", prose, WRAP_WIDTH, false).len(), 3, "without reflow every line is kept");
+
+        // Short lines, lists, indented or column text, other writers and blank lines keep their breaks.
+        let kept = "Short line\nanother short line\n\n\
+                    - first item of a list that is long enough to reach the margin\n\
+                    - second item of the same list which also runs quite long\n\
+                    Name        Value      Comment for a table that is long enough\n\
+                    Other       Row        with a long trailing comment text here\n";
+        let lines = quote_lines("John Doe", kept, WRAP_WIDTH, true);
+        assert_eq!(lines, quote_lines("John Doe", kept, WRAP_WIDTH, false));
+
+        // Existing quotes are joined only within one writer at one depth.
+        let quoted = " XY> The quick brown fox jumps over the lazy dog and then keeps\n\
+                      XY> running across the field until it reaches the river bank.\n\
+                      ZZ> A different writer with a line that is long enough too.\n";
+        let lines = quote_lines("John Doe", quoted, WRAP_WIDTH, true);
+        assert_eq!(
+            lines,
+            [
+                " XY>> The quick brown fox jumps over the lazy dog and then keeps running across",
+                " XY>> the field until it reaches the river bank.",
+                " ZZ>> A different writer with a line that is long enough too.",
+            ]
+        );
     }
 }

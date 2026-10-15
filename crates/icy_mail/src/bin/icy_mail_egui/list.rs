@@ -266,20 +266,22 @@ impl MailApp {
                         let hidden_unread = if collapsed { self.reader.unread_replies(row.index) } else { 0 };
                         let replies = row.descendants.to_string();
                         let strong = unread || hidden_unread > 0;
+                        let ignored = self.is_collapsed_ignored(row.index);
+                        let mut from_cell = Cell::header(&info.from).strong(strong && !ignored).highlight(&from_needle);
+                        let mut subject_cell = Cell::header(&info.subject)
+                            .strong(strong && !ignored)
+                            .highlight(&subject_needle)
+                            .indent(if threaded { tree_indent(row.depth) } else { 0.0 })
+                            .dim(repeated)
+                            .badge(collapsed.then_some((replies.as_str(), hidden_unread > 0)));
+                        if ignored {
+                            from_cell = from_cell.weak();
+                            subject_cell = subject_cell.weak();
+                        }
                         let (response, cells, colors) = widgets::row(
                             ui,
                             &widths,
-                            &[
-                                Cell::new(""),
-                                Cell::header(&info.from).strong(strong).highlight(&from_needle),
-                                Cell::header(&info.subject)
-                                    .strong(strong)
-                                    .highlight(&subject_needle)
-                                    .indent(if threaded { tree_indent(row.depth) } else { 0.0 })
-                                    .dim(repeated)
-                                    .badge(collapsed.then_some((replies.as_str(), hidden_unread > 0))),
-                                Cell::new(&date).weak(),
-                            ],
+                            &[Cell::new(""), from_cell, subject_cell, Cell::new(&date).weak()],
                             selected,
                             focused,
                         );

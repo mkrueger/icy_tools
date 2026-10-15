@@ -170,6 +170,8 @@ pub struct Reader {
     search: Vec<[String; 3]>,
     /// Body matches supplied by a background search, keyed by its normalized query.
     body_matches: Option<(String, HashSet<usize>)>,
+    /// Package indices left out of every list, such as ignored messages.
+    hidden: Vec<bool>,
 }
 
 impl Default for Reader {
@@ -198,6 +200,7 @@ impl Default for Reader {
             search_fields: SearchFields::default(),
             search: Vec::new(),
             body_matches: None,
+            hidden: Vec::new(),
         }
     }
 }
@@ -216,9 +219,23 @@ impl Reader {
         self.numbers.clear();
         self.search.clear();
         self.body_matches = None;
+        self.hidden.clear();
         self.collapsed.clear();
         self.rebuild_conferences();
         self.rebuild_messages();
+    }
+
+    /// Leaves the given package indices out of every list (ignored messages); rebuilds the list.
+    pub fn set_hidden(&mut self, hidden: Vec<bool>) {
+        let hidden = if hidden.iter().any(|&flag| flag) { hidden } else { Vec::new() };
+        if hidden != self.hidden {
+            self.hidden = hidden;
+            self.rebuild_messages();
+        }
+    }
+
+    pub fn is_hidden(&self, index: usize) -> bool {
+        self.hidden.get(index).copied().unwrap_or(false)
     }
 
     pub fn rebuild_conferences(&mut self) {
@@ -269,6 +286,7 @@ impl Reader {
             && self.personal.is_none()
             && !self.unread_only
             && !self.starred_only
+            && self.hidden.is_empty()
             && needle.is_empty())
         .then(|| package.cached_threads())
         .flatten();
@@ -303,7 +321,8 @@ impl Reader {
                 .par_iter()
                 .with_min_len(1024)
                 .filter(|info| {
-                    self.selected_conference.is_none_or(|number| info.conference == number)
+                    !self.is_hidden(info.index)
+                        && self.selected_conference.is_none_or(|number| info.conference == number)
                         && personal.as_ref().is_none_or(|name| package.matches_personal(&info.to, name))
                         && (!self.unread_only || !self.read[info.index])
                         && (!self.starred_only || self.starred[info.index])
@@ -723,16 +742,19 @@ pub fn render_body(data: &[u8]) -> Res<TextScreen> {
     render_body_encoded(data, crate::charset::DecodeOptions::default().detect(data), 80)
 }
 
-pub fn render_body_encoded(data: &[u8], charset: crate::charset::Charset, width: i32) -> Res<TextScreen> {
-    let mut parser = icy_parser_core::AnsiParser::new();
+pub fn render_body_encoded(data: &[u8], format: impl Into<crate::charset::BodyFormat>, width: i32) -> Res<TextScreen> {
+    let format = format.into();
+    let charset = format.charset;
     if charset == crate::charset::Charset::Utf8 {
-        parser.utf8 = true;
         let text = charset.decode(data);
-        render_with_type(text.as_bytes(), &mut parser, width, icy_engine::BufferType::Unicode)
+        render_with_type(text.as_bytes(), &mut *format.parser(true), width, icy_engine::BufferType::Unicode)
     } else if charset == crate::charset::Charset::Cp437 {
-        render_with(data, &mut parser, width)
+        render_with(data, &mut *format.parser(false), width)
     } else {
-        let mut parser = crate::charset::CharsetParser { parser, charset };
+        let mut parser = crate::charset::CharsetParser {
+            parser: format.parser(false),
+            charset,
+        };
         render_with_type(data, &mut parser, width, icy_engine::BufferType::Unicode)
     }
 }
@@ -811,8 +833,10 @@ pub fn body_search_text(data: &[u8]) -> String {
     body_search_text_encoded(data, crate::charset::DecodeOptions::default().detect(data))
 }
 
-pub fn body_search_text_encoded(data: &[u8], charset: crate::charset::Charset) -> String {
-    use icy_parser_core::{AnsiParser, CommandParser, CommandSink, ErrorLevel, ParseError, TerminalCommand};
+pub fn body_search_text_encoded(data: &[u8], format: impl Into<crate::charset::BodyFormat>) -> String {
+    use icy_parser_core::{CommandSink, ErrorLevel, ParseError, TerminalCommand};
+    let format = format.into();
+    let charset = format.charset;
 
     struct Text {
         bytes: Vec<u8>,
@@ -844,8 +868,7 @@ pub fn body_search_text_encoded(data: &[u8], charset: crate::charset::Charset) -
     let mut text = Text {
         bytes: Vec::with_capacity(data.len()),
     };
-    let mut parser = AnsiParser::new();
-    parser.utf8 = charset == crate::charset::Charset::Utf8;
+    let mut parser = format.parser(charset == crate::charset::Charset::Utf8);
     parser.parse(data, &mut text);
     charset.decode(&text.bytes).to_lowercase()
 }

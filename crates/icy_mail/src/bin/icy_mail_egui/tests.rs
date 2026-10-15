@@ -71,6 +71,118 @@ fn loaded(context: &egui::Context) -> (packet_tests::TempDir, app::MailApp) {
     (dir, mail)
 }
 
+fn index_from(mail: &app::MailApp, author: &str) -> usize {
+    let package = mail.reader.package.as_ref().unwrap();
+    package.infos.iter().position(|info| info.from == author).unwrap()
+}
+
+#[test]
+fn ignore_rules_hide_or_collapse_messages_and_persist() {
+    use icy_mail::ignore::{IgnoreField, IgnoreMode};
+
+    crate::use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, mut mail) = loaded(&context);
+    let size = egui::vec2(1100.0, 760.0);
+    let alice = index_from(&mail, "alice");
+    let bob = index_from(&mail, "bob");
+    let total = mail.reader.messages.len();
+    mail.reader.select_message(alice);
+    let unread_before = mail.counts.unread;
+    let alice_unread = !mail.reader.is_read(alice);
+
+    mail.ignore_selected(&context, IgnoreField::Author);
+    assert!(!mail.reader.contains(alice), "hidden messages leave the list");
+    assert_eq!(mail.reader.messages.len(), total - 1);
+    assert_eq!(mail.counts.unread, unread_before - usize::from(alice_unread), "and the unread counts");
+    assert!(mail.notice.as_ref().is_some_and(|notice| notice.text.contains("alice")));
+    mail.persist_options(&context);
+    let saved = icy_mail::options::Options::load_in(dir.path()).unwrap();
+    assert_eq!(saved.ignore.rules.len(), 1, "ignore rules are saved");
+    assert_ne!(mail.reader.selected_message, Some(alice), "the selection leaves the hidden message");
+
+    // Subjects match without reply prefixes, so the whole thread goes.
+    mail.reader.select_message(bob);
+    mail.ignore_selected(&context, IgnoreField::Subject);
+    assert!(!mail.reader.contains(bob));
+    assert_eq!(mail.reader.messages.len(), total - 2);
+
+    let mut options = mail.current_options(&context);
+    options.ignore.mode = IgnoreMode::Collapse;
+    mail.apply_options(&context, &options);
+    assert_eq!(mail.reader.messages.len(), total, "collapsed messages are listed again");
+    assert!(mail.is_collapsed_ignored(alice));
+    mail.reader.select_message(alice);
+    let output = settle(&context, &mut mail, size);
+    label(&output, "Ignored message");
+    click_label(&context, &mut mail, size, "Show Message");
+    assert!(!mail.is_collapsed_ignored(alice), "the reader can still show it");
+    assert!(mail.is_collapsed_ignored(bob), "revealing one message reveals only that one");
+
+    options.ignore.rules.clear();
+    mail.apply_options(&context, &options);
+    assert!(!mail.is_collapsed_ignored(bob));
+    assert_eq!(
+        mail.counts.unread,
+        mail.reader
+            .package
+            .as_ref()
+            .unwrap()
+            .infos
+            .iter()
+            .filter(|info| !mail.reader.is_read(info.index))
+            .count()
+    );
+}
+
+#[test]
+fn reader_header_shows_where_the_encoding_came_from_and_pipe_codes_toggle_per_conference() {
+    use icy_mail::charset::{Charset, CharsetSource, ReadingEncodings};
+
+    crate::use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, _) = packet_tests::load_utf8();
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    mail.open(dir.path().join("UTF8.QWK"), &context);
+    wait(&mut mail, &context);
+    let size = egui::vec2(1100.0, 760.0);
+    mail.reader.select_message(0);
+    wait(&mut mail, &context);
+    assert_eq!(mail.body_charset, Some((Charset::Utf8, CharsetSource::Declared)));
+    label(&settle(&context, &mut mail, size), "UTF-8");
+
+    mail.reader.select_message(1);
+    wait(&mut mail, &context);
+    assert_eq!(mail.body_charset, Some((Charset::Cp437, CharsetSource::Default)));
+    label(&settle(&context, &mut mail, size), "CP437 (default)");
+
+    let package = mail.reader.package.clone().unwrap();
+    mail.loader
+        .encodings
+        .conferences
+        .insert(ReadingEncodings::conference_key(&package, package.infos[1].conference), Charset::Latin1);
+    mail.encodings_changed();
+    wait(&mut mail, &context);
+    assert_eq!(mail.body_charset, Some((Charset::Latin1, CharsetSource::Conference)));
+    mail.loader.encodings.messages.insert(1, Charset::Utf8);
+    mail.encodings_changed();
+    wait(&mut mail, &context);
+    assert_eq!(mail.body_charset, Some((Charset::Utf8, CharsetSource::Override)));
+    label(&settle(&context, &mut mail, size), "UTF-8 (manual)");
+
+    assert!(!mail.conference_pipe_codes());
+    mail.set_conference_pipe_codes(true);
+    assert!(mail.conference_pipe_codes());
+    assert!(mail.body_style().encoding.pipe_codes, "the body is rendered again with pipe codes");
+    mail.persist_options(&context);
+    let saved = icy_mail::options::Options::load_in(dir.path()).unwrap();
+    assert_eq!(saved.reading_encodings.pipe_codes.len(), 1);
+    mail.set_conference_pipe_codes(false);
+    assert!(!mail.body_style().encoding.pipe_codes);
+}
+
 #[test]
 fn utf8_reading_rendering_quotes_search_export_and_overrides_agree() {
     use icy_mail::charset::{Charset, ReadingEncodings};
