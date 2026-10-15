@@ -538,6 +538,102 @@ fn modern_art_images_toggle_rebuilds_the_outbox_preview() {
 }
 
 #[test]
+fn modern_art_upload_respects_gpu_limits_without_losing_pixels() {
+    for (size, max_side) in [
+        ([1264, 8608], 8192),
+        ([131, 137], 64),
+        ([131, 32], 64),
+        ([32, 137], 64),
+        ([64, 64], 64),
+        ([32, 16], 64),
+    ] {
+        let context = egui::Context::default();
+        let pixels = (0..size[0] * size[1])
+            .map(|index| egui::Color32::from_rgb(index as u8, (index / size[0]) as u8, (index / 256) as u8))
+            .collect();
+        let image = egui::ColorImage::new(size, pixels);
+        let mut items = Vec::new();
+        // The context must accept the largest tile; egui's own font atlas needs at least 1024 pixels.
+        let input = egui::RawInput {
+            max_texture_side: Some(max_side.max(2048)),
+            ..Default::default()
+        };
+        let output = context.run(input, |context| {
+            items = modern_view::upload_with_limit(context, vec![modern_view::PreparedItem::Art(image.clone())], max_side);
+        });
+        let [modern_view::Item::Art(art)] = items.as_slice() else {
+            panic!("one art block must remain one item");
+        };
+        assert_eq!(art.size, size);
+        assert_eq!(art.tiles.len(), size[0].div_ceil(max_side) * size[1].div_ceil(max_side));
+        let mut reconstructed = vec![egui::Color32::TRANSPARENT; image.pixels.len()];
+        for (offset, texture) in &art.tiles {
+            let [width, height] = texture.size();
+            assert!(width <= max_side && height <= max_side);
+            let delta = &output.textures_delta.set.iter().find(|(id, _)| *id == texture.id()).unwrap().1;
+            let egui::ImageData::Color(tile) = &delta.image;
+            assert_eq!(tile.size, [width, height]);
+            for y in 0..height {
+                let start = (offset.y as usize + y) * size[0] + offset.x as usize;
+                reconstructed[start..start + width].copy_from_slice(&tile.pixels[y * width..(y + 1) * width]);
+            }
+        }
+        assert_eq!(reconstructed, image.pixels, "tiling must preserve every source pixel");
+    }
+}
+
+#[test]
+fn modern_art_tiles_share_one_layout_rect_at_each_zoom() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (_dir, mut mail) = loaded(&context);
+    // Tall enough that the picture stays on screen at 200%; off-screen tiles are not painted.
+    let size = egui::vec2(1100.0, 2400.0);
+    settle(&context, &mut mail, size);
+    let mut items = Vec::new();
+    let _ = context.run(egui::RawInput::default(), |context| {
+        items = modern_view::upload_with_limit(
+            context,
+            vec![modern_view::PreparedItem::Art(egui::ColorImage::filled([540, 560], egui::Color32::WHITE))],
+            512,
+        );
+    });
+    let modern_view::Item::Art(art) = &items[0] else { unreachable!() };
+    let textures: Vec<_> = art.tiles.iter().map(|(_, texture)| texture.id()).collect();
+    assert_eq!(textures.len(), 4);
+    mail.modern_items = Some((
+        (
+            Arc::as_ptr(mail.reader.package.as_ref().unwrap()) as usize,
+            modern_view::Document::Message(mail.reader.selected_message.unwrap()),
+        ),
+        items,
+    ));
+    let mut original = None;
+    for zoom in [1.0, 1.5, 2.0] {
+        mail.settings.scaling_mode = ScalingMode::Manual(zoom);
+        let output = settle(&context, &mut mail, size);
+        let tiles: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect) if textures.contains(&rect.fill_texture_id()) => Some(rect.rect),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(tiles.len(), 4, "all four tiles are visible at {zoom}");
+        let bounds = tiles.iter().fold(egui::Rect::NOTHING, |bounds, tile| bounds.union(*tile));
+        let scale = bounds.width() / 540.0;
+        // egui snaps each tile to whole pixels, so the picture may differ by a pixel; seams must not.
+        assert!((bounds.height() - 560.0 * scale).abs() <= 1.0);
+        assert!((tiles[0].right() - tiles[1].left()).abs() < 0.1);
+        assert!((tiles[0].bottom() - tiles[2].top()).abs() < 0.1);
+        assert!((tiles.iter().map(|tile| tile.area()).sum::<f32>() - bounds.area()).abs() < 0.1);
+        let original = *original.get_or_insert(bounds.size());
+        assert!((bounds.size() - original * zoom).length() <= 2.0);
+    }
+}
+
+#[test]
 fn modern_art_zoom_scales_images_without_fitting_or_scaling_text() {
     let context = egui::Context::default();
     appearance::apply(&context);
@@ -562,7 +658,10 @@ fn modern_art_zoom_scales_images_without_fitting_or_scaling_text() {
                 quote: false,
                 unwrapped: false,
             }),
-            modern_view::Item::Art(texture.clone()),
+            modern_view::Item::Art(modern_view::ArtImage {
+                size: texture.size(),
+                tiles: vec![(egui::Vec2::ZERO, texture.clone())],
+            }),
         ],
     ));
     let art_size = |output: &egui::FullOutput| {

@@ -88,7 +88,7 @@ const QUOTE_CONTEXT: usize = 2;
 /// One piece of the modern view: text, art, or the switch of a long quote.
 enum Part {
     Text(egui::text::LayoutJob),
-    Art(egui::TextureHandle),
+    Art(ArtImage),
     /// The quote starting at item `start` with `hidden` more lines below its context.
     Fold {
         start: usize,
@@ -166,7 +166,28 @@ pub enum Document {
 /// What the modern view shows, with the art already rendered.
 pub enum Item {
     Text(ModernLine),
-    Art(egui::TextureHandle),
+    Art(ArtImage),
+}
+
+/// An art block retains its full size even when the GPU needs multiple textures.
+#[derive(Clone)]
+pub struct ArtImage {
+    pub size: [usize; 2],
+    pub tiles: Vec<(egui::Vec2, egui::TextureHandle)>,
+}
+
+impl ArtImage {
+    fn show(&self, ui: &mut egui::Ui, scale: f32) -> egui::Response {
+        let size = egui::vec2(self.size[0] as f32, self.size[1] as f32) * scale;
+        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
+        for (offset, texture) in &self.tiles {
+            let tile = egui::Rect::from_min_size(rect.min + *offset * scale, texture.size_vec2() * scale);
+            if ui.is_rect_visible(tile) {
+                egui::Image::new((texture.id(), tile.size())).paint_at(ui, tile);
+            }
+        }
+        response
+    }
 }
 
 /// CPU-prepared content; textures are uploaded only on the UI thread.
@@ -434,6 +455,13 @@ pub fn prepare_items(screen: &TextScreen, blocks: Vec<Block>, art_images: bool) 
 }
 
 pub fn upload(context: &egui::Context, prepared: Vec<PreparedItem>) -> Vec<Item> {
+    let max_side = context.input(|input| input.max_texture_side);
+    upload_with_limit(context, prepared, max_side)
+}
+
+/// [`upload`] with an explicit texture size limit; egui's own atlas needs at least 1024 pixels,
+/// so tests use this to exercise smaller GPU limits.
+pub fn upload_with_limit(context: &egui::Context, prepared: Vec<PreparedItem>, max_side: usize) -> Vec<Item> {
     prepared
         .into_iter()
         .enumerate()
@@ -445,7 +473,22 @@ pub fn upload(context: &egui::Context, prepared: Vec<PreparedItem>) -> Vec<Item>
                     minification: egui::TextureFilter::Linear,
                     ..Default::default()
                 };
-                Item::Art(context.load_texture(format!("modern-art-{index}"), image, options))
+                let size = image.size;
+                let mut tiles = Vec::new();
+                if size[0] <= max_side && size[1] <= max_side {
+                    tiles.push((egui::Vec2::ZERO, context.load_texture(format!("modern-art-{index}"), image, options)));
+                } else {
+                    for y in (0..size[1]).step_by(max_side) {
+                        for x in (0..size[0]).step_by(max_side) {
+                            let tile = image.region_by_pixels([x, y], [max_side.min(size[0] - x), max_side.min(size[1] - y)]);
+                            tiles.push((
+                                egui::vec2(x as f32, y as f32),
+                                context.load_texture(format!("modern-art-{index}-{x}-{y}"), tile, options),
+                            ));
+                        }
+                    }
+                }
+                Item::Art(ArtImage { size, tiles })
             }
         })
         .collect()
@@ -786,10 +829,7 @@ impl MailApp {
                     for part in parts {
                         let part_response = match part {
                             Part::Text(job) => text_label(ui, job, &needle, preserve_selection),
-                            Part::Art(texture) => {
-                                let size = texture.size_vec2() * art_scale;
-                                ui.add(egui::Image::new((texture.id(), size)))
-                            }
+                            Part::Art(image) => image.show(ui, art_scale),
                             Part::Fold { start, hidden, open } => {
                                 let text = if open {
                                     format!("\u{25be}  {}", fl!(LANGUAGE_LOADER, "modern-quote-fold"))

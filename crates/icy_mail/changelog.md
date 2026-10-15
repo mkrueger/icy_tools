@@ -26,6 +26,9 @@
 
 ### Fixed
 
+- Large ANSI art in modern reading mode is split into GPU-safe textures instead
+  of crashing when a picture exceeds the graphics device's texture size limit.
+  Art retains its full resolution, size and zoom.
 - Mystic QWK packets using `0xFF` for active messages retain all messages and
   populated conferences instead of appearing empty. Existing metadata indexes
   are rebuilt so an empty cached index cannot hide the corrected messages.
