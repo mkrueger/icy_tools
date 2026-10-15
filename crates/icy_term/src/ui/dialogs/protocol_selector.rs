@@ -138,6 +138,7 @@ fn get_protocol_description(protocol: &TransferProtocol) -> String {
         "@xmodem1kg" => fl!(crate::LANGUAGE_LOADER, "protocol-xmodem1kG-description"),
         "@ymodem" => fl!(crate::LANGUAGE_LOADER, "protocol-ymodem-description"),
         "@ymodemg" => fl!(crate::LANGUAGE_LOADER, "protocol-ymodemg-description"),
+        "@kermit" => fl!(crate::LANGUAGE_LOADER, "protocol-kermit-description"),
         "@text" => fl!(crate::LANGUAGE_LOADER, "protocol-text-description"),
         "@cet" => fl!(crate::LANGUAGE_LOADER, "protocol-cet-description"),
         // For external protocols, use their description field

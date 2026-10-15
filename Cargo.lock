@@ -1216,7 +1216,7 @@ dependencies = [
 [[package]]
 name = "codepages"
 version = "0.1.0"
-source = "git+https://github.com/mkrueger/icy_board#afbd45e14bf579543dd3d0a38ba21901c8e60fce"
+source = "git+https://github.com/mkrueger/icy_board#46461702f01ea8b7a7aef55506338db776064a14"
 dependencies = [
  "lazy_static",
 ]
@@ -3839,8 +3839,8 @@ dependencies = [
 
 [[package]]
 name = "icy_net"
-version = "0.2.2"
-source = "git+https://github.com/mkrueger/icy_board?rev=afbd45e14bf579543dd3d0a38ba21901c8e60fce#afbd45e14bf579543dd3d0a38ba21901c8e60fce"
+version = "0.2.3"
+source = "git+https://github.com/mkrueger/icy_board?rev=46461702f01ea8b7a7aef55506338db776064a14#46461702f01ea8b7a7aef55506338db776064a14"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3974,8 +3974,8 @@ dependencies = [
 
 [[package]]
 name = "icy_terminal_emulation"
-version = "0.2.2"
-source = "git+https://github.com/mkrueger/icy_board?rev=afbd45e14bf579543dd3d0a38ba21901c8e60fce#afbd45e14bf579543dd3d0a38ba21901c8e60fce"
+version = "0.2.3"
+source = "git+https://github.com/mkrueger/icy_board?rev=46461702f01ea8b7a7aef55506338db776064a14#46461702f01ea8b7a7aef55506338db776064a14"
 dependencies = [
  "serde",
 ]

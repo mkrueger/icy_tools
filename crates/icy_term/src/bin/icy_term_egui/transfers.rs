@@ -282,11 +282,9 @@ impl Transfers {
                         .push(TerminalCommand::StartDownload(protocol, Some(path.to_string_lossy().into_owned())));
                     self.active = true;
                 }
-            } else if let Some(path) = dialog.pick_folder() {
-                self.destination = Some(path.clone());
-                self.commands.push(TerminalCommand::SetDownloadDirectory(path));
-                self.commands.push(TerminalCommand::StartDownload(protocol, None));
-                self.active = true;
+            } else {
+                // The sender announces the file names, so there is nothing to ask the user.
+                self.start_download(protocol, None, options);
             }
         } else {
             let files = if protocol.batch {
@@ -741,9 +739,15 @@ impl Transfers {
                         buttons.push(DialogButton::secondary(tr!("egui-open-download-folder"), Transfer::OpenFolder).leading());
                     }
                     if choosing {
-                        let enabled = connected && self.selected_protocol(options).is_some();
+                        let protocol = self.selected_protocol(options);
+                        let enabled = connected && protocol.is_some();
+                        let label = if self.download && protocol.is_some_and(|protocol| !protocol.ask_for_download_location) {
+                            tr!("egui-start-download")
+                        } else {
+                            tr!("egui-choose-files")
+                        };
                         buttons.push(DialogButton::cancel(tr!("egui-close"), Transfer::Close));
-                        buttons.push(DialogButton::primary(tr!("egui-choose-files"), Transfer::ChooseFiles).enabled(enabled));
+                        buttons.push(DialogButton::primary(label, Transfer::ChooseFiles).enabled(enabled));
                     } else {
                         buttons.push(DialogButton::primary(tr!("egui-close"), Transfer::Close).cancels());
                     }
@@ -1283,6 +1287,22 @@ mod tests {
         transfers.event(&TerminalEvent::Disconnected(None), &options);
         assert!(!transfers.active);
         assert_eq!(transfers.result.as_deref(), Some(&*tr!("egui-connection-closed")));
+    }
+
+    #[test]
+    fn manual_batch_downloads_start_in_the_download_folder_without_a_dialog() {
+        let options = Options::default();
+        for id in ["@zmodem", "@ymodem", "@kermit"] {
+            let mut transfers = Transfers::default();
+            transfers.choose(true);
+            transfers.protocol_id = id.into();
+            let protocol = transfers.selected_protocol(&options).unwrap();
+            transfers.choose_files(protocol, &options);
+            assert!(transfers.active, "{id}");
+            assert_eq!(transfers.destination, Some(PathBuf::from(options.download_path())));
+            assert!(matches!(transfers.commands.first(), Some(TerminalCommand::SetDownloadDirectory(_))));
+            assert!(matches!(transfers.commands.get(1), Some(TerminalCommand::StartDownload(protocol, None)) if protocol.id == id));
+        }
     }
 
     #[test]

@@ -182,6 +182,7 @@ protocol-xmodem1k-description = Zřídka používaný
 protocol-xmodem1kG-description = Opravdu to existuje?
 protocol-ymodem-description = Ok, ale Zmodem je lepší
 protocol-ymodemg-description = Rychlá varianta Ymodem
+protocol-kermit-description = Klasický Kermit pro dávkové přenosy přes obtížné linky
 protocol-text-description = Nahrát textový soubor
 
 transfer-upload = { terminal-upload }

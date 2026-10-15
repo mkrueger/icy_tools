@@ -1,5 +1,18 @@
 # IcyTerm Changelog
 
+## Unreleased
+
+### Added
+
+- Native Kermit file transfers for uploads and batch downloads.
+
+### Changed
+
+- Manual Zmodem, Ymodem and Kermit downloads start directly in the configured
+  download folder instead of asking for a folder first.
+- Kermit negotiates long packets up to 4096 bytes and repeat compression,
+  avoiding the latency bottleneck of classic short packets.
+
 ## 0.9.0 - 2026-10-10
 
 Changes since 0.8.4.

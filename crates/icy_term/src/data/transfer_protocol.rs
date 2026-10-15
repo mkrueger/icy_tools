@@ -96,6 +96,12 @@ impl TransferProtocol {
                 batch: true,
                 ..Default::default()
             }),
+            "@kermit" => Some(Self {
+                enabled: true,
+                id: "@kermit".to_string(),
+                batch: true,
+                ..Default::default()
+            }),
             "@text" => Some(Self {
                 enabled: true,
                 id: "@text".to_string(),
@@ -129,6 +135,7 @@ impl TransferProtocol {
                 "@xmodem1kg" => "Xmodem 1k-G".to_string(),
                 "@ymodem" => "Ymodem".to_string(),
                 "@ymodemg" => "Ymodem-G".to_string(),
+                "@kermit" => "Kermit".to_string(),
                 "@text" => "Text".to_string(),
                 "@cet" => "CET Telesoftware".to_string(),
                 _ => self.name.clone(),
@@ -150,6 +157,7 @@ impl TransferProtocol {
                 "@xmodem1kg" => fl!(crate::LANGUAGE_LOADER, "protocol-xmodem1kG-description"),
                 "@ymodem" => fl!(crate::LANGUAGE_LOADER, "protocol-ymodem-description"),
                 "@ymodemg" => fl!(crate::LANGUAGE_LOADER, "protocol-ymodemg-description"),
+                "@kermit" => fl!(crate::LANGUAGE_LOADER, "protocol-kermit-description"),
                 "@text" => fl!(crate::LANGUAGE_LOADER, "protocol-text-description"),
                 "@cet" => fl!(crate::LANGUAGE_LOADER, "protocol-cet-description"),
                 _ => self.description.clone(),
@@ -181,6 +189,7 @@ impl TransferProtocol {
                 "@xmodem1kg" => TransferProtocolType::XModem1kG,
                 "@ymodem" => TransferProtocolType::YModem,
                 "@ymodemg" => TransferProtocolType::YModemG,
+                "@kermit" => TransferProtocolType::Kermit,
                 "@text" => TransferProtocolType::ASCII,
                 _ => return None,
             };
@@ -297,6 +306,19 @@ pub fn default_protocols() -> Vec<TransferProtocol> {
         },
         TransferProtocol {
             enabled: true,
+            id: "@kermit".to_string(),
+            name: String::new(),
+            description: String::new(),
+            ask_for_download_location: false,
+            batch: true,
+            send_command: String::new(),
+            recv_command: String::new(),
+            auto_transfer: false,
+            download_signature: ModemCommand::default(),
+            upload_signature: ModemCommand::default(),
+        },
+        TransferProtocol {
+            enabled: true,
             id: "@text".to_string(),
             name: String::new(),
             description: String::new(),
@@ -336,6 +358,64 @@ mod tests {
         protocol::{Header, HeaderType, ZFrameType, Zmodem, ZCRCE, ZCRCW},
         Connection,
     };
+
+    #[tokio::test]
+    async fn kermit_is_a_default_batch_protocol_that_transfers_files() {
+        let configured = default_protocols().into_iter().find(|protocol| protocol.id == "@kermit").unwrap();
+        assert_eq!(Some(configured.clone()), TransferProtocol::from_internal_id("@kermit"));
+        assert!(configured.batch);
+        assert!(!configured.ask_for_download_location);
+        assert_eq!(configured.get_name(), "Kermit");
+
+        let dir = std::env::temp_dir().join(format!("icy_term_kermit_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let files: Vec<_> = [("first.bin", 65536), ("second.txt", 17)]
+            .into_iter()
+            .map(|(name, size)| {
+                let path = dir.join(name);
+                std::fs::write(&path, (0..size).map(|index| (index * 7 % 256) as u8).collect::<Vec<_>>()).unwrap();
+                path
+            })
+            .collect();
+
+        let mut sender = configured.create(std::env::temp_dir()).unwrap();
+        let mut receiver = configured.create(std::env::temp_dir()).unwrap();
+        let (mut sender_conn, mut receiver_conn) = ChannelConnection::create_pair();
+        let mut receive_state = receiver.initiate_recv(&mut receiver_conn).await.unwrap();
+        let mut send_state = sender.initiate_send(&mut sender_conn, &files).await.unwrap();
+
+        tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            let send = async {
+                while !send_state.is_finished {
+                    sender.update_transfer(&mut sender_conn, &mut send_state).await.unwrap();
+                }
+                sender_conn.shutdown().await.unwrap();
+            };
+            let receive = async {
+                while !receive_state.is_finished {
+                    receiver.update_transfer(&mut receiver_conn, &mut receive_state).await.unwrap();
+                }
+            };
+            tokio::join!(send, receive);
+        })
+        .await
+        .expect("Kermit batch transfer timed out");
+
+        let received = &receive_state.recieve_state.finished_files;
+        assert_eq!(received.len(), files.len());
+        for ((name, path), source) in received.iter().zip(&files) {
+            assert_eq!(name, source.file_name().unwrap().to_str().unwrap());
+            assert_eq!(std::fs::read(path).unwrap(), std::fs::read(source).unwrap());
+            std::fs::remove_file(path).unwrap();
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(receive_state.recieve_state.check_size, "Checksum/4096");
+        assert_eq!(send_state.send_state.check_size, "Checksum/4096");
+        assert_eq!(receive_state.recieve_state.errors, 0);
+        assert_eq!(send_state.send_state.errors, 0);
+        assert_eq!(receive_state.recieve_state.warnings, 0);
+        assert_eq!(send_state.send_state.warnings, 0);
+    }
 
     #[tokio::test]
     async fn internal_zmodem_downloads_accept_large_subpackets() {

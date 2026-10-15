@@ -184,6 +184,7 @@ protocol-xmodem1k-description = Rarament utilitzat
 protocol-xmodem1kG-description = Això existeix?
 protocol-ymodem-description = Bé, però Zmodem és millor
 protocol-ymodemg-description = Una variant ràpida de Ymodem
+protocol-kermit-description = Kermit clàssic per a transferències per lots en línies difícils
 protocol-text-description = Pujar un fitxer de text
 
 transfer-upload = { terminal-upload }

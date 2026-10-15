@@ -185,6 +185,7 @@ protocol-xmodem1k-description = Einzelne Datei in 1-KB-Blöcken
 protocol-xmodem1kG-description = Streaming-Xmodem 1K für fehlerfreie Verbindungen
 protocol-ymodem-description = Mehrere Dateien auf einmal, samt Name und Größe
 protocol-ymodemg-description = Streaming-Ymodem für fehlerfreie Verbindungen
+protocol-kermit-description = Klassisches Kermit für Batch-Übertragungen über schwierige Leitungen
 protocol-text-description = Sendet eine Textdatei, als würde sie getippt
 protocol-cet-description = Prestel-CET-Telesoftware-Download
 
@@ -736,6 +737,7 @@ egui-external-warning = Startet ein lokal konfiguriertes externes Programm
 egui-cancel-transfer = Übertragung abbrechen
 
 egui-choose-files = Dateien auswählen...
+egui-start-download = Download starten
 
 egui-transfer-upload-hint = Wähle ein Protokoll und danach die zu sendenden Dateien.
 

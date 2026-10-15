@@ -182,6 +182,7 @@ protocol-xmodem1k-description = Ritkán használt
 protocol-xmodem1kG-description = Ez tényleg létezik?
 protocol-ymodem-description = Oké, de a Zmodem jobb
 protocol-ymodemg-description = Egy gyors Ymodem változat
+protocol-kermit-description = Klasszikus Kermit kötegelt átvitelhez nehéz vonalakon
 protocol-text-description = Szövegfájl feltöltése
 
 transfer-upload = { terminal-upload }
