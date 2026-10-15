@@ -21,7 +21,7 @@ const MANIFEST: &str = "manifest.toml";
 const MAX_MANIFEST_SIZE: u64 = 1024 * 1024;
 const DAY: u64 = 24 * 60 * 60;
 const INDEX_FILE: &str = "index-v6.bin";
-const INDEX_VERSION: u32 = 6;
+const INDEX_VERSION: u32 = 7;
 const MAX_INDEX_SIZE: u64 = 1024 * 1024 * 1024;
 const INDEX_CHUNK_MESSAGES: usize = 4096;
 

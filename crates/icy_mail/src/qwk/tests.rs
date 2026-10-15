@@ -550,6 +550,68 @@ fn message_bodies_keep_hidden_lines_until_they_are_read() {
     assert_eq!(synchronet.readable_text(&text, false).as_ref(), text.as_slice());
 }
 
+pub(crate) fn load_utf8() -> (TempDir, QwkPackage) {
+    let dir = TempDir::new();
+    let path = dir.path().join("UTF8.QWK");
+    let mut messages = vec![b' '; 128];
+    for (number, body) in [
+        (1, "\x01CHRS: UTF-8 4\n\x1b[31mGrüße Привет あ\x1b[0m\n... Grüße\n".as_bytes()),
+        (2, b"\xc3\xa9\n".as_slice()),
+    ] {
+        let mut body: Vec<u8> = body.iter().map(|&byte| if byte == b'\n' { 0xe3 } else { byte }).collect();
+        let blocks = body.len().div_ceil(128);
+        body.resize(blocks * 128, b' ');
+        messages.extend(header(b' ', number, "01-05-2600:00", "ALL", "erin", "Encoding", 0, blocks as u32 + 1, 1));
+        messages.extend(body);
+    }
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    let options = zip::write::SimpleFileOptions::default();
+    zip.start_file("CONTROL.DAT", options).unwrap();
+    zip.write_all(&control_dat()).unwrap();
+    zip.start_file("MESSAGES.DAT", options).unwrap();
+    zip.write_all(&messages).unwrap();
+    zip.finish().unwrap();
+    let package = QwkPackage::load_from_file(&path).unwrap();
+    (dir, package)
+}
+
+pub(crate) fn load_legacy_charsets() -> (TempDir, QwkPackage) {
+    let dir = TempDir::new();
+    let path = dir.path().join("CHARSETS.QWK");
+    let mut messages = vec![b' '; 128];
+    for (number, from, body) in [
+        (
+            1,
+            b"\x8f\xe0\xa8\xa2\xa5\xe2".as_slice(),
+            b"\x01CHRS: CP866 2\xe3\x1b[31m\x8f\xe0\xa8\xa2\xa5\xe2\x1b[0m\xe3".as_slice(),
+        ),
+        (2, b"erin", b"\x01CHRS: GERMAN 1\xe3\x1b[31m[\\]\x1b[0m\xe3"),
+    ] {
+        let mut header = header(b' ', number, "01-05-2600:00", "ALL", "", "Encoding", 0, 2, 1);
+        header[46..46 + from.len()].copy_from_slice(from);
+        messages.extend(header);
+        let mut padded = body.to_vec();
+        padded.resize(128, b' ');
+        messages.extend(padded);
+    }
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    let options = zip::write::SimpleFileOptions::default();
+    zip.start_file("CONTROL.DAT", options).unwrap();
+    zip.write_all(&control_dat()).unwrap();
+    zip.start_file("MESSAGES.DAT", options).unwrap();
+    zip.write_all(&messages).unwrap();
+    zip.finish().unwrap();
+    let package = QwkPackage::load_from_file(&path).unwrap();
+    (dir, package)
+}
+
+#[test]
+fn declared_legacy_encodings_decode_index_headers() {
+    let (_dir, package) = load_legacy_charsets();
+    assert_eq!(package.infos[0].from, "Привет");
+    assert_eq!(package.infos[1].from, "erin");
+}
+
 #[test]
 fn reply_keeps_ref_number_and_shares_the_subject_key() {
     let (_dir, package) = load();

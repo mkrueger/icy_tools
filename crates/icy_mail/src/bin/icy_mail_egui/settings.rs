@@ -93,6 +93,7 @@ impl MailApp {
     /// The settings as currently shown, including theme and zoom changed from the menu.
     pub fn current_options(&self, context: &egui::Context) -> Options {
         Options {
+            reading_encodings: self.loader.encodings.persistent(),
             theme: match context.options(|options| options.theme_preference) {
                 egui::ThemePreference::System => Theme::System,
                 egui::ThemePreference::Light => Theme::Light,
@@ -115,6 +116,12 @@ impl MailApp {
     }
 
     pub fn apply_options(&mut self, context: &egui::Context, options: &Options) {
+        if self.loader.encodings.persistent() != options.reading_encodings.persistent() {
+            // Per-message overrides are not settings and survive applying them.
+            self.loader.encodings.default = options.reading_encodings.default;
+            self.loader.encodings.conferences = options.reading_encodings.conferences.clone();
+            self.encodings_changed();
+        }
         self.settings = options.monitor_settings.clone();
         self.random_tagline = options.random_tagline;
         self.signature = options.signature.clone();
@@ -234,6 +241,8 @@ impl MailApp {
                 dialog.draft.modern_font = defaults.modern_font;
                 dialog.draft.modern_font_size = defaults.modern_font_size;
                 dialog.draft.modern_art_images = defaults.modern_art_images;
+                // Conference encodings are chosen from the View menu, not on this page.
+                dialog.draft.reading_encodings.default = defaults.reading_encodings.default;
             }
             Some(Footer::Restore) if dialog.page == 2 => dialog.draft.extraction_cache_days = defaults.extraction_cache_days,
             Some(Footer::Restore) => {
@@ -275,6 +284,16 @@ fn general(ui: &mut egui::Ui, options: &mut Options) {
         });
     });
     appearance::group(ui, &fl!(LANGUAGE_LOADER, "settings-section-messages"), |ui| {
+        appearance::combo_row(
+            ui,
+            &fl!(LANGUAGE_LOADER, "settings-default-charset"),
+            options.reading_encodings.default.name(),
+            |ui| {
+                for charset in icy_mail::charset::Charset::ALL {
+                    ui.selectable_value(&mut options.reading_encodings.default, charset, charset.name());
+                }
+            },
+        );
         let mode = &mut options.reading_mode;
         appearance::combo_row(ui, &fl!(LANGUAGE_LOADER, "settings-reading-mode-label"), reading_mode_name(*mode), |ui| {
             for choice in [ReadingMode::Classic, ReadingMode::Modern] {

@@ -604,9 +604,16 @@ pub fn readable(color: [u8; 3], on_background: bool, dark_mode: bool) -> Color32
 }
 
 impl MailApp {
+    pub fn selectable_body(&self) -> bool {
+        self.reading_mode == ReadingMode::Modern || self.screen.terminal.screen.lock().buffer_type() == icy_engine::BufferType::Unicode
+    }
+
     /// The text of the content pane in the chosen display: the BBS terminal, or the modern view.
     /// Messages, bulletins and outbox drafts all show through here.
     pub fn document_body(&mut self, ui: &mut egui::Ui, document: Document) -> egui::Response {
+        if self.selectable_body() {
+            return self.modern_body(ui, document);
+        }
         match self.reading_mode {
             ReadingMode::Modern => self.modern_body(ui, document),
             ReadingMode::Classic => self.terminal_body(ui),

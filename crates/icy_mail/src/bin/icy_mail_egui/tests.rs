@@ -71,6 +71,128 @@ fn loaded(context: &egui::Context) -> (packet_tests::TempDir, app::MailApp) {
     (dir, mail)
 }
 
+#[test]
+fn utf8_reading_rendering_quotes_search_export_and_overrides_agree() {
+    use icy_mail::charset::{Charset, ReadingEncodings};
+
+    let context = egui::Context::default();
+    let (dir, _) = packet_tests::load_utf8();
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    mail.open(dir.path().join("UTF8.QWK"), &context);
+    wait(&mut mail, &context);
+    assert!(mail.error.is_none(), "{:?}", mail.error);
+    let plain = |mail: &app::MailApp| {
+        let screen = mail.screen.terminal.screen.lock();
+        icy_mail::text::styled_lines(&**screen)
+            .iter()
+            .flatten()
+            .map(|span| span.text.as_str())
+            .collect::<String>()
+    };
+    assert!(plain(&mail).contains("Grüße Привет あ"));
+    assert!(!plain(&mail).contains("CHRS"));
+    assert!(mail.modern_items.is_some());
+    mail.reading_mode = icy_mail::options::ReadingMode::Classic;
+    wait(&mut mail, &context);
+    assert!(plain(&mail).contains("Grüße Привет あ"));
+    assert!(mail.selectable_body(), "classic Unicode uses a fixed-width text grid, not a CP437 bitmap font");
+    let package = mail.reader.package.clone().unwrap();
+    let (_, text) = app::message_file_encoded(&package, 0, true, &mail.loader.encodings).unwrap();
+    assert!(String::from_utf8(text).unwrap().contains("Grüße Привет あ"));
+    let (_, raw) = app::message_file_encoded(&package, 0, false, &mail.loader.encodings).unwrap();
+    assert!(String::from_utf8(raw).unwrap().contains("Grüße Привет あ"));
+    mail.reply(&context, false);
+    assert!(mail.error.is_none(), "{:?}", mail.error);
+    assert!(mail
+        .composer
+        .as_ref()
+        .unwrap()
+        .editor
+        .quotes
+        .lines
+        .iter()
+        .any(|line| line.contains("Grüße Привет あ")));
+    mail.composer = None;
+    mail.loader.encodings.messages.insert(0, Charset::Cp437);
+    mail.encodings_changed();
+    assert!(
+        mail.current_options(&context).reading_encodings.messages.is_empty(),
+        "per-message overrides are not settings and must not trigger a settings save"
+    );
+    let options = mail.current_options(&context);
+    mail.apply_options(&context, &options);
+    assert_eq!(
+        mail.loader.encodings.messages.get(&0),
+        Some(&Charset::Cp437),
+        "applying settings keeps overrides"
+    );
+    wait(&mut mail, &context);
+    assert!(plain(&mail).contains("Gr├╝├ƒe"));
+    mail.loader.encodings.messages.remove(&0);
+    mail.encodings_changed();
+    search_messages(&context, &mut mail, "привет");
+    wait(&mut mail, &context);
+    assert_eq!(mail.reader.selected_message, Some(0));
+    assert!(plain(&mail).contains("Привет"));
+    mail.reader.filter.clear();
+    mail.filter_changed();
+    mail.reader.select_message(1);
+    wait(&mut mail, &context);
+    assert!(plain(&mail).contains("├⌐"));
+    let key = ReadingEncodings::conference_key(&package, 1);
+    mail.loader.encodings.conferences.insert(key.clone(), Charset::Utf8);
+    mail.encodings_changed();
+    wait(&mut mail, &context);
+    assert!(plain(&mail).contains('é'));
+    mail.persist_options(&context);
+    let saved = icy_mail::options::Options::load_in(dir.path()).unwrap();
+    assert_eq!(saved.reading_encodings.conferences[&key], Charset::Utf8);
+    assert!(saved.reading_encodings.messages.is_empty());
+    search_messages(&context, &mut mail, "é");
+    wait(&mut mail, &context);
+    assert!(
+        mail.reader.messages.iter().any(|row| row.index == 1),
+        "changing encodings discards the CP437 search cache"
+    );
+}
+
+#[test]
+fn legacy_charset_packets_share_unicode_rendering_search_and_export() {
+    use icy_mail::options::ReadingMode;
+
+    let context = egui::Context::default();
+    let (dir, _) = packet_tests::load_legacy_charsets();
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    mail.open(dir.path().join("CHARSETS.QWK"), &context);
+    wait(&mut mail, &context);
+    let package = mail.reader.package.clone().unwrap();
+    assert_eq!(package.infos[0].from, "Привет");
+    for mode in [ReadingMode::Modern, ReadingMode::Classic] {
+        mail.reading_mode = mode;
+        for (index, expected) in [(0, "Привет"), (1, "ÄÖÜ")] {
+            mail.reader.select_message(index);
+            wait(&mut mail, &context);
+            let screen = mail.screen.terminal.screen.lock();
+            let lines = icy_mail::text::styled_lines(&**screen);
+            assert_eq!(lines[0].iter().map(|span| span.text.as_str()).collect::<String>(), expected);
+            assert!(lines[0].iter().any(|span| span.foreground.is_some()));
+            drop(screen);
+            assert!(mail.selectable_body());
+            let (_, bytes) = app::message_file_encoded(&package, index, true, &mail.loader.encodings).unwrap();
+            let exported = String::from_utf8(bytes).unwrap();
+            assert!(exported.contains(&format!("\x1b[31m{expected}\x1b[0m")));
+            let (_, raw) = app::message_file_encoded(&package, index, false, &mail.loader.encodings).unwrap();
+            assert!(raw.ends_with(&package.get_message(index).unwrap().text));
+        }
+    }
+    search_messages(&context, &mut mail, "привет");
+    assert_eq!(mail.reader.messages.len(), 1);
+    assert_eq!(mail.reader.selected_message, Some(0));
+    search_messages(&context, &mut mail, "äöü");
+    assert_eq!(mail.reader.messages.len(), 1);
+    assert_eq!(mail.reader.selected_message, Some(1));
+}
+
 fn settle(context: &egui::Context, mail: &mut app::MailApp, size: egui::Vec2) -> egui::FullOutput {
     for _ in 0..3 {
         frame(context, mail, size, vec![]);
@@ -1870,6 +1992,7 @@ fn stale_package_and_body_results_cannot_replace_current_mail() {
         .sender
         .send(loading::Event::Body(
             loading::BodyRequest {
+                encoding: Default::default(),
                 generation: 8,
                 source: loading::BodySource::Message(0),
                 mode: mail.reading_mode,
@@ -2014,6 +2137,7 @@ fn selection_change_and_empty_filter_drop_old_body_results() {
         .sender
         .send(loading::Event::Body(
             loading::BodyRequest {
+                encoding: Default::default(),
                 generation,
                 source: loading::BodySource::Message(3),
                 mode: mail.reading_mode,

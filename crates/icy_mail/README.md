@@ -189,6 +189,29 @@ draft and composer previews still render locally.
   the packet. On narrow windows, advancing opens the message pane.
 - ANSI/CP437 rendering, text/rectangular selection and copy, zoom, light/dark
   themes and additional native windows.
+- **Message encodings** use a Ctrl-A `CHRS` declaration (for example `CHRS: UTF-8 4`)
+  (`CHARSET` and `CODEPAGE` are also recognized), not byte-validity guessing.
+  CP437 is the default for undeclared messages; change it in Settings, or use
+  **View ▸ Conference Default Encoding** for one board's conference.
+  **View ▸ Read Message As** overrides the declaration for the current message
+  until the packet is reopened. All encodings listed in
+  [FTS-5003.001](http://ftsc.org/docs/fts-5003.001) are supported: the seven-bit
+  national variants, CP437/850/852/866/848, Windows-1250/1251/1252,
+  Macintosh Roman/Central European/Cyrillic, Latin-1/2/5/9 and UTF-8, plus
+  KOI8-R, KOI8-U and ISO-8859-5 as used in Cyrillic echoes.
+  Obsolete aliases `ISO-10`, `+7_FIDO` and `MAC` are recognized; `CODEPAGE`
+  disambiguates `CHRS: IBMPC` regardless of control-line order.
+  Missing, malformed, ambiguous and unsupported declarations use the configured
+  default. Undefined bytes and invalid UTF-8 sequences appear as replacement
+  characters. Bundled tables provide identical support on every platform.
+  Declared encodings also apply to message headers when indexing a packet.
+  Display, body search, quoting, tagline detection and UTF-8 text export use
+  the same choice. Encodings other than CP437 are converted to Unicode, keeping
+  ANSI command syntax intact even in national variants that redefine brackets.
+  Their art stays selectable text; classic messages in these encodings use
+  an 80-column, fixed-width application-font grid instead of the CP437 bitmap
+  font. CP437 retains its original bitmap rendering. Composing and reply-packet
+  export remain CP437-only.
 - **Modern message display** (the default; Settings ▸ Messages ▸ Message
   display switches to the classic BBS terminal): messages are shown as
   selectable text, in the fixed-width font unless the proportional one is

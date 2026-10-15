@@ -4,6 +4,16 @@
 
 ### Added
 
+- Message reading supports all FTS-5003.001 character sets, including national
+  ISO 646 variants, DOS and Windows code pages, Macintosh, Latin and UTF-8, plus
+  KOI8-R, KOI8-U and ISO-8859-5.
+  Declared encodings also decode message headers; obsolete aliases and
+  IBMPC/CODEPAGE combinations are recognized. Conversion tables are bundled,
+  without depending on the system's iconv availability.
+- Message reading honors charset kludges before hiding them, with CP437
+  defaults, persistent conference defaults and a per-message read-as override.
+  Rendering, body search, quotes, taglines and UTF-8 exports share the encoding.
+
 - QWK replies end with an `--- IcyMail v<version>` tear line below the tagline,
   as in MultiMail. Blue Wave reply headers name IcyMail and its version so the
   door can build its tear line.
@@ -20,7 +30,7 @@
   or an Internet address. FidoNet addresses with a `@domain` are no longer saved
   as Internet addresses.
 - `taglines.txt` and `addressbook.txt` are read as UTF-8 only, like all other
-  data files; CP437 is used only for message text in packets.
+  data files; packet message text uses its selected reading encoding.
 - FidoNet hidden lines are no longer shown in messages, quotes, search or
   tagline detection unless shown with X. Synchronet packets keep Ctrl-A color codes.
 

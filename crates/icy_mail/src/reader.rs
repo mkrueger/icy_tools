@@ -696,7 +696,12 @@ impl Reader {
 
     pub fn selected_screen(&self) -> Res<TextScreen> {
         match (&self.package, self.selected_message) {
-            (Some(package), Some(index)) => render_body(&package.readable_text(&package.get_message(index)?.text, false)),
+            (Some(package), Some(index)) => {
+                let message = package.get_message(index)?;
+                let charset = crate::charset::DecodeOptions::default().detect(&message.text);
+                let bytes = package.text_for_charset(&message, index, charset)?;
+                render_body_encoded(&package.readable_text(&bytes, false), charset, 80)
+            }
             _ => render_body(&[]),
         }
     }
@@ -715,7 +720,21 @@ pub fn step(current: usize, direction: NavigateDirection, len: usize) -> usize {
 }
 
 pub fn render_body(data: &[u8]) -> Res<TextScreen> {
-    render_with(data, &mut icy_parser_core::AnsiParser::new(), 80)
+    render_body_encoded(data, crate::charset::DecodeOptions::default().detect(data), 80)
+}
+
+pub fn render_body_encoded(data: &[u8], charset: crate::charset::Charset, width: i32) -> Res<TextScreen> {
+    let mut parser = icy_parser_core::AnsiParser::new();
+    if charset == crate::charset::Charset::Utf8 {
+        parser.utf8 = true;
+        let text = charset.decode(data);
+        render_with_type(text.as_bytes(), &mut parser, width, icy_engine::BufferType::Unicode)
+    } else if charset == crate::charset::Charset::Cp437 {
+        render_with(data, &mut parser, width)
+    } else {
+        let mut parser = crate::charset::CharsetParser { parser, charset };
+        render_with_type(data, &mut parser, width, icy_engine::BufferType::Unicode)
+    }
 }
 
 /// Columns of [`render_body_wide`]; longer lines still wrap.
@@ -723,7 +742,7 @@ pub const WIDE_COLUMNS: i32 = 256;
 
 /// Renders a message without wrapping lines at 80 columns, for reading it as flowing text.
 pub fn render_body_wide(data: &[u8]) -> Res<TextScreen> {
-    render_with(data, &mut icy_parser_core::AnsiParser::new(), WIDE_COLUMNS)
+    render_body_encoded(data, crate::charset::DecodeOptions::default().detect(data), WIDE_COLUMNS)
 }
 
 /// Renders a bulletin, news or new files screen. These stop at the DOS end-of-file mark and may use
@@ -765,8 +784,13 @@ fn render_file_page_width(data: &[u8], page: usize, width: i32) -> Res<TextScree
 }
 
 fn render_with(data: &[u8], parser: &mut dyn icy_parser_core::CommandParser, width: i32) -> Res<TextScreen> {
+    render_with_type(data, parser, width, icy_engine::BufferType::CP437)
+}
+
+fn render_with_type(data: &[u8], parser: &mut dyn icy_parser_core::CommandParser, width: i32, buffer_type: icy_engine::BufferType) -> Res<TextScreen> {
     let height = data.iter().filter(|byte| **byte == b'\n').count().max(24) + 1;
     let mut screen = TextScreen::new(Size::new(width, height as i32));
+    screen.buffer.buffer_type = buffer_type;
     screen.terminal_state_mut().is_terminal_buffer = false;
     // Bare line feeds also return to the first column (LNM). They are not turned into CRLF, as only
     // a bare line feed after a full-width row continues on the next row without an empty one.
@@ -777,28 +801,32 @@ fn render_with(data: &[u8], parser: &mut dyn icy_parser_core::CommandParser, wid
     Ok(screen)
 }
 
-/// Searches CP437 message text without ANSI commands or display-width wrapping.
+/// Searches message text without ANSI commands or display-width wrapping.
 pub fn body_contains(data: &[u8], needle: &str) -> bool {
     body_search_text(data).contains(needle)
 }
 
 /// Query-independent, lowercased text for the packet's background search cache.
 pub fn body_search_text(data: &[u8]) -> String {
+    body_search_text_encoded(data, crate::charset::DecodeOptions::default().detect(data))
+}
+
+pub fn body_search_text_encoded(data: &[u8], charset: crate::charset::Charset) -> String {
     use icy_parser_core::{AnsiParser, CommandParser, CommandSink, ErrorLevel, ParseError, TerminalCommand};
 
     struct Text {
-        plain: String,
+        bytes: Vec<u8>,
     }
 
     impl CommandSink for Text {
         fn print(&mut self, text: &[u8]) {
-            self.plain.extend(text.iter().map(|&byte| crate::editor::cp437_char(byte)));
+            self.bytes.extend_from_slice(text);
         }
 
         fn emit(&mut self, command: TerminalCommand) {
             match command {
-                TerminalCommand::LineFeed => self.plain.push('\n'),
-                TerminalCommand::Tab => self.plain.push('\t'),
+                TerminalCommand::LineFeed => self.bytes.push(b'\n'),
+                TerminalCommand::Tab => self.bytes.push(b'\t'),
                 _ => {}
             }
         }
@@ -814,10 +842,12 @@ pub fn body_search_text(data: &[u8]) -> String {
     }
 
     let mut text = Text {
-        plain: String::with_capacity(data.len()),
+        bytes: Vec::with_capacity(data.len()),
     };
-    AnsiParser::new().parse(data, &mut text);
-    text.plain.to_lowercase()
+    let mut parser = AnsiParser::new();
+    parser.utf8 = charset == crate::charset::Charset::Utf8;
+    parser.parse(data, &mut text);
+    charset.decode(&text.bytes).to_lowercase()
 }
 
 #[cfg(test)]

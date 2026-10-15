@@ -2,6 +2,7 @@ pub mod address_book;
 pub mod blue_wave;
 #[cfg(test)]
 mod blue_wave_tests;
+pub mod charset;
 pub mod drafts;
 pub mod editor;
 pub mod logging;

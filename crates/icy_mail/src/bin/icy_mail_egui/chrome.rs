@@ -426,6 +426,51 @@ impl MailApp {
             self.toggle_hidden_lines();
             ui.close();
         }
+        ui.add_enabled_ui(self.message_selected(), |ui| {
+            ui.menu_button(fl!(LANGUAGE_LOADER, "menu-read-as"), |ui| {
+                if let Some(index) = self.reader.selected_message {
+                    let mut choice = self.loader.encodings.messages.get(&index).copied();
+                    let previous = choice;
+                    ui.selectable_value(&mut choice, None, fl!(LANGUAGE_LOADER, "charset-automatic"));
+                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                        for charset in icy_mail::charset::Charset::ALL {
+                            ui.selectable_value(&mut choice, Some(charset), charset.name());
+                        }
+                    });
+                    if choice != previous {
+                        if let Some(charset) = choice {
+                            self.loader.encodings.messages.insert(index, charset);
+                        } else {
+                            self.loader.encodings.messages.remove(&index);
+                        }
+                        self.encodings_changed();
+                        ui.close();
+                    }
+                }
+            });
+            ui.menu_button(fl!(LANGUAGE_LOADER, "menu-conference-charset"), |ui| {
+                if let Some((package, info)) = self.reader.package.as_ref().zip(self.selected_info()) {
+                    let key = icy_mail::charset::ReadingEncodings::conference_key(package, info.conference);
+                    let mut choice = self.loader.encodings.conferences.get(&key).copied();
+                    let previous = choice;
+                    ui.selectable_value(&mut choice, None, fl!(LANGUAGE_LOADER, "charset-use-default"));
+                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                        for charset in icy_mail::charset::Charset::ALL {
+                            ui.selectable_value(&mut choice, Some(charset), charset.name());
+                        }
+                    });
+                    if choice != previous {
+                        if let Some(charset) = choice {
+                            self.loader.encodings.conferences.insert(key, charset);
+                        } else {
+                            self.loader.encodings.conferences.remove(&key);
+                        }
+                        self.encodings_changed();
+                        ui.close();
+                    }
+                }
+            });
+        });
         let threads = self.reader.package.is_some() && self.reader.view_mode == ViewMode::Threads;
         if item(
             ui,

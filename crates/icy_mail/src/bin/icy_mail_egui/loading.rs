@@ -14,7 +14,7 @@ use icy_mail::{
     drafts::{Draft, DraftStore},
     options::ReadingMode,
     qwk::{packet_extensions, ExtractionCache, QwkPackage},
-    reader::{render_body, render_body_wide, render_file_page, render_file_page_wide},
+    reader::{render_file_page, render_file_page_wide},
     LANGUAGE_LOADER,
 };
 use rayon::prelude::*;
@@ -44,6 +44,7 @@ pub enum BodySource {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BodyRequest {
+    pub encoding: icy_mail::charset::DecodeOptions,
     pub generation: u64,
     pub source: BodySource,
     pub mode: ReadingMode,
@@ -55,6 +56,7 @@ pub struct BodyRequest {
 /// How a body is to be shown; a body prepared differently is rendered again.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BodyStyle {
+    pub encoding: icy_mail::charset::DecodeOptions,
     pub mode: ReadingMode,
     pub art_images: bool,
     pub hidden_lines: bool,
@@ -63,6 +65,7 @@ pub struct BodyStyle {
 impl BodyRequest {
     pub fn style(&self) -> BodyStyle {
         BodyStyle {
+            encoding: self.encoding,
             mode: self.mode,
             art_images: self.art_images,
             hidden_lines: self.hidden_lines,
@@ -80,9 +83,13 @@ fn prepare_body(package: &QwkPackage, request: BodyRequest) -> icy_mail::Res<Pre
     let (classic, wide) = match source {
         BodySource::Message(index) => {
             let message = package.get_message(index)?;
-            let text = package.readable_text(&message.text, request.hidden_lines);
-            let classic = render_body(&text)?;
-            let wide = (mode == ReadingMode::Modern).then(|| render_body_wide(&text)).transpose()?;
+            let charset = request.encoding.detect(&message.text);
+            let bytes = package.text_for_charset(&message, index, charset)?;
+            let text = package.readable_text(&bytes, request.hidden_lines);
+            let classic = icy_mail::reader::render_body_encoded(&text, charset, 80)?;
+            let wide = (mode == ReadingMode::Modern)
+                .then(|| icy_mail::reader::render_body_encoded(&text, charset, icy_mail::reader::WIDE_COLUMNS))
+                .transpose()?;
             (classic, wide)
         }
         BodySource::File(index, page) => {
@@ -92,12 +99,29 @@ fn prepare_body(package: &QwkPackage, request: BodyRequest) -> icy_mail::Res<Pre
             (classic, wide)
         }
     };
-    let modern = wide.map(|wide| modern_view::prepare_items(&classic, modern_view::blocks(&classic, &wide), art_images));
+    let unicode = classic.buffer.buffer_type == icy_engine::BufferType::Unicode;
+    let modern = if unicode && mode == ReadingMode::Classic {
+        Some(
+            icy_mail::text::styled_lines(&classic)
+                .into_iter()
+                .map(|spans| {
+                    PreparedItem::Text(modern_view::ModernLine {
+                        spans,
+                        fixed: true,
+                        quote: false,
+                        unwrapped: true,
+                    })
+                })
+                .collect(),
+        )
+    } else {
+        wide.map(|wide| modern_view::prepare_items(&classic, modern_view::blocks(&classic, &wide), art_images && !unicode))
+    };
     Ok(PreparedBody { classic, modern })
 }
 
 enum SearchJob {
-    Scan(u64, Arc<QwkPackage>, String),
+    Scan(u64, Arc<QwkPackage>, String, icy_mail::charset::ReadingEncodings),
     Clear,
 }
 
@@ -110,6 +134,7 @@ enum SearchError {
 struct BodySearch {
     package: Arc<QwkPackage>,
     text: Vec<Option<String>>,
+    encodings: icy_mail::charset::ReadingEncodings,
 }
 
 impl BodySearch {
@@ -117,6 +142,7 @@ impl BodySearch {
         Self {
             text: vec![None; package.infos.len()],
             package,
+            encodings: Default::default(),
         }
     }
 
@@ -134,7 +160,11 @@ impl BodySearch {
                     let message = package
                         .read_message(info.index)
                         .map_err(|error| SearchError::Message(fl!(LANGUAGE_LOADER, "search-message-error", number = info.number, error = error.to_string())))?;
-                    *cached = Some(icy_mail::reader::body_search_text(&package.readable_text(&message.text, false)));
+                    let charset = self.encodings.options(package, info.index).detect(&message.text);
+                    let bytes = package
+                        .text_for_charset(&message, info.index, charset)
+                        .map_err(|error| SearchError::Message(error.to_string()))?;
+                    *cached = Some(icy_mail::reader::body_search_text_encoded(&package.readable_text(&bytes, false), charset));
                 }
                 Ok(cached.as_ref().is_some_and(|text| text.contains(query)).then_some(info.index))
             })
@@ -144,6 +174,7 @@ impl BodySearch {
 }
 
 pub struct Loader {
+    pub encodings: icy_mail::charset::ReadingEncodings,
     pub package_generation: u64,
     pub body_generation: u64,
     pub picking: bool,
@@ -198,7 +229,7 @@ impl Default for Loader {
         let current = search_generation.clone();
         let mut index: Option<BodySearch> = None;
         let searches = latest_worker(sender.clone(), move |job| {
-            let SearchJob::Scan(generation, package, query) = job else {
+            let SearchJob::Scan(generation, package, query, encodings) = job else {
                 index = None;
                 return None;
             };
@@ -206,8 +237,12 @@ impl Default for Loader {
                 return None;
             }
             let index = match &mut index {
-                Some(index) if Arc::ptr_eq(&index.package, &package) => index,
-                slot => slot.insert(BodySearch::new(package)),
+                Some(index) if Arc::ptr_eq(&index.package, &package) && index.encodings == encodings => index,
+                slot => {
+                    let mut index = BodySearch::new(package);
+                    index.encodings = encodings;
+                    slot.insert(index)
+                }
             };
             let result = match index.find(&query, generation, &current) {
                 Ok(matches) => Ok(matches),
@@ -220,6 +255,7 @@ impl Default for Loader {
             Some(Event::Search(generation, query, result))
         });
         Self {
+            encodings: Default::default(),
             package_generation: 0,
             body_generation: 0,
             picking: false,
@@ -260,6 +296,7 @@ impl Loader {
         self.cancel_preload();
         self.body_generation = self.body_generation.wrapping_add(1);
         let request = BodyRequest {
+            encoding: style.encoding,
             generation: self.body_generation,
             source,
             mode: style.mode,
@@ -314,7 +351,10 @@ impl Loader {
             return Ok(());
         }
         self.searches
-            .send((SearchJob::Scan(self.search_generation(), package, query), context.clone()))
+            .send((
+                SearchJob::Scan(self.search_generation(), package, query, self.encodings.clone()),
+                context.clone(),
+            ))
             .map_err(|error| error.to_string())?;
         self.searching = true;
         context.request_repaint();
@@ -397,6 +437,7 @@ impl Loader {
         self.save_picking = true;
         let sender = self.sender.clone();
         let context = context.clone();
+        let encodings = self.encodings.clone();
         std::thread::spawn(move || {
             let path = rfd::FileDialog::new()
                 .set_title(fl!(LANGUAGE_LOADER, "loading-save-messages-title"))
@@ -404,7 +445,7 @@ impl Loader {
                 .set_file_name("messages.txt")
                 .save_file();
             let result = path.map(|path| {
-                let result = icy_mail::transcript::save_transcript(&package, &indices, &source, &path).map_err(|error| error.to_string());
+                let result = icy_mail::transcript::save_transcript_encoded(&package, &indices, &source, &path, &encodings).map_err(|error| error.to_string());
                 (path, result)
             });
             let _ = sender.send(Event::MessagesSaved(indices.len(), result));
@@ -475,6 +516,7 @@ mod tests {
         let context = egui::Context::default();
         let mut loader = Loader::default();
         let style = BodyStyle {
+            encoding: Default::default(),
             mode: ReadingMode::Modern,
             art_images: false,
             hidden_lines: false,
@@ -505,6 +547,7 @@ mod tests {
             for mode in [ReadingMode::Classic, ReadingMode::Modern] {
                 let previous_preload = loader.preload_generation();
                 let style = BodyStyle {
+                    encoding: Default::default(),
                     mode,
                     art_images: true,
                     hidden_lines: false,
@@ -524,7 +567,7 @@ mod tests {
                 assert_eq!(prepared.modern.is_some(), mode == ReadingMode::Modern);
                 if let Some(items) = prepared.modern {
                     let wide = match source {
-                        BodySource::Message(index) => render_body_wide(&package.get_message(index).unwrap().text).unwrap(),
+                        BodySource::Message(index) => icy_mail::reader::render_body_wide(&package.get_message(index).unwrap().text).unwrap(),
                         BodySource::File(index, page) => render_file_page_wide(&package.files[index].data, page).unwrap(),
                     };
                     let expected = modern_view::prepare_items(&prepared.classic, modern_view::blocks(&prepared.classic, &wide), true);

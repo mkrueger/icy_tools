@@ -1,6 +1,11 @@
 # Icy Mail user interface (English, the fallback language)
 
 dialog-close_button = Close
+menu-read-as = Read Message As
+menu-conference-charset = Conference Default Encoding
+charset-automatic = Automatic (declaration or default)
+charset-use-default = Use global default
+settings-default-charset = Default message encoding
 
 # Toolbar
 toolbar-open = Open

@@ -16,6 +16,16 @@ pub fn message_header(info: &MessageInfo) -> String {
 }
 
 pub fn save_transcript(package: &QwkPackage, indices: &[usize], source: &Path, destination: &Path) -> crate::Res<()> {
+    save_transcript_encoded(package, indices, source, destination, &Default::default())
+}
+
+pub fn save_transcript_encoded(
+    package: &QwkPackage,
+    indices: &[usize],
+    source: &Path,
+    destination: &Path,
+    encodings: &crate::charset::ReadingEncodings,
+) -> crate::Res<()> {
     if indices.is_empty() {
         return Err(fl!(LANGUAGE_LOADER, "batch-save-empty").into());
     }
@@ -28,7 +38,9 @@ pub fn save_transcript(package: &QwkPackage, indices: &[usize], source: &Path, d
         let message = package.get_message(index)?;
         transcript.push_str(&message_header(info));
         transcript.push('\n');
-        transcript.push_str(&crate::text::to_utf8(&message.text));
+        let charset = encodings.options(package, index).detect(&message.text);
+        let bytes = package.text_for_charset(&message, index, charset)?;
+        transcript.push_str(&charset.decode_ansi(&bytes));
         if !transcript.ends_with('\n') {
             transcript.push('\n');
         }

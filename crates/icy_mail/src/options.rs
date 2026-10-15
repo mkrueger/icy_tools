@@ -60,6 +60,7 @@ pub enum ModernFont {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Options {
+    pub reading_encodings: crate::charset::ReadingEncodings,
     pub theme: Theme,
     /// Monitor emulation and zoom of the message terminal.
     pub monitor_settings: MonitorSettings,
@@ -88,6 +89,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            reading_encodings: Default::default(),
             theme: Theme::default(),
             // Mail is mostly read at fit width, where integer steps leave large margins.
             monitor_settings: MonitorSettings {

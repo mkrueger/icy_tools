@@ -535,6 +535,7 @@ impl MailApp {
     }
 
     fn loaded(&mut self, context: &egui::Context, path: PathBuf, package: Arc<icy_mail::qwk::QwkPackage>) {
+        self.loader.encodings.messages.clear();
         let drafts = match &self.storage {
             Some(directory) => DraftStore::open_in(&path, &package, directory),
             None => DraftStore::open(&path, &package),
@@ -1039,6 +1040,13 @@ impl MailApp {
     /// How message bodies are currently shown.
     pub fn body_style(&self) -> BodyStyle {
         BodyStyle {
+            encoding: self
+                .reader
+                .package
+                .as_ref()
+                .zip(self.reader.selected_message)
+                .map(|(package, index)| self.loader.encodings.options(package, index))
+                .unwrap_or_default(),
             mode: self.reading_mode,
             art_images: self.modern_art_images,
             hidden_lines: self.show_hidden_lines,
@@ -1048,6 +1056,17 @@ impl MailApp {
     /// Shows or hides FidoNet hidden lines; the shown message is rendered again.
     pub fn toggle_hidden_lines(&mut self) {
         self.show_hidden_lines = !self.show_hidden_lines;
+    }
+
+    pub fn encodings_changed(&mut self) {
+        self.loader.cancel_search();
+        self.reader.set_body_matches(String::new(), Default::default());
+        self.tagline_cache = None;
+        self.rendered = None;
+        self.modern_items = None;
+        self.modern_selection_snapshot = None;
+        self.open_quotes.clear();
+        self.filter_changed();
     }
 
     pub fn set_unread_only(&mut self, unread_only: bool) {
@@ -1160,8 +1179,17 @@ impl MailApp {
                 return;
             }
         };
-        let text = package.readable_text(&message.text, false);
-        let quotes = match quotes(info, &text, &self.quote_header, package.blue_wave.is_some()) {
+        let charset = self.loader.encodings.options(&package, index).detect(&message.text);
+        let bytes = match package.text_for_charset(&message, index, charset) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.error = Some(fl!(LANGUAGE_LOADER, "app-original-failed", error = error.to_string()));
+                return;
+            }
+        };
+        let text = package.readable_text(&bytes, false);
+        let decoded = charset.message_text(&text);
+        let quotes = match quotes_decoded(info, &decoded, &self.quote_header, package.blue_wave.is_some()) {
             Ok(quotes) => quotes,
             Err(error) => {
                 self.error = Some(fl!(LANGUAGE_LOADER, "app-quote-header-failed", error = error.to_string()));
@@ -1169,7 +1197,7 @@ impl MailApp {
             }
         };
         if forward {
-            let text = editor::strip_codes(&editor::decode_message(&text));
+            let text = editor::strip_codes(&decoded);
             let quoted: String = text.trim_end().lines().map(|line| format!("> {line}\n")).collect();
             let header = fl!(
                 LANGUAGE_LOADER,
@@ -1245,9 +1273,13 @@ impl MailApp {
         else {
             return Ok(Vec::new());
         };
-        quotes(
+        let message = package.get_message(index)?;
+        let charset = self.loader.encodings.options(package, index).detect(&message.text);
+        let bytes = package.text_for_charset(&message, index, charset)?;
+        let text = package.readable_text(&bytes, false);
+        quotes_decoded(
             &package.infos[index],
-            &package.get_message(index)?.text,
+            &charset.message_text(&text),
             &self.quote_header,
             package.blue_wave.is_some(),
         )
@@ -1598,10 +1630,19 @@ impl MailApp {
                 return tagline.clone();
             }
         }
-        let tagline = package
-            .get_message(index)
-            .ok()
-            .and_then(|message| taglines::find(&editor::strip_codes(&editor::decode_message(&package.readable_text(&message.text, false)))));
+        let tagline = match package.get_message(index).and_then(|message| {
+            let charset = self.loader.encodings.options(&package, index).detect(&message.text);
+            let bytes = package.text_for_charset(&message, index, charset)?;
+            Ok(taglines::find(&editor::strip_codes(
+                &charset.message_text(&package.readable_text(&bytes, false)),
+            )))
+        }) {
+            Ok(tagline) => tagline,
+            Err(error) => {
+                log::warn!("Could not decode the message tagline: {error}");
+                None
+            }
+        };
         self.tagline_cache = Some((key, tagline.clone()));
         tagline
     }
@@ -1651,7 +1692,7 @@ impl MailApp {
         let Some(package) = self.reader.package.clone() else {
             return;
         };
-        match message_file(&package, index, utf8) {
+        match message_file_encoded(&package, index, utf8, &self.loader.encodings) {
             Ok((name, data)) => self.loader.pick_save_message(name, data, context),
             Err(error) => self.error = Some(error),
         }
@@ -1935,7 +1976,7 @@ impl MailApp {
             self.filter_changed();
         }
         // The modern reading mode's text keeps its own selection, which egui copies.
-        let modern = self.reading_mode == ReadingMode::Modern;
+        let modern = self.selectable_body();
         if self.focus == Pane::Content && !modern {
             let copy_event = context.input(|input| input.events.iter().any(|event| matches!(event, egui::Event::Copy)));
             if key(context, Key::C, true, false) || copy_event {
@@ -1994,27 +2035,33 @@ impl MailApp {
 }
 
 /// File name (`<conference>-<number>.ans` or `.txt`) and header plus content of a saved message.
+#[cfg(test)]
 pub fn message_file(package: &icy_mail::qwk::QwkPackage, index: usize, utf8: bool) -> Result<(String, Vec<u8>), String> {
+    message_file_encoded(package, index, utf8, &Default::default())
+}
+
+pub fn message_file_encoded(
+    package: &icy_mail::qwk::QwkPackage,
+    index: usize,
+    utf8: bool,
+    encodings: &icy_mail::charset::ReadingEncodings,
+) -> Result<(String, Vec<u8>), String> {
     let message = package.get_message(index).map_err(|error| error.to_string())?;
     let info = package.infos.get(index).ok_or_else(|| fl!(LANGUAGE_LOADER, "app-message-unavailable"))?;
     let header = format!(
         "{}------------------------------------------------------------------------\n",
         icy_mail::transcript::message_header(info)
     );
+    let charset = encodings.options(package, index).detect(&message.text);
+    let bytes = package.text_for_charset(&message, index, charset).map_err(|error| error.to_string())?;
     let (data, extension) = if utf8 {
         let mut data = header.into_bytes();
-        data.extend_from_slice(icy_mail::text::to_utf8(&message.text).as_bytes());
+        data.extend_from_slice(charset.decode_ansi(&bytes).as_bytes());
         (data, "txt")
     } else {
         let header = header.replace('\n', "\r\n");
-        let mut data = header
-            .chars()
-            .map(|character| {
-                icy_mail::editor::cp437_byte(character)
-                    .ok_or_else(|| format!("Message header character U+{:04X} cannot be saved as CP437", u32::from(character)))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        data.extend_from_slice(&message.text);
+        let mut data = charset.encode_header(&header)?;
+        data.extend_from_slice(&bytes);
         (data, "ans")
     };
     Ok((format!("{}-{}.{extension}", info.conference, info.number), data))
@@ -2042,7 +2089,7 @@ fn message_origin(info: &MessageInfo) -> String {
 }
 
 /// The attribution and quoted lines offered in the editor's quote panel.
-fn quotes(info: &MessageInfo, text: &[u8], template: &str, blue_wave: bool) -> icy_mail::Res<Vec<String>> {
+fn quotes_decoded(info: &MessageInfo, text: &str, template: &str, blue_wave: bool) -> icy_mail::Res<Vec<String>> {
     let attribution = if template.is_empty() {
         fl!(LANGUAGE_LOADER, "app-quote-attribution", date = info.date_str.as_str(), name = info.from.trim())
     } else {
@@ -2055,7 +2102,7 @@ fn quotes(info: &MessageInfo, text: &[u8], template: &str, blue_wave: bool) -> i
         return Err(fl!(LANGUAGE_LOADER, "app-quote-character-invalid", code = format!("{:04X}", u32::from(character))).into());
     }
     let mut lines = vec![attribution];
-    lines.extend(editor::quote_lines(&info.from, &editor::decode_message(text), editor::WRAP_WIDTH));
+    lines.extend(editor::quote_lines(&info.from, text, editor::WRAP_WIDTH));
     Ok(lines)
 }
 

@@ -508,14 +508,17 @@ impl QwkPackage {
             let date = chrono::DateTime::from_timestamp(message.unix_time, 0)
                 .ok_or("Invalid Blue Wave message date")?
                 .naive_utc();
-            let subject = HeaderText::new(&message.subject);
+            let body = blue_wave_body(&messages_data, message)?;
+            let charset = crate::charset::declared(&body);
+            let decode_header = |bytes: &[u8]| HeaderText::with_declared(bytes, charset);
+            let subject = decode_header(&message.subject);
             infos.push(MessageInfo {
                 index,
                 number,
                 ref_number: message.reply_to,
                 conference: message.area,
-                from: HeaderText::new(&message.from),
-                to: HeaderText::new(&message.to),
+                from: decode_header(&message.from),
+                to: decode_header(&message.to),
                 subject_key: normalize_subject(&subject),
                 subject,
                 date,
@@ -526,7 +529,7 @@ impl QwkPackage {
                 } else {
                     fl!(LANGUAGE_LOADER, "packet-date-unknown")
                 },
-                lines: u32::try_from(blue_wave_body(&messages_data, message)?.iter().filter(|&&byte| byte == b'\n').count())?,
+                lines: u32::try_from(body.iter().filter(|&&byte| byte == b'\n').count())?,
                 private: message.private,
             });
         }
@@ -637,9 +640,22 @@ impl QwkPackage {
                     };
                 };
 
-                let from = HeaderText::new(msg.from.trim());
-                let to = HeaderText::new(msg.to.trim());
-                let subject = HeaderText::new(msg.subj.trim());
+                let charset = crate::charset::declared(&msg.text);
+                let decode_header = |bytes: &[u8]| HeaderText::with_declared(bytes.trim(), charset);
+                // jamjam splits QWKE header lines at every E3 byte, which also starts UTF-8 characters.
+                let recovered = (charset == Some(crate::charset::Charset::Utf8))
+                    .then(|| {
+                        let start = usize::try_from(descriptor.offset).ok()?;
+                        let blocks = data.get(start..start.checked_add(usize::try_from(descriptor.block_count).ok()?.checked_mul(128)?)?)?;
+                        utf8_qwk_body(blocks)
+                            .inspect_err(|error| log::warn!("could not recover the UTF-8 QWK headers of message {}: {error}", msg.msg_number))
+                            .ok()
+                    })
+                    .flatten();
+                let field = |parsed: &[u8], kludge: Option<&Vec<u8>>| decode_header(kludge.map_or(parsed, Vec::as_slice));
+                let from = field(&msg.from, recovered.as_ref().and_then(|body| body.from.as_ref()));
+                let to = field(&msg.to, recovered.as_ref().and_then(|body| body.to.as_ref()));
+                let subject = field(&msg.subj, recovered.as_ref().and_then(|body| body.subject.as_ref()));
                 if log::log_enabled!(log::Level::Debug)
                     && [&msg.from[..], &msg.to[..], &msg.subj[..]]
                         .iter()
@@ -673,7 +689,12 @@ impl QwkPackage {
                     subject,
                     date,
                     date_str,
-                    lines: msg.text.iter().filter(|b| **b == b'\n').count() as u32,
+                    lines: recovered
+                        .as_ref()
+                        .map_or(&msg.text[..], |body| &body.text[..])
+                        .iter()
+                        .filter(|b| **b == b'\n')
+                        .count() as u32,
                     private: matches!(msg.status, b'*' | b'+' | b'~' | b'`'),
                 }
             })
@@ -799,6 +820,20 @@ impl QwkPackage {
         } else {
             crate::text::hidden_lines(text, show_hidden)
         }
+    }
+
+    /// QWK uses E3 for line breaks, but E3 can also start a three-byte UTF-8 character.
+    /// jamjam converts every E3 to LF; recover the raw body for Unicode reading.
+    pub fn text_for_charset<'a>(&self, message: &'a QWKMessage, index: usize, charset: crate::charset::Charset) -> Res<std::borrow::Cow<'a, [u8]>> {
+        if charset != crate::charset::Charset::Utf8 || self.blue_wave.is_some() {
+            return Ok(std::borrow::Cow::Borrowed(&message.text));
+        }
+        let header = self
+            .descriptors
+            .get(index)
+            .ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-message-index-out-of-range"))?;
+        let data = self.messages_data.read_range(header.offset, u64::from(header.block_count) * 128)?;
+        Ok(std::borrow::Cow::Owned(utf8_qwk_body(&data)?.text))
     }
 
     /// Whether any file-backed raw-body chunks have yet to be loaded into RAM.
@@ -935,6 +970,63 @@ fn trim_field(field: &[u8]) -> String {
     String::from_utf8_lossy(field).trim().to_string()
 }
 
+/// A UTF-8 QWK message body with its QWKE `To:`/`From:`/`Subject:` lines split off.
+pub(crate) struct Utf8QwkBody {
+    pub to: Option<Vec<u8>>,
+    pub from: Option<Vec<u8>>,
+    pub subject: Option<Vec<u8>>,
+    pub text: Vec<u8>,
+}
+
+/// Reads a UTF-8 body from a message's raw blocks (header included). Like jamjam, `0xE3` ends a
+/// line and leading QWKE header lines are removed, but `0xE3` starting a valid UTF-8 character
+/// is kept as part of that character.
+pub(crate) fn utf8_qwk_body(blocks: &[u8]) -> Res<Utf8QwkBody> {
+    const HEADER_SIZE: usize = 128;
+    let raw = blocks.get(HEADER_SIZE..).ok_or("QWK message is shorter than its header")?;
+    let mut text = Vec::with_capacity(raw.len());
+    let mut offset = 0;
+    while offset < raw.len() {
+        if raw[offset] == 0xe3 {
+            if let Some(sequence) = raw.get(offset..offset + 3).filter(|sequence| std::str::from_utf8(sequence).is_ok()) {
+                text.extend_from_slice(sequence);
+                offset += 3;
+                continue;
+            }
+            text.push(b'\n');
+        } else {
+            text.push(raw[offset]);
+        }
+        offset += 1;
+    }
+    let mut body = Utf8QwkBody {
+        to: None,
+        from: None,
+        subject: None,
+        text: Vec::new(),
+    };
+    let mut start = 0;
+    loop {
+        let rest = &text[start..];
+        let (slot, prefix): (&mut Option<Vec<u8>>, &[u8]) = if rest.starts_with(b"To: ") {
+            (&mut body.to, b"To: ")
+        } else if rest.starts_with(b"From: ") {
+            (&mut body.from, b"From: ")
+        } else if rest.starts_with(b"Subject: ") {
+            (&mut body.subject, b"Subject: ")
+        } else {
+            break;
+        };
+        let end = rest.iter().position(|&byte| byte == b'\n').unwrap_or(rest.len());
+        let value = &rest[prefix.len()..end];
+        *slot = Some(value.strip_suffix(b"\r").unwrap_or(value).to_vec());
+        start = (start + end + 1).min(text.len());
+    }
+    text.drain(..start);
+    body.text = text;
+    Ok(body)
+}
+
 fn parse_qwk_date(value: &str) -> Result<chrono::NaiveDateTime, chrono::ParseError> {
     chrono::NaiveDateTime::parse_from_str(value, "%m-%d-%y%H:%M").or_else(|_| chrono::NaiveDateTime::parse_from_str(value, "%m/%d/%y%H:%M"))
 }
@@ -948,4 +1040,76 @@ fn parse_qwk_number(data: &[u8]) -> Result<u32, Box<dyn Error>> {
 
     // Parse directly from bytes
     std::str::from_utf8(trimmed)?.parse::<u32>().map_err(std::convert::Into::into)
+}
+
+#[cfg(test)]
+mod utf8_body_tests {
+    use std::io::Write;
+
+    use super::{
+        tests::{control_dat, header, TempDir},
+        QwkPackage,
+    };
+
+    #[test]
+    fn utf8_qwke_subjects_and_truncated_names_survive_e3_bytes() {
+        use crate::charset::{Charset, ReadingEncodings};
+
+        let subject = "あいう long subject over twenty-five bytes";
+        let mut body = format!("Subject: {subject}\n\n\x01CHRS: UTF-8 4\nHello あ\n").into_bytes();
+        // E3 bytes that start UTF-8 characters must stay; the line breaks become QWK's E3.
+        body = body.iter().map(|&byte| if byte == b'\n' { 0xe3 } else { byte }).collect();
+        let blocks = body.len().div_ceil(128);
+        body.resize(blocks * 128, b' ');
+        let mut messages = vec![b' '; 128];
+        // The 25-byte From field cuts "Липатников" inside a two-byte character.
+        messages.extend(header(
+            b' ',
+            1,
+            "01-05-2600:00",
+            "ALL",
+            "Ab Дмитрий Липатников",
+            "short",
+            0,
+            blocks as u32 + 1,
+            1,
+        ));
+        messages.extend(body);
+
+        let dir = TempDir::new();
+        let path = dir.path().join("UTF8E3.QWK");
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("CONTROL.DAT", options).unwrap();
+        zip.write_all(&control_dat()).unwrap();
+        zip.start_file("MESSAGES.DAT", options).unwrap();
+        zip.write_all(&messages).unwrap();
+        zip.finish().unwrap();
+
+        let package = QwkPackage::load_from_file(&path).unwrap();
+        assert_eq!(package.infos[0].subject, subject, "jamjam alone would cut the subject at its first E3 byte");
+        assert_eq!(
+            package.infos[0].from, "Ab Дмитрий Лип",
+            "a character cut by the field width is dropped, not shown as U+FFFD"
+        );
+        let message = package.get_message(0).unwrap();
+        let charset = ReadingEncodings::default().options(&package, 0).detect(&message.text);
+        assert_eq!(charset, Charset::Utf8);
+        let text = package.text_for_charset(&message, 0, charset).unwrap();
+        let readable = charset.decode(&package.readable_text(&text, false)).into_owned();
+        assert!(readable.starts_with("\nHello あ\n"), "{readable:?}");
+        assert!(!readable.contains("Subject"));
+    }
+
+    #[test]
+    fn utf8_qwk_body_recovery_matches_jamjam_for_plain_lines() {
+        let mut blocks = vec![b' '; 128];
+        blocks.extend(b"To: Somebody\xe3From: Someone\xe3\xe3Body \xe3\x81\x82\xe3end");
+        let body = super::utf8_qwk_body(&blocks).unwrap();
+        assert_eq!(body.to.as_deref(), Some(b"Somebody".as_slice()));
+        assert_eq!(body.from.as_deref(), Some(b"Someone".as_slice()));
+        assert_eq!(body.subject, None);
+        assert_eq!(body.text, "\nBody あ\nend".as_bytes());
+        assert!(super::utf8_qwk_body(&[b' '; 10]).is_err());
+    }
 }

@@ -308,7 +308,7 @@ impl MailApp {
             });
             return;
         }
-        let modern = self.reading_mode == ReadingMode::Modern;
+        let modern = self.selectable_body();
         let response = self.document_body(ui, Document::Message(info.index));
         response.context_menu(|ui| {
             if ui.button(fl!(LANGUAGE_LOADER, "reader-copy")).clicked() {

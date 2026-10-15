@@ -27,6 +27,38 @@ pub struct HeaderText {
 }
 
 impl HeaderText {
+    /// Decodes a header in the charset its message declares; undeclared headers keep the legacy
+    /// UTF-8-or-CP437 handling of [`HeaderText::new`].
+    pub fn with_declared(bytes: &[u8], charset: Option<crate::charset::Charset>) -> Self {
+        match charset {
+            None => Self::new(bytes),
+            Some(crate::charset::Charset::Utf8) => Self::with_charset(
+                crate::charset::trim_incomplete_utf8(bytes.trim_ascii_end()).trim_ascii_end(),
+                crate::charset::Charset::Utf8,
+            ),
+            Some(charset) => Self::with_charset(bytes, charset),
+        }
+    }
+
+    pub fn with_charset(bytes: &[u8], charset: crate::charset::Charset) -> Self {
+        if !bytes.iter().any(u8::is_ascii_control) {
+            return Self {
+                plain: charset.decode(bytes).into_owned(),
+                styled: None,
+            };
+        }
+        match crate::reader::render_body_encoded(bytes, charset, HEADER_WIDTH) {
+            Ok(screen) => header_from_screen(screen),
+            Err(error) => {
+                log::warn!("unable to parse {} message header: {error}", charset.name());
+                Self {
+                    plain: charset.decode(bytes).into_owned(),
+                    styled: None,
+                }
+            }
+        }
+    }
+
     #[must_use]
     pub fn new(bytes: &[u8]) -> Self {
         if bytes.iter().any(u8::is_ascii_control) {
@@ -250,6 +282,10 @@ fn parse_ansi(bytes: &[u8]) -> HeaderText {
         };
     }
 
+    header_from_screen(screen)
+}
+
+fn header_from_screen(screen: TextScreen) -> HeaderText {
     let mut rows = Vec::new();
     for y in 0..HEADER_HEIGHT {
         let mut end = 0;
@@ -271,7 +307,12 @@ fn parse_ansi(bytes: &[u8]) -> HeaderText {
         }
         for x in 0..end {
             let cell = screen.char_at(Position::new(x, y));
-            push_span(&mut spans, if cell.ch == '\0' { ' ' } else { cell.ch }, cell.attribute, &screen);
+            let ch = if cell.ch == '\0' {
+                ' '
+            } else {
+                screen.buffer.buffer_type.convert_to_unicode(cell.ch)
+            };
+            push_span(&mut spans, ch, cell.attribute, &screen);
         }
     }
 
