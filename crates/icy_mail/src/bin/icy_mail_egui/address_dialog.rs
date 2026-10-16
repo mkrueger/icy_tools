@@ -377,7 +377,7 @@ impl MailApp {
         }
         self.address_dialog = None;
         if let Some(composer) = &mut self.composer {
-            composer.editor.request_focus();
+            composer.request_focus();
         }
         true
     }

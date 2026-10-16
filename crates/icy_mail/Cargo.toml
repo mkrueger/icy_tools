@@ -99,6 +99,7 @@ rfd =  { workspace = true, optional = true }
 
 tracing-subscriber = "0.3"
 async-recursion = "1.1.1"
+unicode-width = "0.2.2"
 
 [build-dependencies]
 winres = "0.1"

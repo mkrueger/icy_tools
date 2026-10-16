@@ -3827,6 +3827,7 @@ dependencies = [
  "tracing-subscriber",
  "tungstenite 0.30.0",
  "unarc-rs",
+ "unicode-width",
  "url",
  "versions",
  "walkdir",

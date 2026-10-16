@@ -420,6 +420,10 @@ composer-conference = Conference
 composer-conference-number = Conference { $number }
 composer-private = Private
 composer-private-tooltip = Only the recipient and the sysop can read private messages
+composer-encoding-tooltip = The character set the message is written in. UTF-8 offers every script and input method; CP437 offers the BBS editor with ANSI colors and the character table.
+composer-utf8-unsupported = This BBS cannot receive UTF-8 replies: its packets carry no HEADERS.DAT.
+composer-not-cp437 = The text contains “{ $character }”, which CP437 cannot write. Remove it before switching to CP437.
+composer-colors-removed = UTF-8 messages are plain text; the colors were removed.
 composer-field-to = To
 composer-field-subject = Subject
 composer-field-from = From
@@ -460,6 +464,7 @@ editor-quote-rest-tooltip = Quote the selected line and all after it (Ctrl+A)
 editor-quote-line = Quote Line
 editor-quote-line-tooltip = Quote the selected line (Enter)
 editor-quote-help = ↑↓ select · Enter quote line · Ctrl+A quote rest · Esc close
+editor-utf8-hint = UTF-8: any script and input method; lines wrap at 79 columns when sent.
 editor-character-details = Character { $code } · { $hex }h
 editor-character-details-reserved = Character { $code } · { $hex }h · reserved
 editor-character-picking-hint = Arrows choose · Enter insert · Esc back to the text
@@ -733,6 +738,7 @@ draft-issue-message-text-required = Message text is required
 draft-issue-control-character = { $field } contains a control character (U+{ $code })
 draft-issue-no-cp437-equivalent = { $field } contains “{ $character }”, which has no CP437 equivalent
 draft-issue-qwk-line-break = { $field } contains “{ $character }”, which QWK reserves as its line break
+draft-issue-utf8-unsupported = This BBS cannot receive UTF-8 replies: its packets carry no HEADERS.DAT. Switch the message to CP437.
 
 # Packet and reader
 

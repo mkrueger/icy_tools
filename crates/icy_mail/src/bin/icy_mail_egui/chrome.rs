@@ -518,7 +518,7 @@ impl MailApp {
         let context = ui.ctx().clone();
         if self.notice.is_none() {
             if let Some(composer) = &mut self.composer {
-                let help = ui.horizontal_centered(|ui| composer.editor.status_bar(ui)).inner;
+                let help = ui.horizontal_centered(|ui| composer.status_bar(ui)).inner;
                 if help {
                     self.modal = Some(Modal::Shortcuts);
                 }

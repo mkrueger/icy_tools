@@ -191,6 +191,10 @@ draft and composer previews still render locally.
   themes and additional native windows.
 - **Message encodings** use a Ctrl-A `CHRS` declaration (for example `CHRS: UTF-8 4`)
   (`CHARSET` and `CODEPAGE` are also recognized), not byte-validity guessing.
+  Synchronet packets mark UTF-8 messages with `Utf8: true` in `HEADERS.DAT`
+  instead; that flag takes precedence, and such messages end lines with LF rather
+  than QWK's `0xE3`. Its `Sender`, `To` and `Subject` fields replace the
+  25-character header fields and QWKE kludge lines.
   CP437 is the default for undeclared messages; change it in Settings, or use
   **View ▸ Conference Default Encoding** for one board's conference.
   **View ▸ Read Message As** overrides the declaration for the current message
@@ -290,6 +294,27 @@ message in the BBS editor described below.
 Problems that would block export are listed live. Save with Ctrl/Cmd+S or
 Ctrl/Cmd+Enter; Escape cancels and asks before discarding changes. Closing a
 window with an unsaved composer asks as well.
+
+### UTF-8 messages
+
+Packets that carry Synchronet's `HEADERS.DAT` (Synchronet, ENiGMA½ and other
+BBSes that write it) can receive UTF-8 replies. The composer's encoding choice
+beside **Private** switches a draft between **CP437**, written in the BBS editor
+below, and **UTF-8**, written in a plain-text editor with input methods (IME),
+selection, clipboard and undo, the same quote panel (Ctrl+Q, arrows, Enter,
+Ctrl+A) and a guide at the 79 columns the text is wrapped at when it is sent
+(CJK characters count as two). Answers to UTF-8 messages and new messages in
+conferences read as UTF-8 start in UTF-8 where the BBS can receive it. UTF-8
+messages are plain text: switching to UTF-8 drops ANSI colors, and switching to
+CP437 is refused while the text holds characters CP437 lacks. Without
+`HEADERS.DAT`, and in Blue Wave packets, replies are CP437 only.
+
+UTF-8 replies are exported as Synchronet reads them: lines end with LF instead of
+QWK's `0xE3`, the 25-byte header fields are cut on a character boundary, and the
+reply packet's `HEADERS.DAT` marks each message `Utf8: true` with its whole `To`,
+`Sender` and `Subject` (up to 255 characters). Once that file exists every
+message in the packet gets a section, as Synchronet requires. **Import Replies**
+restores UTF-8 drafts from such a packet.
 
 ### Message editor
 

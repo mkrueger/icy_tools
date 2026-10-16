@@ -2,13 +2,15 @@ use eframe::egui::{self, Key};
 use i18n_embed_fl::fl;
 use icy_engine_gui::egui::appearance;
 use icy_mail::{
+    charset::Charset,
     drafts::{Draft, DraftField, DraftKind},
-    LANGUAGE_LOADER,
+    editor, LANGUAGE_LOADER,
 };
 
 use super::{
     app::{key, AfterDiscard, MailApp, Modal, NoticeKind},
     terminal_editor::TerminalEditor,
+    text_editor::TextEditor,
     widgets::Icon,
 };
 
@@ -22,19 +24,27 @@ pub struct Composer {
     pub origin: Option<String>,
     pub error: Option<String>,
     focus_pending: bool,
-    /// The message text, edited on the terminal like on a BBS.
+    /// The message text of a CP437 draft, edited on the terminal like on a BBS.
     pub editor: TerminalEditor,
+    /// The plain-text editor of a UTF-8 draft, with input methods; `None` for CP437 drafts.
+    pub text: Option<TextEditor>,
+    blue_wave: bool,
 }
 
 impl Composer {
     /// `quotes` are the original message's lines for the quote panel, opened right away if `open_quotes`.
     pub fn new(draft: Draft, existing: bool, origin: Option<String>, quotes: Vec<String>, open_quotes: bool, blue_wave: bool) -> Self {
+        let utf8 = draft.charset == Charset::Utf8;
+        let text = utf8.then(|| TextEditor::new(&draft.body, quotes.clone(), open_quotes));
+        let terminal_body = if utf8 { String::new() } else { draft.body.clone() };
         Self {
             editor: if blue_wave {
-                TerminalEditor::new_with_format(&draft.body, quotes, open_quotes, true)
+                TerminalEditor::new_with_format(&terminal_body, quotes, open_quotes && !utf8, true)
             } else {
-                TerminalEditor::new(&draft.body, quotes, open_quotes)
+                TerminalEditor::new(&terminal_body, quotes, open_quotes && !utf8)
             },
+            text,
+            blue_wave,
             original: draft.clone(),
             draft,
             existing,
@@ -46,6 +56,55 @@ impl Composer {
 
     pub fn dirty(&self) -> bool {
         self.draft != self.original
+    }
+
+    pub fn request_focus(&mut self) {
+        match &mut self.text {
+            Some(text) => text.request_focus(),
+            None => self.editor.request_focus(),
+        }
+    }
+
+    /// Whether Escape closes something inside the editor rather than the composer.
+    pub fn captures_escape(&self) -> bool {
+        self.text.as_ref().map_or_else(|| self.editor.captures_escape(), TextEditor::captures_escape)
+    }
+
+    /// The active editor's status bar; returns whether help was asked for.
+    pub fn status_bar(&mut self, ui: &mut egui::Ui) -> bool {
+        match &mut self.text {
+            Some(text) => text.status_bar(ui),
+            None => self.editor.status_bar(ui),
+        }
+    }
+
+    /// Switches the draft between the CP437 BBS editor and the UTF-8 text editor. UTF-8 has no
+    /// ANSI colors, so they are dropped; CP437 is refused while the text has characters it lacks.
+    pub fn set_charset(&mut self, charset: Charset) -> Result<(), String> {
+        if charset == self.draft.charset {
+            return Ok(());
+        }
+        let quotes = self.text.as_ref().map_or(&self.editor.quotes, |text| &text.quotes).lines.clone();
+        if charset == Charset::Utf8 {
+            let body = editor::strip_codes(&self.draft.body);
+            let mut text = TextEditor::new(&body, quotes, false);
+            if body != self.draft.body {
+                text.status = Some(fl!(LANGUAGE_LOADER, "composer-colors-removed"));
+            }
+            self.draft.body = text.text.clone();
+            self.text = Some(text);
+        } else {
+            let body = self.text.as_ref().map_or_else(|| self.draft.body.clone(), |text| text.text.clone());
+            if let Some(character) = body.chars().find(|&ch| ch != '\n' && !editor::is_message_char_for(ch, self.blue_wave)) {
+                return Err(fl!(LANGUAGE_LOADER, "composer-not-cp437", character = character.to_string()));
+            }
+            self.editor = TerminalEditor::new_with_format(&body, quotes, false, self.blue_wave);
+            self.draft.body = self.editor.editor.to_paragraphs();
+            self.text = None;
+        }
+        self.draft.charset = charset;
+        self.request_focus();
+        Ok(())
     }
 
     fn title(&self) -> String {
@@ -71,7 +130,7 @@ impl Composer {
 
 impl MailApp {
     pub fn composer_keys(&mut self, context: &egui::Context) {
-        let editor_escape = self.composer.as_ref().is_some_and(|composer| composer.editor.captures_escape());
+        let editor_escape = self.composer.as_ref().is_some_and(Composer::captures_escape);
         if key(context, Key::F1, false, false) {
             self.modal = Some(Modal::Shortcuts);
         } else if key(context, Key::S, true, false) || key(context, Key::Enter, true, false) {
@@ -211,6 +270,7 @@ impl MailApp {
                         add(ui);
                     });
                 };
+                let mut encoding = None;
                 let draft = &mut composer.draft;
                 if !store.preserves_reply_references() && draft.ref_number != 0 {
                     ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "composer-bluewave-legacy-reply")).weak().small());
@@ -232,13 +292,31 @@ impl MailApp {
                     ui.add_space(12.0);
                     ui.checkbox(&mut draft.private, fl!(LANGUAGE_LOADER, "composer-private"))
                         .on_hover_text(fl!(LANGUAGE_LOADER, "composer-private-tooltip"));
+                    ui.add_space(12.0);
+                    let utf8 = store.supports_utf8() || draft.charset == Charset::Utf8;
+                    egui::ComboBox::from_id_salt("composer-encoding")
+                        .selected_text(draft.charset.name())
+                        .show_ui(ui, |ui| {
+                            for charset in [Charset::Cp437, Charset::Utf8] {
+                                let enabled = charset == Charset::Cp437 || utf8;
+                                if ui
+                                    .add_enabled(enabled, egui::Button::selectable(draft.charset == charset, charset.name()))
+                                    .on_disabled_hover_text(fl!(LANGUAGE_LOADER, "composer-utf8-unsupported"))
+                                    .clicked()
+                                {
+                                    encoding = Some(charset);
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text(fl!(LANGUAGE_LOADER, "composer-encoding-tooltip"));
                 });
                 for (field, label, id_label) in [
                     (DraftField::To, fl!(LANGUAGE_LOADER, "composer-field-to"), "To"),
                     (DraftField::Subject, fl!(LANGUAGE_LOADER, "composer-field-subject"), "Subject"),
                     (DraftField::From, fl!(LANGUAGE_LOADER, "composer-field-from"), "From"),
                 ] {
-                    let header_limit = store.field_limit(field);
+                    let header_limit = store.field_limit_for(field, draft.charset);
                     let value = match field {
                         DraftField::To => &mut draft.to,
                         DraftField::Subject => &mut draft.subject,
@@ -273,6 +351,9 @@ impl MailApp {
                             action = Some(Action::AddressBook);
                         }
                     });
+                }
+                if let Some(charset) = encoding {
+                    composer.error = composer.set_charset(charset).err();
                 }
                 ui.add_space(6.0);
                 if let Some(error) = &composer.error {
@@ -342,17 +423,30 @@ impl MailApp {
                         });
                     });
                 let modern = self.reading_mode == icy_mail::options::ReadingMode::Modern;
-                let output = composer.editor.show(ui, &self.settings, &mut self.icons, enabled, modern);
-                if output.changed {
-                    composer.draft.body = composer.editor.editor.to_paragraphs();
-                }
+                let output = match &mut composer.text {
+                    Some(text) => {
+                        let font = egui::FontId::monospace(if modern { self.modern_font_size } else { 14.0 });
+                        let output = text.show(ui, &mut self.icons, enabled, font);
+                        if output.changed {
+                            composer.draft.body = text.text.clone();
+                        }
+                        output
+                    }
+                    None => {
+                        let output = composer.editor.show(ui, &self.settings, &mut self.icons, enabled, modern);
+                        if output.changed {
+                            composer.draft.body = composer.editor.editor.to_paragraphs();
+                        }
+                        output
+                    }
+                };
                 help = output.help;
             });
         if composer.focus_pending {
             composer.focus_pending = false;
             match composer.first_field() {
                 Some(id) => context.memory_mut(|memory| memory.request_focus(id)),
-                None => composer.editor.request_focus(),
+                None => composer.request_focus(),
             }
         }
         if help {

@@ -22,6 +22,9 @@ pub struct Capabilities {
     /// The packet comes from Synchronet, which uses Ctrl-A for color codes rather than
     /// FidoNet hidden lines.
     pub synchronet: bool,
+    /// The packet carries Synchronet's `HEADERS.DAT`, so its BBS reads one in reply packets
+    /// too: the only way QWK can mark a reply as UTF-8.
+    pub headers_dat: bool,
     pub(crate) subscription_format: SubscriptionFormat,
 }
 

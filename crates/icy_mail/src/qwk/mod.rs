@@ -16,9 +16,11 @@ use crate::{text::HeaderText, Res, LANGUAGE_LOADER};
 
 mod bodies;
 mod cache;
+pub(crate) mod headers_dat;
 mod protocol;
 use bodies::MessageData;
 pub use cache::ExtractionCache;
+pub use headers_dat::ExtendedHeaders;
 pub use protocol::Capabilities;
 pub(crate) use protocol::SubscriptionFormat;
 
@@ -133,6 +135,8 @@ pub struct QwkPackage {
     messages_data: Arc<MessageData>,
     message_cache: Arc<Mutex<HashMap<usize, QWKMessage>>>, // Thread-safe cache
     thread_rows: Option<Arc<Vec<crate::threading::Row>>>,
+    /// `HEADERS.DAT` fields per message, parallel to `descriptors`; empty without that file.
+    extended: Arc<Vec<Option<ExtendedHeaders>>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -186,6 +190,22 @@ impl PacketFile {
 const MAX_PACKET_FILE_SIZE: u64 = 16 * 1024 * 1024;
 
 const MAX_ARCHIVE_ENTRY_SIZE: u64 = 10 * 1024 * 1024 * 1024;
+
+/// `HEADERS.DAT` grows with the message count, so it may exceed the bulletin limit.
+const MAX_HEADERS_DAT_SIZE: u64 = 1024 * 1024 * 1024;
+
+pub(crate) const HEADERS_DAT: &str = "HEADERS.DAT";
+
+/// Largest accepted size of a packet member besides `MESSAGES.DAT` and `CONTROL.DAT`.
+fn member_size_limit(upper_name: &str) -> u64 {
+    if upper_name == HEADERS_DAT {
+        MAX_HEADERS_DAT_SIZE
+    } else if blue_wave_member(upper_name) {
+        MAX_ARCHIVE_ENTRY_SIZE
+    } else {
+        MAX_PACKET_FILE_SIZE
+    }
+}
 
 struct ExtractedPacket {
     format: PacketFormat,
@@ -270,6 +290,7 @@ impl Clone for QwkPackage {
             messages_data: self.messages_data.clone(),
             message_cache: self.message_cache.clone(), // Share the cache across clones
             thread_rows: self.thread_rows.clone(),
+            extended: self.extended.clone(),
         }
     }
 }
@@ -339,11 +360,11 @@ impl QwkPackage {
                 }
             } else if base_name == "CONTROL.DAT" {
                 control_dat = Some(archive.read(&entry)?);
-            } else if !base_name.is_empty() && !base_name.ends_with(".NDX") && (entry.original_size() <= MAX_PACKET_FILE_SIZE || blue_wave_member(base_name)) {
+            } else if !base_name.is_empty() && !base_name.ends_with(".NDX") && entry.original_size() <= member_size_limit(base_name) {
                 // The screen names are only known once CONTROL.DAT is parsed, which may come later.
                 let name = entry.name().replace('\\', "/").rsplit('/').next().unwrap_or_default().to_string();
                 let data = archive.read(&entry)?;
-                if data.len() as u64 <= MAX_PACKET_FILE_SIZE || blue_wave_member(base_name) {
+                if data.len() as u64 <= member_size_limit(base_name) {
                     others.push((name, data));
                 }
             } else {
@@ -393,7 +414,7 @@ impl QwkPackage {
         if others.iter().any(|(name, _)| name.to_ascii_uppercase().ends_with(".INF")) && control_dat.is_none() && messages_dat.is_none() {
             return Err("Incomplete Blue Wave packet: matching INF, MIX, FTI and DAT files are required".into());
         }
-        others.retain(|(_, data)| data.len() as u64 <= MAX_PACKET_FILE_SIZE);
+        others.retain(|(name, data)| data.len() as u64 <= MAX_PACKET_FILE_SIZE || name.eq_ignore_ascii_case(HEADERS_DAT));
         Ok(ExtractedPacket {
             format: PacketFormat::Qwk,
             control: control_dat.ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-control-dat-not-found"))?,
@@ -429,13 +450,29 @@ impl QwkPackage {
             bbs_id = control_file.bbs_name.to_string();
         }
 
+        // HEADERS.DAT is parsed on every load: its UTF-8 flags decide how bodies are read.
+        let headers_dat = others
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(HEADERS_DAT))
+            .map(|(_, data)| headers_dat::parse(data))
+            .unwrap_or_default();
+        let extended_for = |descriptors: &[MessageDescriptor]| -> Vec<Option<ExtendedHeaders>> {
+            if headers_dat.is_empty() {
+                return Vec::new();
+            }
+            descriptors.iter().map(|descriptor| headers_dat.get(&descriptor.offset).cloned()).collect()
+        };
         // Parse just the headers, not full messages
-        let (headers, infos, thread_rows) = match metadata {
-            Some(index) => (index.descriptors, index.infos, Some(Arc::new(index.threads))),
+        let (headers, infos, thread_rows, extended) = match metadata {
+            Some(index) => {
+                let extended = extended_for(&index.descriptors);
+                (index.descriptors, index.infos, Some(Arc::new(index.threads)), extended)
+            }
             None => {
                 let headers = Self::parse_headers(&messages)?;
-                let infos = Self::build_index(&messages, &headers);
-                (headers, infos, None)
+                let extended = extended_for(&headers);
+                let infos = Self::build_index(&messages, &headers, &extended);
+                (headers, infos, None, extended)
             }
         };
         let messages_data = message_source.unwrap_or_else(|| Arc::new(MessageData::Memory(messages)));
@@ -446,6 +483,7 @@ impl QwkPackage {
         }
 
         let mut capabilities = Capabilities::parse(&others);
+        capabilities.headers_dat = others.iter().any(|(name, _)| name.eq_ignore_ascii_case(HEADERS_DAT));
         // Actual extended headers are evidence for QWKE posting, but not for
         // offline subscription commands (those still need an advertisement).
         capabilities.qwke |= infos
@@ -462,6 +500,7 @@ impl QwkPackage {
             messages_data,
             message_cache: Arc::new(Mutex::new(HashMap::new())),
             thread_rows,
+            extended: Arc::new(extended),
         })
     }
 
@@ -583,6 +622,7 @@ impl QwkPackage {
             messages_data,
             message_cache: Arc::new(Mutex::new(HashMap::new())),
             thread_rows,
+            extended: Arc::default(),
         })
     }
 
@@ -610,7 +650,7 @@ impl QwkPackage {
     }
 
     /// Reads message metadata, including QWKE fields, so the list can sort/filter/thread without I/O.
-    fn build_index(data: &[u8], descriptors: &[MessageDescriptor]) -> Vec<MessageInfo> {
+    fn build_index(data: &[u8], descriptors: &[MessageDescriptor], extended: &[Option<ExtendedHeaders>]) -> Vec<MessageInfo> {
         let _timer = crate::perf::Timer::with("qwk::build_index", format!("{} messages", descriptors.len()));
         descriptors
             .par_iter()
@@ -640,22 +680,42 @@ impl QwkPackage {
                     };
                 };
 
-                let charset = crate::charset::declared(&msg.text);
+                let extended = extended.get(index).and_then(Option::as_ref);
+                let utf8_flag = extended.is_some_and(|headers| headers.utf8);
+                let charset = if utf8_flag {
+                    Some(crate::charset::Charset::Utf8)
+                } else {
+                    crate::charset::declared(&msg.text)
+                };
                 let decode_header = |bytes: &[u8]| HeaderText::with_declared(bytes.trim(), charset);
                 // jamjam splits QWKE header lines at every E3 byte, which also starts UTF-8 characters.
                 let recovered = (charset == Some(crate::charset::Charset::Utf8))
                     .then(|| {
                         let start = usize::try_from(descriptor.offset).ok()?;
                         let blocks = data.get(start..start.checked_add(usize::try_from(descriptor.block_count).ok()?.checked_mul(128)?)?)?;
-                        utf8_qwk_body(blocks)
+                        utf8_qwk_body(blocks, !utf8_flag)
                             .inspect_err(|error| log::warn!("could not recover the UTF-8 QWK headers of message {}: {error}", msg.msg_number))
                             .ok()
                     })
                     .flatten();
-                let field = |parsed: &[u8], kludge: Option<&Vec<u8>>| decode_header(kludge.map_or(parsed, Vec::as_slice));
-                let from = field(&msg.from, recovered.as_ref().and_then(|body| body.from.as_ref()));
-                let to = field(&msg.to, recovered.as_ref().and_then(|body| body.to.as_ref()));
-                let subject = field(&msg.subj, recovered.as_ref().and_then(|body| body.subject.as_ref()));
+                // HEADERS.DAT fields take precedence over QWKE kludge lines and the header block.
+                let field =
+                    |parsed: &[u8], kludge: Option<&Vec<u8>>, extended: Option<&Vec<u8>>| decode_header(extended.or(kludge).map_or(parsed, Vec::as_slice));
+                let from = field(
+                    &msg.from,
+                    recovered.as_ref().and_then(|body| body.from.as_ref()),
+                    extended.and_then(|headers| headers.sender.as_ref()),
+                );
+                let to = field(
+                    &msg.to,
+                    recovered.as_ref().and_then(|body| body.to.as_ref()),
+                    extended.and_then(|headers| headers.to.as_ref()),
+                );
+                let subject = field(
+                    &msg.subj,
+                    recovered.as_ref().and_then(|body| body.subject.as_ref()),
+                    extended.and_then(|headers| headers.subject.as_ref()),
+                );
                 if log::log_enabled!(log::Level::Debug)
                     && [&msg.from[..], &msg.to[..], &msg.subj[..]]
                         .iter()
@@ -822,8 +882,19 @@ impl QwkPackage {
         }
     }
 
+    /// `HEADERS.DAT` fields of a message, when the packet has that file.
+    pub fn extended_headers(&self, index: usize) -> Option<&ExtendedHeaders> {
+        self.extended.get(index)?.as_ref()
+    }
+
+    /// Whether `HEADERS.DAT` marks the message as UTF-8 (`Utf8: true`).
+    pub fn declares_utf8(&self, index: usize) -> bool {
+        self.extended_headers(index).is_some_and(|headers| headers.utf8)
+    }
+
     /// QWK uses E3 for line breaks, but E3 can also start a three-byte UTF-8 character.
-    /// jamjam converts every E3 to LF; recover the raw body for Unicode reading.
+    /// jamjam converts every E3 to LF; recover the raw body for Unicode reading. Messages
+    /// `HEADERS.DAT` marks as UTF-8 end lines with LF, so there every E3 belongs to a character.
     pub fn text_for_charset<'a>(&self, message: &'a QWKMessage, index: usize, charset: crate::charset::Charset) -> Res<std::borrow::Cow<'a, [u8]>> {
         if charset != crate::charset::Charset::Utf8 || self.blue_wave.is_some() {
             return Ok(std::borrow::Cow::Borrowed(&message.text));
@@ -833,7 +904,7 @@ impl QwkPackage {
             .get(index)
             .ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-message-index-out-of-range"))?;
         let data = self.messages_data.read_range(header.offset, u64::from(header.block_count) * 128)?;
-        Ok(std::borrow::Cow::Owned(utf8_qwk_body(&data)?.text))
+        Ok(std::borrow::Cow::Owned(utf8_qwk_body(&data, !self.declares_utf8(index))?.text))
     }
 
     /// Whether any file-backed raw-body chunks have yet to be loaded into RAM.
@@ -978,16 +1049,16 @@ pub(crate) struct Utf8QwkBody {
     pub text: Vec<u8>,
 }
 
-/// Reads a UTF-8 body from a message's raw blocks (header included). Like jamjam, `0xE3` ends a
-/// line and leading QWKE header lines are removed, but `0xE3` starting a valid UTF-8 character
-/// is kept as part of that character.
-pub(crate) fn utf8_qwk_body(blocks: &[u8]) -> Res<Utf8QwkBody> {
+/// Reads a UTF-8 body from a message's raw blocks (header included). Leading QWKE header lines
+/// are removed like jamjam does. With `e3_newlines`, `0xE3` ends a line unless it starts a valid
+/// UTF-8 character; without, as in Synchronet's UTF-8 messages, lines end with LF only.
+pub(crate) fn utf8_qwk_body(blocks: &[u8], e3_newlines: bool) -> Res<Utf8QwkBody> {
     const HEADER_SIZE: usize = 128;
     let raw = blocks.get(HEADER_SIZE..).ok_or("QWK message is shorter than its header")?;
     let mut text = Vec::with_capacity(raw.len());
     let mut offset = 0;
     while offset < raw.len() {
-        if raw[offset] == 0xe3 {
+        if raw[offset] == 0xe3 && e3_newlines {
             if let Some(sequence) = raw.get(offset..offset + 3).filter(|sequence| std::str::from_utf8(sequence).is_ok()) {
                 text.extend_from_slice(sequence);
                 offset += 3;
@@ -1048,8 +1119,94 @@ mod utf8_body_tests {
 
     use super::{
         tests::{control_dat, header, TempDir},
-        QwkPackage,
+        ExtractionCache, QwkPackage,
     };
+
+    /// A Synchronet packet: `HEADERS.DAT` marks the first message as UTF-8 (LF line ends, no CHRS
+    /// kludge) with full header fields, leaves the second without a section, and gives the third
+    /// a CP437 subject.
+    fn headers_dat_packet(dir: &TempDir) -> std::path::PathBuf {
+        let mut messages = vec![b' '; 128];
+        let mut offsets = Vec::new();
+        for (number, from, subject, body) in [
+            (1, "Dmitry", "Name in", "Привет あい\nSecond line\n".as_bytes()),
+            (2, "erin", "Plain", b"Caf\x82\xe3".as_slice()),
+            (3, "fred", "Cafe", b"Hello\xe3".as_slice()),
+        ] {
+            offsets.push(messages.len());
+            let mut body = body.to_vec();
+            let blocks = body.len().div_ceil(128);
+            body.resize(blocks * 128, b' ');
+            messages.extend(header(b' ', number, "01-05-2600:00", "ALL", from, subject, 0, blocks as u32 + 1, 1));
+            messages.extend(body);
+        }
+        let mut headers = format!(
+            "[{:x}]\r\nUtf8: true\r\nSender: Дмитрий Липатников\r\nSubject: Имя на кириллице — a long subject\r\nWhenWritten: 20260904001500+0200 0\r\n\r\n",
+            offsets[0]
+        )
+        .into_bytes();
+        headers.extend(format!("[{:x}]\nSubject = Caf", offsets[2]).bytes());
+        headers.extend(b"\x82\n");
+        let path = dir.path().join("SYNC.QWK");
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, data) in [("CONTROL.DAT", control_dat()), ("MESSAGES.DAT", messages), ("HEADERS.DAT", headers)] {
+            zip.start_file(name, options).unwrap();
+            zip.write_all(&data).unwrap();
+        }
+        zip.finish().unwrap();
+        path
+    }
+
+    fn check_headers_dat(package: &QwkPackage) {
+        use crate::charset::{Charset, CharsetSource, ReadingEncodings};
+
+        assert!(package.declares_utf8(0));
+        assert!(!package.declares_utf8(1) && !package.declares_utf8(2));
+        assert_eq!(package.infos[0].from, "Дмитрий Липатников", "HEADERS.DAT outranks the 25 byte header field");
+        assert_eq!(package.infos[0].subject, "Имя на кириллице — a long subject");
+        assert_eq!(package.infos[0].lines, 2, "E3 bytes of UTF-8 characters are not line breaks");
+        assert_eq!(package.infos[1].from, "erin");
+        assert_eq!(package.infos[2].subject, "Café", "a section without Utf8 keeps CP437");
+
+        let mut encodings = ReadingEncodings::default();
+        let message = package.get_message(0).unwrap();
+        assert_eq!(
+            encodings.options(package, 0).resolve(&message.text),
+            (Charset::Utf8, CharsetSource::Declared),
+            "Utf8: true declares the encoding without a CHRS kludge"
+        );
+        let text = package.text_for_charset(&message, 0, Charset::Utf8).unwrap();
+        assert!(
+            text.starts_with("Привет あい\nSecond line\n".as_bytes()),
+            "{:?}",
+            String::from_utf8_lossy(&text)
+        );
+        let other = package.get_message(1).unwrap();
+        assert_eq!(encodings.options(package, 1).resolve(&other.text), (Charset::Cp437, CharsetSource::Default));
+        encodings.messages.insert(0, Charset::Cp437);
+        assert_eq!(
+            encodings.options(package, 0).detect(&message.text),
+            Charset::Cp437,
+            "a manual choice still wins"
+        );
+    }
+
+    #[test]
+    fn headers_dat_marks_utf8_messages_and_overrides_header_fields() {
+        let dir = TempDir::new();
+        let path = headers_dat_packet(&dir);
+        check_headers_dat(&QwkPackage::load_from_file(&path).unwrap());
+        let cache = ExtractionCache::new(dir.path().join("cache"), 30);
+        for _ in 0..2 {
+            // Extracted into the cache, then opened from its cached metadata index.
+            check_headers_dat(&QwkPackage::load_from_file_cached(&path, &cache).unwrap());
+        }
+        assert!(
+            super::member_size_limit("HEADERS.DAT") > super::MAX_PACKET_FILE_SIZE,
+            "large packets keep their HEADERS.DAT"
+        );
+    }
 
     #[test]
     fn utf8_qwke_subjects_and_truncated_names_survive_e3_bytes() {
@@ -1105,11 +1262,11 @@ mod utf8_body_tests {
     fn utf8_qwk_body_recovery_matches_jamjam_for_plain_lines() {
         let mut blocks = vec![b' '; 128];
         blocks.extend(b"To: Somebody\xe3From: Someone\xe3\xe3Body \xe3\x81\x82\xe3end");
-        let body = super::utf8_qwk_body(&blocks).unwrap();
+        let body = super::utf8_qwk_body(&blocks, true).unwrap();
         assert_eq!(body.to.as_deref(), Some(b"Somebody".as_slice()));
         assert_eq!(body.from.as_deref(), Some(b"Someone".as_slice()));
         assert_eq!(body.subject, None);
         assert_eq!(body.text, "\nBody あ\nend".as_bytes());
-        assert!(super::utf8_qwk_body(&[b' '; 10]).is_err());
+        assert!(super::utf8_qwk_body(&[b' '; 10], true).is_err());
     }
 }

@@ -16,6 +16,7 @@ use thiserror::Error;
 use unarc_rs::unified::{ArchiveFormat, ArchiveOptions, UnifiedArchive};
 
 use crate::{
+    charset::Charset,
     qwk::{Capabilities, QwkPackage, SubscriptionFormat},
     LANGUAGE_LOADER,
 };
@@ -85,14 +86,29 @@ pub struct Draft {
     /// Appended once after the body, before the tagline.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub signature: String,
+    /// CP437 drafts hold ANSI colors in BBS editor paragraphs; UTF-8 drafts are plain text,
+    /// sent where the packet supports it (see [`DraftStore::supports_utf8`]).
+    #[serde(default, skip_serializing_if = "is_cp437")]
+    pub charset: Charset,
+}
+
+fn is_cp437(charset: &Charset) -> bool {
+    *charset == Charset::Cp437
 }
 
 impl Draft {
     /// The message text as it is sent: the paragraphs wrapped into lines of at most
     /// [`crate::editor::WRAP_WIDTH`] columns, with the tagline.
     pub fn text(&self) -> String {
-        let mut text = crate::editor::wrap_body(&self.body);
-        let signature = crate::editor::wrap_body(&self.signature.replace("\r\n", "\n").replace('\r', "\n"));
+        let wrap = |text: &str| {
+            if self.charset == Charset::Utf8 {
+                crate::editor::wrap_plain(text, crate::editor::WRAP_WIDTH)
+            } else {
+                crate::editor::wrap_body(text)
+            }
+        };
+        let mut text = wrap(&self.body);
+        let signature = wrap(&self.signature.replace("\r\n", "\n").replace('\r', "\n"));
         if !signature.trim().is_empty() && text != signature && !text.ends_with(&format!("\n{signature}")) {
             text.push_str("\n\n");
             text.push_str(&signature);
@@ -103,6 +119,9 @@ impl Draft {
 
 /// Maximum length of the QWK To, From and Subject header fields.
 pub const HEADER_FIELD_LENGTH: usize = 25;
+
+/// Characters of a UTF-8 reply's header fields, which `HEADERS.DAT` carries whole.
+pub const UTF8_FIELD_LIMIT: usize = 255;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DraftField {
@@ -253,16 +272,15 @@ impl DraftStore {
             Compose::Reply { index } | Compose::Forward { index } => {
                 let info = package.infos.get(index).ok_or_else(|| invalid("message index", "out of range"))?;
                 let original = package.get_message(index).map_err(|e| DraftError::Qwk(e.to_string()))?;
-                let subject = decode(&original.subj);
+                let extended = package.extended_headers(index);
+                // Decoded as CP437 so a CP437 reply writes back exactly the bytes the BBS sent;
+                // `use_decoded_fields` switches a UTF-8 reply to the decoded, whole fields.
+                let subject = decode(extended.and_then(|headers| headers.subject.as_deref()).unwrap_or(&original.subj));
                 if matches!(compose, Compose::Reply { .. }) {
                     (
                         DraftKind::Reply,
-                        decode(&original.from),
-                        if subject.to_ascii_lowercase().starts_with("re:") {
-                            subject
-                        } else {
-                            format!("Re: {subject}")
-                        },
+                        decode(extended.and_then(|headers| headers.sender.as_deref()).unwrap_or(&original.from)),
+                        reply_subject(&subject),
                         info.conference,
                         if package.blue_wave.is_some() { original.msg_number } else { info.number },
                         info.private,
@@ -277,7 +295,7 @@ impl DraftStore {
                             .find(|&number| self.can_post(number))
                             .ok_or_else(|| invalid("conference", "the packet contains no writable conference"))?
                     };
-                    (DraftKind::Forward, String::new(), format!("Fwd: {subject}"), conference, 0, false)
+                    (DraftKind::Forward, String::new(), forward_subject(&subject), conference, 0, false)
                 }
             }
         };
@@ -305,6 +323,7 @@ impl DraftStore {
             },
             tagline: String::new(),
             signature: String::new(),
+            charset: Charset::Cp437,
         })
     }
 
@@ -430,9 +449,17 @@ impl DraftStore {
         data[..self.bbs_id.len()].copy_from_slice(self.bbs_id.as_bytes());
         validate_date(&self.date)?;
         validate_subscriptions(&self.allowed_conferences, &self.capabilities, &self.subscriptions)?;
+        // HEADERS.DAT sections by record offset; once the file exists, every record needs one.
+        let mut sections = Vec::new();
+        let mut utf8_replies = false;
         for draft in &self.drafts {
             validate_conference(&self.allowed_conferences, draft.conference)?;
-            let (to, from, subj, body) = validate_draft(draft, true, self.header_limit())?;
+            let utf8 = draft.charset == Charset::Utf8;
+            if utf8 && !self.supports_utf8() {
+                return Err(invalid("encoding", "this packet's BBS cannot receive UTF-8 replies").into());
+            }
+            utf8_replies |= utf8;
+            let (to, from, subj, body) = validate_draft(draft, true, self.header_limit_for(draft.charset))?;
             let blocks = body.len().div_ceil(128).max(1) + 1;
             if blocks > 999_999 {
                 return Err(invalid("body", "QWK block count exceeds six digits").into());
@@ -452,7 +479,8 @@ impl DraftStore {
                 net_tag: b' ',
                 text: body.into(),
             };
-            write_reply(&message, &mut data, self.capabilities.qwke, true)?;
+            sections.push(headers_section(data.len(), utf8.then_some(draft)));
+            write_reply(&message, &mut data, self.capabilities.qwke, true, utf8)?;
         }
         let mut todoor = String::new();
         for (&conference, &subscribe) in &self.subscriptions {
@@ -477,7 +505,8 @@ impl DraftStore {
                 net_tag: b' ',
                 text: if config { format!("{command} {conference}\n") } else { "\n".into() }.into(),
             };
-            write_reply(&message, &mut data, false, false)?;
+            sections.push(headers_section(data.len(), None));
+            write_reply(&message, &mut data, false, false, false)?;
         }
         atomic_write(destination, |file| {
             let mut zip = zip::ZipWriter::new(file);
@@ -486,6 +515,10 @@ impl DraftStore {
                 .last_modified_time(zip::DateTime::default());
             zip.start_file(format!("{}.MSG", self.bbs_id), options)?;
             zip.write_all(&data)?;
+            if utf8_replies {
+                zip.start_file(crate::qwk::HEADERS_DAT, options)?;
+                zip.write_all(sections.concat().as_bytes())?;
+            }
             if !todoor.is_empty() {
                 zip.start_file("TODOOR.EXT", options)?;
                 zip.write_all(todoor.as_bytes())?;
@@ -522,7 +555,7 @@ impl DraftStore {
                 continue;
             }
             let length = value.chars().count();
-            let limit = self.field_limit(field);
+            let limit = self.field_limit_for(field, draft.charset);
             if length > limit {
                 issues.push(DraftIssue {
                     field,
@@ -535,7 +568,13 @@ impl DraftStore {
                     ),
                 });
             }
-            character_issues_for(field, value, false, self.blue_wave.is_some(), &mut issues);
+            draft_character_issues(draft, field, value, false, self.blue_wave.is_some(), &mut issues);
+        }
+        if draft.charset == Charset::Utf8 && !self.supports_utf8() {
+            issues.push(DraftIssue {
+                field: DraftField::Body,
+                message: fl!(LANGUAGE_LOADER, "draft-issue-utf8-unsupported"),
+            });
         }
         let body = draft.body.replace("\r\n", "\n").replace('\r', "\n");
         if crate::editor::strip_codes(&body).trim().is_empty() {
@@ -545,12 +584,12 @@ impl DraftStore {
             });
         } else {
             for line in body.split('\n') {
-                character_issues_for(DraftField::Body, line, true, self.blue_wave.is_some(), &mut issues);
+                draft_character_issues(draft, DraftField::Body, line, true, self.blue_wave.is_some(), &mut issues);
             }
         }
-        character_issues_for(DraftField::Tagline, &draft.tagline, false, self.blue_wave.is_some(), &mut issues);
+        draft_character_issues(draft, DraftField::Tagline, &draft.tagline, false, self.blue_wave.is_some(), &mut issues);
         for line in draft.signature.replace("\r\n", "\n").replace('\r', "\n").split('\n') {
-            character_issues_for(DraftField::Signature, line, true, self.blue_wave.is_some(), &mut issues);
+            draft_character_issues(draft, DraftField::Signature, line, true, self.blue_wave.is_some(), &mut issues);
         }
         if issues.is_empty() && self.blue_wave.is_some() {
             if let Err(error) = self.blue_wave_reply(draft) {
@@ -570,6 +609,20 @@ impl DraftStore {
 
     pub fn header_limit(&self) -> usize {
         self.field_limit(DraftField::Subject)
+    }
+
+    /// Characters a header field of a draft in `charset` may hold. UTF-8 replies carry their
+    /// whole fields in `HEADERS.DAT`, so the 25-byte QWK header block does not limit them.
+    pub fn field_limit_for(&self, field: DraftField, charset: Charset) -> usize {
+        if charset == Charset::Utf8 && self.supports_utf8() {
+            UTF8_FIELD_LIMIT
+        } else {
+            self.field_limit(field)
+        }
+    }
+
+    fn header_limit_for(&self, charset: Charset) -> usize {
+        self.field_limit_for(DraftField::Subject, charset)
     }
 
     pub fn field_limit(&self, field: DraftField) -> usize {
@@ -594,6 +647,26 @@ impl DraftStore {
 
     pub fn is_blue_wave(&self) -> bool {
         self.blue_wave.is_some()
+    }
+
+    /// For a UTF-8 reply or forward: the original's recipient and subject as the message list shows
+    /// them (decoded in its encoding, whole from QWKE or `HEADERS.DAT`) instead of the CP437 bytes.
+    pub fn use_decoded_fields(draft: &mut Draft, info: &crate::qwk::MessageInfo) {
+        let subject = info.subject.trim();
+        match draft.kind {
+            DraftKind::Reply => {
+                draft.to = info.from.trim().to_string();
+                draft.subject = reply_subject(subject);
+            }
+            DraftKind::Forward => draft.subject = forward_subject(subject),
+            DraftKind::New => {}
+        }
+    }
+
+    /// Whether replies may be UTF-8: QWK packets with Synchronet's `HEADERS.DAT`, whose BBS reads
+    /// the `Utf8` flag from the reply packet. Blue Wave replies have no way to declare it.
+    pub fn supports_utf8(&self) -> bool {
+        self.blue_wave.is_none() && self.capabilities.headers_dat
     }
 
     pub fn can_post(&self, conference: u16) -> bool {
@@ -716,6 +789,7 @@ impl DraftStore {
                     date: date.format("%m-%d-%y%H:%M").to_string(),
                     tagline: String::new(),
                     signature: String::new(),
+                    charset: Charset::Cp437,
                 };
                 self.blue_wave_reply(&draft)?;
                 drafts.push(draft);
@@ -724,10 +798,11 @@ impl DraftStore {
         }
         let expected = format!("{}.MSG", self.bbs_id);
         let mut messages = None;
+        let mut headers = None;
         let mut commands_seen = false;
         while let Some(entry) = archive.next_entry()? {
             let name = entry.name().to_ascii_uppercase();
-            if name.contains(['/', '\\']) || !matches!(name.as_str(), "TODOOR.EXT") && name != expected {
+            if name.contains(['/', '\\']) || !matches!(name.as_str(), "TODOOR.EXT" | crate::qwk::HEADERS_DAT) && name != expected {
                 return Err(invalid("REP archive", "unexpected member or BBS ID").into());
             }
             if entry.original_size() > 128 * 999_999 {
@@ -737,6 +812,10 @@ impl DraftStore {
             if name == expected {
                 if messages.replace(bytes).is_some() {
                     return Err(invalid("REP archive", "duplicate message member").into());
+                }
+            } else if name == crate::qwk::HEADERS_DAT {
+                if headers.replace(crate::qwk::headers_dat::parse(&bytes)).is_some() {
+                    return Err(invalid("REP archive", "duplicate HEADERS.DAT").into());
                 }
             } else {
                 if commands_seen || !bytes.is_ascii() || bytes.iter().any(|b| b.is_ascii_control() && !matches!(b, b'\r' | b'\n' | b'\t')) {
@@ -775,14 +854,30 @@ impl DraftStore {
             }
             let input = io::Read::chain(Cursor::new(normalized), Cursor::new(&data[offset + 128..end]));
             let mut message = QWKMessage::read(input, false).map_err(|e| DraftError::Qwk(e.to_string()))?;
+            let section = headers.as_ref().and_then(|sections| sections.get(&(offset as u64)));
+            let utf8 = section.is_some_and(|section| section.utf8);
             let mut body = trim_padding(&data[offset + 128..end]).to_vec();
-            for byte in &mut body {
-                if *byte == 0xE3 {
-                    *byte = b'\n';
+            if !utf8 {
+                for byte in &mut body {
+                    if *byte == 0xE3 {
+                        *byte = b'\n';
+                    }
                 }
             }
-            extract_kludges(&mut message, &mut body, self.capabilities.qwke)?;
-            let recipient = decode(&message.to);
+            // A UTF-8 field of UTF8_FIELD_LIMIT characters takes up to four bytes each.
+            let max_kludge = if utf8 { 4 * UTF8_FIELD_LIMIT } else { 255 };
+            extract_kludges(&mut message, &mut body, self.capabilities.qwke, max_kludge)?;
+            // UTF-8 replies take their whole header fields from HEADERS.DAT.
+            let field = |block: &[u8], full: Option<&Vec<u8>>| {
+                if utf8 {
+                    String::from_utf8_lossy(full.map_or(block, Vec::as_slice)).trim().to_owned()
+                } else {
+                    decode(block)
+                }
+            };
+            let recipient = field(&message.to, section.and_then(|section| section.to.as_ref()));
+            let sender = field(&message.from, section.and_then(|section| section.sender.as_ref()));
+            let subject = field(&message.subj, section.and_then(|section| section.subject.as_ref()));
             let control_recipient = self
                 .capabilities
                 .control_name
@@ -791,7 +886,6 @@ impl DraftStore {
                 || ["QMAIL", "MARKMAIL", "TOMCAT", "CONTROL"]
                     .iter()
                     .any(|name| recipient.eq_ignore_ascii_case(name));
-            let subject = decode(&message.subj);
             let command = subject.split_ascii_whitespace().next().unwrap_or_default();
             let control = control_recipient
                 && ["ADD", "DROP", "RESET", "CONFIG", "BLTS", "FILES", "WELCOME", "GOODBYE"]
@@ -801,20 +895,25 @@ impl DraftStore {
                 id: 1,
                 kind: if message.ref_msg_number == 0 { DraftKind::New } else { DraftKind::Reply },
                 to: recipient,
-                from: decode(&message.from),
+                from: sender,
                 subject,
-                body: without_tear_line(&decode_text(&body)),
+                body: without_tear_line(&if utf8 {
+                    String::from_utf8_lossy(&body).into_owned()
+                } else {
+                    decode_text(&body)
+                }),
                 conference,
                 ref_number: message.ref_msg_number,
                 private: matches!(message.status, b'*' | b'+' | b'~' | b'`'),
                 date: String::from_utf8(message.date_time.to_vec()).map_err(|_| invalid("date", "non-ASCII date"))?,
                 tagline: String::new(),
                 signature: String::new(),
+                charset: if utf8 { Charset::Utf8 } else { Charset::Cp437 },
             };
             validate_metadata(&draft)?;
             if !control {
                 validate_conference(&self.allowed_conferences, draft.conference)?;
-                validate_draft(&draft, true, self.header_limit())?;
+                validate_draft(&draft, true, self.header_limit_for(draft.charset))?;
                 drafts.push(draft);
             }
             offset = end;
@@ -834,7 +933,7 @@ impl DraftStore {
             if self.blue_wave.is_some() {
                 self.blue_wave_reply(&draft)?;
             } else {
-                validate_draft(&draft, true, self.header_limit())?;
+                validate_draft(&draft, true, self.header_limit_for(draft.charset))?;
             }
             next.next_id = next.next_id.checked_add(1).ok_or_else(|| invalid("draft ID", "exhausted"))?;
             next.drafts.push(draft);
@@ -865,11 +964,15 @@ fn validate_subscriptions(allowed: &BTreeSet<u16>, capabilities: &Capabilities, 
 /// The codec truncates fixed headers and emits QWKE kludges, but writes a
 /// header-only record for an empty body. REP records need at least one body block.
 /// Messages written by the user end with the [`TEAR_LINE`].
-fn write_reply(message: &QWKMessage, data: &mut Vec<u8>, extended: bool, tear_line: bool) -> Result<()> {
+/// With `utf8`, lines end with LF as in Synchronet's UTF-8 messages, since `0xE3` also starts
+/// UTF-8 characters.
+fn write_reply(message: &QWKMessage, data: &mut Vec<u8>, extended: bool, tear_line: bool, utf8: bool) -> Result<()> {
     let mut message = message.clone();
     let mut prefix = Vec::new();
+    // UTF-8 fields are cut below and stated whole here and in HEADERS.DAT; Synchronet lets these
+    // body lines override HEADERS.DAT, so they must not carry the cut values.
     if extended
-        && [&message.to, &message.from, &message.subj].iter().all(|field| field.len() <= 25)
+        && (utf8 || [&message.to, &message.from, &message.subj].iter().all(|field| field.len() <= 25))
         && [b"To: ".as_slice(), b"From: ", b"Subject: "]
             .iter()
             .any(|prefix| message.text.starts_with(prefix))
@@ -898,12 +1001,59 @@ fn write_reply(message: &QWKMessage, data: &mut Vec<u8>, extended: bool, tear_li
     if message.text.is_empty() {
         message.text = " ".into();
     }
+    if utf8 {
+        // UTF-8 header blocks are cut on a character boundary; HEADERS.DAT carries the whole field.
+        for field in [&mut message.to, &mut message.from, &mut message.subj] {
+            *field = utf8_prefix(field, HEADER_FIELD_LENGTH).to_vec().into();
+        }
+        // The codec turns every LF into 0xE3; 0xFF never occurs in UTF-8, so it marks the line
+        // ends through it and is turned back into LF in the written body blocks.
+        message.text = message
+            .text
+            .iter()
+            .map(|&byte| if byte == b'\n' { 0xff } else { byte })
+            .collect::<Vec<_>>()
+            .into();
+    }
     let start = data.len();
     message.write(&mut *data, extended).map_err(|e| DraftError::Qwk(e.to_string()))?;
+    if utf8 {
+        for byte in &mut data[start + 128..] {
+            if *byte == 0xff {
+                *byte = b'\n';
+            }
+        }
+    }
     if (data.len() - start) / 128 > 999_999 {
         return Err(invalid("body", "QWK block count exceeds six digits"));
     }
     Ok(())
+}
+
+fn reply_subject(subject: &str) -> String {
+    if subject.to_ascii_lowercase().starts_with("re:") {
+        subject.to_string()
+    } else {
+        format!("Re: {subject}")
+    }
+}
+
+fn forward_subject(subject: &str) -> String {
+    format!("Fwd: {subject}")
+}
+
+/// The `HEADERS.DAT` section for the reply record at `offset`: a UTF-8 draft states its encoding
+/// and whole header fields, any other record only that it is not UTF-8.
+fn headers_section(offset: usize, utf8: Option<&Draft>) -> String {
+    match utf8 {
+        Some(draft) => format!(
+            "[{offset:x}]\r\nUtf8: true\r\nTo: {}\r\nSender: {}\r\nSubject: {}\r\n\r\n",
+            draft.to.trim(),
+            draft.from.trim(),
+            draft.subject.trim()
+        ),
+        None => format!("[{offset:x}]\r\nUtf8: false\r\n\r\n"),
+    }
 }
 
 /// Names IcyMail at the end of QWK replies, below the tagline, as MultiMail does. Blue Wave
@@ -941,7 +1091,7 @@ fn decode_text(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| BufferType::CP437.convert_to_unicode(char::from(b))).collect()
 }
 
-fn extract_kludges(message: &mut QWKMessage, body: &mut Vec<u8>, extended: bool) -> Result<()> {
+fn extract_kludges(message: &mut QWKMessage, body: &mut Vec<u8>, extended: bool, max_value: usize) -> Result<()> {
     let mut consumed = 0;
     let mut seen = BTreeSet::new();
     while let Some(end) = body[consumed..].iter().position(|&b| matches!(b, b'\n' | b'\r')) {
@@ -968,7 +1118,7 @@ fn extract_kludges(message: &mut QWKMessage, body: &mut Vec<u8>, extended: bool)
                 break;
             }
         }
-        if value.len() > 255 || !seen.insert(key) {
+        if value.len() > max_value || !seen.insert(key) {
             return Err(invalid("REP", "duplicate or oversized QWKE kludge"));
         }
         match key {
@@ -1065,6 +1215,26 @@ fn data_directory(_packet_path: &Path) -> Result<PathBuf> {
         .join("drafts"))
 }
 
+/// [`character_issues_for`] in the draft's encoding: UTF-8 has room for every character, so only
+/// control characters are reported there.
+fn draft_character_issues(draft: &Draft, field: DraftField, value: &str, allow_escape: bool, blue_wave: bool, issues: &mut Vec<DraftIssue>) {
+    if draft.charset != Charset::Utf8 {
+        character_issues_for(field, value, allow_escape, blue_wave, issues);
+        return;
+    }
+    for ch in value.chars().filter(|&ch| ch.is_control() && !(allow_escape && ch == '\x1b')) {
+        let message = fl!(
+            LANGUAGE_LOADER,
+            "draft-issue-control-character",
+            field = field.label(),
+            code = format!("{:04X}", ch as u32)
+        );
+        if !issues.iter().any(|issue| issue.message == message) {
+            issues.push(DraftIssue { field, message });
+        }
+    }
+}
+
 /// Reports each distinct character of `value` that cannot be written to a QWK message once.
 /// Message text may contain ESC for ANSI color sequences.
 fn character_issues_for(field: DraftField, value: &str, allow_escape: bool, blue_wave: bool, issues: &mut Vec<DraftIssue>) {
@@ -1139,6 +1309,28 @@ fn encode_for(field: &'static str, value: &str, max: Option<usize>, blue_wave: b
     Ok(bytes)
 }
 
+/// A field of a UTF-8 draft; `max` counts characters, as the composer shows them.
+fn encode_utf8(field: &'static str, value: &str, max: Option<usize>) -> Result<Vec<u8>> {
+    if value.chars().any(|ch| ch.is_control() && !(field == "body" && ch == '\x1b')) {
+        return Err(invalid(field, "control characters are not allowed"));
+    }
+    if let Some(limit) = max {
+        if value.chars().count() > limit {
+            return Err(invalid(field, format!("exceeds {limit} characters")));
+        }
+    }
+    Ok(value.as_bytes().to_vec())
+}
+
+/// The longest prefix of `bytes` within `limit` bytes that ends on a UTF-8 character boundary.
+fn utf8_prefix(bytes: &[u8], limit: usize) -> &[u8] {
+    let mut end = bytes.len().min(limit);
+    while end > 0 && end < bytes.len() && bytes[end] & 0xc0 == 0x80 {
+        end -= 1;
+    }
+    &bytes[..end]
+}
+
 fn validate_date(date: &str) -> Result<()> {
     if date.len() != 13 || chrono::NaiveDateTime::parse_from_str(date, "%m-%d-%y%H:%M").is_err() {
         return Err(invalid("date", "expected MM-DD-YYHH:MM"));
@@ -1153,6 +1345,9 @@ fn validate_metadata(d: &Draft) -> Result<()> {
 fn validate_metadata_for(d: &Draft, blue_wave: bool) -> Result<()> {
     if d.id == 0 {
         return Err(invalid("draft ID", "must be prepared before saving"));
+    }
+    if !matches!(d.charset, Charset::Cp437 | Charset::Utf8) || blue_wave && d.charset == Charset::Utf8 {
+        return Err(invalid("encoding", format!("replies cannot be written as {}", d.charset.name())));
     }
     validate_date(&d.date)?;
     if !blue_wave && d.ref_number > 99_999_999 {
@@ -1178,19 +1373,26 @@ fn validate_draft_for(d: &Draft, complete: bool, limits: [usize; 3], blue_wave: 
             },
         ));
     }
-    let to = encode_for("to", &d.to, Some(limits[0]), blue_wave)?;
-    let from = encode_for("from", &d.from, Some(limits[1]), blue_wave)?;
-    let subject = encode_for("subject", &d.subject, Some(limits[2]), blue_wave)?;
+    let encode_field = |field: &'static str, value: &str, max: Option<usize>| {
+        if d.charset == Charset::Utf8 {
+            encode_utf8(field, value, max)
+        } else {
+            encode_for(field, value, max, blue_wave)
+        }
+    };
+    let to = encode_field("to", &d.to, Some(limits[0]))?;
+    let from = encode_field("from", &d.from, Some(limits[1]))?;
+    let subject = encode_field("subject", &d.subject, Some(limits[2]))?;
     // Validate even when the signature is already present in the body.
     for line in d.signature.replace("\r\n", "\n").replace('\r', "\n").split('\n') {
-        encode_for("body", line, None, blue_wave)?;
+        encode_field("body", line, None)?;
     }
     let mut body = Vec::new();
     for (index, line) in text.replace("\r\n", "\n").replace('\r', "\n").split('\n').enumerate() {
         if index > 0 {
             body.push(b'\n');
         }
-        body.extend(encode_for("body", line, None, blue_wave)?);
+        body.extend(encode_field("body", line, None)?);
     }
     if complete && (d.to.trim().is_empty() || d.from.trim().is_empty() || d.subject.trim().is_empty() || crate::editor::strip_codes(&d.body).trim().is_empty())
     {
@@ -1311,6 +1513,30 @@ mod tests {
         assert!(store.export(&dir.path().join("TEST.REP")).is_err());
     }
 
+    #[test]
+    fn cp437_replies_and_forwards_preserve_extended_header_bytes() {
+        let (dir, package) = crate::qwk::tests::load_synchronet();
+        let mut store = DraftStore::open(dir.path().join("SYNC.QWK"), &package).unwrap();
+        let headers = package.extended_headers(1).unwrap();
+        let mut reply = store.prepare(&package, Compose::Reply { index: 1 }).unwrap();
+        assert_eq!(reply.charset, Charset::Cp437);
+        assert_eq!(reply.to, "Erin André with a longer sender name");
+        assert_eq!(reply.subject, "Re: Café and the complete CP437 subject");
+        reply.body = "Reply".into();
+        let (to, _, subject, _) = validate_draft(&reply, true, store.header_limit_for(reply.charset)).unwrap();
+        assert_eq!(to.as_slice(), headers.sender.as_deref().unwrap());
+        assert_eq!(subject, [b"Re: ".as_slice(), headers.subject.as_deref().unwrap()].concat());
+
+        let forward = store.prepare(&package, Compose::Forward { index: 1 }).unwrap();
+        assert_eq!(forward.subject, "Fwd: Café and the complete CP437 subject");
+        store.insert(reply.clone()).unwrap();
+        let path = dir.path().join("SYNC.REP");
+        store.export(&path).unwrap();
+        let imported = store.read_rep(&path).unwrap();
+        assert_eq!(imported[0].to, reply.to);
+        assert_eq!(imported[0].subject, reply.subject);
+    }
+
     fn reply() -> Draft {
         Draft {
             id: 1,
@@ -1325,7 +1551,162 @@ mod tests {
             date: "01-01-2600:00".into(),
             tagline: "Bye".into(),
             signature: String::new(),
+            charset: Charset::Cp437,
         }
+    }
+
+    fn utf8_reply() -> Draft {
+        Draft {
+            id: 1,
+            to: "Дмитрий Липатников".into(),
+            from: "Читатель Икс".into(),
+            subject: "Re: Имя на кириллице и あいう".into(),
+            body: "Привет あい\nSecond line".into(),
+            tagline: "До свидания".into(),
+            charset: Charset::Utf8,
+            ..reply()
+        }
+    }
+
+    #[test]
+    fn utf8_replies_are_refused_without_headers_dat_and_by_blue_wave() {
+        let (dir, package) = crate::qwk::tests::load();
+        let mut store = DraftStore::load(&dir.path().join("TEST.QWK"), &package).unwrap();
+        assert!(!store.supports_utf8());
+        let issues = store.issues(&utf8_reply());
+        assert!(issues.iter().any(|issue| issue.message.contains("UTF-8")), "{issues:?}");
+        assert!(
+            !issues.iter().any(|issue| issue.message.contains("no CP437")),
+            "UTF-8 drafts are not checked against CP437"
+        );
+        store.drafts.push(utf8_reply());
+        assert!(store.export(&dir.path().join("TEST.REP")).is_err());
+        store.capabilities.headers_dat = true;
+        assert!(store.supports_utf8());
+        assert!(store.issues(&utf8_reply()).is_empty(), "{:?}", store.issues(&utf8_reply()));
+        let mut control = utf8_reply();
+        control.body.push('\u{7}');
+        assert!(store.issues(&control).iter().any(|issue| issue.message.contains("0007")));
+        let mut blue_wave = utf8_reply();
+        assert!(validate_metadata_for(&blue_wave, true).is_err(), "Blue Wave replies cannot declare UTF-8");
+        blue_wave.charset = Charset::Koi8R;
+        assert!(validate_metadata_for(&blue_wave, false).is_err(), "only CP437 and UTF-8 are written");
+    }
+
+    #[test]
+    fn utf8_replies_use_lf_and_headers_dat_sections_for_every_record_and_import_again() {
+        let (dir, package) = crate::qwk::tests::load();
+        let packet = dir.path().join("TEST.QWK");
+        let mut store = DraftStore::load(&packet, &package).unwrap();
+        store.capabilities.headers_dat = true;
+        store.drafts.push(utf8_reply());
+        store.drafts.push(Draft { id: 2, ..reply() });
+        let rep = dir.path().join("TEST.REP");
+        store.export(&rep).unwrap();
+
+        let mut archive = zip::ZipArchive::new(File::open(&rep).unwrap()).unwrap();
+        let mut messages = Vec::new();
+        archive.by_name("TEST.MSG").unwrap().read_to_end(&mut messages).unwrap();
+        let mut headers = String::new();
+        archive.by_name("HEADERS.DAT").unwrap().read_to_string(&mut headers).unwrap();
+        let sections = crate::qwk::headers_dat::parse(headers.as_bytes());
+        let first = &sections[&128];
+        assert!(first.utf8);
+        assert_eq!(first.to.as_deref(), Some("Дмитрий Липатников".as_bytes()));
+        assert_eq!(first.sender.as_deref(), Some("Читатель Икс".as_bytes()));
+        assert_eq!(first.subject.as_deref(), Some("Re: Имя на кириллице и あいう".as_bytes()));
+
+        // The UTF-8 record: LF line ends, E3 bytes only inside characters, fields cut on a character boundary.
+        let blocks: usize = std::str::from_utf8(&messages[128 + 116..128 + 122]).unwrap().trim().parse().unwrap();
+        let body = &messages[256..128 + blocks * 128];
+        let expected = format!("Привет あい\nSecond line\n\n... До свидания\n{TEAR_LINE}\n");
+        assert!(body.starts_with(expected.as_bytes()), "{:?}", String::from_utf8_lossy(body));
+        assert!(
+            !body.windows(2).any(|pair| pair[0] == 0xe3 && !(0x80..0xc0).contains(&pair[1])),
+            "no QWK line breaks"
+        );
+        let to = trim_padding(&messages[128 + 21..128 + 46]);
+        assert!(std::str::from_utf8(to).is_ok() && to.len() <= 25 && "Дмитрий Липатников".as_bytes().starts_with(to));
+
+        // The CP437 record still has its own section and QWK line breaks.
+        let second = 128 + blocks * 128;
+        assert!(!sections[&(second as u64)].utf8, "every record has a section once HEADERS.DAT exists");
+        assert!(messages[second..].windows(5).any(|window| window == b"\x82\xE3Nex"));
+        assert_eq!(sections.len(), 2);
+
+        let imported = store.read_rep(&rep).unwrap();
+        assert_eq!(imported.len(), 2);
+        let expected = utf8_reply();
+        assert_eq!(imported[0].charset, Charset::Utf8);
+        assert_eq!(
+            (&imported[0].to, &imported[0].from, &imported[0].subject),
+            (&expected.to, &expected.from, &expected.subject)
+        );
+        assert_eq!(imported[0].body, "Привет あい\nSecond line\n\n... До свидания");
+        assert_eq!(imported[1].charset, Charset::Cp437);
+        assert_eq!(imported[1].to, "André");
+    }
+
+    #[test]
+    fn utf8_kludge_prefix_states_whole_fields_and_imports_again() {
+        let (dir, package) = crate::qwk::tests::load();
+        let mut store = DraftStore::load(&dir.path().join("TEST.QWK"), &package).unwrap();
+        store.capabilities.headers_dat = true;
+        store.capabilities.qwke = true;
+        let subject = format!("Re: {}", "Имя на кириллице ".repeat(10).trim());
+        store.drafts.push(Draft {
+            subject: subject.clone(),
+            body: "Subject: looks like a kludge".into(),
+            ..utf8_reply()
+        });
+        let rep = dir.path().join("TEST.REP");
+        store.export(&rep).unwrap();
+        let mut archive = zip::ZipArchive::new(File::open(&rep).unwrap()).unwrap();
+        let mut messages = Vec::new();
+        archive.by_name("TEST.MSG").unwrap().read_to_end(&mut messages).unwrap();
+        let expected = format!("To: Дмитрий Липатников\nFrom: Читатель Икс\nSubject: {subject}\n\nSubject: looks like a kludge\n");
+        assert!(
+            messages[256..].starts_with(expected.as_bytes()),
+            "{:?}",
+            String::from_utf8_lossy(&messages[256..512])
+        );
+        let imported = store.read_rep(&rep).unwrap();
+        assert_eq!(imported[0].subject, subject);
+        assert!(imported[0].body.starts_with("Subject: looks like a kludge\n"), "{:?}", imported[0].body);
+    }
+
+    #[test]
+    fn cp437_replies_keep_the_original_header_bytes_and_utf8_replies_use_decoded_fields() {
+        let (dir, package) = crate::qwk::tests::load_legacy_charsets();
+        let store = DraftStore::load(&dir.path().join("CHARSETS.QWK"), &package).unwrap();
+        let mut draft = store.prepare(&package, Compose::Reply { index: 0 }).unwrap();
+        let original = package.get_message(0).unwrap();
+        assert_eq!(package.infos[0].from, "Привет", "the list shows the CP866 name");
+        let (to, ..) = validate_draft(&draft, false, 25).unwrap();
+        assert_eq!(to.as_slice(), original.from.trim_ascii(), "a CP437 reply writes back the BBS's own bytes");
+        DraftStore::use_decoded_fields(&mut draft, &package.infos[0]);
+        assert_eq!(draft.to, "Привет");
+        assert_eq!(draft.subject, "Re: Encoding");
+    }
+
+    #[test]
+    fn subscription_records_get_sections_beside_utf8_replies() {
+        let (dir, package) = crate::qwk::tests::load();
+        let mut store = DraftStore::load(&dir.path().join("TEST.QWK"), &package).unwrap();
+        store.capabilities.headers_dat = true;
+        store.capabilities.subscription_support = true;
+        store.capabilities.control_name = Some("QMAIL".into());
+        store.capabilities.subscription_format = SubscriptionFormat::Subject;
+        store.subscriptions.insert(1, true);
+        store.drafts.push(utf8_reply());
+        let rep = dir.path().join("TEST.REP");
+        store.export(&rep).unwrap();
+        let mut archive = zip::ZipArchive::new(File::open(&rep).unwrap()).unwrap();
+        let mut headers = String::new();
+        archive.by_name("HEADERS.DAT").unwrap().read_to_string(&mut headers).unwrap();
+        let sections = crate::qwk::headers_dat::parse(headers.as_bytes());
+        assert_eq!(sections.len(), 2, "{headers}");
+        assert_eq!(sections.values().filter(|section| section.utf8).count(), 1);
     }
 
     #[test]
@@ -1347,6 +1728,7 @@ mod tests {
             date: "01-01-2600:00".into(),
             tagline: String::new(),
             signature: String::new(),
+            charset: Charset::Cp437,
         });
         store.save().unwrap();
         drop(store);
@@ -1369,6 +1751,7 @@ mod tests {
             date: "01-01-2600:00".into(),
             tagline: String::new(),
             signature: String::new(),
+            charset: Charset::Cp437,
         });
         let rep = dir.path().join("TEST.REP");
         let original_packet = fs::read(&packet).unwrap();
@@ -1455,6 +1838,7 @@ mod tests {
             date: "01-01-2600:00".into(),
             tagline: String::new(),
             signature: String::new(),
+            charset: Charset::Cp437,
         });
         let rep = dir.path().join("TEST.REP");
         store.export(&rep).unwrap();

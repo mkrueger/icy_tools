@@ -11,6 +11,14 @@
   per conference or per message (**View ▸ Read Message As**). Declared encodings
   also decode message headers. Conversion tables are bundled, without depending
   on the system's iconv availability.
+- Synchronet's `HEADERS.DAT` is read: `Utf8: true` marks UTF-8 messages, whose
+  lines end with LF, and its `Sender`, `To` and `Subject` fields replace the
+  truncated 25-character QWK header fields. Cached message indexes are rebuilt.
+- UTF-8 replies for packets with `HEADERS.DAT`: the composer switches a draft
+  between CP437 in the BBS editor and UTF-8 in a plain-text editor with input
+  methods, the quote panel and a 79-column guide. Answers to UTF-8 messages start
+  in UTF-8. Replies are exported with LF line ends and a `HEADERS.DAT` that marks
+  them `Utf8: true` with their whole header fields, and import back as UTF-8 drafts.
 - The reader header shows the message's encoding and whether the message
   declared it, a conference or the default chose it, or it was chosen by hand;
   clicking it offers **Read Message As**.
@@ -31,6 +39,11 @@
   of crashing when a picture exceeds the graphics device's texture size limit.
   Art retains its full resolution, size and zoom.
 - Long requoted lines keep their quote prefix on every wrapped line.
+- Replies and forwards use whole `HEADERS.DAT` recipient and subject fields.
+  CP437 replies preserve their original bytes, while UTF-8 replies use decoded
+  names and subjects.
+- IME input in the UTF-8 editor closes quote navigation before it can consume
+  composition keys, so Enter inserts a newline rather than an unwanted quote.
 
 ## 0.1.1 - 2026-10-13
 

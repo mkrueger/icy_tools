@@ -431,7 +431,7 @@ impl MailApp {
     fn close_taglines(&mut self) -> bool {
         self.tagline_dialog = None;
         if let Some(composer) = &mut self.composer {
-            composer.editor.request_focus();
+            composer.request_focus();
         }
         true
     }

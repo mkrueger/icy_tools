@@ -71,6 +71,141 @@ fn loaded(context: &egui::Context) -> (packet_tests::TempDir, app::MailApp) {
     (dir, mail)
 }
 
+#[test]
+fn utf8_replies_are_written_with_input_methods_saved_previewed_and_exported() {
+    use icy_mail::charset::Charset;
+    use std::io::Read;
+
+    crate::use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, _) = packet_tests::load_synchronet();
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    mail.open(dir.path().join("SYNC.QWK"), &context);
+    wait(&mut mail, &context);
+    let size = egui::vec2(1100.0, 760.0);
+    assert!(mail.drafts.as_ref().unwrap().supports_utf8());
+
+    // An answer to a UTF-8 message is written in UTF-8, in the text editor.
+    mail.reader.select_message(0);
+    wait(&mut mail, &context);
+    mail.reply(&context, false);
+    assert!(mail.error.is_none(), "{:?}", mail.error);
+    let composer = mail.composer.as_ref().unwrap();
+    assert_eq!(composer.draft.charset, Charset::Utf8);
+    assert_eq!(composer.draft.to, "Дмитрий Липатников");
+    let quotes = &composer.text.as_ref().unwrap().quotes;
+    assert!(
+        quotes.open && quotes.lines.iter().any(|line| line.contains("Привет あい")),
+        "{:?}",
+        quotes.lines
+    );
+    settle(&context, &mut mail, size);
+    assert!(context.memory(|memory| memory.has_focus(text_editor::TextEditor::id())));
+
+    // The quote panel takes the arrows and Enter; typing and an input method's commit go into the text.
+    frame(&context, &mut mail, size, vec![key(egui::Key::ArrowDown, egui::Modifiers::NONE)]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
+    frame(&context, &mut mail, size, vec![egui::Event::Text("Ответ ".into())]);
+    frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Enabled)]);
+    frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Preedit("にほん".into()))]);
+    frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Commit("日本".into()))]);
+    let body = mail.composer.as_ref().unwrap().draft.body.clone();
+    assert_eq!(body, " ДЛ> Привет あい\nОтвет 日本");
+    let output = settle(&context, &mut mail, size);
+    label(&output, "UTF-8");
+
+    frame(&context, &mut mail, size, vec![key(egui::Key::S, egui::Modifiers::COMMAND)]);
+    assert!(mail.composer.is_none(), "{:?}", mail.notice.as_ref().map(|notice| &notice.text));
+    let draft = mail.drafts.as_ref().unwrap().drafts()[0].clone();
+    assert_eq!(draft.charset, Charset::Utf8);
+
+    // The outbox shows the draft as Unicode text.
+    mail.select_folder(app::Folder::Drafts);
+    mail.selected_draft = Some(draft.id);
+    settle(&context, &mut mail, size);
+    let shown: String = icy_mail::text::styled_lines(&**mail.screen.terminal.screen.lock())
+        .iter()
+        .flatten()
+        .map(|span| span.text.as_str())
+        .collect();
+    assert!(shown.contains("Ответ 日本"), "{shown:?}");
+
+    let rep = dir.path().join("SYNC.REP");
+    mail.drafts.as_ref().unwrap().export(&rep).unwrap();
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(&rep).unwrap()).unwrap();
+    let mut headers = String::new();
+    archive.by_name("HEADERS.DAT").unwrap().read_to_string(&mut headers).unwrap();
+    assert!(headers.contains("Utf8: true") && headers.contains("To: Дмитрий Липатников"), "{headers}");
+}
+
+#[test]
+fn utf8_ime_input_leaves_quote_navigation_before_consuming_keys() {
+    crate::use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, _) = packet_tests::load_synchronet();
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    mail.open(dir.path().join("SYNC.QWK"), &context);
+    wait(&mut mail, &context);
+    let size = egui::vec2(1100.0, 760.0);
+    mail.reader.select_message(0);
+    mail.reply(&context, false);
+    settle(&context, &mut mail, size);
+    assert!(mail.composer.as_ref().unwrap().text.as_ref().unwrap().quotes.open);
+
+    frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Enabled)]);
+    frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Preedit("にほん".into()))]);
+    frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Commit("日本".into()))]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
+    let composer = mail.composer.as_ref().unwrap();
+    assert_eq!(composer.draft.body, "日本\n");
+    assert!(!composer.text.as_ref().unwrap().quotes.open);
+}
+
+#[test]
+fn composer_switches_encodings_and_refuses_utf8_where_the_bbs_cannot_receive_it() {
+    use icy_mail::charset::Charset;
+
+    crate::use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let (dir, _) = packet_tests::load_synchronet();
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    mail.open(dir.path().join("SYNC.QWK"), &context);
+    wait(&mut mail, &context);
+    mail.reader.select_message(1);
+    mail.reply(&context, false);
+    let composer = mail.composer.as_mut().unwrap();
+    assert_eq!(composer.draft.charset, Charset::Cp437, "a CP437 message is answered in CP437");
+    assert_eq!(composer.draft.to, "Erin André with a longer sender name");
+    assert_eq!(composer.draft.subject, "Re: Café and the complete CP437 subject");
+    composer.draft.body = "\x1b[1;33mBright\x1b[0m café".into();
+    composer.editor = terminal_editor::TerminalEditor::new(&composer.draft.body, Vec::new(), false);
+    composer.set_charset(Charset::Utf8).unwrap();
+    assert_eq!(composer.draft.body, "Bright café", "UTF-8 is plain text");
+    assert!(composer.text.as_ref().unwrap().status.is_some(), "the removed colors are reported");
+    composer.text.as_mut().unwrap().text.push_str(" Привет");
+    composer.draft.body = composer.text.as_ref().unwrap().text.clone();
+    assert!(composer.set_charset(Charset::Cp437).unwrap_err().contains('П'));
+    composer.text.as_mut().unwrap().text = "Bright café".into();
+    composer.set_charset(Charset::Cp437).unwrap();
+    assert!(composer.text.is_none());
+    assert_eq!(composer.draft.body, "Bright café");
+    mail.composer = None;
+
+    // Without HEADERS.DAT the BBS cannot take UTF-8: answers stay CP437 even to UTF-8 messages.
+    let context = egui::Context::default();
+    let (dir, _) = packet_tests::load_utf8();
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    mail.open(dir.path().join("UTF8.QWK"), &context);
+    wait(&mut mail, &context);
+    assert!(!mail.drafts.as_ref().unwrap().supports_utf8());
+    mail.reader.select_message(0);
+    mail.reply(&context, false);
+    assert_eq!(mail.composer.as_ref().unwrap().draft.charset, Charset::Cp437);
+}
+
 fn index_from(mail: &app::MailApp, author: &str) -> usize {
     let package = mail.reader.package.as_ref().unwrap();
     package.infos.iter().position(|info| info.from == author).unwrap()

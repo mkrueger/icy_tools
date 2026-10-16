@@ -1035,6 +1035,54 @@ pub fn initials(name: &str) -> String {
         .collect()
 }
 
+/// Wraps the plain text of a UTF-8 draft into lines of at most `width` display columns (CJK
+/// characters take two), breaking at spaces. Quoted lines keep their prefix on every wrapped line,
+/// and a word wider than a line is cut.
+#[must_use]
+pub fn wrap_plain(text: &str, width: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+    let columns = |text: &str| text.chars().map(|ch| ch.width().unwrap_or(0)).sum::<usize>();
+    let mut out = Vec::new();
+    for line in text.split('\n') {
+        let line = line.trim_end();
+        if columns(line) <= width {
+            out.push(line.to_string());
+            continue;
+        }
+        let (prefix, rest) = match QuotePrefix::parse(line) {
+            Some(quote) => (line[..quote.len].to_string(), &line[quote.len..]),
+            None => (String::new(), line),
+        };
+        let available = width.saturating_sub(columns(&prefix)).max(10);
+        let mut current = String::new();
+        let mut current_width = 0;
+        for word in rest.split(' ') {
+            let word_width = columns(word);
+            if current_width > 0 && current_width + 1 + word_width > available {
+                out.push(format!("{prefix}{current}"));
+                current.clear();
+                current_width = 0;
+            }
+            if current_width > 0 {
+                current.push(' ');
+                current_width += 1;
+            }
+            for ch in word.chars() {
+                let ch_width = ch.width().unwrap_or(0);
+                if current_width + ch_width > available && current_width > 0 {
+                    out.push(format!("{prefix}{}", current.trim_end()));
+                    current.clear();
+                    current_width = 0;
+                }
+                current.push(ch);
+                current_width += ch_width;
+            }
+        }
+        out.push(format!("{prefix}{}", current.trim_end()));
+    }
+    out.join("\n")
+}
+
 /// Wraps paragraphs (as stored by [`Editor::to_paragraphs`]) into message lines of at most
 /// [`WRAP_WIDTH`] columns, exactly as the editor shows them.
 #[must_use]
@@ -1385,6 +1433,20 @@ mod tests {
         let long = quote_lines("alice", &"word ".repeat(30), WRAP_WIDTH, false);
         assert!(long.len() == 2 && long.iter().all(|line| line.starts_with(" A> ") && line.len() <= WRAP_WIDTH));
         assert_eq!(decode_message(b"a\x1b[1m\x01\xb0\n"), "a\x1b[1m\u{2591}\n");
+    }
+
+    #[test]
+    fn wrap_plain_counts_display_columns_and_keeps_quote_prefixes() {
+        let line = format!("{} end", "word ".repeat(20));
+        let wrapped = wrap_plain(&line, WRAP_WIDTH);
+        assert!(wrapped.lines().count() == 2 && wrapped.lines().all(|line| line.chars().count() <= WRAP_WIDTH));
+        // Each CJK character takes two columns.
+        let cjk = "あ".repeat(50);
+        let wrapped = wrap_plain(&cjk, WRAP_WIDTH);
+        assert_eq!(wrapped.lines().map(|line| line.chars().count()).collect::<Vec<_>>(), [39, 11]);
+        let quoted = format!(" JD> {}", "слово ".repeat(20));
+        assert!(wrap_plain(&quoted, WRAP_WIDTH).lines().all(|line| line.starts_with(" JD> ")));
+        assert_eq!(wrap_plain("short\n\nlines", WRAP_WIDTH), "short\n\nlines");
     }
 
     #[test]

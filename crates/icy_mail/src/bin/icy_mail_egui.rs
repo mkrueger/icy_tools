@@ -33,6 +33,8 @@ mod sidebar;
 mod tagline_dialog;
 #[path = "icy_mail_egui/terminal_editor.rs"]
 mod terminal_editor;
+#[path = "icy_mail_egui/text_editor.rs"]
+mod text_editor;
 #[path = "icy_mail_egui/welcome.rs"]
 mod welcome;
 #[path = "icy_mail_egui/widgets.rs"]

@@ -1205,6 +1205,10 @@ impl MailApp {
             match store.prepare(&package, Compose::New { conference }) {
                 Ok(mut draft) => {
                     draft.to = "ALL".into();
+                    // A conference read as UTF-8 is written in UTF-8 where the BBS can receive it.
+                    if store.supports_utf8() && self.loader.encodings.conference_default(&package, conference) == icy_mail::charset::Charset::Utf8 {
+                        draft.charset = icy_mail::charset::Charset::Utf8;
+                    }
                     self.start_composer(context, Composer::new(draft, false, None, Vec::new(), false, store.is_blue_wave()));
                 }
                 Err(error) => self.error = Some(fl!(LANGUAGE_LOADER, "app-new-message-failed", error = error.to_string())),
@@ -1250,7 +1254,19 @@ impl MailApp {
         };
         let text = package.readable_text(&bytes, false);
         let decoded = charset.message_text(&text);
-        let quotes = match quotes_decoded(info, &decoded, &self.quote_header, self.quote_reflow, package.blue_wave.is_some()) {
+        // An answer to a UTF-8 message is written in UTF-8 where the BBS can receive it.
+        if charset == icy_mail::charset::Charset::Utf8 && store.supports_utf8() {
+            draft.charset = icy_mail::charset::Charset::Utf8;
+            DraftStore::use_decoded_fields(&mut draft, info);
+        }
+        let quotes = match quotes_decoded(
+            info,
+            &decoded,
+            &self.quote_header,
+            self.quote_reflow,
+            package.blue_wave.is_some(),
+            draft.charset,
+        ) {
             Ok(quotes) => quotes,
             Err(error) => {
                 self.error = Some(fl!(LANGUAGE_LOADER, "app-quote-header-failed", error = error.to_string()));
@@ -1344,6 +1360,7 @@ impl MailApp {
             &self.quote_header,
             self.quote_reflow,
             package.blue_wave.is_some(),
+            draft.charset,
         )
     }
 
@@ -2151,21 +2168,41 @@ fn message_origin(info: &MessageInfo) -> String {
 }
 
 /// The attribution and quoted lines offered in the editor's quote panel.
-fn quotes_decoded(info: &MessageInfo, text: &str, template: &str, reflow: bool, blue_wave: bool) -> icy_mail::Res<Vec<String>> {
+fn quotes_decoded(
+    info: &MessageInfo,
+    text: &str,
+    template: &str,
+    reflow: bool,
+    blue_wave: bool,
+    charset: icy_mail::charset::Charset,
+) -> icy_mail::Res<Vec<String>> {
     let attribution = if template.is_empty() {
         fl!(LANGUAGE_LOADER, "app-quote-attribution", date = info.date_str.as_str(), name = info.from.trim())
     } else {
         icy_mail::writing::format_quote_attribution(template, info.from.trim(), &info.subject, &info.date_str)?
     };
-    if let Some(character) = attribution
-        .chars()
-        .find(|&character| character != '\n' && !editor::is_message_char_for(character, blue_wave))
-    {
+    if let Some(character) = attribution.chars().find(|&character| {
+        character != '\n'
+            && if charset == icy_mail::charset::Charset::Utf8 {
+                character.is_control()
+            } else {
+                !editor::is_message_char_for(character, blue_wave)
+            }
+    }) {
         return Err(fl!(LANGUAGE_LOADER, "app-quote-character-invalid", code = format!("{:04X}", u32::from(character))).into());
     }
     let mut lines = vec![attribution];
     lines.extend(editor::quote_lines(&info.from, text, editor::WRAP_WIDTH, reflow));
     Ok(lines)
+}
+
+/// A draft's text on a screen like received mail: CP437 drafts on the BBS font, UTF-8 drafts as Unicode.
+pub fn render_draft_text(text: &str, charset: icy_mail::charset::Charset, width: i32) -> icy_mail::Res<TextScreen> {
+    if charset == icy_mail::charset::Charset::Utf8 {
+        icy_mail::reader::render_body_encoded(text.as_bytes(), charset, width)
+    } else {
+        icy_mail::reader::render_body_encoded(&editor::encode_message(text), icy_mail::charset::Charset::Cp437, width)
+    }
 }
 
 pub fn decode_cp437(bytes: &[u8]) -> String {

@@ -575,6 +575,41 @@ pub(crate) fn load_utf8() -> (TempDir, QwkPackage) {
     (dir, package)
 }
 
+/// A Synchronet packet: `HEADERS.DAT` marks the first message as UTF-8 with LF line ends and
+/// whole header fields; the second has whole CP437 fields without `Utf8`.
+pub(crate) fn load_synchronet() -> (TempDir, QwkPackage) {
+    let dir = TempDir::new();
+    let path = dir.path().join("SYNC.QWK");
+    let mut messages = vec![b' '; 128];
+    let mut headers = Vec::new();
+    for (number, from, subject, body, utf8) in [
+        (1, "Dmitry", "Name in", "Привет あい\nThe quick brown fox\n".as_bytes(), true),
+        (2, "erin", "Plain", b"Caf\x82\xe3".as_slice(), false),
+    ] {
+        headers.extend_from_slice(format!("[{:x}]\r\n", messages.len()).as_bytes());
+        if utf8 {
+            headers.extend_from_slice("Utf8: true\r\nSender: Дмитрий Липатников\r\nSubject: Имя на кириллице\r\n".as_bytes());
+        } else {
+            headers.extend_from_slice(b"Sender: Erin Andr\x82 with a longer sender name\r\nSubject: Caf\x82 and the complete CP437 subject\r\n");
+        }
+        headers.extend_from_slice(b"\r\n");
+        let mut body = body.to_vec();
+        let blocks = body.len().div_ceil(128);
+        body.resize(blocks * 128, b' ');
+        messages.extend(header(b' ', number, "01-05-2600:00", "USER", from, subject, 0, blocks as u32 + 1, 1));
+        messages.extend(body);
+    }
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    let options = zip::write::SimpleFileOptions::default();
+    for (name, data) in [("CONTROL.DAT", control_dat()), ("MESSAGES.DAT", messages), ("HEADERS.DAT", headers)] {
+        zip.start_file(name, options).unwrap();
+        zip.write_all(&data).unwrap();
+    }
+    zip.finish().unwrap();
+    let package = QwkPackage::load_from_file(&path).unwrap();
+    (dir, package)
+}
+
 pub(crate) fn load_legacy_charsets() -> (TempDir, QwkPackage) {
     let dir = TempDir::new();
     let path = dir.path().join("CHARSETS.QWK");

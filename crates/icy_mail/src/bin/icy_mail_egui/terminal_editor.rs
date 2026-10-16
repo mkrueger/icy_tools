@@ -41,7 +41,7 @@ pub struct Quotes {
     pub lines: Vec<String>,
     pub open: bool,
     pub selected: usize,
-    reveal: bool,
+    pub(super) reveal: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -738,83 +738,18 @@ impl TerminalEditor {
     }
 
     fn quote_panel(&mut self, ui: &mut egui::Ui, icons: &mut Icons) {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "editor-quote-from-original")).strong());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if icons.button(ui, Icon::Close, &fl!(LANGUAGE_LOADER, "editor-close-tooltip"), true).clicked() {
+        match quote_panel(ui, icons, &mut self.quotes) {
+            Some(QuotePanelAction::Insert { range, close }) => {
+                self.insert_quotes(range);
+                if close {
                     self.quotes.open = false;
-                    self.request_focus();
                 }
-                let count = self.quotes.lines.len();
-                let selected = self.quotes.selected;
-                if ui
-                    .button(fl!(LANGUAGE_LOADER, "editor-quote-rest"))
-                    .on_hover_text(fl!(LANGUAGE_LOADER, "editor-quote-rest-tooltip"))
-                    .clicked()
-                {
-                    self.insert_quotes(selected..count);
-                    self.quotes.open = false;
-                    self.request_focus();
-                }
-                if ui
-                    .button(fl!(LANGUAGE_LOADER, "editor-quote-line"))
-                    .on_hover_text(fl!(LANGUAGE_LOADER, "editor-quote-line-tooltip"))
-                    .clicked()
-                {
-                    self.insert_quotes(selected..selected + 1);
-                    self.request_focus();
-                }
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    let help = fl!(LANGUAGE_LOADER, "editor-quote-help");
-                    ui.add(egui::Label::new(egui::RichText::new(help).size(11.5).color(ui.visuals().weak_text_color())).truncate());
-                });
-            });
-        });
-        ui.add_space(4.0);
-        let reveal = std::mem::take(&mut self.quotes.reveal);
-        let font = egui::FontId::monospace(13.0);
-        let row_height = ui.fonts_mut(|fonts| fonts.row_height(&font)) + 4.0;
-        let (mut clicked, mut double_clicked) = (None, None);
-        egui::Frame::new()
-            .fill(ui.visuals().extreme_bg_color)
-            .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
-            .corner_radius(4)
-            .inner_margin(4)
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                    for (index, line) in self.quotes.lines.iter().enumerate() {
-                        let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height), egui::Sense::click());
-                        let selected = index == self.quotes.selected;
-                        let visuals = ui.visuals();
-                        let color = if selected {
-                            ui.painter().rect_filled(rect, 3, visuals.selection.bg_fill);
-                            visuals.selection.stroke.color
-                        } else {
-                            if response.hovered() {
-                                ui.painter().rect_filled(rect, 3, visuals.widgets.hovered.weak_bg_fill);
-                            }
-                            visuals.text_color()
-                        };
-                        ui.painter()
-                            .text(rect.left_center() + egui::vec2(6.0, 0.0), egui::Align2::LEFT_CENTER, line, font.clone(), color);
-                        if selected && reveal {
-                            response.scroll_to_me(None);
-                        }
-                        if response.double_clicked() {
-                            double_clicked = Some(index);
-                        } else if response.clicked() {
-                            clicked = Some(index);
-                        }
-                    }
-                });
-            });
-        if let Some(index) = double_clicked {
-            self.insert_quotes(index..index + 1);
-            self.request_focus();
-        } else if let Some(index) = clicked {
-            self.quotes.selected = index;
-            self.request_focus();
+            }
+            Some(QuotePanelAction::Select(index)) => self.quotes.selected = index,
+            Some(QuotePanelAction::Close) => self.quotes.open = false,
+            None => return,
         }
+        self.request_focus();
     }
 
     fn char_panel(&mut self, ui: &mut egui::Ui, icons: &mut Icons) {
@@ -1372,7 +1307,7 @@ impl TerminalEditor {
 }
 
 /// Clickable "keys label" hint of the status bar.
-fn status_hint(ui: &mut egui::Ui, keys: &str, label: &str) -> egui::Response {
+pub(super) fn status_hint(ui: &mut egui::Ui, keys: &str, label: &str) -> egui::Response {
     let mut job = egui::text::LayoutJob::default();
     let format = |color: Color32| egui::TextFormat {
         font_id: egui::FontId::proportional(12.0),
@@ -1509,4 +1444,97 @@ impl Canvas {
             self.cells[y as usize * self.width + x as usize] = (char::from(code), attr);
         }
     }
+}
+
+/// What the reader did in the quote panel.
+pub(super) enum QuotePanelAction {
+    Insert { range: std::ops::Range<usize>, close: bool },
+    Select(usize),
+    Close,
+}
+
+/// The original's lines to pick quotes from, shared by the CP437 and UTF-8 editors.
+pub(super) fn quote_panel(ui: &mut egui::Ui, icons: &mut Icons, quotes: &mut Quotes) -> Option<QuotePanelAction> {
+    let mut action = None;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "editor-quote-from-original")).strong());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if icons.button(ui, Icon::Close, &fl!(LANGUAGE_LOADER, "editor-close-tooltip"), true).clicked() {
+                action = Some(QuotePanelAction::Close);
+            }
+            let count = quotes.lines.len();
+            let selected = quotes.selected;
+            if ui
+                .button(fl!(LANGUAGE_LOADER, "editor-quote-rest"))
+                .on_hover_text(fl!(LANGUAGE_LOADER, "editor-quote-rest-tooltip"))
+                .clicked()
+            {
+                action = Some(QuotePanelAction::Insert {
+                    range: selected..count,
+                    close: true,
+                });
+            }
+            if ui
+                .button(fl!(LANGUAGE_LOADER, "editor-quote-line"))
+                .on_hover_text(fl!(LANGUAGE_LOADER, "editor-quote-line-tooltip"))
+                .clicked()
+            {
+                action = Some(QuotePanelAction::Insert {
+                    range: selected..selected + 1,
+                    close: false,
+                });
+            }
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                let help = fl!(LANGUAGE_LOADER, "editor-quote-help");
+                ui.add(egui::Label::new(egui::RichText::new(help).size(11.5).color(ui.visuals().weak_text_color())).truncate());
+            });
+        });
+    });
+    ui.add_space(4.0);
+    let reveal = std::mem::take(&mut quotes.reveal);
+    let font = egui::FontId::monospace(13.0);
+    let row_height = ui.fonts_mut(|fonts| fonts.row_height(&font)) + 4.0;
+    let (mut clicked, mut double_clicked) = (None, None);
+    egui::Frame::new()
+        .fill(ui.visuals().extreme_bg_color)
+        .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+        .corner_radius(4)
+        .inner_margin(4)
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                for (index, line) in quotes.lines.iter().enumerate() {
+                    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height), egui::Sense::click());
+                    let selected = index == quotes.selected;
+                    let visuals = ui.visuals();
+                    let color = if selected {
+                        ui.painter().rect_filled(rect, 3, visuals.selection.bg_fill);
+                        visuals.selection.stroke.color
+                    } else {
+                        if response.hovered() {
+                            ui.painter().rect_filled(rect, 3, visuals.widgets.hovered.weak_bg_fill);
+                        }
+                        visuals.text_color()
+                    };
+                    ui.painter()
+                        .text(rect.left_center() + egui::vec2(6.0, 0.0), egui::Align2::LEFT_CENTER, line, font.clone(), color);
+                    if selected && reveal {
+                        response.scroll_to_me(None);
+                    }
+                    if response.double_clicked() {
+                        double_clicked = Some(index);
+                    } else if response.clicked() {
+                        clicked = Some(index);
+                    }
+                }
+            });
+        });
+    if let Some(index) = double_clicked {
+        action = Some(QuotePanelAction::Insert {
+            range: index..index + 1,
+            close: false,
+        });
+    } else if let Some(index) = clicked {
+        action = Some(QuotePanelAction::Select(index));
+    }
+    action
 }

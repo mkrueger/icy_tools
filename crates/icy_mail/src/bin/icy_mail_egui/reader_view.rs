@@ -7,7 +7,6 @@ use icy_engine_gui::{
 };
 use icy_mail::{
     drafts::{Draft, DraftKind},
-    editor,
     ignore::IgnoreField,
     options::ReadingMode,
     reader::{NavigateDirection, Pane},
@@ -629,7 +628,7 @@ impl MailApp {
         if self.rendered_draft.as_ref().is_some_and(|(id, body)| *id == draft.id && *body == text) {
             return;
         }
-        let screen = icy_mail::reader::render_body(&editor::encode_message(&text)).unwrap_or_else(|_| TextScreen::new(Size::new(80, 25)));
+        let screen = super::app::render_draft_text(&text, draft.charset, 80).unwrap_or_else(|_| TextScreen::new(Size::new(80, 25)));
         self.screen = ScreenView::new(screen);
         // A body still loading for the message list must not replace the draft.
         self.loader.body_generation = self.loader.body_generation.wrapping_add(1);

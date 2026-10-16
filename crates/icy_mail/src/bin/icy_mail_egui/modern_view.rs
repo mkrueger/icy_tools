@@ -10,9 +10,8 @@ use i18n_embed_fl::fl;
 use icy_engine::{Rectangle, RenderOptions, TextPane, TextScreen};
 use icy_engine_gui::{egui::appearance, ScalingMode};
 use icy_mail::{
-    editor,
     options::{ModernFont, ReadingMode, MODERN_FONT_SIZES},
-    reader::{render_body, render_body_wide, Pane},
+    reader::Pane,
     text::{styled_lines, StyledSpan},
     LANGUAGE_LOADER,
 };
@@ -626,9 +625,10 @@ impl MailApp {
             .as_ref()
             .and_then(|store| store.drafts().iter().find(|draft| draft.id == id).cloned())
             .ok_or_else(|| format!("Draft {id} does not exist"))?;
-        let text = editor::encode_message(&draft.text());
-        render_body(&text)
-            .and_then(|classic| Ok((classic, render_body_wide(&text)?)))
+        let text = draft.text();
+        let render = |width| super::app::render_draft_text(&text, draft.charset, width);
+        render(80)
+            .and_then(|classic| Ok((classic, render(icy_mail::reader::WIDE_COLUMNS)?)))
             .map_err(|error| error.to_string())
     }
 

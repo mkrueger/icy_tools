@@ -21,7 +21,7 @@ const MANIFEST: &str = "manifest.toml";
 const MAX_MANIFEST_SIZE: u64 = 1024 * 1024;
 const DAY: u64 = 24 * 60 * 60;
 const INDEX_FILE: &str = "index-v6.bin";
-const INDEX_VERSION: u32 = 7;
+const INDEX_VERSION: u32 = 8;
 const MAX_INDEX_SIZE: u64 = 1024 * 1024 * 1024;
 const INDEX_CHUNK_MESSAGES: usize = 4096;
 
@@ -258,8 +258,11 @@ impl ExtractionCache {
         let mut upgraded = false;
         let mut files = Vec::with_capacity(manifest.files.len());
         for (index, entry) in manifest.files.iter_mut().enumerate() {
-            let limit = if index < 2 || manifest.format == PacketFormat::BlueWave && blue_wave_member(&entry.name.to_ascii_uppercase()) {
+            let upper = entry.name.to_ascii_uppercase();
+            let limit = if index < 2 || manifest.format == PacketFormat::BlueWave && blue_wave_member(&upper) {
                 MAX_ARCHIVE_ENTRY_SIZE
+            } else if upper == super::HEADERS_DAT {
+                super::MAX_HEADERS_DAT_SIZE
             } else {
                 MAX_PACKET_FILE_SIZE
             };

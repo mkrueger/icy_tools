@@ -405,6 +405,8 @@ pub struct DecodeOptions {
     pub default_source: CharsetSource,
     pub override_charset: Option<Charset>,
     pub pipe_codes: bool,
+    /// The packet's `HEADERS.DAT` marks the message as UTF-8, which outranks its kludges.
+    pub utf8_header: bool,
 }
 
 impl DecodeOptions {
@@ -415,6 +417,9 @@ impl DecodeOptions {
     pub fn resolve(self, bytes: &[u8]) -> (Charset, CharsetSource) {
         if let Some(charset) = self.override_charset {
             return (charset, CharsetSource::Override);
+        }
+        if self.utf8_header {
+            return (Charset::Utf8, CharsetSource::Declared);
         }
         match declared(bytes) {
             Some(charset) => (charset, CharsetSource::Declared),
@@ -554,6 +559,14 @@ impl ReadingEncodings {
         format!("{}:{conference}", board.iter().map(|byte| format!("{byte:02x}")).collect::<String>())
     }
 
+    /// The encoding undeclared messages of a conference are read in.
+    pub fn conference_default(&self, package: &crate::qwk::QwkPackage, conference: u16) -> Charset {
+        self.conferences
+            .get(&Self::conference_key(package, conference))
+            .copied()
+            .unwrap_or(self.default)
+    }
+
     pub fn options(&self, package: &crate::qwk::QwkPackage, index: usize) -> DecodeOptions {
         let key = package.infos.get(index).map(|info| Self::conference_key(package, info.conference));
         let conference = key.as_ref().and_then(|key| self.conferences.get(key)).copied();
@@ -566,6 +579,7 @@ impl ReadingEncodings {
             },
             override_charset: self.messages.get(&index).copied(),
             pipe_codes: key.is_some_and(|key| self.pipe_codes.contains(&key)),
+            utf8_header: package.declares_utf8(index),
         }
     }
 }

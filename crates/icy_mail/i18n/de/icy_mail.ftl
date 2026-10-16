@@ -420,6 +420,10 @@ composer-conference = Konferenz
 composer-conference-number = Konferenz { $number }
 composer-private = Privat
 composer-private-tooltip = Nur der Empfänger und der Sysop können private Nachrichten lesen
+composer-encoding-tooltip = Der Zeichensatz der Nachricht. UTF-8 erlaubt jede Schrift und Eingabemethode; CP437 bietet den BBS-Editor mit ANSI-Farben und der Zeichentabelle.
+composer-utf8-unsupported = Diese BBS kann keine UTF-8-Antworten empfangen, ihre Pakete enthalten kein HEADERS.DAT.
+composer-not-cp437 = Der Text enthält „{ $character }“, das CP437 nicht schreiben kann. Entferne es, bevor du auf CP437 umstellst.
+composer-colors-removed = UTF-8-Nachrichten sind reiner Text; die Farben wurden entfernt.
 composer-field-to = An
 composer-field-subject = Betreff
 composer-field-from = Von
@@ -460,6 +464,7 @@ editor-quote-rest-tooltip = Ausgewählte Zeile und alle folgenden zitieren (Ctrl
 editor-quote-line = Zeile zitieren
 editor-quote-line-tooltip = Ausgewählte Zeile zitieren (Enter)
 editor-quote-help = ↑↓ auswählen · Enter Zeile zitieren · Ctrl+A Rest zitieren · Esc schließen
+editor-utf8-hint = UTF-8: jede Schrift und Eingabemethode; Zeilen werden beim Senden nach 79 Spalten umbrochen.
 editor-character-details = Zeichen { $code } · { $hex }h
 editor-character-details-reserved = Zeichen { $code } · { $hex }h · reserviert
 editor-character-picking-hint = Pfeiltasten auswählen · Enter einfügen · Esc zurück zum Text
@@ -733,6 +738,7 @@ draft-issue-message-text-required = Nachrichtentext muss angegeben werden
 draft-issue-control-character = { $field } enthält ein Steuerzeichen (U+{ $code })
 draft-issue-no-cp437-equivalent = { $field } enthält „{ $character }“, wofür es keine CP437-Entsprechung gibt
 draft-issue-qwk-line-break = { $field } enthält „{ $character }“, das QWK als Zeilenumbruch reserviert
+draft-issue-utf8-unsupported = Diese BBS kann keine UTF-8-Antworten empfangen, ihre Pakete enthalten kein HEADERS.DAT. Stelle die Nachricht auf CP437 um.
 
 # Packet and reader
 
