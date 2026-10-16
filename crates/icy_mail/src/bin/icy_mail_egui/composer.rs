@@ -113,12 +113,16 @@ impl Composer {
             (false, DraftKind::New) => fl!(LANGUAGE_LOADER, "composer-title-new-message"),
             (false, DraftKind::Reply) => fl!(LANGUAGE_LOADER, "composer-title-reply"),
             (false, DraftKind::Forward) => fl!(LANGUAGE_LOADER, "composer-title-forward-message"),
+            (false, DraftKind::Edit) => fl!(LANGUAGE_LOADER, "composer-title-edit-message"),
         }
     }
 
     /// The header field that should receive the keyboard first, `None` for the message text.
     fn first_field(&self) -> Option<egui::Id> {
-        if self.draft.to.trim().is_empty() {
+        // A message base opened on its own may not know who writes.
+        if self.draft.from.trim().is_empty() {
+            Some(egui::Id::new("composer-From"))
+        } else if self.draft.to.trim().is_empty() {
             Some(egui::Id::new("composer-To"))
         } else if self.draft.subject.trim().is_empty() {
             Some(egui::Id::new("composer-Subject"))
@@ -164,6 +168,13 @@ impl MailApp {
             self.notify(context, NoticeKind::Warning, message);
             return;
         }
+        if store.is_message_base() {
+            // A message base has no outbox: saving writes the message, as BBS and FidoNet editors do.
+            if let Some(path) = self.path.clone() {
+                self.loader.write_message(path, store.clone(), composer.draft.clone(), context);
+            }
+            return;
+        }
         let mut next = store.clone();
         let result = if composer.existing {
             next.update(composer.draft.clone())
@@ -191,6 +202,15 @@ impl MailApp {
         let Some(store) = self.drafts.as_ref() else {
             return;
         };
+        let (save, save_tooltip) = if store.is_message_base() {
+            (
+                fl!(LANGUAGE_LOADER, "composer-save-message"),
+                fl!(LANGUAGE_LOADER, "composer-save-message-tooltip"),
+            )
+        } else {
+            (fl!(LANGUAGE_LOADER, "composer-save-draft"), fl!(LANGUAGE_LOADER, "composer-save-draft-tooltip"))
+        };
+        let writing = self.loader.writing;
         let conferences: Vec<_> = self.choices.iter().filter(|(number, _)| store.can_post(*number)).cloned().collect();
         let Some(composer) = &mut self.composer else {
             return;
@@ -218,7 +238,7 @@ impl MailApp {
                     let image = self.icons.image(
                         &context,
                         match composer.draft.kind {
-                            DraftKind::New => Icon::Compose,
+                            DraftKind::New | DraftKind::Edit => Icon::Compose,
                             DraftKind::Reply => Icon::Reply,
                             DraftKind::Forward => Icon::Forward,
                         },
@@ -240,8 +260,8 @@ impl MailApp {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let missing = problems.join("\n");
                         if ui
-                            .add_enabled(problems.is_empty(), appearance::primary_button(fl!(LANGUAGE_LOADER, "composer-save-draft")))
-                            .on_hover_text(fl!(LANGUAGE_LOADER, "composer-save-draft-tooltip"))
+                            .add_enabled(problems.is_empty() && !writing, appearance::primary_button(save.as_str()))
+                            .on_hover_text(save_tooltip.as_str())
                             .on_disabled_hover_text(&missing)
                             .clicked()
                         {
@@ -281,14 +301,17 @@ impl MailApp {
                         || fl!(LANGUAGE_LOADER, "composer-conference-number", number = draft.conference),
                         |(number, name)| format!("{name} ({number})"),
                     );
-                    egui::ComboBox::from_id_salt("composer-conference")
-                        .width((ui.available_width() - 140.0).clamp(120.0, 320.0))
-                        .selected_text(selected)
-                        .show_ui(ui, |ui| {
-                            for (number, name) in &conferences {
-                                ui.selectable_value(&mut draft.conference, *number, format!("{name} ({number})"));
-                            }
-                        });
+                    // An edited message is changed where it is stored.
+                    ui.add_enabled_ui(draft.kind != DraftKind::Edit, |ui| {
+                        egui::ComboBox::from_id_salt("composer-conference")
+                            .width((ui.available_width() - 140.0).clamp(120.0, 320.0))
+                            .selected_text(selected)
+                            .show_ui(ui, |ui| {
+                                for (number, name) in &conferences {
+                                    ui.selectable_value(&mut draft.conference, *number, format!("{name} ({number})"));
+                                }
+                            });
+                    });
                     ui.add_space(12.0);
                     ui.checkbox(&mut draft.private, fl!(LANGUAGE_LOADER, "composer-private"))
                         .on_hover_text(fl!(LANGUAGE_LOADER, "composer-private-tooltip"));
@@ -350,6 +373,19 @@ impl MailApp {
                         {
                             action = Some(Action::AddressBook);
                         }
+                    });
+                }
+                if store.is_netmail(draft.conference) {
+                    let invalid = issues.iter().any(|issue| issue.field == DraftField::Address && !draft.address.trim().is_empty());
+                    row(ui, &fl!(LANGUAGE_LOADER, "draft-field-address"), &mut |ui| {
+                        let mut edit = appearance::text_edit(&mut draft.address)
+                            .id(egui::Id::new("composer-Address"))
+                            .hint_text("2:240/1")
+                            .desired_width((ui.available_width() - 8.0).clamp(80.0, 220.0));
+                        if invalid {
+                            edit = edit.text_color(ui.visuals().error_fg_color);
+                        }
+                        ui.add(edit);
                     });
                 }
                 if let Some(charset) = encoding {

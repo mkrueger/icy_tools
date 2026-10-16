@@ -1656,6 +1656,283 @@ fn invalid_quote_attribution_reports_error_without_starting_composer() {
 }
 
 #[test]
+fn saving_in_a_jam_message_base_writes_the_message_without_an_outbox() {
+    crate::use_english();
+    let context = egui::Context::default();
+    let dir = packet_tests::TempDir::new();
+    let base_path = dir.path().join("local");
+    let mut base = jamjam::jam::JamMessageBase::create(&base_path).unwrap();
+    base.write_message(
+        &jamjam::jam::JamMessage::default()
+            .with_from("Alice".into())
+            .with_to("All".into())
+            .with_subject("Hello".into())
+            .with_text("Is anybody there?\r".into()),
+    )
+    .unwrap();
+    drop(base);
+    let path = base_path.with_extension("jhr");
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    mail.open(path.clone(), &context);
+    wait(&mut mail, &context);
+    assert_eq!(mail.reader.package.as_ref().unwrap().format(), icy_mail::qwk::PacketFormat::Jam);
+    assert!(mail.posts_to_base());
+    let size = egui::vec2(1100.0, 760.0);
+    let output = settle(&context, &mut mail, size);
+    assert_eq!(count(&output, "Outbox"), 0, "a message base has no outbox");
+    assert_eq!(count(&output, "Export Replies"), 0, "nor anything to export");
+
+    mail.reply(&context, false);
+    assert!(mail.error.is_none(), "{:?}", mail.error);
+    // A single base outside of an IcyBoard installation, without local messages, names no user,
+    // so the composer starts in the empty From field.
+    settle(&context, &mut mail, size);
+    frame(&context, &mut mail, size, vec![egui::Event::Text("Bob".into())]);
+    let composer = mail.composer.as_mut().unwrap();
+    assert_eq!((composer.draft.from.as_str(), composer.draft.ref_number), ("Bob", 1));
+    composer.request_focus();
+    let output = settle(&context, &mut mail, size);
+    label(&output, "Save Message");
+    frame(&context, &mut mail, size, vec![egui::Event::Text("Hi Alice".into())]);
+    frame(&context, &mut mail, size, vec![key(egui::Key::S, egui::Modifiers::COMMAND)]);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while mail.loader.writing {
+        assert!(Instant::now() < deadline, "writing the message timed out");
+        mail.poll(&context);
+        std::thread::yield_now();
+    }
+    wait(&mut mail, &context);
+    assert!(
+        mail.composer.is_none(),
+        "{:?}",
+        mail.composer.as_ref().and_then(|composer| composer.error.clone())
+    );
+    assert_eq!(mail.notice.as_ref().map(|notice| notice.text.as_str()), Some("Message 2 saved in local"));
+    assert!(mail.drafts.as_ref().unwrap().drafts().is_empty(), "nothing waits in an outbox");
+    let package = mail.reader.package.as_ref().unwrap();
+    assert_eq!(package.message_count(), 2);
+    assert_eq!((package.infos[1].number, package.infos[1].ref_number), (2, 1));
+    assert_eq!(package.infos[1].from.trim(), "Bob");
+    assert_eq!(package.infos[1].subject.trim(), "Re: Hello");
+    assert_eq!(mail.reader.selected_message, Some(1), "the written message is shown");
+}
+
+#[test]
+fn jam_messages_are_marked_deleted_restored_and_packed() {
+    crate::use_english();
+    let context = egui::Context::default();
+    let dir = packet_tests::TempDir::new();
+    let base_path = dir.path().join("local");
+    let mut base = jamjam::jam::JamMessageBase::create(&base_path).unwrap();
+    for subject in ["Keep me", "Spam"] {
+        base.write_message(
+            &jamjam::jam::JamMessage::default()
+                .with_from("Alice".into())
+                .with_to("All".into())
+                .with_subject(subject.into())
+                .with_text("Text\r".into()),
+        )
+        .unwrap();
+    }
+    drop(base);
+    let path = base_path.with_extension("jhr");
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    mail.open(path.clone(), &context);
+    wait(&mut mail, &context);
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    mail.reader.select_message(1);
+    mail.set_focus(Pane::Messages, &context);
+    let finish = |mail: &mut app::MailApp| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while mail.loader.changing {
+            assert!(Instant::now() < deadline, "the message base did not answer");
+            mail.poll(&context);
+            std::thread::yield_now();
+        }
+        assert!(mail.error.is_none(), "{:?}", mail.error);
+    };
+
+    frame(&context, &mut mail, size, vec![key(egui::Key::Delete, egui::Modifiers::NONE)]);
+    finish(&mut mail);
+    assert!(mail.is_deleted(1));
+    assert_eq!(mail.notice.as_ref().map(|notice| notice.text.as_str()), Some("Message 2 marked as deleted"));
+    let output = settle(&context, &mut mail, size);
+    label(&output, "Deleted");
+
+    frame(&context, &mut mail, size, vec![key(egui::Key::Delete, egui::Modifiers::NONE)]);
+    finish(&mut mail);
+    assert!(!mail.is_deleted(1), "Delete toggles the mark off again");
+    frame(&context, &mut mail, size, vec![key(egui::Key::Delete, egui::Modifiers::NONE)]);
+    finish(&mut mail);
+
+    mail.ask_pack();
+    let Some(app::Modal::PackBase(dialog)) = mail.modal.take() else {
+        panic!("packing asks first");
+    };
+    assert_eq!(dialog.deleted, 1);
+    mail.pack(&context, &dialog);
+    finish(&mut mail);
+    wait(&mut mail, &context);
+    assert_eq!(mail.notice.as_ref().map(|notice| notice.text.as_str()), Some("Removed 1 deleted message"));
+    let package = mail.reader.package.as_ref().unwrap();
+    assert_eq!(package.message_count(), 1);
+    assert_eq!(package.infos[0].subject.trim(), "Keep me");
+}
+
+#[test]
+fn jam_messages_sync_lastread_and_are_edited_inspected_and_checked() {
+    use jamjam::jam::{attributes, last_read_storage::JamLastReadStorage, JamMessage, JamMessageBase};
+    crate::use_english();
+    let context = egui::Context::default();
+    let dir = packet_tests::TempDir::new();
+    // A base inside an IcyBoard installation whose user list names the sysop.
+    std::fs::write(
+        dir.path().join("icboard.toml"),
+        "[sysop]\nname = \"Bob\"\n\n[paths]\nuser_file = \"users.toml\"\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("users.toml"), "[[users]]\nname = \"Bob\"\n").unwrap();
+    let base_path = dir.path().join("local");
+    let mut base = JamMessageBase::create(&base_path).unwrap();
+    base.write_message(
+        &JamMessage::default()
+            .with_from("Alice".into())
+            .with_subject("First".into())
+            .with_text("Hi\r".into()),
+    )
+    .unwrap();
+    base.write_message(
+        &JamMessage::default()
+            .with_from("Bob".into())
+            .with_to("Alice".into())
+            .with_subject("Mine".into())
+            .with_attributes(attributes::MSG_LOCAL)
+            .with_text("Written here\r".into()),
+    )
+    .unwrap();
+    for subject in ["Third", "Fourth"] {
+        base.write_message(
+            &JamMessage::default()
+                .with_from("Carol".into())
+                .with_subject(subject.into())
+                .with_text("More\r".into()),
+        )
+        .unwrap();
+    }
+    let crc = JamMessageBase::crc(&"Bob".into());
+    base.write_last_read(&JamLastReadStorage {
+        user_crc: crc,
+        user_id: 0,
+        last_read_msg: 1,
+        high_read_msg: 1,
+    })
+    .unwrap();
+    drop(base);
+    let path = base_path.with_extension("jhr");
+    let mut mail = app::MailApp::with_storage(&context, dir.path().to_path_buf());
+    mail.open(path.clone(), &context);
+    wait(&mut mail, &context);
+    assert_eq!(mail.user_name(), "Bob", "the sysop of the installation the base lies in");
+    assert!(mail.reader.is_read(0), "what the BBS saw as read is read");
+    assert_eq!(mail.reader.selected_message, Some(1), "the first message the BBS has not shown yet");
+    let pointer = || {
+        JamMessageBase::open(&base_path)
+            .unwrap()
+            .find_last_read(crc, 0)
+            .unwrap()
+            .map_or(0, |record| record.last_read_msg)
+    };
+    let reaches = |number: u32| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while pointer() != number {
+            assert!(Instant::now() < deadline, "the lastread pointer did not reach {number}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    reaches(2);
+    // Reading message 4 past the unread message 3 leaves the pointer: the BBS would take 3 for read.
+    mail.set_read(&context, &[3], true);
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(pointer(), 2);
+    mail.set_read(&context, &[2], true);
+    reaches(4);
+
+    let size = egui::vec2(1100.0, 760.0);
+    settle(&context, &mut mail, size);
+    mail.reader.select_message(1);
+    mail.set_focus(Pane::Messages, &context);
+    frame(&context, &mut mail, size, vec![key(egui::Key::E, egui::Modifiers::COMMAND)]);
+    let composer = mail.composer.as_mut().expect("Ctrl+E edits the message");
+    assert_eq!(composer.draft.kind, icy_mail::drafts::DraftKind::Edit);
+    assert_eq!(composer.draft.body, "Written here");
+    composer.draft.subject = "Mine, edited".into();
+    let output = settle(&context, &mut mail, size);
+    label(&output, "Edit Message");
+    frame(&context, &mut mail, size, vec![key(egui::Key::S, egui::Modifiers::COMMAND)]);
+    let finish = |mail: &mut app::MailApp| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while mail.loader.writing || mail.loader.changing {
+            assert!(Instant::now() < deadline, "the message base did not answer");
+            mail.poll(&context);
+            std::thread::yield_now();
+        }
+        wait(mail, &context);
+    };
+    finish(&mut mail);
+    assert!(mail.composer.is_none());
+    assert_eq!(mail.notice.as_ref().map(|notice| notice.text.as_str()), Some("Message 2 changed"));
+    let package = mail.reader.package.clone().unwrap();
+    assert_eq!(package.message_count(), 4);
+    assert_eq!(package.infos[1].subject.trim(), "Mine, edited");
+
+    mail.reader.select_message(0);
+    mail.set_focus(Pane::Messages, &context);
+    frame(&context, &mut mail, size, vec![key(egui::Key::I, egui::Modifiers::NONE)]);
+    let Some(app::Modal::MessageInfo(info)) = mail.modal.take() else {
+        panic!("I shows the message info");
+    };
+    assert_eq!((info.area, info.number, info.details.number), (0, 1, 1));
+    mail.base_job(
+        loading::BaseJob::Attributes {
+            index: 0,
+            set: attributes::MSG_SENT,
+            clear: 0,
+        },
+        &context,
+    );
+    finish(&mut mail);
+    assert_eq!(mail.notice.as_ref().map(|notice| notice.text.as_str()), Some("Attributes of message 1 saved"));
+    let details = mail.reader.package.as_ref().unwrap().message_base.as_ref().unwrap().details(0).unwrap();
+    assert_ne!(details.attributes & attributes::MSG_SENT, 0);
+
+    mail.base_job(loading::BaseJob::Verify, &context);
+    finish(&mut mail);
+    let Some(app::Modal::CheckReport { checks, repaired: false }) = mail.modal.take() else {
+        panic!("checking shows a report");
+    };
+    assert!(checks.iter().all(|check| check.ok()), "{checks:?}");
+    assert_eq!(checks[0].reclaimable, 13, "the edit left its old text for the next pack");
+
+    mail.reader.select_message(0);
+    mail.ask_transfer();
+    for _ in 0..2 {
+        frame(&context, &mut mail, size, Vec::new());
+        assert!(
+            matches!(mail.modal, Some(app::Modal::Transfer(_))),
+            "the transfer dialog stays open without input"
+        );
+    }
+    let Some(app::Modal::Transfer(transfer)) = mail.modal.take() else {
+        panic!("move or copy asks for the area");
+    };
+    assert_eq!(transfer.target, None, "a single base has no other area");
+    mail.modal = Some(app::Modal::Transfer(transfer));
+    frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
+    assert!(mail.modal.is_none(), "Escape cancels the transfer dialog");
+}
+
+#[test]
 fn exporting_replies_shows_the_saved_file_and_next_step() {
     let context = egui::Context::default();
     appearance::apply(&context);

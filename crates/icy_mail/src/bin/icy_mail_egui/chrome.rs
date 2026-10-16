@@ -9,6 +9,7 @@ use icy_mail::{
 
 use super::{
     app::{Folder, MailApp, Modal, NoticeKind, SaveMessages},
+    loading::BaseJob,
     settings,
     widgets::{self, Icon},
 };
@@ -83,17 +84,19 @@ impl MailApp {
             } else {
                 fl!(LANGUAGE_LOADER, "toolbar-export")
             };
-            if self
-                .icons
-                .tool(
-                    ui,
-                    Icon::Export,
-                    captions.then_some(export.as_str()),
-                    &fl!(LANGUAGE_LOADER, "toolbar-export-tooltip"),
-                    self.has_exportable() && !self.loader.export_picking,
-                    false,
-                )
-                .clicked()
+            // A message base is written to as messages are saved; it has nothing to export.
+            if !self.posts_to_base()
+                && self
+                    .icons
+                    .tool(
+                        ui,
+                        Icon::Export,
+                        captions.then_some(export.as_str()),
+                        &fl!(LANGUAGE_LOADER, "toolbar-export-tooltip"),
+                        self.has_exportable() && !self.loader.export_picking,
+                        false,
+                    )
+                    .clicked()
             {
                 self.export(&context);
             }
@@ -277,27 +280,36 @@ impl MailApp {
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-packet-information"), "", open) {
             self.modal = Some(Modal::PacketInfo);
         }
+        if self.posts_to_base() && item(ui, &fl!(LANGUAGE_LOADER, "menu-pack-base"), "", self.loading.is_none() && !self.loader.changing) {
+            self.ask_pack();
+        }
+        if self.posts_to_base() && item(ui, &fl!(LANGUAGE_LOADER, "menu-check-base"), "", self.loading.is_none() && !self.loader.changing) {
+            self.base_job(BaseJob::Verify, &context);
+        }
         ui.separator();
-        if item(
-            ui,
-            &fl!(LANGUAGE_LOADER, "menu-import-replies"),
-            "",
-            open && self.loading.is_none() && !self.loader.import_picking,
-        ) {
-            if let Some(store) = &self.drafts {
-                self.loader.pick_import(store.clone(), &context);
+        // Reply packets and offline subscriptions belong to mail packets, not to message bases.
+        if !self.posts_to_base() {
+            if item(
+                ui,
+                &fl!(LANGUAGE_LOADER, "menu-import-replies"),
+                "",
+                open && self.loading.is_none() && !self.loader.import_picking,
+            ) {
+                if let Some(store) = &self.drafts {
+                    self.loader.pick_import(store.clone(), &context);
+                }
             }
-        }
-        if item(
-            ui,
-            &fl!(LANGUAGE_LOADER, "menu-export-replies"),
-            &command_shift(Key::E),
-            self.has_exportable() && !self.loader.export_picking,
-        ) {
-            self.export(&context);
-        }
-        if item(ui, &fl!(LANGUAGE_LOADER, "menu-conference-subscriptions"), "", open) {
-            self.modal = Some(Modal::Subscriptions);
+            if item(
+                ui,
+                &fl!(LANGUAGE_LOADER, "menu-export-replies"),
+                &command_shift(Key::E),
+                self.has_exportable() && !self.loader.export_picking,
+            ) {
+                self.export(&context);
+            }
+            if item(ui, &fl!(LANGUAGE_LOADER, "menu-conference-subscriptions"), "", open) {
+                self.modal = Some(Modal::Subscriptions);
+            }
         }
         ui.separator();
         if item(ui, &fl!(LANGUAGE_LOADER, "menu-settings"), &command(Key::Comma), true) {
@@ -344,6 +356,26 @@ impl MailApp {
         };
         if item(ui, &label, "S", selected) {
             self.toggle_star(&context);
+        }
+        if self.posts_to_base() {
+            let label = if self.reader.selected_message.is_some_and(|index| self.is_deleted(index)) {
+                fl!(LANGUAGE_LOADER, "menu-undelete")
+            } else {
+                fl!(LANGUAGE_LOADER, "menu-mark-deleted")
+            };
+            if item(ui, &label, "Del", self.can_toggle_deleted()) {
+                self.toggle_deleted(&context);
+            }
+            let changeable = self.can_change_selected();
+            if item(ui, &fl!(LANGUAGE_LOADER, "menu-edit-message"), &command(Key::E), changeable && self.composer.is_none()) {
+                self.edit_message(&context);
+            }
+            if item(ui, &fl!(LANGUAGE_LOADER, "menu-transfer-message"), "", selected && !self.loader.changing) {
+                self.ask_transfer();
+            }
+            if item(ui, &fl!(LANGUAGE_LOADER, "menu-message-info"), "I", selected) {
+                self.show_message_info();
+            }
         }
         if item(
             ui,

@@ -123,6 +123,7 @@ impl MainWindow {
                     let file_dialog = rfd::AsyncFileDialog::new()
                         .set_title("Open Mail Package")
                         .add_filter("Mail Packages", &packet_extensions())
+                        .add_filter("JAM Message Bases and IcyBoard", &icy_mail::message_base::extensions())
                         .add_filter("All Files", &["*"]);
 
                     file_dialog.pick_file().await

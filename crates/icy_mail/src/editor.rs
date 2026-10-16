@@ -1195,7 +1195,7 @@ fn starts_item(text: &str) -> bool {
 const MIN_FILL_WIDTH: usize = 40;
 
 /// Joins lines that a paragraph was hard-wrapped into, so quotes are wrapped at the reply's margin
-/// instead of keeping the original editor's breaks (as AmberEdit's `quote_unwrap`).
+/// instead of keeping the original editor's breaks.
 ///
 /// A run is the lines with text under one quote prefix; blank lines, other depths or initials end
 /// it. Its longest line approximates the original margin, and a line continues the one above when

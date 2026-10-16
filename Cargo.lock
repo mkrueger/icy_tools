@@ -1208,14 +1208,6 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 [[package]]
 name = "codepages"
 version = "0.1.0"
-source = "git+https://github.com/mkrueger/icy_board?rev=0c679e79bbd4a3a98c9352a124b512d7712609a5#0c679e79bbd4a3a98c9352a124b512d7712609a5"
-dependencies = [
- "lazy_static",
-]
-
-[[package]]
-name = "codepages"
-version = "0.1.0"
 source = "git+https://github.com/mkrueger/icy_board#46461702f01ea8b7a7aef55506338db776064a14"
 dependencies = [
  "lazy_static",
@@ -3573,7 +3565,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap-i18n-richformatter",
- "codepages 0.1.0 (git+https://github.com/mkrueger/icy_board)",
+ "codepages",
  "crc32fast",
  "directories",
  "eframe",
@@ -3639,7 +3631,7 @@ dependencies = [
  "bstr",
  "byteorder",
  "chrono",
- "codepages 0.1.0 (git+https://github.com/mkrueger/icy_board)",
+ "codepages",
  "criterion",
  "env_logger",
  "fastrand",
@@ -3685,7 +3677,7 @@ dependencies = [
  "base64 0.23.1",
  "bitflags 2.13.2",
  "bstr",
- "codepages 0.1.0 (git+https://github.com/mkrueger/icy_board)",
+ "codepages",
  "criterion",
  "futures-util",
  "i18n-embed",
@@ -3718,7 +3710,7 @@ dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
  "clipboard-rs",
- "codepages 0.1.0 (git+https://github.com/mkrueger/icy_board)",
+ "codepages",
  "cpal",
  "criterion",
  "egui",
@@ -3767,7 +3759,7 @@ dependencies = [
 name = "icy_engine_scripting"
 version = "0.1.0"
 dependencies = [
- "codepages 0.1.0 (git+https://github.com/mkrueger/icy_board)",
+ "codepages",
  "icy_engine",
  "icy_parser_core",
  "image",
@@ -4506,14 +4498,12 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jamjam"
-version = "0.2.0"
-source = "git+https://github.com/mkrueger/icy_board?rev=0c679e79bbd4a3a98c9352a124b512d7712609a5#0c679e79bbd4a3a98c9352a124b512d7712609a5"
+version = "0.3.0"
+source = "git+https://github.com/mkrueger/jamjam?rev=fbe459511e761baffeb7b4e89732c49d4bb07e67#fbe459511e761baffeb7b4e89732c49d4bb07e67"
 dependencies = [
  "bstr",
  "chrono",
- "codepages 0.1.0 (git+https://github.com/mkrueger/icy_board?rev=0c679e79bbd4a3a98c9352a124b512d7712609a5)",
  "fastrand",
- "lazy_static",
  "log",
  "rayon",
  "thiserror 2.0.21",

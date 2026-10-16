@@ -30,8 +30,8 @@ legacy-ui = ["dep:icy_ui", "dep:rfd", "icy_engine_gui/legacy-ui"]
 egui = ["dep:eframe", "dep:rfd", "dep:resvg", "icy_engine_gui/egui"]
 
 [dependencies]
-jamjam = { git = "https://github.com/mkrueger/icy_board", rev = "0c679e79bbd4a3a98c9352a124b512d7712609a5" }
-#jamjam = { path ="../../../icy_board/crates/jamjam" }
+jamjam = { git = "https://github.com/mkrueger/jamjam", rev = "fbe459511e761baffeb7b4e89732c49d4bb07e67" }
+#jamjam = { path ="../../../jamjam" }
 
 icy_ui = { workspace = true, optional = true, features = [ "tokio", "svg", "image", "wgpu" ] }
 eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }

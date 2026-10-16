@@ -28,12 +28,61 @@ pub enum Event {
     Search(u64, String, Result<HashSet<usize>, String>),
     Picked(Option<PathBuf>),
     Exported(Option<(PathBuf, Result<(), String>)>),
+    /// A message written into the message base at the path: its area and number.
+    MessageWritten(PathBuf, Result<(u16, u32), String>),
+    /// A [`BaseJob`] on the message base at the path finished.
+    BaseDone(PathBuf, Result<BaseOutcome, String>),
     MessageSaved(Option<(PathBuf, Result<(), String>)>),
     MessagesSaved(usize, Option<(PathBuf, Result<(), String>)>),
     RepliesPicked(u64, Option<(PathBuf, Result<Vec<Draft>, String>)>),
 }
 
 type Jobs<T> = mpsc::Sender<(T, egui::Context)>;
+
+/// A change to an open message base, run in the background because JAM waits for its lock.
+#[derive(Clone, Debug)]
+pub enum BaseJob {
+    SetDeleted { index: usize, deleted: bool },
+    Pack(icy_mail::message_base::PackChoice),
+    /// Copies the message into another area, or moves it there without `keep`.
+    Transfer { index: usize, target: u16, keep: bool },
+    Attributes { index: usize, set: u32, clear: u32 },
+    Verify,
+    Repair,
+}
+
+#[derive(Clone, Debug)]
+pub enum BaseOutcome {
+    SetDeleted { index: usize, deleted: bool },
+    Packed(icy_mail::message_base::PackSummary),
+    Transferred { area: u16, number: u32, keep: bool },
+    Attributes { index: usize },
+    Checked(Vec<icy_mail::message_base::AreaCheck>),
+    Repaired(Vec<icy_mail::message_base::AreaCheck>),
+}
+
+impl BaseJob {
+    fn run(self, base: &icy_mail::message_base::MessageBase) -> icy_mail::Res<BaseOutcome> {
+        Ok(match self {
+            Self::SetDeleted { index, deleted } => {
+                base.set_deleted(index, deleted)?;
+                BaseOutcome::SetDeleted { index, deleted }
+            }
+            Self::Pack(choice) => BaseOutcome::Packed(base.pack(choice)?),
+            Self::Transfer { index, target, keep } => BaseOutcome::Transferred {
+                area: target,
+                number: base.transfer(index, target, keep)?,
+                keep,
+            },
+            Self::Attributes { index, set, clear } => {
+                base.set_attributes(index, set, clear)?;
+                BaseOutcome::Attributes { index }
+            }
+            Self::Verify => BaseOutcome::Checked(base.verify()?),
+            Self::Repair => BaseOutcome::Repaired(base.repair()?),
+        })
+    }
+}
 
 /// What the content pane shows: a message body or one of the packet's bulletin files.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -193,6 +242,10 @@ pub struct Loader {
     pub export_picking: bool,
     pub import_picking: bool,
     pub save_picking: bool,
+    /// A message is being written into the message base.
+    pub writing: bool,
+    /// A delete mark is being changed or the message base is being packed.
+    pub changing: bool,
     pub sender: mpsc::Sender<Event>,
     pub receiver: mpsc::Receiver<Event>,
     packages: Jobs<(u64, PathBuf, Option<PathBuf>, u32)>,
@@ -274,6 +327,8 @@ impl Default for Loader {
             export_picking: false,
             import_picking: false,
             save_picking: false,
+            writing: false,
+            changing: false,
             sender,
             receiver,
             packages,
@@ -384,6 +439,7 @@ impl Loader {
             let path = rfd::FileDialog::new()
                 .set_title(fl!(LANGUAGE_LOADER, "loading-open-title"))
                 .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-packages"), &packet_extensions())
+                .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-message-bases"), &icy_mail::message_base::extensions())
                 .add_filter(fl!(LANGUAGE_LOADER, "loading-filter-all"), &["*"])
                 .pick_file();
             let _ = sender.send(Event::Picked(path));
@@ -462,6 +518,65 @@ impl Loader {
             });
             let _ = sender.send(Event::MessagesSaved(indices.len(), result));
             context.request_repaint();
+        });
+    }
+
+    /// Writes a message into the open message base in the background; JAM waits for the base's
+    /// lock while IcyBoard or a tosser holds it.
+    pub fn write_message(&mut self, path: PathBuf, drafts: DraftStore, draft: Draft, context: &egui::Context) {
+        if self.writing {
+            return;
+        }
+        self.writing = true;
+        let sender = self.sender.clone();
+        let context = context.clone();
+        std::thread::spawn(move || {
+            let result = drafts.post_draft(&draft).map_err(|error| error.to_string());
+            let _ = sender.send(Event::MessageWritten(path, result));
+            context.request_repaint();
+        });
+    }
+
+    /// Runs a change to the open message base in the background, one at a time.
+    pub fn base_job(&mut self, path: PathBuf, package: Arc<QwkPackage>, job: BaseJob, context: &egui::Context) {
+        let Some(base) = package.message_base.clone() else {
+            return;
+        };
+        if self.changing {
+            return;
+        }
+        self.changing = true;
+        let sender = self.sender.clone();
+        let context = context.clone();
+        std::thread::spawn(move || {
+            let result = job.run(&base).map_err(|error| error.to_string());
+            let _ = sender.send(Event::BaseDone(path, result));
+            context.request_repaint();
+        });
+    }
+
+    /// Moves the lastread pointers of the message base forward to the messages just read, as
+    /// `(area, number)`; the BBS then knows what is new for the user as well. Failures are logged:
+    /// a read-only base is the usual reason.
+    pub fn advance_last_read(&self, package: &QwkPackage, read: Vec<(u16, u32)>) {
+        let Some(base) = package.message_base.clone() else {
+            return;
+        };
+        let mut highest = std::collections::BTreeMap::new();
+        for (area, number) in read {
+            let entry = highest.entry(area).or_insert(0);
+            *entry = number.max(*entry);
+        }
+        highest.retain(|area, number| *number > base.last_read(*area));
+        if highest.is_empty() {
+            return;
+        }
+        std::thread::spawn(move || {
+            for (area, number) in highest {
+                if let Err(error) = base.advance_last_read(area, number) {
+                    log::warn!("could not move the lastread pointer of area {area} to {number}: {error}");
+                }
+            }
         });
     }
 

@@ -51,6 +51,8 @@ menu-open-packet = Open Packet…
 menu-open-recent = Open Recent
 menu-reload-packet = Reload Packet
 menu-packet-information = Packet Information
+menu-pack-base = Pack Message Base…
+menu-check-base = Check Message Base…
 menu-new-message = New Message
 menu-reply = Reply
 menu-forward = Forward
@@ -58,6 +60,11 @@ menu-export-replies = Export Replies…
 menu-next-unread = Next Unread
 menu-mark-read = Mark as Read
 menu-star = Star
+menu-mark-deleted = Mark as Deleted
+menu-undelete = Undelete
+menu-edit-message = Edit Message
+menu-transfer-message = Move or Copy to Area…
+menu-message-info = Message Info…
 menu-unstar = Remove Star
 menu-mark-unread = Mark as Unread
 menu-mark-folder-read = Mark Folder as Read
@@ -128,6 +135,7 @@ folder-bulletins-tooltip = Welcome and news screens, bulletins and new files lis
 # File dialogs
 loading-open-title = Open Mail Package
 loading-filter-packages = Mail Packages
+loading-filter-message-bases = JAM Message Bases and IcyBoard
 loading-filter-all = All Files
 loading-save-message-title = Save Message
 loading-filter-message = Message text
@@ -171,6 +179,12 @@ app-no-subject = (no subject)
 app-save-message-failed = Unable to save { $path }: { $error }
 app-export-failed = Unable to export { $path }:
     { $error }
+app-delete-mark-failed = Unable to change the delete mark:
+    { $error }
+app-pack-failed = Unable to pack the message base:
+    { $error }
+app-base-change-failed = Unable to change the message base:
+    { $error }
 app-drafts-failed = Unable to load the drafts for { $path }:
     { $error }
 app-no-conference = This packet has no conference to post a message in.
@@ -205,6 +219,17 @@ notice-no-more-unread = No more unread messages
 notice-no-more-unread-filtered = No more unread messages in this search. Clear the search to see the rest.
 notice-draft-deleted = Draft deleted
 notice-nothing-to-export = There are no replies to export
+notice-message-written = Message { $number } saved in { $area }
+notice-message-deleted = Message { $number } marked as deleted
+notice-message-restored = Message { $number } restored
+notice-base-packed = { $count ->
+    [one] Removed 1 deleted message
+   *[other] Removed { $count } deleted messages
+}
+notice-message-moved-to = Message moved to { $area } as number { $number }
+notice-message-copied-to = Message copied to { $area } as number { $number }
+notice-message-changed = Message { $number } changed
+notice-attributes-saved = Attributes of message { $number } saved
 notice-no-tagline = This message has no tagline
 notice-tagline-known = This tagline is already in your list
 notice-tagline-saved = Tagline saved: ... { $tagline }
@@ -307,6 +332,50 @@ subscriptions-unsubscribe = Unsubscribe
 # Mail dialogs
 dialog-mail-app-title = Icy Mail
 dialog-mail-delete-draft-title = Delete this draft?
+dialog-pack-base-title = Pack Message Base?
+dialog-pack-base-message = { $count ->
+    [one] 1 message marked as deleted will be removed for good.
+   *[other] { $count } messages marked as deleted will be removed for good.
+} Message numbers do not change.
+dialog-pack-base-message-none = No message is marked as deleted. Packing still frees the space of replaced message headers.
+dialog-pack-base-pack = Pack
+dialog-pack-base-older = Also remove messages older than
+dialog-pack-base-days = days
+dialog-pack-base-received-private = Also remove private messages their recipient has read
+dialog-transfer-title = Move or Copy Message
+dialog-transfer-help = Moving marks the original as deleted. A copy gets a message ID of its own.
+dialog-transfer-area = Area
+dialog-transfer-none = There is no other area to write to.
+dialog-transfer-move = Move
+dialog-transfer-copy = Copy
+dialog-info-title = Message { $number }
+dialog-info-dates = Dates
+dialog-info-written = Written
+dialog-info-received = Received
+dialog-info-processed = Processed
+dialog-info-links = Thread
+dialog-info-reply-to = Answers
+dialog-info-reply-first = First answer
+dialog-info-reply-next = Next answer
+dialog-info-storage = Storage
+dialog-info-times-read = Times read
+dialog-info-text-length = Text length
+dialog-info-attributes = Attributes
+dialog-info-fields = Header fields
+dialog-info-save = Save Attributes
+dialog-info-read-only = The attributes of a read-only area cannot be changed.
+dialog-check-title = Message Base Check
+dialog-check-ok = { $count ->
+    [one] No problems found in 1 area.
+   *[other] No problems found in { $count } areas.
+}
+dialog-check-problems = { $count ->
+    [one] Problems found in 1 area.
+   *[other] Problems found in { $count } areas.
+}
+dialog-check-repaired = Repair finished.
+dialog-check-reclaimable = { $bytes } bytes of replaced text; packing frees them.
+dialog-check-repair = Repair
 dialog-mail-delete-draft-message = “{ $title }” will be removed from the outbox. This cannot be undone.
 dialog-mail-delete-draft-keep = Keep
 dialog-mail-delete-draft-delete = Delete
@@ -371,6 +440,10 @@ shortcuts-writing-new-message = New message
 shortcuts-writing-reply = Reply
 shortcuts-writing-forward = Forward
 shortcuts-writing-save-draft = Save the draft
+shortcuts-writing-save-message = Save the message into the message base
+shortcuts-writing-edit-message = Edit the selected message in the message base
+shortcuts-writing-mark-deleted = Mark the selected message as deleted, or restore it
+shortcuts-writing-message-info = Show the stored header and attributes of the message
 shortcuts-writing-pick-recipient-address-book = Pick the recipient from the address book
 shortcuts-writing-choose-tagline = Choose the tagline while writing
 shortcuts-writing-edit-tagline-list = Edit the tagline list
@@ -401,6 +474,7 @@ shortcuts-editor-close-panel-selection = Close a panel or the selection
 # Composer
 composer-title-edit-draft = Edit Draft
 composer-title-new-message = New Message
+composer-title-edit-message = Edit Message
 composer-title-reply = Reply
 composer-title-forward-message = Forward Message
 composer-draft-saved-needs-changes = Draft saved - it needs changes before it can be exported
@@ -413,6 +487,9 @@ composer-forwarding-origin = Forwarding { $origin }
 composer-replying-origin = Replying to { $origin }
 composer-save-draft = Save Draft
 composer-save-draft-tooltip = Keep the message in the outbox (Ctrl+S)
+composer-save-message = Save Message
+composer-save-message-tooltip = Write the message into the message base (Ctrl+S)
+composer-write-error = Unable to write the message into the message base: { $error }
 composer-cancel = Cancel
 composer-cancel-tooltip = Close without saving (Esc)
 composer-delete-draft = Delete Draft
@@ -538,6 +615,7 @@ reader-forward-short = Forward (Ctrl+L)
 reader-reply-short = Reply (Ctrl+R)
 reader-to = to
 reader-private = Private
+reader-deleted = Deleted
 reader-reply-to = reply to #{ $number }
 reader-show-original-message = Show the original message
 reader-copy = Copy
@@ -730,6 +808,7 @@ draft-field-to = To
 draft-field-subject = Subject
 draft-field-body = Message text
 draft-field-signature = Signature
+draft-field-address = Address
 draft-field-tagline = Tagline
 draft-issue-conference-not-in-packet = Conference { $conference } is not part of this packet
 draft-issue-field-required = { $field } is required
@@ -739,6 +818,9 @@ draft-issue-control-character = { $field } contains a control character (U+{ $co
 draft-issue-no-cp437-equivalent = { $field } contains “{ $character }”, which has no CP437 equivalent
 draft-issue-qwk-line-break = { $field } contains “{ $character }”, which QWK reserves as its line break
 draft-issue-utf8-unsupported = This BBS cannot receive UTF-8 replies: its packets carry no HEADERS.DAT. Switch the message to CP437.
+draft-issue-area-read-only = This message area is read-only; choose another area
+draft-issue-edit-area = An edited message stays in its area
+draft-issue-address-invalid = “{ $address }” is not a FidoNet address like 2:240/1 or 2:240/1.5
 
 # Packet and reader
 

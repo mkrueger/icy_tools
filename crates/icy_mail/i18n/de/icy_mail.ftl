@@ -51,6 +51,8 @@ menu-open-packet = Paket öffnen…
 menu-open-recent = Zuletzt geöffnet
 menu-reload-packet = Paket neu laden
 menu-packet-information = Paketinformationen
+menu-pack-base = Nachrichtenbasis packen…
+menu-check-base = Nachrichtenbasis prüfen…
 menu-new-message = Neue Nachricht
 menu-reply = Antworten
 menu-forward = Weiterleiten
@@ -58,6 +60,11 @@ menu-export-replies = Antworten exportieren…
 menu-next-unread = Nächste ungelesene Nachricht
 menu-mark-read = Als gelesen markieren
 menu-star = Markieren
+menu-mark-deleted = Als gelöscht markieren
+menu-undelete = Wiederherstellen
+menu-edit-message = Nachricht bearbeiten
+menu-transfer-message = In Bereich verschieben oder kopieren…
+menu-message-info = Nachrichteninfo…
 menu-unstar = Markierung entfernen
 menu-mark-unread = Als ungelesen markieren
 menu-mark-folder-read = Ordner als gelesen markieren
@@ -128,6 +135,7 @@ folder-bulletins-tooltip = Begrüßungs- und News-Bildschirme, Bulletins und Lis
 # File dialogs
 loading-open-title = Nachrichtenpaket öffnen
 loading-filter-packages = Nachrichtenpakete
+loading-filter-message-bases = JAM-Nachrichtenbasen und IcyBoard
 loading-filter-all = Alle Dateien
 loading-save-message-title = Nachricht speichern
 loading-filter-message = Nachrichtentext
@@ -171,6 +179,12 @@ app-no-subject = (kein Betreff)
 app-save-message-failed = { $path } konnte nicht gespeichert werden: { $error }
 app-export-failed = { $path } konnte nicht exportiert werden:
     { $error }
+app-delete-mark-failed = Die Löschmarke konnte nicht geändert werden:
+    { $error }
+app-pack-failed = Die Nachrichtenbasis konnte nicht gepackt werden:
+    { $error }
+app-base-change-failed = Die Nachrichtenbasis konnte nicht geändert werden:
+    { $error }
 app-drafts-failed = Die Entwürfe für { $path } konnten nicht geladen werden:
     { $error }
 app-no-conference = Dieses Paket enthält keine Konferenz zum Schreiben einer Nachricht.
@@ -205,6 +219,17 @@ notice-no-more-unread = Keine weiteren ungelesenen Nachrichten
 notice-no-more-unread-filtered = Keine weiteren ungelesenen Nachrichten in dieser Suche. Lösche die Suche, um die übrigen zu sehen.
 notice-draft-deleted = Entwurf gelöscht
 notice-nothing-to-export = Keine Antworten zum Exportieren vorhanden
+notice-message-written = Nachricht { $number } in { $area } gespeichert
+notice-message-deleted = Nachricht { $number } als gelöscht markiert
+notice-message-restored = Nachricht { $number } wiederhergestellt
+notice-base-packed = { $count ->
+    [one] 1 gelöschte Nachricht entfernt
+   *[other] { $count } gelöschte Nachrichten entfernt
+}
+notice-message-moved-to = Nachricht als Nummer { $number } nach { $area } verschoben
+notice-message-copied-to = Nachricht als Nummer { $number } nach { $area } kopiert
+notice-message-changed = Nachricht { $number } geändert
+notice-attributes-saved = Attribute von Nachricht { $number } gespeichert
 notice-no-tagline = Diese Nachricht enthält keine Tagline
 notice-tagline-known = Diese Tagline ist bereits in der Liste
 notice-tagline-saved = Tagline gespeichert: ... { $tagline }
@@ -307,6 +332,50 @@ subscriptions-unsubscribe = Abbestellen
 # Mail dialogs
 dialog-mail-app-title = Icy Mail
 dialog-mail-delete-draft-title = Diesen Entwurf löschen?
+dialog-pack-base-title = Nachrichtenbasis packen?
+dialog-pack-base-message = { $count ->
+    [one] 1 als gelöscht markierte Nachricht wird endgültig entfernt.
+   *[other] { $count } als gelöscht markierte Nachrichten werden endgültig entfernt.
+} Die Nachrichtennummern bleiben gleich.
+dialog-pack-base-message-none = Keine Nachricht ist als gelöscht markiert. Packen gibt trotzdem den Platz ersetzter Nachrichtenköpfe frei.
+dialog-pack-base-pack = Packen
+dialog-pack-base-older = Auch Nachrichten entfernen, die älter sind als
+dialog-pack-base-days = Tage
+dialog-pack-base-received-private = Auch private Nachrichten entfernen, die ihr Empfänger gelesen hat
+dialog-transfer-title = Nachricht verschieben oder kopieren
+dialog-transfer-help = Beim Verschieben wird das Original als gelöscht markiert. Eine Kopie bekommt eine eigene Nachrichten-ID.
+dialog-transfer-area = Bereich
+dialog-transfer-none = Es gibt keinen anderen Bereich, in den geschrieben werden kann.
+dialog-transfer-move = Verschieben
+dialog-transfer-copy = Kopieren
+dialog-info-title = Nachricht { $number }
+dialog-info-dates = Daten
+dialog-info-written = Geschrieben
+dialog-info-received = Empfangen
+dialog-info-processed = Verarbeitet
+dialog-info-links = Thread
+dialog-info-reply-to = Antwort auf
+dialog-info-reply-first = Erste Antwort
+dialog-info-reply-next = Nächste Antwort
+dialog-info-storage = Speicher
+dialog-info-times-read = Gelesen
+dialog-info-text-length = Textlänge
+dialog-info-attributes = Attribute
+dialog-info-fields = Kopffelder
+dialog-info-save = Attribute speichern
+dialog-info-read-only = Die Attribute eines schreibgeschützten Bereichs können nicht geändert werden.
+dialog-check-title = Prüfung der Nachrichtenbasis
+dialog-check-ok = { $count ->
+    [one] Keine Probleme in 1 Bereich gefunden.
+   *[other] Keine Probleme in { $count } Bereichen gefunden.
+}
+dialog-check-problems = { $count ->
+    [one] Probleme in 1 Bereich gefunden.
+   *[other] Probleme in { $count } Bereichen gefunden.
+}
+dialog-check-repaired = Reparatur abgeschlossen.
+dialog-check-reclaimable = { $bytes } Bytes ersetzter Text; Packen gibt sie frei.
+dialog-check-repair = Reparieren
 dialog-mail-delete-draft-message = „{ $title }“ wird aus dem Postausgang entfernt. Dies kann nicht rückgängig gemacht werden.
 dialog-mail-delete-draft-keep = Behalten
 dialog-mail-delete-draft-delete = Löschen
@@ -371,6 +440,10 @@ shortcuts-writing-new-message = Neue Nachricht
 shortcuts-writing-reply = Antworten
 shortcuts-writing-forward = Weiterleiten
 shortcuts-writing-save-draft = Entwurf speichern
+shortcuts-writing-save-message = Nachricht in die Nachrichtenbasis schreiben
+shortcuts-writing-edit-message = Ausgewählte Nachricht in der Nachrichtenbasis bearbeiten
+shortcuts-writing-mark-deleted = Ausgewählte Nachricht als gelöscht markieren oder wiederherstellen
+shortcuts-writing-message-info = Gespeicherten Kopf und Attribute der Nachricht anzeigen
 shortcuts-writing-pick-recipient-address-book = Empfänger aus dem Adressbuch auswählen
 shortcuts-writing-choose-tagline = Tagline beim Schreiben auswählen
 shortcuts-writing-edit-tagline-list = Tagline-Liste bearbeiten
@@ -401,6 +474,7 @@ shortcuts-editor-close-panel-selection = Bereich schließen oder Auswahl aufhebe
 # Composer
 composer-title-edit-draft = Entwurf bearbeiten
 composer-title-new-message = Neue Nachricht
+composer-title-edit-message = Nachricht bearbeiten
 composer-title-reply = Antworten
 composer-title-forward-message = Nachricht weiterleiten
 composer-draft-saved-needs-changes = Entwurf gespeichert - vor dem Export sind noch Änderungen nötig
@@ -413,6 +487,9 @@ composer-forwarding-origin = Weiterleitung von { $origin }
 composer-replying-origin = Antwort auf { $origin }
 composer-save-draft = Entwurf speichern
 composer-save-draft-tooltip = Nachricht im Postausgang aufbewahren (Ctrl+S)
+composer-save-message = Nachricht speichern
+composer-save-message-tooltip = Die Nachricht in die Nachrichtenbasis schreiben (Ctrl+S)
+composer-write-error = Die Nachricht konnte nicht in die Nachrichtenbasis geschrieben werden: { $error }
 composer-cancel = Abbrechen
 composer-cancel-tooltip = Ohne Speichern schließen (Esc)
 composer-delete-draft = Entwurf löschen
@@ -538,6 +615,7 @@ reader-forward-short = Weiterleiten (Ctrl+L)
 reader-reply-short = Antworten (Ctrl+R)
 reader-to = an
 reader-private = Privat
+reader-deleted = Gelöscht
 reader-reply-to = Antwort auf #{ $number }
 reader-show-original-message = Ursprüngliche Nachricht anzeigen
 reader-copy = Kopieren
@@ -730,6 +808,7 @@ draft-field-to = Empfänger
 draft-field-subject = Betreff
 draft-field-body = Nachrichtentext
 draft-field-signature = Signatur
+draft-field-address = Adresse
 draft-field-tagline = Tagline
 draft-issue-conference-not-in-packet = Konferenz { $conference } ist nicht Teil dieses Pakets
 draft-issue-field-required = { $field } muss angegeben werden
@@ -739,6 +818,9 @@ draft-issue-control-character = { $field } enthält ein Steuerzeichen (U+{ $code
 draft-issue-no-cp437-equivalent = { $field } enthält „{ $character }“, wofür es keine CP437-Entsprechung gibt
 draft-issue-qwk-line-break = { $field } enthält „{ $character }“, das QWK als Zeilenumbruch reserviert
 draft-issue-utf8-unsupported = Diese BBS kann keine UTF-8-Antworten empfangen, ihre Pakete enthalten kein HEADERS.DAT. Stelle die Nachricht auf CP437 um.
+draft-issue-area-read-only = Dieser Nachrichtenbereich ist schreibgeschützt; wähle einen anderen Bereich
+draft-issue-edit-area = Eine bearbeitete Nachricht bleibt in ihrem Bereich
+draft-issue-address-invalid = „{ $address }“ ist keine FidoNet-Adresse wie 2:240/1 oder 2:240/1.5
 
 # Packet and reader
 

@@ -1,6 +1,7 @@
 # Icy Mail
 
-An offline QWK and Blue Wave mail reader and reply-packet composer. The regular binary uses
+An offline QWK and Blue Wave mail reader and reply-packet composer that also reads and
+writes JAM message bases, alone or as the message areas of an IcyBoard installation. The regular binary uses
 egui with the existing wgpu ANSI renderer. Packet parsing, header indexing, lazy
 body loading, caching and reply threading remain shared with the previous
 frontend.
@@ -60,6 +61,84 @@ retain their separate 16 MiB limit. Cold extraction and disabled caching keep
 message data in memory; warm cache openings can show the first message before
 background loading finishes. Large packets still require enough available RAM
 for the uncompressed data and index.
+
+### JAM message bases and IcyBoard
+
+Open a JAM base by its `.jhr` header file, or a whole IcyBoard installation by its
+`icboard.toml`; the Open dialog has a filter for both. A base is read in place
+rather than unpacked: headers are indexed when it opens, bodies are read on demand,
+and JAM's shared lock keeps a running BBS or tosser from changing the files while
+a message is read. **Reload** (F5) picks up messages written since.
+
+An IcyBoard installation lists every message area of every conference, named
+*Conference / Area* and numbered in the order IcyBoard's own QWK packets use, plus
+the email base when it exists. The sysop's name is the default sender. A single
+base takes its sender from the IcyBoard installation it lies in, or else from its
+newest locally written message; otherwise the composer starts in the empty From
+field.
+
+Kludges that JAM keeps in header subfields (`MSGID`, `REPLY`, `PID`, `CHRS`,
+`TZUTC`, `SEEN-BY`, `PATH`) are shown as hidden lines, so they declare the
+message's charset and appear with **Show Hidden Lines**; a UTF-8 byte order mark
+counts as a UTF-8 declaration. IcyBoard keeps all text as UTF-8 — it converts
+tossed mail but keeps the packet's `CHRS` line — so its areas, and bases that lie
+inside an IcyBoard installation or carry IcyBoard's date subfield, are read as
+UTF-8 whatever their kludges say.
+
+A message base has no Outbox and nothing to export or import. As in BBS and
+FidoNet editors, **Save Message** (Ctrl/Cmd+S) in the composer writes the message
+straight into its area under JAM's exclusive lock, then reloads the base and shows
+the new message; Escape drops it. Messages are flagged as locally written
+echomail in echo areas (IcyBoard conferences with echomail, or single bases whose
+messages are echomail) and as local mail elsewhere, so the BBS or tosser sends
+them out. They carry `PID` and `CHRS` kludges, and replies keep the original's
+message number and `MSGID` as `REPLY`, as IcyBoard does; a reply moved to another
+area is not linked, since numbers count per area. The tosser adds `MSGID`, origin
+and seen-by lines when it sends them out. IcyBoard areas get UTF-8 text (CP437
+messages are converted), LF line ends and a UTC date, other bases the JAM
+specification's CR line ends and local time. An area's base is created with its
+first message. Read-only IcyBoard areas cannot be written to; names are limited
+to 35 characters and subjects to 71, as FidoNet expects. Messages may be CP437 or
+UTF-8.
+
+Read marks follow the sysop's lastread records when the base belongs to an
+IcyBoard installation whose user list names the sysop: JAM keys the records by
+name CRC and user id, which is the sysop's position in that list. Messages up to
+the pointer count as read when the base opens, and reading moves the pointer
+forward — never back, and never past a message still unread, since the BBS takes
+everything up to its pointer for read. Without a known user the records are left
+alone: a guessed name would have the BBS skip somebody's unread mail.
+
+IcyBoard's netmail base (`netmail` in its `ftn.toml`) is listed as **Netmail**;
+a single base whose messages are netmail counts as one too. Netmail needs a
+destination address (`2:240/1`, or `2:240/1.5` for a point), which the composer
+asks for and an answer takes from the original. It is stored as JAM's destination
+address and the message is flagged private netmail for the tosser.
+
+**Edit Message** (Ctrl/Cmd+E) opens a message in the composer and saves it where
+it is: number, date, message ID and links stay, sender, recipient, subject,
+privacy, address and text change. JAM appends the new text; **Pack Message
+Base…** frees the old. **Move or Copy to Area…** writes the message into
+another area as that area's kind of mail; moving marks the original deleted and
+keeps its message ID, a copy gets an ID of its own and is marked local and
+unsent, and the reply links, which count per area, are dropped. Transfers to
+Netmail require an existing valid destination address and make the message
+private; otherwise the transfer is rejected without changing the original.
+**Message Info…** (I) shows the stored header —
+dates, thread links, read count, kludges and other subfields — and its
+attribute flags, which can be changed; clearing *Sent* lets the tosser send a
+message again.
+
+**Mark as Deleted** (Del, in **Message**, the list's context menu and the reader
+header's **⋯** menu) sets JAM's delete flag; the message stays in the list,
+struck through and labelled *Deleted*, and the same command restores it.
+**Pack Message Base…** in the main menu asks first, then removes the deleted
+messages of every area for good and reloads; it can also remove messages older
+than a number of days and private messages their recipient has read. **Check
+Message Base…** compares the files of every area and offers to repair what is
+wrong; text left behind by edits is listed as space a pack frees. Message numbers do not change, so
+replies and the BBS's lastread pointers stay valid. Messages in read-only IcyBoard
+areas keep their marks.
 
 ### Packet extraction cache
 
@@ -525,7 +604,9 @@ and frame scheduling are also used by icy_term and icy_view. Native windows use
 
 ## Scope
 
-Replies are exported as files, not sent over a network. Blue Wave offline door
+Replies are exported as files or written into a local JAM message base, not sent
+over a network. Squish and Fido `*.msg` bases and tosser area configurations are
+not read. Blue Wave offline door
 configuration, file requests and addressed netmail export are not supported.
 OMEN, SOUP and OPX packets, direct mail delivery and the legacy frontend's composer
 are not implemented. Read marks, recent packets, drafts, taglines and the

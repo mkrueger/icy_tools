@@ -4,6 +4,22 @@
 
 ### Added
 
+- JAM message bases are read and written in place: open a `.jhr` file, or an
+  IcyBoard installation's `icboard.toml` to get all of its conference areas and
+  the email base. Kludge subfields appear as hidden lines and declare the
+  charset; IcyBoard areas are read and written as UTF-8. There is no Outbox:
+  **Save Message** writes a new message or reply straight into its area under
+  JAM's lock, linked to the message number and `MSGID` it answers, and shows it.
+  Messages can be marked deleted and restored (Del); they stay listed, struck
+  through, until **Pack Message Base…** removes them without renumbering, along
+  with old or received private messages if asked to.
+- Messages of a JAM base can be edited in place (Ctrl+E), moved or copied to
+  another area, and inspected with **Message Info…** (I), whose attribute flags
+  can be changed. **Check Message Base…** verifies and repairs the files.
+- Read marks follow the sysop's lastread records of IcyBoard bases in both
+  directions; the pointer only moves past messages read without a gap.
+- Netmail: IcyBoard's netmail base is listed, and netmail asks for the
+  destination address, which answers take from the original.
 - Message reading supports all FTS-5003.001 character sets, including national
   ISO 646 variants, DOS and Windows code pages, Macintosh, Latin and UTF-8, plus
   KOI8-R, KOI8-U and ISO-8859-5. The encoding comes from the message's CHRS,

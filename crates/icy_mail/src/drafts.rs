@@ -10,14 +10,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use bstr::BString;
 use i18n_embed_fl::fl;
 use icy_engine::BufferType;
-use jamjam::qwk::qwk_message::{QWKMessage, MSG_ACTIVE};
+use jamjam::qwk::qwk_message::{QwkMessage, MSG_ACTIVE};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use unarc_rs::unified::{ArchiveFormat, ArchiveOptions, UnifiedArchive};
 
 use crate::{
     charset::Charset,
-    qwk::{Capabilities, QwkPackage, SubscriptionFormat},
+    qwk::{Capabilities, PacketFormat, QwkPackage, SubscriptionFormat},
     LANGUAGE_LOADER,
 };
 
@@ -53,6 +53,8 @@ pub enum DraftKind {
     New,
     Reply,
     Forward,
+    /// Changes a message of a message base in place.
+    Edit,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -60,6 +62,8 @@ pub enum Compose {
     New { conference: u16 },
     Reply { index: usize },
     Forward { index: usize },
+    /// A message of a message base, to change where it is stored.
+    Edit { index: usize },
 }
 
 /// Editable UTF-8 message fields. The UI can insert, edit, and remove drafts in `DraftStore::drafts`.
@@ -77,6 +81,12 @@ pub struct Draft {
     pub body: String,
     pub conference: u16,
     pub ref_number: u32,
+    /// Conference of the message `ref_number` answers; message bases number each area on its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ref_conference: Option<u16>,
+    /// Destination of a netmail, `zone:net/node[.point]`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub address: String,
     pub private: bool,
     #[serde(default)]
     pub date: String,
@@ -132,6 +142,8 @@ pub enum DraftField {
     Body,
     Tagline,
     Signature,
+    /// The FidoNet address of a netmail.
+    Address,
 }
 
 impl DraftField {
@@ -144,6 +156,7 @@ impl DraftField {
             Self::Body => fl!(LANGUAGE_LOADER, "draft-field-body"),
             Self::Tagline => fl!(LANGUAGE_LOADER, "draft-field-tagline"),
             Self::Signature => fl!(LANGUAGE_LOADER, "draft-field-signature"),
+            Self::Address => fl!(LANGUAGE_LOADER, "draft-field-address"),
         }
     }
 }
@@ -177,6 +190,7 @@ pub struct DraftStore {
     allowed_conferences: BTreeSet<u16>,
     capabilities: Capabilities,
     blue_wave: Option<std::sync::Arc<crate::blue_wave::Packet>>,
+    message_base: Option<std::sync::Arc<crate::message_base::MessageBase>>,
     sender: String,
     subscriptions: BTreeMap<u16, bool>,
     pub drafts: Vec<Draft>,
@@ -226,7 +240,7 @@ impl DraftStore {
             if draft.date.is_empty() {
                 draft.date.clone_from(&stored.date);
             }
-            validate_metadata_for(draft, package.blue_wave.is_some())?;
+            validate_metadata_for(draft, package.format())?;
             validate_conference(&allowed_conferences, draft.conference)?;
             if draft.id <= max_id {
                 return Err(invalid("draft IDs", "duplicate or unordered IDs").into());
@@ -247,6 +261,7 @@ impl DraftStore {
             allowed_conferences,
             capabilities: package.capabilities.clone(),
             blue_wave: package.blue_wave.clone(),
+            message_base: package.message_base.clone(),
             sender: decode(&package.control_file.qmail_user_name),
             subscriptions: stored.subscriptions,
             drafts: stored.drafts,
@@ -269,6 +284,7 @@ impl DraftStore {
         let mut from = decode(&package.control_file.qmail_user_name);
         let (kind, to, subject, conference, ref_number, mut private) = match compose {
             Compose::New { conference } => (DraftKind::New, String::new(), String::new(), conference, 0, false),
+            Compose::Edit { index } => return self.prepare_edit(package, index),
             Compose::Reply { index } | Compose::Forward { index } => {
                 let info = package.infos.get(index).ok_or_else(|| invalid("message index", "out of range"))?;
                 let original = package.get_message(index).map_err(|e| DraftError::Qwk(e.to_string()))?;
@@ -306,7 +322,7 @@ impl DraftStore {
             from = decode(&sender);
             private |= required_private;
         }
-        Ok(Draft {
+        let mut draft = Draft {
             id: self.next_id,
             kind,
             to,
@@ -315,6 +331,8 @@ impl DraftStore {
             body: String::new(),
             conference,
             ref_number,
+            ref_conference: (kind == DraftKind::Reply).then_some(conference),
+            address: String::new(),
             private,
             date: if self.blue_wave.is_some() {
                 chrono::Utc::now().format("%m-%d-%y%H:%M").to_string()
@@ -324,7 +342,22 @@ impl DraftStore {
             tagline: String::new(),
             signature: String::new(),
             charset: Charset::Cp437,
-        })
+        };
+        if let (Compose::Reply { index }, Some(base)) = (compose, &self.message_base) {
+            // A netmail answer goes back to where the original was written.
+            if base.is_netmail(conference) {
+                draft.address = base.messages.get(index).and_then(|message| message.origin.clone()).unwrap_or_default();
+            }
+        }
+        if let Compose::Reply { index } | Compose::Forward { index } = compose {
+            // UTF-8 header bytes decoded as CP437 would be written back converted twice.
+            if self.message_base.is_some() && package.declares_utf8(index) {
+                if let Some(info) = package.infos.get(index) {
+                    Self::use_decoded_fields(&mut draft, info);
+                }
+            }
+        }
+        Ok(draft)
     }
 
     /// Save a prepared draft, committing the in-memory change only after the write succeeds.
@@ -333,7 +366,7 @@ impl DraftStore {
         if draft.id != self.next_id {
             return Err(invalid("draft ID", "draft must be prepared for the current store"));
         }
-        validate_metadata_for(&draft, self.blue_wave.is_some())?;
+        validate_metadata_for(&draft, self.format())?;
         validate_conference(&self.allowed_conferences, draft.conference)?;
         let mut next = self.clone();
         next.next_id = next.next_id.checked_add(1).ok_or_else(|| invalid("draft ID", "exhausted"))?;
@@ -349,7 +382,7 @@ impl DraftStore {
         if draft.kind != self.drafts[index].kind || draft.date != self.drafts[index].date {
             return Err(invalid("draft metadata", "kind and date cannot be changed"));
         }
-        validate_metadata_for(&draft, self.blue_wave.is_some())?;
+        validate_metadata_for(&draft, self.format())?;
         validate_conference(&self.allowed_conferences, draft.conference)?;
         let mut next = self.clone();
         next.drafts[index] = draft;
@@ -403,7 +436,7 @@ impl DraftStore {
         validate_date(&self.date)?;
         validate_subscriptions(&self.allowed_conferences, &self.capabilities, &self.subscriptions)?;
         for draft in &self.drafts {
-            validate_metadata_for(draft, self.blue_wave.is_some())?;
+            validate_metadata_for(draft, self.format())?;
             validate_conference(&self.allowed_conferences, draft.conference)?;
         }
         let content = toml::to_string(&Stored {
@@ -422,6 +455,9 @@ impl DraftStore {
 
     /// Write a deterministic ZIP using the incoming packet's reply format.
     pub fn export(&self, destination: &Path) -> crate::Res<()> {
+        if self.message_base.is_some() {
+            return Err(invalid("export", "messages are written into the message base, not exported").into());
+        }
         if destination.canonicalize().is_ok_and(|path| path == self.source_path) {
             return Err(invalid("export path", "cannot overwrite the source packet").into());
         }
@@ -464,7 +500,7 @@ impl DraftStore {
             if blocks > 999_999 {
                 return Err(invalid("body", "QWK block count exceeds six digits").into());
             }
-            let message = QWKMessage {
+            let message = QwkMessage {
                 status: if draft.private { b'*' } else { b' ' },
                 msg_number: u32::from(draft.conference), // REP uses conference in the number field.
                 date_time: BString::from(draft.date.as_bytes()),
@@ -490,7 +526,7 @@ impl DraftStore {
                 continue;
             }
             let config = self.capabilities.subscription_format == SubscriptionFormat::Config;
-            let message = QWKMessage {
+            let message = QwkMessage {
                 status: b' ',
                 msg_number: u32::from(conference),
                 date_time: self.date.as_bytes().into(),
@@ -533,6 +569,100 @@ impl DraftStore {
         self.export(destination)
     }
 
+    /// Writes a message straight into the message base, where there is no outbox: the base is
+    /// what a tosser or the BBS sends from. An edited message is changed where it is stored.
+    /// Returns the area and the message number.
+    pub fn post_draft(&self, draft: &Draft) -> crate::Res<(u16, u32)> {
+        let base = self.message_base.as_ref().ok_or("only message bases can be written to directly")?;
+        let post = self.jam_post(draft)?;
+        if draft.kind == DraftKind::Edit {
+            let index = base
+                .messages
+                .iter()
+                .position(|message| Some(message.area) == draft.ref_conference && message.number == draft.ref_number)
+                .ok_or("the edited message is no longer in the message base")?;
+            base.update(index, &post)?;
+            return Ok((post.area, draft.ref_number));
+        }
+        let number = base.post(&post)?;
+        Ok((post.area, number))
+    }
+
+    /// A draft holding a message of the message base, to change it. The text loses its kludge
+    /// lines, which stay in the header; a message in another charset than CP437 is edited as UTF-8.
+    fn prepare_edit(&self, package: &QwkPackage, index: usize) -> Result<Draft> {
+        let base = self.message_base.as_ref().ok_or_else(|| invalid("message", "only messages of a message base can be edited"))?;
+        let info = package.infos.get(index).ok_or_else(|| invalid("message index", "out of range"))?;
+        let message = package.get_message(index).map_err(|e| DraftError::Qwk(e.to_string()))?;
+        let charset = crate::charset::ReadingEncodings::default().options(package, index).detect(&message.text);
+        let text = crate::text::hidden_lines(&message.text, false);
+        let text = text.strip_suffix(b"\n").unwrap_or(&text);
+        let (body, charset) = if charset == Charset::Cp437 {
+            (crate::editor::decode_message(text), Charset::Cp437)
+        } else {
+            (charset.message_text(text), Charset::Utf8)
+        };
+        Ok(Draft {
+            id: self.next_id,
+            kind: DraftKind::Edit,
+            to: info.to.trim().to_owned(),
+            from: info.from.trim().to_owned(),
+            subject: info.subject.trim().to_owned(),
+            body,
+            conference: info.conference,
+            ref_number: info.number,
+            ref_conference: Some(info.conference),
+            address: base.messages.get(index).and_then(|message| message.destination.clone()).unwrap_or_default(),
+            private: info.private,
+            date: chrono::Local::now().format("%m-%d-%y%H:%M").to_string(),
+            tagline: String::new(),
+            signature: String::new(),
+            charset,
+        })
+    }
+
+    /// Whether messages of a conference travel as netmail and need an address.
+    pub fn is_netmail(&self, conference: u16) -> bool {
+        self.message_base.as_ref().is_some_and(|base| base.is_netmail(conference))
+    }
+
+    fn jam_post(&self, draft: &Draft) -> crate::Res<crate::message_base::Post> {
+        validate_conference(&self.allowed_conferences, draft.conference)?;
+        if !self.can_post(draft.conference) {
+            return Err(invalid("conference", format!("message area {} is read-only", draft.conference)).into());
+        }
+        let (to, from, subject, body) = validate_draft_for(
+            draft,
+            true,
+            [
+                self.field_limit(DraftField::To),
+                self.field_limit(DraftField::From),
+                self.field_limit(DraftField::Subject),
+            ],
+            PacketFormat::Jam,
+        )?;
+        Ok(crate::message_base::Post {
+            area: draft.conference,
+            from,
+            to,
+            subject,
+            body,
+            private: draft.private,
+            // A reply moved to another area has nothing there to link to.
+            reply_to: if draft.kind == DraftKind::Reply && draft.ref_conference == Some(draft.conference) {
+                draft.ref_number
+            } else {
+                0
+            },
+            utf8: draft.charset == Charset::Utf8,
+            address: if self.is_netmail(draft.conference) {
+                Some(crate::message_base::parse_address(&draft.address).ok_or_else(|| invalid("address", "expected zone:net/node or zone:net/node.point"))?)
+            } else {
+                None
+            },
+        })
+    }
+
     /// Every problem that would stop `draft` from being exported, so an editor can show them while typing.
     pub fn issues(&self, draft: &Draft) -> Vec<DraftIssue> {
         let mut issues = Vec::new();
@@ -568,7 +698,7 @@ impl DraftStore {
                     ),
                 });
             }
-            draft_character_issues(draft, field, value, false, self.blue_wave.is_some(), &mut issues);
+            draft_character_issues(draft, field, value, false, self.format() != PacketFormat::Qwk, &mut issues);
         }
         if draft.charset == Charset::Utf8 && !self.supports_utf8() {
             issues.push(DraftIssue {
@@ -584,12 +714,19 @@ impl DraftStore {
             });
         } else {
             for line in body.split('\n') {
-                draft_character_issues(draft, DraftField::Body, line, true, self.blue_wave.is_some(), &mut issues);
+                draft_character_issues(draft, DraftField::Body, line, true, self.format() != PacketFormat::Qwk, &mut issues);
             }
         }
-        draft_character_issues(draft, DraftField::Tagline, &draft.tagline, false, self.blue_wave.is_some(), &mut issues);
+        draft_character_issues(
+            draft,
+            DraftField::Tagline,
+            &draft.tagline,
+            false,
+            self.format() != PacketFormat::Qwk,
+            &mut issues,
+        );
         for line in draft.signature.replace("\r\n", "\n").replace('\r', "\n").split('\n') {
-            draft_character_issues(draft, DraftField::Signature, line, true, self.blue_wave.is_some(), &mut issues);
+            draft_character_issues(draft, DraftField::Signature, line, true, self.format() != PacketFormat::Qwk, &mut issues);
         }
         if issues.is_empty() && self.blue_wave.is_some() {
             if let Err(error) = self.blue_wave_reply(draft) {
@@ -598,6 +735,31 @@ impl DraftStore {
                     message: error.to_string(),
                 });
             }
+        }
+        if draft.kind == DraftKind::Edit && draft.ref_conference != Some(draft.conference) {
+            issues.push(DraftIssue {
+                field: DraftField::Conference,
+                message: fl!(LANGUAGE_LOADER, "draft-issue-edit-area"),
+            });
+        }
+        if self.is_netmail(draft.conference) {
+            if draft.address.trim().is_empty() {
+                issues.push(DraftIssue {
+                    field: DraftField::Address,
+                    message: fl!(LANGUAGE_LOADER, "draft-issue-field-required", field = DraftField::Address.label()),
+                });
+            } else if crate::message_base::parse_address(&draft.address).is_none() {
+                issues.push(DraftIssue {
+                    field: DraftField::Address,
+                    message: fl!(LANGUAGE_LOADER, "draft-issue-address-invalid", address = draft.address.trim()),
+                });
+            }
+        }
+        if self.message_base.is_some() && self.allowed_conferences.contains(&draft.conference) && !self.can_post(draft.conference) {
+            issues.push(DraftIssue {
+                field: DraftField::Conference,
+                message: fl!(LANGUAGE_LOADER, "draft-issue-area-read-only"),
+            });
         }
         issues
     }
@@ -614,7 +776,7 @@ impl DraftStore {
     /// Characters a header field of a draft in `charset` may hold. UTF-8 replies carry their
     /// whole fields in `HEADERS.DAT`, so the 25-byte QWK header block does not limit them.
     pub fn field_limit_for(&self, field: DraftField, charset: Charset) -> usize {
-        if charset == Charset::Utf8 && self.supports_utf8() {
+        if charset == Charset::Utf8 && self.supports_utf8() && self.message_base.is_none() {
             UTF8_FIELD_LIMIT
         } else {
             self.field_limit(field)
@@ -626,6 +788,13 @@ impl DraftStore {
     }
 
     pub fn field_limit(&self, field: DraftField) -> usize {
+        if self.message_base.is_some() {
+            return if field == DraftField::Subject {
+                crate::message_base::SUBJECT_LIMIT
+            } else {
+                crate::message_base::NAME_LIMIT
+            };
+        }
         if let Some(packet) = &self.blue_wave {
             if field == DraftField::Subject {
                 usize::from(packet.info.subject_limit).min(71)
@@ -649,6 +818,26 @@ impl DraftStore {
         self.blue_wave.is_some()
     }
 
+    /// Whether messages are written straight into a JAM message base instead of a reply packet.
+    pub fn is_message_base(&self) -> bool {
+        self.message_base.is_some()
+    }
+
+    pub fn format(&self) -> PacketFormat {
+        if self.blue_wave.is_some() {
+            PacketFormat::BlueWave
+        } else if self.message_base.is_some() {
+            PacketFormat::Jam
+        } else {
+            PacketFormat::Qwk
+        }
+    }
+
+    /// Whether byte E3 must stay out of messages, which only QWK uses as its line break.
+    pub fn reserves_e3(&self) -> bool {
+        self.format() == PacketFormat::Qwk
+    }
+
     /// For a UTF-8 reply or forward: the original's recipient and subject as the message list shows
     /// them (decoded in its encoding, whole from QWKE or `HEADERS.DAT`) instead of the CP437 bytes.
     pub fn use_decoded_fields(draft: &mut Draft, info: &crate::qwk::MessageInfo) {
@@ -659,14 +848,15 @@ impl DraftStore {
                 draft.subject = reply_subject(subject);
             }
             DraftKind::Forward => draft.subject = forward_subject(subject),
-            DraftKind::New => {}
+            DraftKind::New | DraftKind::Edit => {}
         }
     }
 
     /// Whether replies may be UTF-8: QWK packets with Synchronet's `HEADERS.DAT`, whose BBS reads
-    /// the `Utf8` flag from the reply packet. Blue Wave replies have no way to declare it.
+    /// the `Utf8` flag from the reply packet, and message bases, where a `CHRS` kludge declares it.
+    /// Blue Wave replies have no way to declare it.
     pub fn supports_utf8(&self) -> bool {
-        self.blue_wave.is_none() && self.capabilities.headers_dat
+        self.message_base.is_some() || self.blue_wave.is_none() && self.capabilities.headers_dat
     }
 
     pub fn can_post(&self, conference: u16) -> bool {
@@ -675,6 +865,10 @@ impl DraftStore {
                 .blue_wave
                 .as_ref()
                 .is_none_or(|packet| crate::blue_wave::posting_defaults(packet, conference).is_ok())
+            && self
+                .message_base
+                .as_ref()
+                .is_none_or(|base| base.area(conference).is_some_and(|area| !area.read_only))
     }
 
     pub fn preserves_reply_references(&self) -> bool {
@@ -691,7 +885,7 @@ impl DraftStore {
                 self.field_limit(DraftField::From),
                 self.field_limit(DraftField::Subject),
             ],
-            true,
+            PacketFormat::BlueWave,
         )?;
         let unix_time = chrono::NaiveDateTime::parse_from_str(&draft.date, "%m-%d-%y%H:%M")?.and_utc().timestamp();
         let reply = crate::blue_wave::Reply {
@@ -759,6 +953,9 @@ impl DraftStore {
     /// Door controls are excluded. Returned IDs are placeholders; `import_drafts`
     /// assigns fresh IDs when the main thread merges into its latest store.
     pub fn read_rep(&self, path: &Path) -> crate::Res<Vec<Draft>> {
+        if self.message_base.is_some() {
+            return Err(invalid("reply archive", "reply packets cannot be imported into a message base").into());
+        }
         let mut reader = io::BufReader::new(File::open(path)?);
         let format = ArchiveFormat::detect(&mut reader, Some(path))?.ok_or_else(|| invalid("reply archive", "unknown archive format"))?;
         let options = ArchiveOptions::new()
@@ -785,6 +982,8 @@ impl DraftStore {
                     body: decode_text(&reply.body).replace("\r\n", "\n").replace('\r', "\n"),
                     conference: reply.conference,
                     ref_number: reply.reply_to,
+                    ref_conference: None,
+                    address: String::new(),
                     private: reply.private,
                     date: date.format("%m-%d-%y%H:%M").to_string(),
                     tagline: String::new(),
@@ -853,7 +1052,7 @@ impl DraftStore {
                 normalized[range.start..range.start + value.len()].copy_from_slice(value.as_bytes());
             }
             let input = io::Read::chain(Cursor::new(normalized), Cursor::new(&data[offset + 128..end]));
-            let mut message = QWKMessage::read(input, false).map_err(|e| DraftError::Qwk(e.to_string()))?;
+            let mut message = QwkMessage::read(input, false).map_err(|e| DraftError::Qwk(e.to_string()))?;
             let section = headers.as_ref().and_then(|sections| sections.get(&(offset as u64)));
             let utf8 = section.is_some_and(|section| section.utf8);
             let mut body = trim_padding(&data[offset + 128..end]).to_vec();
@@ -904,6 +1103,8 @@ impl DraftStore {
                 }),
                 conference,
                 ref_number: message.ref_msg_number,
+                ref_conference: None,
+                address: String::new(),
                 private: matches!(message.status, b'*' | b'+' | b'~' | b'`'),
                 date: String::from_utf8(message.date_time.to_vec()).map_err(|_| invalid("date", "non-ASCII date"))?,
                 tagline: String::new(),
@@ -966,7 +1167,7 @@ fn validate_subscriptions(allowed: &BTreeSet<u16>, capabilities: &Capabilities, 
 /// Messages written by the user end with the [`TEAR_LINE`].
 /// With `utf8`, lines end with LF as in Synchronet's UTF-8 messages, since `0xE3` also starts
 /// UTF-8 characters.
-fn write_reply(message: &QWKMessage, data: &mut Vec<u8>, extended: bool, tear_line: bool, utf8: bool) -> Result<()> {
+fn write_reply(message: &QwkMessage, data: &mut Vec<u8>, extended: bool, tear_line: bool, utf8: bool) -> Result<()> {
     let mut message = message.clone();
     let mut prefix = Vec::new();
     // UTF-8 fields are cut below and stated whole here and in HEADERS.DAT; Synchronet lets these
@@ -1091,7 +1292,7 @@ fn decode_text(bytes: &[u8]) -> String {
     bytes.iter().map(|&b| BufferType::CP437.convert_to_unicode(char::from(b))).collect()
 }
 
-fn extract_kludges(message: &mut QWKMessage, body: &mut Vec<u8>, extended: bool, max_value: usize) -> Result<()> {
+fn extract_kludges(message: &mut QwkMessage, body: &mut Vec<u8>, extended: bool, max_value: usize) -> Result<()> {
     let mut consumed = 0;
     let mut seen = BTreeSet::new();
     while let Some(end) = body[consumed..].iter().position(|&b| matches!(b, b'\n' | b'\r')) {
@@ -1339,37 +1540,39 @@ fn validate_date(date: &str) -> Result<()> {
 }
 
 fn validate_metadata(d: &Draft) -> Result<()> {
-    validate_metadata_for(d, false)
+    validate_metadata_for(d, PacketFormat::Qwk)
 }
 
-fn validate_metadata_for(d: &Draft, blue_wave: bool) -> Result<()> {
+fn validate_metadata_for(d: &Draft, format: PacketFormat) -> Result<()> {
     if d.id == 0 {
         return Err(invalid("draft ID", "must be prepared before saving"));
     }
-    if !matches!(d.charset, Charset::Cp437 | Charset::Utf8) || blue_wave && d.charset == Charset::Utf8 {
+    if !matches!(d.charset, Charset::Cp437 | Charset::Utf8) || format == PacketFormat::BlueWave && d.charset == Charset::Utf8 {
         return Err(invalid("encoding", format!("replies cannot be written as {}", d.charset.name())));
     }
     validate_date(&d.date)?;
-    if !blue_wave && d.ref_number > 99_999_999 {
+    if format == PacketFormat::Qwk && d.ref_number > 99_999_999 {
         return Err(invalid("reference number", "exceeds eight digits"));
     }
     Ok(())
 }
 
 fn validate_draft(d: &Draft, complete: bool, header_limit: usize) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
-    validate_draft_for(d, complete, [header_limit; 3], false)
+    validate_draft_for(d, complete, [header_limit; 3], PacketFormat::Qwk)
 }
 
-fn validate_draft_for(d: &Draft, complete: bool, limits: [usize; 3], blue_wave: bool) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
-    validate_metadata_for(d, blue_wave)?;
+fn validate_draft_for(d: &Draft, complete: bool, limits: [usize; 3], format: PacketFormat) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
+    validate_metadata_for(d, format)?;
+    // Only QWK uses byte E3, as its line break.
+    let blue_wave = format != PacketFormat::Qwk;
     let text = d.text();
     if text.len() > if blue_wave { u32::MAX as usize - 1 } else { 128 * 999_998 } {
         return Err(invalid(
             "body",
-            if blue_wave {
-                "Blue Wave body length exceeds its 32-bit field"
-            } else {
-                "QWK block count exceeds six digits"
+            match format {
+                PacketFormat::BlueWave => "Blue Wave body length exceeds its 32-bit field",
+                PacketFormat::Jam => "JAM message text exceeds its 32-bit length field",
+                PacketFormat::Qwk => "QWK block count exceeds six digits",
             },
         ));
     }
@@ -1547,6 +1750,8 @@ mod tests {
             body: "Café\r\nNext".into(),
             conference: 1,
             ref_number: 11,
+            ref_conference: None,
+            address: String::new(),
             private: true,
             date: "01-01-2600:00".into(),
             tagline: "Bye".into(),
@@ -1588,9 +1793,15 @@ mod tests {
         control.body.push('\u{7}');
         assert!(store.issues(&control).iter().any(|issue| issue.message.contains("0007")));
         let mut blue_wave = utf8_reply();
-        assert!(validate_metadata_for(&blue_wave, true).is_err(), "Blue Wave replies cannot declare UTF-8");
+        assert!(
+            validate_metadata_for(&blue_wave, PacketFormat::BlueWave).is_err(),
+            "Blue Wave replies cannot declare UTF-8"
+        );
         blue_wave.charset = Charset::Koi8R;
-        assert!(validate_metadata_for(&blue_wave, false).is_err(), "only CP437 and UTF-8 are written");
+        assert!(
+            validate_metadata_for(&blue_wave, PacketFormat::Qwk).is_err(),
+            "only CP437 and UTF-8 are written"
+        );
     }
 
     #[test]
@@ -1724,6 +1935,8 @@ mod tests {
             body: "Forwarded".into(),
             conference: 1,
             ref_number: 0,
+            ref_conference: None,
+            address: String::new(),
             private: false,
             date: "01-01-2600:00".into(),
             tagline: String::new(),
@@ -1747,6 +1960,8 @@ mod tests {
             body: "Forwarded".into(),
             conference: 1,
             ref_number: 0,
+            ref_conference: None,
+            address: String::new(),
             private: false,
             date: "01-01-2600:00".into(),
             tagline: String::new(),
@@ -1769,7 +1984,7 @@ mod tests {
         assert_eq!(bytes.len() % 128, 0);
         assert_eq!(&bytes[..4], b"TEST");
         let mut cursor = Cursor::new(&bytes[128..]);
-        let msg = QWKMessage::read(&mut cursor, false).unwrap();
+        let msg = QwkMessage::read(&mut cursor, false).unwrap();
         assert_eq!(msg.msg_number, 1);
         assert_eq!(msg.conference_number, 1);
         assert_eq!(msg.ref_msg_number, 11);
@@ -1779,7 +1994,7 @@ mod tests {
             .text
             .starts_with(&[b"Caf\x82\nNext\n\n... Bye\n".as_slice(), TEAR_LINE.as_bytes(), b"\n"].concat()));
         assert!(bytes.windows(18).any(|w| w == b"Caf\x82\xE3Next\xE3\xE3... Bye"));
-        let next = QWKMessage::read(&mut cursor, false).unwrap();
+        let next = QwkMessage::read(&mut cursor, false).unwrap();
         assert_eq!(next.ref_msg_number, 0);
         assert_eq!(next.msg_number, 1);
         assert_eq!(next.conference_number, 1);
@@ -1834,6 +2049,8 @@ mod tests {
             body: "\n\nText\n".into(),
             conference: 2,
             ref_number: 0,
+            ref_conference: None,
+            address: String::new(),
             private: false,
             date: "01-01-2600:00".into(),
             tagline: String::new(),
@@ -1845,7 +2062,7 @@ mod tests {
         let mut zip = zip::ZipArchive::new(File::open(rep).unwrap()).unwrap();
         let mut data = Vec::new();
         zip.by_name("TEST.MSG").unwrap().read_to_end(&mut data).unwrap();
-        let message = QWKMessage::read(Cursor::new(&data[128..]), false).unwrap();
+        let message = QwkMessage::read(Cursor::new(&data[128..]), false).unwrap();
         assert_eq!(message.msg_number, 2);
         assert!(message.text.starts_with(format!("\n\nText\n\n{TEAR_LINE}\n").as_bytes()));
         assert!(data.windows(7).any(|w| w == b"\xE3\xE3Text\xE3"));
@@ -1927,7 +2144,7 @@ mod tests {
         let path = dir.path().join("TEST.REP");
         store.export(&path).unwrap();
         let data = rep_bytes(&path);
-        let message = QWKMessage::read(Cursor::new(&data[128..]), true).unwrap();
+        let message = QwkMessage::read(Cursor::new(&data[128..]), true).unwrap();
         assert_eq!(decode(&message.to), draft.to);
         assert_eq!(decode(&message.from), draft.from);
         assert_eq!(decode(&message.subj), draft.subject);
@@ -1989,7 +2206,7 @@ mod tests {
             let rep = directory.join("TEST.REP");
             loaded.export(&rep).unwrap();
             let data = rep_bytes(&rep);
-            let message = QWKMessage::read(Cursor::new(&data[128..]), false).unwrap();
+            let message = QwkMessage::read(Cursor::new(&data[128..]), false).unwrap();
             assert_eq!(decode(&message.to), package.capabilities.control_name.clone().unwrap());
             assert_eq!(decode(&message.subj), expected_subject);
             assert!(message.text.starts_with(expected_body.as_bytes()));

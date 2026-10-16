@@ -248,6 +248,8 @@ impl MailApp {
                     let Some(package) = self.reader.package.clone() else {
                         return;
                     };
+                    let base = package.message_base.is_some();
+                    let changing = self.loader.changing;
                     for position in range {
                         let row = self.reader.messages[position];
                         let info = &package.infos[row.index];
@@ -267,6 +269,7 @@ impl MailApp {
                         let replies = row.descendants.to_string();
                         let strong = unread || hidden_unread > 0;
                         let ignored = self.is_collapsed_ignored(row.index);
+                        let deleted = self.is_deleted(row.index);
                         let mut from_cell = Cell::header(&info.from).strong(strong && !ignored).highlight(&from_needle);
                         let mut subject_cell = Cell::header(&info.subject)
                             .strong(strong && !ignored)
@@ -277,6 +280,10 @@ impl MailApp {
                         if ignored {
                             from_cell = from_cell.weak();
                             subject_cell = subject_cell.weak();
+                        }
+                        if deleted {
+                            from_cell = from_cell.weak().strike();
+                            subject_cell = subject_cell.weak().strike();
                         }
                         let (response, cells, colors) = widgets::row(
                             ui,
@@ -363,6 +370,36 @@ impl MailApp {
                                 action = Some(("star", index));
                                 ui.close();
                             }
+                            if base {
+                                ui.separator();
+                                let label = if deleted {
+                                    fl!(LANGUAGE_LOADER, "menu-undelete")
+                                } else {
+                                    fl!(LANGUAGE_LOADER, "menu-mark-deleted")
+                                };
+                                if ui.add_enabled(package.can_change(index), egui::Button::new(label)).clicked() {
+                                    action = Some(("delete", index));
+                                    ui.close();
+                                }
+                                if ui
+                                    .add_enabled(package.can_change(index), egui::Button::new(fl!(LANGUAGE_LOADER, "menu-edit-message")))
+                                    .clicked()
+                                {
+                                    action = Some(("edit", index));
+                                    ui.close();
+                                }
+                                if ui
+                                    .add_enabled(!changing, egui::Button::new(fl!(LANGUAGE_LOADER, "menu-transfer-message")))
+                                    .clicked()
+                                {
+                                    action = Some(("transfer", index));
+                                    ui.close();
+                                }
+                                if ui.button(fl!(LANGUAGE_LOADER, "menu-message-info")).clicked() {
+                                    action = Some(("info", index));
+                                    ui.close();
+                                }
+                            }
                         });
                     }
                 });
@@ -409,6 +446,10 @@ impl MailApp {
                 "forward" => self.reply(&context, true),
                 "star" => self.set_starred(&context, index, !self.reader.is_starred(index)),
                 "thread" => self.mark_thread_read(&context),
+                "delete" => self.toggle_deleted(&context),
+                "edit" => self.edit_message(&context),
+                "transfer" => self.ask_transfer(),
+                "info" => self.show_message_info(),
                 _ => {
                     let read = !self.reader.is_read(index);
                     self.set_read(&context, &[index], read);
@@ -490,7 +531,7 @@ impl MailApp {
                         );
                         let flags = cells[0];
                         let icon = match draft.kind {
-                            DraftKind::New => Icon::Compose,
+                            DraftKind::New | DraftKind::Edit => Icon::Compose,
                             DraftKind::Reply => Icon::Reply,
                             DraftKind::Forward => Icon::Forward,
                         };

@@ -7,8 +7,9 @@ use icy_engine_gui::egui::{
 use icy_mail::LANGUAGE_LOADER;
 
 use super::{
-    app::{draft_title, AfterDiscard, Folder, MailApp, Modal},
+    app::{draft_title, AfterDiscard, Folder, InfoDialog, MailApp, Modal, PackDialog, TransferDialog},
     chrome::shortcut,
+    loading::BaseJob,
 };
 
 impl MailApp {
@@ -98,6 +99,24 @@ impl MailApp {
                             ));
                         }
                     }
+                }
+            }
+            Modal::PackBase(state) => {
+                let state = state.clone();
+                self.modal = self.pack_dialog(context, state).map(Modal::PackBase);
+            }
+            Modal::Transfer(state) => {
+                let state = state.clone();
+                self.modal = self.transfer_dialog(context, state).map(Modal::Transfer);
+            }
+            Modal::MessageInfo(state) => {
+                let state = state.clone();
+                self.modal = self.message_info_dialog(context, state).map(Modal::MessageInfo);
+            }
+            Modal::CheckReport { checks, repaired } => {
+                let (checks, repaired) = (checks.clone(), *repaired);
+                if self.check_report_dialog(context, &checks, repaired) {
+                    self.modal = None;
                 }
             }
             Modal::DeleteDraft(id) => {
@@ -231,21 +250,37 @@ impl MailApp {
                     ),
                 ],
             ),
-            (
-                fl!(LANGUAGE_LOADER, "shortcuts-section-writing"),
-                vec![
+            (fl!(LANGUAGE_LOADER, "shortcuts-section-writing"), {
+                // A message base is written to on saving and has no outbox to delete from or export.
+                let base = self.posts_to_base();
+                let mut writing = vec![
                     (command(Key::N), fl!(LANGUAGE_LOADER, "shortcuts-writing-new-message")),
                     (command(Key::R), fl!(LANGUAGE_LOADER, "shortcuts-writing-reply")),
                     (command(Key::L), fl!(LANGUAGE_LOADER, "shortcuts-writing-forward")),
-                    (command(Key::S), fl!(LANGUAGE_LOADER, "shortcuts-writing-save-draft")),
+                    (
+                        command(Key::S),
+                        if base {
+                            fl!(LANGUAGE_LOADER, "shortcuts-writing-save-message")
+                        } else {
+                            fl!(LANGUAGE_LOADER, "shortcuts-writing-save-draft")
+                        },
+                    ),
                     (command(Key::B), fl!(LANGUAGE_LOADER, "shortcuts-writing-pick-recipient-address-book")),
                     (command(Key::T), fl!(LANGUAGE_LOADER, "shortcuts-writing-choose-tagline")),
                     (command_shift(Key::T), fl!(LANGUAGE_LOADER, "shortcuts-writing-edit-tagline-list")),
                     ("Esc".into(), fl!(LANGUAGE_LOADER, "shortcuts-writing-cancel-writing")),
-                    ("Del".into(), fl!(LANGUAGE_LOADER, "shortcuts-writing-delete-selected-draft")),
-                    (command_shift(Key::E), fl!(LANGUAGE_LOADER, "shortcuts-writing-export-reply-packet")),
-                ],
-            ),
+                ];
+                if base {
+                    writing.push((command(Key::E), fl!(LANGUAGE_LOADER, "shortcuts-writing-edit-message")));
+                    writing.push(("Del".into(), fl!(LANGUAGE_LOADER, "shortcuts-writing-mark-deleted")));
+                    writing.push(("I".into(), fl!(LANGUAGE_LOADER, "shortcuts-writing-message-info")));
+                }
+                if !base {
+                    writing.push(("Del".into(), fl!(LANGUAGE_LOADER, "shortcuts-writing-delete-selected-draft")));
+                    writing.push((command_shift(Key::E), fl!(LANGUAGE_LOADER, "shortcuts-writing-export-reply-packet")));
+                }
+                writing
+            }),
             (
                 fl!(LANGUAGE_LOADER, "shortcuts-section-packets"),
                 vec![
@@ -345,6 +380,233 @@ impl MailApp {
             self.set_subscription(context, conference, subscribe);
         }
         response.action.is_some() || response.dismissed
+    }
+
+    /// Asks before packing; returns the dialog while it stays open.
+    fn pack_dialog(&mut self, context: &egui::Context, mut state: PackDialog) -> Option<PackDialog> {
+        let message = if state.deleted == 0 {
+            fl!(LANGUAGE_LOADER, "dialog-pack-base-message-none")
+        } else {
+            fl!(LANGUAGE_LOADER, "dialog-pack-base-message", count = (state.deleted as i64))
+        };
+        let response = appearance::Dialog::new("mail-pack-base")
+            .title(fl!(LANGUAGE_LOADER, "dialog-pack-base-title"))
+            .subtitle(message)
+            .size(appearance::DialogSize::Medium)
+            .show(context, |dialog| {
+                dialog.content(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut state.older, fl!(LANGUAGE_LOADER, "dialog-pack-base-older"));
+                        ui.add_enabled(state.older, egui::DragValue::new(&mut state.days).range(1..=36_500));
+                        ui.label(fl!(LANGUAGE_LOADER, "dialog-pack-base-days"));
+                    });
+                    ui.checkbox(&mut state.received_private, fl!(LANGUAGE_LOADER, "dialog-pack-base-received-private"));
+                });
+                dialog.buttons([
+                    appearance::DialogButton::cancel(appearance::labels::cancel(), false).cancels(),
+                    appearance::DialogButton::destructive(fl!(LANGUAGE_LOADER, "dialog-pack-base-pack"), true),
+                ]);
+            });
+        match response.action.or(response.dismissed.then_some(false)) {
+            Some(true) => {
+                self.pack(context, &state);
+                None
+            }
+            Some(false) => None,
+            None => Some(state),
+        }
+    }
+
+    fn transfer_dialog(&mut self, context: &egui::Context, mut state: TransferDialog) -> Option<TransferDialog> {
+        let index = self.index_of(state.area, state.number)?;
+        let targets = self.transfer_targets(state.area);
+        let can_move = self.reader.package.as_ref().is_some_and(|package| package.can_change(index));
+        #[derive(Clone, Copy)]
+        enum Choice {
+            Cancel,
+            Move,
+            Copy,
+        }
+        let response = appearance::Dialog::new("mail-transfer")
+            .title(fl!(LANGUAGE_LOADER, "dialog-transfer-title"))
+            .subtitle(fl!(LANGUAGE_LOADER, "dialog-transfer-help"))
+            .size(appearance::DialogSize::Medium)
+            .show(context, |dialog| {
+                dialog.content(|ui| {
+                    if targets.is_empty() {
+                        ui.label(fl!(LANGUAGE_LOADER, "dialog-transfer-none"));
+                        return;
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label(fl!(LANGUAGE_LOADER, "dialog-transfer-area"));
+                        let selected = targets
+                            .iter()
+                            .find(|(number, _)| Some(*number) == state.target)
+                            .map(|(_, name)| name.clone())
+                            .unwrap_or_default();
+                        egui::ComboBox::from_id_salt("mail-transfer-area")
+                            .width(280.0)
+                            .selected_text(selected)
+                            .show_ui(ui, |ui| {
+                                for (number, name) in &targets {
+                                    ui.selectable_value(&mut state.target, Some(*number), name);
+                                }
+                            });
+                    });
+                });
+                let ready = state.target.is_some();
+                dialog.buttons([
+                    appearance::DialogButton::cancel(appearance::labels::cancel(), Choice::Cancel).cancels(),
+                    appearance::DialogButton::secondary(fl!(LANGUAGE_LOADER, "dialog-transfer-copy"), Choice::Copy).enabled(ready),
+                    appearance::DialogButton::primary(fl!(LANGUAGE_LOADER, "dialog-transfer-move"), Choice::Move).enabled(ready && can_move),
+                ]);
+            });
+        let Some(choice) = response.action.or(response.dismissed.then_some(Choice::Cancel)) else {
+            return Some(state);
+        };
+        if let (Choice::Move | Choice::Copy, Some(target)) = (choice, state.target) {
+            let keep = matches!(choice, Choice::Copy);
+            self.base_job(BaseJob::Transfer { index, target, keep }, context);
+        }
+        None
+    }
+
+    fn message_info_dialog(&mut self, context: &egui::Context, mut state: InfoDialog) -> Option<InfoDialog> {
+        let index = self.index_of(state.area, state.number)?;
+        let writable = self.reader.package.as_ref().is_some_and(|package| package.can_change(index)) && !self.loader.changing;
+        let details = &state.details;
+        let date = |date: Option<chrono::NaiveDateTime>| date.map_or_else(|| "-".to_owned(), |date| date.format("%Y-%m-%d %H:%M:%S").to_string());
+        let number = |number: u32| if number == 0 { "-".to_owned() } else { number.to_string() };
+        let response = appearance::Dialog::new("mail-message-info")
+            .title(fl!(LANGUAGE_LOADER, "dialog-info-title", number = details.number))
+            .subtitle(details.area.clone())
+            .size(appearance::DialogSize::Medium)
+            .show(context, |dialog| {
+                dialog.content(|ui| {
+                    egui::ScrollArea::vertical().max_height(440.0).show(ui, |ui| {
+                        let rows = |ui: &mut egui::Ui, rows: &[(String, String)]| {
+                            egui::Grid::new(ui.id().with("rows")).num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
+                                for (label, value) in rows {
+                                    ui.label(egui::RichText::new(label).weak());
+                                    ui.add(egui::Label::new(value).wrap());
+                                    ui.end_row();
+                                }
+                            });
+                        };
+                        appearance::compact_group(ui, &fl!(LANGUAGE_LOADER, "dialog-info-dates"), |ui| {
+                            rows(
+                                ui,
+                                &[
+                                    (fl!(LANGUAGE_LOADER, "dialog-info-written"), date(details.written)),
+                                    (fl!(LANGUAGE_LOADER, "dialog-info-received"), date(details.received)),
+                                    (fl!(LANGUAGE_LOADER, "dialog-info-processed"), date(details.processed)),
+                                ],
+                            );
+                        });
+                        appearance::compact_group(ui, &fl!(LANGUAGE_LOADER, "dialog-info-links"), |ui| {
+                            rows(
+                                ui,
+                                &[
+                                    (fl!(LANGUAGE_LOADER, "dialog-info-reply-to"), number(details.reply_to)),
+                                    (fl!(LANGUAGE_LOADER, "dialog-info-reply-first"), number(details.reply_first)),
+                                    (fl!(LANGUAGE_LOADER, "dialog-info-reply-next"), number(details.reply_next)),
+                                ],
+                            );
+                        });
+                        appearance::compact_group(ui, &fl!(LANGUAGE_LOADER, "dialog-info-storage"), |ui| {
+                            rows(
+                                ui,
+                                &[
+                                    (fl!(LANGUAGE_LOADER, "dialog-info-times-read"), details.times_read.to_string()),
+                                    (fl!(LANGUAGE_LOADER, "dialog-info-text-length"), details.text_len.to_string()),
+                                ],
+                            );
+                        });
+                        appearance::compact_group(ui, &fl!(LANGUAGE_LOADER, "dialog-info-attributes"), |ui| {
+                            if !writable {
+                                ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "dialog-info-read-only")).weak());
+                            }
+                            ui.add_enabled_ui(writable, |ui| {
+                                egui::Grid::new("mail-message-attributes").num_columns(2).spacing([16.0, 2.0]).show(ui, |ui| {
+                                    for (position, (bit, name)) in icy_mail::message_base::EDITABLE_ATTRIBUTES.iter().enumerate() {
+                                        let mut on = state.attributes & bit != 0;
+                                        if ui.checkbox(&mut on, *name).changed() {
+                                            state.attributes = if on { state.attributes | bit } else { state.attributes & !bit };
+                                        }
+                                        if position % 2 == 1 {
+                                            ui.end_row();
+                                        }
+                                    }
+                                });
+                            });
+                        });
+                        if !details.fields.is_empty() {
+                            appearance::compact_group(ui, &fl!(LANGUAGE_LOADER, "dialog-info-fields"), |ui| {
+                                rows(ui, &details.fields);
+                            });
+                        }
+                    });
+                });
+                let changed = state.attributes != details.attributes;
+                dialog.buttons([
+                    appearance::DialogButton::cancel(appearance::labels::close(), false).cancels(),
+                    appearance::DialogButton::primary(fl!(LANGUAGE_LOADER, "dialog-info-save"), true).enabled(writable && changed),
+                ]);
+            });
+        match response.action.or(response.dismissed.then_some(false)) {
+            Some(true) => {
+                let set = state.attributes & !state.details.attributes;
+                let clear = state.details.attributes & !state.attributes;
+                self.base_job(BaseJob::Attributes { index, set, clear }, context);
+                None
+            }
+            Some(false) => None,
+            None => Some(state),
+        }
+    }
+
+    fn check_report_dialog(&mut self, context: &egui::Context, checks: &[icy_mail::message_base::AreaCheck], repaired: bool) -> bool {
+        let problems = checks.iter().filter(|check| !check.ok()).count();
+        let summary = if repaired {
+            fl!(LANGUAGE_LOADER, "dialog-check-repaired")
+        } else if problems == 0 {
+            fl!(LANGUAGE_LOADER, "dialog-check-ok", count = (checks.len() as i64))
+        } else {
+            fl!(LANGUAGE_LOADER, "dialog-check-problems", count = (problems as i64))
+        };
+        let response = appearance::Dialog::new("mail-check-base")
+            .title(fl!(LANGUAGE_LOADER, "dialog-check-title"))
+            .subtitle(summary)
+            .size(appearance::DialogSize::Medium)
+            .show(context, |dialog| {
+                dialog.content(|ui| {
+                    egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
+                        for check in checks.iter().filter(|check| !check.ok() || check.reclaimable > 0) {
+                            appearance::compact_group(ui, &check.area, |ui| {
+                                for problem in &check.problems {
+                                    ui.add(egui::Label::new(egui::RichText::new(problem).color(ui.visuals().error_fg_color)).wrap());
+                                }
+                                if check.reclaimable > 0 {
+                                    ui.label(egui::RichText::new(fl!(LANGUAGE_LOADER, "dialog-check-reclaimable", bytes = (check.reclaimable as i64))).weak());
+                                }
+                            });
+                        }
+                    });
+                });
+                let mut buttons = vec![appearance::DialogButton::cancel(appearance::labels::close(), false).cancels()];
+                if problems > 0 && !repaired {
+                    buttons.push(appearance::DialogButton::destructive(fl!(LANGUAGE_LOADER, "dialog-check-repair"), true));
+                }
+                dialog.buttons(buttons);
+            });
+        match response.action.or(response.dismissed.then_some(false)) {
+            Some(true) => {
+                self.base_job(BaseJob::Repair, context);
+                true
+            }
+            Some(false) => true,
+            None => false,
+        }
     }
 
     fn packet_info(&self, context: &egui::Context) -> bool {

@@ -394,6 +394,8 @@ pub struct Cell<'a> {
     pub badge: Option<(&'a str, bool)>,
     /// Leading bytes of the text drawn in the weak colour, e.g. a subject repeated from the parent.
     pub dim: usize,
+    /// Struck through, e.g. a message marked deleted.
+    pub strike: bool,
 }
 
 impl<'a> Cell<'a> {
@@ -408,6 +410,7 @@ impl<'a> Cell<'a> {
             highlight: "",
             badge: None,
             dim: 0,
+            strike: false,
         }
     }
 
@@ -420,6 +423,11 @@ impl<'a> Cell<'a> {
 
     pub fn strong(mut self, strong: bool) -> Self {
         self.strong = strong;
+        self
+    }
+
+    pub fn strike(mut self) -> Self {
+        self.strike = true;
         self
     }
 
@@ -522,11 +530,19 @@ pub fn row(ui: &mut egui::Ui, widths: &[f32], cells: &[Cell], selected: bool, fo
         }
         let align = if value.right { egui::Align::Max } else { egui::Align::Min };
         let font = FontId::new(13.0, family);
+        let strike = |job: &mut egui::text::LayoutJob| {
+            if value.strike {
+                for section in &mut job.sections {
+                    section.format.strikethrough = Stroke::new(1.0, color);
+                }
+            }
+        };
         match value.text {
-            CellText::Plain(cell_text) if value.highlight.is_empty() => paint_text(ui, area, cell_text, font, color, align),
+            CellText::Plain(cell_text) if value.highlight.is_empty() && !value.strike => paint_text(ui, area, cell_text, font, color, align),
             CellText::Plain(cell_text) => {
                 let mut job = egui::text::LayoutJob::simple_singleline(cell_text.to_owned(), font, color);
                 highlight(&mut job, 0, value.highlight, ui);
+                strike(&mut job);
                 paint_job(ui, area, job, color, align);
             }
             CellText::Header(header) => {
@@ -535,6 +551,7 @@ pub fn row(ui: &mut egui::Ui, widths: &[f32], cells: &[Cell], selected: bool, fo
                     dim(&mut job, value.prefix.len() + value.dim, weak);
                 }
                 highlight(&mut job, value.prefix.len(), value.highlight, ui);
+                strike(&mut job);
                 paint_job(ui, area, job, color, align);
             }
         }

@@ -93,24 +93,27 @@ impl MailApp {
                 },
                 fl!(LANGUAGE_LOADER, "folder-starred-tooltip"),
             ));
-            let drafts = self.draft_count();
-            let problems = self
-                .drafts
-                .as_ref()
-                .map_or(0, |store| store.drafts().iter().filter(|draft| !store.issues(draft).is_empty()).count());
-            entries.push((
-                Folder::Drafts,
-                Some(Icon::Export),
-                fl!(LANGUAGE_LOADER, "folder-outbox"),
-                if problems > 0 {
-                    Badge::Warning(problems)
-                } else if drafts > 0 {
-                    Badge::Total(drafts)
-                } else {
-                    Badge::None
-                },
-                fl!(LANGUAGE_LOADER, "folder-outbox-tooltip"),
-            ));
+            // Saving writes into a message base right away, so it has no outbox.
+            if !self.posts_to_base() {
+                let drafts = self.draft_count();
+                let problems = self
+                    .drafts
+                    .as_ref()
+                    .map_or(0, |store| store.drafts().iter().filter(|draft| !store.issues(draft).is_empty()).count());
+                entries.push((
+                    Folder::Drafts,
+                    Some(Icon::Export),
+                    fl!(LANGUAGE_LOADER, "folder-outbox"),
+                    if problems > 0 {
+                        Badge::Warning(problems)
+                    } else if drafts > 0 {
+                        Badge::Total(drafts)
+                    } else {
+                        Badge::None
+                    },
+                    fl!(LANGUAGE_LOADER, "folder-outbox-tooltip"),
+                ));
+            }
             let files = self.file_count();
             if files > 0 {
                 entries.push((

@@ -1,7 +1,7 @@
 use bstr::ByteSlice;
 use i18n_embed_fl::fl;
 use jamjam::qwk::control::{Conference, ControlDat};
-use jamjam::qwk::qwk_message::{QWKMessage, MSG_ACTIVE};
+use jamjam::qwk::qwk_message::{QwkMessage, MSG_ACTIVE};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -29,6 +29,8 @@ pub enum PacketFormat {
     #[default]
     Qwk,
     BlueWave,
+    /// A JAM message base or IcyBoard installation, read and written in place.
+    Jam,
 }
 
 pub fn packet_extensions() -> Vec<String> {
@@ -132,8 +134,9 @@ pub struct QwkPackage {
     /// Welcome, news and goodbye screens, bulletins and new files lists, in display order.
     pub files: Arc<Vec<PacketFile>>,
     pub blue_wave: Option<Arc<crate::blue_wave::Packet>>,
+    pub message_base: Option<Arc<crate::message_base::MessageBase>>,
     messages_data: Arc<MessageData>,
-    message_cache: Arc<Mutex<HashMap<usize, QWKMessage>>>, // Thread-safe cache
+    message_cache: Arc<Mutex<HashMap<usize, QwkMessage>>>, // Thread-safe cache
     thread_rows: Option<Arc<Vec<crate::threading::Row>>>,
     /// `HEADERS.DAT` fields per message, parallel to `descriptors`; empty without that file.
     extended: Arc<Vec<Option<ExtendedHeaders>>>,
@@ -287,6 +290,7 @@ impl Clone for QwkPackage {
             capabilities: self.capabilities.clone(),
             files: self.files.clone(),
             blue_wave: self.blue_wave.clone(),
+            message_base: self.message_base.clone(),
             messages_data: self.messages_data.clone(),
             message_cache: self.message_cache.clone(), // Share the cache across clones
             thread_rows: self.thread_rows.clone(),
@@ -299,6 +303,9 @@ impl QwkPackage {
     pub fn load_from_file(path: impl AsRef<Path>) -> Res<Self> {
         let _timer = crate::perf::Timer::new("qwk::load_from_file");
         let path = path.as_ref();
+        if crate::message_base::is_message_base(path) {
+            return Self::load_message_base(path);
+        }
         Self::extract_packet(path)
             .and_then(|extracted| Self::from_extracted(path, extracted))
             .inspect_err(|error| log::error!("unable to load mail packet {}: {error}", path.display()))
@@ -307,6 +314,10 @@ impl QwkPackage {
     pub fn load_from_file_cached(path: impl AsRef<Path>, cache: &ExtractionCache) -> Res<Self> {
         let _timer = crate::perf::Timer::new("qwk::load_from_file_cached");
         let path = path.as_ref();
+        if crate::message_base::is_message_base(path) {
+            // Message bases are read in place and change while they are open; nothing to cache.
+            return Self::load_message_base(path);
+        }
         let mut extracted = cache
             .load(path, || Self::extract_packet(path))
             .inspect_err(|error| log::error!("unable to extract mail packet {}: {error}", path.display()))?;
@@ -496,6 +507,7 @@ impl QwkPackage {
             capabilities,
             files: Arc::new(packet_files(&control_file, others)),
             blue_wave: None,
+            message_base: None,
             control_file,
             messages_data,
             message_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -610,6 +622,7 @@ impl QwkPackage {
             welcome_screen: "WELCOME".into(),
             news_screen: "NEWS".into(),
             logoff_screen: "GOODBYE".into(),
+            extra_lines: Vec::new(),
         };
         Ok(Self {
             bbs_name: packet.info.bbs_name.clone(),
@@ -619,6 +632,7 @@ impl QwkPackage {
             control_file,
             capabilities: Capabilities::default(),
             blue_wave: Some(Arc::new(packet)),
+            message_base: None,
             messages_data,
             message_cache: Arc::new(Mutex::new(HashMap::new())),
             thread_rows,
@@ -626,9 +640,83 @@ impl QwkPackage {
         })
     }
 
+    fn load_message_base(path: &Path) -> Res<Self> {
+        let base = crate::message_base::MessageBase::open(path).inspect_err(|error| log::error!("unable to open message base {}: {error}", path.display()))?;
+        let mut descriptors = Vec::with_capacity(base.messages.len());
+        let mut infos = Vec::with_capacity(base.messages.len());
+        for (index, message) in base.messages.iter().enumerate() {
+            descriptors.push(MessageDescriptor {
+                number: message.number,
+                conference: message.area,
+                offset: 0,
+                block_count: 0,
+                body_len: None,
+            });
+            let decode_header = |bytes: &[u8]| HeaderText::with_declared(bytes.trim(), message.charset);
+            let subject = decode_header(&message.subject);
+            infos.push(MessageInfo {
+                index,
+                number: message.number,
+                ref_number: message.reply_to,
+                conference: message.area,
+                from: decode_header(&message.from),
+                to: decode_header(&message.to),
+                subject_key: normalize_subject(&subject),
+                subject,
+                date: message.date.unwrap_or_default(),
+                date_str: message
+                    .date
+                    .map_or_else(|| fl!(LANGUAGE_LOADER, "packet-date-unknown"), |date| date.format("%Y-%m-%d %H:%M").to_string()),
+                lines: message.lines,
+                private: message.private,
+            });
+        }
+        let control_file = ControlDat {
+            bbs_name: base.name.as_bytes().into(),
+            bbs_city_and_state: "".into(),
+            bbs_phone_number: "".into(),
+            bbs_sysop_name: "".into(),
+            bbs_id: base.bbs_id.as_bytes().into(),
+            serial_number: 0,
+            creation_time: "".into(),
+            qmail_user_name: base.user_name.as_bytes().into(),
+            qmail_menu_name: "".into(),
+            zero_line: "".into(),
+            message_count: u32::try_from(base.messages.len())?,
+            conferences: base
+                .areas
+                .iter()
+                .map(|area| Conference {
+                    number: area.number,
+                    name: area.name.as_bytes().into(),
+                })
+                .collect(),
+            welcome_screen: "".into(),
+            news_screen: "".into(),
+            logoff_screen: "".into(),
+            extra_lines: Vec::new(),
+        };
+        Ok(Self {
+            bbs_name: base.name.clone(),
+            descriptors,
+            infos,
+            control_file,
+            capabilities: Capabilities::default(),
+            files: Arc::default(),
+            blue_wave: None,
+            message_base: Some(Arc::new(base)),
+            messages_data: Arc::new(MessageData::Memory(Vec::new())),
+            message_cache: Arc::new(Mutex::new(HashMap::new())),
+            thread_rows: None,
+            extended: Arc::default(),
+        })
+    }
+
     pub fn format(&self) -> PacketFormat {
         if self.blue_wave.is_some() {
             PacketFormat::BlueWave
+        } else if self.message_base.is_some() {
+            PacketFormat::Jam
         } else {
             PacketFormat::Qwk
         }
@@ -661,7 +749,7 @@ impl QwkPackage {
                 let msg = cursor
                     .seek(SeekFrom::Start(descriptor.offset))
                     .ok()
-                    .and_then(|_| QWKMessage::read(&mut cursor, true).ok());
+                    .and_then(|_| QwkMessage::read(&mut cursor, true).ok());
 
                 let Some(msg) = msg else {
                     return MessageInfo {
@@ -797,14 +885,14 @@ impl QwkPackage {
     }
 
     /// Load a specific message on demand with caching
-    pub fn get_message(&self, index: usize) -> Res<QWKMessage> {
+    pub fn get_message(&self, index: usize) -> Res<QwkMessage> {
         if index >= self.descriptors.len() {
             return Err(fl!(LANGUAGE_LOADER, "packet-error-message-index-out-of-range").into());
         }
 
         // Check cache first
         {
-            let cache: std::sync::MutexGuard<'_, HashMap<usize, QWKMessage>> = self.message_cache.lock().unwrap();
+            let cache: std::sync::MutexGuard<'_, HashMap<usize, QwkMessage>> = self.message_cache.lock().unwrap();
             if let Some(message) = cache.get(&index) {
                 return Ok(message.clone());
             }
@@ -834,7 +922,10 @@ impl QwkPackage {
     }
 
     /// Read without locking or populating the interactive message cache, for bulk scans.
-    pub fn read_message(&self, index: usize) -> Res<QWKMessage> {
+    pub fn read_message(&self, index: usize) -> Res<QwkMessage> {
+        if let Some(base) = &self.message_base {
+            return base.read(index);
+        }
         if let Some(packet) = &self.blue_wave {
             let message = packet
                 .messages
@@ -842,7 +933,7 @@ impl QwkPackage {
                 .ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-message-index-out-of-range"))?;
             let text = blue_wave_body(&self.messages_data, message)?;
             let date = chrono::DateTime::from_timestamp(message.unix_time, 0).ok_or("Invalid Blue Wave message date")?;
-            return Ok(QWKMessage {
+            return Ok(QwkMessage {
                 status: if message.private { b'*' } else { b' ' },
                 msg_number: message.number,
                 date_time: if message.date_known {
@@ -868,7 +959,7 @@ impl QwkPackage {
             .ok_or_else(|| fl!(LANGUAGE_LOADER, "packet-error-message-index-out-of-range"))?;
         let data = self.messages_data.read_range(header.offset, u64::from(header.block_count) * 128)?;
         let mut cursor = Cursor::new(data);
-        QWKMessage::read(&mut cursor, true)
+        Ok(QwkMessage::read(&mut cursor, true)?)
     }
 
     /// Message text as it is read: FidoNet hidden lines are left out, or with `show_hidden`
@@ -887,16 +978,27 @@ impl QwkPackage {
         self.extended.get(index)?.as_ref()
     }
 
-    /// Whether `HEADERS.DAT` marks the message as UTF-8 (`Utf8: true`).
+    /// Whether the message is marked deleted in its message base, waiting for a pack.
+    pub fn is_deleted(&self, index: usize) -> bool {
+        self.message_base.as_ref().is_some_and(|base| base.is_deleted(index))
+    }
+
+    /// Whether the message lies in a message base area that may be changed.
+    pub fn can_change(&self, index: usize) -> bool {
+        self.message_base.as_ref().is_some_and(|base| base.can_change(index))
+    }
+
+    /// Whether `HEADERS.DAT` marks the message as UTF-8 (`Utf8: true`), or it is in a message
+    /// base area that stores UTF-8.
     pub fn declares_utf8(&self, index: usize) -> bool {
-        self.extended_headers(index).is_some_and(|headers| headers.utf8)
+        self.extended_headers(index).is_some_and(|headers| headers.utf8) || self.message_base.as_ref().is_some_and(|base| base.declares_utf8(index))
     }
 
     /// QWK uses E3 for line breaks, but E3 can also start a three-byte UTF-8 character.
     /// jamjam converts every E3 to LF; recover the raw body for Unicode reading. Messages
     /// `HEADERS.DAT` marks as UTF-8 end lines with LF, so there every E3 belongs to a character.
-    pub fn text_for_charset<'a>(&self, message: &'a QWKMessage, index: usize, charset: crate::charset::Charset) -> Res<std::borrow::Cow<'a, [u8]>> {
-        if charset != crate::charset::Charset::Utf8 || self.blue_wave.is_some() {
+    pub fn text_for_charset<'a>(&self, message: &'a QwkMessage, index: usize, charset: crate::charset::Charset) -> Res<std::borrow::Cow<'a, [u8]>> {
+        if charset != crate::charset::Charset::Utf8 || self.blue_wave.is_some() || self.message_base.is_some() {
             return Ok(std::borrow::Cow::Borrowed(&message.text));
         }
         let header = self

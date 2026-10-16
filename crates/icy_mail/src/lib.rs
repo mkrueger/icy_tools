@@ -7,6 +7,7 @@ pub mod drafts;
 pub mod editor;
 pub mod ignore;
 pub mod logging;
+pub mod message_base;
 pub mod options;
 pub mod perf;
 pub mod qwk;

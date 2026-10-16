@@ -22,7 +22,7 @@ use parking_lot::Mutex;
 use super::{
     address_dialog::AddressDialog,
     composer::Composer,
-    loading::{BodySource, BodyStyle, Event, Loader},
+    loading::{BaseJob, BaseOutcome, BodySource, BodyStyle, Event, Loader},
     mark_writer::{MarkKind, MarkWriter},
     modern_view::{Document, Item},
     settings::SettingsDialog,
@@ -78,12 +78,47 @@ pub enum AfterDiscard {
     Quit,
 }
 
+/// What the pack dialog asks: the messages marked deleted go anyway.
+#[derive(Clone, Debug)]
+pub struct PackDialog {
+    pub deleted: usize,
+    pub older: bool,
+    pub days: u32,
+    pub received_private: bool,
+}
+
+/// Dialogs name their message by area and number: a reload while one is open renumbers the list.
+#[derive(Clone, Debug)]
+pub struct TransferDialog {
+    pub area: u16,
+    pub number: u32,
+    pub target: Option<u16>,
+}
+
+#[derive(Clone, Debug)]
+pub struct InfoDialog {
+    pub area: u16,
+    pub number: u32,
+    pub details: icy_mail::message_base::MessageDetails,
+    /// The attributes as changed in the dialog.
+    pub attributes: u32,
+}
+
 pub enum Modal {
     About,
     Shortcuts,
     PacketInfo,
     Exported(PathBuf),
     DeleteDraft(u64),
+    PackBase(PackDialog),
+    /// Moves or copies a message of a message base to another area.
+    Transfer(TransferDialog),
+    MessageInfo(InfoDialog),
+    /// The result of checking or repairing the message base.
+    CheckReport {
+        checks: Vec<icy_mail::message_base::AreaCheck>,
+        repaired: bool,
+    },
     Discard(AfterDiscard),
     ExportProblems(Vec<String>),
     Settings,
@@ -132,6 +167,8 @@ pub struct MailApp {
     file_page_scroll_to_end: bool,
     pub composer: Option<Composer>,
     pub modal: Option<Modal>,
+    /// `(conference, number)` of a message to show once the package is loaded again.
+    pub select_after_load: Option<(u16, u32)>,
     pub notice: Option<Notice>,
     pub counts: Counts,
     /// Conferences a draft can be posted to, see [`conference_choices`].
@@ -265,6 +302,7 @@ impl MailApp {
             file_page_scroll_to_end: false,
             composer: None,
             modal: None,
+            select_after_load: None,
             notice: None,
             counts: Counts::default(),
             choices: Vec::new(),
@@ -377,6 +415,7 @@ impl MailApp {
                     match result {
                         Ok(package) => self.loaded(context, path, package),
                         Err(error) => {
+                            self.select_after_load = None;
                             self.error = Some(format!("{}\n{error}", path.display()));
                             self.rendered = None;
                             if !path.exists() {
@@ -511,6 +550,8 @@ impl MailApp {
                         None => {}
                     }
                 }
+                Event::MessageWritten(path, result) => self.message_written(context, path, result),
+                Event::BaseDone(path, result) => self.base_done(context, path, result),
                 Event::Exported(result) => {
                     self.loader.export_picking = false;
                     if let Some((path, result)) = result {
@@ -575,11 +616,21 @@ impl MailApp {
             None => ReadState::open(&path, &package),
         };
         let reload = self.path.as_ref() == Some(&path);
+        // The header the message info shows may have changed.
+        if matches!(self.modal, Some(Modal::MessageInfo(_))) {
+            self.modal = None;
+        }
         let previous = (self.folder, self.reader.selected_message, self.reader.view_mode, self.reader.message_sort);
         self.reader.set_package(package.clone());
         self.choices = conference_choices(&package);
+        let mut synced = false;
         match read_state {
-            Ok(state) => {
+            Ok(mut state) => {
+                // What the BBS knows the user read counts as read here as well.
+                synced = package
+                    .message_base
+                    .as_ref()
+                    .is_some_and(|base| state.mark(package.infos.iter().filter(|info| info.number <= base.last_read(info.conference)), true));
                 self.reader.set_read_marks(state.indices(&package));
                 self.reader.set_stars(state.starred_indices(&package));
                 self.read_state = Some(state);
@@ -595,6 +646,9 @@ impl MailApp {
         }
         self.drafts = Some(drafts);
         self.path = Some(path.clone());
+        if synced {
+            self.save_marks(context, MarkKind::Read);
+        }
         self.rendered = None;
         self.rendered_file = None;
         self.rendered_file_page = 0;
@@ -617,6 +671,14 @@ impl MailApp {
             self.selected_draft = None;
             self.select_folder(Folder::All);
             self.focus = Pane::Messages;
+        }
+        if let Some((conference, number)) = self.select_after_load.take() {
+            if let Some(index) = package.infos.iter().position(|info| info.conference == conference && info.number == number) {
+                if !self.reader.contains(index) {
+                    self.select_folder(Folder::Conference(conference));
+                }
+                self.reader.select_message(index);
+            }
         }
         self.reveal_sidebar = true;
         self.reveal_message = true;
@@ -870,6 +932,7 @@ impl MailApp {
             return;
         };
         let infos: Vec<_> = indices.iter().filter_map(|index| package.infos.get(*index)).collect();
+        let areas: std::collections::BTreeSet<u16> = infos.iter().map(|info| info.conference).collect();
         if let Some(state) = &mut self.read_state {
             if state.mark(infos.iter().copied(), read) {
                 self.save_marks(context, MarkKind::Read);
@@ -893,6 +956,25 @@ impl MailApp {
             if personal {
                 delta(&mut self.counts.personal.0);
             }
+        }
+        if read && package.message_base.as_ref().is_some_and(|base| base.syncs_last_read()) {
+            // The BBS takes everything up to its lastread pointer for read, so the pointer only
+            // moves past messages that are read without a gap. A message base lists each area's
+            // messages in number order.
+            let pointers = areas
+                .into_iter()
+                .map(|area| {
+                    let highest = package
+                        .infos
+                        .iter()
+                        .filter(|info| info.conference == area)
+                        .take_while(|info| self.reader.is_read(info.index) || package.is_deleted(info.index))
+                        .last()
+                        .map_or(0, |info| info.number);
+                    (area, highest)
+                })
+                .collect();
+            self.loader.advance_last_read(&package, pointers);
         }
     }
 
@@ -1209,7 +1291,7 @@ impl MailApp {
                     if store.supports_utf8() && self.loader.encodings.conference_default(&package, conference) == icy_mail::charset::Charset::Utf8 {
                         draft.charset = icy_mail::charset::Charset::Utf8;
                     }
-                    self.start_composer(context, Composer::new(draft, false, None, Vec::new(), false, store.is_blue_wave()));
+                    self.start_composer(context, Composer::new(draft, false, None, Vec::new(), false, !store.reserves_e3()));
                 }
                 Err(error) => self.error = Some(fl!(LANGUAGE_LOADER, "app-new-message-failed", error = error.to_string())),
             }
@@ -1264,7 +1346,7 @@ impl MailApp {
             &decoded,
             &self.quote_header,
             self.quote_reflow,
-            package.blue_wave.is_some(),
+            package.format() != icy_mail::qwk::PacketFormat::Qwk,
             draft.charset,
         ) {
             Ok(quotes) => quotes,
@@ -1288,7 +1370,7 @@ impl MailApp {
         }
         let origin = message_origin(info);
         // Like on a BBS, a reply starts empty with the quote panel open to pick lines from.
-        self.start_composer(context, Composer::new(draft, false, Some(origin), quotes, !forward, store.is_blue_wave()));
+        self.start_composer(context, Composer::new(draft, false, Some(origin), quotes, !forward, !store.reserves_e3()));
     }
 
     pub fn edit_draft(&mut self, context: &egui::Context, id: u64) {
@@ -1314,7 +1396,7 @@ impl MailApp {
                     origin,
                     quotes,
                     false,
-                    self.drafts.as_ref().is_some_and(|store| store.is_blue_wave()),
+                    self.drafts.as_ref().is_some_and(|store| !store.reserves_e3()),
                 ),
             );
         } else {
@@ -1359,7 +1441,7 @@ impl MailApp {
             &charset.message_text(&text),
             &self.quote_header,
             self.quote_reflow,
-            package.blue_wave.is_some(),
+            package.format() != icy_mail::qwk::PacketFormat::Qwk,
             draft.charset,
         )
     }
@@ -1407,6 +1489,10 @@ impl MailApp {
         let (Some(path), Some(store)) = (&self.path, &self.drafts) else {
             return;
         };
+        if store.is_message_base() {
+            // Messages are written into the base as they are saved; there is nothing to export.
+            return;
+        }
         if !store.has_exportable() {
             self.notify(context, NoticeKind::Info, fl!(LANGUAGE_LOADER, "notice-nothing-to-export"));
             return;
@@ -1423,6 +1509,257 @@ impl MailApp {
             return;
         }
         self.loader.pick_export(store.default_export_path(path), store.clone(), context);
+    }
+
+    /// Whether the message at `index` is marked deleted in its message base.
+    pub fn is_deleted(&self, index: usize) -> bool {
+        self.reader.package.as_ref().is_some_and(|package| package.is_deleted(index))
+    }
+
+    /// Whether the selected message lies in a message base area that may be changed.
+    pub fn can_change_selected(&self) -> bool {
+        self.message_selected()
+            && !self.loader.changing
+            && self
+                .reader
+                .selected_message
+                .zip(self.reader.package.as_ref())
+                .is_some_and(|(index, package)| package.can_change(index))
+    }
+
+    /// Whether the selected message's delete mark can be changed: a message base area that is
+    /// not read-only.
+    pub fn can_toggle_deleted(&self) -> bool {
+        self.message_selected()
+            && !self.loader.changing
+            && self
+                .reader
+                .selected_message
+                .zip(self.reader.package.as_ref())
+                .is_some_and(|(index, package)| package.can_change(index))
+    }
+
+    /// Marks the selected message deleted, or restores it; the mark stays until the base is packed.
+    pub fn toggle_deleted(&mut self, context: &egui::Context) {
+        let (Some(package), Some(index)) = (self.reader.package.clone(), self.reader.selected_message) else {
+            return;
+        };
+        if !self.message_selected() || package.message_base.is_none() {
+            return;
+        }
+        if !package.can_change(index) {
+            self.notify(context, NoticeKind::Warning, fl!(LANGUAGE_LOADER, "draft-issue-area-read-only"));
+            return;
+        }
+        let deleted = !package.is_deleted(index);
+        self.base_job(BaseJob::SetDeleted { index, deleted }, context);
+    }
+
+    /// Starts a change to the open message base.
+    pub fn base_job(&mut self, job: BaseJob, context: &egui::Context) {
+        if let (Some(path), Some(package)) = (self.path.clone(), self.reader.package.clone()) {
+            self.loader.base_job(path, package, job, context);
+        }
+    }
+
+    fn base_done(&mut self, context: &egui::Context, path: PathBuf, result: Result<BaseOutcome, String>) {
+        self.loader.changing = false;
+        let outcome = match result {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                self.error = Some(fl!(LANGUAGE_LOADER, "app-base-change-failed", error = error));
+                return;
+            }
+        };
+        let open = self.path.as_ref() == Some(&path);
+        let number = |app: &Self, index: usize| {
+            app.reader
+                .package
+                .as_ref()
+                .and_then(|package| package.infos.get(index))
+                .map_or(0, |info| info.number)
+        };
+        match outcome {
+            BaseOutcome::SetDeleted { index, deleted } => {
+                let number = number(self, index);
+                let text = if deleted {
+                    fl!(LANGUAGE_LOADER, "notice-message-deleted", number = number)
+                } else {
+                    fl!(LANGUAGE_LOADER, "notice-message-restored", number = number)
+                };
+                self.notify(context, NoticeKind::Success, text);
+            }
+            BaseOutcome::Packed(summary) => {
+                self.notify(
+                    context,
+                    NoticeKind::Success,
+                    fl!(LANGUAGE_LOADER, "notice-base-packed", count = summary.removed),
+                );
+                if open {
+                    self.reload(context);
+                }
+            }
+            BaseOutcome::Transferred { area, number, keep } => {
+                let area_name = self.folder_name(Folder::Conference(area));
+                let text = if keep {
+                    fl!(LANGUAGE_LOADER, "notice-message-copied-to", area = area_name, number = number)
+                } else {
+                    fl!(LANGUAGE_LOADER, "notice-message-moved-to", area = area_name, number = number)
+                };
+                self.notify(context, NoticeKind::Success, text);
+                if open {
+                    self.select_after_load = Some((area, number));
+                    self.reload(context);
+                }
+            }
+            BaseOutcome::Attributes { index } => {
+                let number = number(self, index);
+                self.notify(context, NoticeKind::Success, fl!(LANGUAGE_LOADER, "notice-attributes-saved", number = number));
+                if open {
+                    self.reload(context);
+                }
+            }
+            BaseOutcome::Checked(checks) => self.modal = Some(Modal::CheckReport { checks, repaired: false }),
+            BaseOutcome::Repaired(checks) => {
+                self.modal = Some(Modal::CheckReport { checks, repaired: true });
+                if open {
+                    self.reload(context);
+                }
+            }
+        }
+    }
+
+    /// Asks before packing the open message base.
+    pub fn ask_pack(&mut self) {
+        if let Some(base) = self.reader.package.as_ref().and_then(|package| package.message_base.as_ref()) {
+            self.modal = Some(Modal::PackBase(PackDialog {
+                deleted: base.deleted_count(),
+                older: false,
+                days: 365,
+                received_private: false,
+            }));
+        }
+    }
+
+    pub fn pack(&mut self, context: &egui::Context, dialog: &PackDialog) {
+        let choice = icy_mail::message_base::PackChoice {
+            purge_before: dialog.older.then(|| chrono::Utc::now() - chrono::Duration::days(i64::from(dialog.days))),
+            purge_received_private: dialog.received_private,
+        };
+        self.base_job(BaseJob::Pack(choice), context);
+    }
+
+    /// Opens the selected message of a message base in the composer, to change it in place.
+    pub fn edit_message(&mut self, context: &egui::Context) {
+        let (Some(package), Some(index), Some(store)) = (self.reader.package.clone(), self.reader.selected_message, self.drafts.as_ref()) else {
+            return;
+        };
+        if !self.message_selected() || !package.can_change(index) {
+            return;
+        }
+        match store.prepare(&package, Compose::Edit { index }) {
+            Ok(draft) => {
+                let e3 = !store.reserves_e3();
+                self.start_composer(context, Composer::new(draft, false, None, Vec::new(), false, e3));
+            }
+            Err(error) => self.error = Some(fl!(LANGUAGE_LOADER, "app-base-change-failed", error = error.to_string())),
+        }
+    }
+
+    /// The list position of a message of the open package.
+    pub fn index_of(&self, area: u16, number: u32) -> Option<usize> {
+        self.reader
+            .package
+            .as_ref()?
+            .infos
+            .iter()
+            .position(|info| info.conference == area && info.number == number)
+    }
+
+    /// Asks which area to move or copy the selected message to.
+    pub fn ask_transfer(&mut self) {
+        let Some(index) = self.reader.selected_message.filter(|_| self.message_selected() && !self.loader.changing) else {
+            return;
+        };
+        let Some(package) = &self.reader.package else {
+            return;
+        };
+        let Some(info) = package.infos.get(index) else {
+            return;
+        };
+        let target = self.transfer_targets(info.conference).first().map(|(number, _)| *number);
+        self.modal = Some(Modal::Transfer(TransferDialog {
+            area: info.conference,
+            number: info.number,
+            target,
+        }));
+    }
+
+    /// Areas a message of `area` can be moved or copied to.
+    pub fn transfer_targets(&self, area: u16) -> Vec<(u16, String)> {
+        let Some(store) = &self.drafts else {
+            return Vec::new();
+        };
+        self.choices
+            .iter()
+            .filter(|(number, _)| *number != area && store.can_post(*number))
+            .cloned()
+            .collect()
+    }
+
+    /// Shows the stored header of the selected message, with its attributes to change.
+    pub fn show_message_info(&mut self) {
+        let (Some(package), Some(index)) = (&self.reader.package, self.reader.selected_message) else {
+            return;
+        };
+        let Some(base) = &package.message_base else {
+            return;
+        };
+        match base.details(index) {
+            Ok(details) => {
+                let attributes = details.attributes;
+                let Some(info) = package.infos.get(index) else {
+                    return;
+                };
+                self.modal = Some(Modal::MessageInfo(InfoDialog {
+                    area: info.conference,
+                    number: info.number,
+                    details,
+                    attributes,
+                }));
+            }
+            Err(error) => self.error = Some(fl!(LANGUAGE_LOADER, "app-base-change-failed", error = error.to_string())),
+        }
+    }
+
+    fn message_written(&mut self, context: &egui::Context, path: PathBuf, result: Result<(u16, u32), String>) {
+        self.loader.writing = false;
+        match result {
+            Ok((area, number)) => {
+                let edited = self
+                    .composer
+                    .take()
+                    .is_some_and(|composer| composer.draft.kind == icy_mail::drafts::DraftKind::Edit);
+                let area_name = self.folder_name(Folder::Conference(area));
+                let text = if edited {
+                    fl!(LANGUAGE_LOADER, "notice-message-changed", number = number)
+                } else {
+                    fl!(LANGUAGE_LOADER, "notice-message-written", number = number, area = area_name)
+                };
+                self.notify(context, NoticeKind::Success, text);
+                if self.path.as_ref() == Some(&path) {
+                    self.select_after_load = Some((area, number));
+                    self.reload(context);
+                }
+            }
+            Err(error) => {
+                let text = fl!(LANGUAGE_LOADER, "composer-write-error", error = error);
+                match &mut self.composer {
+                    Some(composer) => composer.error = Some(text),
+                    None => self.error = Some(text),
+                }
+            }
+        }
     }
 
     pub fn import_replies(&mut self, context: &egui::Context, drafts: Vec<Draft>) {
@@ -1511,6 +1848,12 @@ impl MailApp {
 
     pub fn has_exportable(&self) -> bool {
         self.drafts.as_ref().is_some_and(DraftStore::has_exportable)
+    }
+
+    /// Whether messages go straight into an open message base, which has no outbox, instead of
+    /// being exported as a reply packet.
+    pub fn posts_to_base(&self) -> bool {
+        self.drafts.as_ref().is_some_and(DraftStore::is_message_base)
     }
 
     pub fn supports_subscriptions(&self) -> bool {
@@ -2035,6 +2378,20 @@ impl MailApp {
         if key(context, Key::Tab, false, true) {
             self.set_focus(self.focus.cycle(false), context);
         }
+        if self.posts_to_base() && self.folder.holds_messages() && self.focus != Pane::Conferences {
+            if key(context, Key::Delete, false, false) {
+                self.toggle_deleted(context);
+                return;
+            }
+            if key(context, Key::E, true, false) {
+                self.edit_message(context);
+                return;
+            }
+            if key(context, Key::I, false, false) {
+                self.show_message_info();
+                return;
+            }
+        }
         if self.folder == Folder::Drafts && self.focus != Pane::Conferences {
             if let Some(id) = self.selected_draft {
                 if key(context, Key::Enter, false, false) {
@@ -2224,7 +2581,15 @@ pub fn conference_choices(package: &icy_mail::qwk::QwkPackage) -> Vec<(u16, Stri
         .control_file
         .conferences
         .iter()
-        .map(|conference| (conference.number, decode_cp437(&conference.name)))
+        .map(|conference| {
+            // Area names of a message base come from UTF-8 configuration files.
+            let name = if package.format() == icy_mail::qwk::PacketFormat::Jam {
+                String::from_utf8_lossy(&conference.name).into_owned()
+            } else {
+                decode_cp437(&conference.name)
+            };
+            (conference.number, name)
+        })
         .collect();
     for (number, name, _) in package.conferences() {
         conferences.entry(number).or_insert(name);

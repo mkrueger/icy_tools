@@ -95,6 +95,7 @@ impl MailApp {
             return;
         }
         let context = ui.ctx().clone();
+        let deleted = self.is_deleted(self.reader.selected_message.unwrap_or(usize::MAX));
         let Some(info) = self.selected_info().cloned() else {
             let image = self.icons.image(&context, Icon::Mailbox, 44.0);
             widgets::empty(
@@ -251,6 +252,10 @@ impl MailApp {
                     if info.private {
                         ui.add_space(2.0);
                         appearance::status_badge(ui, &fl!(LANGUAGE_LOADER, "reader-private"), widgets::warning(ui));
+                    }
+                    if deleted {
+                        ui.add_space(2.0);
+                        appearance::status_badge(ui, &fl!(LANGUAGE_LOADER, "reader-deleted"), widgets::warning(ui));
                     }
                 };
                 let details = |ui: &mut egui::Ui| -> bool {
@@ -438,6 +443,33 @@ impl MailApp {
             let image = self.icons.image(&context, Icon::Close, 16.0);
             if entry(ui, image, label, String::new(), true, Some(fl!(LANGUAGE_LOADER, "reader-menu-ignore-tooltip"))) {
                 self.ignore_selected(&context, field);
+            }
+        }
+        if self.posts_to_base() {
+            ui.separator();
+            let selected = self.reader.selected_message;
+            let label = if selected.is_some_and(|index| self.is_deleted(index)) {
+                fl!(LANGUAGE_LOADER, "menu-undelete")
+            } else {
+                fl!(LANGUAGE_LOADER, "menu-mark-deleted")
+            };
+            let image = self.icons.image(&context, Icon::Delete, 16.0);
+            if entry(ui, image, label, "Del".into(), self.can_toggle_deleted(), None) {
+                self.toggle_deleted(&context);
+            }
+            let image = self.icons.image(&context, Icon::Compose, 16.0);
+            let shortcut = chrome::shortcut(&context, Modifiers::COMMAND, Key::E);
+            if entry(ui, image, fl!(LANGUAGE_LOADER, "menu-edit-message"), shortcut, self.can_change_selected(), None) {
+                self.edit_message(&context);
+            }
+            let image = self.icons.image(&context, Icon::Forward, 16.0);
+            if entry(ui, image, fl!(LANGUAGE_LOADER, "menu-transfer-message"), String::new(), !self.loader.changing, None) {
+                self.ask_transfer();
+            }
+            let image = self.icons.image(&context, Icon::Info, 16.0);
+            let shortcut = chrome::shortcut(&context, Modifiers::NONE, Key::I);
+            if entry(ui, image, fl!(LANGUAGE_LOADER, "menu-message-info"), shortcut, true, None) {
+                self.show_message_info();
             }
         }
         ui.separator();
@@ -771,7 +803,7 @@ impl MailApp {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let kind = match draft.kind {
-                        DraftKind::New => fl!(LANGUAGE_LOADER, "reader-kind-new-message"),
+                        DraftKind::New | DraftKind::Edit => fl!(LANGUAGE_LOADER, "reader-kind-new-message"),
                         DraftKind::Reply => fl!(LANGUAGE_LOADER, "reader-kind-reply"),
                         DraftKind::Forward => fl!(LANGUAGE_LOADER, "reader-kind-forward"),
                     };
