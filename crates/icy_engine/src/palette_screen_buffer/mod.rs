@@ -156,6 +156,7 @@ impl PaletteScreenBuffer {
             return;
         }
 
+        self.mark_dirty();
         let x = pos.x;
         let y = pos.y;
 
@@ -546,6 +547,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn set_resolution(&mut self, size: Size) {
+        self.mark_dirty();
         self.pixel_size = size;
         let font_size = self.font(0).unwrap().size();
         self.char_screen_size = Size::new(self.pixel_size.width / font_size.width, self.pixel_size.height / font_size.height);
@@ -557,6 +559,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn screen_mut(&mut self) -> &mut Vec<u8> {
+        self.mark_dirty();
         &mut self.screen
     }
 
@@ -600,6 +603,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn palette_mut(&mut self) -> &mut Palette {
+        self.mark_dirty();
         &mut self.palette
     }
 
@@ -648,6 +652,7 @@ impl EditableScreen for PaletteScreenBuffer {
             return;
         }
 
+        self.mark_dirty();
         // Add top line to scrollback before scrolling (while data is still there)
         if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state.is_terminal_buffer {
             let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, line_height as i32);
@@ -676,6 +681,7 @@ impl EditableScreen for PaletteScreenBuffer {
             return;
         }
 
+        self.mark_dirty();
         let row_len = screen_width;
         let movable_rows = screen_height - line_height;
         let background = self.caret.attribute.background() as u8;
@@ -697,6 +703,7 @@ impl EditableScreen for PaletteScreenBuffer {
         if char_width == 0 || char_width >= screen_width {
             return;
         }
+        self.mark_dirty();
         let background = self.caret.attribute.background() as u8;
 
         for y in 0..screen_height {
@@ -718,6 +725,7 @@ impl EditableScreen for PaletteScreenBuffer {
         if char_width == 0 || char_width >= screen_width {
             return;
         }
+        self.mark_dirty();
         let background = self.caret.attribute.background() as u8;
 
         for y in 0..screen_height {
@@ -731,6 +739,7 @@ impl EditableScreen for PaletteScreenBuffer {
     }
 
     fn clear_screen(&mut self) {
+        self.mark_dirty();
         // Add entire screen to scrollback
         if self.terminal_state.is_terminal_buffer {
             let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, self.pixel_size.height);
@@ -807,6 +816,7 @@ impl EditableScreen for PaletteScreenBuffer {
 
     fn handle_rip_command(&mut self, cmd: RipCommand) {
         self.handle_rip_command_impl(cmd);
+        self.mark_dirty();
     }
 
     fn handle_skypix_command(&mut self, _cmd: SkypixCommand) {

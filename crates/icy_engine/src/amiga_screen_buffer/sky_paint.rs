@@ -110,7 +110,9 @@ impl SkyPaint {
     /// - `FillMode::Color`: Fill replaces all connected pixels that are the
     ///   SAME color as the starting pixel (x, y).
     pub fn flood_fill(&mut self, buf: &mut dyn EditableScreen, x: i32, y: i32, mode: FillMode, fill_color: u8) {
-        let res = buf.resolution();
+        let mut res = buf.resolution();
+        // Drawing addresses native pixels, not the scanline-doubled display.
+        res.height = (buf.screen().len() / res.width as usize) as i32;
 
         if x < 0 || y < 0 || x >= res.width || y >= res.height {
             return;

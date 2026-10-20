@@ -90,3 +90,114 @@ fn edit_on_a_line_that_straddles_two_tiles_repaints_both() {
     assert!(row_has_content(&after, 0, TILE_HEIGHT - 1), "upper part of the line is stale in tile 0");
     assert!(row_has_content(&after, 1, 0), "lower part of the line is missing in tile 1");
 }
+
+#[test]
+fn skypix_stream_repaints_cached_frames_at_scanline_doubled_size() {
+    use icy_engine::{ScreenMode, ScreenSink, TerminalEmulation};
+    use icy_engine_gui::util::QueueingSink;
+    use std::collections::VecDeque;
+
+    let (screen, mut parser) = ScreenMode::SkyPix.create_screen(TerminalEmulation::Skypix, None);
+    let screen: Box<dyn Screen> = screen;
+    let state = CRTShaderState::from_screen(&*screen);
+    let terminal = Terminal::new(Arc::new(Mutex::new(screen)));
+    let initial = frame(&terminal, &state);
+    assert_eq!(initial.total_content_height, 400.0);
+    assert_eq!(initial.visible_height, 400.0);
+    assert_eq!(initial.slices_blink_off[0].height, 400);
+    assert!(!row_has_content(&initial, 0, 398));
+
+    for bytes in [&b"Hello SkyPix"[..], b"\x1b[1;639;199!"] {
+        let mut queue = VecDeque::new();
+        for byte in bytes.chunks(1) {
+            parser.parse(byte, &mut QueueingSink::new(&mut queue));
+        }
+        let mut screen = terminal.screen.lock();
+        let mut sink = ScreenSink::new(screen.as_editable().unwrap());
+        while let Some(command) = queue.pop_front() {
+            command.process_screen_command(&mut sink);
+        }
+        drop(screen);
+
+        let updated = frame(&terminal, &state);
+        assert_ne!(updated.slices_blink_off[0].rgba_data, initial.slices_blink_off[0].rgba_data);
+    }
+
+    let final_frame = frame(&terminal, &state);
+    assert!(row_has_content(&final_frame, 0, 398));
+    assert!(row_has_content(&final_frame, 0, 399));
+}
+
+#[test]
+fn rip_graphics_text_and_erase_repaint_cached_frames() {
+    use icy_engine::{ScreenMode, ScreenSink, TerminalEmulation};
+    use icy_engine_gui::util::QueueingSink;
+    use icy_parser_core::RipCommand;
+    use std::collections::VecDeque;
+
+    let (screen, mut parser) = ScreenMode::Rip.create_screen(TerminalEmulation::Rip, None);
+    let screen: Box<dyn Screen> = screen;
+    let state = CRTShaderState::from_screen(&*screen);
+    let terminal = Terminal::new(Arc::new(Mutex::new(screen)));
+    let mut previous = frame(&terminal, &state);
+    assert_eq!(previous.total_content_height, 350.0);
+    assert_eq!(previous.visible_height, 350.0);
+    assert_eq!(previous.slices_blink_off[0].width, 640);
+    assert_eq!(previous.slices_blink_off[0].height, 350);
+    assert!(!row_has_content(&previous, 0, 349));
+
+    let graphics = format!("!{}{}\n", RipCommand::Color { c: 15 }, RipCommand::Pixel { x: 639, y: 349 });
+    for bytes in [graphics.as_bytes(), b"Hello RIP", b"\x1b[2J"] {
+        let mut queue = VecDeque::new();
+        for byte in bytes.chunks(1) {
+            parser.parse(byte, &mut QueueingSink::new(&mut queue));
+        }
+        let mut screen = terminal.screen.lock();
+        let mut sink = ScreenSink::new(screen.as_editable().unwrap());
+        while let Some(command) = queue.pop_front() {
+            command.process_screen_command(&mut sink);
+        }
+        drop(screen);
+
+        let updated = frame(&terminal, &state);
+        assert_ne!(updated.slices_blink_off[0].rgba_data, previous.slices_blink_off[0].rgba_data, "{bytes:?}");
+        previous = updated;
+    }
+    assert!(!row_has_content(&previous, 0, 349));
+}
+
+#[test]
+fn skypix_custom_font_changes_preserve_frame_size_and_repaint_glyphs() {
+    use icy_engine::{ScreenMode, ScreenSink, TerminalEmulation};
+    use icy_engine_gui::util::QueueingSink;
+    use std::collections::VecDeque;
+
+    let (screen, mut parser) = ScreenMode::SkyPix.create_screen(TerminalEmulation::Skypix, None);
+    let screen: Box<dyn Screen> = screen;
+    let state = CRTShaderState::from_screen(&*screen);
+    let terminal = Terminal::new(Arc::new(Mutex::new(screen)));
+    frame(&terminal, &state);
+    for bytes in [
+        &b"\x1b[10;19!Sapphire.font!\x1b[19;25;25!Reign of Fire BBS"[..],
+        b"\x1b[10;36!Courier.font!\x1b[19;200;100!MW",
+        b"\x1b[10;0!\x1b[99!Default font",
+    ] {
+        let mut queue = VecDeque::new();
+        for byte in bytes.chunks(1) {
+            parser.parse(byte, &mut QueueingSink::new(&mut queue));
+        }
+        let mut screen = terminal.screen.lock();
+        let mut sink = ScreenSink::new(screen.as_editable().unwrap());
+        while let Some(command) = queue.pop_front() {
+            command.process_screen_command(&mut sink);
+        }
+        let expected = screen.render_to_rgba(&Default::default()).1;
+        drop(screen);
+
+        let updated = frame(&terminal, &state);
+        assert_eq!(updated.total_content_height, 400.0);
+        assert_eq!(updated.visible_height, 400.0);
+        assert_eq!(updated.slices_blink_off[0].height, 400);
+        assert_eq!(*updated.slices_blink_off[0].rgba_data, expected);
+    }
+}

@@ -1,7 +1,7 @@
 use icy_parser_core::{DisplayMode, SkypixCommand};
 
 use super::sky_paint::SkyPaint;
-use crate::{get_amiga_font_by_name, BitFont, EditableScreen, Palette, Screen, Size, SKYPIX_PALETTE, SKYPIX_PALETTE_8};
+use crate::{fonts::skypix::get_amiga_font, BitFont, EditableScreen, Palette, Screen, Size, SKYPIX_PALETTE, SKYPIX_PALETTE_8};
 
 /// Resets font page from a custom font (page 1) back to the default font (page 0).
 /// Corrects the Y position so the caret stays at the baseline rather than the top
@@ -9,14 +9,14 @@ use crate::{get_amiga_font_by_name, BitFont, EditableScreen, Palette, Screen, Si
 ///
 /// When switching from a larger font to the default 8x8 font, the Y position needs
 /// adjustment: y += `old_font_height` - `base_font_height`
-fn reset_to_default_font(buf: &mut super::AmigaScreenBuffer) {
+pub(super) fn reset_to_default_font(buf: &mut super::AmigaScreenBuffer) {
     let current_page = buf.caret().font_page();
 
     // Only adjust if we're on a custom font page
     if current_page != 0 {
-        if let Some(current_font) = buf.font(current_page as usize) {
-            let current_height = current_font.size().height;
-            let default_height = buf.font_dimensions().height;
+        if let Some(default_font) = buf.font(0) {
+            let current_height = buf.font_dimensions().height;
+            let default_height = default_font.size().height;
 
             let mut pos = buf.caret().position();
             pos.y += current_height - default_height;
@@ -30,10 +30,12 @@ fn reset_to_default_font(buf: &mut super::AmigaScreenBuffer) {
 }
 
 /// Switches to a custom font (page 1).
-fn switch_to_custom_font(buf: &mut super::AmigaScreenBuffer, font: BitFont) {
-    buf.set_font(1, font);
+fn switch_to_custom_font(buf: &mut super::AmigaScreenBuffer, font: std::sync::Arc<crate::fonts::skypix::AmigaFont>) {
+    buf.set_font(1, font.compact.clone());
+    buf.amiga_font = Some(font);
     buf.caret_mut().set_font_page(1);
     buf.caret_mut().visible = false; // Hide text caret in JAM1 mode.
+    buf.text_mode = super::TextMode::Jam1;
 }
 
 /// Amiga 8x8 IBM compatible font for Skypix
@@ -48,7 +50,6 @@ pub const SKYPIX_SCREEN_SIZE: Size = Size { width: 640, height: 200 };
 fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPaint, cmd: SkypixCommand) {
     // Get current pen colors from caret attribute
     let pen_a = buf.caret().attribute.foreground() as u8;
-    buf.text_mode = super::TextMode::Jam1;
     match cmd {
         SkypixCommand::Comment { .. } => {
             // Command 0: Comments are ignored
@@ -105,12 +106,11 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
         }
 
         SkypixCommand::SetFont { size, name } => {
-            if let Some(font) = get_amiga_font_by_name(&name, size) {
+            if let Some(font) = get_amiga_font(&name, size) {
                 switch_to_custom_font(buf, font);
-            // JAM1 mode: CR moves to beginning of next line, LF is ignored
             } else {
                 log::warn!("SKYPIX_SET_FONT: Font '{name}' size {size} not found");
-                buf.caret_mut().set_font_page(0);
+                reset_to_default_font(buf);
             }
         }
         SkypixCommand::ResetFont => {
@@ -180,13 +180,11 @@ fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPai
         SkypixCommand::EndSkypix => {
             *buf.palette_mut() = Palette::from_slice(&SKYPIX_PALETTE);
 
+            reset_to_default_font(buf);
             buf.terminal_state.reset_terminal(buf.terminal_state.size());
-            buf.caret.visible = true;
             buf.caret.shape = crate::CaretShape::Underline;
             buf.caret.set_foreground(buf.default_foreground_color());
             buf.caret.set_background(0);
-            buf.caret.set_font_page(0);
-            buf.text_mode = super::TextMode::Jam2;
         }
     }
 }
