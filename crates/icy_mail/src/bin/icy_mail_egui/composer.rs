@@ -376,7 +376,9 @@ impl MailApp {
                     });
                 }
                 if store.is_netmail(draft.conference) {
-                    let invalid = issues.iter().any(|issue| issue.field == DraftField::Address && !draft.address.trim().is_empty());
+                    let invalid = issues
+                        .iter()
+                        .any(|issue| issue.field == DraftField::Address && !draft.address.trim().is_empty());
                     row(ui, &fl!(LANGUAGE_LOADER, "draft-field-address"), &mut |ui| {
                         let mut edit = appearance::text_edit(&mut draft.address)
                             .id(egui::Id::new("composer-Address"))

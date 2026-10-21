@@ -463,7 +463,14 @@ impl MailApp {
                 self.edit_message(&context);
             }
             let image = self.icons.image(&context, Icon::Forward, 16.0);
-            if entry(ui, image, fl!(LANGUAGE_LOADER, "menu-transfer-message"), String::new(), !self.loader.changing, None) {
+            if entry(
+                ui,
+                image,
+                fl!(LANGUAGE_LOADER, "menu-transfer-message"),
+                String::new(),
+                !self.loader.changing,
+                None,
+            ) {
                 self.ask_transfer();
             }
             let image = self.icons.image(&context, Icon::Info, 16.0);

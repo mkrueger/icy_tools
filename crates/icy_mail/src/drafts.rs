@@ -59,11 +59,19 @@ pub enum DraftKind {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Compose {
-    New { conference: u16 },
-    Reply { index: usize },
-    Forward { index: usize },
+    New {
+        conference: u16,
+    },
+    Reply {
+        index: usize,
+    },
+    Forward {
+        index: usize,
+    },
     /// A message of a message base, to change where it is stored.
-    Edit { index: usize },
+    Edit {
+        index: usize,
+    },
 }
 
 /// Editable UTF-8 message fields. The UI can insert, edit, and remove drafts in `DraftStore::drafts`.
@@ -591,7 +599,10 @@ impl DraftStore {
     /// A draft holding a message of the message base, to change it. The text loses its kludge
     /// lines, which stay in the header; a message in another charset than CP437 is edited as UTF-8.
     fn prepare_edit(&self, package: &QwkPackage, index: usize) -> Result<Draft> {
-        let base = self.message_base.as_ref().ok_or_else(|| invalid("message", "only messages of a message base can be edited"))?;
+        let base = self
+            .message_base
+            .as_ref()
+            .ok_or_else(|| invalid("message", "only messages of a message base can be edited"))?;
         let info = package.infos.get(index).ok_or_else(|| invalid("message index", "out of range"))?;
         let message = package.get_message(index).map_err(|e| DraftError::Qwk(e.to_string()))?;
         let charset = crate::charset::ReadingEncodings::default().options(package, index).detect(&message.text);

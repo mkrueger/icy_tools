@@ -283,7 +283,14 @@ impl MailApp {
         if self.posts_to_base() && item(ui, &fl!(LANGUAGE_LOADER, "menu-pack-base"), "", self.loading.is_none() && !self.loader.changing) {
             self.ask_pack();
         }
-        if self.posts_to_base() && item(ui, &fl!(LANGUAGE_LOADER, "menu-check-base"), "", self.loading.is_none() && !self.loader.changing) {
+        if self.posts_to_base()
+            && item(
+                ui,
+                &fl!(LANGUAGE_LOADER, "menu-check-base"),
+                "",
+                self.loading.is_none() && !self.loader.changing,
+            )
+        {
             self.base_job(BaseJob::Verify, &context);
         }
         ui.separator();
@@ -367,7 +374,12 @@ impl MailApp {
                 self.toggle_deleted(&context);
             }
             let changeable = self.can_change_selected();
-            if item(ui, &fl!(LANGUAGE_LOADER, "menu-edit-message"), &command(Key::E), changeable && self.composer.is_none()) {
+            if item(
+                ui,
+                &fl!(LANGUAGE_LOADER, "menu-edit-message"),
+                &command(Key::E),
+                changeable && self.composer.is_none(),
+            ) {
                 self.edit_message(&context);
             }
             if item(ui, &fl!(LANGUAGE_LOADER, "menu-transfer-message"), "", selected && !self.loader.changing) {

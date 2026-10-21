@@ -42,11 +42,22 @@ type Jobs<T> = mpsc::Sender<(T, egui::Context)>;
 /// A change to an open message base, run in the background because JAM waits for its lock.
 #[derive(Clone, Debug)]
 pub enum BaseJob {
-    SetDeleted { index: usize, deleted: bool },
+    SetDeleted {
+        index: usize,
+        deleted: bool,
+    },
     Pack(icy_mail::message_base::PackChoice),
     /// Copies the message into another area, or moves it there without `keep`.
-    Transfer { index: usize, target: u16, keep: bool },
-    Attributes { index: usize, set: u32, clear: u32 },
+    Transfer {
+        index: usize,
+        target: u16,
+        keep: bool,
+    },
+    Attributes {
+        index: usize,
+        set: u32,
+        clear: u32,
+    },
     Verify,
     Repair,
 }
