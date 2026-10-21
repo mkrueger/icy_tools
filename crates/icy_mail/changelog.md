@@ -4,6 +4,12 @@
 
 ### Added
 
+- FidoNet timezone declarations (`TZUTC` and legacy `TZUTCINFO`) convert message
+  dates to the reader's local timezone. New JAM messages record their timezone;
+  IcyBoard's RFC 3339 dates retain precedence over tossed declarations.
+- Threading uses exact FidoNet `MSGID`/`REPLY` links when numeric reply pointers
+  are missing or unavailable, before falling back to subjects. Links stay within
+  their area, and ambiguous duplicate IDs are logged and ignored.
 - JAM message bases are read and written in place: open a `.jhr` file, or an
   IcyBoard installation's `icboard.toml` to get all of its conference areas and
   the email base. Kludge subfields appear as hidden lines and declare the

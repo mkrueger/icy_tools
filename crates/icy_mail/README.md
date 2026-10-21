@@ -85,6 +85,20 @@ tossed mail but keeps the packet's `CHRS` line — so its areas, and bases that 
 inside an IcyBoard installation or carry IcyBoard's date subfield, are read as
 UTF-8 whatever their kludges say.
 
+FidoNet `MSGID`/`REPLY` declarations also link threads when numeric reply links
+are unavailable, even when the subject changes. Numeric links take precedence,
+then exact message IDs, then subject matching; links stay within an area.
+Ambiguous duplicate message IDs are logged and not used for ID-based linking.
+This works for JAM subfields and hidden lines in QWK and Blue Wave packets.
+
+Dates declared with `TZUTC` or the legacy `TZUTCINFO` are shown in the reader's
+local timezone, including fractional-hour offsets and date changes across
+midnight. Undeclared dates retain their previous interpretation; invalid offsets
+are logged and ignored. IcyBoard's RFC 3339 date takes precedence over retained
+packet timezone declarations. New JAM messages carry `TZUTCInfo`: the current
+local offset for ordinary bases, or `0000` for IcyBoard's UTC dates. Editing a
+message preserves its original date and timezone.
+
 A message base has no Outbox and nothing to export or import. As in BBS and
 FidoNet editors, **Save Message** (Ctrl/Cmd+S) in the composer writes the message
 straight into its area under JAM's exclusive lock, then reloads the base and shows

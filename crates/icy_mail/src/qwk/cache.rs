@@ -21,7 +21,7 @@ const MANIFEST: &str = "manifest.toml";
 const MAX_MANIFEST_SIZE: u64 = 1024 * 1024;
 const DAY: u64 = 24 * 60 * 60;
 const INDEX_FILE: &str = "index-v6.bin";
-const INDEX_VERSION: u32 = 8;
+const INDEX_VERSION: u32 = 9;
 const MAX_INDEX_SIZE: u64 = 1024 * 1024 * 1024;
 const INDEX_CHUNK_MESSAGES: usize = 4096;
 
@@ -411,6 +411,23 @@ impl ExtractionCache {
             .any(|descriptor| descriptor.body_len.is_some() != (identity.format == PacketFormat::BlueWave))
         {
             return Err(invalid("metadata cache uses the wrong packet format").into());
+        }
+        let mut dates_changed = false;
+        for info in &mut index.infos {
+            if let Some(timestamp) = info.ftn.utc_timestamp {
+                let date = chrono::DateTime::from_timestamp(timestamp, 0)
+                    .ok_or_else(|| invalid("invalid cached UTC message date"))?
+                    .with_timezone(&chrono::Local)
+                    .naive_local();
+                if info.date != date {
+                    info.date = date;
+                    info.date_str = date.format("%Y-%m-%d %H:%M").to_string();
+                    dates_changed = true;
+                }
+            }
+        }
+        if dates_changed {
+            index.threads = crate::threading::build_threads(&index.infos.iter().collect::<Vec<_>>());
         }
         Ok(Some(index))
     }
@@ -906,6 +923,49 @@ mod tests {
         let mut output = crc32fast::hash(&payload).to_le_bytes().to_vec();
         output.extend(payload);
         fs::write(directory.join(INDEX_FILE), output).unwrap();
+    }
+
+    #[test]
+    fn version_eight_index_is_rebuilt_without_reextracting_messages() {
+        let (_dir, path, cache) = fixture();
+        let original = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+        let directory = entry(&cache, &path);
+        let raw_modified = fs::metadata(directory.join("1.dat")).unwrap().modified().unwrap();
+        rewrite_metadata(&directory, |record| record.version = 8);
+        let extracted = cache.load(&path, || panic!("old index must not require reextraction")).unwrap();
+        assert!(extracted.metadata.is_none());
+        let rebuilt = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+        assert_eq!(rebuilt.infos, original.infos);
+        assert_eq!(fs::metadata(directory.join("1.dat")).unwrap().modified().unwrap(), raw_modified);
+        assert!(cache.load(&path, || panic!("rebuilt index must reuse extraction")).unwrap().metadata.is_some());
+    }
+
+    #[test]
+    fn cached_known_instants_refresh_local_dates_and_thread_order() {
+        let (_dir, path, cache) = fixture();
+        QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+        let directory = entry(&cache, &path);
+        let timestamp = chrono::DateTime::parse_from_rfc3339("2030-01-01T00:15:00Z").unwrap().timestamp();
+        rewrite_metadata(&directory, |record| {
+            let mut index: MetadataIndex = bincode::DefaultOptions::new()
+                .with_fixint_encoding()
+                .deserialize(&record.index.chunks[0])
+                .unwrap();
+            index.infos[0].ftn.utc_timestamp = Some(timestamp);
+            record.index.chunks[0] = bincode::DefaultOptions::new().with_fixint_encoding().serialize(&index).unwrap();
+        });
+        let warm = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+        let date = chrono::DateTime::from_timestamp(timestamp, 0)
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .naive_local();
+        assert_eq!(warm.infos[0].date, date);
+        assert_eq!(warm.infos[0].date_str, date.format("%Y-%m-%d %H:%M").to_string());
+        assert_eq!(
+            warm.cached_threads().unwrap(),
+            crate::threading::build_threads(&warm.infos.iter().collect::<Vec<_>>())
+        );
+        assert!(warm.needs_preload(), "refreshing dates must not load bodies");
     }
 
     #[test]

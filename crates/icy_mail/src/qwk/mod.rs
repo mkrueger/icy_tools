@@ -73,6 +73,7 @@ pub struct MessageInfo {
     pub number: u32,
     /// Message this one replies to, `0` when it starts a thread.
     pub ref_number: u32,
+    pub ftn: crate::ftn::Metadata,
     pub conference: u16,
     pub from: HeaderText,
     pub to: HeaderText,
@@ -560,6 +561,8 @@ impl QwkPackage {
                 .ok_or("Invalid Blue Wave message date")?
                 .naive_utc();
             let body = blue_wave_body(&messages_data, message)?;
+            let mut ftn = crate::ftn::Metadata::parse(&body);
+            let date = if message.date_known { ftn.local_date(date) } else { date };
             let charset = crate::charset::declared(&body);
             let decode_header = |bytes: &[u8]| HeaderText::with_declared(bytes, charset);
             let subject = decode_header(&message.subject);
@@ -567,6 +570,7 @@ impl QwkPackage {
                 index,
                 number,
                 ref_number: message.reply_to,
+                ftn,
                 conference: message.area,
                 from: decode_header(&message.from),
                 to: decode_header(&message.to),
@@ -658,6 +662,7 @@ impl QwkPackage {
                 index,
                 number: message.number,
                 ref_number: message.reply_to,
+                ftn: message.ftn.clone(),
                 conference: message.area,
                 from: decode_header(&message.from),
                 to: decode_header(&message.to),
@@ -756,6 +761,7 @@ impl QwkPackage {
                         index,
                         number: descriptor.number,
                         ref_number: 0,
+                        ftn: crate::ftn::Metadata::default(),
                         conference: descriptor.conference,
                         from: HeaderText::default(),
                         to: HeaderText::default(),
@@ -819,8 +825,12 @@ impl QwkPackage {
                     );
                 }
                 let raw_date = trim_field(&msg.date_time);
+                let mut ftn = crate::ftn::Metadata::parse(recovered.as_ref().map_or(&msg.text[..], |body| &body.text[..]));
                 let (date, date_str) = match parse_qwk_date(&raw_date) {
-                    Ok(date) => (date, date.format("%Y-%m-%d %H:%M").to_string()),
+                    Ok(date) => {
+                        let date = ftn.local_date(date);
+                        (date, date.format("%Y-%m-%d %H:%M").to_string())
+                    }
                     Err(error) => {
                         log::warn!("invalid QWK date for message {}: {raw_date:?}: {error}", msg.msg_number);
                         (chrono::NaiveDateTime::default(), raw_date)
@@ -830,6 +840,7 @@ impl QwkPackage {
                     index,
                     number: msg.msg_number,
                     ref_number: msg.ref_msg_number,
+                    ftn,
                     conference: msg.conference_number,
                     from,
                     to,

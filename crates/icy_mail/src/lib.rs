@@ -5,6 +5,7 @@ mod blue_wave_tests;
 pub mod charset;
 pub mod drafts;
 pub mod editor;
+pub mod ftn;
 pub mod ignore;
 pub mod logging;
 pub mod message_base;

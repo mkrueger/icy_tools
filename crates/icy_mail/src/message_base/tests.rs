@@ -219,6 +219,15 @@ fn posting_to_a_single_base_follows_the_jam_specification() {
     assert_eq!(message.header().reply_crc, JamMessageBase::crc(&BString::from("2:240/2 0002abcd")));
     assert_eq!(subfield_text(&message, SubfieldType::FTSKludge).as_deref(), Some("CHRS: CP437 2"));
     assert!(subfield_text(&message, SubfieldType::PID).is_some_and(|pid| pid.starts_with("IcyMail ")));
+    let offset = subfield_text(&message, SubfieldType::TZUTCInfo).unwrap();
+    assert!(!offset.starts_with('+'));
+    let mut metadata = crate::ftn::Metadata::parse(format!("\x01TZUTC: {offset}\n").as_bytes());
+    let written = chrono::DateTime::from_timestamp(i64::from(message.header().date_written), 0)
+        .unwrap()
+        .naive_utc();
+    metadata.local_date(written);
+    let instant = metadata.utc_timestamp.unwrap();
+    assert!((chrono::Utc::now().timestamp() - instant).abs() < 10);
     assert!(
         subfield_text(&message, SubfieldType::DateWritten).is_none(),
         "JAM dates are local time without IcyBoard's subfield"
@@ -308,6 +317,7 @@ fn posting_to_icyboard_writes_like_icyboard_and_creates_missing_bases() {
     assert_eq!(message.text().to_string(), "Grüße\nfrom the sysop");
     assert_eq!(subfield_text(&message, SubfieldType::FTSKludge).as_deref(), Some("CHRS: UTF-8 4"));
     assert!(subfield_text(&message, SubfieldType::DateWritten).is_some());
+    assert_eq!(subfield_text(&message, SubfieldType::TZUTCInfo).as_deref(), Some("0000"));
     assert_eq!(
         message.header().attributes,
         attributes::MSG_LOCAL | attributes::MSG_PRIVATE | attributes::MSG_TYPEECHO
@@ -353,6 +363,68 @@ fn package_reads_message_bases_in_place() {
     let message = package.get_message(1).unwrap();
     assert_eq!((message.msg_number, message.ref_msg_number), (2, 1));
     assert_eq!(package.readable_text(&message.text, false).as_ref(), b"A reply\n");
+}
+
+#[test]
+fn jam_timezone_subfields_and_legacy_kludges_normalize_dates() {
+    use chrono::TimeZone;
+
+    let wall = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap().naive_utc();
+    for extra in [field(SubfieldType::TZUTCInfo, "-0330"), field(SubfieldType::FTSKludge, "TZUTCINFO: -0330")] {
+        let dir = TempDir::new();
+        let path = dir.path().join("time");
+        let mut base = JamMessageBase::create(&path).unwrap();
+        write_fido(&mut base, "Alice", "Timezone", "Text\r", 0, vec![extra]);
+        drop(base);
+        let package = QwkPackage::load_from_file(&path.with_extension("jhr")).unwrap();
+        let expected = chrono::FixedOffset::west_opt(3 * 3600 + 30 * 60).unwrap().from_local_datetime(&wall).unwrap();
+        assert_eq!(package.infos[0].ftn.utc_offset, Some(-12600));
+        assert_eq!(package.infos[0].ftn.utc_timestamp, Some(expected.timestamp()));
+        assert_eq!(package.infos[0].date, expected.with_timezone(&chrono::Local).naive_local());
+        assert_eq!(package.message_base.as_ref().unwrap().details(0).unwrap().written, Some(package.infos[0].date));
+    }
+}
+
+#[test]
+fn icyboard_rfc3339_dates_override_tossed_timezone_declarations() {
+    let mut header = JamMessageHeader::default();
+    header.sub_fields.push(field(SubfieldType::DateWritten, "2026-01-01T00:15:00Z"));
+    header.sub_fields.push(field(SubfieldType::TZUTCInfo, "-1200"));
+    let indexed = index_message(0, &header);
+    let expected = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:15:00Z").unwrap();
+    assert_eq!(indexed.date, Some(expected.with_timezone(&chrono::Local).naive_local()));
+    assert_eq!(indexed.ftn.utc_timestamp, Some(expected.timestamp()));
+    assert_eq!(indexed.ftn.utc_offset, Some(-12 * 3600));
+}
+
+#[test]
+fn jam_id_threading_does_not_require_numeric_links_or_matching_subjects() {
+    let dir = TempDir::new();
+    let path = dir.path().join("thread");
+    let mut base = JamMessageBase::create(&path).unwrap();
+    write_fido(&mut base, "Alice", "Original", "First\r", 0, vec![field(SubfieldType::MsgID, "2:1/1 12345678")]);
+    write_fido(&mut base, "Bob", "Changed", "Answer\r", 0, vec![field(SubfieldType::ReplyID, "2:1/1 12345678")]);
+    drop(base);
+    let package = QwkPackage::load_from_file(&path.with_extension("jhr")).unwrap();
+    let rows = crate::threading::build_threads(&package.infos.iter().collect::<Vec<_>>());
+    assert_eq!(rows.iter().map(|row| (row.index, row.depth)).collect::<Vec<_>>(), [(0, 0), (1, 1)]);
+}
+
+#[test]
+fn editing_preserves_original_timezone_and_instant() {
+    let dir = TempDir::new();
+    let path = dir.path().join("time");
+    let mut base = JamMessageBase::create(&path).unwrap();
+    write_fido(&mut base, "Alice", "Original", "First\r", 0, vec![field(SubfieldType::TZUTCInfo, "0545")]);
+    drop(base);
+    let base = MessageBase::open(&path.with_extension("jhr")).unwrap();
+    let before = base.messages[0].clone();
+    base.update(0, &post(0, "Changed", "Edited")).unwrap();
+    let saved = stored(&path, 1);
+    assert_eq!(subfield_text(&saved, SubfieldType::TZUTCInfo).as_deref(), Some("0545"));
+    let reopened = MessageBase::open(&path.with_extension("jhr")).unwrap();
+    assert_eq!(reopened.messages[0].date, before.date);
+    assert_eq!(reopened.messages[0].ftn.utc_timestamp, before.ftn.utc_timestamp);
 }
 
 #[test]

@@ -38,22 +38,33 @@ impl Row {
 
 /// Groups messages into reply threads.
 ///
-/// QWK carries a `ref_msg_number` back-pointer, but many BBS packets leave it empty, so
-/// messages that reference nothing fall back to grouping by normalized subject.
+/// Numeric back-pointers take precedence, followed by FidoNet MSGID/REPLY linkage and
+/// normalized subjects. All links stay within their conference.
 /// Threads are emitted depth-first, roots ordered by their newest message.
 pub fn build_threads(infos: &[&MessageInfo]) -> Vec<Row> {
-    let by_number: HashMap<u32, usize> = infos
+    let by_number: HashMap<(u16, u32), usize> = infos
         .iter()
         .enumerate()
         .filter(|(_, info)| info.number != 0)
-        .map(|(pos, info)| (info.number, pos))
+        .map(|(pos, info)| ((info.conference, info.number), pos))
         .collect();
 
-    // First message seen per subject, used when `ref_msg_number` is missing.
-    let mut subject_root: HashMap<&str, usize> = HashMap::new();
+    let mut by_id = HashMap::new();
+    let mut subject_root: HashMap<(u16, &str), usize> = HashMap::new();
     for (pos, info) in infos.iter().enumerate() {
+        if let Some(id) = info.ftn.msgid.as_deref() {
+            let entry = by_id.entry((info.conference, id)).or_insert(Some(pos));
+            if *entry != Some(pos) {
+                log::warn!(
+                    "Duplicate FidoNet MSGID {:?} in conference {}; ignoring ambiguous ID links",
+                    String::from_utf8_lossy(id),
+                    info.conference
+                );
+                *entry = None;
+            }
+        }
         if !info.subject_key.is_empty() {
-            subject_root.entry(info.subject_key.as_str()).or_insert(pos);
+            subject_root.entry((info.conference, info.subject_key.as_str())).or_insert(pos);
         }
     }
 
@@ -62,10 +73,22 @@ pub fn build_threads(infos: &[&MessageInfo]) -> Vec<Row> {
 
     for (pos, info) in infos.iter().enumerate() {
         let parent = by_number
-            .get(&info.ref_number)
+            .get(&(info.conference, info.ref_number))
             .copied()
-            .or_else(|| subject_root.get(info.subject_key.as_str()).copied())
-            .filter(|parent| *parent != pos);
+            .filter(|parent| *parent != pos)
+            .or_else(|| {
+                info.ftn
+                    .reply
+                    .as_deref()
+                    .and_then(|id| by_id.get(&(info.conference, id)).copied().flatten())
+                    .filter(|parent| *parent != pos)
+            })
+            .or_else(|| {
+                subject_root
+                    .get(&(info.conference, info.subject_key.as_str()))
+                    .copied()
+                    .filter(|parent| *parent != pos)
+            });
 
         match parent {
             Some(parent) => children[parent].push(pos),
@@ -170,6 +193,7 @@ mod tests {
             index,
             number,
             ref_number,
+            ftn: crate::ftn::Metadata::default(),
             conference: 0,
             from: Default::default(),
             to: Default::default(),
@@ -217,6 +241,62 @@ mod tests {
         let rows = rows_of(&infos);
         assert!(rows.iter().all(|r| r.depth == 0));
         assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn message_ids_link_changed_subjects_and_out_of_order_messages() {
+        let mut infos = vec![info(0, 11, 999, "Changed subject", 1), info(1, 10, 0, "Original", 0)];
+        infos[0].ftn = crate::ftn::Metadata::parse(b"\x01REPLY: \"other network\" 1234ABCD\r");
+        infos[1].ftn = crate::ftn::Metadata::parse(b"\x01MSGID: \"other network\" 1234ABCD\r");
+        let rows = rows_of(&infos);
+        assert_eq!(rows.iter().map(|r| (r.index, r.depth)).collect::<Vec<_>>(), [(1, 0), (0, 1)]);
+    }
+
+    #[test]
+    fn numeric_links_take_precedence_and_self_links_allow_id_fallback() {
+        let mut infos = vec![info(0, 10, 0, "Numeric parent", 0), info(1, 11, 0, "ID parent", 1), info(2, 12, 10, "Reply", 2)];
+        infos[1].ftn = crate::ftn::Metadata::parse(b"\x01MSGID: 2:1/1 12345678\n");
+        infos[2].ftn = crate::ftn::Metadata::parse(b"\x01REPLY: 2:1/1 12345678\n");
+        let rows = rows_of(&infos);
+        let parent = rows.iter().position(|row| row.index == 0).unwrap();
+        assert_eq!((rows[parent + 1].index, rows[parent + 1].depth), (2, 1));
+
+        infos[2].ref_number = 12;
+        let rows = rows_of(&infos);
+        let parent = rows.iter().position(|row| row.index == 1).unwrap();
+        assert_eq!((rows[parent + 1].index, rows[parent + 1].depth), (2, 1));
+    }
+
+    #[test]
+    fn links_and_subjects_never_cross_conferences() {
+        let mut infos = vec![info(0, 10, 0, "Topic", 0), info(1, 11, 10, "Topic", 1)];
+        infos[0].ftn = crate::ftn::Metadata::parse(b"\x01MSGID: 2:1/1 12345678\n");
+        infos[1].ftn = crate::ftn::Metadata::parse(b"\x01REPLY: 2:1/1 12345678\n");
+        infos[1].conference = 1;
+        assert!(rows_of(&infos).iter().all(|row| row.depth == 0));
+    }
+
+    #[test]
+    fn duplicate_ids_are_ambiguous_and_id_comparison_is_exact() {
+        let mut infos = vec![info(0, 10, 0, "First", 0), info(1, 11, 0, "Second", 1), info(2, 12, 0, "Reply", 2)];
+        infos[0].ftn = crate::ftn::Metadata::parse(b"\x01MSGID: 2:1/1 1234abcd\n");
+        infos[1].ftn = infos[0].ftn.clone();
+        infos[2].ftn = crate::ftn::Metadata::parse(b"\x01REPLY: 2:1/1 1234abcd\n");
+        assert!(rows_of(&infos).iter().all(|row| row.depth == 0));
+        infos[1].ftn = crate::ftn::Metadata::default();
+        infos[2].ftn = crate::ftn::Metadata::parse(b"\x01REPLY: 2:1/1 1234ABCD\n");
+        assert!(rows_of(&infos).iter().all(|row| row.depth == 0));
+    }
+
+    #[test]
+    fn id_cycles_and_self_replies_keep_every_message_once() {
+        let mut infos = vec![info(0, 10, 0, "First", 0), info(1, 11, 0, "Second", 1), info(2, 12, 0, "Self", 2)];
+        infos[0].ftn = crate::ftn::Metadata::parse(b"\x01MSGID: 2:1/1 00000001\n\x01REPLY: 2:1/1 00000002\n");
+        infos[1].ftn = crate::ftn::Metadata::parse(b"\x01MSGID: 2:1/1 00000002\n\x01REPLY: 2:1/1 00000001\n");
+        infos[2].ftn = crate::ftn::Metadata::parse(b"\x01MSGID: 2:1/1 00000003\n\x01REPLY: 2:1/1 00000003\n");
+        let mut seen: Vec<_> = rows_of(&infos).iter().map(|row| row.index).collect();
+        seen.sort_unstable();
+        assert_eq!(seen, [0, 1, 2]);
     }
 
     #[test]

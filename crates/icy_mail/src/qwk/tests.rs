@@ -100,6 +100,44 @@ pub(super) fn control_dat() -> Vec<u8> {
 }
 
 #[test]
+fn ftn_identity_and_timezones_survive_qwk_indexing_and_warm_cache() {
+    let dir = TempDir::new();
+    let path = dir.path().join("FTN.QWK");
+    let mut messages = vec![b' '; 128];
+    for (number, subject, body) in [
+        (1, "Original", b"\x01MSGID: 2:1/1 12345678\xe3\x01TZUTC: 0545\xe3First\xe3".as_slice()),
+        (2, "Changed", b"\x01REPLY: 2:1/1 12345678\xe3\x01TZUTCINFO: +0545\xe3Answer\xe3".as_slice()),
+    ] {
+        let blocks = body.len().div_ceil(128);
+        messages.extend(header(b' ', number, "01-01-2601:15", "All", "Alice", subject, 0, blocks as u32 + 1, 1));
+        messages.extend(body);
+        messages.resize(messages.len() + blocks * 128 - body.len(), b' ');
+    }
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    let options = zip::write::SimpleFileOptions::default();
+    zip.start_file("CONTROL.DAT", options).unwrap();
+    zip.write_all(&control_dat()).unwrap();
+    zip.start_file("MESSAGES.DAT", options).unwrap();
+    zip.write_all(&messages).unwrap();
+    zip.finish().unwrap();
+    let cache = crate::qwk::ExtractionCache::new(dir.path().join("cache"), 30);
+    let plain = QwkPackage::load_from_file(&path).unwrap();
+    let cold = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    let warm = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    let expected = chrono::DateTime::parse_from_rfc3339("2025-12-31T19:30:00Z").unwrap();
+    for package in [&plain, &cold, &warm] {
+        assert_eq!(package.infos, plain.infos);
+        assert_eq!(package.infos[0].ftn.utc_offset, Some(20700));
+        assert_eq!(package.infos[0].ftn.utc_timestamp, Some(expected.timestamp()));
+        assert_eq!(package.infos[0].date, expected.with_timezone(&chrono::Local).naive_local());
+        assert_eq!(package.infos[1].date, package.infos[0].date);
+        let rows = crate::threading::build_threads(&package.infos.iter().collect::<Vec<_>>());
+        assert_eq!(rows.iter().map(|row| (row.index, row.depth)).collect::<Vec<_>>(), [(0, 0), (1, 1)]);
+    }
+    assert_eq!(warm.cached_threads(), cold.cached_threads());
+}
+
+#[test]
 fn all_qwk_statuses_open_without_scanning_bodies_as_headers() {
     let statuses = b" -*+~`%^!#$";
     let mut messages = vec![b' '; 128];

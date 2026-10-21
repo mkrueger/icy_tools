@@ -73,6 +73,7 @@ pub struct Message {
     pub area: u16,
     pub number: u32,
     pub reply_to: u32,
+    pub ftn: crate::ftn::Metadata,
     pub from: Vec<u8>,
     pub to: Vec<u8>,
     pub subject: Vec<u8>,
@@ -589,7 +590,7 @@ impl MessageBase {
             number: header.message_number,
             attributes: header.attributes,
             times_read: header.times_read,
-            written: message_date(header),
+            written: message_date(header, &mut crate::ftn::Metadata::parse(&display_text(header, &[]))),
             received: date(header.date_received),
             processed: date(header.date_processed),
             reply_to: header.reply_to,
@@ -894,9 +895,14 @@ impl Area {
         if self.icyboard {
             header.date_written = u32::try_from(now.timestamp()).unwrap_or(u32::MAX);
             header.sub_fields.push(MessageSubfield::new(SubfieldType::DateWritten, now.to_rfc3339().into()));
+            header.sub_fields.push(MessageSubfield::new(SubfieldType::TZUTCInfo, "0000".into()));
         } else {
-            let local = now.with_timezone(&chrono::Local).naive_local().and_utc();
-            header.date_written = u32::try_from(local.timestamp()).unwrap_or(u32::MAX);
+            let local = now.with_timezone(&chrono::Local);
+            header.date_written = u32::try_from(local.naive_local().and_utc().timestamp()).unwrap_or(u32::MAX);
+            header.sub_fields.push(MessageSubfield::new(
+                SubfieldType::TZUTCInfo,
+                crate::ftn::format_offset(local.offset().local_minus_utc()).into(),
+            ));
         }
         JamMessage::from_stored(header, text.into())
     }
@@ -1037,16 +1043,20 @@ fn deleted_message(base: &JamMessageBase, number: u32) -> jamjam::Result<Option<
 }
 
 fn index_message(area: u16, header: &JamMessageHeader) -> Message {
-    let charset = crate::charset::declared(&display_text(header, &[]));
+    let text = display_text(header, &[]);
+    let charset = crate::charset::declared(&text);
+    let mut ftn = crate::ftn::Metadata::parse(&text);
+    let date = message_date(header, &mut ftn);
     let field = |kind| subfield(header, kind).map(|value| value.to_vec()).unwrap_or_default();
     Message {
         area,
         number: header.message_number,
         reply_to: header.reply_to,
+        ftn,
         from: field(SubfieldType::SenderName),
         to: field(SubfieldType::RecvName),
         subject: field(SubfieldType::Subject),
-        date: message_date(header),
+        date,
         private: header.attributes & attributes::MSG_PRIVATE != 0,
         local: header.attributes & attributes::MSG_LOCAL != 0,
         lines: 0,
@@ -1058,17 +1068,18 @@ fn index_message(area: u16, header: &JamMessageHeader) -> Message {
 }
 
 /// IcyBoard stores the UTC time and repeats it as RFC 3339; the JAM specification has local time.
-fn message_date(header: &JamMessageHeader) -> Option<chrono::NaiveDateTime> {
+fn message_date(header: &JamMessageHeader, ftn: &mut crate::ftn::Metadata) -> Option<chrono::NaiveDateTime> {
     if let Some(date) = subfield(header, SubfieldType::DateWritten)
         .and_then(|value| std::str::from_utf8(value).ok())
         .and_then(|value| chrono::DateTime::parse_from_rfc3339(value.trim()).ok())
     {
+        ftn.utc_timestamp = Some(date.timestamp());
         return Some(date.with_timezone(&chrono::Local).naive_local());
     }
     (header.date_written != 0)
         .then(|| chrono::DateTime::from_timestamp(i64::from(header.date_written), 0))
         .flatten()
-        .map(|date| date.naive_utc())
+        .map(|date| ftn.local_date(date.naive_utc()))
 }
 
 fn subfield(header: &JamMessageHeader, kind: SubfieldType) -> Option<&BString> {

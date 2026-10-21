@@ -21,6 +21,29 @@ pub(crate) fn packet(path: &Path, files: &[(String, Vec<u8>)]) {
 }
 
 #[test]
+fn blue_wave_indexes_ftn_metadata_and_timezone_on_cold_and_warm_loads() {
+    let dir = TempDir::new();
+    let path = dir.path().join("FTN.BW");
+    let mut files = crate::blue_wave::fixture_files(3, false);
+    let body = b" \x01MSGID: 2:1/1 12345678\r\n\x01REPLY: 2:1/1 abcdef01\r\n\x01TZUTC: -0330\r\nHello\r\n";
+    files.iter_mut().find(|(name, _)| name == "TEST.FTI").unwrap().1[174..178].copy_from_slice(&(body.len() as u32).to_le_bytes());
+    files.iter_mut().find(|(name, _)| name == "TEST.DAT").unwrap().1 = body.to_vec();
+    packet(&path, &files);
+    let cache = ExtractionCache::new(dir.path().join("cache"), 30);
+    let plain = QwkPackage::load_from_file(&path).unwrap();
+    let cold = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    let warm = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
+    let expected = chrono::DateTime::parse_from_rfc3339("2024-01-01T16:04:56Z").unwrap();
+    for package in [&plain, &cold, &warm] {
+        assert_eq!(package.infos, plain.infos);
+        assert_eq!(package.infos[0].ftn.msgid.as_deref(), Some(b"2:1/1 12345678".as_slice()));
+        assert_eq!(package.infos[0].ftn.reply.as_deref(), Some(b"2:1/1 abcdef01".as_slice()));
+        assert_eq!(package.infos[0].ftn.utc_timestamp, Some(expected.timestamp()));
+        assert_eq!(package.infos[0].date, expected.with_timezone(&chrono::Local).naive_local());
+    }
+}
+
+#[test]
 fn blue_wave_native_metadata_and_bodies_survive_cold_warm_and_disabled_cache() {
     for (level, uses_upl) in [(2, false), (3, false), (3, true)] {
         let dir = TempDir::new();
