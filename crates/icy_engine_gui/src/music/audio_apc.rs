@@ -645,6 +645,11 @@ fn decode_ogg_opus(_data: &[u8]) -> Option<Vec<f32>> {
 #[derive(Default, Clone)]
 struct Patch {
     frames: Arc<[f32]>,
+    /// When this buffer was last queued (`AudioApcState::queue_clock`), or
+    /// `None` while it has never been. SyncTERM empties a slot on `Queue`, so
+    /// a queued buffer kept here for replay is a courtesy a conforming board
+    /// never relies on, and the first thing to go when memory is short.
+    queued: Option<u64>,
 }
 
 struct PatchSource {
@@ -807,6 +812,10 @@ pub struct AudioApcState {
     deferred: Vec<Vec<AudioApcCommand>>,
     decode_tx: SyncSender<DecodeJob>,
     decode_rx: Receiver<DecodeResult>,
+    /// Ticks once per `Queue`; orders queued patches oldest-first for eviction.
+    queue_clock: u64,
+    /// Ceiling on resident patches; [`MAX_TOTAL_PATCH_BYTES`] outside tests.
+    patch_budget: usize,
 }
 
 impl Default for AudioApcState {
@@ -828,6 +837,8 @@ impl AudioApcState {
             deferred: vec![Vec::new(); PATCH_SLOTS],
             decode_tx,
             decode_rx,
+            queue_clock: 0,
+            patch_budget: MAX_TOTAL_PATCH_BYTES,
         }
     }
 
@@ -871,7 +882,7 @@ impl AudioApcState {
         let index = slot as usize;
         self.generations[index] = self.generations[index].wrapping_add(1);
         self.pending[index] = true;
-        self.patches[index].frames = Arc::default();
+        self.patches[index] = Patch::default();
         self.deferred[index].clear();
         let job = DecodeJob {
             slot,
@@ -909,19 +920,55 @@ impl AudioApcState {
         if frames.is_empty() {
             return;
         }
-        // Replacing the slot frees its old buffer, so only the others count.
-        let resident: usize = self
-            .patches
+        let needed = frames.len() * std::mem::size_of::<f32>();
+        if self.resident_except(slot) + needed > self.patch_budget {
+            self.evict_queued(slot, needed);
+        }
+        if self.resident_except(slot) + needed > self.patch_budget {
+            log::warn!("Audio APC: patch memory budget exhausted, dropping slot {slot}");
+            return;
+        }
+        self.patches[slot as usize] = Patch { frames, queued: None };
+    }
+
+    /// Bytes held by every slot but `slot` (replacing a slot frees its old buffer).
+    fn resident_except(&self, slot: u8) -> usize {
+        self.patches
             .iter()
             .enumerate()
             .filter(|(index, _)| *index != slot as usize)
             .map(|(_, patch)| patch.frames.len() * std::mem::size_of::<f32>())
-            .sum();
-        if resident + frames.len() * std::mem::size_of::<f32>() > MAX_TOTAL_PATCH_BYTES {
-            log::warn!("Audio APC: patch memory budget exhausted, dropping slot {slot}");
-            return;
+            .sum()
+    }
+
+    /// Frees already-queued patches, oldest first, until `needed` more bytes fit.
+    ///
+    /// Queued buffers are kept so a board may re-trigger a slot without
+    /// reloading it, but SyncTERM's `Queue` empties the slot, so no conforming
+    /// board depends on one surviving; a buffer that has never been queued is
+    /// still pending its first play and is never evicted. Without this, every
+    /// sound a session ever queued stayed resident, and a board that loads
+    /// each play into a fresh slot ran into the ceiling and fell silent for the
+    /// rest of the connection. A channel already playing a patch holds its own
+    /// reference, so eviction never cuts off what is sounding.
+    fn evict_queued(&mut self, slot: u8, needed: usize) {
+        let mut queued: Vec<(u64, usize)> = self
+            .patches
+            .iter()
+            .enumerate()
+            .filter(|(index, patch)| *index != slot as usize && !patch.frames.is_empty())
+            .filter_map(|(index, patch)| patch.queued.map(|at| (at, index)))
+            .collect();
+        queued.sort_unstable();
+        let mut resident = self.resident_except(slot);
+        for (_, index) in queued {
+            if resident + needed <= self.patch_budget {
+                break;
+            }
+            resident -= self.patches[index].frames.len() * std::mem::size_of::<f32>();
+            self.patches[index] = Patch::default();
+            log::debug!("Audio APC: evicted queued slot {index} to make room for slot {slot}");
         }
-        self.patches[slot as usize] = Patch { frames };
     }
 
     /// Decodes an audio file into stereo f32 frames at [`SAMPLE_RATE`].
@@ -1026,6 +1073,9 @@ impl AudioApcState {
                 if frames.is_empty() {
                     return;
                 }
+                // Kept for replay, but now evictable (see `evict_queued`).
+                self.queue_clock += 1;
+                self.patches[slot as usize].queued = Some(self.queue_clock);
                 let Some(mixer) = mixer else {
                     log::warn!("Audio APC: cannot queue channel {channel}: no audio mixer");
                     return;
@@ -1509,5 +1559,81 @@ mod tests {
         // Out-of-range writes must not corrupt the mask.
         status.set_active(200, true);
         assert_eq!(status.active_mask(), 1 << 9);
+    }
+
+    fn queue_on(channel: u8, slot: u8) -> AudioApcCommand {
+        AudioApcCommand::Queue {
+            channel,
+            slot,
+            fade_in: 0,
+            looping: false,
+            left_db: 0.0,
+            right_db: 0.0,
+        }
+    }
+
+    fn resident(state: &AudioApcState) -> usize {
+        state.patches.iter().map(|patch| patch.frames.len() * std::mem::size_of::<f32>()).sum()
+    }
+
+    /// Room for exactly three patches of `FRAMES` samples.
+    const FRAMES: usize = 4096;
+    fn three_patch_state() -> AudioApcState {
+        let mut state = AudioApcState::new();
+        state.patch_budget = FRAMES * std::mem::size_of::<f32>() * 3;
+        state
+    }
+
+    #[test]
+    fn a_board_that_loads_every_play_fresh_never_runs_out() {
+        // SyncTERM empties a slot on Queue, so a board may load each play into a
+        // new slot. Before eviction every queued buffer stayed resident and the
+        // fourth load here was dropped; a live session went silent the same way.
+        let (mixer, _output) = rodio::mixer::mixer(stereo(), sample_rate());
+        let mut state = three_patch_state();
+        for slot in 0..40u8 {
+            state.store(slot, vec![0.25; FRAMES]);
+            assert_eq!(state.patches[slot as usize].frames.len(), FRAMES, "slot {slot} was dropped");
+            state.handle(Some(&mixer), None, queue_on(4, slot));
+        }
+        assert!(resident(&state) <= state.patch_budget);
+    }
+
+    #[test]
+    fn a_patch_that_was_never_queued_is_never_evicted() {
+        let (mixer, _output) = rodio::mixer::mixer(stereo(), sample_rate());
+        let mut state = three_patch_state();
+        // A board preloading its sounds: the budget is full and nothing has played.
+        for slot in 0..3u8 {
+            state.store(slot, vec![0.25; FRAMES]);
+        }
+        state.store(9, vec![0.25; FRAMES]);
+        assert!(state.patches[9].frames.is_empty(), "nothing has been queued, so nothing may be evicted");
+        for slot in 0..3usize {
+            assert_eq!(state.patches[slot].frames.len(), FRAMES, "preloaded slot {slot} was evicted");
+        }
+
+        // Once one of them has played, its buffer is the one that goes.
+        state.handle(Some(&mixer), None, queue_on(4, 1));
+        state.store(9, vec![0.25; FRAMES]);
+        assert_eq!(state.patches[9].frames.len(), FRAMES);
+        assert!(state.patches[1].frames.is_empty());
+        assert_eq!(state.patches[0].frames.len(), FRAMES);
+        assert_eq!(state.patches[2].frames.len(), FRAMES);
+    }
+
+    #[test]
+    fn the_oldest_queued_patch_is_evicted_first() {
+        let (mixer, _output) = rodio::mixer::mixer(stereo(), sample_rate());
+        let mut state = three_patch_state();
+        for slot in 0..3u8 {
+            state.store(slot, vec![0.25; FRAMES]);
+        }
+        state.handle(Some(&mixer), None, queue_on(4, 2));
+        state.handle(Some(&mixer), None, queue_on(5, 0));
+        state.store(9, vec![0.25; FRAMES]);
+        assert!(state.patches[2].frames.is_empty(), "slot 2 was queued first");
+        assert_eq!(state.patches[0].frames.len(), FRAMES, "the more recently queued slot stays replayable");
+        assert_eq!(state.patches[1].frames.len(), FRAMES);
     }
 }
