@@ -1,4 +1,5 @@
 pub(crate) mod io;
+pub use io::save_icy_draw_with_preview;
 pub use io::{atari_st_buffer, atari_st_columns, atari_st_font, atari_st_resolution, atari_st_text_color, atascii_buffer};
 pub use io::{
     petscii_background, petscii_buffer, petscii_charset, petscii_font, petscii_screen_code, PetsciiCase, PetsciiMachine, PET_PHOSPHORS, VDC_COLORS_OF_C64,
@@ -102,6 +103,7 @@ impl LoadData {
         self.convert_to_utf8
     }
 
+    /// Interpret ANSI/text input as UTF-8 even when it has no byte-order mark.
     pub fn with_convert_to_utf8(mut self, convert: bool) -> Self {
         self.convert_to_utf8 = convert;
         self

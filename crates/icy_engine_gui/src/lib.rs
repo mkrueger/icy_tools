@@ -94,6 +94,11 @@ pub use theme::*;
 pub mod render_unicode;
 pub use render_unicode::*;
 
+mod terminal_unicode;
+#[cfg(feature = "egui")]
+pub use terminal_unicode::request_unicode_ui_fonts;
+pub use terminal_unicode::{render_unicode_glyph_to_rgba, render_unicode_region_to_rgba, render_unicode_screen_to_rgba};
+
 pub mod unicode_glyph_cache;
 pub use unicode_glyph_cache::*;
 

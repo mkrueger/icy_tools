@@ -442,6 +442,11 @@ pub enum EditorUndoOp {
         layer: Box<Layer>,
         description: String,
     },
+    /// One row segment of a Unicode layer; undo and redo exchange it with the layer.
+    ReplaceUnicodeSpan {
+        layer: usize,
+        span: Box<icy_engine::UnicodeCellSpan>,
+    },
     ReplaceLayers {
         layers: Vec<Layer>,
         current_layer: usize,
@@ -457,7 +462,7 @@ impl EditorUndoOp {
             EditorUndoOp::Atomic { description, .. } | EditorUndoOp::ReplaceLayer { description, .. } | EditorUndoOp::ReplaceLayers { description, .. } => {
                 description.clone()
             }
-            EditorUndoOp::SetChar { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_char"),
+            EditorUndoOp::SetChar { .. } | EditorUndoOp::ReplaceUnicodeSpan { .. } => fl!(crate::LANGUAGE_LOADER, "undo-set_char"),
             EditorUndoOp::SwapChar { .. } => String::new(),
             EditorUndoOp::AddLayer { .. } => fl!(crate::LANGUAGE_LOADER, "undo-add_layer"),
             EditorUndoOp::RemoveLayer { .. } => fl!(crate::LANGUAGE_LOADER, "undo-remove_layer"),
@@ -561,6 +566,16 @@ impl EditorUndoOp {
                 for op in operations.iter_mut().rev() {
                     op.undo(edit_state)?;
                 }
+                Ok(())
+            }
+            EditorUndoOp::ReplaceUnicodeSpan { layer, span } => {
+                let buffer = edit_state.get_buffer_mut();
+                let current = buffer
+                    .layers
+                    .get_mut(*layer)
+                    .ok_or_else(|| EngineError::Generic(format!("Invalid layer index: {layer}")))?;
+                current.swap_unicode_span(span);
+                buffer.mark_line_dirty(span.row());
                 Ok(())
             }
             EditorUndoOp::ReplaceLayer { index, layer, .. } => {
@@ -696,8 +711,10 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::Crop { orig_size, layers, .. } => {
-                edit_state.get_buffer_mut().set_size(*orig_size);
-                std::mem::swap(layers, &mut edit_state.get_buffer_mut().layers);
+                let buffer = edit_state.get_buffer_mut();
+                let current = std::mem::take(&mut buffer.layers);
+                buffer.set_size(*orig_size);
+                buffer.layers = std::mem::replace(layers, current);
                 edit_state.set_mask_size();
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
@@ -1063,6 +1080,16 @@ impl EditorUndoOp {
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
             }
+            EditorUndoOp::ReplaceUnicodeSpan { layer, span } => {
+                let buffer = edit_state.get_buffer_mut();
+                let current = buffer
+                    .layers
+                    .get_mut(*layer)
+                    .ok_or_else(|| EngineError::Generic(format!("Invalid layer index: {layer}")))?;
+                current.swap_unicode_span(span);
+                buffer.mark_line_dirty(span.row());
+                Ok(())
+            }
             EditorUndoOp::ReplaceLayer { index, layer, .. } => {
                 let current = edit_state
                     .get_buffer_mut()
@@ -1202,8 +1229,10 @@ impl EditorUndoOp {
                 Ok(())
             }
             EditorUndoOp::Crop { size, layers, .. } => {
-                edit_state.get_buffer_mut().set_size(*size);
-                std::mem::swap(layers, &mut edit_state.get_buffer_mut().layers);
+                let buffer = edit_state.get_buffer_mut();
+                let current = std::mem::take(&mut buffer.layers);
+                buffer.set_size(*size);
+                buffer.layers = std::mem::replace(layers, current);
                 edit_state.set_mask_size();
                 edit_state.get_buffer_mut().mark_dirty();
                 Ok(())
@@ -1721,6 +1750,7 @@ mod collab_mapping {
                 | EditorUndoOp::ChangeFontSlot { .. }
                 | EditorUndoOp::UpdateLayerProperties { .. }
                 | EditorUndoOp::ReplaceLayer { .. }
+                | EditorUndoOp::ReplaceUnicodeSpan { .. }
                 | EditorUndoOp::ReplaceLayers { .. }
                 | EditorUndoOp::SetUseAspectRatio { .. }
                 | EditorUndoOp::SetFontDimensions { .. }

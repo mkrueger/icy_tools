@@ -32,6 +32,7 @@ pub(crate) use avatar::{load_avatar, save_avatar};
 pub(crate) use bin::{load_bin, save_bin};
 pub(crate) use ctrla::{load_ctrla, save_ctrla};
 pub(crate) use ice_draw::{load_ice_draw, save_ice_draw};
+pub use icy_draw::save_icy_draw_with_preview;
 pub(crate) use icy_draw::{load_icy_draw, save_icy_draw};
 pub(crate) use pcboard::{load_pcboard, save_pcboard};
 pub(crate) use renegade::{load_renegade, save_renegade};

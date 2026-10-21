@@ -86,6 +86,7 @@ All keywords below are stored as `icYD` records.
 | `SAUCE` | optional | yes* | Raw `icy_sauce::SauceRecord` bytes |
 | `FONT` | optional | yes* | Font slot + name + PSF2 bytes |
 | `LAYER` | yes* | yes* | Layer header + layer payload (text or image) |
+| `GRAPHEME` | optional | yes* | Unicode grapheme metadata for the preceding text layer (v6) |
 | `TAG` | optional | yes* | Tag list |
 | `END` | yes | never | Terminator |
 
@@ -102,17 +103,21 @@ Ordering rules (strict):
 - `ICED` **must** appear exactly once.
 - Readers should stop interpreting metadata after `END`.
 
-### 3.3 `ICED` header (v1/v2)
+### 3.3 `ICED` header
 
 The `ICED` record contains a fixed-size binary header.
 
-Header size: **19 bytes** (unchanged between v1 and v2).
+Header size: **19 bytes** (unchanged through v6).
+
+Versions 3, 4 and 5 add layer effects, live text and nested groups respectively.
+Version 6 adds Unicode cell documents. Older readers must reject unsupported
+versions instead of loading them with different character widths.
 
 Layout:
 
 | Offset | Field | Type | Size | Description |
 | ---: | --- | --- | ---: | --- |
-| 0 | `version` | u16_le | 2 | Format version (`1` or `2`) |
+| 0 | `version` | u16_le | 2 | Format version (`1` through `6`) |
 | 2 | `type` | byte[3] | 3 | Type field: `[compression:u8][reserved:u16]` |
 | 5 | `buffer_type` | u16_le | 2 | `BufferType::to_byte()` stored as u16 |
 | 7 | `ice_mode` | u8 | 1 | `IceMode::to_byte()` |
@@ -127,6 +132,23 @@ Type field enums:
 - `compression`:
   - `0` = none
   - `2` = zstd
+
+#### Unicode cell documents (v6)
+
+A v6 header with `buffer_type = 0` enables Unicode grapheme/cell widths, even
+when the document is empty. Unicode characters occupy one or two cells.
+The regular `LAYER` payload still contains the first scalar and attributes of
+each cell, with blank continuation cells for wide characters.
+
+An optional `GRAPHEME` record directly after a text `LAYER` contains a version
+byte (`1`), followed by UTF-8 JSON of the form
+`{"0":{"1":{"text":"界","width":2},"3":{"text":"é","width":1}}}`.
+The outer keys are layer-local rows and the inner keys are starting columns.
+Each text value must be one extended grapheme cluster, with its terminal width
+matching `width`. Entries must not overlap or extend outside the layer; only
+widths 1 and 2 are accepted. The first scalar must match the `LAYER` cell.
+The record uses the file's normal compression. Non-Unicode documents retain
+their existing version.
 
 ### 3.4 `PALETTE` record (v1)
 

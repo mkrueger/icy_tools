@@ -163,6 +163,7 @@ impl EditState {
     }
 
     pub fn bake_layer_effects(&mut self, index: usize) -> Result<()> {
+        self.require_legacy_cells()?;
         let source = self
             .get_buffer()
             .layers
@@ -293,6 +294,9 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn anchor_layer(&mut self) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.merge_unicode_layer_down(self.get_current_layer()?);
+        }
         // Find the floating layer by role (it's at current_layer + 1)
         let floating_idx = self.get_current_layer();
 
@@ -342,6 +346,9 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn merge_layer_down(&mut self, layer: usize) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.merge_unicode_layer_down(layer);
+        }
         println!("Merging layer {} down", layer);
         if layer == 0 {
             return Err(crate::EngineError::Generic("Cannot merge down base layer".to_string()));
@@ -471,6 +478,9 @@ impl EditState {
     }
 
     pub fn set_layer_size(&mut self, layer: usize, size: impl Into<Size>) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.resize_unicode_layer(layer, size.into());
+        }
         if layer >= self.screen.buffer.layers.len() {
             return Err(crate::EngineError::Generic("Invalid layer index: {layer}".to_string()));
         }
@@ -493,6 +503,7 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn stamp_layer_down(&mut self) -> Result<()> {
+        self.require_legacy_cells()?;
         let _undo: crate::AtomicUndoGuard = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-stamp-down"));
         let layer_idx = self.screen.current_layer;
         println!("Stamping layer {} down", layer_idx);
@@ -556,6 +567,7 @@ impl EditState {
     /// Rotate the floating paste layer 90° clockwise.
     /// This is only used in paste mode and generates collaboration ROTATE command.
     pub fn paste_rotate(&mut self) -> Result<()> {
+        self.require_legacy_cells()?;
         self.require_cell_layer(self.get_current_layer()?)?;
         let current_layer = self.screen.current_layer;
         let font_dims = self.get_buffer().font_dimensions();
@@ -655,6 +667,10 @@ impl EditState {
     /// Flip the floating paste layer horizontally.
     /// This is only used in paste mode and generates collaboration FLIP_X command.
     pub fn paste_flip_x(&mut self) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.flip_unicode_layer(true);
+        }
+        self.require_legacy_cells()?;
         self.require_cell_layer(self.get_current_layer()?)?;
         let current_layer = self.screen.current_layer;
         let mut flip_tables = std::collections::HashMap::new();
@@ -682,6 +698,10 @@ impl EditState {
     /// Flip the floating paste layer vertically.
     /// This is only used in paste mode and generates collaboration FLIP_Y command.
     pub fn paste_flip_y(&mut self) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.flip_unicode_layer(false);
+        }
+        self.require_legacy_cells()?;
         self.require_cell_layer(self.get_current_layer()?)?;
         let current_layer = self.screen.current_layer;
         let mut flip_tables = std::collections::HashMap::new();
@@ -736,6 +756,7 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn make_layer_transparent(&mut self) -> Result<()> {
+        self.require_legacy_cells()?;
         self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-make_transparent"));
         let layer_idx = self.screen.current_layer;

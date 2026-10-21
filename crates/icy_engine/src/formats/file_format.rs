@@ -269,7 +269,7 @@ impl FileFormat {
             "ams" | "mus" => Some(FileFormat::AnsiMusic),
 
             // Plain ASCII
-            "asc" | "txt" => Some(FileFormat::Ascii),
+            "asc" | "txt" | "utf8" => Some(FileFormat::Ascii),
 
             // Avatar
             "avt" => Some(FileFormat::Avatar),
@@ -475,7 +475,7 @@ impl FileFormat {
         match self {
             FileFormat::Ansi => &["ans", "ansi", "diz", "nfo", "ice", "gfx"],
             FileFormat::AnsiMusic => &["ams", "mus"],
-            FileFormat::Ascii => &["asc", "txt"],
+            FileFormat::Ascii => &["asc", "txt", "utf8"],
             FileFormat::Avatar => &["avt"],
             FileFormat::PCBoard => &["pcb"],
             FileFormat::CtrlA => &["msg"],
@@ -1280,6 +1280,15 @@ impl FileFormat {
     /// Returns an error if file reading fails or if the format doesn't support loading.
     pub fn load(&self, file_path: &Path, load_data: Option<LoadData>) -> Result<LoadedDocument> {
         let data = std::fs::read(file_path)?;
+        let load_data = if file_path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("utf8"))
+        {
+            Some(load_data.unwrap_or_default().with_convert_to_utf8(true))
+        } else {
+            load_data
+        };
         self.from_bytes(&data, load_data)
     }
 
@@ -1296,6 +1305,15 @@ impl FileFormat {
     /// Returns an error if the format doesn't support saving or if saving fails.
     /// Note: Image formats require `save_to_file` instead as they need a file path.
     pub fn to_bytes(&self, buffer: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+        if buffer.unicode_width
+            && !matches!(self, FileFormat::IcyDraw | FileFormat::Ansi | FileFormat::Ascii)
+            && !(self == &FileFormat::PCBoard && options.character_options().unicode)
+        {
+            return Err(EngineError::FormatNotSupported {
+                name: self.name().to_string(),
+                operation: "lossless Unicode document export; use UTF-8 ANSI, text, or .icy".into(),
+            });
+        }
         if let FileFormat::Image(img) = self {
             return Err(EngineError::FormatNotSupported {
                 name: img.name().to_string(),

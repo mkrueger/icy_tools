@@ -77,6 +77,7 @@ pub fn format_description(format: FormatMode) -> String {
 /// Edited values of the File Settings dialog.
 #[derive(Clone)]
 pub struct FileSettingsDraft {
+    unicode: bool,
     size: [i32; 2],
     font_height: i32,
     format: FormatMode,
@@ -91,6 +92,7 @@ impl DrawApp {
         let draft = self.document.with_state(|state| {
             let buffer = state.get_buffer();
             FileSettingsDraft {
+                unicode: buffer.buffer_type == icy_engine::BufferType::Unicode,
                 size: [buffer.width(), buffer.height()],
                 font_height: buffer.font_dimensions().height,
                 format: state.get_format_mode(),
@@ -124,15 +126,20 @@ impl DrawApp {
                         appearance::form_row(ui, &fl!("file-settings-font-height"), |ui| {
                             ui.add(egui::DragValue::new(&mut draft.font_height).range(1..=32).suffix(" px"));
                         });
-                        appearance::combo_row(ui, &fl!("file-settings-format"), draft.format.to_string(), |ui| {
-                            for format in FormatMode::ALL {
-                                ui.selectable_value(&mut draft.format, format, format.to_string())
-                                    .on_hover_text(format_description(format));
-                            }
-                        });
-                        appearance::form_row(ui, "", |ui| {
-                            ui.weak(format_description(draft.format));
-                        });
+                        if draft.unicode {
+                            appearance::value_row(ui, &fl!("file-settings-format"), &fl!("new-file-editor-utf8"));
+                            ui.weak(fl!("unicode-mode-hint"));
+                        } else {
+                            appearance::combo_row(ui, &fl!("file-settings-format"), draft.format.to_string(), |ui| {
+                                for format in FormatMode::ALL {
+                                    ui.selectable_value(&mut draft.format, format, format.to_string())
+                                        .on_hover_text(format_description(format));
+                                }
+                            });
+                            appearance::form_row(ui, "", |ui| {
+                                ui.weak(format_description(draft.format));
+                            });
+                        }
                     });
                     appearance::group(ui, &fl!("sauce-display"), |ui| {
                         ui.horizontal_wrapped(|ui| {
@@ -170,7 +177,9 @@ impl DrawApp {
             if font_size.height != draft.font_height {
                 state.set_font_dimensions(Size::new(font_size.width, draft.font_height))?;
             }
-            state.set_format_mode(draft.format);
+            if !draft.unicode {
+                state.set_format_mode(draft.format);
+            }
             if draft.format == FormatMode::XBinExtended && !state.get_buffer().has_font(1) {
                 state.set_font_in_slot(1, BitFont::default())?;
             }

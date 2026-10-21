@@ -29,6 +29,9 @@ fn get_area(sel: Option<Selection>, layer: Rectangle) -> Rectangle {
 
 impl EditState {
     fn flip_x_art(&mut self) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.flip_unicode_layer(true);
+        }
         self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-x"));
         self.flip_layer_mask(true)?;
@@ -57,6 +60,9 @@ impl EditState {
     }
 
     fn flip_y_art(&mut self) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.flip_unicode_layer(false);
+        }
         self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-flip-y"));
         self.flip_layer_mask(false)?;
@@ -113,6 +119,7 @@ impl EditState {
     }
 
     fn crop_rect_art(&mut self, rect: Rectangle) -> Result<()> {
+        self.require_legacy_cells()?;
         let old_size = self.get_buffer().size();
         let mut cropped = Vec::new();
         for old_layer in &self.get_buffer().layers {
@@ -160,6 +167,9 @@ impl EditState {
     ///
     /// Panics if .
     pub fn erase_selection(&mut self) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.fill_unicode_selection(AttributedChar::invisible());
+        }
         if !self.is_something_selected() {
             return Ok(());
         }
@@ -192,6 +202,9 @@ impl EditState {
 
     /// Sets every selected cell of the current layer to `ch`, as one undo step.
     pub fn fill_selection(&mut self, ch: AttributedChar) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.fill_unicode_selection(ch);
+        }
         if !self.is_something_selected() {
             return Ok(());
         }
@@ -222,6 +235,7 @@ impl EditState {
     }
 
     fn scroll_area_up_art(&mut self) -> Result<()> {
+        self.require_legacy_cells()?;
         self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();
@@ -271,6 +285,7 @@ impl EditState {
     }
 
     fn scroll_area_down_art(&mut self) -> Result<()> {
+        self.require_legacy_cells()?;
         self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();
@@ -319,6 +334,7 @@ impl EditState {
     }
 
     fn scroll_area_left_art(&mut self) -> Result<()> {
+        self.require_legacy_cells()?;
         self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();
@@ -350,6 +366,7 @@ impl EditState {
     }
 
     fn scroll_area_right_art(&mut self) -> Result<()> {
+        self.require_legacy_cells()?;
         self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-justify-left"));
         let sel = self.selection();
@@ -421,6 +438,7 @@ impl EditState {
     /// row's content is its visible characters and the tags starting in it, so a tag keeps its
     /// place next to the art.
     fn justify_rows(&mut self, justify: Justify, label: String) -> Result<()> {
+        self.require_legacy_cells()?;
         self.require_cell_layer(self.get_current_layer()?)?;
         let _undo = self.begin_atomic_undo(label);
         let Some((area, document_area)) = self.operation_area() else {

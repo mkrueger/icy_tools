@@ -82,7 +82,7 @@ pub struct GetHelpRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct NewDocumentRequest {
-    /// Document type: "ansi", "animation", "bitfont", "charfont", "rip", "igs", "skypix"
+    /// Document type: "ansi", "utf8", "animation", "bitfont", "charfont", "rip", "igs", "skypix"
     #[serde(rename = "type")]
     pub doc_type: String,
 }

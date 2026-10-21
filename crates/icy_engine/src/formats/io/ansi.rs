@@ -23,8 +23,10 @@ pub(crate) fn load_ansi(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt
     }
 
     let (file_data, is_unicode) = crate::prepare_data_for_parsing(data);
-    if is_unicode {
+    if is_unicode || load_data_opt.is_some_and(LoadData::convert_to_utf8) {
+        std::str::from_utf8(file_data).map_err(|error| crate::EngineError::Generic(format!("Invalid UTF-8 input: {error}")))?;
         result.buffer.buffer_type = crate::BufferType::Unicode;
+        result.set_unicode_width(true);
     }
     crate::load_with_parser(&mut result, &mut parser, file_data, true, -1)?;
     Ok(result)
@@ -32,5 +34,8 @@ pub(crate) fn load_ansi(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt
 
 /// Save a `TextBuffer` to ANSI format using ANSI exporter v2.
 pub(crate) fn save_ansi(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+    if buf.unicode_width && !options.ansi_options().level.supports_utf8() {
+        return Err(crate::EngineError::Generic("Unicode documents require UTF-8 ANSI export compatibility.".into()));
+    }
     save_ansi_v2(buf, options)
 }

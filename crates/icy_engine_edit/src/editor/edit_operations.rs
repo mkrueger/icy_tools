@@ -12,6 +12,9 @@ use super::{EditState, EditorUndoOp};
 
 impl EditState {
     pub fn set_char(&mut self, pos: impl Into<Position>, attributed_char: AttributedChar) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.set_unicode_char(self.get_current_layer()?, pos.into(), attributed_char);
+        }
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-set_char"));
 
         if let Some(layer) = self.get_cur_layer() {
@@ -49,6 +52,9 @@ impl EditState {
     /// This is intended for tools that manage their own `AtomicUndoGuard` (e.g. brush strokes)
     /// and need to push many `UndoSetChar` operations into a single undo entry.
     pub fn set_char_in_atomic(&mut self, pos: impl Into<Position>, attributed_char: AttributedChar) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.set_unicode_char(self.get_current_layer()?, pos.into(), attributed_char);
+        }
         if let Some(layer) = self.get_cur_layer() {
             let pos = pos.into();
             let old = layer.char_at(pos);
@@ -84,6 +90,9 @@ impl EditState {
     /// This is intended for MCP operations that need to set characters on a specific layer
     /// while managing their own `AtomicUndoGuard`.
     pub fn set_char_at_layer_in_atomic(&mut self, layer_index: usize, pos: impl Into<Position>, attributed_char: AttributedChar) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.set_unicode_char(layer_index, pos.into(), attributed_char);
+        }
         let buffer = self.get_buffer();
         if layer_index >= buffer.layers.len() {
             return Err(crate::EngineError::Generic(format!("Layer index {} out of range", layer_index)));
@@ -115,6 +124,11 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn paste_clipboard_data(&mut self, data: &[u8]) -> Result<()> {
+        if data.starts_with(b"\x89PNG\r\n\x1a\n") {
+            let source = icy_engine::FileFormat::IcyDraw.from_bytes(data, None)?;
+            return self.paste_buffer(&source.screen.buffer, fl!(crate::LANGUAGE_LOADER, "layer-pasted-name"));
+        }
+        self.require_legacy_cells()?;
         log::debug!("paste_clipboard_data: received {} bytes", data.len());
         if let Some(mut layer) = clipboard::from_clipboard_data(self.get_buffer().buffer_type, data) {
             // Position the pasted layer at the current caret position
@@ -168,6 +182,9 @@ impl EditState {
         use icy_engine::AttributeColor;
         use std::collections::HashMap;
 
+        if source.unicode_width() && !self.get_buffer().unicode_width() {
+            return Err(EngineError::Generic("Unicode artwork cannot be pasted into a legacy cell buffer".into()));
+        }
         let mut layer = Layer::new(title, source.size());
         layer.properties.has_alpha_channel = true;
         layer.set_offset(self.screen.caret.position());
@@ -177,6 +194,9 @@ impl EditState {
         for y in 0..source.height() {
             for x in 0..source.width() {
                 let mut ch = source.char_at((x, y).into());
+                if source.unicode_width() && source.is_grapheme_continuation(Position::new(x, y)) {
+                    continue;
+                }
                 if !ch.is_visible() {
                     continue;
                 }
@@ -198,6 +218,17 @@ impl EditState {
                             }
                         }
                     }
+                }
+                if target.unicode_width() {
+                    let text = if source.unicode_width() {
+                        source
+                            .grapheme_at(Position::new(x, y))
+                            .map_or_else(|| ch.ch.to_string(), |(text, _)| text.to_owned())
+                    } else {
+                        source.buffer_type.convert_to_unicode(ch.ch).to_string()
+                    };
+                    layer.set_grapheme(Position::new(x, y), &text, ch.attribute)?;
+                    continue;
                 }
                 let page = ch.font_page();
                 if let std::collections::hash_map::Entry::Vacant(entry) = fonts.entry(page) {
@@ -245,6 +276,9 @@ impl EditState {
     }
 
     pub fn paste_text(&mut self, text: &str) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.paste_unicode_text(text);
+        }
         let x = self.screen.caret.position().x;
         let y = self.screen.caret.position().y;
 
@@ -282,6 +316,9 @@ impl EditState {
     ///
     /// This function will return an error if .
     pub fn resize_buffer(&mut self, resize_layer: bool, size: impl Into<Size>) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.resize_unicode_buffer(resize_layer, size.into());
+        }
         if resize_layer {
             self.require_cell_layers()?;
             let size = size.into();
@@ -353,6 +390,7 @@ impl EditState {
     }
 
     pub fn center_line(&mut self) -> Result<()> {
+        self.require_legacy_cells()?;
         let offset = if let Some(layer) = self.get_cur_layer() { layer.offset().y } else { 0 };
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
@@ -364,6 +402,7 @@ impl EditState {
     }
 
     pub fn justify_line_left(&mut self) -> Result<()> {
+        self.require_legacy_cells()?;
         let offset: i32 = if let Some(layer) = self.get_cur_layer() { layer.offset().y } else { 0 };
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 
@@ -375,6 +414,7 @@ impl EditState {
     }
 
     pub fn justify_line_right(&mut self) -> Result<()> {
+        self.require_legacy_cells()?;
         let offset: i32 = if let Some(layer) = self.get_cur_layer() { layer.offset().y } else { 0 };
         let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-delete-selection"));
 

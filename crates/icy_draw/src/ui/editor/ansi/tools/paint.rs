@@ -236,6 +236,10 @@ pub fn apply_stamp_at_doc_pos(state: &mut EditState, settings: BrushSettings, do
                 height: i32,
             }
             impl icy_engine_edit::brushes::DrawTarget for LayerTarget<'_> {
+                fn unicode_width(&self) -> bool {
+                    // Brush glyphs are CP437 codes; Unicode documents need them mapped to real characters.
+                    self.state.get_buffer().buffer_type == icy_engine::BufferType::Unicode
+                }
                 fn width(&self) -> i32 {
                     self.width
                 }

@@ -13,6 +13,7 @@ mod editor_error;
 pub use editor_error::*;
 
 mod terminal_input;
+mod unicode_input;
 
 mod layer_operations;
 pub use layer_operations::*;
@@ -530,17 +531,22 @@ impl EditState {
 
     /// Set the caret position
     pub fn set_caret_position(&mut self, pos: Position) {
+        let pos = if self.get_buffer().unicode_width() {
+            self.unicode_caret_position(pos, false)
+        } else {
+            pos
+        };
         self.screen.caret.set_position(pos);
     }
 
     /// Set the caret X coordinate
     pub fn set_caret_x(&mut self, x: i32) {
-        self.screen.caret.x = x;
+        self.set_caret_position(Position::new(x, self.screen.caret.y));
     }
 
     /// Set the caret Y coordinate
     pub fn set_caret_y(&mut self, y: i32) {
-        self.screen.caret.y = y;
+        self.set_caret_position(Position::new(self.screen.caret.x, y));
     }
 
     /// Constrain a foreground color based on the current font mode.
@@ -608,22 +614,27 @@ impl EditState {
 
     /// Move caret up by given amount (clamped to 0)
     pub fn move_caret_up(&mut self, amount: i32) {
-        self.screen.caret.y = (self.screen.caret.y - amount).max(0);
+        self.set_caret_y((self.screen.caret.y - amount).max(0));
     }
 
     /// Move caret down by given amount
     pub fn move_caret_down(&mut self, amount: i32) {
-        self.screen.caret.y += amount;
+        self.set_caret_y(self.screen.caret.y + amount);
     }
 
     /// Move caret left by given amount (clamped to 0)
     pub fn move_caret_left(&mut self, amount: i32) {
-        self.screen.caret.x = (self.screen.caret.x - amount).max(0);
+        self.set_caret_x((self.screen.caret.x - amount).max(0));
     }
 
     /// Move caret right by given amount
     pub fn move_caret_right(&mut self, amount: i32) {
-        self.screen.caret.x += amount;
+        let pos = Position::new(self.screen.caret.x + amount, self.screen.caret.y);
+        if self.get_buffer().unicode_width() {
+            self.screen.caret.set_position(self.unicode_caret_position(pos, true));
+        } else {
+            self.screen.caret.set_position(pos);
+        }
     }
 
     /// Set caret visibility
@@ -646,6 +657,9 @@ impl EditState {
     }
 
     pub fn copy_text(&self) -> Option<String> {
+        if self.get_buffer().unicode_width() {
+            return self.copy_unicode_text();
+        }
         let Some(selection) = &self.selection_opt else {
             return None;
         };
@@ -713,6 +727,27 @@ impl EditState {
 
     /// Push and execute an undo operation
     pub(crate) fn push_undo_action(&mut self, mut op: EditorUndoOp) -> Result<()> {
+        if self.get_buffer().unicode_width()
+            && matches!(
+                &op,
+                EditorUndoOp::SetChar { .. }
+                    | EditorUndoOp::SwapChar { .. }
+                    | EditorUndoOp::LayerChange { .. }
+                    | EditorUndoOp::DeleteRow { .. }
+                    | EditorUndoOp::InsertRow { .. }
+                    | EditorUndoOp::DeleteColumn { .. }
+                    | EditorUndoOp::InsertColumn { .. }
+                    | EditorUndoOp::ScrollWholeLayerUp { .. }
+                    | EditorUndoOp::ScrollWholeLayerDown { .. }
+                    | EditorUndoOp::ClearLayer { .. }
+                    | EditorUndoOp::SetLayerSize { .. }
+                    | EditorUndoOp::PasteRotate { .. }
+                    | EditorUndoOp::PasteFlipX { .. }
+                    | EditorUndoOp::PasteFlipY { .. }
+            )
+        {
+            return self.require_legacy_cells();
+        }
         if let EditorUndoOp::Paste { layer, current_layer } = &mut op {
             let current = self
                 .get_buffer()
@@ -981,16 +1016,24 @@ impl Screen for EditState {
     }
 
     fn copy_text(&self) -> Option<String> {
-        let selection = self.selection_opt.as_ref()?;
-        clipboard::text(&self.screen.buffer, self.screen.buffer.buffer_type, selection)
+        EditState::copy_text(self)
     }
 
     fn copy_rich_text(&self) -> Option<String> {
+        if self.get_buffer().unicode_width() {
+            return None;
+        }
         let selection = self.selection_opt.as_ref()?;
         clipboard::get_rich_text(&self.screen.buffer, selection)
     }
 
     fn clipboard_data(&self) -> Option<Vec<u8>> {
+        if self.get_buffer().unicode_width() {
+            return self.unicode_clipboard_data().unwrap_or_else(|error| {
+                log::warn!("Unable to copy Unicode selection: {error}");
+                None
+            });
+        }
         // Use EditState's own selection_mask and selection_opt, not screen's
         clipboard::clipboard_data(&self.screen.buffer, self.screen.current_layer, &self.selection_mask, &self.selection_opt)
     }

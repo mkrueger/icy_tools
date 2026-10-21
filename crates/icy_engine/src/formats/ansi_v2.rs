@@ -1058,7 +1058,14 @@ impl StringGeneratorV2 {
 
             let len = *effective_line_lengths.get(y).unwrap_or(&line.len());
             while x < len {
+                let position = crate::Position::new(area.start.x + x as i32, area.start.y + y as i32);
+                if self.level.supports_utf8() && layer.is_grapheme_continuation(position) {
+                    x += 1;
+                    continue;
+                }
                 let cell = &line[x];
+                let grapheme = self.level.supports_utf8().then(|| layer.grapheme_at(position)).flatten();
+                let cell_width = grapheme.map_or(1, |(_, width)| width);
 
                 if self.level.supports_font_pages() && cur_font_page != cell.font_page {
                     cur_font_page = cell.font_page;
@@ -1085,7 +1092,9 @@ impl StringGeneratorV2 {
                 }
 
                 let cell_char = if self.level.supports_utf8() {
-                    if cell.ch == '\0' {
+                    if let Some((text, _)) = grapheme {
+                        text.as_bytes().to_vec()
+                    } else if cell.ch == '\0' {
                         vec![b' ']
                     } else {
                         let uni_ch = buf.buffer_type.convert_to_unicode(cell.ch);
@@ -1114,10 +1123,15 @@ impl StringGeneratorV2 {
                 };
 
                 // Compression
-                if self.options.compress {
+                if self.options.compress && grapheme.is_none() {
                     let mut rle = x + 1;
                     while rle < len {
-                        if line[rle].ch != line[x].ch || !line[rle].sgr.is_empty() || line[rle].font_page != line[x].font_page {
+                        let next_position = crate::Position::new(area.start.x + rle as i32, area.start.y + y as i32);
+                        if line[rle].ch != line[x].ch
+                            || !line[rle].sgr.is_empty()
+                            || line[rle].font_page != line[x].font_page
+                            || (self.level.supports_utf8() && (layer.grapheme_at(next_position).is_some() || layer.is_grapheme_continuation(next_position)))
+                        {
                             break;
                         }
                         rle += 1;
@@ -1164,11 +1178,11 @@ impl StringGeneratorV2 {
                 result.extend_from_slice(&cell_char);
                 self.push_result(&mut result);
 
-                if full_width > 0 && x == full_width.saturating_sub(1) {
+                if full_width > 0 && x + cell_width >= full_width {
                     printed_last_column = true;
                 }
 
-                x += 1;
+                x += cell_width;
             }
 
             if !self.options.longer_terminal_output {

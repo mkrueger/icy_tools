@@ -3659,6 +3659,7 @@ dependencies = [
  "rgb",
  "ruzstd",
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "unarc-rs",
  "unicode-segmentation",
@@ -3699,6 +3700,8 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.30.0",
  "toml 1.1.8+spec-1.1.0",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]
@@ -3716,6 +3719,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "fastrand",
+ "fontdb 0.23.0",
  "i18n-embed",
  "i18n-embed-fl",
  "icy_engine",
@@ -3742,6 +3746,7 @@ dependencies = [
  "tokio",
  "toml 1.1.8+spec-1.1.0",
  "ttf-parser",
+ "unicode-width",
  "wgpu",
  "ym2149-gist-replayer",
 ]

@@ -145,6 +145,10 @@ impl DrawApp {
                             self.replace(Document::new(Size::new(80, 25)));
                             Ok(())
                         }
+                        "utf8" => {
+                            self.replace(Document::new_unicode(Size::new(80, 25)));
+                            Ok(())
+                        }
                         "animation" => {
                             self.replace(Document::new(Size::new(80, 25)));
                             self.animation = Some(crate::animation::AnimationEditor::new());

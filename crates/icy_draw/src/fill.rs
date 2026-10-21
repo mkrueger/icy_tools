@@ -53,7 +53,12 @@ pub fn fill(state: &mut EditState, settings: BrushSettings, position: Position, 
                 let point = Position::new(column, row);
                 if state.is_selected(point + offset) {
                     let character = if primary == BrushPrimaryMode::HalfBlock {
-                        AttributedChar::new(219 as char, TextAttribute::from_colors(fill_color, fill_color))
+                        let block = if state.get_buffer().buffer_type == icy_engine::BufferType::Unicode {
+                            '\u{2588}'
+                        } else {
+                            219 as char
+                        };
+                        AttributedChar::new(block, TextAttribute::from_colors(fill_color, fill_color))
                     } else {
                         replacement(state.get_cur_layer().unwrap().char_at(point))
                     };
@@ -94,7 +99,21 @@ pub fn fill(state: &mut EditState, settings: BrushSettings, position: Position, 
         return;
     }
     let start = Position::new(local.x, local.y * 2 + i32::from(!top));
-    let block = HalfBlock::from_char(base, start);
+    // Half-block analysis works on CP437 codes; Unicode documents store the real block characters.
+    let unicode = state.get_buffer().buffer_type == icy_engine::BufferType::Unicode;
+    let to_cp437 = |mut character: AttributedChar| {
+        if unicode {
+            character.ch = icy_engine::BufferType::CP437.convert_from_unicode(character.ch);
+        }
+        character
+    };
+    let from_cp437 = |mut character: AttributedChar| {
+        if unicode {
+            character.ch = icy_engine::BufferType::CP437.convert_to_unicode(character.ch);
+        }
+        character
+    };
+    let block = HalfBlock::from_char(to_cp437(base), start);
     if !block.is_blocky() {
         return;
     }
@@ -109,7 +128,7 @@ pub fn fill(state: &mut EditState, settings: BrushSettings, position: Position, 
             continue;
         }
         let cell = Position::new(point.x, point.y / 2);
-        let block = HalfBlock::from_char(state.get_cur_layer().unwrap().char_at(cell), point);
+        let block = HalfBlock::from_char(to_cp437(state.get_cur_layer().unwrap().char_at(cell)), point);
         let replacement = if block.is_blocky() && (if block.is_top { block.upper_block_color } else { block.lower_block_color }) == target {
             Some(block.get_half_block_char(fill_color, true))
         } else if block.is_vertically_blocky() {
@@ -129,7 +148,7 @@ pub fn fill(state: &mut EditState, settings: BrushSettings, position: Position, 
             None
         };
         if let Some(character) = replacement {
-            let _ = state.set_char_in_atomic(cell, character);
+            let _ = state.set_char_in_atomic(cell, from_cp437(character));
             for delta in [Position::new(-1, 0), Position::new(1, 0), Position::new(0, -1), Position::new(0, 1)] {
                 stack.push((point, point + delta));
             }

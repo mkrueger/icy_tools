@@ -23,6 +23,9 @@
 //! u8 version 1, u64 parent ID (0 for root), u64 group ID (0 for a leaf),
 //! and a boolean collapsed byte. Group markers follow their contiguous children;
 //! member offsets remain document-relative and groups compose in pass-through mode.
+//! Unicode cell documents require ICED v6. `GRAPHEME` follows its `LAYER` and stores
+//! version byte 1 followed by a JSON row/column map of validated text/width pairs.
+//! The v6 Unicode header enables terminal cell widths, including for empty documents.
 
 use std::fmt::Alignment;
 use std::io::Cursor;
@@ -39,6 +42,7 @@ mod constants {
     pub const ICED_LAYER_EFFECTS_VERSION: u16 = 3;
     pub const ICED_LIVE_TEXT_VERSION: u16 = 4;
     pub const ICED_LAYER_GROUP_VERSION: u16 = 5;
+    pub const ICED_UNICODE_VERSION: u16 = 6;
     pub const ICED_HEADER_SIZE: usize = 19; // Version(2) + Type(3) + Modes(4) + Size(8) + FontDims(2)
 
     /// Compression methods for ICED format (stored in first byte of Type field)
@@ -332,7 +336,7 @@ fn process_icy_draw_v1_decoded_chunk(
             }
 
             let version = u16::from_le_bytes([bytes[0], bytes[1]]);
-            if !(constants::ICED_VERSION..=constants::ICED_LAYER_GROUP_VERSION).contains(&version) {
+            if !(constants::ICED_VERSION..=constants::ICED_UNICODE_VERSION).contains(&version) {
                 return Err(IcedError::UnsupportedVersion(version));
             }
             if bytes.len() < constants::ICED_HEADER_SIZE {
@@ -351,6 +355,7 @@ fn process_icy_draw_v1_decoded_chunk(
             let buffer_type = u16::from_le_bytes(bytes[o..(o + 2)].try_into().unwrap());
             o += 2;
             result.buffer_type = crate::BufferType::from_byte(buffer_type as u8);
+            result.unicode_width = version >= constants::ICED_UNICODE_VERSION && result.buffer_type == crate::BufferType::Unicode;
 
             if bytes.len() < o + 2 {
                 return Err(IcedError::DataTruncated(o + 2));
@@ -613,6 +618,35 @@ fn process_icy_draw_v1_decoded_chunk(
             result.layers.push(layer);
         }
 
+        "GRAPHEME" => {
+            if bytes.first() != Some(&1) || !result.unicode_width {
+                return Err(IcedError::InvalidRecord("Invalid GRAPHEME version or document mode".into()));
+            }
+            let layer = result
+                .layers
+                .last_mut()
+                .ok_or_else(|| IcedError::InvalidRecord("GRAPHEME without a layer".into()))?;
+            if !layer.graphemes.is_empty() || layer.role == crate::Role::Image {
+                return Err(IcedError::InvalidRecord("Duplicate or misplaced GRAPHEME record".into()));
+            }
+            layer.graphemes = serde_json::from_slice(&bytes[1..]).map_err(|error| IcedError::InvalidRecord(error.to_string()))?;
+            for (&row, columns) in &layer.graphemes {
+                let mut end = 0;
+                for (&column, grapheme) in columns {
+                    if row < 0
+                        || row >= layer.height()
+                        || column < end
+                        || i64::from(column) + grapheme.width as i64 > i64::from(layer.width())
+                        || grapheme.width > 2
+                        || layer.char_at(Position::new(column, row)).ch != grapheme.text.chars().next().unwrap()
+                        || (1..grapheme.width).any(|offset| layer.char_at(Position::new(column + offset as i32, row)).ch != ' ')
+                    {
+                        return Err(IcedError::InvalidRecord("Invalid GRAPHEME cell bounds or contents".into()));
+                    }
+                    end = column + grapheme.width as i32;
+                }
+            }
+        }
         "GROUP" => {
             if bytes.len() != 18 || bytes[0] != 1 || bytes[17] > 1 {
                 return Err(IcedError::InvalidRecord("Invalid GROUP record".into()));
@@ -744,6 +778,16 @@ fn process_icy_draw_v1_decoded_chunk(
 }
 
 pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
+    save_icy_draw_with_preview(buf, options, None)
+}
+
+/// Saves a native document with an optional thumbnail rendered by the frontend's font system.
+pub fn save_icy_draw_with_preview(buf: &TextBuffer, options: &SaveOptions, preview: Option<(Size, Vec<u8>)>) -> Result<Vec<u8>> {
+    if (buf.unicode_width && buf.buffer_type != crate::BufferType::Unicode)
+        || (!buf.unicode_width && buf.layers.iter().any(|layer| !layer.graphemes.is_empty()))
+    {
+        return Err(IcedError::InvalidRecord("Unicode graphemes require a Unicode cell document".into()).into());
+    }
     buf.validate_layer_groups()?;
     for layer in &buf.layers {
         layer.effects.validate()?;
@@ -766,7 +810,7 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
     let font_dims = buf.font_dimensions();
     let icy_opts = options.icy_draw_options();
     // Absolute fast path for IcyDraw autosave: no thumbnail rendering.
-    let fast_save = icy_opts.skip_thumbnail;
+    let fast_save = icy_opts.skip_thumbnail || (buf.unicode_width && preview.is_none());
 
     let (width, height, image_empty) = if fast_save {
         (1, 1, true)
@@ -792,7 +836,15 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
         (width, height, image_empty)
     };
 
-    let (width, height, preview) = if image_empty {
+    let (width, height, preview) = if let Some((size, data)) = preview.filter(|_| !fast_save) {
+        if size.width <= 0
+            || size.height <= 0
+            || (size.width as usize).checked_mul(size.height as usize).and_then(|pixels| pixels.checked_mul(4)) != Some(data.len())
+        {
+            return Err(IcedError::InvalidRecord("Invalid RGBA thumbnail dimensions".into()).into());
+        }
+        (size.width, size.height, data)
+    } else if image_empty {
         (width, height, vec![0, 0, 0, 0])
     } else {
         let (size, data) = buf.render_to_rgba(
@@ -837,7 +889,9 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
                         .any(|ch| ch.attribute.requires_custom_palette_encoding())
                 })
             });
-        let version = if buf.layers.iter().any(|layer| layer.is_group()) {
+        let version = if buf.unicode_width {
+            constants::ICED_UNICODE_VERSION
+        } else if buf.layers.iter().any(|layer| layer.is_group()) {
             constants::ICED_LAYER_GROUP_VERSION
         } else if buf.layers.iter().any(|layer| layer.is_text()) {
             constants::ICED_LIVE_TEXT_VERSION
@@ -979,6 +1033,11 @@ pub(crate) fn save_icy_draw(buf: &TextBuffer, options: &SaveOptions) -> Result<V
             }
 
             write_compressed_chunk(&mut writer, "LAYER", file_compression, &layer_data)?;
+            if !layer.graphemes.is_empty() {
+                let mut data = vec![1];
+                data.extend(serde_json::to_vec(&layer.graphemes).map_err(|error| IcedError::InvalidRecord(error.to_string()))?);
+                write_compressed_chunk(&mut writer, "GRAPHEME", file_compression, &data)?;
+            }
             if let Some(source) = layer.live_text() {
                 write_compressed_chunk(&mut writer, "LIVETEXT", file_compression, &source.encode()?)?;
             }
@@ -1174,6 +1233,40 @@ fn write_utf8_encoded_string(data: &mut Vec<u8>, s: &str) {
 }
 
 const MAX_LINES: i32 = 80;
+
+#[cfg(test)]
+mod unicode_metadata_tests {
+    use super::*;
+
+    fn decode(json: &str) -> std::result::Result<TextBuffer, IcedError> {
+        let mut buffer = TextBuffer::new((4, 2));
+        buffer.buffer_type = crate::BufferType::Unicode;
+        buffer.unicode_width = true;
+        buffer.layers[0].set_char(Position::new(0, 0), crate::AttributedChar::new('\u{754c}', TextAttribute::default()));
+        buffer.layers[0].set_char(Position::new(1, 0), crate::AttributedChar::new(' ', TextAttribute::default()));
+        let mut bytes = vec![1];
+        bytes.extend_from_slice(json.as_bytes());
+        process_icy_draw_v1_decoded_chunk("GRAPHEME", &bytes, &mut buffer, &mut 0, &mut None)?;
+        Ok(buffer)
+    }
+
+    #[test]
+    fn unicode_records_validate_graphemes_widths_and_bounds() {
+        let valid = "{\"0\":{\"0\":{\"text\":\"\\u754c\",\"width\":2}}}";
+        assert_eq!(decode(valid).unwrap().grapheme_at(Position::new(0, 0)), Some(("\u{754c}", 2)));
+        for json in [
+            "{\"0\":{\"0\":{\"text\":\"\\u754c\",\"width\":1}}}",
+            "{\"0\":{\"0\":{\"text\":\"AB\",\"width\":2}}}",
+            "{\"0\":{\"0\":{\"text\":\"A\",\"width\":1}}}",
+            "{\"0\":{\"-1\":{\"text\":\"\\u754c\",\"width\":2}}}",
+            "{\"2\":{\"0\":{\"text\":\"\\u754c\",\"width\":2}}}",
+            "{\"0\":{\"3\":{\"text\":\"\\u754c\",\"width\":2}}}",
+            "{\"0\":{\"0\":{\"text\":\"\\u754c\",\"width\":2},\"1\":{\"text\":\"x\",\"width\":1}}}",
+        ] {
+            assert!(decode(json).is_err(), "{json}");
+        }
+    }
+}
 
 #[cfg(test)]
 mod screen_metadata_tests {

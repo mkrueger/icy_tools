@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::TextureSliceData;
 
-/// Tile height in pixels.
+/// Default bitmap tile height in raw document pixels.
 ///
 /// Smaller tiles reduce worst-case CPU render + GPU upload work per miss.
 /// The actual number of slices used is dynamic and depends on the viewport.
@@ -35,7 +35,7 @@ impl TileCacheKey {
 pub struct SharedCachedTile {
     /// The texture slice data
     pub texture: TextureSliceData,
-    /// Height of this tile in pixels
+    /// Height in raw document pixels, independent of text raster density.
     pub height: u32,
     /// Y start position in document space
     pub start_y: f32,
@@ -51,6 +51,10 @@ pub struct SharedRenderCache {
     pub content_height: f32,
     /// Content width in pixels
     pub content_width: u32,
+    /// Text texels per raw document pixel; graphics retain their original resolution.
+    pub text_raster_scale: u32,
+    /// Tile height in raw document pixels.
+    pub raw_tile_height: u32,
 
     /// Visible width in content pixels used by the terminal shader (after zoom/fit/limits)
     pub visible_width: f32,
@@ -71,6 +75,8 @@ impl SharedRenderCache {
             overlay_tiles: HashMap::new(),
             content_height: 0.0,
             content_width: 0,
+            text_raster_scale: 1,
+            raw_tile_height: TILE_HEIGHT,
             visible_width: 0.0,
             visible_height: 0.0,
             scroll_offset_x: 0.0,

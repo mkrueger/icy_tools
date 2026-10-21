@@ -5,6 +5,7 @@ use icy_engine_edit::brushes::DrawTarget;
 
 /// A simple test target that records all drawing operations
 pub struct TestTarget {
+    pub unicode: bool,
     width: i32,
     height: i32,
     chars: Vec<AttributedChar>,
@@ -13,6 +14,7 @@ pub struct TestTarget {
 impl TestTarget {
     pub fn new(width: i32, height: i32) -> Self {
         Self {
+            unicode: false,
             width,
             height,
             chars: vec![AttributedChar::new(' ', TextAttribute::default()); (width * height) as usize],
@@ -29,6 +31,10 @@ impl TestTarget {
 }
 
 impl DrawTarget for TestTarget {
+    fn unicode_width(&self) -> bool {
+        self.unicode
+    }
+
     fn width(&self) -> i32 {
         self.width
     }

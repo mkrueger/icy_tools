@@ -17,6 +17,8 @@ toml = { workspace = true }
 tempfile = "3"
 rustybuzz = "0.20.1"
 ttf-parser = "0.25.1"
+fontdb = "0.23"
+unicode-width = "0.2.2"
 tiny-skia = "0.12"
 parking_lot = { workspace = true}
 bitflags = { workspace = true}

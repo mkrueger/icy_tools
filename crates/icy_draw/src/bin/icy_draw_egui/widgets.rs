@@ -588,6 +588,46 @@ pub fn paint_glyph_on(painter: &egui::Painter, font: &icy_engine::BitFont, code:
     painter.image(atlas.texture.id(), target, uv, color);
 }
 
+type UnicodeGlyphTextures = std::sync::Arc<parking_lot::Mutex<HashMap<(char, u32, u32), (egui::TextureHandle, f32)>>>;
+
+/// Paints the Unicode `character` like the canvas does, into the cell `target`; wide
+/// characters extend over the following cell. Masks are rendered at physical resolution.
+pub fn paint_unicode_glyph_on(painter: &egui::Painter, character: char, target: egui::Rect, color: Color32) {
+    if character == '\0' || character.is_whitespace() {
+        return;
+    }
+    let context = painter.ctx();
+    let pixels = (target.size() * context.pixels_per_point()).round();
+    let (width, height) = ((pixels.x as u32).clamp(1, 512), (pixels.y as u32).clamp(1, 512));
+    let textures = context.data_mut(|data| {
+        data.get_temp_mut_or_default::<UnicodeGlyphTextures>(egui::Id::new("unicode-preview-glyphs"))
+            .clone()
+    });
+    let mut textures = textures.lock();
+    // Shape previews use few characters; bound the cache when the zoom keeps changing.
+    if textures.len() > 256 {
+        textures.clear();
+    }
+    let (texture, cells) = textures
+        .entry((character, width, height))
+        .or_insert_with(|| {
+            let mut text = [0; 4];
+            let (size, rgba) = icy_engine_gui::render_unicode_glyph_to_rgba(
+                character.encode_utf8(&mut text),
+                icy_engine::Size::new(width as i32, height as i32),
+                [255, 255, 255, 255],
+            );
+            let image = egui::ColorImage::from_rgba_unmultiplied([size.width.max(1) as usize, size.height.max(1) as usize], &rgba);
+            (
+                context.load_texture("unicode-preview-glyph", image, egui::TextureOptions::NEAREST),
+                size.width.max(1) as f32 / width as f32,
+            )
+        })
+        .clone();
+    let rect = egui::Rect::from_min_size(target.min, egui::vec2(target.width() * cells, target.height()));
+    painter.image(texture.id(), rect, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), color);
+}
+
 /// The size of the square buttons of the transport bars.
 pub const TRANSPORT_BUTTON: f32 = 30.0;
 /// The size of the round play button between them.

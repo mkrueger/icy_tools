@@ -54,8 +54,87 @@ struct PendingGrapheme {
     width: usize,
 }
 
+impl crate::TextBuffer {
+    /// Whether cells are laid out using Unicode grapheme widths.
+    pub fn unicode_width(&self) -> bool {
+        self.unicode_width
+    }
+}
+
+/// The cells and grapheme metadata of one row segment, for compact undo of Unicode edits.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UnicodeCellSpan {
+    row: i32,
+    start: i32,
+    cells: Vec<AttributedChar>,
+    graphemes: Vec<(i32, Grapheme)>,
+}
+
 impl Layer {
-    pub(crate) fn shift_cells(&mut self, start: Position, end: Position, delta: Position, attribute: TextAttribute) {
+    /// Snapshot of `columns` in `row`, widened so no grapheme crosses its ends.
+    pub fn unicode_span(&self, row: i32, columns: std::ops::Range<i32>) -> UnicodeCellSpan {
+        let mut start = columns.start.clamp(0, self.width());
+        let mut end = columns.end.clamp(start, self.width());
+        if let Some(leading) = self.grapheme_start(Position::new(start, row)) {
+            start = start.min(leading.x);
+        }
+        if end > start {
+            if let Some((leading, (_, width))) = self
+                .grapheme_start(Position::new(end - 1, row))
+                .and_then(|leading| self.grapheme_at(leading).map(|grapheme| (leading, grapheme)))
+            {
+                end = end.max(leading.x + width as i32).min(self.width());
+            }
+        }
+        self.exact_unicode_span(row, start, end)
+    }
+
+    fn exact_unicode_span(&self, row: i32, start: i32, end: i32) -> UnicodeCellSpan {
+        UnicodeCellSpan {
+            row,
+            start,
+            cells: (start..end).map(|column| self.char_at(Position::new(column, row))).collect(),
+            graphemes: self
+                .graphemes
+                .get(&row)
+                .map(|columns| columns.range(start..end).map(|(&column, grapheme)| (column, grapheme.clone())).collect())
+                .unwrap_or_default(),
+        }
+    }
+
+    /// Exchanges the span's cells with the layer's, so the same span undoes and redoes.
+    pub fn swap_unicode_span(&mut self, span: &mut UnicodeCellSpan) {
+        let end = span.start + span.cells.len() as i32;
+        if span.row < 0 || span.row >= self.height() || span.start < 0 || end > self.width() {
+            return;
+        }
+        let mut previous = self.exact_unicode_span(span.row, span.start, end);
+        let row = span.row as usize;
+        if self.lines.len() <= row {
+            self.lines.resize(row + 1, crate::Line::create(self.width()));
+        }
+        for (offset, character) in span.cells.iter().enumerate() {
+            self.lines[row].set_char(span.start + offset as i32, *character);
+        }
+        let columns = self.graphemes.entry(span.row).or_default();
+        columns.retain(|column, _| !(span.start..end).contains(column));
+        columns.extend(span.graphemes.iter().cloned());
+        if columns.is_empty() {
+            self.graphemes.remove(&span.row);
+        }
+        std::mem::swap(span, &mut previous);
+    }
+}
+
+impl UnicodeCellSpan {
+    pub fn row(&self) -> i32 {
+        self.row
+    }
+}
+
+impl Layer {
+    /// Shift complete graphemes inside a cell rectangle, discarding clipped glyphs.
+    pub fn shift_cells(&mut self, start: Position, end: Position, delta: Position, attribute: TextAttribute) {
         let start = Position::new(start.x.max(0), start.y.max(0));
         let end = Position::new(end.x.min(self.width() - 1), end.y.min(self.height() - 1));
         let mut cells = Vec::new();
@@ -118,9 +197,25 @@ impl Layer {
             && self.grapheme_start(position).is_some_and(|start| start != position)
     }
 
-    fn grapheme_start(&self, position: Position) -> Option<Position> {
+    /// Return the leading cell of the grapheme covering this cell.
+    pub fn grapheme_start(&self, position: Position) -> Option<Position> {
         let (&column, grapheme) = self.graphemes.get(&position.y)?.range(..=position.x).next_back()?;
         (position.x < column + grapheme.width as i32).then_some(Position::new(column, position.y))
+    }
+
+    /// Store one printable terminal grapheme (one or two cells).
+    ///
+    /// Invalid text and out-of-bounds writes are rejected before modifying cells.
+    pub fn set_grapheme(&mut self, position: Position, text: &str, attribute: TextAttribute) -> crate::Result<()> {
+        let width = text.width();
+        if text.len() > MAX_GRAPHEME_BYTES || text.graphemes(true).count() != 1 || text.chars().any(char::is_control) || !(1..=2).contains(&width) {
+            return Err(crate::EngineError::Generic("Expected a printable one- or two-cell Unicode grapheme".into()));
+        }
+        if position.x < 0 || position.y < 0 || position.y >= self.height() || position.x + width as i32 > self.width() {
+            return Err(crate::EngineError::Generic("Unicode grapheme does not fit the layer".into()));
+        }
+        self.put_grapheme(position, text.to_owned(), width, attribute);
+        Ok(())
     }
 
     pub(crate) fn clear_grapheme_at(&mut self, position: Position, attribute: TextAttribute) {

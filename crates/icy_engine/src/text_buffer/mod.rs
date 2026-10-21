@@ -14,7 +14,7 @@ pub mod text_screen;
 pub use text_screen::*;
 
 mod unicode;
-pub use unicode::MAX_GRAPHEME_BYTES;
+pub use unicode::{UnicodeCellSpan, MAX_GRAPHEME_BYTES};
 
 pub mod layer;
 pub use layer::*;

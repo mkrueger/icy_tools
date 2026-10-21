@@ -9,3 +9,4 @@ mod area_operations_tests;
 mod edit_operations_tests;
 mod font_operations_tests;
 mod layer_operations_tests;
+mod unicode_input_tests;

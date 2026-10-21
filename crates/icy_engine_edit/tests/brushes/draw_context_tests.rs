@@ -7,6 +7,34 @@ use icy_engine_edit::brushes::{BrushMode, DrawContext, DrawTarget, MirrorMode, P
 use test_target::TestTarget;
 
 #[test]
+fn unicode_block_and_half_block_brushes_use_unicode_glyphs() {
+    let mut target = TestTarget::new(8, 1);
+    target.unicode = true;
+    let pos = Position::new(0, 0);
+    DrawContext::default()
+        .with_brush_mode(BrushMode::Block)
+        .plot_point(&mut target, pos, PointRole::Fill);
+    assert_eq!(target.get_at(0, 0).ch, '█');
+    target.set_char(pos, AttributedChar::new(' ', TextAttribute::default()));
+    let context = DrawContext::default().with_brush_mode(BrushMode::HalfBlock).with_foreground(4);
+    context.plot_point(&mut target, pos, PointRole::Fill);
+    assert!(matches!(target.get_at(0, 0).ch, '▀' | '▄' | '█'));
+    context.plot_point(&mut target, pos, PointRole::Fill);
+    assert!(matches!(target.get_at(0, 0).ch, '▀' | '▄' | '█'));
+}
+
+#[test]
+fn unicode_shading_uses_unicode_block_elements_with_default_ramp() {
+    let mut target = TestTarget::new(8, 1);
+    target.unicode = true;
+    let context = DrawContext::default().with_brush_mode(BrushMode::Shade);
+    for expected in ['░', '▒', '▓', '█'] {
+        context.plot_point(&mut target, Position::new(0, 0), PointRole::Fill);
+        assert_eq!(target.get_at(0, 0).ch, expected);
+    }
+}
+
+#[test]
 fn test_draw_block() {
     let mut target = TestTarget::new(80, 25);
     let ctx = DrawContext::default().with_brush_mode(BrushMode::Block);

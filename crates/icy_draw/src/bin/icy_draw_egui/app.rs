@@ -53,6 +53,8 @@ mod settings_dialog;
 mod shade;
 #[path = "tag_picker.rs"]
 mod tag_picker;
+#[path = "unicode.rs"]
+mod unicode;
 #[path = "vt52.rs"]
 mod vt52;
 #[path = "welcome.rs"]
@@ -239,6 +241,7 @@ const PREVIEW_OPACITY: f32 = 0.7;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum NewKind {
     Ansi,
+    Utf8,
     AiImport,
     Atascii,
     Vt52,
@@ -254,7 +257,7 @@ pub enum NewKind {
 impl NewKind {
     pub fn groups() -> [(String, &'static [NewKind]); 3] {
         [
-            (fl!("new-group-ansi"), &[Self::Ansi, Self::AiImport, Self::Animation, Self::Rip]),
+            (fl!("new-group-ansi"), &[Self::Ansi, Self::Utf8, Self::AiImport, Self::Animation, Self::Rip]),
             (fl!("new-group-retro"), &[Self::Atascii, Self::Vt52, Self::Igs, Self::Petscii, Self::Skypix]),
             (fl!("new-group-fonts"), &[Self::BitmapFont, Self::TheDraw]),
         ]
@@ -263,6 +266,7 @@ impl NewKind {
     pub fn name(self) -> String {
         match self {
             NewKind::Ansi => fl!("new-file-editor-ansi"),
+            NewKind::Utf8 => fl!("new-file-editor-utf8"),
             NewKind::AiImport => fl!("menu-ai-import"),
             NewKind::Atascii => fl!("new-file-editor-atascii"),
             NewKind::Vt52 => fl!("new-file-editor-vt52"),
@@ -279,6 +283,7 @@ impl NewKind {
     pub fn description(self) -> String {
         match self {
             NewKind::Ansi => fl!("new-kind-ansi-description"),
+            NewKind::Utf8 => fl!("new-kind-utf8-description"),
             NewKind::AiImport => fl!("ai-import-description"),
             NewKind::Atascii => fl!("new-kind-atascii-description"),
             NewKind::Vt52 => fl!("new-kind-vt52-description"),
@@ -295,6 +300,7 @@ impl NewKind {
     pub fn icon(self) -> &'static str {
         match self {
             NewKind::Ansi => "pencil",
+            NewKind::Utf8 => "text",
             NewKind::AiImport => "paint_brush",
             NewKind::Atascii => "text",
             NewKind::Vt52 => "cursor",
@@ -308,9 +314,9 @@ impl NewKind {
         }
     }
 
-    /// Only ANSI documents use the size entered in the New dialog.
+    /// Text art documents use the size entered in the New dialog.
     pub fn has_size(self) -> bool {
-        self == NewKind::Ansi
+        matches!(self, NewKind::Ansi | NewKind::Utf8)
     }
 }
 
@@ -537,6 +543,7 @@ impl DrawApp {
                 document.with_state(|state| template.apply(state.get_buffer_mut()));
                 self.replace(document);
             }
+            NewKind::Utf8 => self.replace(Document::new_unicode(size)),
             NewKind::Atascii => self.replace(Document::new_atascii(self.new_atascii_mode)),
             NewKind::Vt52 => self.replace(Document::new_atari_st(self.new_vt52_resolution)),
             NewKind::Petscii => self.replace(Document::new_petscii(self.new_petscii.0, self.new_petscii.1)),
@@ -1062,7 +1069,14 @@ impl DrawApp {
     pub(super) fn export_dialog(&self) -> ExportDialog {
         let (formats, sauce) = self.document.with_state(|state| {
             (
-                FileFormat::save_formats_with_images_for_buffer_type(state.get_buffer().buffer_type),
+                if state.get_buffer().buffer_type == icy_engine::BufferType::Unicode {
+                    FileFormat::save_formats_with_images_for_buffer_type(icy_engine::BufferType::Unicode)
+                        .into_iter()
+                        .filter(|format| matches!(format, FileFormat::Ansi | FileFormat::Ascii | FileFormat::IcyDraw | FileFormat::Image(_)))
+                        .collect()
+                } else {
+                    FileFormat::save_formats_with_images_for_buffer_type(state.get_buffer().buffer_type)
+                },
                 state.get_sauce_meta().clone(),
             )
         });
@@ -1078,7 +1092,11 @@ impl DrawApp {
             .map_or_else(|| fl!("unsaved-title"), |name| name.to_string_lossy().into_owned());
         let dialog = ExportDialog::new(formats, directory, &name)
             .with_settings(&self.settings.export_settings)
-            .with_sauce(Some(sauce));
+            .with_sauce(Some(sauce))
+            .with_unicode(
+                self.document
+                    .with_state(|state| state.get_buffer().buffer_type == icy_engine::BufferType::Unicode),
+            );
         // Documents of a home computer's screen export to its own format first.
         match self.document.profile().native_format() {
             Some((format, extension)) => dialog.with_format(format).with_extension(format, extension),
@@ -1111,6 +1129,13 @@ impl DrawApp {
     }
 
     pub(super) fn open_font_selector(&mut self) {
+        if self
+            .document
+            .with_state(|state| state.get_buffer().buffer_type == icy_engine::BufferType::Unicode)
+        {
+            self.result(Err(fl!("unicode-font-hint")));
+            return;
+        }
         if self
             .document
             .with_state(|state| state.get_buffer().font_mode == icy_engine::FontMode::Unlimited)
@@ -1813,7 +1838,18 @@ impl DrawApp {
                         self.shade_options(ui, font.as_ref());
                     }
                     Some(BrushPrimaryMode::Char | BrushPrimaryMode::Replace) => {
-                        if let Some(font) = &font {
+                        if self
+                            .document
+                            .with_state(|state| state.get_buffer().buffer_type == icy_engine::BufferType::Unicode)
+                        {
+                            widgets::divider(ui);
+                            if unicode::glyph_button(ui, self.document.brush.paint_char)
+                                .on_hover_text(fl!("brush-char-tooltip"))
+                                .clicked()
+                            {
+                                self.dialog = Some(Dialog::Characters);
+                            }
+                        } else if let Some(font) = &font {
                             widgets::divider(ui);
                             if widgets::glyph(ui, font, self.document.brush.paint_char, false, widgets::CONTROL_HEIGHT)
                                 .on_hover_text(fl!("brush-char-tooltip"))
@@ -1981,12 +2017,20 @@ impl DrawApp {
                             (self.settings.fkeys.current_set + self.settings.fkeys.set_count() - 1) % self.settings.fkeys.set_count();
                     }
                     for (index, code) in self.settings.fkeys.current_set_codes().into_iter().enumerate() {
-                        let response = widgets::fkey(ui, font, char::from_u32(code as u32).unwrap_or(' '), index);
+                        let character = super::input::fkey_character(&self.document, code);
+                        let unicode = self
+                            .document
+                            .with_state(|state| state.get_buffer().buffer_type == icy_engine::BufferType::Unicode);
+                        let response = if unicode {
+                            ui.button(format!("F{} {}", index + 1, character))
+                        } else {
+                            widgets::fkey(ui, font, character, index)
+                        };
                         if response.secondary_clicked() {
                             self.dialog = Some(Dialog::FKeyCharacter(self.settings.fkeys.current_set, index));
                         }
                         if response.clicked() && self.document.can_paint() {
-                            self.edit(|state| state.type_key(char::from_u32(code as u32).unwrap_or(' ')));
+                            self.edit(|state| state.type_key(character));
                             self.canvas_focus = true;
                         }
                     }
@@ -2002,6 +2046,22 @@ impl DrawApp {
                     .on_hover_text(fl!("fkey-set-tooltip"));
                     ui.spacing_mut().item_spacing.x = 4.0;
                     widgets::divider(ui);
+                    let character = self.document.brush.paint_char;
+                    let response = if self
+                        .document
+                        .with_state(|state| state.get_buffer().buffer_type == icy_engine::BufferType::Unicode)
+                    {
+                        unicode::glyph_button(ui, character)
+                    } else {
+                        widgets::glyph(ui, font, character, false, widgets::CONTROL_HEIGHT)
+                    }
+                    .on_hover_text(fl!("click-char-tooltip"));
+                    if response.clicked() {
+                        self.insert_character(character);
+                    }
+                    if response.secondary_clicked() {
+                        self.dialog = Some(Dialog::Characters);
+                    }
                     if self.icons.button(ui, "font", &fl!("char_table_tool_title"), false).clicked() {
                         self.dialog = Some(Dialog::Characters);
                     }
@@ -2542,10 +2602,10 @@ impl DrawApp {
             // The operation tried on a copy: its cells as they will look, drawn over the picture
             // translucent, so what they cover stays visible.
             let character = egui::vec2(info.font_width, info.font_height * if info.scan_lines { 2.0 } else { 1.0 });
-            let (fonts, palette) = self.document.with_state(|state| {
+            let (fonts, palette, unicode) = self.document.with_state(|state| {
                 let buffer = state.get_buffer();
                 let fonts: HashMap<u8, icy_engine::BitFont> = buffer.font_iter().map(|(slot, font)| (*slot, font.clone())).collect();
-                (fonts, buffer.palette.clone())
+                (fonts, buffer.palette.clone(), buffer.buffer_type == icy_engine::BufferType::Unicode)
             });
             let rgb = |color: icy_engine::AttributeColor, index: u32| {
                 let (red, green, blue) = color.as_rgb().unwrap_or_else(|| palette.rgb(index));
@@ -2558,8 +2618,11 @@ impl DrawApp {
                 );
                 let attribute = ch.attribute;
                 painter.rect_filled(rect, 0, rgb(attribute.background_color(), attribute.background()));
-                if let Some(font) = fonts.get(&attribute.font_page()).or_else(|| fonts.get(&0)) {
-                    widgets::paint_glyph_on(&painter, font, ch.ch, rect, rgb(attribute.foreground_color(), attribute.foreground()));
+                let foreground = rgb(attribute.foreground_color(), attribute.foreground());
+                if unicode {
+                    widgets::paint_unicode_glyph_on(&painter, ch.ch, rect, foreground);
+                } else if let Some(font) = fonts.get(&attribute.font_page()).or_else(|| fonts.get(&0)) {
+                    widgets::paint_glyph_on(&painter, font, ch.ch, rect, foreground);
                 }
             }
         }
@@ -4091,6 +4154,13 @@ impl DrawApp {
                     self.dialog = Some(Dialog::FileSettings(draft));
                 }
             }
+            Dialog::Characters
+                if self
+                    .document
+                    .with_state(|state| state.get_buffer().buffer_type == icy_engine::BufferType::Unicode) =>
+            {
+                keep = !self.unicode_character_dialog(context);
+            }
             Dialog::Characters | Dialog::FKeyCharacter(_, _) => {
                 #[derive(Clone, Copy)]
                 enum Action {
@@ -4175,7 +4245,7 @@ impl DrawApp {
                             self.result(result);
                         }
                     } else {
-                        self.document.brush.paint_char = character;
+                        self.choose_character(character);
                     }
                     keep = false;
                 }

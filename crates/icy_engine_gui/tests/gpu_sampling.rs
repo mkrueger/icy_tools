@@ -169,6 +169,60 @@ fn integer_scale_is_pixel_exact() {
 
 #[test]
 #[ignore = "requires a working wgpu adapter"]
+fn unicode_samples_high_resolution_text_and_native_resolution_graphics_independently() {
+    let gpu = Gpu::new();
+    let mut renderer = TerminalShaderRenderer::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm);
+    let mut screen = TextScreen::new((1, 1));
+    screen.buffer.buffer_type = icy_engine::BufferType::Unicode;
+    screen.set_unicode_width(true);
+    let mut attribute = TextAttribute::default();
+    attribute.set_foreground_rgb(255, 255, 255);
+    attribute.set_background_rgb(0, 0, 0);
+    screen.set_char(Position::new(0, 0), AttributedChar::new('X', attribute));
+    let state = CRTShaderState::from_screen(&screen);
+    let mut terminal = Terminal::new(Arc::new(Mutex::new(Box::new(screen))));
+    terminal.has_focus = false;
+    let size = [64, 96];
+    let mut last_frame = None;
+    for (zoom, density) in [(4.0, 1.0), (1.0, 1.0), (2.0, 2.0), (2.0, 1.0), (4.0, 1.0)] {
+        let current = frame(&terminal, &state, settings(ScalingMode::Manual(zoom), true), size, density);
+        let physical_scale = (zoom * density) as u32;
+        assert_eq!(current.text_raster_scale, physical_scale);
+        let pixels = gpu.render(&current, &mut renderer, size, density);
+        let info = terminal.render_info.read().clone();
+        let (origin_x, origin_y) = ((info.viewport_x * density) as u32, (info.viewport_y * density) as u32);
+        // One text texel per physical pixel: glyph outlines reach the screen unscaled.
+        for y in 0..16 * physical_scale {
+            for x in 0..8 * physical_scale {
+                let expected = texel(&current, x, y)[0];
+                let actual = pixel(&pixels, size[0], origin_x + x, origin_y + y);
+                assert!(
+                    actual[0].abs_diff(expected) <= 1,
+                    "Unicode sample at {zoom}x/{density} DPI differs at ({x}, {y}): {actual:?} vs {expected}"
+                );
+            }
+        }
+        last_frame = Some((current, origin_x, origin_y));
+    }
+    let (mut frame, origin_x, origin_y) = last_frame.unwrap();
+    let mut overlay = vec![0; 8 * 16 * 4];
+    overlay[..4].copy_from_slice(&[255, 0, 0, 255]);
+    let overlay = icy_engine_gui::TextureSliceData {
+        rgba_data: Arc::new(overlay),
+        width: 8,
+        height: 16,
+    };
+    let index = frame.text_slice_count;
+    frame.slices_blink_off[index] = overlay.clone();
+    frame.slices_blink_on[index] = overlay;
+    frame.render_generation += 1;
+    let pixels = gpu.render(&frame, &mut renderer, size, 1.0);
+    assert_eq!(pixel(&pixels, size[0], origin_x + 1, origin_y + 1), [255, 0, 0, 255]);
+    assert_ne!(pixel(&pixels, size[0], origin_x + 5, origin_y + 1), [255, 0, 0, 255]);
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
 fn aspect_ratio_draws_every_texel_row_with_equal_weight() {
     let gpu = Gpu::new();
     let mut renderer = TerminalShaderRenderer::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm);

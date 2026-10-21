@@ -36,6 +36,9 @@ impl EditState {
     ///
     /// Mirror mode: if enabled, the same character is placed at the mirrored x position.
     pub fn type_key(&mut self, char_code: char) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.type_unicode_key(char_code);
+        }
         let pos = self.get_caret().position();
         let layer_idx = self.get_current_layer()?;
         let insert_mode = self.get_caret().insert_mode;
@@ -136,6 +139,9 @@ impl EditState {
     /// - In insert mode: shifts characters left (deletes the character)
     /// - In overwrite mode: just clears the character at the new position
     pub fn backspace(&mut self) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.delete_unicode(true);
+        }
         let pos = self.get_caret().position();
 
         // Can't backspace at column 0
@@ -225,6 +231,9 @@ impl EditState {
     ///
     /// Deletes the character at the current position and shifts remaining characters left.
     pub fn delete_key(&mut self) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.delete_unicode(false);
+        }
         let pos = self.get_caret().position();
         let layer_idx = self.get_current_layer()?;
         let caret_attr = self.get_caret().attribute;
@@ -287,6 +296,9 @@ impl EditState {
     /// Moves caret to the beginning of the next line.
     /// In insert mode, inserts a new row first.
     pub fn new_line(&mut self) -> Result<()> {
+        if self.get_buffer().unicode_width() {
+            return self.type_unicode_key('\n');
+        }
         let pos = self.get_caret().position();
         let insert_mode = self.get_caret().insert_mode;
 
@@ -325,6 +337,11 @@ impl EditState {
         // Move to next tab stop (8-column increments)
         let new_x = ((pos.x / 8) + 1) * 8;
         let new_x = new_x.min(layer_width - 1);
+        let new_x = if self.get_buffer().unicode_width() {
+            self.unicode_caret_position(Position::new(new_x, pos.y), true).x
+        } else {
+            new_x
+        };
         self.get_caret_mut().x = new_x;
     }
 
@@ -336,6 +353,11 @@ impl EditState {
 
         // Move to previous tab stop (8-column increments)
         let new_x = if pos.x % 8 == 0 { (pos.x - 8).max(0) } else { (pos.x / 8) * 8 };
+        let new_x = if self.get_buffer().unicode_width() {
+            self.unicode_caret_position(Position::new(new_x, pos.y), false).x
+        } else {
+            new_x
+        };
         self.get_caret_mut().x = new_x;
     }
 

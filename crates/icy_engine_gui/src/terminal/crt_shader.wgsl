@@ -63,7 +63,8 @@ struct Uniforms {
     caret_size: vec2<f32>,       // Caret size in pixels (width, height)
     caret_visible: f32,          // 1.0 = visible, 0.0 = hidden (for blinking)
     caret_mode: f32,             // 0 = Bar, 1 = Block, 2 = Underline
-    _caret_padding: vec2<f32>,   // Padding for 16-byte alignment
+    text_raster_scale: f32,
+    _caret_padding: f32,
 
     // Marker uniforms (raster grid and guide crosshair)
     raster_spacing: vec2<f32>,   // Raster grid spacing in pixels (cell_width, cell_height), (0,0) = disabled
@@ -208,11 +209,6 @@ fn get_canvas_background() -> vec4<f32> {
     return uniforms.background_color;
 }
 
-fn get_max_layer_height() -> f32 {
-    // aspect_params[1] contains max_layer_height for UV scaling
-    return uniforms.aspect_params.y;
-}
-
 // Remaps a texel coordinate for the (always linear) sampler so every texel is drawn as a
 // flat block with at most a one pixel blended edge. At integer scales this is identical to
 // nearest sampling; at fractional scales (aspect ratio correction, fractional DPI, fit modes)
@@ -232,8 +228,9 @@ fn sharpen_texel(texel: f32, pixels_per_texel: f32) -> f32 {
 fn sample_slice(index: i32, texel: vec2<f32>, slice_height: f32) -> vec4<f32> {
     // All texture array layers have uniform size (max_layer_height). Rows below
     // `slice_height` hold stale data of taller tiles, so filtering must never reach them.
-    let layer_size = vec2<f32>(max(uniforms.texture_width, 1.0), max(get_max_layer_height(), 1.0));
-    let x = clamp(texel.x, 0.5, layer_size.x - 0.5);
+    let layer_size = vec2<f32>(textureDimensions(t_slices));
+    let scale = select(1.0, max(uniforms.text_raster_scale, 1.0), index < i32(uniforms.num_slices));
+    let x = clamp(texel.x, 0.5, max(uniforms.texture_width * scale - 0.5, 0.5));
     let y = clamp(texel.y, 0.5, max(slice_height - 0.5, 0.5));
     // Explicit LOD: this runs in non-uniform control flow, where implicit derivatives are undefined.
     return textureSampleLevel(t_slices, terminal_sampler, vec2<f32>(x, y) / layer_size, index, 0.0);
@@ -254,7 +251,7 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     let max_scroll_x = max(0.0, tex_width - visible_w);
     let scroll_x = clamp(uniforms.scroll_offset_x, 0.0, max_scroll_x);
 
-    // Document pixel X (absolute position in full texture); one texel per document pixel
+    // Document pixel X; Unicode text has an independent texel density.
     let doc_pixel_x = scroll_x + uv.x * visible_w;
     if doc_pixel_x < 0.0 || doc_pixel_x > tex_width {
         return get_canvas_background();
@@ -271,8 +268,10 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
     }
 
     // Convert to raw texture rows (undo aspect ratio correction)
-    let texel_x = sharpen_texel(doc_pixel_x, uniforms.aspect_params.z);
-    let texel_y = sharpen_texel(doc_pixel_y_display / aspect_y, uniforms.aspect_params.w);
+    let raw_y = doc_pixel_y_display / aspect_y;
+    let text_scale = max(uniforms.text_raster_scale, 1.0);
+    let texel_x = select(sharpen_texel(doc_pixel_x, uniforms.aspect_params.z), doc_pixel_x, text_scale > 1.0);
+    let texel_y = select(sharpen_texel(raw_y, uniforms.aspect_params.w), raw_y, text_scale > 1.0);
 
     // first_slice_start_y tells us where our sliding window starts in document space
     let window_y = texel_y - get_first_slice_start_y();
@@ -290,8 +289,12 @@ fn sample_sliced_texture(uv: vec2<f32>) -> vec4<f32> {
 
         if window_y < next_cumulative || i == num_slices - 1 {
             let texel = vec2<f32>(texel_x, window_y - cumulative_height);
-            let text_color = sample_slice(i, texel, slice_height);
-            let overlay_color = sample_slice(i + num_slices, texel, slice_height);
+            let text_color = sample_slice(i, texel * text_scale, slice_height * text_scale);
+            let overlay_texel = vec2<f32>(
+                sharpen_texel(doc_pixel_x, uniforms.aspect_params.z),
+                sharpen_texel(raw_y, uniforms.aspect_params.w) - get_first_slice_start_y() - cumulative_height
+            );
+            let overlay_color = sample_slice(i + num_slices, overlay_texel, slice_height);
             return overlay_color + text_color * (1.0 - overlay_color.a);
         }
         cumulative_height = next_cumulative;

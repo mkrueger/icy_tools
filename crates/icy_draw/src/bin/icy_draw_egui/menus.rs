@@ -360,7 +360,10 @@ impl DrawApp {
             self.open_ai_import();
         }
         if self.animation.is_none() && self.charfont.is_none() && self.rip.is_none() && self.igs.is_none() && self.skypix.is_none() {
-            if item(ui, &fl!("menu-import-font"), None, true) {
+            let bitmap_fonts = self
+                .document
+                .with_state(|state| state.get_buffer().buffer_type != icy_engine::BufferType::Unicode);
+            if item(ui, &fl!("menu-import-font"), None, bitmap_fonts) {
                 self.dialog = Some(Dialog::FontImport(Box::default()));
             }
         }
@@ -525,7 +528,10 @@ impl DrawApp {
             ui.menu_button(fl!("menu-area-operations"), |ui| self.area_menu(ui));
         });
         ui.separator();
-        if item(ui, &fl!("menu-open_font_selector"), None, true) {
+        let bitmap_fonts = self
+            .document
+            .with_state(|state| state.get_buffer().buffer_type != icy_engine::BufferType::Unicode);
+        if item(ui, &fl!("menu-open_font_selector"), None, bitmap_fonts) {
             self.open_font_selector();
         }
         ui.separator();

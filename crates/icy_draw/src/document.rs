@@ -194,6 +194,16 @@ impl Document {
         Self::from_state(EditState::from_buffer(buffer))
     }
 
+    pub fn new_unicode(size: Size) -> Self {
+        let mut screen = icy_engine::TextScreen::new(size);
+        screen.buffer.buffer_type = icy_engine::BufferType::Unicode;
+        screen.buffer.terminal_state.is_terminal_buffer = false;
+        screen.buffer.ice_mode = icy_engine::IceMode::Unlimited;
+        screen.buffer.font_mode = icy_engine::FontMode::Single;
+        screen.set_unicode_width(true);
+        Self::from_state(EditState::from_buffer(screen.buffer))
+    }
+
     /// An empty ATASCII document in the Atari screen `mode`.
     pub fn new_atascii(mode: crate::screen_profile::AtasciiMode) -> Self {
         Self::from_state(EditState::from_buffer(crate::screen_profile::atascii_buffer(mode)))
@@ -226,11 +236,23 @@ impl Document {
     }
 
     pub fn from_state(state: EditState) -> Self {
+        let mut brush = BrushSettings::default();
+        if state.get_buffer().buffer_type == icy_engine::BufferType::Unicode {
+            brush.paint_char = icy_engine::BufferType::CP437.convert_to_unicode(brush.paint_char);
+            brush.shade_chars = crate::brush::Ramp::new(
+                &brush
+                    .shade_chars
+                    .as_slice()
+                    .iter()
+                    .map(|&ch| icy_engine::BufferType::CP437.convert_to_unicode(ch))
+                    .collect::<Vec<_>>(),
+            );
+        }
         Self {
             screen: Arc::new(Mutex::new(Box::new(state))),
             path: None,
             baseline: None,
-            brush: BrushSettings::default(),
+            brush,
             box_line: None,
             box_style: BoxStyle::default(),
             tool: Tool::Click,
@@ -256,7 +278,15 @@ impl Document {
     pub fn load(path: &Path) -> DrawResult<Self> {
         let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
         let format = FileFormat::from_path(path).ok_or_else(|| format!("Unknown file format: {}", path.display()))?;
-        let load_data = crate::screen_profile::atascii_columns(path).map(|columns| icy_engine::LoadData::new(None, Some(columns)));
+        let load_data = if path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("utf8"))
+        {
+            Some(icy_engine::LoadData::default().with_convert_to_utf8(true))
+        } else {
+            crate::screen_profile::atascii_columns(path).map(|columns| icy_engine::LoadData::new(None, Some(columns)))
+        };
         let loaded = format.from_bytes(&bytes, load_data).map_err(|error| error.to_string())?;
         let mut state = EditState::from_buffer(loaded.screen.buffer);
         if let Some(sauce) = loaded.sauce_opt {
@@ -280,7 +310,14 @@ impl Document {
     pub fn bytes(&self, format: FileFormat, mut options: icy_engine::SaveOptions) -> DrawResult<Vec<u8>> {
         self.with_state(|state| {
             options.sauce = Some(state.get_sauce_meta().clone());
-            format.to_bytes(state.get_buffer(), &options).map_err(|error| error.to_string())
+            let buffer = state.get_buffer();
+            if format == FileFormat::IcyDraw && buffer.buffer_type == icy_engine::BufferType::Unicode && !options.icy_draw_options().skip_thumbnail {
+                let rect = Rectangle::from_min_size(Position::default(), Size::new(buffer.width(), buffer.height().min(80)));
+                let preview = icy_engine_gui::render_unicode_screen_to_rgba(state, &rect.into());
+                icy_engine::save_icy_draw_with_preview(buffer, &options, Some(preview)).map_err(|error| error.to_string())
+            } else {
+                format.to_bytes(buffer, &options).map_err(|error| error.to_string())
+            }
         })
     }
 
@@ -375,7 +412,25 @@ impl Document {
     /// Lifts the selected cells into a floating paste at the same place, like the Move Block and
     /// Copy Block of Moebius and PabloDraw; `cut` erases them from the layer below.
     pub fn float_selection(&mut self, cut: bool) -> DrawResult<()> {
-        let Some((data, area)) = self.with_state(|state| Some((state.clipboard_data()?, state.selection()?.as_rectangle()))) else {
+        let selected = self
+            .with_state(|state| -> icy_engine::Result<_> {
+                let Some(selection) = state.selection() else {
+                    return Ok(None);
+                };
+                let unicode = state.get_buffer().buffer_type == icy_engine::BufferType::Unicode;
+                let area = if unicode {
+                    let Some(bounds) = state.unicode_clipboard_bounds()? else {
+                        return Ok(None);
+                    };
+                    bounds
+                } else {
+                    selection.as_rectangle()
+                };
+                let data = if unicode { state.unicode_clipboard_data()? } else { state.clipboard_data() };
+                Ok(data.map(|data| (data, area)))
+            })
+            .map_err(|error| error.to_string())?;
+        let Some((data, area)) = selected else {
             return Ok(());
         };
         // Tags that lie completely inside the block go with it.
@@ -422,7 +477,12 @@ impl Document {
             }
             let mut block = icy_engine::TextAttribute::default();
             block.set_foreground(attribute.foreground());
-            state.fill_selection(icy_engine::AttributedChar::new('\u{00DB}', block))
+            let character = if state.get_buffer().buffer_type == icy_engine::BufferType::Unicode {
+                '\u{2588}'
+            } else {
+                '\u{00DB}'
+            };
+            state.fill_selection(icy_engine::AttributedChar::new(character, block))
         })
         .map_err(|error| error.to_string())
     }
@@ -552,6 +612,9 @@ impl Document {
     pub fn paste_action(&mut self, action: PasteAction) -> DrawResult<()> {
         if !self.paste_active() {
             return Ok(());
+        }
+        if action == PasteAction::Transparent && self.with_state(|state| state.get_buffer().buffer_type == icy_engine::BufferType::Unicode) {
+            return Err("The floating-paste transparency toggle is not available for Unicode documents.".into());
         }
         if action == PasteAction::Cancel {
             self.cancel();
@@ -1218,6 +1281,9 @@ impl Document {
             return Ok(());
         }
         self.with_state(|state| {
+            if state.get_buffer().buffer_type == icy_engine::BufferType::Unicode && !self.outline_font {
+                return state.type_unicode_text(text);
+            }
             let _undo = state.begin_atomic_undo("Type text");
             for character in text.chars() {
                 match character {
@@ -2205,6 +2271,55 @@ mod tests {
         for x in [8, 12] {
             assert_eq!(cell(x, 5).ch, ' ', "column {x} is outside the brush");
         }
+    }
+
+    #[test]
+    fn utf8_half_block_painting_and_filling_use_unicode_block_characters() {
+        let mut doc = Document::new_unicode(Size::new(20, 10));
+        doc.tool = Tool::Pencil;
+        doc.brush.primary = BrushPrimaryMode::HalfBlock;
+        doc.brush.brush_size = 3;
+        doc.with_state(|state| state.set_caret_attribute(icy_engine::TextAttribute::from_color(4, 0)));
+        doc.begin(Position::new(10, 10), MouseButton::Left);
+        doc.finish();
+        let cell = |doc: &Document, x: i32, y: i32| doc.with_state(|state| state.get_buffer().char_at((x, y).into()));
+        for x in 9..=11 {
+            assert_eq!(cell(&doc, x, 4).ch, '\u{2584}', "lower half block at column {x}");
+            assert_eq!(cell(&doc, x, 5).ch, '\u{2588}', "full block at column {x}");
+            assert_eq!(cell(&doc, x, 6).ch, ' ');
+        }
+        // An existing Unicode half block is recognized when the other half is added.
+        doc.brush.brush_size = 1;
+        doc.begin(Position::new(2, 1), MouseButton::Left);
+        doc.finish();
+        assert_eq!(cell(&doc, 2, 0).ch, '\u{2584}');
+        doc.begin(Position::new(2, 0), MouseButton::Left);
+        doc.finish();
+        assert_eq!(cell(&doc, 2, 0).ch, '\u{2588}');
+        doc.begin(Position::new(3, 0), MouseButton::Left);
+        doc.finish();
+        assert_eq!(cell(&doc, 3, 0).ch, '\u{2580}');
+        for x in 0..20 {
+            for y in 0..10 {
+                assert!(
+                    !matches!(cell(&doc, x, y).ch, '\u{DB}' | '\u{DC}' | '\u{DF}'),
+                    "raw CP437 code leaked into the Unicode document at ({x}, {y})"
+                );
+            }
+        }
+
+        doc.tool = Tool::Fill;
+        doc.with_state(|state| state.set_caret_attribute(icy_engine::TextAttribute::from_color(2, 0)));
+        doc.begin(Position::new(0, 19), MouseButton::Left);
+        doc.finish();
+        let filled = cell(&doc, 0, 9);
+        assert_eq!(filled.ch, '\u{2588}', "both empty halves are flooded");
+        assert_eq!(filled.attribute.foreground(), 2);
+        assert_eq!(cell(&doc, 10, 4).ch, '\u{2580}', "the empty upper half is filled");
+        assert_eq!(cell(&doc, 10, 4).attribute.foreground(), 2);
+        assert_eq!(cell(&doc, 10, 4).attribute.background(), 4, "the painted lower half keeps its color");
+        assert_eq!(cell(&doc, 10, 5).ch, '\u{2588}', "the fill stops at painted blocks");
+        assert_eq!(cell(&doc, 10, 5).attribute.foreground(), 4);
     }
 
     #[test]

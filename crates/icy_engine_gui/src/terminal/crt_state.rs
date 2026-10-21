@@ -54,6 +54,7 @@ pub struct CachedScreenInfo {
     pub last_selection_state: (Option<Position>, Option<Position>, bool),
     /// Graphics type of the screen (Text, IGS, Skypix, Rip)
     pub graphics_type: GraphicsType,
+    pub buffer_type: icy_engine::BufferType,
     /// Last bounds size for detecting window resize
     pub last_bounds_size: (f32, f32),
     /// Last scroll Y position for cache invalidation
@@ -72,6 +73,7 @@ impl Clone for CachedScreenInfo {
             render_size: self.render_size,
             last_selection_state: self.last_selection_state,
             graphics_type: self.graphics_type,
+            buffer_type: self.buffer_type,
             last_bounds_size: self.last_bounds_size,
             last_scroll_y: std::sync::atomic::AtomicU32::new(self.last_scroll_y.load(std::sync::atomic::Ordering::Relaxed)),
         }
@@ -90,6 +92,7 @@ impl Default for CachedScreenInfo {
             render_size: (0, 0),
             last_selection_state: (None, None, false),
             graphics_type: GraphicsType::Text,
+            buffer_type: icy_engine::BufferType::CP437,
             last_bounds_size: (0.0, 0.0),
             last_scroll_y: std::sync::atomic::AtomicU32::new(0),
         }
@@ -133,6 +136,7 @@ pub struct CRTShaderState {
     pub render_generation: AtomicU64,
 
     pub unicode_glyph_cache: Arc<parking_lot::Mutex<Option<UnicodeGlyphCache>>>,
+    pub(crate) terminal_unicode_cache: Mutex<crate::terminal_unicode::TerminalUnicodeCache>,
 
     /// Cached texture slices for blink_on state (with stable Arc pointers)
     pub cached_slices_blink_on: parking_lot::Mutex<Vec<TextureSliceData>>,
@@ -166,6 +170,7 @@ impl CRTShaderState {
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             render_generation: AtomicU64::new(0),
             unicode_glyph_cache: Arc::new(parking_lot::Mutex::new(None)),
+            terminal_unicode_cache: Mutex::new(Default::default()),
             cached_slices_blink_on: parking_lot::Mutex::new(Vec::new()),
             cached_slices_blink_off: parking_lot::Mutex::new(Vec::new()),
             cached_slice_heights_blink_on: parking_lot::Mutex::new(Vec::new()),
@@ -188,6 +193,7 @@ impl CRTShaderState {
     pub fn update_cached_screen_info(&self, screen: &dyn Screen) -> bool {
         let mut info = self.cached_screen_info.lock();
         let old_graphics_type = info.graphics_type;
+        let old_buffer_type = info.buffer_type;
         if let Some(font) = screen.font(0) {
             info.font_w = font.size().width as f32;
             info.font_h = font.size().height as f32;
@@ -197,7 +203,8 @@ impl CRTShaderState {
         info.resolution = screen.resolution();
         info.scan_lines = screen.scan_lines();
         info.graphics_type = screen.graphics_type();
-        old_graphics_type != info.graphics_type
+        info.buffer_type = screen.buffer_type();
+        old_graphics_type != info.graphics_type || old_buffer_type != info.buffer_type
     }
 
     /// Map mouse coordinates to cell position using shared RenderInfo from shader.
@@ -305,6 +312,7 @@ impl Default for CRTShaderState {
             instance_id: TERMINAL_SHADER_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             render_generation: AtomicU64::new(0),
             unicode_glyph_cache: Arc::new(parking_lot::Mutex::new(None)),
+            terminal_unicode_cache: Mutex::new(Default::default()),
 
             cached_slices_blink_on: parking_lot::Mutex::new(Vec::new()),
             cached_slices_blink_off: parking_lot::Mutex::new(Vec::new()),

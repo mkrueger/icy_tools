@@ -32,6 +32,37 @@ impl ExportRequest {
     /// Writes `screen` in the requested format.
     pub fn write_screen(&self, screen: &mut dyn Screen) -> Result<(), String> {
         self.write_with(|path| match self.format {
+            FileFormat::Image(image) if screen.buffer_type() == icy_engine::BufferType::Unicode => {
+                let options = icy_engine::RenderOptions {
+                    blink_on: true,
+                    ..Default::default()
+                };
+                let (size, pixels) = crate::render_unicode_screen_to_rgba(&*screen, &options);
+                let frame =
+                    image::RgbaImage::from_raw(size.width as u32, size.height as u32, pixels).ok_or_else(|| "Could not render Unicode image".to_owned())?;
+                match image {
+                    icy_engine::formats::ImageFormat::Png => frame.save_with_format(path, image::ImageFormat::Png).map_err(|error| error.to_string()),
+                    icy_engine::formats::ImageFormat::Gif => {
+                        let mut encoder = image::codecs::gif::GifEncoder::new(std::fs::File::create(path).map_err(|error| error.to_string())?);
+                        encoder.set_repeat(image::codecs::gif::Repeat::Infinite).map_err(|error| error.to_string())?;
+                        let delay = image::Delay::from_numer_denom_ms(screen.buffer_type().blink_rate() as u32, 1);
+                        encoder
+                            .encode_frame(image::Frame::from_parts(frame, 0, 0, delay))
+                            .map_err(|error| error.to_string())?;
+                        let options = icy_engine::RenderOptions {
+                            blink_on: false,
+                            ..Default::default()
+                        };
+                        let (size, pixels) = crate::render_unicode_screen_to_rgba(&*screen, &options);
+                        let frame = image::RgbaImage::from_raw(size.width as u32, size.height as u32, pixels)
+                            .ok_or_else(|| "Could not render Unicode image".to_owned())?;
+                        encoder
+                            .encode_frame(image::Frame::from_parts(frame, 0, 0, delay))
+                            .map_err(|error| error.to_string())
+                    }
+                    _ => Err(format!("Unicode image export does not support {}", image.name())),
+                }
+            }
             FileFormat::Image(image) => image.save_screen(&*screen, path).map_err(|error| error.to_string()),
             format => {
                 let data = screen.to_bytes(format.primary_extension(), &self.options).map_err(|error| error.to_string())?;
@@ -86,6 +117,7 @@ pub struct ExportDialog {
     error: Option<String>,
     /// A format written with another of its extensions, such as XEP80 ATASCII as .xep.
     extension: Option<(FileFormat, &'static str)>,
+    unicode: bool,
 }
 
 impl ExportDialog {
@@ -112,6 +144,7 @@ impl ExportDialog {
             confirmed: None,
             error: None,
             extension: None,
+            unicode: false,
         };
         dialog.file_name = dialog.stem(name);
         if dialog.file_name.is_empty() {
@@ -133,7 +166,35 @@ impl ExportDialog {
         if let Some(format) = settings.format_in(&self.formats) {
             self.format = format;
         }
+        self.unicode_defaults();
         self
+    }
+
+    /// Use UTF-8 export defaults for Unicode documents, overriding legacy
+    /// persisted defaults. Callers still choose the compatible format list.
+    pub fn with_buffer_type(mut self, buffer_type: icy_engine::BufferType) -> Self {
+        self.unicode = buffer_type == icy_engine::BufferType::Unicode;
+        self.unicode_defaults();
+        self
+    }
+
+    pub fn with_unicode(self, unicode: bool) -> Self {
+        self.with_buffer_type(if unicode {
+            icy_engine::BufferType::Unicode
+        } else {
+            icy_engine::BufferType::CP437
+        })
+    }
+
+    pub fn with_buffer(self, buffer: &icy_engine::TextBuffer) -> Self {
+        self.with_buffer_type(buffer.buffer_type)
+    }
+
+    fn unicode_defaults(&mut self) {
+        if self.unicode {
+            self.settings.ansi_level = AnsiCompatibilityLevel::Utf8Terminal;
+            self.settings.utf8_output = true;
+        }
     }
 
     pub fn with_format(mut self, format: FileFormat) -> Self {
@@ -481,6 +542,55 @@ mod tests {
         screen
     }
 
+    #[test]
+    fn unicode_documents_override_legacy_export_defaults_in_either_builder_order() {
+        for dialog in [
+            ExportDialog::new(vec![FileFormat::Ansi], ".", "unicode")
+                .with_settings(&ExportSettings::default())
+                .with_unicode(true),
+            ExportDialog::new(vec![FileFormat::Ansi], ".", "unicode")
+                .with_unicode(true)
+                .with_settings(&ExportSettings::default()),
+        ] {
+            assert_eq!(dialog.settings().ansi_level, AnsiCompatibilityLevel::Utf8Terminal);
+            assert!(dialog.settings().utf8_output);
+            assert_eq!(dialog.request().unwrap().options.ansi_options().level, AnsiCompatibilityLevel::Utf8Terminal);
+        }
+    }
+
+    #[test]
+    fn unicode_png_and_gif_export_use_the_crt_rasterizer() {
+        let directory = tempfile::Builder::new()
+            .prefix("unicode-export-")
+            .tempdir_in(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target"))
+            .unwrap();
+        let mut screen = screen();
+        screen.buffer.buffer_type = icy_engine::BufferType::Unicode;
+        screen.set_unicode_width(true);
+        screen.buffer.layers[0]
+            .set_grapheme(icy_engine::Position::new(0, 0), "Ж", icy_engine::TextAttribute::default())
+            .unwrap();
+        let (expected_size, expected) = crate::render_unicode_screen_to_rgba(
+            &screen,
+            &icy_engine::RenderOptions {
+                blink_on: true,
+                ..Default::default()
+            },
+        );
+        for format in [ImageFormat::Png, ImageFormat::Gif] {
+            let request = ExportRequest {
+                path: directory.path().join(format!("unicode.{}", format.extension())),
+                format: FileFormat::Image(format),
+                options: SaveOptions::default(),
+            };
+            request.write_screen(&mut screen).unwrap();
+            let image = image::open(&request.path).unwrap().into_rgba8();
+            assert_eq!(image.dimensions(), (expected_size.width as u32, expected_size.height as u32));
+            if format == ImageFormat::Png {
+                assert_eq!(image.into_raw(), expected);
+            }
+        }
+    }
     #[test]
     fn target_appends_the_format_extension_and_rejects_folders_in_the_name() {
         let directory = tempfile::tempdir().unwrap();

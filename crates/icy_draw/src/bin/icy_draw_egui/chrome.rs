@@ -293,7 +293,11 @@ fn render_minimap(buffer: &TextBuffer, max_side: usize) -> Option<egui::ColorIma
         return None;
     }
     let options: RenderOptions = Rectangle::from(0, 0, size.width, size.height).into();
-    let (pixels, rgba) = buffer.render_to_rgba(&options, false);
+    let (pixels, rgba) = if buffer.buffer_type == icy_engine::BufferType::Unicode {
+        icy_engine_gui::render_unicode_screen_to_rgba(&icy_engine::TextScreen::from_buffer(buffer.clone()), &options)
+    } else {
+        buffer.render_to_rgba(&options, false)
+    };
     let (width, height) = (pixels.width.max(0) as usize, pixels.height.max(0) as usize);
     let step = width.div_ceil(MINIMAP_PIXELS).max(height.div_ceil(max_side.max(1)));
     downsample_by(width, height, &rgba, step)
@@ -372,6 +376,7 @@ fn layer_preview_sized(buffer: &TextBuffer, index: usize, max_width: usize) -> O
         return None;
     }
     let mut preview = TextBuffer::create(size);
+    preview.buffer_type = buffer.buffer_type;
     preview.palette = buffer.palette.clone();
     preview.set_font_table(buffer.font_table());
     preview.ice_mode = buffer.ice_mode;
@@ -389,7 +394,11 @@ fn layer_preview_sized(buffer: &TextBuffer, index: usize, max_width: usize) -> O
     let options: RenderOptions = Rectangle::from(0, 0, columns, rows).into();
     let dimensions = preview.font_dimensions();
     let region = Rectangle::from(0, 0, columns * (dimensions.width + 1), rows * dimensions.height * 2);
-    let (pixels, rgba) = preview.render_region_to_rgba(region, &options, false);
+    let (pixels, rgba) = if buffer.buffer_type == icy_engine::BufferType::Unicode {
+        icy_engine_gui::render_unicode_screen_to_rgba(&icy_engine::TextScreen::from_buffer(preview), &options)
+    } else {
+        preview.render_region_to_rgba(region, &options, false)
+    };
     downsample(pixels.width.max(0) as usize, pixels.height.max(0) as usize, &rgba, max_width)
 }
 
@@ -2063,7 +2072,12 @@ impl DrawApp {
                         font.to_owned()
                     }
                 };
-                if let Some((names, current)) = self.font_slots() {
+                if self
+                    .document
+                    .with_state(|state| state.get_buffer().buffer_type == icy_engine::BufferType::Unicode)
+                {
+                    widgets::status_button(ui, "UTF-8", &fl!("unicode-mode-hint"));
+                } else if let Some((names, current)) = self.font_slots() {
                     // XBin Extended: one button per font slot; the caret's slot is outlined.
                     for slot in [1, 0] {
                         let label = if compact {

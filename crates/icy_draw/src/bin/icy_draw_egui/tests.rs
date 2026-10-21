@@ -1,5 +1,325 @@
 use super::*;
 
+#[test]
+fn utf8_document_types_wide_and_combining_text_and_roundtrips() {
+    use_english();
+    let mut app = DrawApp::new();
+    app.create(NewKind::Utf8, Size::new(20, 4));
+    app.document.type_text("A\u{754c}e\u{301}\u{1f600}").unwrap();
+    app.document.with_state(|state| {
+        let buffer = state.get_buffer();
+        assert_eq!(buffer.buffer_type, icy_engine::BufferType::Unicode);
+        assert_eq!(buffer.grapheme_at(Position::new(1, 0)), Some(("\u{754c}", 2)));
+        assert_eq!(buffer.grapheme_at(Position::new(3, 0)), Some(("e\u{301}", 1)));
+        assert_eq!(state.get_caret().position(), Position::new(6, 0));
+    });
+    let bytes = app.document.bytes(FileFormat::IcyDraw, icy_engine::SaveOptions::icy_draw()).unwrap();
+    let thumbnail = image::load_from_memory(&bytes).unwrap().to_rgba8();
+    assert_eq!(thumbnail.dimensions(), (160, 64));
+    assert!(thumbnail.pixels().any(|pixel| pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0));
+    let loaded = FileFormat::IcyDraw.from_bytes(&bytes, None).unwrap().screen;
+    assert!(loaded.unicode_width());
+    assert_eq!(loaded.buffer.grapheme_at(Position::new(3, 0)), Some(("e\u{301}", 1)));
+    app.document.undo().unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch), ' ');
+    app.document.redo().unwrap();
+    assert_eq!(
+        app.document.with_state(|state| state
+            .get_buffer()
+            .grapheme_at(Position::new(3, 0))
+            .map(|(text, width)| (text.to_owned(), width))),
+        Some(("e\u{301}".into(), 1))
+    );
+}
+
+#[test]
+fn utf8_cursor_arrows_skip_wide_character_continuations() {
+    use_english();
+    let mut document = Document::new_unicode(Size::new(20, 4));
+    document.type_text("A\u{754c}B").unwrap();
+    document.with_state(|state| state.set_caret_position(Position::new(1, 0)));
+    let mut fkeys = icy_draw::FKeySets::default();
+    super::super::input::key(&mut document, &mut fkeys, Key::ArrowRight, egui::Modifiers::NONE).unwrap();
+    assert_eq!(document.with_state(|state| state.get_caret().position()), Position::new(3, 0));
+    super::super::input::key(&mut document, &mut fkeys, Key::ArrowLeft, egui::Modifiers::NONE).unwrap();
+    assert_eq!(document.with_state(|state| state.get_caret().position()), Position::new(1, 0));
+    assert_eq!(super::super::input::fkey_character(&document, 0xC4), '\u{2500}');
+}
+
+#[test]
+fn utf8_image_exports_use_unicode_glyphs_and_document_dimensions() {
+    use_english();
+    let mut document = Document::new_unicode(Size::new(20, 4));
+    document.type_text("A\u{754c}e\u{301}").unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    for (format, extension) in [(icy_engine::ImageFormat::Png, "png"), (icy_engine::ImageFormat::Gif, "gif")] {
+        let path = directory.path().join(format!("unicode.{extension}"));
+        let request = ExportRequest {
+            path: path.clone(),
+            format: FileFormat::Image(format),
+            options: icy_engine::SaveOptions::default(),
+        };
+        super::super::export::write(&document, &request).unwrap();
+        let image = image::load_from_memory(&std::fs::read(path).unwrap()).unwrap().to_rgba8();
+        assert_eq!(image.dimensions(), (160, 64));
+        assert!(image.pixels().any(|pixel| pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0));
+    }
+}
+
+#[test]
+fn utf8_tall_documents_use_bounded_native_thumbnails() {
+    let mut document = Document::new_unicode(Size::new(20, 10_000));
+    document.type_text("Unicode").unwrap();
+    let bytes = document.bytes(FileFormat::IcyDraw, icy_engine::SaveOptions::icy_draw()).unwrap();
+    let image = image::load_from_memory(&bytes).unwrap();
+    assert_eq!((image.width(), image.height()), (160, 80 * 16));
+}
+
+#[test]
+fn utf8_selection_blocks_move_and_copy_with_graphemes_colors_and_undo() {
+    use_english();
+    for cut in [false, true] {
+        let mut document = Document::new_unicode(Size::new(20, 4));
+        document.with_state(|state| state.set_caret_foreground(12));
+        document.type_text("\u{754c}e\u{301}").unwrap();
+        document
+            .with_state(|state| state.set_selection(icy_engine::Rectangle::from(0, 0, 3, 1)))
+            .unwrap();
+        document.float_selection(cut).unwrap();
+        assert!(document.paste_active());
+        document.paste_action(icy_draw::document::PasteAction::Move(Position::new(5, 0))).unwrap();
+        document.paste_action(icy_draw::document::PasteAction::Anchor).unwrap();
+        document.with_state(|state| {
+            let buffer = state.get_buffer();
+            assert_eq!(buffer.grapheme_at(Position::new(5, 0)), Some(("\u{754c}", 2)));
+            assert_eq!(buffer.grapheme_at(Position::new(7, 0)), Some(("e\u{301}", 1)));
+            assert_eq!(buffer.char_at(Position::new(5, 0)).attribute.foreground(), 12);
+            assert_eq!(buffer.char_at(Position::new(0, 0)).ch, if cut { ' ' } else { '\u{754c}' });
+        });
+        document.undo().unwrap();
+        document.with_state(|state| {
+            assert_eq!(state.get_buffer().grapheme_at(Position::new(0, 0)), Some(("\u{754c}", 2)));
+            assert_eq!(state.get_buffer().grapheme_at(Position::new(5, 0)), None);
+        });
+    }
+}
+
+#[test]
+fn utf8_selection_fill_uses_unicode_blocks_and_preserves_undo() {
+    let mut document = Document::new_unicode(Size::new(20, 4));
+    document.type_text("\u{754c}").unwrap();
+    document
+        .with_state(|state| state.set_selection(icy_engine::Rectangle::from(0, 0, 2, 1)))
+        .unwrap();
+    document.fill_selection().unwrap();
+    document.with_state(|state| {
+        assert_eq!(state.get_buffer().char_at(Position::new(0, 0)).ch, '\u{2588}');
+        assert_eq!(state.get_buffer().char_at(Position::new(1, 0)).ch, '\u{2588}');
+    });
+    document.undo().unwrap();
+    assert_eq!(
+        document.with_state(|state| state
+            .get_buffer()
+            .grapheme_at(Position::new(0, 0))
+            .map(|(text, width)| (text.to_owned(), width))),
+        Some(("\u{754c}".into(), 2))
+    );
+}
+
+#[test]
+fn utf8_floating_blocks_keep_the_expanded_origin_across_rows() {
+    let mut document = Document::new_unicode(Size::new(20, 4));
+    document.type_text("AB\r\n\u{754c}C").unwrap();
+    document
+        .with_state(|state| state.set_selection(icy_engine::Rectangle::from(1, 0, 1, 2)))
+        .unwrap();
+    document.float_selection(false).unwrap();
+    assert_eq!(document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::default());
+    document.paste_action(icy_draw::document::PasteAction::Move(Position::new(5, 0))).unwrap();
+    document.paste_action(icy_draw::document::PasteAction::Anchor).unwrap();
+    document.with_state(|state| {
+        assert_eq!(state.get_buffer().char_at(Position::new(6, 0)).ch, 'B');
+        assert_eq!(state.get_buffer().grapheme_at(Position::new(5, 1)), Some(("\u{754c}", 2)));
+        assert_eq!(state.get_buffer().char_at(Position::new(5, 0)).ch, ' ');
+    });
+}
+
+#[test]
+fn utf8_character_picker_draws_text_without_prerendered_page_textures() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.create(NewKind::Utf8, Size::new(20, 4));
+    for (page, code) in [(0, "0041"), (0x4E, "4E00"), (0x1F6, "1F600"), (0, "0041")] {
+        context.data_mut(|data| {
+            data.insert_temp(egui::Id::new("unicode-character-picker"), (page, code.to_owned()));
+        });
+        let started = std::time::Instant::now();
+        let outputs: Vec<_> = (0..3)
+            .map(|_| {
+                context.run(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                        ..Default::default()
+                    },
+                    |context| {
+                        assert!(!app.unicode_character_dialog(context));
+                    },
+                )
+            })
+            .collect();
+        eprintln!("Unicode picker page {page:X} (3 frames): {:?}", started.elapsed());
+        for output in &outputs {
+            assert!(
+                output.textures_delta.set.iter().all(|(id, _)| *id == egui::TextureId::Managed(0)),
+                "The picker must only update egui's shared font atlas"
+            );
+        }
+        assert!(outputs.last().unwrap().shapes.iter().any(|shape| matches!(
+            &shape.shape,
+            egui::Shape::Text(text) if text.galley.text() == char::from_u32(page * 256 + 0x41).unwrap().to_string()
+        )));
+    }
+}
+
+#[test]
+fn utf8_character_picker_selects_text_cells_directly() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.create(NewKind::Utf8, Size::new(20, 4));
+    app.dialog = Some(Dialog::Characters);
+    context.data_mut(|data| {
+        data.insert_temp(egui::Id::new("unicode-character-picker"), (3_u32, "0391".to_owned()));
+    });
+    let size = egui::vec2(1280.0, 820.0);
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    click_text(&context, &mut app, size, "\u{3A9}");
+    assert!(app.dialog.is_none());
+    assert_eq!(app.document.brush.paint_char, '\u{3A9}');
+}
+
+#[test]
+fn utf8_shape_previews_draw_unicode_glyphs_like_the_canvas() {
+    let context = egui::Context::default();
+    let mut shapes = Vec::new();
+    let output = context.run(egui::RawInput::default(), |context| {
+        let painter = context.layer_painter(egui::LayerId::background());
+        for (index, character) in ['\u{2591}', '\u{2580}', '\u{754c}', ' '].into_iter().enumerate() {
+            let cell = egui::Rect::from_min_size(egui::pos2(index as f32 * 40.0, 0.0), egui::vec2(16.0, 32.0));
+            widgets::paint_unicode_glyph_on(&painter, character, cell, Color32::RED);
+        }
+    });
+    shapes.extend(output.shapes.iter().filter_map(|shape| match &shape.shape {
+        egui::Shape::Mesh(mesh) => Some((mesh.texture_id, mesh.calc_bounds())),
+        _ => None,
+    }));
+    assert_eq!(shapes.len(), 3, "spaces draw nothing");
+    let image = |id: egui::TextureId| {
+        output
+            .textures_delta
+            .set
+            .iter()
+            .find(|(texture, _)| *texture == id)
+            .map(|(_, delta)| match &delta.image {
+                egui::ImageData::Color(image) => image.clone(),
+            })
+            .unwrap()
+    };
+    let shade = image(shapes[0].0);
+    assert_eq!(shade.size, [16, 32]);
+    let lit = shade.pixels.iter().filter(|pixel| pixel.a() > 0).count();
+    assert_eq!(lit * 4, shade.pixels.len(), "░ keeps its 25% dither pattern");
+    let half = image(shapes[1].0);
+    assert!(half.pixels[..16 * 16].iter().all(|pixel| pixel.a() == 255));
+    assert!(half.pixels[16 * 16..].iter().all(|pixel| pixel.a() == 0));
+    assert_eq!(image(shapes[2].0).size, [32, 32]);
+    assert_eq!(shapes[2].1.width(), 32.0, "wide characters cover two cells");
+    assert_eq!(shapes[0].1.width(), 16.0);
+}
+
+#[test]
+fn click_tool_character_button_inserts_and_the_table_replaces_it() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::vec2(1280.0, 820.0);
+    let mut app = DrawApp::new();
+    app.create(NewKind::Utf8, Size::new(20, 4));
+    app.document.tool = Tool::Click;
+    app.document.brush.paint_char = '\u{2605}';
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    for _ in 0..2 {
+        click_text(&context, &mut app, size, "\u{2605}");
+    }
+    let row = |app: &DrawApp| -> String {
+        app.document
+            .with_state(|state| (0..4).map(|x| state.get_buffer().char_at(Position::new(x, 0)).ch).collect())
+    };
+    assert_eq!(row(&app), "\u{2605}\u{2605}  ");
+
+    // Choosing from the table types the character once and makes it the button's character.
+    for (tool, expected) in [(Tool::Click, "\u{2605}\u{2605}\u{263A} "), (Tool::Pencil, "\u{2605}\u{2605}\u{263A} ")] {
+        app.document.tool = tool;
+        app.dialog = Some(Dialog::Characters);
+        context.data_mut(|data| data.insert_temp(egui::Id::new("unicode-character-picker"), (0x26_u32, "263A".to_owned())));
+        for _ in 0..3 {
+            frame(&context, &mut app, size, vec![]);
+        }
+        click_text(&context, &mut app, size, &icy_draw::fl!("select-font-dialog-select"));
+        assert!(app.dialog.is_none());
+        assert_eq!(app.document.brush.paint_char, '\u{263A}');
+        assert_eq!(row(&app), expected, "{tool:?}");
+    }
+
+    let mut legacy = DrawApp::new();
+    legacy.create(NewKind::Ansi, Size::new(20, 4));
+    legacy.document.tool = Tool::Click;
+    legacy.choose_character('\u{DB}');
+    legacy.insert_character('\u{DB}');
+    legacy.document.tool = Tool::Pencil;
+    legacy.choose_character('\u{B0}');
+    assert_eq!(row(&legacy), "\u{DB}\u{DB}  ");
+    assert_eq!(legacy.document.brush.paint_char, '\u{B0}');
+}
+
+#[test]
+fn utf8_character_picker_accepts_supplementary_codepoints() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.create(NewKind::Utf8, Size::new(20, 4));
+    app.dialog = Some(Dialog::Characters);
+    context.data_mut(|data| {
+        data.insert_temp(egui::Id::new("unicode-character-picker"), (0x1F6_u32, "1F600".to_owned()));
+    });
+    let size = egui::vec2(1280.0, 820.0);
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    let output = frame(&context, &mut app, size, vec![]);
+    let select_bounds: Vec<_> = output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.text() == icy_draw::fl!("select-font-dialog-select") => {
+                Some((egui::Rect::from_min_size(text.pos, text.galley.size()), shape.clip_rect))
+            }
+            _ => None,
+        })
+        .collect();
+    click_text(&context, &mut app, size, &icy_draw::fl!("select-font-dialog-select"));
+    assert!(app.dialog.is_none(), "Select button geometry: {select_bounds:?}");
+    assert_eq!(app.document.brush.paint_char, '\u{1F600}');
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn additional_windows_preserve_only_the_explicit_x11_choice() {
@@ -4459,7 +4779,7 @@ fn new_document_groups_cover_all_editors_in_the_same_order() {
     let mut app = DrawApp::new();
     app.show_start = true;
     let groups = NewKind::groups();
-    assert!(groups[0].1 == [NewKind::Ansi, NewKind::AiImport, NewKind::Animation, NewKind::Rip]);
+    assert!(groups[0].1 == [NewKind::Ansi, NewKind::Utf8, NewKind::AiImport, NewKind::Animation, NewKind::Rip]);
     assert!(groups[1].1 == [NewKind::Atascii, NewKind::Vt52, NewKind::Igs, NewKind::Petscii, NewKind::Skypix]);
     assert!(groups[2].1 == [NewKind::BitmapFont, NewKind::TheDraw]);
     let welcome = frame(&context, &mut app, size, vec![]);

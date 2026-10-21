@@ -53,10 +53,9 @@ pub fn clamp_terminal_height_to_viewport(editable: &mut dyn EditableScreen, boun
 
 /// Inclusive range of tiles covering the lines `first_line..end_line` (`end_line` exclusive).
 ///
-/// `line_height` is in raw texture rows. A line may straddle a tile boundary, so both
+/// `line_height` is in raw document rows. A line may straddle a tile boundary, so both
 /// ends are mapped through pixel rows instead of assuming whole lines per tile.
-fn tiles_for_lines(first_line: i32, end_line: i32, line_height: f32) -> (i32, i32) {
-    let tile_height = TILE_HEIGHT as f32;
+fn tiles_for_lines(first_line: i32, end_line: i32, line_height: f32, tile_height: f32) -> (i32, i32) {
     let first_row = first_line.max(0) as f32 * line_height;
     let last_row = (end_line.max(first_line + 1) as f32 * line_height - 1.0).max(first_row);
     ((first_row / tile_height).floor() as i32, (last_row / tile_height).floor() as i32)
@@ -105,6 +104,8 @@ impl<'a> CRTShaderProgram<'a> {
         let tile_height: f32;
         let full_content_height_raw: f32;
         let raw_line_height: f32;
+        let text_raster_scale: u32;
+        let is_unicode: bool;
 
         let mut slices_blink_off: Vec<TextureSliceData> = Vec::new();
         let mut slices_blink_on: Vec<TextureSliceData> = Vec::new();
@@ -379,6 +380,28 @@ impl<'a> CRTShaderProgram<'a> {
 
             full_content_height = content_height;
             texture_width = resolution.width as u32;
+            is_unicode = screen.buffer_type() == icy_engine::BufferType::Unicode;
+            text_raster_scale = if is_unicode {
+                let display_scale = self.monitor_settings.scaling_mode.compute_zoom(
+                    visible_width,
+                    visible_height,
+                    bounds_width,
+                    bounds_height,
+                    self.monitor_settings.use_integer_scaling,
+                );
+                // Match physical pixels; supersampling beyond that multiplies the per-edit cost.
+                let desired = (display_scale * pixels_per_point * aspect_ratio_y.max(1.0) - 0.05).ceil().max(1.0) as u32;
+                let max_scale = (wgpu::Limits::default().max_texture_dimension_2d / texture_width.max(1)).clamp(1, 4);
+                desired.clamp(1, max_scale)
+            } else {
+                1
+            };
+            // Smaller Unicode tiles bound upload work; retain enough coverage for zoomed-out views.
+            tile_height = if is_unicode {
+                (512 / text_raster_scale).max((visible_height / aspect_ratio_y / (MAX_TEXTURE_SLICES - 2) as f32).ceil() as u32) as f32
+            } else {
+                TILE_HEIGHT as f32
+            };
 
             // Scrolling is owned by the scroll_area widget. The shader clamps offsets locally
             // and exposes effective values via the shared render cache.
@@ -393,7 +416,7 @@ impl<'a> CRTShaderProgram<'a> {
                 let texture_width_changed = cache.content_width != 0 && cache.content_width != texture_width;
 
                 // Full invalidation when screen type or rendered width changes.
-                if screen_type_changed || texture_width_changed {
+                if screen_type_changed || texture_width_changed || cache.text_raster_scale != text_raster_scale || cache.raw_tile_height != tile_height as u32 {
                     cache.invalidate();
                 }
 
@@ -402,13 +425,15 @@ impl<'a> CRTShaderProgram<'a> {
                 // it touched repaints in one go once the update ends.
                 let dirty_lines = if synchronized { None } else { screen.get_dirty_lines() };
                 if let Some((first_dirty_line, end_dirty_line)) = dirty_lines {
-                    let (first_tile, last_tile) = tiles_for_lines(first_dirty_line, end_dirty_line, raw_line_height);
+                    let (first_tile, last_tile) = tiles_for_lines(first_dirty_line, end_dirty_line, raw_line_height, tile_height);
                     cache.invalidate_tiles(first_tile, last_tile);
                     screen.clear_dirty_lines();
                 }
 
                 cache.content_height = full_content_height;
                 cache.content_width = texture_width;
+                cache.text_raster_scale = text_raster_scale;
+                cache.raw_tile_height = tile_height as u32;
                 cache.last_blink_state = blink_on;
 
                 // Expose the *effective* visible region used by the shader so other widgets
@@ -534,8 +559,6 @@ impl<'a> CRTShaderProgram<'a> {
 
             // Calculate which tiles we need based on scroll position
             // Each tile is TILE_HEIGHT pixels tall
-            tile_height = TILE_HEIGHT as f32;
-
             // Tile slicing/rendering happens in RAW texture pixel coordinates.
             // Viewport/scroll inputs are in aspect-corrected document pixels.
             let scroll_offset_y_raw = scroll_offset_y / aspect_ratio_y;
@@ -609,11 +632,32 @@ impl<'a> CRTShaderProgram<'a> {
                 });
 
                 let cache_key = TileCacheKey::new(tile_idx, blink_state);
-                let cached_tile = if selection_intersects {
+                let mut cached_tile = if selection_intersects {
                     None
                 } else {
                     self.term.render_cache.read().get(&cache_key).cloned()
                 };
+                // High-resolution Unicode tiles are costly; without blinking cells both states are identical.
+                if cached_tile.is_none() && blink_state && is_unicode && !selection_intersects {
+                    let first_line = (tile_start_y / raw_line_height).floor() as i32;
+                    let last_line = ((tile_end_y - 1.0).max(tile_start_y) / raw_line_height).floor() as i32;
+                    let has_blink = |screen: &dyn icy_engine::Screen| {
+                        (first_line..=last_line.min(screen.height() - 1))
+                            .any(|y| (0..screen.width()).any(|x| screen.char_at(icy_engine::Position::new(x, y)).attribute.is_blinking()))
+                    };
+                    let blinking = if let Some(snapshot) = render_snapshot.as_ref() {
+                        has_blink(&**snapshot)
+                    } else {
+                        has_blink(&**self.term.screen.lock())
+                    };
+                    if !blinking {
+                        let mut cache = self.term.render_cache.write();
+                        if let Some(steady) = cache.get(&TileCacheKey::new(tile_idx, false)).cloned() {
+                            cache.insert(cache_key, steady.clone());
+                            cached_tile = Some(steady);
+                        }
+                    }
+                }
 
                 if let Some(cached) = cached_tile {
                     slices.push(cached.texture);
@@ -638,10 +682,23 @@ impl<'a> CRTShaderProgram<'a> {
                         selection_bg: selection_bg.clone(),
                         override_scan_lines: None,
                     };
+                    let render_text = |screen: &dyn icy_engine::Screen| {
+                        if screen.buffer_type() == icy_engine::BufferType::Unicode {
+                            crate::terminal_unicode::render_region_scaled(
+                                screen,
+                                tile_region,
+                                &render_options,
+                                &state.terminal_unicode_cache,
+                                text_raster_scale,
+                            )
+                        } else {
+                            screen.render_text_region_to_rgba_raw(tile_region, &render_options)
+                        }
+                    };
                     let (render_size, rgba_data) = if let Some(snapshot) = render_snapshot.as_ref() {
-                        snapshot.render_text_region_to_rgba_raw(tile_region, &render_options)
+                        render_text(&**snapshot)
                     } else {
-                        self.term.screen.lock().render_text_region_to_rgba_raw(tile_region, &render_options)
+                        render_text(&**self.term.screen.lock())
                     };
                     let width = render_size.width as u32;
                     let height = render_size.height as u32;
@@ -656,7 +713,7 @@ impl<'a> CRTShaderProgram<'a> {
                     if !selection_intersects {
                         let cached_tile = SharedCachedTile {
                             texture: slice.clone(),
-                            height,
+                            height: actual_tile_height,
                             start_y: tile_start_y,
                         };
                         self.term.render_cache.write().insert(cache_key, cached_tile);
@@ -664,7 +721,7 @@ impl<'a> CRTShaderProgram<'a> {
 
                     slices.push(slice);
                     if heights.len() < tile_indices.len() {
-                        heights.push(height);
+                        heights.push(actual_tile_height);
                     }
                 }
             }
@@ -828,6 +885,7 @@ impl<'a> CRTShaderProgram<'a> {
             slices_blink_off,
             slices_blink_on,
             text_slice_count,
+            text_raster_scale,
             slice_heights,
             texture_width,
             total_content_height: full_content_height,

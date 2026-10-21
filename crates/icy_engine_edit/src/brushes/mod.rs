@@ -83,6 +83,11 @@ pub struct HalfBlocks {
 /// This abstraction allows the brush algorithms to work with
 /// any buffer-like structure without depending on specific types.
 pub trait DrawTarget {
+    /// Whether brush glyphs use Unicode rather than CP437 glyph indices.
+    fn unicode_width(&self) -> bool {
+        false
+    }
+
     /// Get the width of the drawable area
     fn width(&self) -> i32;
 
@@ -269,18 +274,24 @@ impl DrawContext {
 
     fn draw_block<T: DrawTarget>(&self, target: &mut T, pos: Position) {
         let attr = self.make_attribute();
-        target.set_char(pos, AttributedChar::new(HALF_BLOCKS.full, attr));
+        target.set_char(pos, AttributedChar::new(if target.unicode_width() { '█' } else { HALF_BLOCKS.full }, attr));
     }
 
     fn draw_half_block<T: DrawTarget>(&self, target: &mut T, pos: Position) {
         // CP437 half-block drawing: update only upper/lower pixel using existing cell state.
-        let Some(current) = target.char_at(pos) else {
+        let Some(mut current) = target.char_at(pos) else {
             return;
         };
+        if target.unicode_width() {
+            current.ch = crate::BufferType::CP437.convert_from_unicode(current.ch);
+        }
         let hb_pos = Position::new(pos.x, if self.half_block_is_top { 0 } else { 1 });
         let hb = icy_engine::paint::HalfBlock::from_char(current, hb_pos);
         let col = AttributeColor::Palette(self.foreground as u8);
-        let block = hb.get_half_block_char(col, true);
+        let mut block = hb.get_half_block_char(col, true);
+        if target.unicode_width() {
+            block.ch = crate::BufferType::CP437.convert_to_unicode(block.ch);
+        }
         target.set_char(pos, block);
     }
 
@@ -290,6 +301,11 @@ impl DrawContext {
             return;
         }
         let attr = self.make_attribute();
+        let ch = if target.unicode_width() {
+            crate::BufferType::CP437.convert_to_unicode(ch)
+        } else {
+            ch
+        };
         target.set_char(pos, AttributedChar::new(ch, attr));
     }
 
@@ -307,6 +323,12 @@ impl DrawContext {
     }
 
     fn draw_shade<T: DrawTarget>(&self, target: &mut T, pos: Position, up: bool) {
+        if target.unicode_width() && self.shade_chars.as_slice() == SHADE_GRADIENT {
+            let mut unicode = self.clone();
+            unicode.shade_chars = SHADE_GRADIENT.iter().map(|ch| crate::BufferType::CP437.convert_to_unicode(*ch)).collect();
+            unicode.draw_shade(target, pos, up);
+            return;
+        }
         let current = target.char_at(pos);
         let current_ch = current.map(|c| c.ch).unwrap_or(' ');
         let keep_chars = self.shade_chars.is_empty();

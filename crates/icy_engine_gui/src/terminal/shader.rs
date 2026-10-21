@@ -54,8 +54,8 @@ struct CRTUniforms {
     visible_height: f32,
 
     // aspect_params[0] = aspect_ratio_y (1.0 = disabled)
-    // aspect_params[1] = max_layer_height (for UV scaling in texture arrays)
-    // aspect_params[2..4] = physical screen pixels per texel (x, y)
+    // aspect_params[1] = maximum logical slice height
+    // aspect_params[2..4] = physical screen pixels per raw document pixel (x, y)
     aspect_params: [f32; 4],
     // Packed slice heights (up to 10) + first_slice_start_y
     // slice_heights[0] = [h0, h1, h2, first_slice_start_y]
@@ -79,8 +79,8 @@ struct CRTUniforms {
     caret_visible: f32,
     /// Caret mode: 0 = Bar, 1 = Block, 2 = Underline
     caret_mode: f32,
-    /// Padding for 16-byte alignment
-    _caret_padding: [f32; 2],
+    text_raster_scale: f32,
+    _caret_padding: f32,
 
     // Marker uniforms (raster grid and guide crosshair)
     /// Raster grid spacing in pixels (cell_width, cell_height), (0,0) = disabled
@@ -233,9 +233,11 @@ pub struct TerminalShader {
     pub slices_blink_on: Vec<TextureSliceData>,
     /// Number of text layers; graphics layers follow at the same indices.
     pub text_slice_count: usize,
-    /// Heights of each slice in pixels (same for both blink states)
+    /// Unicode text texels per raw document pixel; graphics are not scaled.
+    pub text_raster_scale: u32,
+    /// Heights of each slice in logical raw document pixels (same for both blink states).
     pub slice_heights: Vec<u32>,
-    /// Width of the texture (same for all slices)
+    /// Logical document width; Unicode text textures can have a higher resolution.
     pub texture_width: u32,
     /// Total content height (full document)
     pub total_content_height: f32,
@@ -1225,7 +1227,7 @@ impl TerminalShader {
             total_image_height: self.total_content_height,
             scroll_offset_y: self.scroll_offset_y,
             visible_height: self.visible_height,
-            // Calculate max layer height for UV scaling in texture arrays
+            // Logical slice metadata and physical pixel density.
             aspect_params: [
                 self.aspect_ratio_y,
                 self.slice_heights.iter().copied().max().unwrap_or(1) as f32,
@@ -1243,7 +1245,8 @@ impl TerminalShader {
             caret_size: self.caret_size,
             caret_visible: if self.caret_visible { 1.0 } else { 0.0 },
             caret_mode: self.caret_mode as f32,
-            _caret_padding: [0.0; 2],
+            text_raster_scale: self.text_raster_scale as f32,
+            _caret_padding: 0.0,
 
             // Marker uniforms
             raster_spacing: self.raster_spacing.map_or([0.0, 0.0], |(w, h)| [w, h]),

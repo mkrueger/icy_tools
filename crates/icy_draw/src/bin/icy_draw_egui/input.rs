@@ -18,6 +18,15 @@ const FUNCTION_KEYS: [Key; 12] = [
     Key::F12,
 ];
 
+pub fn fkey_character(document: &Document, code: u16) -> char {
+    let character = char::from_u32(code as u32).unwrap_or(' ');
+    if document.with_state(|state| state.get_buffer().buffer_type == icy_engine::BufferType::Unicode) {
+        icy_engine::BufferType::CP437.convert_to_unicode(character)
+    } else {
+        character
+    }
+}
+
 pub fn key(document: &mut Document, fkeys: &mut FKeySets, key: Key, modifiers: Modifiers) -> Result<bool, String> {
     if document.paste_active() {
         use icy_draw::document::PasteAction;
@@ -79,7 +88,7 @@ pub fn key(document: &mut Document, fkeys: &mut FKeySets, key: Key, modifiers: M
         if let Some(slot) = FUNCTION_KEYS.iter().position(|candidate| *candidate == key) {
             let code = fkeys.code_at(fkeys.current_set(), slot);
             document.brush.primary = BrushPrimaryMode::Char;
-            document.brush.paint_char = char::from_u32(code as u32).unwrap_or(' ');
+            document.brush.paint_char = fkey_character(document, code);
             return Ok(true);
         }
     }
@@ -114,7 +123,7 @@ pub fn key(document: &mut Document, fkeys: &mut FKeySets, key: Key, modifiers: M
                 fkeys.current_set = set % fkeys.set_count().max(1);
             } else if !modifiers.command && !modifiers.ctrl && document.can_paint() {
                 document.finish();
-                let character = char::from_u32(fkeys.code_at(fkeys.current_set(), slot) as u32).unwrap_or(' ');
+                let character = fkey_character(document, fkeys.code_at(fkeys.current_set(), slot));
                 document.with_state(|state| state.type_key(character)).map_err(|error| error.to_string())?;
             }
             return Ok(true);
@@ -180,6 +189,15 @@ pub fn key(document: &mut Document, fkeys: &mut FKeySets, key: Key, modifiers: M
                 }
                 target.x = target.x.clamp(0, maximum.x);
                 target.y = target.y.clamp(0, maximum.y);
+                if layer.is_grapheme_continuation(target) {
+                    if key == Key::ArrowRight && target.x < maximum.x {
+                        target.x += 1;
+                    } else {
+                        while target.x > 0 && layer.is_grapheme_continuation(target) {
+                            target.x -= 1;
+                        }
+                    }
+                }
                 if modifiers.shift {
                     let mut selection = state.selection().unwrap_or_else(|| Selection::new(start + offset));
                     selection.lead = target + offset;
@@ -232,7 +250,8 @@ pub fn key(document: &mut Document, fkeys: &mut FKeySets, key: Key, modifiers: M
                 return Ok(false);
             }
             document.finish();
-            document.with_state(|state| state.type_key('\u{00ff}')).map_err(|error| error.to_string())?;
+            let character = fkey_character(document, 255);
+            document.with_state(|state| state.type_key(character)).map_err(|error| error.to_string())?;
         }
         _ => return Ok(false),
     }

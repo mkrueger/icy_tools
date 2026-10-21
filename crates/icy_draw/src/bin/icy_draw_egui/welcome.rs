@@ -41,7 +41,7 @@ const RECENT_MAX_WIDTH: f32 = 520.0;
 
 /// Selectable row with icon, name and description of a document kind.
 pub(super) fn kind_row(icons: &mut Icons, ui: &mut egui::Ui, kind: NewKind, selected: bool) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 44.0), egui::Sense::click());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 40.0), egui::Sense::click());
     let visuals = ui.visuals().clone();
     if selected {
         ui.painter().rect_filled(rect, 6, PRIMARY);

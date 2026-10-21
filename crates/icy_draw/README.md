@@ -36,6 +36,49 @@ Changing a color, tool, or function-key character set keeps keyboard input on
 the drawing canvas, so you can continue typing without clicking it again.
 Text and numeric entry fields temporarily take keyboard input while focused.
 
+### UTF-8 art
+
+Choose **UTF-8 Art** on the start screen or in **New** for a Unicode canvas.
+The mode uses terminal-compatible cells: most characters take one cell, CJK
+and other wide characters take two, and combining marks stay with their base
+character. Existing CP437 documents keep their original character encoding.
+RTL, contextual script shaping and color emoji layout are not supported.
+
+The character picker browses 256-code-point pages across the Unicode range,
+with shortcuts to drawing symbols, block elements, Braille and other blocks.
+Enter a hexadecimal **Unicode code point** to jump directly to a character.
+The picker draws visible characters directly through the UI font cache, without
+prerendering a page of glyph images. Additional fallback fonts are loaded on
+demand in the background. Available glyphs depend on font coverage.
+The canvas and document previews share bundled monospace fonts and installed system
+fallbacks. Missing glyphs are shown as replacement boxes; no single font covers
+every Unicode character.
+Unicode canvas text uses scalable Hermit outlines and a zoom-/DPI-aware render
+resolution, separate from the logical cell grid. Zooming or moving to a HiDPI
+display rerasterizes text rather than enlarging an 8x16 bitmap. Cursor, selection,
+graphics and document/export dimensions retain their original coordinates.
+Legacy CP437 and other bitmap modes keep their original pixel-exact rendering.
+Block elements (`▀▄█▌▐`, eighths, quadrants), shades (`░▒▓`, with the VGA dither
+patterns) and box drawing (single, heavy, double and mixed joints, dashes, arcs,
+diagonals) are drawn by Icy Draw itself rather than taken from a font, so they
+fill the cell exactly and connect to neighbouring cells at every zoom level.
+
+Save as **`.icy`** to preserve layers and graphemes. UTF-8 documents use native
+format version **6**, which older readers reject rather than misinterpret.
+Export text or ANSI with UTF-8 compatibility; these exports include a UTF-8
+BOM so they reopen in the correct mode. A BOM-less text file can be opened
+explicitly as UTF-8 by giving it the **`.utf8`** extension. Other BOM-less
+ANSI/text files retain the existing CP437 interpretation. Legacy byte-oriented
+exports such as XBin are not offered for Unicode documents.
+
+Typing, painting, selection erase/fill, text and rich copy/paste, undo/redo,
+resizing, layer merging and whole-grapheme flips are supported. Operations
+that still assume independent single-cell characters, such as rotation,
+justification and row/column shifting, report an error rather than damage
+Unicode text. The floating-paste transparency toggle is also unavailable.
+
+MCP clients can create this mode with `new_document` and `"type": "utf8"`.
+
 ### Lua plugins
 
 The **Plugins** menu groups scripts into alphabetized submenus using the first

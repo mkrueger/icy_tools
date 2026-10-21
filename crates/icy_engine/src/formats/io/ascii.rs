@@ -16,8 +16,10 @@ pub(crate) fn load_ascii(data: &[u8], load_data_opt: Option<&LoadData>, sauce_op
     }
 
     let (file_data, is_unicode) = crate::prepare_data_for_parsing(data);
-    if is_unicode {
+    if is_unicode || load_data_opt.is_some_and(LoadData::convert_to_utf8) {
+        std::str::from_utf8(file_data).map_err(|error| crate::EngineError::Generic(format!("Invalid UTF-8 input: {error}")))?;
         result.buffer.buffer_type = crate::BufferType::Unicode;
+        result.set_unicode_width(true);
     }
     crate::load_with_parser(&mut result, &mut icy_parser_core::AsciiParser::default(), file_data, true, -1)?;
     Ok(result)
@@ -25,16 +27,25 @@ pub(crate) fn load_ascii(data: &[u8], load_data_opt: Option<&LoadData>, sauce_op
 
 /// Save a `TextBuffer` to ASCII format.
 pub(crate) fn save_ascii(buf: &TextBuffer, options: &SaveOptions) -> Result<Vec<u8>> {
-    let mut result = Vec::new();
+    let unicode = options.character_options().unicode || buf.buffer_type == crate::BufferType::Unicode;
+    let mut result = if unicode { vec![0xEF, 0xBB, 0xBF] } else { Vec::new() };
     let mut pos = Position::default();
     let height = buf.line_count();
 
     while pos.y < height {
         let line_length = buf.line_length(pos.y);
-        let unicode = options.character_options().unicode;
         while pos.x < line_length {
+            if unicode && buf.is_grapheme_continuation(pos) {
+                pos.x += 1;
+                continue;
+            }
             let ch = buf.char_at(pos);
             if unicode {
+                if let Some((text, width)) = buf.grapheme_at(pos) {
+                    result.extend_from_slice(text.as_bytes());
+                    pos.x += width as i32;
+                    continue;
+                }
                 let char_to_write = if ch.ch == '\0' { ' ' } else { ch.ch };
                 let uni = buf.buffer_type.convert_to_unicode(char_to_write);
                 for byte in uni.to_string().as_bytes() {
