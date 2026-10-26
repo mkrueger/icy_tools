@@ -71,7 +71,7 @@ fn paint_tree(ui: &egui::Ui, cell: egui::Rect, row: &Row, collapsed: bool, color
     let center = |level: u16| painter.round_to_pixel_center(left + f32::from(level) * TREE_STEP + TREE_STEP / 2.0);
     let (top, bottom) = (cell.top(), cell.bottom());
     let middle = painter.round_to_pixel_center(cell.center().y);
-    let stroke = egui::Stroke::new(1.0, color.gamma_multiply(0.6));
+    let stroke = egui::Stroke::new(1.0_f32, color.gamma_multiply(0.6));
 
     for level in 0..depth.saturating_sub(1) {
         if level < u32::BITS as u16 && row.guides & (1 << level) != 0 {

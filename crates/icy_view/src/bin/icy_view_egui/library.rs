@@ -235,7 +235,7 @@ pub fn context_menu(ui: &mut eframe::egui::Ui, library: &Library, location: &Nav
 /// Round check badge marking art that has been opened before.
 pub fn paint_viewed(painter: &eframe::egui::Painter, center: eframe::egui::Pos2, radius: f32, visuals: &eframe::egui::Visuals) {
     use eframe::egui;
-    painter.circle(center, radius, visuals.selection.bg_fill, egui::Stroke::new(1.0, visuals.window_fill));
+    painter.circle(center, radius, visuals.selection.bg_fill, egui::Stroke::new(1.0_f32, visuals.window_fill));
     let size = radius * 0.5;
     painter.line(
         vec![

@@ -814,7 +814,7 @@ fn protocol_row(ui: &mut egui::Ui, protocol: &TransferProtocol, selected: bool) 
         painter.rect_stroke(
             rect.shrink(0.5),
             6.0,
-            egui::Stroke::new(1.0, accent.gamma_multiply(0.8)),
+            egui::Stroke::new(1.0_f32, accent.gamma_multiply(0.8)),
             egui::StrokeKind::Inside,
         );
     } else if response.hovered() {
@@ -826,7 +826,7 @@ fn protocol_row(ui: &mut egui::Ui, protocol: &TransferProtocol, selected: bool) 
         painter.circle_filled(radio, 8.0, accent);
         painter.circle_filled(radio, 3.0, egui::Color32::WHITE);
     } else {
-        painter.circle_stroke(radio, 7.5, egui::Stroke::new(1.5, visuals.weak_text_color()));
+        painter.circle_stroke(radio, 7.5, egui::Stroke::new(1.5_f32, visuals.weak_text_color()));
     }
 
     let mut tags = Vec::new();
@@ -927,7 +927,7 @@ fn badge_width(ui: &egui::Ui, label: &str) -> f32 {
 
 /// An arrow into or out of a tray, drawn as lines so it looks the same in every font.
 fn paint_direction(painter: &egui::Painter, center: egui::Pos2, download: bool, color: egui::Color32) {
-    let stroke = egui::Stroke::new(2.0, color);
+    let stroke = egui::Stroke::new(2.0_f32, color);
     let (from, tip, head) = if download {
         (center + egui::vec2(0.0, -10.0), center + egui::vec2(0.0, 4.0), -5.0)
     } else {
@@ -960,7 +960,7 @@ fn paint_check(painter: &egui::Painter, center: egui::Pos2, size: f32, color: eg
 
 /// Check mark, exclamation mark or cross, drawn so the icon does not depend on the font's symbols.
 fn paint_outcome(painter: &egui::Painter, center: egui::Pos2, size: f32, outcome: Outcome, color: egui::Color32) {
-    let stroke = egui::Stroke::new(2.6, color);
+    let stroke = egui::Stroke::new(2.6_f32, color);
     match outcome {
         Outcome::Success => paint_check(painter, center, size, color, 2.6),
         Outcome::Warnings | Outcome::Cancelled => {
@@ -1041,7 +1041,7 @@ fn log_list(ui: &mut egui::Ui, info: &TransferInformation, focus: Option<(LogKin
                         None => egui::Color32::TRANSPARENT,
                     })
                     .stroke(if highlighted {
-                        egui::Stroke::new(1.0, color.gamma_multiply(0.8))
+                        egui::Stroke::new(1.0_f32, color.gamma_multiply(0.8))
                     } else {
                         egui::Stroke::NONE
                     })
@@ -1074,7 +1074,7 @@ fn counter_button(ui: &mut egui::Ui, label: &str, color: egui::Color32) -> egui:
     ui.painter().rect_filled(rect, 5.0, fill);
     if response.hovered() {
         ui.painter()
-            .rect_stroke(rect, 5.0, egui::Stroke::new(1.0, color.gamma_multiply(0.7)), egui::StrokeKind::Inside);
+            .rect_stroke(rect, 5.0, egui::Stroke::new(1.0_f32, color.gamma_multiply(0.7)), egui::StrokeKind::Inside);
     }
     ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, label, font, color);
     response.on_hover_cursor(egui::CursorIcon::PointingHand)

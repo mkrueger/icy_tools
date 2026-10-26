@@ -524,7 +524,7 @@ fn header(ui: &mut egui::Ui, title: &str, subtitle: Option<&str>, icon: Option<&
     }
     // Drawn as lines, since the glyph sits below the title's centre in most fonts.
     let arm = 4.5;
-    let stroke = egui::Stroke::new(1.6, visuals.fg_stroke.color);
+    let stroke = egui::Stroke::new(1.6_f32, visuals.fg_stroke.color);
     let center = rect.center();
     ui.painter()
         .line_segment([center - egui::Vec2::splat(arm), center + egui::Vec2::splat(arm)], stroke);

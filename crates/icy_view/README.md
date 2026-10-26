@@ -79,6 +79,12 @@ The second command requires a working GPU adapter and network access for the opt
 - Renegade (.an1, .an2, etc.)
 - And many more...
 
+Text formats use their format-specific parser during playback and seeking, including
+PCBoard color codes, Ctrl-A and Renegade. Binary art formats (BIN, XBin, ADF,
+Tundra Draw, iCE Draw, IcyDraw and REXPaint) use dedicated loaders rather than
+terminal parsers; their SAUCE metadata is retained, including BIN column widths.
+BIN files without SAUCE default to 160 columns.
+
 ### Images
 
 - PNG, JPEG, GIF, BMP, WebP, TGA, TIFF, QOI, ICO

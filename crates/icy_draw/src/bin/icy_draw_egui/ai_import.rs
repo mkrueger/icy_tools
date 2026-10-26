@@ -1124,7 +1124,7 @@ impl ImportDialog {
         let dragging_files = !locked && ui.input(|input| !input.raw.hovered_files.is_empty());
         if loaded {
             let stroke = if dragging_files {
-                egui::Stroke::new(2.0, appearance::PRIMARY)
+                egui::Stroke::new(2.0_f32, appearance::PRIMARY)
             } else {
                 canvas_stroke(ui)
             };
@@ -1168,7 +1168,7 @@ impl ImportDialog {
                 border.left_bottom(),
                 border.left_top(),
             ],
-            egui::Stroke::new(1.5, color),
+            egui::Stroke::new(1.5_f32, color),
             6.0,
             4.0,
         ));
@@ -1430,11 +1430,11 @@ impl ImportDialog {
                 }
             }
             ui.painter()
-                .rect_stroke(converted, 0, egui::Stroke::new(2.0, appearance::PRIMARY), egui::StrokeKind::Inside);
+                .rect_stroke(converted, 0, egui::Stroke::new(2.0_f32, appearance::PRIMARY), egui::StrokeKind::Inside);
         }
         if dragging.is_some() || self.options.focus != Options::default().focus {
             ui.painter()
-                .rect_stroke(project(focus), 0, egui::Stroke::new(1.0, egui::Color32::WHITE), egui::StrokeKind::Inside);
+                .rect_stroke(project(focus), 0, egui::Stroke::new(1.0_f32, egui::Color32::WHITE), egui::StrokeKind::Inside);
         }
         if self.ai_job.is_none() {
             response.on_hover_cursor(egui::CursorIcon::Crosshair);
@@ -1490,7 +1490,7 @@ fn canvas_fill(ui: &egui::Ui) -> egui::Color32 {
 }
 
 fn canvas_stroke(ui: &egui::Ui) -> egui::Stroke {
-    egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
+    egui::Stroke::new(1.0_f32, ui.visuals().widgets.noninteractive.bg_stroke.color)
 }
 
 fn paint_canvas(ui: &egui::Ui, rect: egui::Rect, stroke: egui::Stroke) {
@@ -1529,7 +1529,7 @@ fn centered_text(ui: &egui::Ui, center: egui::Pos2, text: &str, size: f32, color
 /// Framed landscape pictogram for the empty source pane.
 fn paint_picture_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
     let frame = egui::Rect::from_center_size(center, egui::vec2(46.0, 36.0));
-    let stroke = egui::Stroke::new(1.8, color);
+    let stroke = egui::Stroke::new(1.8_f32, color);
     painter.rect_stroke(frame, 5, stroke, egui::StrokeKind::Inside);
     let at = |x: f32, y: f32| frame.min + egui::vec2(x, y) * frame.size();
     painter.circle_stroke(at(0.7, 0.32), 3.5, stroke);

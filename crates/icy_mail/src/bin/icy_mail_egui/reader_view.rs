@@ -901,7 +901,7 @@ pub fn issue_box(ui: &mut egui::Ui, icons: &mut widgets::Icons, issues: &[String
     let color = widgets::warning(ui);
     egui::Frame::new()
         .fill(color.gamma_multiply(0.12))
-        .stroke(egui::Stroke::new(1.0, color.gamma_multiply(0.5)))
+        .stroke(egui::Stroke::new(1.0_f32, color.gamma_multiply(0.5)))
         .corner_radius(6)
         .inner_margin(egui::Margin::symmetric(10, 6))
         .show(ui, |ui| {

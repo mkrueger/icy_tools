@@ -667,7 +667,7 @@ pub fn transport_button(icons: &mut Icons, ui: &mut egui::Ui, icon: &str, toolti
             visuals.text_color(),
         )
     };
-    ui.painter().rect(rect, 6, fill, Stroke::new(1.0, stroke), StrokeKind::Inside);
+    ui.painter().rect(rect, 6, fill, Stroke::new(1.0_f32, stroke), StrokeKind::Inside);
     image
         .tint(tint)
         .paint_at(ui, egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(18.0)));
@@ -707,6 +707,6 @@ pub fn paint_vertices(ui: &egui::Ui, points: impl IntoIterator<Item = egui::Pos2
     for point in points {
         let handle = egui::Rect::from_center_size(point, egui::Vec2::splat(7.0));
         ui.painter().rect_filled(handle, 1.0, Color32::WHITE);
-        ui.painter().rect_stroke(handle, 1.0, Stroke::new(1.5, accent), egui::StrokeKind::Middle);
+        ui.painter().rect_stroke(handle, 1.0, Stroke::new(1.5_f32, accent), egui::StrokeKind::Middle);
     }
 }

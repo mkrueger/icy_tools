@@ -86,7 +86,7 @@ fn tile(icons: &mut Icons, ui: &mut egui::Ui, icon: &str, title: &str, subtitle:
         visuals.widgets.inactive.weak_bg_fill
     };
     let stroke = if response.hovered() {
-        egui::Stroke::new(1.0, PRIMARY)
+        egui::Stroke::new(1.0_f32, PRIMARY)
     } else {
         visuals.widgets.noninteractive.bg_stroke
     };

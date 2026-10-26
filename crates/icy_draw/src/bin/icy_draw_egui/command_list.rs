@@ -80,7 +80,7 @@ impl CommandRow<'_> {
         let mut x = rect.left() + 42.0;
         let swatch = |cell: egui::Rect, color| {
             painter.rect_filled(cell, 2, color);
-            painter.rect_stroke(cell, 2, Stroke::new(1.0, weak), egui::StrokeKind::Inside);
+            painter.rect_stroke(cell, 2, Stroke::new(1.0_f32, weak), egui::StrokeKind::Inside);
         };
         let cell = egui::Rect::from_center_size(egui::pos2(x + 7.0, center), egui::Vec2::splat(14.0));
         match (self.swatch_layout, self.swatch) {

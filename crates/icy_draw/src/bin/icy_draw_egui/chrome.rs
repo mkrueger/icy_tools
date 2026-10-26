@@ -80,7 +80,7 @@ fn paint_layer_tree(painter: &egui::Painter, left: f32, rows: egui::Rangef, midd
     let depth = tree.depth.min(LAYER_TREE_MAX_DEPTH);
     let center = |level: usize| painter.round_to_pixel_center(left + level as f32 * LAYER_TREE_STEP + LAYER_TREE_STEP / 2.0);
     let middle = painter.round_to_pixel_center(middle);
-    let stroke = egui::Stroke::new(1.0, line);
+    let stroke = egui::Stroke::new(1.0_f32, line);
     for level in 0..depth.saturating_sub(1) {
         if level < u64::BITS as usize && tree.guides & (1 << level) != 0 {
             painter.vline(center(level), rows, stroke);
@@ -212,8 +212,12 @@ pub(super) fn color_sample(ui: &mut egui::Ui, label: &str, (red, green, blue): (
         Color32::WHITE
     };
     ui.painter().rect_filled(swatch_rect, 4, color);
-    ui.painter()
-        .rect_stroke(swatch_rect, 4, egui::Stroke::new(1.0, visuals.strong_text_color()), egui::StrokeKind::Inside);
+    ui.painter().rect_stroke(
+        swatch_rect,
+        4,
+        egui::Stroke::new(1.0_f32, visuals.strong_text_color()),
+        egui::StrokeKind::Inside,
+    );
     ui.painter().text(
         swatch_rect.center(),
         egui::Align2::CENTER_CENTER,
@@ -488,7 +492,7 @@ impl DrawApp {
         let plate = |target: egui::Rect, (red, green, blue): (u8, u8, u8)| {
             painter.rect_filled(target.expand(2.0), 6, visuals.panel_fill);
             painter.rect_filled(target, 4, Color32::from_rgb(red, green, blue));
-            painter.rect_stroke(target, 4, egui::Stroke::new(1.0, border), egui::StrokeKind::Inside);
+            painter.rect_stroke(target, 4, egui::Stroke::new(1.0_f32, border), egui::StrokeKind::Inside);
         };
         plate(background_rect, background);
         plate(foreground_rect, foreground);
@@ -507,10 +511,11 @@ impl DrawApp {
         let back = egui::Rect::from_min_size(default.min + egui::vec2(5.0, 5.0), egui::Vec2::splat(7.0));
         let front = egui::Rect::from_min_size(default.min + egui::vec2(1.0, 1.0), egui::Vec2::splat(7.0));
         ui.painter().rect_filled(back, 1, Color32::BLACK);
-        ui.painter().rect_stroke(back, 1, egui::Stroke::new(1.0, reset_color), egui::StrokeKind::Inside);
+        ui.painter()
+            .rect_stroke(back, 1, egui::Stroke::new(1.0_f32, reset_color), egui::StrokeKind::Inside);
         ui.painter().rect_filled(front, 1, Color32::from_gray(170));
         ui.painter()
-            .rect_stroke(front, 1, egui::Stroke::new(1.0, reset_color), egui::StrokeKind::Inside);
+            .rect_stroke(front, 1, egui::Stroke::new(1.0_f32, reset_color), egui::StrokeKind::Inside);
 
         if swap_response.clicked() {
             let result = self.document.swap_caret_colors();
@@ -806,22 +811,27 @@ impl DrawApp {
             let target = egui::Rect::from_min_size(rect.min + egui::vec2(column as f32 * cell, row as f32 * cell), egui::Vec2::splat(cell)).shrink(gap / 2.0);
             let (red, green, blue) = palette.rgb(index as u32);
             painter.rect_filled(target, rounding, Color32::from_rgb(red, green, blue));
-            painter.rect_stroke(target, rounding, egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
+            painter.rect_stroke(target, rounding, egui::Stroke::new(1.0_f32, edge), egui::StrokeKind::Inside);
             if index as u32 == foreground {
-                painter.rect_stroke(target, rounding, egui::Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Inside);
-                painter.rect_stroke(target.shrink(2.0), rounding, egui::Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Inside);
+                painter.rect_stroke(target, rounding, egui::Stroke::new(2.0_f32, Color32::WHITE), egui::StrokeKind::Inside);
+                painter.rect_stroke(
+                    target.shrink(2.0),
+                    rounding,
+                    egui::Stroke::new(1.0_f32, Color32::BLACK),
+                    egui::StrokeKind::Inside,
+                );
             } else if hovered == Some(index) {
                 painter.rect_stroke(
                     target,
                     rounding,
-                    egui::Stroke::new(1.0, ui.visuals().strong_text_color()),
+                    egui::Stroke::new(1.0_f32, ui.visuals().strong_text_color()),
                     egui::StrokeKind::Inside,
                 );
             }
             if index as u32 == background {
                 let radius = (cell * 0.14).clamp(2.0, 3.5);
                 painter.circle_filled(target.center(), radius, Color32::WHITE);
-                painter.circle_stroke(target.center(), radius, egui::Stroke::new(1.0, Color32::BLACK));
+                painter.circle_stroke(target.center(), radius, egui::Stroke::new(1.0_f32, Color32::BLACK));
             }
         }
         if let Some(index) = hovered {
@@ -993,7 +1003,7 @@ impl DrawApp {
         let shows_frame = layout.frame.width() < layout.image.width() - 1.0 || layout.frame.height() < layout.image.height() - 1.0;
         if shows_frame {
             painter.rect_filled(frame, 0, PRIMARY.gamma_multiply(0.15));
-            painter.rect_stroke(frame, 0, egui::Stroke::new(1.5, PRIMARY), egui::StrokeKind::Inside);
+            painter.rect_stroke(frame, 0, egui::Stroke::new(1.5_f32, PRIMARY), egui::StrokeKind::Inside);
         }
         let clamp = |offset: egui::Vec2| offset.max(egui::Vec2::ZERO).min(max_offset);
         let grab_id = id.with("grab");
@@ -1269,7 +1279,7 @@ impl DrawApp {
                                     ui.painter().rect_stroke(
                                         preview_rect,
                                         3,
-                                        egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+                                        egui::Stroke::new(1.0_f32, ui.visuals().widgets.noninteractive.bg_stroke.color),
                                         egui::StrokeKind::Outside,
                                     );
                                 }
@@ -1340,7 +1350,7 @@ impl DrawApp {
                         if !subtrees[source].contains(&target.index()) {
                             let tree = if has_groups { 6.0 } else { 0.0 };
                             let indent = |index: usize| content_x + if has_groups { layer_tree_width(depths[index]) } else { 0.0 } + tree;
-                            let stroke = egui::Stroke::new(2.0, PRIMARY);
+                            let stroke = egui::Stroke::new(2.0_f32, PRIMARY);
                             match target {
                                 LayerDrop::Into(_) => {
                                     ui.painter().rect_stroke(rect, 6, stroke, egui::StrokeKind::Inside);
@@ -1505,7 +1515,7 @@ impl DrawApp {
                     let galley = painter.layout_no_wrap(rows[source].0.title.clone(), egui::FontId::proportional(13.0), ui.visuals().text_color());
                     let label = egui::Rect::from_min_size(position + egui::vec2(14.0, 6.0), galley.size()).expand2(egui::vec2(8.0, 4.0));
                     painter.rect_filled(label, 6, ui.visuals().window_fill.gamma_multiply(0.95));
-                    painter.rect_stroke(label, 6, egui::Stroke::new(1.0, PRIMARY), egui::StrokeKind::Inside);
+                    painter.rect_stroke(label, 6, egui::Stroke::new(1.0_f32, PRIMARY), egui::StrokeKind::Inside);
                     painter.galley(label.min + egui::vec2(8.0, 4.0), galley, ui.visuals().text_color());
                 }
                 ui.ctx().request_repaint();
@@ -2088,7 +2098,7 @@ impl DrawApp {
                         let response = widgets::status_button(ui, &label, &fl!("status-font-slot-tooltip", slot = slot, font = names[slot].as_str()));
                         if slot == current {
                             ui.painter()
-                                .rect_stroke(response.rect, 4, egui::Stroke::new(1.0, PRIMARY), egui::StrokeKind::Inside);
+                                .rect_stroke(response.rect, 4, egui::Stroke::new(1.0_f32, PRIMARY), egui::StrokeKind::Inside);
                         }
                         if response.double_clicked() {
                             self.select_font_slot(slot, true);

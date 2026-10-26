@@ -903,7 +903,7 @@ impl DrawApp {
                     };
                     let rect = cell(col, row);
                     painter.rect_filled(rect, 0, color.gamma_multiply(0.22));
-                    painter.rect_stroke(rect, 0, egui::Stroke::new(2.0, color), egui::StrokeKind::Outside);
+                    painter.rect_stroke(rect, 0, egui::Stroke::new(2.0_f32, color), egui::StrokeKind::Outside);
                     rect
                 }
                 CursorMode::Selection => {
@@ -913,8 +913,8 @@ impl DrawApp {
                     let (start_col, start_row) = user.cursor.unwrap_or((col, row));
                     let rect = cell(start_col, start_row).union(cell(col, row));
                     painter.rect_filled(rect, 0, color.gamma_multiply(0.08));
-                    painter.rect_stroke(rect, 0, egui::Stroke::new(2.0, color), egui::StrokeKind::Outside);
-                    painter.rect_stroke(rect.shrink(3.0), 0, egui::Stroke::new(1.0, color), egui::StrokeKind::Inside);
+                    painter.rect_stroke(rect, 0, egui::Stroke::new(2.0_f32, color), egui::StrokeKind::Outside);
+                    painter.rect_stroke(rect.shrink(3.0), 0, egui::Stroke::new(1.0_f32, color), egui::StrokeKind::Inside);
                     rect
                 }
                 CursorMode::Operation => {
@@ -930,13 +930,13 @@ impl DrawApp {
                             egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
                             Color32::WHITE.gamma_multiply(0.85),
                         );
-                        painter.rect_stroke(rect, 0, egui::Stroke::new(2.0, color), egui::StrokeKind::Outside);
+                        painter.rect_stroke(rect, 0, egui::Stroke::new(2.0_f32, color), egui::StrokeKind::Outside);
                         rect
                     } else {
                         let rect = cell(col, row);
                         painter.rect_filled(rect, 0, color.gamma_multiply(0.25));
-                        painter.rect_stroke(rect, 0, egui::Stroke::new(2.0, color), egui::StrokeKind::Outside);
-                        painter.rect_stroke(rect.shrink(2.0), 0, egui::Stroke::new(1.0, color), egui::StrokeKind::Inside);
+                        painter.rect_stroke(rect, 0, egui::Stroke::new(2.0_f32, color), egui::StrokeKind::Outside);
+                        painter.rect_stroke(rect.shrink(2.0), 0, egui::Stroke::new(1.0_f32, color), egui::StrokeKind::Inside);
                         rect
                     }
                 }

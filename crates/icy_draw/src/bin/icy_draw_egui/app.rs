@@ -978,6 +978,7 @@ impl DrawApp {
         self.dialog = Some(Dialog::AiImport(Box::default()));
     }
 
+    #[cfg(test)]
     fn import_ansi(&mut self, buffer: icy_engine::TextBuffer) {
         self.import_image(ai_import::Accepted {
             imported: ai_import::Imported::Ansi(buffer),
@@ -2479,7 +2480,7 @@ impl DrawApp {
                     .ctx()
                     .layer_painter(egui::LayerId::new(egui::Order::Tooltip, response.id.with("selection-add-type")));
                 let center = pointer + egui::vec2(14.0, 14.0);
-                let stroke = egui::Stroke::new(1.5, Color32::WHITE);
+                let stroke = egui::Stroke::new(1.5_f32, Color32::WHITE);
                 painter.circle_filled(center, 7.0, appearance::PRIMARY);
                 painter.line_segment([center - egui::vec2(3.5, 0.0), center + egui::vec2(3.5, 0.0)], stroke);
                 if add_type == AddType::Add {
@@ -2578,14 +2579,14 @@ impl DrawApp {
                 let horizontal = origin.x + (start.x + column as f32) * step.x;
                 painter.line_segment(
                     [egui::pos2(horizontal, response.rect.top()), egui::pos2(horizontal, response.rect.bottom())],
-                    egui::Stroke::new(0.5, Color32::from_white_alpha(45)),
+                    egui::Stroke::new(0.5_f32, Color32::from_white_alpha(45)),
                 );
             }
             for row in 0..=count.y as i32 + 1 {
                 let vertical = origin.y + (start.y + row as f32) * step.y;
                 painter.line_segment(
                     [egui::pos2(response.rect.left(), vertical), egui::pos2(response.rect.right(), vertical)],
-                    egui::Stroke::new(0.5, Color32::from_white_alpha(45)),
+                    egui::Stroke::new(0.5_f32, Color32::from_white_alpha(45)),
                 );
             }
         }
@@ -2637,7 +2638,7 @@ impl DrawApp {
                     origin + egui::vec2((position.x - half) as f32 * cell_size.x, (position.y - half) as f32 * cell_size.y) * info.display_scale,
                     cell_size * brush_size as f32 * info.display_scale,
                 );
-                painter.rect_stroke(rect, 0, egui::Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Inside);
+                painter.rect_stroke(rect, 0, egui::Stroke::new(2.0_f32, Color32::WHITE), egui::StrokeKind::Inside);
             }
         }
         if self.document.tool == Tool::Tag {
@@ -2667,7 +2668,12 @@ impl DrawApp {
                 if selected {
                     painter.rect_filled(rect, 0, color.gamma_multiply(0.12));
                 }
-                painter.rect_stroke(rect, 0, egui::Stroke::new(if selected { 2.0 } else { 1.0 }, color), egui::StrokeKind::Inside);
+                painter.rect_stroke(
+                    rect,
+                    0,
+                    egui::Stroke::new(if selected { 2.0 } else { 1.0_f32 }, color),
+                    egui::StrokeKind::Inside,
+                );
                 if selected {
                     for corner in [rect.left_top(), rect.right_top(), rect.left_bottom(), rect.right_bottom()] {
                         painter.rect_filled(egui::Rect::from_center_size(corner, egui::Vec2::splat(4.0)), 0, color);
@@ -2685,7 +2691,7 @@ impl DrawApp {
                 );
                 let corners = [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom(), rect.left_top()];
                 let editing = self.document.text_edit.is_some();
-                let stroke = egui::Stroke::new(if editing { 1.5 } else { 1.0 }, ui.visuals().selection.stroke.color);
+                let stroke = egui::Stroke::new(if editing { 1.5 } else { 1.0_f32 }, ui.visuals().selection.stroke.color);
                 painter.extend(egui::Shape::dashed_line(&corners, stroke, 4.0, 3.0));
             }
             if let Some((caret, height)) = self.document.text_caret() {

@@ -198,7 +198,7 @@ pub fn field(ui: &mut egui::Ui, width: f32, id: egui::Id, add: impl FnOnce(&mut 
     let focused = ui.memory(|memory| memory.has_focus(id));
     let visuals = ui.visuals().clone();
     let stroke = if focused {
-        Stroke::new(1.0, visuals.selection.stroke.color)
+        Stroke::new(1.0_f32, visuals.selection.stroke.color)
     } else {
         visuals.widgets.inactive.bg_stroke
     };
@@ -522,7 +522,7 @@ pub fn row(ui: &mut egui::Ui, widths: &[f32], cells: &[Cell], selected: bool, fo
                     ui.painter().rect_filled(pill, 8.0, fill);
                 } else {
                     ui.painter()
-                        .rect_stroke(pill, 8.0, Stroke::new(1.0, weak.gamma_multiply(0.6)), egui::StrokeKind::Inside);
+                        .rect_stroke(pill, 8.0, Stroke::new(1.0_f32, weak.gamma_multiply(0.6)), egui::StrokeKind::Inside);
                 }
                 ui.painter().galley(pill.center() - galley.size() / 2.0, galley, badge_color);
                 area.max.x = (pill.left() - 6.0).max(area.min.x);
@@ -533,7 +533,7 @@ pub fn row(ui: &mut egui::Ui, widths: &[f32], cells: &[Cell], selected: bool, fo
         let strike = |job: &mut egui::text::LayoutJob| {
             if value.strike {
                 for section in &mut job.sections {
-                    section.format.strikethrough = Stroke::new(1.0, color);
+                    section.format.strikethrough = Stroke::new(1.0_f32, color);
                 }
             }
         };
@@ -574,7 +574,7 @@ pub fn header(ui: &mut egui::Ui, widths: &[f32], labels: &[&str], active: Option
     ui.painter().hline(
         rect.x_range(),
         rect.bottom() - 0.5,
-        Stroke::new(1.0, visuals.widgets.noninteractive.bg_stroke.color),
+        Stroke::new(1.0_f32, visuals.widgets.noninteractive.bg_stroke.color),
     );
     let mut clicked = None;
     for (index, (cell, label)) in columns(rect, widths).into_iter().zip(labels).enumerate() {
@@ -665,8 +665,8 @@ pub fn append_header(job: &mut egui::text::LayoutJob, ui: &egui::Ui, header: &He
                     .background
                     .map_or(Color32::TRANSPARENT, |[red, green, blue]| Color32::from_rgb(red, green, blue)),
                 italics: span.italic,
-                underline: if span.underline { Stroke::new(1.0, span_color) } else { Stroke::NONE },
-                strikethrough: if span.strikethrough { Stroke::new(1.0, span_color) } else { Stroke::NONE },
+                underline: if span.underline { Stroke::new(1.0_f32, span_color) } else { Stroke::NONE },
+                strikethrough: if span.strikethrough { Stroke::new(1.0_f32, span_color) } else { Stroke::NONE },
                 ..Default::default()
             },
         );

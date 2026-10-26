@@ -113,7 +113,7 @@ pub fn paint(painter: &egui::Painter, rect: egui::Rect, kind: PolymarkerKind, si
             painter.add(egui::Shape::line(line, stroke));
         }
     }
-    painter.rect_stroke(rect, 2.0, Stroke::new(1.0, Color32::from_gray(96)), egui::StrokeKind::Inside);
+    painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, Color32::from_gray(96)), egui::StrokeKind::Inside);
 }
 
 /// What the polymarker picker changed.
@@ -165,7 +165,7 @@ pub fn picker(ui: &mut egui::Ui, id: &str, kind: PolymarkerKind, size: u8, color
                                 if candidate == kind {
                                     let accent = ui.visuals().selection.stroke.color;
                                     ui.painter()
-                                        .rect_stroke(swatch.expand(2.0), 3.0, Stroke::new(2.0, accent), egui::StrokeKind::Inside);
+                                        .rect_stroke(swatch.expand(2.0), 3.0, Stroke::new(2.0_f32, accent), egui::StrokeKind::Inside);
                                 }
                                 ui.selectable_label(candidate == kind, super::marker_name(candidate))
                             })

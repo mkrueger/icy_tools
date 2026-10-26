@@ -7,7 +7,6 @@ use std::time::Instant;
 use icy_engine::{formats::FileFormat, limits, EditableScreen, LoadData, Screen, ScreenMode, ScreenSink, Size, TextBuffer, TextPane, TextScreen};
 use icy_engine_gui::music::SoundThread;
 use icy_engine_gui::util::{BaudEmulator, QueuedCommand, QueueingSink};
-use icy_net::telnet::TerminalEmulation;
 use icy_parser_core::*;
 use icy_sauce::{Capabilities, SauceRecord};
 use parking_lot::Mutex;
@@ -109,8 +108,8 @@ struct LoadOperation {
     load_mode: LoadMode,
     /// Current screen mode
     screen_mode: ScreenMode,
-    /// Current terminal emulation
-    terminal_emulation: TerminalEmulation,
+    /// Format used to recreate the streaming parser
+    parser_format: FileFormat,
     /// Parser for ANSI/etc content (None for format-based loading)
     parser: Option<Box<dyn CommandParser + Send>>,
     /// Command queue for granular locking
@@ -134,7 +133,7 @@ impl LoadOperation {
             document_height: None,
             load_mode: LoadMode::Parser,
             screen_mode: ScreenMode::Vga(80, 25),
-            terminal_emulation: TerminalEmulation::Ansi,
+            parser_format: FileFormat::Ansi,
             parser: None,
             command_queue: VecDeque::new(),
             auto_scroll_enabled,
@@ -188,11 +187,11 @@ pub fn prepare_parser_data(data: Vec<u8>, ext: &str) -> (Vec<u8>, bool) {
 
 /// Size a text stream from the complete input, without painting into the live screen.
 /// Parser commands (rather than newline counts) account for wrapping and cursor moves.
-fn text_document_height(mode: ScreenMode, emulation: TerminalEmulation, sauce: Option<&SauceRecord>, unicode: bool, data: &[u8]) -> Option<i32> {
+fn text_document_height(mode: ScreenMode, format: FileFormat, sauce: Option<&SauceRecord>, unicode: bool, data: &[u8]) -> Option<i32> {
     if !matches!(mode, ScreenMode::Vga(..) | ScreenMode::Unicode(..)) {
         return None;
     }
-    let (mut screen, mut parser) = mode.create_screen(emulation, None);
+    let (mut screen, mut parser) = create_parser_screen(mode, format);
     screen.terminal_state_mut().is_terminal_buffer = false;
     if let Some(sauce) = sauce {
         let height = screen.height();
@@ -216,6 +215,13 @@ fn text_document_height(mode: ScreenMode, emulation: TerminalEmulation, sauce: O
         }
     }
     Some(screen.height().max(screen.caret_position().y + 1).min(limits::MAX_BUFFER_HEIGHT))
+}
+
+pub(crate) fn create_parser_screen(mode: ScreenMode, format: FileFormat) -> (Box<dyn EditableScreen>, Box<dyn CommandParser + Send>) {
+    let emulation = format.terminal_emulation().expect("Streaming formats must define terminal emulation");
+    let (screen, _) = mode.create_screen(emulation, None);
+    let parser = format.create_parser(None).expect("Streaming formats must define a parser");
+    (screen, parser)
 }
 
 /// Find a matching format for the file extension
@@ -397,9 +403,9 @@ impl ViewThread {
         }
         let position = position.min(load.file_data.len());
         if position < load.file_position {
-            let (mode, emulation, sauce, preserve_height, unicode, file_data, mut document_height) = (
+            let (mode, format, sauce, preserve_height, unicode, file_data, mut document_height) = (
                 load.screen_mode,
-                load.terminal_emulation,
+                load.parser_format,
                 load.sauce.clone(),
                 load.preserve_height,
                 load.is_unicode,
@@ -407,10 +413,10 @@ impl ViewThread {
                 load.document_height,
             );
             if document_height.is_none() && !matches!(self.baud_emulator.baud_emulation, BaudEmulation::Off) {
-                document_height = text_document_height(mode, emulation, sauce.as_ref(), unicode, &file_data);
+                document_height = text_document_height(mode, format, sauce.as_ref(), unicode, &file_data);
             }
             self.sound_thread.clear();
-            let parser = self.init_parser_screen(mode, emulation, sauce.as_ref(), preserve_height, unicode, document_height);
+            let parser = self.init_parser_screen(mode, format, sauce.as_ref(), preserve_height, unicode, document_height);
             let load = self.current_load.as_mut().unwrap();
             load.parser = Some(parser);
             load.document_height = document_height;
@@ -548,8 +554,8 @@ impl ViewThread {
     /// Initialize the screen for the given screen mode using create_screen
     /// This replaces the entire screen like icy_term does
     /// Returns the parser for storing in LoadOperation
-    fn init_screen_for_mode(&mut self, mode: ScreenMode, emulation: TerminalEmulation) -> Box<dyn CommandParser + Send> {
-        let (mut new_screen, parser) = mode.create_screen(emulation, None);
+    fn init_screen_for_mode(&mut self, mode: ScreenMode, format: FileFormat) -> Box<dyn CommandParser + Send> {
+        let (mut new_screen, parser) = create_parser_screen(mode, format);
         {
             new_screen.terminal_state_mut().is_terminal_buffer = false;
             let mut screen = self.screen.lock();
@@ -562,13 +568,13 @@ impl ViewThread {
     fn init_parser_screen(
         &mut self,
         mode: ScreenMode,
-        emulation: TerminalEmulation,
+        format: FileFormat,
         sauce: Option<&SauceRecord>,
         preserve_height: bool,
         unicode: bool,
         document_height: Option<i32>,
     ) -> Box<dyn CommandParser + Send> {
-        let parser = self.init_screen_for_mode(mode, emulation);
+        let parser = self.init_screen_for_mode(mode, format);
         let mut screen = self.screen.lock();
         if let Some(editable) = screen.as_editable() {
             if let Some(sauce) = sauce {
@@ -657,18 +663,16 @@ impl ViewThread {
         if let Some(format) = file_format {
             if format.uses_parser() {
                 let mode = format.screen_mode();
-                let emulation = format.terminal_emulation().unwrap_or(TerminalEmulation::Ansi);
-
                 // Prepare data: strip BOM and crop at EOF marker
                 let (file_data, is_unicode) = prepare_parser_data(stripped_data, &ext);
                 let document_height = if matches!(self.baud_emulator.baud_emulation, BaudEmulation::Off) {
                     None
                 } else {
-                    text_document_height(mode, emulation, repaired_sauce_opt.as_ref(), is_unicode, &file_data)
+                    text_document_height(mode, format, repaired_sauce_opt.as_ref(), is_unicode, &file_data)
                 };
                 // Initialize screen for this mode - replaces the entire screen
-                let parser = self.init_parser_screen(mode, emulation, repaired_sauce_opt.as_ref(), true, is_unicode, document_height);
-                self.start_streaming(parser, mode, emulation, file_data, repaired_sauce_opt, true, is_unicode, document_height);
+                let parser = self.init_parser_screen(mode, format, repaired_sauce_opt.as_ref(), true, is_unicode, document_height);
+                self.start_streaming(parser, mode, format, file_data, repaired_sauce_opt, true, is_unicode, document_height);
 
                 // Send scroll mode: ClampToBottom if baud emulation active, otherwise Off (will switch to AutoScroll on complete)
                 if !matches!(self.baud_emulator.baud_emulation, BaudEmulation::Off) {
@@ -711,7 +715,7 @@ impl ViewThread {
             let stripped_data_clone = stripped_data.clone();
             let handle = tokio::task::spawn_blocking(move || {
                 let load_data = LoadData::new(None, None);
-                match format.from_bytes(&stripped_data_clone, Some(load_data)) {
+                match format.from_bytes(&data, Some(load_data)) {
                     Ok(loaded_doc) => {
                         let buffer = loaded_doc.screen.buffer;
                         // Validate buffer before returning
@@ -739,15 +743,15 @@ impl ViewThread {
 
         // Unknown format - try parser anyway with default ANSI emulation
         let mode = ScreenMode::Vga(80, 25);
-        let emulation = TerminalEmulation::Ansi;
+        let format = FileFormat::Ansi;
         let (file_data, is_unicode) = prepare_parser_data(stripped_data, &ext);
         let document_height = if matches!(self.baud_emulator.baud_emulation, BaudEmulation::Off) {
             None
         } else {
-            text_document_height(mode, emulation, repaired_sauce_opt.as_ref(), is_unicode, &file_data)
+            text_document_height(mode, format, repaired_sauce_opt.as_ref(), is_unicode, &file_data)
         };
-        let parser = self.init_parser_screen(mode, emulation, repaired_sauce_opt.as_ref(), false, is_unicode, document_height);
-        self.start_streaming(parser, mode, emulation, file_data, repaired_sauce_opt, false, is_unicode, document_height);
+        let parser = self.init_parser_screen(mode, format, repaired_sauce_opt.as_ref(), false, is_unicode, document_height);
+        self.start_streaming(parser, mode, format, file_data, repaired_sauce_opt, false, is_unicode, document_height);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -755,7 +759,7 @@ impl ViewThread {
         &mut self,
         parser: Box<dyn CommandParser + Send>,
         mode: ScreenMode,
-        emulation: TerminalEmulation,
+        format: FileFormat,
         file_data: Vec<u8>,
         sauce: Option<SauceRecord>,
         preserve_height: bool,
@@ -765,7 +769,7 @@ impl ViewThread {
         if let Some(load) = &mut self.current_load {
             load.parser = Some(parser);
             load.screen_mode = mode;
-            load.terminal_emulation = emulation;
+            load.parser_format = format;
             load.file_data = file_data;
             load.load_mode = LoadMode::Parser;
             load.file_position = 0;
@@ -1030,4 +1034,152 @@ impl ViewThread {
 /// Helper function to create a view thread
 pub fn create_view_thread(screen: Arc<Mutex<Box<dyn Screen>>>) -> (mpsc::UnboundedSender<ViewCommand>, mpsc::UnboundedReceiver<ViewEvent>) {
     ViewThread::spawn(screen)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use icy_engine::{AttributedChar, IceMode, SaveOptions, TextAttribute};
+
+    fn view_thread() -> (ViewThread, mpsc::UnboundedReceiver<ViewEvent>) {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        (
+            ViewThread {
+                screen: Arc::new(Mutex::new(Box::new(TextScreen::new((80, 25))))),
+                baud_emulator: BaudEmulator::new(),
+                event_tx: ViewEvents { sender, request: None },
+                sound_thread: SoundThread::new(),
+                load_generation: Arc::new(AtomicU64::new(0)),
+                pending_format_load: None,
+                auto_scroll_enabled: false,
+                current_load: None,
+                last_progress: Instant::now(),
+            },
+            receiver,
+        )
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap()
+    }
+
+    fn assert_colored_cell(thread: &ViewThread, format: FileFormat) {
+        let screen = thread.screen.lock();
+        let cell = screen.char_at((0, 0).into());
+        assert_eq!(cell.ch, 'Z', "{format:?} printed control codes");
+        let foreground = cell.attribute.foreground() + if cell.attribute.is_bold() { 8 } else { 0 };
+        assert_eq!(foreground, 14, "{format:?} foreground");
+        assert_eq!(cell.attribute.background(), 1, "{format:?} background");
+    }
+
+    #[test]
+    fn streaming_formats_define_screen_and_parser() {
+        for &format in FileFormat::ALL {
+            assert_eq!(format.uses_parser(), format.create_parser(None).is_some(), "{format:?}");
+            if format.uses_parser() {
+                let _ = create_parser_screen(format.screen_mode(), format);
+            }
+        }
+    }
+
+    #[test]
+    fn streaming_load_and_backward_seek_use_format_parser() {
+        runtime().block_on(async {
+            for format in [
+                FileFormat::Ansi,
+                FileFormat::Avatar,
+                FileFormat::PCBoard,
+                FileFormat::CtrlA,
+                FileFormat::Renegade,
+            ] {
+                let mut buffer = TextBuffer::new((80, 25));
+                buffer.layers[0].set_char((0, 0), AttributedChar::new('Z', TextAttribute::from_u8(0x1E, IceMode::Blink)));
+                let data = format.to_bytes(&buffer, &SaveOptions::default()).unwrap();
+                let (mut thread, _events) = view_thread();
+                thread.load_data(PathBuf::from(format!("test.{}", format.primary_extension())), data).await;
+                assert!(thread.pending_format_load.is_none(), "{format:?} should stream");
+                thread.process_next_chunk().await;
+                assert_colored_cell(&thread, format);
+
+                thread.baud_emulator.set_baud_rate(BaudEmulation::Rate(9600));
+                thread.seek(0).await;
+                let length = thread.current_load.as_ref().unwrap().file_data.len();
+                thread.seek(length).await;
+                assert_colored_cell(&thread, format);
+                assert_eq!(thread.current_load.as_ref().unwrap().parser_format, format);
+                thread.stop();
+            }
+        });
+    }
+
+    #[test]
+    fn pcboard_height_counts_cells_not_color_codes() {
+        let mode = FileFormat::PCBoard.screen_mode();
+        let data = b"@X1FZ".repeat(80 * 30);
+        let plain = b"Z".repeat(80 * 30);
+        let expected = text_document_height(mode, FileFormat::Ascii, None, false, &plain);
+        assert!(expected.unwrap() > 25);
+        assert_eq!(text_document_height(mode, FileFormat::PCBoard, None, false, &data), expected);
+    }
+
+    #[test]
+    fn binary_previews_use_format_loaders_and_preserve_sauce() {
+        runtime().block_on(async {
+            for format in [
+                FileFormat::Bin,
+                FileFormat::XBin,
+                FileFormat::Artworx,
+                FileFormat::TundraDraw,
+                FileFormat::IceDraw,
+                FileFormat::IcyDraw,
+            ] {
+                assert!(!format.uses_parser(), "{format:?}");
+                for with_sauce in [false, true] {
+                    let width = if format == FileFormat::Bin && !with_sauce { 160 } else { 80 };
+                    let mut buffer = TextBuffer::new((width, 3));
+                    buffer.ice_mode = IceMode::Ice;
+                    for y in 0..3 {
+                        for x in 0..width {
+                            buffer.layers[0].set_char((x, y), AttributedChar::new('Z', TextAttribute::from_color(14, 1)));
+                        }
+                    }
+                    buffer.layers[0].set_char((2, 0), AttributedChar::new('\u{001a}', TextAttribute::from_color(14, 1)));
+                    let options = SaveOptions {
+                        sauce: with_sauce.then(icy_sauce::MetaData::default),
+                        ..Default::default()
+                    };
+                    let data = format.to_bytes(&buffer, &options).unwrap();
+                    let expected = format.from_bytes(&data, None).unwrap().screen.buffer;
+                    let (mut thread, _events) = view_thread();
+                    thread.load_data(PathBuf::from(format!("test.{}", format.primary_extension())), data).await;
+                    assert!(thread.current_load.as_ref().unwrap().parser.is_none(), "{format:?} must not stream");
+                    let result = thread
+                        .pending_format_load
+                        .take()
+                        .expect("Binary formats must use their loader")
+                        .await
+                        .unwrap()
+                        .unwrap();
+                    thread.apply_format_load_result(result);
+                    let screen = thread.screen.lock();
+                    assert_eq!(screen.size(), expected.size(), "{format:?}, SAUCE={with_sauce}");
+                    assert_eq!(screen.width(), width, "{format:?}, SAUCE={with_sauce}");
+                    assert_eq!(screen.ice_mode(), expected.ice_mode, "{format:?} iCE colors");
+                    assert_eq!(screen.palette(), &expected.palette, "{format:?} palette");
+                    assert_eq!(screen.font(0), expected.font(0), "{format:?} font");
+                    for y in 0..3 {
+                        for x in 0..width {
+                            let position = (x, y).into();
+                            let actual = screen.char_at(position);
+                            let expected_cell = expected.char_at(position);
+                            assert_eq!(actual.ch, expected_cell.ch, "{format:?} at {position:?}");
+                            assert_eq!(actual.attribute, expected_cell.attribute, "{format:?} at {position:?}");
+                        }
+                    }
+                    drop(screen);
+                    thread.stop();
+                }
+            }
+        });
+    }
 }

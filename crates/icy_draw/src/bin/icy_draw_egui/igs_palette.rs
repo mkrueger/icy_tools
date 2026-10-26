@@ -79,13 +79,18 @@ fn pen_swatch(ui: &mut egui::Ui, color: Color32, selected: bool) -> egui::Respon
     painter.rect_stroke(
         rect,
         3.0,
-        Stroke::new(1.0, visuals.widgets.noninteractive.bg_stroke.color),
+        Stroke::new(1.0_f32, visuals.widgets.noninteractive.bg_stroke.color),
         egui::StrokeKind::Inside,
     );
     if selected {
-        painter.rect_stroke(rect.expand(3.0), 5.0, Stroke::new(2.0, accent), egui::StrokeKind::Inside);
+        painter.rect_stroke(rect.expand(3.0), 5.0, Stroke::new(2.0_f32, accent), egui::StrokeKind::Inside);
     } else if hovered {
-        painter.rect_stroke(rect.expand(3.0), 5.0, Stroke::new(1.5, visuals.strong_text_color()), egui::StrokeKind::Inside);
+        painter.rect_stroke(
+            rect.expand(3.0),
+            5.0,
+            Stroke::new(1.5_f32, visuals.strong_text_color()),
+            egui::StrokeKind::Inside,
+        );
     }
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -158,7 +163,7 @@ impl PaletteDialog {
                                     .fill(color)
                                     .min_size(egui::vec2(48.0, 34.0))
                                     .stroke(Stroke::new(
-                                        if selected { 3.0 } else { 1.0 },
+                                        if selected { 3.0 } else { 1.0_f32 },
                                         if selected {
                                             ui.visuals().selection.stroke.color
                                         } else {

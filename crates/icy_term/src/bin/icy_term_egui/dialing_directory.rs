@@ -337,7 +337,7 @@ impl DialingDirectory {
                         ui.spacing_mut().item_spacing.x = 6.0;
                         let weak = ui.visuals().weak_text_color();
                         let (glyph, _) = ui.allocate_exact_size(egui::vec2(13.0, 20.0), egui::Sense::hover());
-                        let stroke = egui::Stroke::new(1.4, weak);
+                        let stroke = egui::Stroke::new(1.4_f32, weak);
                         ui.painter().circle_stroke(glyph.center() - egui::vec2(1.0, 1.0), 4.5, stroke);
                         ui.painter()
                             .line_segment([glyph.center() + egui::vec2(2.0, 2.0), glyph.center() + egui::vec2(5.0, 5.0)], stroke);

@@ -939,7 +939,7 @@ impl Chat {
         let mut action = None;
         egui::Frame::new()
             .fill(ui.visuals().faint_bg_color)
-            .stroke(egui::Stroke::new(1.0, appearance::PRIMARY))
+            .stroke(egui::Stroke::new(1.0_f32, appearance::PRIMARY))
             .corner_radius(8)
             .inner_margin(egui::Margin::same(8))
             .show(ui, |ui| {
@@ -1173,7 +1173,7 @@ impl Chat {
         let focused = ui.memory(|memory| memory.has_focus(prompt));
         let visuals = ui.visuals();
         let stroke = if focused {
-            egui::Stroke::new(1.0, appearance::PRIMARY)
+            egui::Stroke::new(1.0_f32, appearance::PRIMARY)
         } else {
             visuals.widgets.inactive.bg_stroke
         };
@@ -1780,7 +1780,12 @@ impl DrawApp {
             if let Some(panel) = egui::containers::panel::PanelState::load(context, egui::Id::new("ai-chat")) {
                 let painter = context.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("ai-image-drop")));
                 painter.rect_filled(panel.rect, 0, Color32::from_rgba_unmultiplied(32, 100, 160, 80));
-                painter.rect_stroke(panel.rect.shrink(2.0), 4, egui::Stroke::new(2.0, appearance::PRIMARY), egui::StrokeKind::Inside);
+                painter.rect_stroke(
+                    panel.rect.shrink(2.0),
+                    4,
+                    egui::Stroke::new(2.0_f32, appearance::PRIMARY),
+                    egui::StrokeKind::Inside,
+                );
                 painter.text(
                     panel.rect.center(),
                     egui::Align2::CENTER_CENTER,

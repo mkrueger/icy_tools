@@ -1399,7 +1399,7 @@ mod tests {
     #[test]
     fn drafts_keep_paragraphs_and_wrap_only_for_sending() {
         let text = "word ".repeat(40);
-        let mut editor = Editor::from_body(&format!("{}\n\x1b[1;33mSecond\x1b[0m paragraph", text.trim_end()));
+        let editor = Editor::from_body(&format!("{}\n\x1b[1;33mSecond\x1b[0m paragraph", text.trim_end()));
         assert_eq!(editor.visual_lines().len(), 4, "three wrapped rows and the second paragraph");
         let stored = editor.to_paragraphs();
         assert_eq!(stored.matches('\n').count(), 1, "only the paragraph end is a line break: {stored:?}");

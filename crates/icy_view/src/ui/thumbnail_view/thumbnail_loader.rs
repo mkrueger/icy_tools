@@ -14,9 +14,48 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::items::Item;
-use crate::view_thread::prepare_parser_data;
+use crate::view_thread::{create_parser_screen, prepare_parser_data};
 
 use super::thumbnail::{get_width_multiplier, RgbaData, ThumbnailResult, ThumbnailState, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use icy_engine::SaveOptions;
+
+    #[test]
+    fn bin_thumbnail_retains_sauce_column_width() {
+        let mut buffer = TextBuffer::new((80, 3));
+        for y in 0..3 {
+            for x in 0..80 {
+                buffer.layers[0].set_char((x, y), AttributedChar::new('Z', TextAttribute::default()));
+            }
+        }
+        let options = SaveOptions {
+            sauce: Some(icy_sauce::MetaData::default()),
+            ..Default::default()
+        };
+        let data = FileFormat::Bin.to_bytes(&buffer, &options).unwrap();
+        let path = "test.bin".to_string();
+        let result = render_ansi_thumbnail(&path, &data, "bin", "", &CancellationToken::new()).unwrap();
+        assert_eq!(result.width_multiplier, 1);
+        assert!(matches!(result.state, ThumbnailState::Ready { .. }));
+        assert!(result.sauce_info.is_some());
+    }
+
+    #[test]
+    fn pcboard_thumbnail_parser_interprets_color_codes() {
+        let path = "test.pcb".to_string();
+        let token = CancellationToken::new();
+        let pcboard = render_with_parser(&path, b"@X14Z", "pcb", None, "", &token).unwrap();
+        let ansi = render_with_parser(&path, b"\x1b[31;44mZ", "ans", None, "", &token).unwrap();
+        let (ThumbnailState::Ready { rgba: actual }, ThumbnailState::Ready { rgba: expected }) = (pcboard.state, ansi.state) else {
+            panic!("Expected static thumbnails");
+        };
+        assert_eq!((actual.width, actual.height), (expected.width, expected.height));
+        assert_eq!(actual.data, expected.data);
+    }
+}
 
 /// Maximum characters per line for label tag
 const TAG_MAX_CHARS_PER_LINE: usize = 28;
@@ -484,7 +523,7 @@ fn render_ansi_thumbnail(path: &String, data: &[u8], ext: &str, label: &str, can
     }
 
     // Try format-based loading
-    if let Some(result) = render_with_format(path, &stripped_data, ext, sauce_opt.as_ref(), label, cancel_token) {
+    if let Some(result) = render_with_format(path, data, ext, sauce_opt.as_ref(), label, cancel_token) {
         return Some(result);
     }
 
@@ -531,13 +570,8 @@ fn render_with_parser(
     let total_start = Instant::now();
     let parse_start = Instant::now();
 
-    // Get screen mode and emulation from FileFormat, fallback to ANSI
-    let (mode, emulation) = if let Some(format) = FileFormat::from_extension(ext) {
-        (format.screen_mode(), format.terminal_emulation().unwrap_or(TerminalEmulation::Ansi))
-    } else {
-        (ScreenMode::Vga(80, 25), TerminalEmulation::Ansi)
-    };
-    let (mut screen, mut parser) = mode.create_screen(emulation, None);
+    let format = FileFormat::from_extension(ext).unwrap_or(FileFormat::Ansi);
+    let (mut screen, mut parser) = create_parser_screen(format.screen_mode(), format);
 
     // Prepare data (strips BOM and truncates at 0x1A)
     let (file_data, is_unicode) = prepare_parser_data(data.to_vec(), ext);

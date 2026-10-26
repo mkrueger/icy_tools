@@ -70,7 +70,7 @@ fn group_with_spacing<R>(
     let border = visuals.widgets.noninteractive.bg_stroke.color.lerp_to_gamma(visuals.window_fill, 0.3);
     let inner = egui::Frame::new()
         .fill(fill)
-        .stroke(Stroke::new(1.0, border))
+        .stroke(Stroke::new(1.0_f32, border))
         .corner_radius(8)
         .inner_margin(egui::Margin::symmetric(16, vertical_margin))
         .show(ui, |ui| {
@@ -101,7 +101,7 @@ pub fn check(ui: &mut egui::Ui, value: &mut bool) -> egui::Response {
             let point = |x: f32, y: f32| square.min + egui::vec2(x, y) * side;
             painter.add(egui::Shape::line(
                 vec![point(0.26, 0.52), point(0.43, 0.69), point(0.75, 0.33)],
-                Stroke::new(2.0, Color32::WHITE),
+                Stroke::new(2.0_f32, Color32::WHITE),
             ));
         } else {
             let stroke = if response.hovered() {
@@ -174,7 +174,7 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeInclusiv
         painter.rect_filled(egui::Rect::from_x_y_ranges(left..=x, track.y_range()), 2.0, PRIMARY);
         let active = response.hovered() || response.dragged() || response.has_focus();
         let handle = if active { radius + 1.0 } else { radius };
-        painter.circle(egui::pos2(x, y), handle - 1.0, Color32::WHITE, Stroke::new(2.0, PRIMARY));
+        painter.circle(egui::pos2(x, y), handle - 1.0, Color32::WHITE, Stroke::new(2.0_f32, PRIMARY));
     }
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -394,13 +394,13 @@ pub fn apply(context: &egui::Context) {
         visuals.extreme_bg_color = input;
         visuals.faint_bg_color = control;
         visuals.weak_text_color = Some(muted);
-        visuals.window_stroke = Stroke::new(1.0, border);
+        visuals.window_stroke = Stroke::new(1.0_f32, border);
         visuals.selection.bg_fill = if dark {
             Color32::from_rgb(43, 70, 96)
         } else {
             Color32::from_rgb(214, 231, 249)
         };
-        visuals.selection.stroke = Stroke::new(1.0, accent);
+        visuals.selection.stroke = Stroke::new(1.0_f32, accent);
         visuals.hyperlink_color = accent;
         for widget in [
             &mut visuals.widgets.noninteractive,
@@ -410,8 +410,8 @@ pub fn apply(context: &egui::Context) {
             &mut visuals.widgets.open,
         ] {
             widget.corner_radius = CornerRadius::same(4);
-            widget.fg_stroke = Stroke::new(1.0, text);
-            widget.bg_stroke = Stroke::new(1.0, border);
+            widget.fg_stroke = Stroke::new(1.0_f32, text);
+            widget.bg_stroke = Stroke::new(1.0_f32, border);
             widget.expansion = 0.0;
         }
         visuals.widgets.noninteractive.bg_fill = surface;
@@ -420,10 +420,10 @@ pub fn apply(context: &egui::Context) {
         visuals.widgets.inactive.weak_bg_fill = control;
         visuals.widgets.hovered.bg_fill = hover;
         visuals.widgets.hovered.weak_bg_fill = hover;
-        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, accent);
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, accent);
         visuals.widgets.active.bg_fill = visuals.selection.bg_fill;
         visuals.widgets.active.weak_bg_fill = visuals.selection.bg_fill;
-        visuals.widgets.active.bg_stroke = Stroke::new(1.0, accent);
+        visuals.widgets.active.bg_stroke = Stroke::new(1.0_f32, accent);
         visuals.widgets.open = visuals.widgets.active;
     });
 }

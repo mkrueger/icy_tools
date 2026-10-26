@@ -45,7 +45,7 @@ fn text_label(ui: &mut egui::Ui, mut job: egui::text::LayoutJob, needle: &str, p
     let color = ui.visuals().hyperlink_color;
     widgets::format_ranges(&mut job, &links, |format| {
         format.color = color;
-        format.underline = egui::Stroke::new(1.0, color);
+        format.underline = egui::Stroke::new(1.0_f32, color);
     });
     widgets::highlight(&mut job, 0, needle, ui);
     let unwrapped = job.wrap.max_width.is_infinite();
@@ -801,9 +801,13 @@ impl MailApp {
                             Color32::TRANSPARENT
                         },
                         italics: span.italic,
-                        underline: if span.underline { egui::Stroke::new(1.0, color) } else { egui::Stroke::NONE },
+                        underline: if span.underline {
+                            egui::Stroke::new(1.0_f32, color)
+                        } else {
+                            egui::Stroke::NONE
+                        },
                         strikethrough: if span.strikethrough {
-                            egui::Stroke::new(1.0, color)
+                            egui::Stroke::new(1.0_f32, color)
                         } else {
                             egui::Stroke::NONE
                         },

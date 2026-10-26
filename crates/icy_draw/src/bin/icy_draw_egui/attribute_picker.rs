@@ -164,7 +164,7 @@ fn color(palette: &Palette, index: u32) -> Color32 {
 /// A swatch with rounded corners and a hairline, so dark colors stand out on the popup.
 fn swatch(painter: &egui::Painter, rect: egui::Rect, fill: Color32, edge: Color32) {
     painter.rect_filled(rect, 4.0, fill);
-    painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
+    painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0_f32, edge), egui::StrokeKind::Inside);
 }
 
 fn paint(ui: &egui::Ui, rect: egui::Rect, colors: &Colors, hovered: Option<Pick>) {
@@ -177,7 +177,7 @@ fn paint(ui: &egui::Ui, rect: egui::Rect, colors: &Colors, hovered: Option<Pick>
         painter.rect_stroke(
             cell.expand(1.5),
             5.0,
-            egui::Stroke::new(2.0, visuals.strong_text_color()),
+            egui::Stroke::new(2.0_f32, visuals.strong_text_color()),
             egui::StrokeKind::Outside,
         );
     };

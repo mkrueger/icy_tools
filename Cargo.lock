@@ -11714,8 +11714,3 @@ dependencies = [
  "syn 3.0.9",
  "winnow",
 ]
-
-[[patch.unused]]
-name = "lzma-rust2"
-version = "0.22.0"
-source = "git+https://github.com/hasenbanck/lzma-rust2?branch=master#13fadfeb5e9e8fd8660389974e1fc7a9c4698ce2"

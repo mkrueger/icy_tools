@@ -178,7 +178,6 @@ impl TerminalEditor {
     /// The color index of a cell on the editor's screen, for tests.
     #[cfg(test)]
     pub fn cell_foreground(&self, x: i32, y: i32) -> u32 {
-        use icy_engine::TextPane;
         match self.view.terminal.screen.lock().char_at(Position::new(x, y)).attribute.foreground_color() {
             icy_engine::AttributeColor::Palette(index) => u32::from(index),
             _ => u32::MAX,
@@ -804,7 +803,7 @@ impl TerminalEditor {
             painter.rect_stroke(
                 rect.expand(1.0),
                 4,
-                egui::Stroke::new(1.5, visuals.selection.stroke.color),
+                egui::Stroke::new(1.5_f32, visuals.selection.stroke.color),
                 egui::StrokeKind::Outside,
             );
         }
@@ -1053,7 +1052,7 @@ impl TerminalEditor {
             };
             ui.painter().with_clip_rect(response.rect).extend(egui::Shape::dashed_line(
                 &[egui::pos2(wrap, response.rect.top()), egui::pos2(wrap, response.rect.bottom())],
-                egui::Stroke::new(1.0, color),
+                egui::Stroke::new(1.0_f32, color),
                 4.0,
                 4.0,
             ));
@@ -1071,7 +1070,7 @@ impl TerminalEditor {
             );
         }
         if self.focused {
-            let stroke = egui::Stroke::new(1.5, ui.visuals().selection.stroke.color);
+            let stroke = egui::Stroke::new(1.5_f32, ui.visuals().selection.stroke.color);
             let rect = if modern { response.rect.expand2(margin * 0.5) } else { response.rect };
             ui.painter().rect_stroke(rect, if modern { 4.0 } else { 0.0 }, stroke, egui::StrokeKind::Inside);
         }
@@ -1385,12 +1384,12 @@ fn swatch(ui: &mut egui::Ui, color: Color32, selected: bool) -> egui::Response {
         ui.painter().rect_stroke(
             rect.shrink(0.5),
             4,
-            egui::Stroke::new(2.0, visuals.selection.stroke.color),
+            egui::Stroke::new(2.0_f32, visuals.selection.stroke.color),
             egui::StrokeKind::Inside,
         );
     } else if response.hovered() {
         ui.painter()
-            .rect_stroke(rect.shrink(0.5), 4, egui::Stroke::new(1.0, visuals.text_color()), egui::StrokeKind::Inside);
+            .rect_stroke(rect.shrink(0.5), 4, egui::Stroke::new(1.0_f32, visuals.text_color()), egui::StrokeKind::Inside);
     } else {
         ui.painter()
             .rect_stroke(rect.shrink(2.0), 3, visuals.widgets.noninteractive.bg_stroke, egui::StrokeKind::Outside);

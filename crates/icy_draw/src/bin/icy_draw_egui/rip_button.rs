@@ -323,7 +323,7 @@ pub fn color_picker_sized(ui: &mut egui::Ui, id: &str, palette: &icy_engine::Pal
                 let swatch = egui::Button::new("")
                     .fill(color32(palette, color))
                     .min_size(egui::vec2(22.0, 22.0))
-                    .stroke(egui::Stroke::new(if selected { 2.0 } else { 0.5 }, ui.visuals().strong_text_color()));
+                    .stroke(egui::Stroke::new(if selected { 2.0 } else { 0.5_f32 }, ui.visuals().strong_text_color()));
                 if ui.add(swatch).on_hover_text(color.to_string()).clicked() {
                     *value = color;
                     changed = true;

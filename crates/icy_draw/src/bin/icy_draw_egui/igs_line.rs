@@ -90,7 +90,7 @@ pub fn paint(painter: &egui::Painter, rect: egui::Rect, style: LineStyle, user: 
             }
         }
     }
-    painter.rect_stroke(rect, 2.0, Stroke::new(1.0, Color32::from_gray(96)), egui::StrokeKind::Inside);
+    painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, Color32::from_gray(96)), egui::StrokeKind::Inside);
 }
 
 fn ends_name((start, end): (ArrowEnd, ArrowEnd)) -> String {
@@ -137,7 +137,7 @@ pub fn picker(ui: &mut egui::Ui, id: &str, style: LineStyle, user: &[Vec<u16>; 8
                     if selected {
                         let accent = ui.visuals().selection.stroke.color;
                         ui.painter()
-                            .rect_stroke(swatch.expand(2.0), 3.0, Stroke::new(2.0, accent), egui::StrokeKind::Inside);
+                            .rect_stroke(swatch.expand(2.0), 3.0, Stroke::new(2.0_f32, accent), egui::StrokeKind::Inside);
                     }
                     ui.selectable_label(selected, name)
                 })

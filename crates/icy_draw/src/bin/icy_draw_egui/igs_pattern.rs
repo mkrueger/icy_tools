@@ -74,7 +74,7 @@ pub fn paint_swatch(painter: &egui::Painter, rect: egui::Rect, pattern: PatternT
             }
         }
     }
-    painter.rect_stroke(rect, 2.0, Stroke::new(1.0, Color32::from_gray(96)), egui::StrokeKind::Inside);
+    painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, Color32::from_gray(96)), egui::StrokeKind::Inside);
 }
 
 /// A clickable swatch of `pattern`, framed with the accent while it is the current one.
@@ -84,10 +84,10 @@ fn swatch(ui: &mut egui::Ui, pattern: PatternType, current: PatternType, user: &
     let accent = ui.visuals().selection.stroke.color;
     if pattern == current {
         ui.painter()
-            .rect_stroke(rect.expand(2.0), 3.0, Stroke::new(2.0, accent), egui::StrokeKind::Inside);
+            .rect_stroke(rect.expand(2.0), 3.0, Stroke::new(2.0_f32, accent), egui::StrokeKind::Inside);
     } else if response.hovered() {
         ui.painter()
-            .rect_stroke(rect.expand(2.0), 3.0, Stroke::new(1.0, ui.visuals().text_color()), egui::StrokeKind::Inside);
+            .rect_stroke(rect.expand(2.0), 3.0, Stroke::new(1.0_f32, ui.visuals().text_color()), egui::StrokeKind::Inside);
     }
     response.on_hover_text(super::pattern_name(pattern))
 }
@@ -248,7 +248,7 @@ impl PatternDialog {
             }
         }
         for line in 1..16 {
-            let stroke = Stroke::new(1.0, if line == 8 { Color32::from_gray(110) } else { Color32::from_gray(200) });
+            let stroke = Stroke::new(1.0_f32, if line == 8 { Color32::from_gray(110) } else { Color32::from_gray(200) });
             let offset = line as f32 * CELL;
             painter.line_segment(
                 [rect.left_top() + egui::vec2(offset, 0.0), rect.left_bottom() + egui::vec2(offset, 0.0)],
@@ -256,10 +256,10 @@ impl PatternDialog {
             );
             painter.line_segment([rect.left_top() + egui::vec2(0.0, offset), rect.right_top() + egui::vec2(0.0, offset)], stroke);
         }
-        painter.rect_stroke(rect, 0.0, Stroke::new(1.0, Color32::from_gray(110)), egui::StrokeKind::Inside);
+        painter.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, Color32::from_gray(110)), egui::StrokeKind::Inside);
         if let Some((x, y)) = response.hover_pos().and_then(cell_at) {
             let cell = egui::Rect::from_min_size(rect.min + egui::vec2(x as f32, y as f32) * CELL, egui::Vec2::splat(CELL));
-            painter.rect_stroke(cell, 0.0, Stroke::new(2.0, ui.visuals().selection.stroke.color), egui::StrokeKind::Inside);
+            painter.rect_stroke(cell, 0.0, Stroke::new(2.0_f32, ui.visuals().selection.stroke.color), egui::StrokeKind::Inside);
         }
     }
 
@@ -281,7 +281,7 @@ impl PatternDialog {
                 }
             }
         }
-        painter.rect_stroke(rect, 0.0, Stroke::new(1.0, Color32::from_gray(110)), egui::StrokeKind::Outside);
+        painter.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, Color32::from_gray(110)), egui::StrokeKind::Outside);
     }
 
     /// Moves the pattern one cell, wrapping around like the tiles do.
@@ -327,7 +327,7 @@ impl PatternDialog {
                                 ui.painter().rect_stroke(
                                     rect.expand(2.0),
                                     3.0,
-                                    Stroke::new(2.0, ui.visuals().selection.stroke.color),
+                                    Stroke::new(2.0_f32, ui.visuals().selection.stroke.color),
                                     egui::StrokeKind::Inside,
                                 );
                             }

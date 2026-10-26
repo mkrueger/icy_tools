@@ -257,7 +257,7 @@ impl PaletteEditor {
         let (rect, _) = ui.allocate_exact_size(egui::Vec2::splat(PREVIEW), egui::Sense::hover());
         let painter = ui.painter();
         painter.rect_filled(rect, 6, Color32::from_rgb(red, green, blue));
-        painter.rect_stroke(rect, 6, Stroke::new(1.0, Color32::from_gray(80)), StrokeKind::Inside);
+        painter.rect_stroke(rect, 6, Stroke::new(1.0_f32, Color32::from_gray(80)), StrokeKind::Inside);
         let luminance = 0.299 * f32::from(red) + 0.587 * f32::from(green) + 0.114 * f32::from(blue);
         painter.text(
             rect.center(),
@@ -304,7 +304,7 @@ impl PaletteEditor {
             let mut hex = self.hex.clone();
             let response = ui.add(appearance::text_edit(&mut hex).desired_width(80.0).char_limit(7).hint_text("RRGGBB"));
             if !valid {
-                ui.painter().rect_stroke(response.rect, 4, Stroke::new(1.0, DANGER), StrokeKind::Inside);
+                ui.painter().rect_stroke(response.rect, 4, Stroke::new(1.0_f32, DANGER), StrokeKind::Inside);
             }
             if response.changed() {
                 self.set_hex(hex);
@@ -323,15 +323,15 @@ fn swatch(ui: &mut egui::Ui, color: Color32, selected: bool, size: f32) -> egui:
     let painter = ui.painter();
     painter.rect_filled(inner, 4, color);
     if selected {
-        painter.rect_stroke(rect, 5, Stroke::new(2.0, Color32::BLACK), StrokeKind::Inside);
-        painter.rect_stroke(inner, 3, Stroke::new(2.0, Color32::WHITE), StrokeKind::Inside);
+        painter.rect_stroke(rect, 5, Stroke::new(2.0_f32, Color32::BLACK), StrokeKind::Inside);
+        painter.rect_stroke(inner, 3, Stroke::new(2.0_f32, Color32::WHITE), StrokeKind::Inside);
     } else {
         let border = if response.hovered() {
             ui.visuals().text_color()
         } else {
             Color32::from_gray(50)
         };
-        painter.rect_stroke(inner, 4, Stroke::new(1.0, border), StrokeKind::Inside);
+        painter.rect_stroke(inner, 4, Stroke::new(1.0_f32, border), StrokeKind::Inside);
     }
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }

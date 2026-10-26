@@ -126,12 +126,3 @@ strip = true      # Strip symbols from binary*
 inherits = "release"
 debug = true
 strip = false
-
-## NOTE: This workspace used to override `iced_aw` with a local vendored copy.
-## The `vendor/iced_aw` directory is not present in this repo checkout, which breaks
-## `cargo fetch/check` in clean environments. If you keep a local vendor, re-add this
-## patch locally.
-[patch.crates-io]
-# sevenz-rust2 v0.20.0 pins lzma-rust2 = "=0.15.3" which is incompatible with crc v2.x
-# Override to v0.15.4 which has the fix
-lzma-rust2 = { git = "https://github.com/hasenbanck/lzma-rust2", branch = "master" }

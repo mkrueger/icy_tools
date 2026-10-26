@@ -153,15 +153,15 @@ impl DrawApp {
             painter.rect_stroke(
                 cell_rect(index),
                 2,
-                egui::Stroke::new(1.0, Color32::from_white_alpha(160)),
+                egui::Stroke::new(1.0_f32, Color32::from_white_alpha(160)),
                 egui::StrokeKind::Outside,
             );
         }
         if let Some(index) = selected.and_then(|selected| codes.iter().position(|&code| code == selected)) {
             // A dark and a white ring, visible on any screen color.
             let rect = cell_rect(index).expand(1.0);
-            painter.rect_stroke(rect, 3, egui::Stroke::new(3.0, Color32::from_black_alpha(200)), egui::StrokeKind::Outside);
-            painter.rect_stroke(rect, 3, egui::Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Inside);
+            painter.rect_stroke(rect, 3, egui::Stroke::new(3.0_f32, Color32::from_black_alpha(200)), egui::StrokeKind::Outside);
+            painter.rect_stroke(rect, 3, egui::Stroke::new(2.0_f32, Color32::WHITE), egui::StrokeKind::Inside);
         }
         let code = hovered.map(|index| codes[index]);
         let response = match code {

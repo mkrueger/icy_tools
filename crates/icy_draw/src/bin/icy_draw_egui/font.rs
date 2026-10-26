@@ -723,7 +723,7 @@ impl FontEditor {
         let back = egui::Rect::from_min_size(rect.max - swatch, swatch);
         let front = egui::Rect::from_min_size(rect.min, swatch);
         let painter = ui.painter();
-        let stroke = egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.fg_stroke.color);
+        let stroke = egui::Stroke::new(1.0_f32, ui.visuals().widgets.noninteractive.fg_stroke.color);
         painter.rect_filled(back, 2, palette_color(self.colors.1));
         painter.rect_stroke(back, 2, stroke, egui::StrokeKind::Inside);
         painter.rect_filled(front, 2, palette_color(self.colors.0));
@@ -1016,14 +1016,14 @@ impl FontEditor {
         }
         if columns > width {
             let x = grid.left() + width as f32 * pitch - gap / 2.0;
-            painter.vline(x, grid.y_range(), egui::Stroke::new(2.0, NINE_DOT_SEPARATOR));
+            painter.vline(x, grid.y_range(), egui::Stroke::new(2.0_f32, NINE_DOT_SEPARATOR));
         }
         if let Some((x1, y1, x2, y2)) = self.state.selection() {
             let area = cell_rect(x1.min(x2), y1.min(y2))
                 .union(cell_rect(x1.max(x2), y1.max(y2)))
                 .expand(gap / 2.0 + 1.0);
             painter.rect_filled(area, 0, SELECTION_FILL);
-            painter.rect_stroke(area, 0, egui::Stroke::new(2.0, SELECTION_BORDER), egui::StrokeKind::Middle);
+            painter.rect_stroke(area, 0, egui::Stroke::new(2.0_f32, SELECTION_BORDER), egui::StrokeKind::Middle);
         }
         for (column, row) in self.shape_preview() {
             if (0..width).contains(&column) && (0..height).contains(&row) {
@@ -1127,11 +1127,11 @@ impl FontEditor {
                 let (top, bottom) = ((anchor / 16).min(lead / 16), (anchor / 16).max(lead / 16));
                 let area = cell_rect(top * 16 + left).union(cell_rect(bottom * 16 + right));
                 painter.rect_filled(area, 0, RECT_SELECTION_FILL);
-                painter.rect_stroke(area.expand(1.0), 0, egui::Stroke::new(2.0, RECT_SELECTION_BORDER), egui::StrokeKind::Middle);
+                painter.rect_stroke(area.expand(1.0), 0, egui::Stroke::new(2.0_f32, RECT_SELECTION_BORDER), egui::StrokeKind::Middle);
             } else {
                 let (start, end) = (anchor.min(lead), anchor.max(lead));
                 let inside = |column: i32, row: i32| (0..16).contains(&column) && (0..16).contains(&row) && (start..=end).contains(&(row * 16 + column));
-                let stroke = egui::Stroke::new(1.5, SELECTION_BORDER);
+                let stroke = egui::Stroke::new(1.5_f32, SELECTION_BORDER);
                 for code in start..=end {
                     let area = cell_rect(code);
                     painter.rect_filled(area, 0, SELECTION_FILL);
@@ -1332,7 +1332,7 @@ fn panel_header(ui: &egui::Ui, rect: egui::Rect, title_height: f32, title: &str,
         ui.painter().rect_stroke(
             rect.expand(4.0),
             4,
-            egui::Stroke::new(2.0, visuals.selection.stroke.color),
+            egui::Stroke::new(2.0_f32, visuals.selection.stroke.color),
             egui::StrokeKind::Inside,
         );
     }

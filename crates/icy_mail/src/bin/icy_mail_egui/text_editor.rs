@@ -225,7 +225,7 @@ impl TextEditor {
         }
         let guide = edit.galley_pos.x + margin;
         if guide < edit.response.rect.right() {
-            let stroke = egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color);
+            let stroke = egui::Stroke::new(1.0_f32, ui.visuals().widgets.noninteractive.bg_stroke.color);
             ui.painter().vline(guide, edit.response.rect.y_range(), stroke);
         }
         if std::mem::take(&mut self.focus_request) {

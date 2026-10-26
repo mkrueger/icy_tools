@@ -3287,7 +3287,7 @@ impl IgsEditor {
                 for (rect, strong) in [(self.copy_source.map(area), true), (self.drag.map(area), false)] {
                     if let Some(rect) = rect {
                         ui.painter()
-                            .rect_stroke(rect, 0.0, Stroke::new(if strong { 1.5 } else { 1.0 }, accent), egui::StrokeKind::Middle);
+                            .rect_stroke(rect, 0.0, Stroke::new(if strong { 1.5 } else { 1.0_f32 }, accent), egui::StrokeKind::Middle);
                     }
                 }
             }
@@ -3297,7 +3297,7 @@ impl IgsEditor {
                     if !points_only {
                         let (x0, y0, x1, y1) = select::bounds(&geometry);
                         let frame = egui::Rect::from_two_pos(on_screen((x0, y0)), on_screen((x1, y1))).expand2(scale * 0.5 + egui::Vec2::splat(2.0));
-                        ui.painter().rect_stroke(frame, 0.0, Stroke::new(1.0, accent), egui::StrokeKind::Middle);
+                        ui.painter().rect_stroke(frame, 0.0, Stroke::new(1.0_f32, accent), egui::StrokeKind::Middle);
                     }
                     let handles = select::handles(&command, &geometry);
                     let count = handles.len();
@@ -3311,8 +3311,12 @@ impl IgsEditor {
                             Color32::from_rgb(0x30, 0xC0, 0x30)
                         };
                         ui.painter().rect_filled(handle, 1.0, if points_only { Color32::BLACK } else { Color32::WHITE });
-                        ui.painter()
-                            .rect_stroke(handle, 1.0, Stroke::new(if points_only { 2.0 } else { 1.5 }, color), egui::StrokeKind::Middle);
+                        ui.painter().rect_stroke(
+                            handle,
+                            1.0,
+                            Stroke::new(if points_only { 2.0 } else { 1.5_f32 }, color),
+                            egui::StrokeKind::Middle,
+                        );
                     }
                 }
             }
@@ -3329,7 +3333,7 @@ impl IgsEditor {
                 )
                 .expand(2.0);
                 ui.painter()
-                    .rect_stroke(frame, 1.0, Stroke::new(1.0, accent.gamma_multiply(0.6)), egui::StrokeKind::Outside);
+                    .rect_stroke(frame, 1.0, Stroke::new(1.0_f32, accent.gamma_multiply(0.6)), egui::StrokeKind::Outside);
                 // A blinking caret after the last character.
                 let time = ui.input(|input| input.time);
                 if (time * 2.0) as i64 % 2 == 0 {
@@ -3373,7 +3377,7 @@ impl IgsEditor {
             let rect = area((x0, y0), (x1, y1));
             let chosen = selected == Some(index);
             painter.rect_filled(rect, 0.0, color.gamma_multiply(if chosen { 0.22 } else { 0.12 }));
-            painter.rect_stroke(rect, 0.0, Stroke::new(if chosen { 2.0 } else { 1.0 }, color), egui::StrokeKind::Inside);
+            painter.rect_stroke(rect, 0.0, Stroke::new(if chosen { 2.0 } else { 1.0_f32 }, color), egui::StrokeKind::Inside);
             let galley = painter.layout(latin1(&string), egui::FontId::proportional(11.0), Color32::WHITE, (rect.width() - 6.0).max(0.0));
             let tag = egui::Rect::from_min_size(rect.min, galley.size() + egui::vec2(6.0, 2.0)).intersect(rect);
             painter.rect_filled(tag, 0.0, color.gamma_multiply(0.85));
@@ -3382,7 +3386,7 @@ impl IgsEditor {
         if let Some((from, to)) = self.drag {
             let rect = area(from, to);
             painter.rect_filled(rect, 0.0, color.gamma_multiply(0.18));
-            painter.rect_stroke(rect, 0.0, Stroke::new(1.5, color), egui::StrokeKind::Inside);
+            painter.rect_stroke(rect, 0.0, Stroke::new(1.5_f32, color), egui::StrokeKind::Inside);
         }
     }
 

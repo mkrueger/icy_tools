@@ -111,7 +111,7 @@ impl MailApp {
         let edge = rect.shrink(0.5);
         let corners = [edge.left_top(), edge.right_top(), edge.right_bottom(), edge.left_bottom(), edge.left_top()];
         ui.painter()
-            .extend(egui::Shape::dashed_line(&corners, egui::Stroke::new(1.2, stroke), 6.0, 4.0));
+            .extend(egui::Shape::dashed_line(&corners, egui::Stroke::new(1.2_f32, stroke), 6.0, 4.0));
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect.shrink(12.0)), |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(4.0);

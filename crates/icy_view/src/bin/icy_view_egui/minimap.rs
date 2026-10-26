@@ -102,7 +102,7 @@ impl Minimap {
         );
         let view = egui::Rect::from_min_size(strip.min + egui::vec2(0.0, geometry.view_top), egui::vec2(WIDTH, geometry.view_height)).intersect(strip);
         painter.rect_filled(view, 2.0, visuals.selection.bg_fill.gamma_multiply(0.25));
-        painter.rect_stroke(view, 2.0, egui::Stroke::new(1.5, visuals.selection.stroke.color), egui::StrokeKind::Inside);
+        painter.rect_stroke(view, 2.0, egui::Stroke::new(1.5_f32, visuals.selection.stroke.color), egui::StrokeKind::Inside);
         let button = egui::Rect::from_min_size(egui::pos2(strip.right() - TOGGLE - 3.0, strip.top() + 3.0), egui::Vec2::splat(TOGGLE));
         self.rects = Some((strip, button));
         let hovered = ui.rect_contains_pointer(strip) && !response.dragged();

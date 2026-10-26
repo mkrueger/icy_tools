@@ -98,7 +98,7 @@ impl PaletteDialog {
                                     .fill(ega_color(self.values[slot]))
                                     .min_size(egui::vec2(48.0, 34.0))
                                     .stroke(Stroke::new(
-                                        if selected { 3.0 } else { 1.0 },
+                                        if selected { 3.0 } else { 1.0_f32 },
                                         if selected {
                                             ui.visuals().selection.stroke.color
                                         } else {
@@ -126,7 +126,7 @@ impl PaletteDialog {
                                     .fill(ega_color(value))
                                     .min_size(egui::vec2(52.0, 22.0))
                                     .stroke(Stroke::new(
-                                        if selected { 3.0 } else { 0.5 },
+                                        if selected { 3.0 } else { 0.5_f32 },
                                         if selected {
                                             ui.visuals().selection.stroke.color
                                         } else {

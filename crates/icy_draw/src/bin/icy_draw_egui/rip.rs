@@ -2802,10 +2802,10 @@ impl RipEditor {
                     if !points_only {
                         let (x0, y0, x1, y1) = select::bounds(&geometry);
                         let frame = egui::Rect::from_two_pos(to_screen((x0, y0)), to_screen((x1, y1))).expand(scale * 0.5 + 2.0);
-                        ui.painter().rect_stroke(frame, 0.0, Stroke::new(1.0, accent), egui::StrokeKind::Middle);
+                        ui.painter().rect_stroke(frame, 0.0, Stroke::new(1.0_f32, accent), egui::StrokeKind::Middle);
                     }
                     if let (RipCommand::Bezier { .. }, Geometry::Points(points)) = (&command, &geometry) {
-                        let guide = Stroke::new(1.0, Color32::from_white_alpha(90));
+                        let guide = Stroke::new(1.0_f32, Color32::from_white_alpha(90));
                         ui.painter().line_segment([to_screen(points[0]), to_screen(points[1])], guide);
                         ui.painter().line_segment([to_screen(points[3]), to_screen(points[2])], guide);
                     }
@@ -2821,8 +2821,12 @@ impl RipEditor {
                             Color32::from_rgb(0x30, 0xC0, 0x30)
                         };
                         ui.painter().rect_filled(handle, 1.0, if points_only { Color32::BLACK } else { Color32::WHITE });
-                        ui.painter()
-                            .rect_stroke(handle, 1.0, Stroke::new(if points_only { 2.0 } else { 1.5 }, color), egui::StrokeKind::Middle);
+                        ui.painter().rect_stroke(
+                            handle,
+                            1.0,
+                            Stroke::new(if points_only { 2.0 } else { 1.5_f32 }, color),
+                            egui::StrokeKind::Middle,
+                        );
                     }
                 }
             }
@@ -2841,7 +2845,7 @@ impl RipEditor {
                 let accent = ui.visuals().selection.stroke.color;
                 let frame = egui::Rect::from_min_max(point(x, y), point(x + box_width, y + box_height)).expand(2.0);
                 ui.painter()
-                    .rect_stroke(frame, 1.0, Stroke::new(1.0, accent.gamma_multiply(0.6)), egui::StrokeKind::Outside);
+                    .rect_stroke(frame, 1.0, Stroke::new(1.0_f32, accent.gamma_multiply(0.6)), egui::StrokeKind::Outside);
                 // A blinking caret after the last character (above it for vertical text).
                 let time = ui.input(|input| input.time);
                 if (time * 2.0) as i64 % 2 == 0 {
@@ -2856,7 +2860,7 @@ impl RipEditor {
             }
             if let Some(edit) = &self.bezier {
                 let points = edit.points.map(on_screen);
-                let guide = Stroke::new(1.0, Color32::from_white_alpha(90));
+                let guide = Stroke::new(1.0_f32, Color32::from_white_alpha(90));
                 ui.painter().line_segment([points[0], points[1]], guide);
                 ui.painter().line_segment([points[3], points[2]], guide);
                 for (index, point) in points.iter().enumerate() {
@@ -2866,7 +2870,7 @@ impl RipEditor {
                         Color32::from_rgb(0x30, 0xC0, 0x30)
                     };
                     let handle = egui::Rect::from_center_size(*point, egui::Vec2::splat(9.0));
-                    ui.painter().rect_stroke(handle, 1.0, Stroke::new(2.0, color), egui::StrokeKind::Middle);
+                    ui.painter().rect_stroke(handle, 1.0, Stroke::new(2.0_f32, color), egui::StrokeKind::Middle);
                 }
             }
         });
@@ -2887,7 +2891,7 @@ impl RipEditor {
             let rect = area((x0, y0, x1, y1));
             let chosen = selected == Some(index);
             painter.rect_filled(rect, 0.0, color.gamma_multiply(if chosen { 0.22 } else { 0.12 }));
-            painter.rect_stroke(rect, 0.0, Stroke::new(if chosen { 2.0 } else { 1.0 }, color), egui::StrokeKind::Inside);
+            painter.rect_stroke(rect, 0.0, Stroke::new(if chosen { 2.0 } else { 1.0_f32 }, color), egui::StrokeKind::Inside);
             let label = if text.is_empty() { fl!("rip-mouse-no-command") } else { text };
             let galley = painter.layout(label, egui::FontId::proportional(11.0), Color32::WHITE, (rect.width() - 6.0).max(0.0));
             let tag = egui::Rect::from_min_size(rect.min, galley.size() + egui::vec2(6.0, 2.0)).intersect(rect);
@@ -2897,7 +2901,7 @@ impl RipEditor {
         if let Some((from, to)) = self.drag {
             let rect = area((from.0, from.1, to.0, to.1));
             painter.rect_filled(rect, 0.0, color.gamma_multiply(0.18));
-            painter.rect_stroke(rect, 0.0, Stroke::new(1.5, color), egui::StrokeKind::Inside);
+            painter.rect_stroke(rect, 0.0, Stroke::new(1.5_f32, color), egui::StrokeKind::Inside);
         }
     }
 

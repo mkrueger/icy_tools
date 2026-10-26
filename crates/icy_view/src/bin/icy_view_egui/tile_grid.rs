@@ -152,7 +152,7 @@ impl TileGrid {
                 ui.painter().rect_stroke(
                     rect,
                     6.0,
-                    egui::Stroke::new(if selected || response.hovered() { 2.0 } else { 1.0 }, visuals.bg_stroke.color),
+                    egui::Stroke::new(if selected || response.hovered() { 2.0 } else { 1.0_f32 }, visuals.bg_stroke.color),
                     egui::StrokeKind::Inside,
                 );
                 let art = egui::Rect::from_min_max(rect.min + egui::Vec2::splat(PADDING), rect.max - egui::vec2(PADDING, PADDING + LABEL_HEIGHT));

@@ -577,7 +577,7 @@ impl DrawApp {
                     ui.painter().rect_filled(rect, 3, egui::Color32::from_rgb(red, green, blue));
                     if index == current {
                         ui.painter()
-                            .rect_stroke(rect, 3, egui::Stroke::new(2.0, egui::Color32::WHITE), egui::StrokeKind::Inside);
+                            .rect_stroke(rect, 3, egui::Stroke::new(2.0_f32, egui::Color32::WHITE), egui::StrokeKind::Inside);
                     } else if response.hovered() {
                         ui.painter()
                             .rect_stroke(rect, 3, ui.visuals().widgets.hovered.fg_stroke, egui::StrokeKind::Inside);
@@ -616,9 +616,9 @@ impl DrawApp {
             let edge = ui.visuals().widgets.noninteractive.bg_stroke;
             painter.rect_stroke(outer, 4, edge, egui::StrokeKind::Inside);
             if screen_response.hovered() {
-                painter.rect_stroke(inner, 2, egui::Stroke::new(2.0, egui::Color32::WHITE), egui::StrokeKind::Inside);
+                painter.rect_stroke(inner, 2, egui::Stroke::new(2.0_f32, egui::Color32::WHITE), egui::StrokeKind::Inside);
             } else if border_response.hovered() {
-                painter.rect_stroke(outer, 4, egui::Stroke::new(2.0, egui::Color32::WHITE), egui::StrokeKind::Inside);
+                painter.rect_stroke(outer, 4, egui::Stroke::new(2.0_f32, egui::Color32::WHITE), egui::StrokeKind::Inside);
             }
             let border_response = border_response.on_hover_text(fl!("petscii-border-tooltip"));
             let screen_response = screen_response.on_hover_text(fl!("petscii-screen-tooltip"));

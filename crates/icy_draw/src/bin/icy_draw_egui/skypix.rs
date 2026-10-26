@@ -652,7 +652,7 @@ impl SkypixEditor {
                             }),
                         )
                         .fill(color)
-                        .stroke(Stroke::new(if selected { 3.0 } else { 0.5 }, ui.visuals().selection.stroke.color))
+                        .stroke(Stroke::new(if selected { 3.0 } else { 0.5_f32 }, ui.visuals().selection.stroke.color))
                         .min_size(egui::vec2(27.0, 27.0)),
                     );
                     if response.clicked() {
@@ -1303,7 +1303,7 @@ impl SkypixEditor {
             }
             let on_screen = |point| canvas.position(point);
             if let Some((from, to)) = self.drag {
-                let stroke = Stroke::new(1.0, ui.visuals().selection.stroke.color);
+                let stroke = Stroke::new(1.0_f32, ui.visuals().selection.stroke.color);
                 if self.tool == Tool::Line {
                     ui.painter().line_segment([on_screen(from), on_screen(to)], stroke);
                 } else if self.tool != Tool::Select {
@@ -1320,7 +1320,7 @@ impl SkypixEditor {
                             ui.painter().rect_stroke(
                                 egui::Rect::from_two_pos(on_screen(a), on_screen(b)).expand(3.0),
                                 0,
-                                Stroke::new(1.0, ui.visuals().selection.stroke.color),
+                                Stroke::new(1.0_f32, ui.visuals().selection.stroke.color),
                                 egui::StrokeKind::Middle,
                             );
                         }

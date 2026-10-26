@@ -1836,7 +1836,7 @@ fn field(ui: &mut egui::Ui, width: f32, id: egui::Id, add: impl FnOnce(&mut egui
     let focused = ui.memory(|memory| memory.has_focus(id));
     let visuals = ui.visuals().clone();
     let stroke = if focused {
-        egui::Stroke::new(1.0, visuals.selection.stroke.color)
+        egui::Stroke::new(1.0_f32, visuals.selection.stroke.color)
     } else {
         visuals.widgets.inactive.bg_stroke
     };

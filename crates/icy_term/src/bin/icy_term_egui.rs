@@ -247,7 +247,7 @@ impl TerminalApp {
                     _ => tr!("toolbar-stop-playing6"),
                 };
                 if ui
-                    .add(egui::Button::new(egui::RichText::new(format!("\u{1F507} {label}")).color(orange)).stroke(egui::Stroke::new(1.0, orange)))
+                    .add(egui::Button::new(egui::RichText::new(format!("\u{1F507} {label}")).color(orange)).stroke(egui::Stroke::new(1.0_f32, orange)))
                     .clicked()
                 {
                     if let Some(sound) = &mut self.sound {
@@ -903,8 +903,12 @@ impl TerminalApp {
                         galley.size() + 2.0 * padding,
                     );
                     ui.painter().rect_filled(rect, 4.0, egui::Color32::from_black_alpha(180));
-                    ui.painter()
-                        .rect_stroke(rect, 4.0, egui::Stroke::new(1.0, ui.visuals().window_stroke.color), egui::StrokeKind::Inside);
+                    ui.painter().rect_stroke(
+                        rect,
+                        4.0,
+                        egui::Stroke::new(1.0_f32, ui.visuals().window_stroke.color),
+                        egui::StrokeKind::Inside,
+                    );
                     ui.painter().galley(rect.min + padding, galley, egui::Color32::WHITE);
                 }
                 response.context_menu(|ui| self.terminal_menu(ui));

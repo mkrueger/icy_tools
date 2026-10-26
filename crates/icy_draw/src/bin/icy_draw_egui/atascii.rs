@@ -267,7 +267,7 @@ impl DrawApp {
                     ui.painter().rect_filled(rect, 2, Color32::from_rgb(red, green, blue));
                     if color == current {
                         ui.painter()
-                            .rect_stroke(rect.expand(1.0), 3, egui::Stroke::new(2.0, Color32::WHITE), egui::StrokeKind::Outside);
+                            .rect_stroke(rect.expand(1.0), 3, egui::Stroke::new(2.0_f32, Color32::WHITE), egui::StrokeKind::Outside);
                     }
                     if response.on_hover_text(format!("${:02X}", color.0 * 16 + color.1)).clicked() {
                         picked = Some(color);

@@ -787,7 +787,7 @@ impl TuneDialog {
             if pitch % 12 == 0 {
                 grid_painter.line_segment(
                     [row.left_bottom(), row.right_bottom()],
-                    Stroke::new(1.0, visuals.weak_text_color().gamma_multiply(0.4)),
+                    Stroke::new(1.0_f32, visuals.weak_text_color().gamma_multiply(0.4)),
                 );
             }
         }
@@ -804,7 +804,7 @@ impl TuneDialog {
             let x = x_of(tick as f32);
             let strong = tick.is_multiple_of(TICKS_PER_SECOND);
             let color = visuals.weak_text_color().gamma_multiply(if strong { 0.5 } else { 0.15 });
-            grid_painter.line_segment([egui::pos2(x, grid.top()), egui::pos2(x, grid.bottom())], Stroke::new(1.0, color));
+            grid_painter.line_segment([egui::pos2(x, grid.top()), egui::pos2(x, grid.bottom())], Stroke::new(1.0_f32, color));
             if strong {
                 painter.with_clip_rect(ruler).text(
                     egui::pos2(x + 3.0, ruler.center().y),
@@ -845,14 +845,19 @@ impl TuneDialog {
                     grid_painter.rect_filled(fade, 0.0, color.gamma_multiply(0.5));
                 }
                 NoteEnd::Cut => {
-                    grid_painter.line_segment([bar.right_top(), bar.right_bottom()], Stroke::new(2.0, Color32::BLACK));
+                    grid_painter.line_segment([bar.right_top(), bar.right_bottom()], Stroke::new(2.0_f32, Color32::BLACK));
                 }
                 NoteEnd::Hold => {
-                    grid_painter.line_segment([bar.right_center(), bar.right_center() + egui::vec2(8.0, 0.0)], Stroke::new(1.0, color));
+                    grid_painter.line_segment([bar.right_center(), bar.right_center() + egui::vec2(8.0, 0.0)], Stroke::new(1.0_f32, color));
                 }
             }
             if Some(index) == self.selected {
-                grid_painter.rect_stroke(bar.expand(1.0), 2.0, Stroke::new(2.0, visuals.strong_text_color()), egui::StrokeKind::Outside);
+                grid_painter.rect_stroke(
+                    bar.expand(1.0),
+                    2.0,
+                    Stroke::new(2.0_f32, visuals.strong_text_color()),
+                    egui::StrokeKind::Outside,
+                );
             }
         }
         // The keyboard, with the octaves named at their C.
@@ -870,7 +875,7 @@ impl TuneDialog {
                 0.0,
                 if black { Color32::from_gray(30) } else { Color32::from_gray(235) },
             );
-            keys.line_segment([key.left_bottom(), key.right_bottom()], Stroke::new(1.0, Color32::from_gray(150)));
+            keys.line_segment([key.left_bottom(), key.right_bottom()], Stroke::new(1.0_f32, Color32::from_gray(150)));
             if pitch % 12 == 0 {
                 keys.text(
                     key.right_center() - egui::vec2(3.0, 0.0),
@@ -890,7 +895,7 @@ impl TuneDialog {
             } else {
                 visuals.selection.stroke.color
             };
-            painter.line_segment([egui::pos2(x, ruler.top()), egui::pos2(x, grid.bottom())], Stroke::new(2.0, color));
+            painter.line_segment([egui::pos2(x, ruler.top()), egui::pos2(x, grid.bottom())], Stroke::new(2.0_f32, color));
         } else if self.clock.is_some() && x > grid.right() {
             // Keep the playhead in view while playing.
             self.scroll.0 = head as f32 - grid.width() / zoom * 0.1;
@@ -898,7 +903,7 @@ impl TuneDialog {
         painter.rect_stroke(
             rect,
             0.0,
-            Stroke::new(1.0, visuals.widgets.noninteractive.bg_stroke.color),
+            Stroke::new(1.0_f32, visuals.widgets.noninteractive.bg_stroke.color),
             egui::StrokeKind::Inside,
         );
     }

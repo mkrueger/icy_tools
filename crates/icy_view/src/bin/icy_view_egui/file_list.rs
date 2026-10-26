@@ -139,7 +139,7 @@ impl FileList {
                         ui.painter().vline(
                             rect.left(),
                             rect.y_range().shrink(5.0),
-                            egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+                            egui::Stroke::new(1.0_f32, ui.visuals().widgets.noninteractive.bg_stroke.color),
                         );
                     }
                     left += width;
