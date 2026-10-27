@@ -1190,6 +1190,14 @@ pub trait CommandSink {
     /// Play ANSI music sequence. Default implementation does nothing.
     fn play_music(&mut self, _music: AnsiMusic) {}
 
+    /// Asked right after `play_music` and `aps`, the constructs that can hold
+    /// the stream (foreground music, `APC SyncTERM:A;Wait`), while the input
+    /// is parsed with `CommandParser::parse_until_pause`. Return true to stop
+    /// the parse after that construct. Default: never pause.
+    fn should_pause(&mut self) -> bool {
+        false
+    }
+
     /// Handle a terminal request that expects a response.
     /// The implementation should send appropriate data back to the host.
     /// Default implementation does nothing.
@@ -1234,6 +1242,20 @@ pub trait CommandSink {
 /// meaning; adjacent `print` calls may have different boundaries.
 pub trait CommandParser: Send {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink);
+
+    /// Like `parse`, but stops right after a blocking construct when the sink
+    /// asks for it (`CommandSink::should_pause`). Returns how many bytes of
+    /// `input` were consumed; pass the rest (`&input[n..]`) in a later call,
+    /// once the sink is ready to go on. The parser state is kept, as across
+    /// any chunk boundary.
+    ///
+    /// The default consumes the whole input, for parsers that don't pause.
+    /// `AnsiParser` pauses after ANSI music and APC strings. A construct
+    /// played from a CTerm macro (`CSI Pn * z`) does not pause.
+    fn parse_until_pause(&mut self, input: &[u8], sink: &mut dyn CommandSink) -> usize {
+        self.parse(input, sink);
+        input.len()
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

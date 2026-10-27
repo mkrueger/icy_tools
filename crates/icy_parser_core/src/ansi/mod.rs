@@ -36,6 +36,8 @@ pub struct AnsiParser {
     cur_length: i32,
     cur_tempo: i32,
     dotted_note: bool,
+    /// Set when `play_music` or `aps` was just called, for `parse_until_pause`.
+    blocking_construct: bool,
 }
 
 impl Default for AnsiParser {
@@ -58,6 +60,7 @@ impl Default for AnsiParser {
             cur_length: 4,
             cur_tempo: 120,
             dotted_note: false,
+            blocking_construct: false,
         }
     }
 }
@@ -376,6 +379,18 @@ impl AnsiParser {
 
 impl CommandParser for AnsiParser {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink) {
+        self.parse_input(input, sink, false);
+    }
+
+    fn parse_until_pause(&mut self, input: &[u8], sink: &mut dyn CommandSink) -> usize {
+        self.parse_input(input, sink, true)
+    }
+}
+
+impl AnsiParser {
+    /// Returns the number of bytes consumed: all of `input`, unless `pausable`
+    /// and the sink asked to pause after a blocking construct.
+    fn parse_input(&mut self, input: &[u8], sink: &mut dyn CommandSink, pausable: bool) -> usize {
         let mut i = 0;
         let mut printable_start = 0;
         while i < input.len() {
@@ -1545,10 +1560,14 @@ impl CommandParser for AnsiParser {
                             sink.request(TerminalRequest::JxlSupportReport);
                         } else {
                             sink.aps(&self.parse_buffer);
+                            self.blocking_construct = true;
                         }
                         self.reset();
                         i += 1;
                         printable_start = i;
+                        if self.take_pause(sink, pausable) {
+                            return i;
+                        }
                     } else {
                         // False alarm - ESC was part of APS data
                         self.push_string_data(&[ESC, byte]);
@@ -1581,6 +1600,9 @@ impl CommandParser for AnsiParser {
                     self.parse_ansi_music(byte, sink);
                     i += 1;
                     printable_start = i;
+                    if self.take_pause(sink, pausable) {
+                        return i;
+                    }
                 }
             }
         }
@@ -1590,6 +1612,12 @@ impl CommandParser for AnsiParser {
             self.remember_printed(&input[printable_start..i]);
             sink.print(&input[printable_start..i]);
         }
+        input.len()
+    }
+
+    /// Whether to stop after the construct just handed to the sink.
+    fn take_pause(&mut self, sink: &mut dyn CommandSink, pausable: bool) -> bool {
+        std::mem::take(&mut self.blocking_construct) && pausable && sink.should_pause()
     }
 }
 
