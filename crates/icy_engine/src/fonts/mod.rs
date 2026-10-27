@@ -304,6 +304,11 @@ impl BitFont {
 impl BitFont {
     /// Load font from bytes (PSF1, PSF2, YAFF, or plain format)
     pub fn from_bytes(name: impl Into<String>, data: &[u8]) -> crate::Result<Self> {
+        // No data is no font. The YAFF parser accepts an empty document, so
+        // without this an empty file or DCS payload became a blank 8x16 font.
+        if data.is_empty() {
+            return Err(FontError::UnknownFontFormat(0).into());
+        }
         let name = name.into();
 
         // Try to parse as PSF font first
@@ -471,3 +476,14 @@ impl FromStr for BitFont {
 
 /// Number of ANSI font slots (legacy alias)
 pub const ANSI_FONTS: usize = 42;
+
+#[cfg(test)]
+mod tests {
+    use super::BitFont;
+
+    #[test]
+    fn from_bytes_rejects_empty_data() {
+        // libyaff accepts an empty document, which made this a blank 8x16 font
+        assert!(BitFont::from_bytes("empty", &[]).is_err());
+    }
+}
