@@ -224,6 +224,25 @@ impl<'a> ScreenSink<'a> {
             self.screen.caret().attribute
         };
 
+        // CTerm modes 31/34: bold and/or blink text use the alternate fonts
+        // selected with `CSI Ps1 ; Ps2 SP D`. Modes 32/35 then drop the
+        // brightening and the blinking.
+        let state = self.screen.terminal_state();
+        let bright_font = state.bright_alt_charset && attr.is_bold();
+        let blink_font = state.blink_alt_charset && attr.is_blinking();
+        match (bright_font, blink_font) {
+            (true, true) => attr.set_font_page(state.high_intensity_blink_attribute_font_slot as u8),
+            (true, false) => attr.set_font_page(state.high_intensity_attribute_font_slot as u8),
+            (false, true) => attr.set_font_page(state.blink_attribute_font_slot as u8),
+            (false, false) => {}
+        }
+        if state.bright_intensity_disabled {
+            attr.set_is_bold(false);
+        }
+        if state.blink_disabled && !state.ice_colors {
+            attr.set_is_blinking(false);
+        }
+
         // iCE has no blinking; the blink bit only brightens a 16-color background.
         // RGB and extended backgrounds (e.g. PabloDraw's `ESC[0;R;G;Bt`) keep their color.
         if self.screen.terminal_state().ice_colors && attr.is_blinking() {
@@ -426,6 +445,18 @@ impl<'a> ScreenSink<'a> {
             }
             DecMode::CursorBlinking => {
                 self.screen.caret_mut().blinking = enabled;
+            }
+            DecMode::BrightAltCharset => {
+                self.screen.terminal_state_mut().bright_alt_charset = enabled;
+            }
+            DecMode::BrightIntensityDisable => {
+                self.screen.terminal_state_mut().bright_intensity_disabled = enabled;
+            }
+            DecMode::BlinkAltCharset => {
+                self.screen.terminal_state_mut().blink_alt_charset = enabled;
+            }
+            DecMode::BlinkDisabled => {
+                self.screen.terminal_state_mut().blink_disabled = enabled;
             }
             DecMode::SmoothScroll => {
                 self.screen.terminal_state_mut().scroll_state = if enabled {
@@ -1423,6 +1454,30 @@ mod tests {
         parser.parse(b"\x1b[0;37 DB", &mut ScreenSink::new(&mut screen));
         assert_eq!(screen.terminal_state().normal_attribute_font_slot, 37);
         assert_eq!(screen.char_at(Position::new(1, 0)).font_page(), 37);
+    }
+
+    #[test]
+    fn cterm_alt_charset_modes_pick_the_font_and_drop_bright_and_blink() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        let mut parser = AnsiParser::new();
+
+        // Bright font 37, blink font 38, bright-blink font 39; primary stays 0.
+        parser.parse(b"\x1b[1;37 D\x1b[2;38 D\x1b[3;39 D", &mut ScreenSink::new(&mut screen));
+        parser.parse(b"\x1b[?31;34h\x1b[1mA\x1b[0;5mB\x1b[1;5mC\x1b[0mD", &mut ScreenSink::new(&mut screen));
+        let font_pages: Vec<u8> = (0..4).map(|x| screen.char_at(Position::new(x, 0)).font_page()).collect();
+        assert_eq!(font_pages, vec![37, 38, 39, 0]);
+        // Without ?32 / ?35 the cells keep bold and blink.
+        assert!(screen.char_at(Position::new(2, 0)).attribute.is_bold());
+        assert!(screen.char_at(Position::new(2, 0)).attribute.is_blinking());
+
+        // ?32 / ?35: bold no longer brightens, blink no longer blinks.
+        parser.parse(b"\x1b[?32;35h\x1b[1;5mE", &mut ScreenSink::new(&mut screen));
+        let e = screen.char_at(Position::new(4, 0));
+        assert_eq!(e.font_page(), 39);
+        assert!(!e.attribute.is_bold());
+        assert!(!e.attribute.is_blinking());
+        // ?35 isn't the cursor blink mode.
+        assert!(screen.caret().blinking);
     }
 
     #[test]

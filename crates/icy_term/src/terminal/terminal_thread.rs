@@ -217,9 +217,13 @@ fn dec_mode_report_status(screen: &dyn Screen, mode: u16) -> u8 {
         6 => Some(matches!(state.origin_mode, icy_engine::OriginMode::WithinMargins)),
         7 => Some(matches!(state.auto_wrap_mode, icy_engine::AutoWrapMode::AutoWrap)),
         9 => Some(matches!(state.mouse_mode(), icy_engine::MouseMode::X10)),
+        12 => Some(screen.caret().blinking),
         25 => Some(screen.caret().visible),
+        31 => Some(state.bright_alt_charset),
+        32 => Some(state.bright_intensity_disabled),
         33 => Some(state.ice_colors),
-        35 => Some(screen.caret().blinking),
+        34 => Some(state.blink_alt_charset),
+        35 => Some(state.blink_disabled),
         69 => Some(state.dec_left_right_margins()),
         80 => Some(!state.sixel_at_cursor),
         1000 => Some(matches!(state.mouse_mode(), icy_engine::MouseMode::VT200)),
@@ -2533,10 +2537,19 @@ impl TerminalThread {
                 if screen.caret().visible {
                     params.push("25");
                 }
+                if state.bright_alt_charset {
+                    params.push("31");
+                }
+                if state.bright_intensity_disabled {
+                    params.push("32");
+                }
                 if screen.ice_mode() == icy_engine::IceMode::Ice {
                     params.push("33");
                 }
-                if screen.caret().blinking {
+                if state.blink_alt_charset {
+                    params.push("34");
+                }
+                if state.blink_disabled {
                     params.push("35");
                 }
 

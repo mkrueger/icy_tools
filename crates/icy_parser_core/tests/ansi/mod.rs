@@ -149,6 +149,33 @@ fn test_mixed_content() {
 }
 
 #[test]
+fn test_cterm_charset_and_blink_modes() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // CTerm modes 31, 32, 34 and 35; ?35 is "blink disabled", not cursor blink.
+    parser.parse(b"\x1B[?31;32;34;35h\x1B[?12l", &mut sink);
+    let modes: Vec<_> = sink
+        .cmds
+        .iter()
+        .map(|cmd| match cmd {
+            TerminalCommand::CsiDecSetMode(mode, enabled) => (*mode, *enabled),
+            other => panic!("Expected CsiDecSetMode, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        modes,
+        vec![
+            (DecMode::BrightAltCharset, true),
+            (DecMode::BrightIntensityDisable, true),
+            (DecMode::BlinkAltCharset, true),
+            (DecMode::BlinkDisabled, true),
+            (DecMode::CursorBlinking, false),
+        ]
+    );
+}
+
+#[test]
 fn test_dec_private_modes() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();

@@ -324,10 +324,24 @@ pub enum DecMode {
     /// When set: cursor is visible
     /// When reset: cursor is invisible
     CursorVisible = 25,
-    /// ATT610 - Blinking Cursor (Mode 35)
-    /// When set: cursor stops blinking
-    /// When reset: cursor blinks
-    CursorBlinking = 35,
+    /// ATT610 - Blinking Cursor (Mode 12)
+    /// When set: cursor blinks
+    /// When reset: cursor stops blinking
+    CursorBlinking = 12,
+
+    // CTerm character set and attribute modes
+    /// CTerm bright alternate character set (Mode 31)
+    /// When set: bold text uses the font selected with `CSI 1 ; Ps2 SP D`
+    BrightAltCharset = 31,
+    /// CTerm bright intensity disable (Mode 32)
+    /// When set: bold no longer brightens the foreground
+    BrightIntensityDisable = 32,
+    /// CTerm blink alternate character set (Mode 34)
+    /// When set: blinking text uses the font selected with `CSI 2 ; Ps2 SP D`
+    BlinkAltCharset = 34,
+    /// CTerm blink disabled (Mode 35)
+    /// When set: blinking text no longer blinks
+    BlinkDisabled = 35,
 
     // iCE Colors / Blink Mode
     /// iCE Colors (Mode 33)
@@ -396,8 +410,12 @@ impl DecMode {
             6 => Some(Self::OriginMode),
             7 => Some(Self::AutoWrap),
             25 => Some(Self::CursorVisible),
+            12 => Some(Self::CursorBlinking),
+            31 => Some(Self::BrightAltCharset),
+            32 => Some(Self::BrightIntensityDisable),
             33 => Some(Self::IceColors),
-            35 => Some(Self::CursorBlinking),
+            34 => Some(Self::BlinkAltCharset),
+            35 => Some(Self::BlinkDisabled),
             69 => Some(Self::LeftRightMargin),
             80 => Some(Self::SixelDisplay),
             9 => Some(Self::X10Mouse),

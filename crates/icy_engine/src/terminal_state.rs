@@ -216,6 +216,14 @@ pub struct TerminalState {
     // Attributes used for determining the real current device attribute:
     pub inverse_video: bool,
     pub ice_colors: bool,
+    /// `CSI ? 31 h`: bold text uses `high_intensity_attribute_font_slot`.
+    pub bright_alt_charset: bool,
+    /// `CSI ? 32 h`: bold doesn't brighten the foreground.
+    pub bright_intensity_disabled: bool,
+    /// `CSI ? 34 h`: blinking text uses `blink_attribute_font_slot`.
+    pub blink_alt_charset: bool,
+    /// `CSI ? 35 h`: blinking text doesn't blink.
+    pub blink_disabled: bool,
 
     // Special for Viewdata terminals - they reset colors on row change.
     pub(crate) vd_last_row: i32,
@@ -290,6 +298,10 @@ impl TerminalState {
             cr_is_if: false,
             inverse_video: false,
             ice_colors: false,
+            bright_alt_charset: false,
+            bright_intensity_disabled: false,
+            blink_alt_charset: false,
+            blink_disabled: false,
             dec_left_right_margins: false,
             vd_last_row: 0,
             viewdata: icy_parser_core::ViewdataState::default(),
