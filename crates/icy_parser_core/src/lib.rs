@@ -1050,9 +1050,12 @@ pub enum TerminalRequest {
     /// Terminal should respond with version and hardware info
     SecondaryDeviceAttributes,
 
-    /// Extended Device Attributes: ESC[<c
-    /// Terminal should respond with extended capabilities
-    ExtendedDeviceAttributes,
+    /// Extended Device Attributes (CTDA): ESC[<c or ESC[<0c
+    /// Terminal should respond with extended capabilities.
+    /// Carries the parameters: a reply has the same shape
+    /// (ESC[<0;1;2...c), so a host that echoes it back sends feature numbers,
+    /// which should not be answered again.
+    ExtendedDeviceAttributes(Vec<u16>),
 
     /// Device Status Report (DSR): ESC[5n
     /// Terminal should respond with "\x1b[0n" (terminal OK)

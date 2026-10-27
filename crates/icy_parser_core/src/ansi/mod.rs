@@ -1193,7 +1193,7 @@ impl CommandParser for AnsiParser {
                     b'c' => {
                         // Extended Device Attributes: ESC[<...c
                         // Reports terminal capabilities
-                        sink.request(TerminalRequest::ExtendedDeviceAttributes);
+                        sink.request(TerminalRequest::ExtendedDeviceAttributes(self.params.clone()));
                         self.reset();
                         i += 1;
                         printable_start = i;

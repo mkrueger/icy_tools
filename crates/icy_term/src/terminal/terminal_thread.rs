@@ -2345,7 +2345,10 @@ impl TerminalThread {
                 let hardware_options = 1 | 4 | 8 | 128;
                 Some(format!("\x1b[>65;{version};{hardware_options}c").into_bytes())
             }
-            TerminalRequest::ExtendedDeviceAttributes => {
+            // Only CSI < c and CSI < 0 c are requests; anything with feature
+            // numbers is a reply (ours, echoed back) and isn't answered.
+            TerminalRequest::ExtendedDeviceAttributes(params) if params.iter().any(|&p| p != 0) => None,
+            TerminalRequest::ExtendedDeviceAttributes(_) => {
                 /*
                     Reply: CSI < 0 ; Ps... c, one Ps per feature:
                     1 - Loadable fonts are availabe via Device Control Strings
