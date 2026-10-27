@@ -529,7 +529,7 @@ impl EditableScreen for TextScreen {
                     Position::new(0, -1),
                     self.caret.attribute,
                 );
-            } else {
+            } else if !layer_ref.scroll_full_width_rows(start_column, end_column, start_line, end_line, true, blank) {
                 for x in start_column..=end_column {
                     (start_line..end_line).for_each(|y| {
                         let ch = layer_ref.char_at((x, y + 1).into());
@@ -538,6 +538,9 @@ impl EditableScreen for TextScreen {
                     layer_ref.set_char((x, end_line), blank);
                 }
             }
+        }
+        if start_line <= end_line {
+            self.buffer.mark_lines_dirty(start_line, end_line + 1);
         }
         let layer_ref = &mut self.buffer.layers[self.current_layer];
 
@@ -574,6 +577,9 @@ impl EditableScreen for TextScreen {
         let end_column = self.last_editable_column();
         let blank = AttributedChar::new(' ', self.caret.attribute);
 
+        if start_line <= end_line {
+            self.buffer.mark_lines_dirty(start_line, end_line + 1);
+        }
         let layer_ref = &mut self.buffer.layers[self.current_layer];
         // Shift character data downward
         if self.buffer.unicode_width {
@@ -583,7 +589,7 @@ impl EditableScreen for TextScreen {
                 Position::new(0, 1),
                 self.caret.attribute,
             );
-        } else {
+        } else if !layer_ref.scroll_full_width_rows(start_column, end_column, start_line, end_line, false, blank) {
             for x in start_column..=end_column {
                 ((start_line + 1)..=end_line).rev().for_each(|y: i32| {
                     let ch = layer_ref.char_at((x, y - 1).into());
@@ -801,6 +807,9 @@ impl EditableScreen for TextScreen {
 
         let top = self.first_editable_line();
         let bottom = self.last_editable_line();
+        if line >= top && line <= bottom {
+            self.buffer.mark_lines_dirty(line, bottom + 1);
+        }
 
         if self.unicode_width() {
             if line >= top && line <= bottom {
@@ -850,6 +859,9 @@ impl EditableScreen for TextScreen {
 
         let top = self.first_editable_line();
         let bottom = self.last_editable_line();
+        if line >= top && line <= bottom {
+            self.buffer.mark_lines_dirty(line, bottom + 1);
+        }
 
         if self.unicode_width() {
             if line >= top && line <= bottom {
@@ -982,6 +994,7 @@ impl EditableScreen for TextScreen {
 #[cfg(test)]
 mod dirty_line_tests {
     use super::*;
+    use crate::TextAttribute;
 
     #[test]
     fn writing_text_invalidates_its_rendered_line() {
@@ -995,5 +1008,144 @@ mod dirty_line_tests {
         screen.caret.set_position(Position::new(1, 4));
         screen.print_char(ch);
         assert_eq!(screen.get_dirty_lines(), Some((4, 5)));
+    }
+
+    fn row_text(screen: &TextScreen, y: i32) -> String {
+        (0..screen.width()).map(|x| screen.char_at(Position::new(x, y)).ch).collect()
+    }
+
+    /// A 4x6 screen whose rows read "0000", "1111", ...
+    fn numbered_screen() -> TextScreen {
+        let mut screen = TextScreen::new(Size::new(4, 6));
+        for y in 0..6 {
+            for x in 0..4 {
+                screen.set_char(Position::new(x, y), AttributedChar::new(char::from(b'0' + y as u8), TextAttribute::default()));
+            }
+        }
+        screen.clear_dirty_lines();
+        screen
+    }
+
+    #[test]
+    fn scrolling_marks_the_scroll_region_dirty() {
+        let mut screen = numbered_screen();
+        screen.scroll_up();
+        assert_eq!(screen.get_dirty_lines(), Some((0, 6)));
+
+        screen.clear_dirty_lines();
+        screen.terminal_state_mut().set_margins_top_bottom(2, 4);
+        screen.scroll_down();
+        assert_eq!(screen.get_dirty_lines(), Some((2, 5)));
+
+        screen.clear_dirty_lines();
+        screen.scroll_up();
+        assert_eq!(screen.get_dirty_lines(), Some((2, 5)));
+    }
+
+    #[test]
+    fn full_width_scroll_moves_lines_with_the_cell_copy_result() {
+        let mut screen = numbered_screen();
+        screen.caret.attribute.set_background(4);
+        let blank = AttributedChar::new(' ', screen.caret.attribute);
+        screen.terminal_state_mut().set_margins_top_bottom(1, 4);
+
+        // The rows are whole lines, so the scroll below takes the line move.
+        assert!(screen.buffer.layers[0].clone().scroll_full_width_rows(0, 3, 1, 4, true, blank));
+
+        screen.scroll_up();
+        let rows: Vec<String> = (0..6).map(|y| row_text(&screen, y)).collect();
+        assert_eq!(rows, ["0000", "2222", "3333", "4444", "    ", "5555"]);
+        assert_eq!(screen.char_at(Position::new(0, 4)), blank);
+
+        screen.scroll_down();
+        let rows: Vec<String> = (0..6).map(|y| row_text(&screen, y)).collect();
+        assert_eq!(rows, ["0000", "    ", "2222", "3333", "4444", "5555"]);
+        assert_eq!(screen.char_at(Position::new(3, 1)), blank);
+    }
+
+    /// Cells that differ in character, colours, blink and RGB, so a line move
+    /// that lost or mixed up attributes would show.
+    fn varied_screen() -> TextScreen {
+        let mut screen = TextScreen::new(Size::new(5, 7));
+        for y in 0..7 {
+            for x in 0..5 {
+                let mut attr = TextAttribute::default();
+                attr.set_foreground((x + y) as u32 % 16);
+                attr.set_background((x * 3 + y) as u32 % 8);
+                attr.set_is_blinking((x + y) % 3 == 0);
+                if (x * y) % 4 == 1 {
+                    attr.set_foreground_rgb(10 * x as u8, 20 * y as u8, 7);
+                }
+                screen.set_char(Position::new(x, y), AttributedChar::new(char::from(b'a' + (y * 5 + x) as u8), attr));
+            }
+        }
+        screen
+    }
+
+    /// The scroll the line move replaced, written out cell by cell.
+    fn cell_copy_scroll(screen: &mut TextScreen, first: i32, last: i32, up: bool, blank: AttributedChar) {
+        for x in 0..screen.width() {
+            if up {
+                for y in first..last {
+                    let ch = screen.char_at(Position::new(x, y + 1));
+                    screen.set_char(Position::new(x, y), ch);
+                }
+                screen.set_char(Position::new(x, last), blank);
+            } else {
+                for y in ((first + 1)..=last).rev() {
+                    let ch = screen.char_at(Position::new(x, y - 1));
+                    screen.set_char(Position::new(x, y), ch);
+                }
+                screen.set_char(Position::new(x, first), blank);
+            }
+        }
+    }
+
+    #[test]
+    fn full_width_scroll_keeps_every_attribute_like_the_cell_copy() {
+        for (top, bottom) in [(None, None), (Some(2), Some(5)), (Some(0), Some(6)), (Some(3), Some(3))] {
+            for up in [true, false] {
+                let mut moved = varied_screen();
+                let mut copied = varied_screen();
+                moved.caret.attribute.set_background(5);
+                moved.caret.attribute.set_is_blinking(true);
+                let blank = AttributedChar::new(' ', moved.caret.attribute);
+                if let (Some(top), Some(bottom)) = (top, bottom) {
+                    moved.terminal_state_mut().set_margins_top_bottom(top, bottom);
+                }
+                let (first, last) = (moved.first_editable_line(), moved.last_editable_line());
+
+                if up {
+                    moved.scroll_up();
+                } else {
+                    moved.scroll_down();
+                }
+                cell_copy_scroll(&mut copied, first, last, up, blank);
+
+                assert_eq!(
+                    moved.buffer.layers[0].lines, copied.buffer.layers[0].lines,
+                    "margins {top:?}..{bottom:?}, up {up}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn line_move_declines_what_the_cell_copy_handles_differently() {
+        let screen = numbered_screen();
+        let blank = AttributedChar::new(' ', TextAttribute::default());
+        let layer = &screen.buffer.layers[0];
+        // narrower than the layer
+        assert!(!layer.clone().scroll_full_width_rows(1, 3, 0, 5, true, blank));
+        // past the last row
+        assert!(!layer.clone().scroll_full_width_rows(0, 3, 0, 6, true, blank));
+        // a locked layer
+        let mut locked = layer.clone();
+        locked.properties.is_locked = true;
+        assert!(!locked.scroll_full_width_rows(0, 3, 0, 5, true, blank));
+        // a short line
+        let mut short = layer.clone();
+        short.lines[2].chars.truncate(2);
+        assert!(!short.scroll_full_width_rows(0, 3, 0, 5, true, blank));
     }
 }

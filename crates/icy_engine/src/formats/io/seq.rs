@@ -555,6 +555,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "embedded-fonts")]
     fn short_rows_end_with_return_and_the_lower_right_corner_does_not_scroll() {
         let mut buffer = petscii_buffer(PetsciiMachine::C64, PetsciiCase::Upper, Size::new(40, 25), 1, 0);
         buffer.layers[0].set_char((0, 0), AttributedChar::new('\u{1}', crate::TextAttribute::default()));
@@ -598,6 +599,7 @@ mod tests {
 #[cfg(test)]
 mod machine_tests {
     use super::*;
+    #[cfg(feature = "embedded-fonts")]
     use crate::FileFormat;
 
     #[test]
@@ -626,6 +628,7 @@ mod machine_tests {
     }
 
     #[test]
+    #[cfg(feature = "embedded-fonts")]
     fn vdc_seq_translates_colors_and_writes_attributes_per_character() {
         let mut buffer = petscii_buffer(PetsciiMachine::C128Vdc, PetsciiCase::Upper, Size::new(80, 25), 15, 0);
         let mut red = crate::TextAttribute::default();
@@ -643,6 +646,7 @@ mod machine_tests {
     }
 
     #[test]
+    #[cfg(feature = "embedded-fonts")]
     fn vic20_rows_wrap_at_22_columns_and_the_pet_has_no_colors() {
         let mut buffer = petscii_buffer(PetsciiMachine::Vic20, PetsciiCase::Upper, Size::new(22, 23), 2, 1);
         for x in 0..22 {

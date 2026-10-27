@@ -133,6 +133,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "embedded-fonts")]
     fn inverse_is_kept_in_the_character() {
         let mut buffer = atascii_buffer(40, 2);
         let mut attribute = TextAttribute::default();
@@ -160,6 +161,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "embedded-fonts")]
     fn the_screens_use_their_fonts_cell_size() {
         let antic = atascii_buffer(40, 24);
         assert_eq!(antic.font_dimensions(), Size::new(8, 8));

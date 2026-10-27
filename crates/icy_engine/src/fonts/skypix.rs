@@ -78,7 +78,7 @@ impl AmigaFont {
 macro_rules! amiga_fonts {
     ($( ($i:ident, $file:expr, $name: expr, $size:expr) ),* $(,)? ) => {
         $(
-            pub const $i: &str = include_str!(concat!("../../data/fonts/Amiga/original/", $file));
+            pub const $i: &str = font_str!(concat!("../../data/fonts/Amiga/original/", $file));
         )*
 
         pub fn load_amiga_fonts() -> Vec<(String, i32, &'static str, Mutex<Option<BitFont>>)> {
@@ -108,6 +108,10 @@ pub(crate) fn get_amiga_font(name: &str, size: i32) -> Option<Arc<AmigaFont>> {
 
             if let Some(cached_font) = font_cache.as_ref() {
                 return Some(cached_font.clone());
+            }
+            if font_data.is_empty() {
+                // Not compiled in (no `embedded-fonts` feature).
+                return None;
             }
 
             match YaffFont::from_bytes(font_data.as_bytes()) {

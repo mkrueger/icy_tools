@@ -790,12 +790,13 @@ impl StringGeneratorV2 {
 
         let mut ansi_fonts = Vec::new();
         for i in 0..ANSI_FONTS as u8 {
-            ansi_fonts.push(BitFont::from_ansi_font_page(i, buf.font_dimensions().height as u8).unwrap());
+            // None for a slot that isn't compiled in or installed (no `embedded-fonts`).
+            ansi_fonts.push(BitFont::from_ansi_font_page(i, buf.font_dimensions().height as u8));
         }
         for (page, font) in buf.font_iter() {
             let mut to_page = *page;
             for (i, ansi_font) in ansi_fonts.iter().enumerate() {
-                if *ansi_font == font {
+                if ansi_font.is_some_and(|f| f == font) {
                     to_page = i as u8;
                     break;
                 }

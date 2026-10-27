@@ -249,7 +249,10 @@ impl ScreenMode {
         match self {
             ScreenMode::Vga(_x, y) => {
                 screen.clear_font_table();
-                screen.set_font(0, BitFont::from_ansi_font_page(0, font_height_for_lines(*y as usize)).unwrap().clone());
+                screen.set_font(
+                    0,
+                    BitFont::from_ansi_font_page(0, font_height_for_lines(*y as usize)).cloned().unwrap_or_default(),
+                );
                 *screen.buffer_type_mut() = BufferType::CP437;
             }
             ScreenMode::Unicode(_x, _y) => {
@@ -257,7 +260,7 @@ impl ScreenMode {
             }
             ScreenMode::Default => {
                 screen.clear_font_table();
-                screen.set_font(0, BitFont::from_bytes("", CP437).unwrap());
+                screen.set_font(0, BitFont::from_embedded("", CP437));
                 *screen.buffer_type_mut() = BufferType::CP437;
             }
             ScreenMode::Vic => {

@@ -36,178 +36,178 @@ pub const DEFAULT_FONT_NAME: &str = "Codepage 437 English";
 pub const ALT_DEFAULT_FONT_NAME: &str = "IBM VGA";
 
 /// CP437 PSF bytes for direct access (Slot 0, 16px)
-pub const CP437: &[u8] = include_bytes!("../../data/fonts/ansi/00-Codepage_437_English_16.psf");
+pub const CP437: &[u8] = font_bytes!("../../data/fonts/ansi/00-Codepage_437_English_16.psf");
 
 // ============================================================================
 // PSF2 Font Data - All fonts in PSF2 format
 // ============================================================================
 
 // Slot 0: Codepage 437 English
-const SLOT_00_F08: &[u8] = include_bytes!("../../data/fonts/ansi/00-Codepage_437_English_8.psf");
-const SLOT_00_F14: &[u8] = include_bytes!("../../data/fonts/ansi/00-Codepage_437_English_14.psf");
-const SLOT_00_F16: &[u8] = include_bytes!("../../data/fonts/ansi/00-Codepage_437_English_16.psf");
+const SLOT_00_F08: &[u8] = font_bytes!("../../data/fonts/ansi/00-Codepage_437_English_8.psf");
+const SLOT_00_F14: &[u8] = font_bytes!("../../data/fonts/ansi/00-Codepage_437_English_14.psf");
+const SLOT_00_F16: &[u8] = font_bytes!("../../data/fonts/ansi/00-Codepage_437_English_16.psf");
 
 // Slot 1: Codepage 1251 Cyrillic (swiss)
-const SLOT_01_F16: &[u8] = include_bytes!("../../data/fonts/ansi/01-Codepage_1251_Cyrillic_swiss_16.psf");
+const SLOT_01_F16: &[u8] = font_bytes!("../../data/fonts/ansi/01-Codepage_1251_Cyrillic_swiss_16.psf");
 
 // Slot 2: Russian koi8-r
-const SLOT_02_F08: &[u8] = include_bytes!("../../data/fonts/ansi/02-Russian_koi8-r_8.psf");
-const SLOT_02_F14: &[u8] = include_bytes!("../../data/fonts/ansi/02-Russian_koi8-r_14.psf");
-const SLOT_02_F16: &[u8] = include_bytes!("../../data/fonts/ansi/02-Russian_koi8-r_16.psf");
+const SLOT_02_F08: &[u8] = font_bytes!("../../data/fonts/ansi/02-Russian_koi8-r_8.psf");
+const SLOT_02_F14: &[u8] = font_bytes!("../../data/fonts/ansi/02-Russian_koi8-r_14.psf");
+const SLOT_02_F16: &[u8] = font_bytes!("../../data/fonts/ansi/02-Russian_koi8-r_16.psf");
 
 // Slot 3: ISO-8859-2 Central European
-const SLOT_03_F08: &[u8] = include_bytes!("../../data/fonts/ansi/03-ISO-8859-2_Central_European_8.psf");
-const SLOT_03_F14: &[u8] = include_bytes!("../../data/fonts/ansi/03-ISO-8859-2_Central_European_14.psf");
-const SLOT_03_F16: &[u8] = include_bytes!("../../data/fonts/ansi/03-ISO-8859-2_Central_European_16.psf");
+const SLOT_03_F08: &[u8] = font_bytes!("../../data/fonts/ansi/03-ISO-8859-2_Central_European_8.psf");
+const SLOT_03_F14: &[u8] = font_bytes!("../../data/fonts/ansi/03-ISO-8859-2_Central_European_14.psf");
+const SLOT_03_F16: &[u8] = font_bytes!("../../data/fonts/ansi/03-ISO-8859-2_Central_European_16.psf");
 
 // Slot 4: ISO-8859-4 Baltic wide VGA 9bit mapped
-const SLOT_04_F16: &[u8] = include_bytes!("../../data/fonts/ansi/04-ISO-8859-4_Baltic_wide_VGA_9bit_mapped_16.psf");
+const SLOT_04_F16: &[u8] = font_bytes!("../../data/fonts/ansi/04-ISO-8859-4_Baltic_wide_VGA_9bit_mapped_16.psf");
 
 // Slot 5: Codepage 866 (c) Russian
-const SLOT_05_F16: &[u8] = include_bytes!("../../data/fonts/ansi/05-Codepage_866_c_Russian_16.psf");
+const SLOT_05_F16: &[u8] = font_bytes!("../../data/fonts/ansi/05-Codepage_866_c_Russian_16.psf");
 
 // Slot 6: ISO-8859-9 Turkish
-const SLOT_06_F16: &[u8] = include_bytes!("../../data/fonts/ansi/06-ISO-8859-9_Turkish_16.psf");
+const SLOT_06_F16: &[u8] = font_bytes!("../../data/fonts/ansi/06-ISO-8859-9_Turkish_16.psf");
 
 // Slot 7: haik8 codepage (ARMSCII-8 screenmap)
-const SLOT_07_F08: &[u8] = include_bytes!("../../data/fonts/ansi/07-haik8_codepage_use_only_with_armscii8_screenmap_8.psf");
-const SLOT_07_F14: &[u8] = include_bytes!("../../data/fonts/ansi/07-haik8_codepage_use_only_with_armscii8_screenmap_14.psf");
-const SLOT_07_F16: &[u8] = include_bytes!("../../data/fonts/ansi/07-haik8_codepage_use_only_with_armscii8_screenmap_16.psf");
+const SLOT_07_F08: &[u8] = font_bytes!("../../data/fonts/ansi/07-haik8_codepage_use_only_with_armscii8_screenmap_8.psf");
+const SLOT_07_F14: &[u8] = font_bytes!("../../data/fonts/ansi/07-haik8_codepage_use_only_with_armscii8_screenmap_14.psf");
+const SLOT_07_F16: &[u8] = font_bytes!("../../data/fonts/ansi/07-haik8_codepage_use_only_with_armscii8_screenmap_16.psf");
 
 // Slot 8: ISO-8859-8 Hebrew
-const SLOT_08_F08: &[u8] = include_bytes!("../../data/fonts/ansi/08-ISO-8859-8_Hebrew_8.psf");
-const SLOT_08_F14: &[u8] = include_bytes!("../../data/fonts/ansi/08-ISO-8859-8_Hebrew_14.psf");
-const SLOT_08_F16: &[u8] = include_bytes!("../../data/fonts/ansi/08-ISO-8859-8_Hebrew_16.psf");
+const SLOT_08_F08: &[u8] = font_bytes!("../../data/fonts/ansi/08-ISO-8859-8_Hebrew_8.psf");
+const SLOT_08_F14: &[u8] = font_bytes!("../../data/fonts/ansi/08-ISO-8859-8_Hebrew_14.psf");
+const SLOT_08_F16: &[u8] = font_bytes!("../../data/fonts/ansi/08-ISO-8859-8_Hebrew_16.psf");
 
 // Slot 9: Ukrainian font koi8-u
-const SLOT_09_F08: &[u8] = include_bytes!("../../data/fonts/ansi/09-Ukrainian_font_koi8-u_8.psf");
-const SLOT_09_F14: &[u8] = include_bytes!("../../data/fonts/ansi/09-Ukrainian_font_koi8-u_14.psf");
-const SLOT_09_F16: &[u8] = include_bytes!("../../data/fonts/ansi/09-Ukrainian_font_koi8-u_16.psf");
+const SLOT_09_F08: &[u8] = font_bytes!("../../data/fonts/ansi/09-Ukrainian_font_koi8-u_8.psf");
+const SLOT_09_F14: &[u8] = font_bytes!("../../data/fonts/ansi/09-Ukrainian_font_koi8-u_14.psf");
+const SLOT_09_F16: &[u8] = font_bytes!("../../data/fonts/ansi/09-Ukrainian_font_koi8-u_16.psf");
 
 // Slot 10: ISO-8859-15 West European (thin)
-const SLOT_10_F16: &[u8] = include_bytes!("../../data/fonts/ansi/10-ISO-8859-15_West_European_thin_16.psf");
+const SLOT_10_F16: &[u8] = font_bytes!("../../data/fonts/ansi/10-ISO-8859-15_West_European_thin_16.psf");
 
 // Slot 11: ISO-8859-4 Baltic VGA 9bit mapped
-const SLOT_11_F08: &[u8] = include_bytes!("../../data/fonts/ansi/11-ISO-8859-4_Baltic_VGA_9bit_mapped_8.psf");
-const SLOT_11_F14: &[u8] = include_bytes!("../../data/fonts/ansi/11-ISO-8859-4_Baltic_VGA_9bit_mapped_14.psf");
-const SLOT_11_F16: &[u8] = include_bytes!("../../data/fonts/ansi/11-ISO-8859-4_Baltic_VGA_9bit_mapped_16.psf");
+const SLOT_11_F08: &[u8] = font_bytes!("../../data/fonts/ansi/11-ISO-8859-4_Baltic_VGA_9bit_mapped_8.psf");
+const SLOT_11_F14: &[u8] = font_bytes!("../../data/fonts/ansi/11-ISO-8859-4_Baltic_VGA_9bit_mapped_14.psf");
+const SLOT_11_F16: &[u8] = font_bytes!("../../data/fonts/ansi/11-ISO-8859-4_Baltic_VGA_9bit_mapped_16.psf");
 
 // Slot 12: Russian koi8-r (b)
-const SLOT_12_F16: &[u8] = include_bytes!("../../data/fonts/ansi/12-Russian_koi8-r_b_16.psf");
+const SLOT_12_F16: &[u8] = font_bytes!("../../data/fonts/ansi/12-Russian_koi8-r_b_16.psf");
 
 // Slot 13: ISO-8859-4 Baltic wide
-const SLOT_13_F16: &[u8] = include_bytes!("../../data/fonts/ansi/13-ISO-8859-4_Baltic_wide_16.psf");
+const SLOT_13_F16: &[u8] = font_bytes!("../../data/fonts/ansi/13-ISO-8859-4_Baltic_wide_16.psf");
 
 // Slot 14: ISO-8859-5 Cyrillic
-const SLOT_14_F08: &[u8] = include_bytes!("../../data/fonts/ansi/14-ISO-8859-5_Cyrillic_8.psf");
-const SLOT_14_F14: &[u8] = include_bytes!("../../data/fonts/ansi/14-ISO-8859-5_Cyrillic_14.psf");
-const SLOT_14_F16: &[u8] = include_bytes!("../../data/fonts/ansi/14-ISO-8859-5_Cyrillic_16.psf");
+const SLOT_14_F08: &[u8] = font_bytes!("../../data/fonts/ansi/14-ISO-8859-5_Cyrillic_8.psf");
+const SLOT_14_F14: &[u8] = font_bytes!("../../data/fonts/ansi/14-ISO-8859-5_Cyrillic_14.psf");
+const SLOT_14_F16: &[u8] = font_bytes!("../../data/fonts/ansi/14-ISO-8859-5_Cyrillic_16.psf");
 
 // Slot 15: ARMSCII-8 Character set
-const SLOT_15_F08: &[u8] = include_bytes!("../../data/fonts/ansi/15-ARMSCII-8_Character_set_8.psf");
-const SLOT_15_F14: &[u8] = include_bytes!("../../data/fonts/ansi/15-ARMSCII-8_Character_set_14.psf");
-const SLOT_15_F16: &[u8] = include_bytes!("../../data/fonts/ansi/15-ARMSCII-8_Character_set_16.psf");
+const SLOT_15_F08: &[u8] = font_bytes!("../../data/fonts/ansi/15-ARMSCII-8_Character_set_8.psf");
+const SLOT_15_F14: &[u8] = font_bytes!("../../data/fonts/ansi/15-ARMSCII-8_Character_set_14.psf");
+const SLOT_15_F16: &[u8] = font_bytes!("../../data/fonts/ansi/15-ARMSCII-8_Character_set_16.psf");
 
 // Slot 16: ISO-8859-15 West European
-const SLOT_16_F08: &[u8] = include_bytes!("../../data/fonts/ansi/16-ISO-8859-15_West_European_8.psf");
-const SLOT_16_F14: &[u8] = include_bytes!("../../data/fonts/ansi/16-ISO-8859-15_West_European_14.psf");
-const SLOT_16_F16: &[u8] = include_bytes!("../../data/fonts/ansi/16-ISO-8859-15_West_European_16.psf");
+const SLOT_16_F08: &[u8] = font_bytes!("../../data/fonts/ansi/16-ISO-8859-15_West_European_8.psf");
+const SLOT_16_F14: &[u8] = font_bytes!("../../data/fonts/ansi/16-ISO-8859-15_West_European_14.psf");
+const SLOT_16_F16: &[u8] = font_bytes!("../../data/fonts/ansi/16-ISO-8859-15_West_European_16.psf");
 
 // Slot 17: Codepage 850 Multilingual Latin I (thin)
-const SLOT_17_F16: &[u8] = include_bytes!("../../data/fonts/ansi/17-Codepage_850_Multilingual_Latin_I_thin_16.psf");
+const SLOT_17_F16: &[u8] = font_bytes!("../../data/fonts/ansi/17-Codepage_850_Multilingual_Latin_I_thin_16.psf");
 
 // Slot 18: Codepage 850 Multilingual Latin I
-const SLOT_18_F08: &[u8] = include_bytes!("../../data/fonts/ansi/18-Codepage_850_Multilingual_Latin_I_8.psf");
-const SLOT_18_F14: &[u8] = include_bytes!("../../data/fonts/ansi/18-Codepage_850_Multilingual_Latin_I_14.psf");
-const SLOT_18_F16: &[u8] = include_bytes!("../../data/fonts/ansi/18-Codepage_850_Multilingual_Latin_I_16.psf");
+const SLOT_18_F08: &[u8] = font_bytes!("../../data/fonts/ansi/18-Codepage_850_Multilingual_Latin_I_8.psf");
+const SLOT_18_F14: &[u8] = font_bytes!("../../data/fonts/ansi/18-Codepage_850_Multilingual_Latin_I_14.psf");
+const SLOT_18_F16: &[u8] = font_bytes!("../../data/fonts/ansi/18-Codepage_850_Multilingual_Latin_I_16.psf");
 
 // Slot 19: Codepage 865 Norwegian (thin)
-const SLOT_19_F16: &[u8] = include_bytes!("../../data/fonts/ansi/19-Codepage_865_Norwegian_thin_16.psf");
+const SLOT_19_F16: &[u8] = font_bytes!("../../data/fonts/ansi/19-Codepage_865_Norwegian_thin_16.psf");
 
 // Slot 20: Codepage 1251 Cyrillic
-const SLOT_20_F08: &[u8] = include_bytes!("../../data/fonts/ansi/20-Codepage_1251_Cyrillic_8.psf");
-const SLOT_20_F14: &[u8] = include_bytes!("../../data/fonts/ansi/20-Codepage_1251_Cyrillic_14.psf");
-const SLOT_20_F16: &[u8] = include_bytes!("../../data/fonts/ansi/20-Codepage_1251_Cyrillic_16.psf");
+const SLOT_20_F08: &[u8] = font_bytes!("../../data/fonts/ansi/20-Codepage_1251_Cyrillic_8.psf");
+const SLOT_20_F14: &[u8] = font_bytes!("../../data/fonts/ansi/20-Codepage_1251_Cyrillic_14.psf");
+const SLOT_20_F16: &[u8] = font_bytes!("../../data/fonts/ansi/20-Codepage_1251_Cyrillic_16.psf");
 
 // Slot 21: ISO-8859-7 Greek
-const SLOT_21_F08: &[u8] = include_bytes!("../../data/fonts/ansi/21-ISO-8859-7_Greek_8.psf");
-const SLOT_21_F14: &[u8] = include_bytes!("../../data/fonts/ansi/21-ISO-8859-7_Greek_14.psf");
-const SLOT_21_F16: &[u8] = include_bytes!("../../data/fonts/ansi/21-ISO-8859-7_Greek_16.psf");
+const SLOT_21_F08: &[u8] = font_bytes!("../../data/fonts/ansi/21-ISO-8859-7_Greek_8.psf");
+const SLOT_21_F14: &[u8] = font_bytes!("../../data/fonts/ansi/21-ISO-8859-7_Greek_14.psf");
+const SLOT_21_F16: &[u8] = font_bytes!("../../data/fonts/ansi/21-ISO-8859-7_Greek_16.psf");
 
 // Slot 22: Russian koi8-r (c)
-const SLOT_22_F16: &[u8] = include_bytes!("../../data/fonts/ansi/22-Russian_koi8-r_c_16.psf");
+const SLOT_22_F16: &[u8] = font_bytes!("../../data/fonts/ansi/22-Russian_koi8-r_c_16.psf");
 
 // Slot 23: ISO-8859-4 Baltic
-const SLOT_23_F08: &[u8] = include_bytes!("../../data/fonts/ansi/23-ISO-8859-4_Baltic_8.psf");
-const SLOT_23_F14: &[u8] = include_bytes!("../../data/fonts/ansi/23-ISO-8859-4_Baltic_14.psf");
-const SLOT_23_F16: &[u8] = include_bytes!("../../data/fonts/ansi/23-ISO-8859-4_Baltic_16.psf");
+const SLOT_23_F08: &[u8] = font_bytes!("../../data/fonts/ansi/23-ISO-8859-4_Baltic_8.psf");
+const SLOT_23_F14: &[u8] = font_bytes!("../../data/fonts/ansi/23-ISO-8859-4_Baltic_14.psf");
+const SLOT_23_F16: &[u8] = font_bytes!("../../data/fonts/ansi/23-ISO-8859-4_Baltic_16.psf");
 
 // Slot 24: ISO-8859-1 West European
-const SLOT_24_F08: &[u8] = include_bytes!("../../data/fonts/ansi/24-ISO-8859-1_West_European_8.psf");
-const SLOT_24_F14: &[u8] = include_bytes!("../../data/fonts/ansi/24-ISO-8859-1_West_European_14.psf");
-const SLOT_24_F16: &[u8] = include_bytes!("../../data/fonts/ansi/24-ISO-8859-1_West_European_16.psf");
+const SLOT_24_F08: &[u8] = font_bytes!("../../data/fonts/ansi/24-ISO-8859-1_West_European_8.psf");
+const SLOT_24_F14: &[u8] = font_bytes!("../../data/fonts/ansi/24-ISO-8859-1_West_European_14.psf");
+const SLOT_24_F16: &[u8] = font_bytes!("../../data/fonts/ansi/24-ISO-8859-1_West_European_16.psf");
 
 // Slot 25: Codepage 866 Russian
-const SLOT_25_F08: &[u8] = include_bytes!("../../data/fonts/ansi/25-Codepage_866_Russian_8.psf");
-const SLOT_25_F14: &[u8] = include_bytes!("../../data/fonts/ansi/25-Codepage_866_Russian_14.psf");
-const SLOT_25_F16: &[u8] = include_bytes!("../../data/fonts/ansi/25-Codepage_866_Russian_16.psf");
+const SLOT_25_F08: &[u8] = font_bytes!("../../data/fonts/ansi/25-Codepage_866_Russian_8.psf");
+const SLOT_25_F14: &[u8] = font_bytes!("../../data/fonts/ansi/25-Codepage_866_Russian_14.psf");
+const SLOT_25_F16: &[u8] = font_bytes!("../../data/fonts/ansi/25-Codepage_866_Russian_16.psf");
 
 // Slot 26: Codepage 437 English (thin)
-const SLOT_26_F16: &[u8] = include_bytes!("../../data/fonts/ansi/26-Codepage_437_English_thin_16.psf");
+const SLOT_26_F16: &[u8] = font_bytes!("../../data/fonts/ansi/26-Codepage_437_English_thin_16.psf");
 
 // Slot 27: Codepage 866 (b) Russian
-const SLOT_27_F16: &[u8] = include_bytes!("../../data/fonts/ansi/27-Codepage_866_b_Russian_16.psf");
+const SLOT_27_F16: &[u8] = font_bytes!("../../data/fonts/ansi/27-Codepage_866_b_Russian_16.psf");
 
 // Slot 28: Codepage 865 Norwegian
-const SLOT_28_F08: &[u8] = include_bytes!("../../data/fonts/ansi/28-Codepage_865_Norwegian_8.psf");
-const SLOT_28_F14: &[u8] = include_bytes!("../../data/fonts/ansi/28-Codepage_865_Norwegian_14.psf");
-const SLOT_28_F16: &[u8] = include_bytes!("../../data/fonts/ansi/28-Codepage_865_Norwegian_16.psf");
+const SLOT_28_F08: &[u8] = font_bytes!("../../data/fonts/ansi/28-Codepage_865_Norwegian_8.psf");
+const SLOT_28_F14: &[u8] = font_bytes!("../../data/fonts/ansi/28-Codepage_865_Norwegian_14.psf");
+const SLOT_28_F16: &[u8] = font_bytes!("../../data/fonts/ansi/28-Codepage_865_Norwegian_16.psf");
 
 // Slot 29: Ukrainian font cp866u
-const SLOT_29_F08: &[u8] = include_bytes!("../../data/fonts/ansi/29-Ukrainian_font_cp866u_8.psf");
-const SLOT_29_F14: &[u8] = include_bytes!("../../data/fonts/ansi/29-Ukrainian_font_cp866u_14.psf");
-const SLOT_29_F16: &[u8] = include_bytes!("../../data/fonts/ansi/29-Ukrainian_font_cp866u_16.psf");
+const SLOT_29_F08: &[u8] = font_bytes!("../../data/fonts/ansi/29-Ukrainian_font_cp866u_8.psf");
+const SLOT_29_F14: &[u8] = font_bytes!("../../data/fonts/ansi/29-Ukrainian_font_cp866u_14.psf");
+const SLOT_29_F16: &[u8] = font_bytes!("../../data/fonts/ansi/29-Ukrainian_font_cp866u_16.psf");
 
 // Slot 30: ISO-8859-1 West European (thin)
-const SLOT_30_F16: &[u8] = include_bytes!("../../data/fonts/ansi/30-ISO-8859-1_West_European_thin_16.psf");
+const SLOT_30_F16: &[u8] = font_bytes!("../../data/fonts/ansi/30-ISO-8859-1_West_European_thin_16.psf");
 
 // Slot 31: Codepage 1131 Belarusian (swiss)
-const SLOT_31_F16: &[u8] = include_bytes!("../../data/fonts/ansi/31-Codepage_1131_Belarusian_swiss_16.psf");
+const SLOT_31_F16: &[u8] = font_bytes!("../../data/fonts/ansi/31-Codepage_1131_Belarusian_swiss_16.psf");
 
 // Slot 32: Commodore 64 UPPER
-const SLOT_32_F16: &[u8] = include_bytes!("../../data/fonts/ansi/32-Commodore_64_UPPER_16.psf");
+const SLOT_32_F16: &[u8] = font_bytes!("../../data/fonts/ansi/32-Commodore_64_UPPER_16.psf");
 
 // Slot 33: Commodore 64 Lower
-const SLOT_33_F16: &[u8] = include_bytes!("../../data/fonts/ansi/33-Commodore_64_Lower_16.psf");
+const SLOT_33_F16: &[u8] = font_bytes!("../../data/fonts/ansi/33-Commodore_64_Lower_16.psf");
 
 // Slot 34: Commodore 128 UPPER
-const SLOT_34_F16: &[u8] = include_bytes!("../../data/fonts/ansi/34-Commodore_128_UPPER_16.psf");
+const SLOT_34_F16: &[u8] = font_bytes!("../../data/fonts/ansi/34-Commodore_128_UPPER_16.psf");
 
 // Slot 35: Commodore 128 Lower
-const SLOT_35_F16: &[u8] = include_bytes!("../../data/fonts/ansi/35-Commodore_128_Lower_16.psf");
+const SLOT_35_F16: &[u8] = font_bytes!("../../data/fonts/ansi/35-Commodore_128_Lower_16.psf");
 
 // Slot 36: Atari
-const SLOT_36_F16: &[u8] = include_bytes!("../../data/fonts/ansi/36-Atari_16.psf");
+const SLOT_36_F16: &[u8] = font_bytes!("../../data/fonts/ansi/36-Atari_16.psf");
 
 // Slot 37: P0T NOoDLE (Amiga)
-const SLOT_37_F14: &[u8] = include_bytes!("../../data/fonts/ansi/37-P0T_NOoDLE_Amiga_14.psf");
-const SLOT_37_F16: &[u8] = include_bytes!("../../data/fonts/ansi/37-P0T_NOoDLE_Amiga_16.psf");
+const SLOT_37_F14: &[u8] = font_bytes!("../../data/fonts/ansi/37-P0T_NOoDLE_Amiga_14.psf");
+const SLOT_37_F16: &[u8] = font_bytes!("../../data/fonts/ansi/37-P0T_NOoDLE_Amiga_16.psf");
 
 // Slot 38: mOsOul (Amiga)
-const SLOT_38_F16: &[u8] = include_bytes!("../../data/fonts/ansi/38-mOsOul_Amiga_16.psf");
+const SLOT_38_F16: &[u8] = font_bytes!("../../data/fonts/ansi/38-mOsOul_Amiga_16.psf");
 
 // Slot 39: MicroKnight Plus (Amiga)
-const SLOT_39_F16: &[u8] = include_bytes!("../../data/fonts/ansi/39-MicroKnight_Plus_Amiga_16.psf");
+const SLOT_39_F16: &[u8] = font_bytes!("../../data/fonts/ansi/39-MicroKnight_Plus_Amiga_16.psf");
 
 // Slot 40: Topaz Plus (Amiga)
-const SLOT_40_F16: &[u8] = include_bytes!("../../data/fonts/ansi/40-Topaz_Plus_Amiga_16.psf");
+const SLOT_40_F16: &[u8] = font_bytes!("../../data/fonts/ansi/40-Topaz_Plus_Amiga_16.psf");
 
 // Slot 41: MicroKnight (Amiga)
-const SLOT_41_F16: &[u8] = include_bytes!("../../data/fonts/ansi/41-MicroKnight_Amiga_16.psf");
+const SLOT_41_F16: &[u8] = font_bytes!("../../data/fonts/ansi/41-MicroKnight_Amiga_16.psf");
 
 // Slot 42: Topaz (Amiga)
-const SLOT_42_F14: &[u8] = include_bytes!("../../data/fonts/ansi/42-Topaz_Amiga_14.psf");
-const SLOT_42_F16: &[u8] = include_bytes!("../../data/fonts/ansi/42-Topaz_Amiga_16.psf");
+const SLOT_42_F14: &[u8] = font_bytes!("../../data/fonts/ansi/42-Topaz_Amiga_14.psf");
+const SLOT_42_F16: &[u8] = font_bytes!("../../data/fonts/ansi/42-Topaz_Amiga_16.psf");
 
 /// Complete table of all ANSI font slots (0-42)
 pub static ANSI_SLOT_FONTS: [AnsiSlotFont; ANSI_SLOT_COUNT] = [
@@ -597,12 +597,28 @@ pub fn get_ansi_font(slot: u8, font_height: u8) -> Option<&'static BitFont> {
     // Load font
     let slot_font = &ANSI_SLOT_FONTS[slot];
 
-    // Try to get the exact height variant, with fallbacks
+    // Try to get the exact height variant, with fallbacks. Without the
+    // `embedded-fonts` feature the data is empty, which counts as absent.
+    let embedded = |data: Option<&'static [u8]>| data.filter(|d| !d.is_empty());
+    let (f08, f14, f16) = (embedded(slot_font.f08), embedded(slot_font.f14), embedded(slot_font.f16));
     let font_data = match font_height {
-        8 => slot_font.f08.or(slot_font.f14).or(slot_font.f16),
-        14 => slot_font.f14.or(slot_font.f16).or(slot_font.f08),
-        _ => slot_font.f16.or(slot_font.f14).or(slot_font.f08),
+        8 => f08.or(f14).or(f16),
+        14 => f14.or(f16).or(f08),
+        _ => f16.or(f14).or(f08),
     };
+
+    if font_data.is_none() {
+        // Nothing embedded: fall back to a font installed at another height,
+        // in the same order as above.
+        let fallbacks: [usize; 2] = match height_index {
+            0 => [1, 2],
+            1 => [2, 0],
+            _ => [1, 0],
+        };
+        if let Some(font) = fallbacks.iter().find_map(|&i| FONT_CACHE[slot][i].get()) {
+            return Some(font);
+        }
+    }
 
     if let Some(data) = font_data {
         let Ok(font) = BitFont::from_bytes(slot_font.name, data) else {
@@ -616,6 +632,35 @@ pub fn get_ansi_font(slot: u8, font_height: u8) -> Option<&'static BitFont> {
         log::warn!("No font data available for slot {} ('{}') with height {}", slot, slot_font.name, font_height);
         None
     }
+}
+
+/// Installs `font` as ANSI slot `slot` (0-42) for its own height, which must
+/// be 8, 14 or 16. `get_ansi_font` and `BitFont::from_ansi_font_page` then
+/// return it for that slot, so `CSI Ps1 ; Ps2 SP D` and the SAUCE/format
+/// code can select it.
+///
+/// This is how an embedder built without the `embedded-fonts` feature
+/// supplies the slot fonts at run time. Without that feature a slot that has
+/// only some heights installed falls back to the installed ones, in the same
+/// order as for the embedded variants.
+///
+/// A slot and height is filled once, like the lazy cache it shares: this
+/// fails if that font was already installed or loaded. With embedded fonts,
+/// install before the slot is first used to replace the built-in font.
+pub fn install_ansi_font(slot: u8, font: BitFont) -> crate::Result<()> {
+    let slot = slot as usize;
+    if slot >= ANSI_SLOT_COUNT {
+        return Err(crate::EngineError::UnsupportedFontPage { page: slot });
+    }
+    let height_index = match font.height {
+        8 => 0,
+        14 => 1,
+        16 => 2,
+        h => return Err(crate::EngineError::Generic(format!("ANSI slot fonts are 8, 14 or 16 pixels high, not {h}"))),
+    };
+    FONT_CACHE[slot][height_index]
+        .set(font)
+        .map_err(|_| crate::EngineError::Generic(format!("ANSI font slot {slot} is already loaded at this height")))
 }
 
 /// Get the font height based on terminal line count.

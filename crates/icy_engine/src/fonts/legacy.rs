@@ -6,31 +6,31 @@ use super::BitFont;
 
 lazy_static::lazy_static! {
     // Atari XEP80 fonts
-    pub static ref ATARI_XEP80: BitFont = BitFont::from_bytes("Atari XEP80", include_bytes!("../../data/fonts/Atari/xep80.psf")).unwrap();
-    pub static ref ATARI_XEP80_INT: BitFont = BitFont::from_bytes("Atari XEP80 INT", include_bytes!("../../data/fonts/Atari/xep80_int.psf")).unwrap();
+    pub static ref ATARI_XEP80: BitFont = BitFont::from_embedded("Atari XEP80", font_bytes!("../../data/fonts/Atari/xep80.psf"));
+    pub static ref ATARI_XEP80_INT: BitFont = BitFont::from_embedded("Atari XEP80 INT", font_bytes!("../../data/fonts/Atari/xep80_int.psf"));
 
     // Viewdata/Teletext font
-    pub static ref VIEWDATA: BitFont = BitFont::from_bytes("Viewdata", include_bytes!("../../data/fonts/Viewdata/saa5050.psf")).unwrap();
+    pub static ref VIEWDATA: BitFont = BitFont::from_embedded("Viewdata", font_bytes!("../../data/fonts/Viewdata/saa5050.psf"));
 
     // C64 fonts
-    pub static ref C64_UNSHIFTED: BitFont = BitFont::from_bytes("C64 PETSCII unshifted", include_bytes!("../../data/fonts/Commodore/C64_PETSCII_unshifted.psf")).unwrap();
-    pub static ref C64_SHIFTED: BitFont = BitFont::from_bytes("C64 PETSCII shifted", include_bytes!("../../data/fonts/Commodore/C64_PETSCII_shifted.psf")).unwrap();
+    pub static ref C64_UNSHIFTED: BitFont = BitFont::from_embedded("C64 PETSCII unshifted", font_bytes!("../../data/fonts/Commodore/C64_PETSCII_unshifted.psf"));
+    pub static ref C64_SHIFTED: BitFont = BitFont::from_embedded("C64 PETSCII shifted", font_bytes!("../../data/fonts/Commodore/C64_PETSCII_shifted.psf"));
 
     // Character ROMs of the other Commodore machines; "upper" is upper case with graphics,
     // "lower" lower and upper case. The C128's 40 column upper case set is the C64's.
-    pub static ref C128_LOWER: BitFont = BitFont::from_bytes("C128 PETSCII lower", include_bytes!("../../data/fonts/Commodore/C128_PETSCII_lower.psf")).unwrap();
-    pub static ref C16_UPPER: BitFont = BitFont::from_bytes("C16 PETSCII upper", include_bytes!("../../data/fonts/Commodore/C16_PETSCII_upper.psf")).unwrap();
-    pub static ref C16_LOWER: BitFont = BitFont::from_bytes("C16 PETSCII lower", include_bytes!("../../data/fonts/Commodore/C16_PETSCII_lower.psf")).unwrap();
-    pub static ref VIC20_UPPER: BitFont = BitFont::from_bytes("VIC-20 PETSCII upper", include_bytes!("../../data/fonts/Commodore/VIC20_PETSCII_upper.psf")).unwrap();
-    pub static ref VIC20_LOWER: BitFont = BitFont::from_bytes("VIC-20 PETSCII lower", include_bytes!("../../data/fonts/Commodore/VIC20_PETSCII_lower.psf")).unwrap();
-    pub static ref PET_UPPER: BitFont = BitFont::from_bytes("PET PETSCII upper", include_bytes!("../../data/fonts/Commodore/PET_PETSCII_upper.psf")).unwrap();
-    pub static ref PET_LOWER: BitFont = BitFont::from_bytes("PET PETSCII lower", include_bytes!("../../data/fonts/Commodore/PET_PETSCII_lower.psf")).unwrap();
+    pub static ref C128_LOWER: BitFont = BitFont::from_embedded("C128 PETSCII lower", font_bytes!("../../data/fonts/Commodore/C128_PETSCII_lower.psf"));
+    pub static ref C16_UPPER: BitFont = BitFont::from_embedded("C16 PETSCII upper", font_bytes!("../../data/fonts/Commodore/C16_PETSCII_upper.psf"));
+    pub static ref C16_LOWER: BitFont = BitFont::from_embedded("C16 PETSCII lower", font_bytes!("../../data/fonts/Commodore/C16_PETSCII_lower.psf"));
+    pub static ref VIC20_UPPER: BitFont = BitFont::from_embedded("VIC-20 PETSCII upper", font_bytes!("../../data/fonts/Commodore/VIC20_PETSCII_upper.psf"));
+    pub static ref VIC20_LOWER: BitFont = BitFont::from_embedded("VIC-20 PETSCII lower", font_bytes!("../../data/fonts/Commodore/VIC20_PETSCII_lower.psf"));
+    pub static ref PET_UPPER: BitFont = BitFont::from_embedded("PET PETSCII upper", font_bytes!("../../data/fonts/Commodore/PET_PETSCII_upper.psf"));
+    pub static ref PET_LOWER: BitFont = BitFont::from_embedded("PET PETSCII lower", font_bytes!("../../data/fonts/Commodore/PET_PETSCII_lower.psf"));
 
     // Atari font
-    pub static ref ATARI: BitFont = BitFont::from_bytes("Atari ATASCII", include_bytes!("../../data/fonts/Atari/Atari_ATASCII.psf")).unwrap();
+    pub static ref ATARI: BitFont = BitFont::from_embedded("Atari ATASCII", font_bytes!("../../data/fonts/Atari/Atari_ATASCII.psf"));
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "embedded-fonts"))]
 mod tests {
     use super::*;
     use crate::Size;

@@ -1399,6 +1399,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "embedded-fonts")]
     fn ice_rgb_background_cell_renders_foreground() {
         let mut screen = crate::TextScreen::new((80, 25));
         screen.terminal_state_mut().is_terminal_buffer = false;

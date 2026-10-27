@@ -1,9 +1,9 @@
 use crate::BitFont;
 
 lazy_static::lazy_static! {
-    pub static ref ATARI_ST_FONT_6x6: BitFont = BitFont::from_bytes("Atari ST 6x6", include_bytes!("../../../data/fonts/Atari/atari-st-6x6.psf")).unwrap();
-    pub static ref ATARI_ST_FONT_8x8: BitFont = BitFont::from_bytes("Atari ST 8x8", include_bytes!("../../../data/fonts/Atari/atari-st-8x8.psf")).unwrap();
-    pub static ref ATARI_ST_FONT_8x16: BitFont = BitFont::from_bytes("Atari ST 8x16", include_bytes!("../../../data/fonts/Atari/atari-st-8x16.psf")).unwrap();
+    pub static ref ATARI_ST_FONT_6x6: BitFont = BitFont::from_embedded("Atari ST 6x6", font_bytes!("../../../data/fonts/Atari/atari-st-6x6.psf"));
+    pub static ref ATARI_ST_FONT_8x8: BitFont = BitFont::from_embedded("Atari ST 8x8", font_bytes!("../../../data/fonts/Atari/atari-st-8x8.psf"));
+    pub static ref ATARI_ST_FONT_8x16: BitFont = BitFont::from_embedded("Atari ST 8x16", font_bytes!("../../../data/fonts/Atari/atari-st-8x16.psf"));
 }
 
 pub struct FontMetrics {

@@ -44,6 +44,36 @@
     clippy::struct_field_names,
     clippy::declare_interior_mutable_const
 )]
+
+/// Embeds a font file from `data/fonts`. Without the `embedded-fonts` feature
+/// it expands to empty data, and the font lookups treat the font as absent.
+#[cfg(feature = "embedded-fonts")]
+macro_rules! font_bytes {
+    ($($path:tt)*) => {
+        include_bytes!($($path)*)
+    };
+}
+#[cfg(not(feature = "embedded-fonts"))]
+macro_rules! font_bytes {
+    ($($path:tt)*) => {
+        (&[] as &'static [u8])
+    };
+}
+
+/// Like `font_bytes!`, for the text (YAFF) font files.
+#[cfg(feature = "embedded-fonts")]
+macro_rules! font_str {
+    ($($path:tt)*) => {
+        include_str!($($path)*)
+    };
+}
+#[cfg(not(feature = "embedded-fonts"))]
+macro_rules! font_str {
+    ($($path:tt)*) => {
+        ""
+    };
+}
+
 mod text_attribute;
 use std::{
     cmp::min,

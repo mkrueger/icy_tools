@@ -59,6 +59,19 @@ fn test_osc8_hyperlink_survives_sink_boundary_and_wraps() {
 }
 
 #[test]
+fn test_active_osc8_hyperlink_is_readable() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+    assert_eq!(screen.terminal_state().active_hyperlink(), None);
+
+    parser.parse(b"\x1b[1;3H\x1b]8;;https://example.com\x1b\\AB", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().active_hyperlink(), Some(("https://example.com", Position::new(2, 0))));
+
+    parser.parse(b"\x1b]8;;\x1b\\", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().active_hyperlink(), None);
+}
+
+#[test]
 fn test_osc4_palette_change_marks_screen_dirty() {
     let mut screen = TextScreen::new(Size::new(2, 1));
     let mut base_attribute = TextAttribute::default();
@@ -1769,4 +1782,24 @@ fn test_synchronized_output_mode_starts_and_ends() {
     parser.parse(b"\x1b[?2026l", &mut ScreenSink::new(&mut screen));
     assert!(!screen.terminal_state().synchronized_output());
     assert!(!screen.terminal_state().synchronized_output_active());
+}
+
+#[test]
+fn test_scroll_sequences_mark_the_scrolled_lines_dirty() {
+    for (name, seq) in [
+        ("CSI S", &b"\x1b[S"[..]),
+        ("CSI T", b"\x1b[T"),
+        ("LF on the bottom row", b"\x1b[5;1H\n"),
+        ("IND on the bottom row", b"\x1b[5;1H\x1bD"),
+        ("CSI L", b"\x1b[2;1H\x1b[L"),
+        ("CSI M", b"\x1b[2;1H\x1b[M"),
+    ] {
+        let mut screen = TextScreen::new(Size::new(10, 5));
+        let mut parser = AnsiParser::new();
+        parser.parse(b"1\r\n2\r\n3\r\n4\r\n5", &mut ScreenSink::new(&mut screen));
+        screen.clear_dirty_lines();
+        parser.parse(seq, &mut ScreenSink::new(&mut screen));
+        let (start, end) = screen.get_dirty_lines().unwrap_or((0, 0));
+        assert!(start <= 1 && end == 5, "{name}: {:?}", screen.get_dirty_lines());
+    }
 }

@@ -269,6 +269,7 @@ impl AnsiParser {
                 self.cur_octave = 5;
                 if let Some(music) = self.cur_music.take() {
                     sink.play_music(music);
+                    self.blocking_construct = true;
                 }
             }
             b'T' => self.music_state = MusicState::SetTempo(0),

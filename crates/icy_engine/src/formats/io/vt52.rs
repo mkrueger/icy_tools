@@ -247,6 +247,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "embedded-fonts")]
     fn the_resolution_is_recognized() {
         let low = atari_st_buffer(TerminalResolution::Low, 25);
         let medium = atari_st_buffer(TerminalResolution::Medium, 25);
@@ -266,6 +267,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "embedded-fonts")]
     fn control_codes_are_not_written_as_commands() {
         let mut buffer = atari_st_buffer(TerminalResolution::Medium, 1);
         buffer.layers[0].set_char((0, 0), colored('\u{7}', 3, 0));

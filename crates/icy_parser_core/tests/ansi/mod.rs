@@ -25,6 +25,8 @@ mod sgr;
 
 pub mod music;
 
+mod pause;
+
 pub struct CollectSink {
     pub text: Vec<u8>,
     pub cmds: Vec<TerminalCommand>,
