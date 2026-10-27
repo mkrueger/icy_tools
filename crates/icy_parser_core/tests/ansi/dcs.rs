@@ -114,6 +114,27 @@ fn test_mutually_recursive_macros_do_not_recurse() {
 }
 
 #[test]
+fn test_nested_macro_expansion_is_bounded() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // Macro 0 prints 1000 "A"s, macro 1 invokes macro 0 1000 times, macro 2 invokes macro 1 10 times.
+    // Fully expanded that is 10 MB of output from a few bytes of input; each extra level multiplies it.
+    parser.parse(b"\x1bP0;0;1!z!1000;41;\x1b\\", &mut sink);
+    parser.parse(b"\x1bP1;0;1!z!1000;1B5B302A7A;\x1b\\", &mut sink);
+    parser.parse(b"\x1bP2;0;1!z!10;1B5B312A7A;\x1b\\", &mut sink);
+    parser.parse(b"\x1b[2*z", &mut sink);
+
+    assert!(!sink.text.is_empty());
+    assert!(sink.text.len() < 5 * 1024 * 1024, "expanded {} bytes", sink.text.len());
+
+    // The budget is per top-level invocation, so the next one runs again.
+    sink.text.clear();
+    parser.parse(b"\x1b[0*z", &mut sink);
+    assert_eq!(sink.text.len(), 1000);
+}
+
+#[test]
 fn test_macro_slots_above_63_are_ignored() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();
