@@ -1,5 +1,48 @@
 # IcyDraw Changelog
 
+## 0.6.1 - 2026-10-27
+
+Changes since 0.6.0.
+
+### Added
+
+- UTF-8 Art document mode on the start screen, in the New dialog and through
+  MCP (`"type": "utf8"`), with terminal-compatible one- and two-cell graphemes,
+  wide characters and combining marks.
+- Grapheme-aware typing, painting, selection erase/fill, clipboard operations,
+  undo/redo, resizing, layer merging and flips.
+- Unicode character picker with code-point navigation, drawing-symbol shortcuts
+  and background font fallback loading; the click tool can insert the chosen
+  character at the caret.
+- Scalable, zoom- and DPI-aware Unicode canvas rendering, with cell-filling
+  block elements, shades and connected box drawing.
+- UTF-8 text and ANSI export with a BOM, explicit `.utf8` file loading, and
+  Unicode PNG/GIF export.
+
+### Fixed
+
+- Restored alphabetized plugin category submenus from script metadata, with
+  title sorting and description/author tooltips.
+- Corrected SkyPix Amiga font bitmaps, proportional spacing and bearings,
+  scanline geometry and text-mode transitions.
+- Refreshed cached SkyPix and RIP graphics after pixel changes.
+- Prevented queued audio patches from exhausting the memory budget and blocking
+  later loads, without interrupting sounds already playing.
+
+### Compatibility
+
+- UTF-8 `.icy` documents use native format version 6; older readers reject
+  them. Existing CP437 documents retain their encoding and bitmap rendering.
+- UTF-8 text/ANSI exports include a BOM so they reopen in the correct mode.
+  BOM-less files require the `.utf8` extension to opt into UTF-8; other
+  BOM-less text/ANSI files retain CP437 interpretation.
+- Unicode mode does not support RTL, contextual script shaping or color emoji
+  layout. Glyph availability depends on font coverage.
+- Legacy byte-oriented exports such as XBin and the floating-paste transparency
+  toggle are unavailable for Unicode documents. Unsupported operations such as
+  rotation, justification and row/column shifting report an error rather than
+  damage Unicode text.
+
 ## 0.6.0 - 2026-10-10
 
 Changes since 0.5.1.
