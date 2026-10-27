@@ -1300,32 +1300,14 @@ impl CommandParser for AnsiParser {
                         printable_start = i;
                     }
                     b'n' => {
-                        // Font/mode reports: ESC[={n}n
-                        if self.params.len() == 1 {
-                            match self.params.first() {
-                                Some(1) => sink.request(TerminalRequest::FontStateReport),
-                                Some(2) => sink.request(TerminalRequest::FontModeReport),
-                                Some(3) => sink.request(TerminalRequest::FontDimensionReport),
-                                _ => {
-                                    sink.report_error(
-                                        ParseError::MalformedSequence {
-                                            description: "Unsupported CSI = n sequence",
-                                            sequence: Some(format!("CSI = {} n", self.params.first().unwrap_or(&0))),
-                                            context: Some("Font/mode report with unsupported parameter".to_string()),
-                                        },
-                                        crate::ErrorLevel::Error,
-                                    );
-                                }
-                            }
-                        } else {
-                            sink.report_error(
-                                ParseError::MalformedSequence {
-                                    description: "Invalid parameter count for CSI = n",
-                                    sequence: Some(format!("CSI = {:?} n", self.params)),
-                                    context: Some(format!("Expected 1 parameter, got {}", self.params.len())),
-                                },
-                                crate::ErrorLevel::Error,
-                            );
+                        // CTerm State/Mode Request (CTSMRR): ESC[={Ps}[;{Pn}...]n
+                        match self.params.as_slice() {
+                            [] | [1] => sink.request(TerminalRequest::FontStateReport),
+                            [2] => sink.request(TerminalRequest::FontModeReport),
+                            [3] => sink.request(TerminalRequest::FontDimensionReport),
+                            [7] => sink.request(TerminalRequest::AudioChannelStateReport(None)),
+                            [7, channel] => sink.request(TerminalRequest::AudioChannelStateReport(Some(*channel))),
+                            [ps, rest @ ..] => sink.request(TerminalRequest::StateModeReport(*ps, rest.to_vec())),
                         }
                         self.reset();
                         i += 1;

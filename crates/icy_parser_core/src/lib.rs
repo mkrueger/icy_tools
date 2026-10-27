@@ -1129,6 +1129,11 @@ pub enum TerminalRequest {
     /// Terminal should respond with current font dimensions
     FontDimensionReport,
 
+    /// Any other CTerm State/Mode Request: ESC[={Ps}[;{Pn}...]n
+    /// Carries `Ps` and the remaining parameters (for example `ESC[=6n`,
+    /// the OSC 8 hyperlink support query). The host decides what to answer.
+    StateModeReport(u16, Vec<u16>),
+
     /// Macro Space Report: ESC[?62n
     /// Terminal should respond with available macro space
     MacroSpaceReport,

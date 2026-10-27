@@ -2573,6 +2573,8 @@ impl TerminalThread {
                 let dim = screen.font_dimensions();
                 Some(format!("\x1B[=3;{};{}n", dim.height, dim.width).into_bytes())
             }
+            // Other CTerm state/mode requests (CSI = Ps n) aren't answered yet.
+            TerminalRequest::StateModeReport(..) => None,
             TerminalRequest::MacroSpaceReport => Some(b"\x1B[32767*{".to_vec()),
             TerminalRequest::MemoryChecksumReport(pid, checksum) => Some(format!("\x1BP{pid}!~{checksum:04X}\x1B\\").into_bytes()),
             TerminalRequest::RipRequestTerminalId => {
