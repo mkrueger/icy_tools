@@ -217,7 +217,7 @@ fn text_document_height(mode: ScreenMode, format: FileFormat, sauce: Option<&Sau
     Some(screen.height().max(screen.caret_position().y + 1).min(limits::MAX_BUFFER_HEIGHT))
 }
 
-pub(crate) fn create_parser_screen(mode: ScreenMode, format: FileFormat) -> (Box<dyn EditableScreen>, Box<dyn CommandParser + Send>) {
+pub fn create_parser_screen(mode: ScreenMode, format: FileFormat) -> (Box<dyn EditableScreen>, Box<dyn CommandParser + Send>) {
     let emulation = format.terminal_emulation().expect("Streaming formats must define terminal emulation");
     let (screen, _) = mode.create_screen(emulation, None);
     let parser = format.create_parser(None).expect("Streaming formats must define a parser");
