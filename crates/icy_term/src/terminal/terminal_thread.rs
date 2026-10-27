@@ -2353,7 +2353,7 @@ impl TerminalThread {
             }
             // Only CSI < c and CSI < 0 c are requests; anything with feature
             // numbers is a reply (ours, echoed back) and isn't answered.
-            TerminalRequest::ExtendedDeviceAttributes(params) if params.iter().any(|&p| p != 0) => None,
+            TerminalRequest::ExtendedDeviceAttributes(params) if !matches!(params.as_slice(), [] | [0]) => None,
             TerminalRequest::ExtendedDeviceAttributes(_) => {
                 /*
                     Reply: CSI < 0 ; Ps... c, one Ps per feature:
