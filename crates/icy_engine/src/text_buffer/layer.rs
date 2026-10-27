@@ -405,6 +405,45 @@ impl Layer {
         }
     }
 
+    /// Scrolls rows `start..=end` one row up (`up`) or down by moving the
+    /// `Line`s, and blanks the row that comes free with `blank`. This is the
+    /// fast path of a full-width scroll and gives the same result as copying
+    /// each cell with `set_char`.
+    ///
+    /// Returns false, without changing anything, when moving whole lines
+    /// would not match the cell copy: a region narrower than the layer, a
+    /// locked or hidden layer, a locked alpha channel, graphemes or sixels in
+    /// the rows, or rows that are missing or not exactly one layer wide.
+    pub(crate) fn scroll_full_width_rows(&mut self, start_column: i32, end_column: i32, start: i32, end: i32, up: bool, blank: AttributedChar) -> bool {
+        let width = self.width();
+        if start_column != 0
+            || end_column != width - 1
+            || start < 0
+            || start > end
+            || end >= self.height()
+            || end >= self.lines.len() as i32
+            || self.properties.is_locked
+            || !self.properties.is_visible
+            || (self.properties.has_alpha_channel && self.properties.is_alpha_channel_locked)
+            || !self.sixels.is_empty()
+            || self.graphemes.range(start..=end).next().is_some()
+        {
+            return false;
+        }
+        let rows = &mut self.lines[start as usize..=end as usize];
+        if rows.iter().any(|line| line.chars.len() != width as usize) {
+            return false;
+        }
+        if up {
+            rows.rotate_left(1);
+            rows[rows.len() - 1].chars.fill(blank);
+        } else {
+            rows.rotate_right(1);
+            rows[0].chars.fill(blank);
+        }
+        true
+    }
+
     /// Set a char without any bounds checking - caller must ensure pos is valid
     /// This is an optimization for bulk loading where bounds are guaranteed
     ///
