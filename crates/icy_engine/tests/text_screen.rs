@@ -59,6 +59,19 @@ fn test_osc8_hyperlink_survives_sink_boundary_and_wraps() {
 }
 
 #[test]
+fn test_active_osc8_hyperlink_is_readable() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+    assert_eq!(screen.terminal_state().active_hyperlink(), None);
+
+    parser.parse(b"\x1b[1;3H\x1b]8;;https://example.com\x1b\\AB", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().active_hyperlink(), Some(("https://example.com", Position::new(2, 0))));
+
+    parser.parse(b"\x1b]8;;\x1b\\", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().active_hyperlink(), None);
+}
+
+#[test]
 fn test_osc4_palette_change_marks_screen_dirty() {
     let mut screen = TextScreen::new(Size::new(2, 1));
     let mut base_attribute = TextAttribute::default();

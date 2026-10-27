@@ -299,6 +299,18 @@ impl TerminalState {
         ret
     }
 
+    /// The OSC 8 hyperlink being written: its URI and the caret position
+    /// where it started. `None` outside a link.
+    ///
+    /// When the link is closed it is added to the screen with
+    /// `EditableScreen::add_hyperlink`, as a start position and a length in
+    /// screen coordinates. Those stored links don't move when the screen
+    /// scrolls, so an embedder that keeps links in its scrollback can use
+    /// this to tag cells as they are written instead.
+    pub fn active_hyperlink(&self) -> Option<(&str, Position)> {
+        self.active_hyperlink.as_ref().map(|(url, position)| (url.as_str(), *position))
+    }
+
     pub fn mouse_mode(&self) -> MouseMode {
         self.mouse_state.mouse_mode
     }
