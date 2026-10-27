@@ -3666,6 +3666,7 @@ dependencies = [
  "unicode-width",
  "utf8parse",
  "walkdir",
+ "web-time",
  "zstd",
 ]
 

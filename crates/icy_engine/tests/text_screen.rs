@@ -1756,3 +1756,17 @@ fn test_scrollback_size_limits_stored_chunks() {
     screen.set_scrollback_buffer_size(0);
     assert!(screen.scrollback_buffer.chunks.is_empty());
 }
+
+#[test]
+fn test_synchronized_output_mode_starts_and_ends() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    parser.parse(b"\x1b[?2026h", &mut ScreenSink::new(&mut screen));
+    assert!(screen.terminal_state().synchronized_output());
+    assert!(screen.terminal_state().synchronized_output_active());
+
+    parser.parse(b"\x1b[?2026l", &mut ScreenSink::new(&mut screen));
+    assert!(!screen.terminal_state().synchronized_output());
+    assert!(!screen.terminal_state().synchronized_output_active());
+}

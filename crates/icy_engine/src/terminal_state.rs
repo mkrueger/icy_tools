@@ -1,6 +1,9 @@
 use icy_parser_core::BaudEmulation;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+// `std::time::Instant::now` panics on wasm32-unknown-unknown; `web_time` is `std::time` elsewhere.
+use web_time::Instant;
 
 use crate::{Position, Size};
 
