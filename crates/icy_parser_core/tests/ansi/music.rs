@@ -71,7 +71,7 @@ fn test_music_option_conflicting_with_csi_m() {
     assert_eq!(1, music.music_actions.len());
 
     if let MusicAction::PlayNote(freq, len, dotted) = music.music_actions[0] {
-        assert!((freq - 523.2511).abs() < 0.01); // C5 (middle C)
+        assert!((freq - 1046.5023).abs() < 0.01); // O4 C (CTerm manual)
         assert_eq!(4 * 120, len); // Quarter note at default tempo 120
         assert!(!dotted);
     } else {
@@ -105,7 +105,7 @@ fn test_music_option_banana_with_csi_n() {
     assert_eq!(1, music.music_actions.len());
 
     if let MusicAction::PlayNote(freq, _, _) = music.music_actions[0] {
-        assert!((freq - 523.2511).abs() < 0.01); // C5
+        assert!((freq - 1046.5023).abs() < 0.01); // O4 C (CTerm manual)
     } else {
         panic!("Expected PlayNote action");
     }
@@ -176,7 +176,7 @@ fn test_single_note() {
     assert_eq!(1, music.music_actions.len());
 
     if let MusicAction::PlayNote(freq, len, dotted) = music.music_actions[0] {
-        assert!((freq - 523.2511).abs() < 0.01); // C5
+        assert!((freq - 1046.5023).abs() < 0.01); // O4 C (CTerm manual)
         assert_eq!(4 * 120, len); // Default: quarter note, tempo 120
         assert!(!dotted);
     } else {
@@ -197,7 +197,7 @@ fn test_set_length() {
     assert_eq!(1, music.music_actions.len());
 
     if let MusicAction::PlayNote(freq, len, _) = music.music_actions[0] {
-        assert!((freq - 523.2511).abs() < 0.01); // C5
+        assert!((freq - 1046.5023).abs() < 0.01); // O4 C (CTerm manual)
         assert_eq!(8 * 120, len); // Eighth note at tempo 120
     } else {
         panic!("Expected PlayNote");
@@ -210,14 +210,14 @@ fn test_set_octave() {
     parser.set_music_option(MusicOption::Both);
     let mut sink = TestSink::new();
 
-    // Set octave to 4, play C (should be C4)
-    parser.parse(b"\x1B[NO4C\x0E", &mut sink);
+    // Set octave to 3, play C (one octave below the default O4 C)
+    parser.parse(b"\x1B[NO3C\x0E", &mut sink);
 
     let music = sink.get_music().expect("Should have music");
     assert_eq!(1, music.music_actions.len());
 
     if let MusicAction::PlayNote(freq, _, _) = music.music_actions[0] {
-        assert!((freq - 261.6256).abs() < 0.01); // C4 (one octave below C5)
+        assert!((freq - 523.2511).abs() < 0.01); // O3 C (CTerm manual)
     } else {
         panic!("Expected PlayNote");
     }
@@ -236,7 +236,7 @@ fn test_set_tempo() {
     assert_eq!(1, music.music_actions.len());
 
     if let MusicAction::PlayNote(freq, len, _) = music.music_actions[0] {
-        assert!((freq - 523.2511).abs() < 0.01); // C5
+        assert!((freq - 1046.5023).abs() < 0.01); // O4 C (CTerm manual)
         assert_eq!(4 * 200, len); // Quarter note at tempo 200
     } else {
         panic!("Expected PlayNote");
@@ -256,7 +256,8 @@ fn test_pause() {
     assert_eq!(1, music.music_actions.len());
 
     if let MusicAction::Pause(len) = music.music_actions[0] {
-        assert_eq!(32 * 120 * 3 / 2, len); // Dotted 32nd note: 32 * 120 * 1.5
+        // Dotted 32nd note: 1.5 times 240000 / (32 * 120) ms
+        assert_eq!(MusicAction::Pause(len).get_duration(), 360000 / (32 * 120));
     } else {
         panic!("Expected Pause, got {:?}", music.music_actions[0]);
     }
@@ -327,14 +328,14 @@ fn test_play_note_by_number() {
     parser.set_music_option(MusicOption::Both);
     let mut sink = TestSink::new();
 
-    // Play note number 49 (A4 = 440Hz, the reference pitch)
-    parser.parse(b"\x1B[NN49\x0E", &mut sink);
+    // Note 0 is C in octave 0, so note 33 is A in octave 2 (440 Hz)
+    parser.parse(b"\x1B[NN33\x0E", &mut sink);
 
     let music = sink.get_music().expect("Should have music");
     assert_eq!(1, music.music_actions.len());
 
     if let MusicAction::PlayNote(freq, _, _) = music.music_actions[0] {
-        assert!((freq - 440.0).abs() < 0.01, "Note 49 should be A4 (440Hz), got {}", freq);
+        assert!((freq - 440.0).abs() < 0.01, "Note 33 should be 440 Hz, got {}", freq);
     } else {
         panic!("Expected PlayNote");
     }
@@ -399,7 +400,7 @@ fn test_pipe_music_command() {
     assert_eq!(1, music.music_actions.len());
 
     if let MusicAction::PlayNote(freq, _, _) = music.music_actions[0] {
-        assert!((freq - 523.2511).abs() < 0.01); // C5
+        assert!((freq - 1046.5023).abs() < 0.01); // O4 C (CTerm manual)
     } else {
         panic!("Expected PlayNote");
     }
@@ -508,8 +509,8 @@ fn test_mso1d16_parsed_as_music() {
 
     // Second action: note D in octave 1 with length 16
     if let MusicAction::PlayNote(freq, len, dotted) = music.music_actions[1] {
-        // D in octave 1: ~73.42 Hz
-        assert!((freq - 73.4162).abs() < 0.1, "Expected D in octave 1 (~73.4 Hz), got {}", freq);
+        // O1 D (CTerm manual): ~146.83 Hz
+        assert!((freq - 146.8324).abs() < 0.1, "Expected O1 D (~146.8 Hz), got {}", freq);
         assert_eq!(16 * 120, len, "Length should be 16 * tempo(120)");
         assert!(!dotted);
     } else {
@@ -520,16 +521,19 @@ fn test_mso1d16_parsed_as_music() {
 #[test]
 fn test_bansi_skips_leading_style_char() {
     // ESC[N (BANSI style) does NOT parse a leading style character —
-    // it jumps straight into the command loop.
-    // So ESC[NSO1D16 would treat 'S' as an unknown command and abort.
+    // it jumps straight into the command loop, where 'S' does nothing.
     let mut parser = AnsiParser::new();
     parser.set_music_option(MusicOption::Banana);
     let mut sink = TestSink::new();
 
     parser.parse(b"\x1B[NSO1D16\x0E", &mut sink);
 
-    // 'S' is not valid in the command loop — music should abort
-    assert!(sink.get_music().is_none(), "BANSI should NOT parse leading style char");
+    let music = sink.get_music().expect("ESC[NSO1D16 should produce music");
+    assert!(
+        matches!(music.music_actions[..], [MusicAction::PlayNote(_, 1920, false)]),
+        "BANSI should NOT parse leading style char, got {:?}",
+        music.music_actions
+    );
 }
 
 #[test]
@@ -546,10 +550,111 @@ fn test_bansi_direct_commands() {
     assert_eq!(1, music.music_actions.len(), "Should have 1 action: PlayNote");
 
     if let MusicAction::PlayNote(freq, len, dotted) = music.music_actions[0] {
-        assert!((freq - 73.4162).abs() < 0.1, "Expected D in octave 1 (~73.4 Hz), got {}", freq);
+        assert!((freq - 146.8324).abs() < 0.1, "Expected O1 D (~146.8 Hz), got {}", freq);
         assert_eq!(16 * 120, len, "Length should be 16 * tempo(120)");
         assert!(!dotted);
     } else {
         panic!("Expected PlayNote, got {:?}", music.music_actions[0]);
     }
+}
+
+fn note_frequencies(music: &AnsiMusic) -> Vec<f32> {
+    music
+        .music_actions
+        .iter()
+        .filter_map(|action| match action {
+            MusicAction::PlayNote(freq, _, _) => Some(*freq),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn test_octaves_follow_the_cterm_manual() {
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::SyncTerm);
+    let mut sink = TestSink::new();
+
+    // Octaves 0-2 are distinct, and O4 is two octaves above O2.
+    parser.parse(b"\x1B[|O0CO1CO2CO4C\x0E", &mut sink);
+
+    let freqs = note_frequencies(sink.get_music().unwrap());
+    let expected = [65.4064, 130.8128, 261.6256, 1046.5023];
+    assert_eq!(freqs.len(), expected.len());
+    for (freq, expected) in freqs.iter().zip(expected) {
+        assert!((freq - expected).abs() < 0.01, "got {freqs:?}");
+    }
+}
+
+#[test]
+fn test_music_state_carries_over_between_strings() {
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::SyncTerm);
+    let mut sink = TestSink::new();
+
+    // Octave, tempo, length and articulation persist, as in CTerm.
+    parser.parse(b"\x1B[|O2T200L8MSC\x0E", &mut sink);
+    parser.parse(b"\x1B[|C\x0E", &mut sink);
+    let music = sink.get_music().unwrap();
+    assert_eq!(music.music_actions[0], MusicAction::SetStyle(icy_parser_core::MusicStyle::Staccato));
+    assert!(matches!(music.music_actions[1], MusicAction::PlayNote(_, 1600, false)));
+    assert!((note_frequencies(music)[0] - 261.6256).abs() < 0.01);
+
+    // RIS resets them.
+    parser.parse(b"\x1Bc\x1B[|C\x0E", &mut sink);
+    let music = sink.get_music().unwrap();
+    assert!(matches!(music.music_actions[..], [MusicAction::PlayNote(_, 480, false)]));
+    assert!((note_frequencies(music)[0] - 1046.5023).abs() < 0.01);
+}
+
+#[test]
+fn test_lower_case_and_dotted_length() {
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::SyncTerm);
+    let mut sink = TestSink::new();
+
+    // A dot after an explicit length makes the note 1.5 times as long.
+    parser.parse(b"\x1B[|t120c8.\x0E", &mut sink);
+
+    let music = sink.get_music().unwrap();
+    assert_eq!(music.music_actions.len(), 1);
+    assert_eq!(music.music_actions[0].get_duration(), 360000 / (120 * 8));
+}
+
+#[test]
+fn test_csi_equals_m_selects_music_introducers() {
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Both);
+    let mut sink = TestSink::new();
+
+    // CSI = 0 M: only CSI | starts music; CSI M is Delete Line again.
+    parser.parse(b"\x1B[=0M\x1B[MC\x0E", &mut sink);
+    assert!(sink.get_music().is_none());
+    assert!(sink.commands.iter().any(|cmd| matches!(cmd, TerminalCommand::CsiDeleteLine(1))));
+    assert_eq!(parser.music_option(), MusicOption::SyncTerm);
+
+    // CSI = 1 M: CSI N starts music too.
+    parser.parse(b"\x1B[=1M\x1B[NC\x0E", &mut sink);
+    assert!(sink.get_music().is_some());
+    assert_eq!(parser.music_option(), MusicOption::Banana);
+
+    // CSI = 2 M: CSI M as well.
+    parser.parse(b"\x1B[=2M", &mut sink);
+    assert_eq!(parser.music_option(), MusicOption::Both);
+
+    // Music the embedder turned off stays off.
+    parser.set_music_option(MusicOption::Off);
+    parser.parse(b"\x1B[=2M", &mut sink);
+    assert_eq!(parser.music_option(), MusicOption::Off);
+}
+
+#[test]
+fn test_music_option_can_change_through_command_parser() {
+    let mut parser: Box<dyn CommandParser> = Box::new(AnsiParser::new());
+    let mut sink = TestSink::new();
+
+    parser.set_music_option(MusicOption::SyncTerm);
+    parser.parse(b"\x1B[|C\x0E", &mut sink);
+
+    assert!(sink.get_music().is_some());
 }

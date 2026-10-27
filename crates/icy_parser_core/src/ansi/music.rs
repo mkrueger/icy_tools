@@ -2,14 +2,35 @@ use serde::{Deserialize, Serialize};
 
 use crate::{AnsiParser, CommandSink, ParseError, ansi::ParserState};
 
+/// Characters allowed in a music string (CTerm manual, "ANSI" Music). Any
+/// other byte ends the string, and the string is discarded.
+const MUSIC_CHARS: &[u8] = b"aAbBcCdDeEfFgGlLmMnNoOpPsStT0123456789.-+#<> ";
+
+/// CTerm keeps at most this many characters of a music string.
+const MAX_MUSIC_STRING_LEN: usize = 1022;
+
+/// Semitones within an octave, as letter notes and sharps.
+const SCALE: &[u8; 12] = b"C#D#EF#G#A#B";
+
+/// Letter notes play this many semitones above their note number. The CTerm
+/// manual numbers notes from C in octave 0, so `O4 C` is note 48 (1046.5 Hz).
+/// SyncTERM indexes its frequency table with `octave * 12 + 1`, one semitone
+/// sharp; that would be 1.
+const LETTER_NOTE_OFFSET: i32 = 0;
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum MusicOption {
     #[default]
     Off,
+    /// `CSI |` and `CSI M` start music.
     Conflicting,
+    /// `CSI |` and `CSI N` start music (CTerm's `CSI = 1 M`).
     Banana,
+    /// `CSI |`, `CSI N` and `CSI M` start music (CTerm's `CSI = 2 M`).
     Both,
+    /// Only `CSI |` starts music (CTerm's `CSI = 0 M`).
+    SyncTerm,
 }
 
 impl std::fmt::Display for MusicOption {
@@ -19,6 +40,7 @@ impl std::fmt::Display for MusicOption {
             MusicOption::Conflicting => write!(f, "Conflicting"),
             MusicOption::Banana => write!(f, "Banana"),
             MusicOption::Both => write!(f, "Both"),
+            MusicOption::SyncTerm => write!(f, "SyncTERM"),
         }
     }
 }
@@ -97,211 +119,171 @@ pub const FREQ: [f32; 12 * 7] = [
     4_698.636, 4978.0317, 5_274.041, 5_587.652, 5919.9108, 6_271.927, 6_644.875, 7040.0000, 7_458.62, 7_902.132,
 ];
 
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum MusicState {
-    Default,
-    ParseMusicStyle,
-    SetTempo(u16),
-    Pause(i32),
-    SetOctave,
-    Note(usize, i32),
-    PlayNoteByNumber(usize),
-    SetLength(i32),
+/// Music state that carries over from one music string to the next, as in
+/// CTerm; it resets with the terminal (RIS).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MusicSettings {
+    tempo: i32,
+    octave: i32,
+    length: i32,
+    articulation: MusicStyle,
+    foreground: bool,
+}
+
+impl Default for MusicSettings {
+    fn default() -> Self {
+        Self {
+            tempo: 120,
+            octave: 4,
+            length: 4,
+            articulation: MusicStyle::Normal,
+            foreground: true,
+        }
+    }
+}
+
+fn parse_number(s: &[u8], i: &mut usize) -> Option<i32> {
+    let start = *i;
+    let mut value: i32 = 0;
+    while let Some(digit) = s.get(*i).filter(|b| b.is_ascii_digit()) {
+        value = value.saturating_mul(10).saturating_add(i32::from(digit - b'0'));
+        *i += 1;
+    }
+    (*i > start).then_some(value)
+}
+
+impl MusicSettings {
+    fn set_style(&mut self, style: MusicStyle, music: &mut AnsiMusic) {
+        match style {
+            MusicStyle::Foreground => self.foreground = true,
+            MusicStyle::Background => self.foreground = false,
+            articulation => self.articulation = articulation,
+        }
+        music.music_actions.push(MusicAction::SetStyle(style));
+    }
+
+    /// Parse one music string. `style_prefix`: the introducer was `CSI |` or
+    /// `CSI M`, so a leading F, B, L, S, or N not followed by a digit, is a
+    /// style, as if `M` came before it.
+    pub(crate) fn play(&mut self, string: &[u8], style_prefix: bool) -> AnsiMusic {
+        let s: Vec<u8> = string.iter().map(u8::to_ascii_uppercase).collect();
+        let mut music = AnsiMusic::default();
+
+        // Articulation and background play carry over from earlier strings.
+        if self.articulation != MusicStyle::Normal {
+            music.music_actions.push(MusicAction::SetStyle(self.articulation));
+        }
+        if !self.foreground {
+            music.music_actions.push(MusicAction::SetStyle(MusicStyle::Background));
+        }
+
+        let style = |c: Option<&u8>| match c {
+            Some(b'F') => Some(MusicStyle::Foreground),
+            Some(b'B') => Some(MusicStyle::Background),
+            Some(b'N') => Some(MusicStyle::Normal),
+            Some(b'L') => Some(MusicStyle::Legato),
+            Some(b'S') => Some(MusicStyle::Staccato),
+            _ => None,
+        };
+
+        let mut i = 0;
+        let note_number_first = s.first() == Some(&b'N') && s.get(1).is_some_and(u8::is_ascii_digit);
+        if let Some(style) = style(s.first()).filter(|_| style_prefix && !note_number_first) {
+            self.set_style(style, &mut music);
+            i = 1;
+        }
+
+        while i < s.len() {
+            let c = s[i];
+            i += 1;
+            match c {
+                b'M' => {
+                    if let Some(style) = style(s.get(i)) {
+                        self.set_style(style, &mut music);
+                        i += 1;
+                    }
+                }
+                b'T' => self.tempo = parse_number(&s, &mut i).unwrap_or(0).clamp(32, 255),
+                b'O' => self.octave = parse_number(&s, &mut i).unwrap_or(0).min(6),
+                b'L' => self.length = parse_number(&s, &mut i).unwrap_or(0).clamp(1, 64),
+                b'<' => self.octave = (self.octave - 1).max(0),
+                b'>' => self.octave = (self.octave + 1).min(6),
+                b'A'..=b'G' | b'P' | b'N' => {
+                    // `None` is silence: a pause, or a note number above 71.
+                    let mut note = match c {
+                        b'P' => None,
+                        b'N' => Some(parse_number(&s, &mut i).unwrap_or(0)).filter(|n| *n <= 71),
+                        _ => Some(self.octave * 12 + LETTER_NOTE_OFFSET + SCALE.iter().position(|&x| x == c).unwrap_or(0) as i32),
+                    };
+                    let mut length = self.length;
+                    let mut dotted = false;
+                    // Modifiers, in any order; a later length overrides an earlier one.
+                    loop {
+                        match s.get(i) {
+                            Some(b'+' | b'#') => note = note.map(|n| n + 1),
+                            Some(b'-') => note = note.map(|n| n - 1),
+                            Some(b'.') => dotted = true,
+                            Some(d) if d.is_ascii_digit() => {
+                                length = parse_number(&s, &mut i).unwrap_or(0);
+                                continue;
+                            }
+                            _ => break,
+                        }
+                        i += 1;
+                    }
+                    let tempo_length = self.tempo * length.clamp(1, 64);
+                    match note.filter(|n| (0..FREQ.len() as i32).contains(n)) {
+                        Some(n) => music.music_actions.push(MusicAction::PlayNote(FREQ[n as usize], tempo_length, dotted)),
+                        // Pause lasts 240000 / len ms; a dotted one 1.5 times that.
+                        None => music
+                            .music_actions
+                            .push(MusicAction::Pause(if dotted { (tempo_length * 2 / 3).max(1) } else { tempo_length })),
+                    }
+                }
+                // Spaces, and digits or modifiers with nothing to modify.
+                _ => {}
+            }
+        }
+        music
+    }
 }
 
 impl AnsiParser {
-    // ANSI Music parsing methods
+    /// Start collecting a music string. `style_prefix`: see [`MusicSettings::play`].
+    pub(crate) fn start_ansi_music(&mut self, style_prefix: bool) {
+        self.state = ParserState::AnsiMusic;
+        self.music_string.clear();
+        self.music_style_prefix = style_prefix;
+    }
+
+    /// Collect a music string up to SO (0x0E), then play it.
     pub(crate) fn parse_ansi_music(&mut self, byte: u8, sink: &mut dyn CommandSink) {
-        match self.music_state {
-            MusicState::ParseMusicStyle => {
-                self.music_state = MusicState::Default;
-                match byte {
-                    b'F' => self
-                        .cur_music
-                        .as_mut()
-                        .unwrap()
-                        .music_actions
-                        .push(MusicAction::SetStyle(MusicStyle::Foreground)),
-                    b'B' => self
-                        .cur_music
-                        .as_mut()
-                        .unwrap()
-                        .music_actions
-                        .push(MusicAction::SetStyle(MusicStyle::Background)),
-                    b'N' => self.cur_music.as_mut().unwrap().music_actions.push(MusicAction::SetStyle(MusicStyle::Normal)),
-                    b'L' => self.cur_music.as_mut().unwrap().music_actions.push(MusicAction::SetStyle(MusicStyle::Legato)),
-                    b'S' => self.cur_music.as_mut().unwrap().music_actions.push(MusicAction::SetStyle(MusicStyle::Staccato)),
-                    _ => self.parse_default_ansi_music(byte, sink),
-                }
+        if byte == 0x0E {
+            self.state = ParserState::Default;
+            let music = self.music_settings.play(&self.music_string, self.music_style_prefix);
+            self.music_string.clear();
+            sink.play_music(music);
+        } else if MUSIC_CHARS.contains(&byte) {
+            if self.music_string.len() < MAX_MUSIC_STRING_LEN {
+                self.music_string.push(byte);
             }
-            MusicState::SetTempo(x) => {
-                if byte.is_ascii_digit() {
-                    let x = (x as i32).saturating_mul(10).saturating_add((byte - b'0') as i32) as u16;
-                    self.music_state = MusicState::SetTempo(x);
-                } else {
-                    self.music_state = MusicState::Default;
-                    self.cur_tempo = (x.clamp(32, 255)) as i32;
-                    self.parse_default_ansi_music(byte, sink);
-                }
-            }
-            MusicState::SetOctave => {
-                if (b'0'..=b'6').contains(&byte) {
-                    self.cur_octave = (byte - b'0') as usize;
-                    self.music_state = MusicState::Default;
-                } else {
-                    sink.report_error(
-                        ParseError::MalformedSequence {
-                            description: "Invalid octave in ANSI music",
-                            sequence: Some(format!(
-                                "O{}",
-                                if byte.is_ascii_graphic() {
-                                    format!("'{}'", byte as char)
-                                } else {
-                                    format!("0x{:02X}", byte)
-                                }
-                            )),
-                            context: Some("Octave must be 0-6".to_string()),
-                        },
-                        crate::ErrorLevel::Error,
-                    );
-                    self.music_state = MusicState::Default;
-                }
-            }
-            MusicState::Note(n, len) => {
-                self.music_state = MusicState::Default;
-                match byte {
-                    b'+' | b'#' => {
-                        if n + 1 < FREQ.len() {
-                            self.music_state = MusicState::Note(n + 1, len);
-                        }
-                    }
-                    b'-' => {
-                        if n > 0 {
-                            self.music_state = MusicState::Note(n - 1, len);
-                        }
-                    }
-                    b'0'..=b'9' => {
-                        let len = len.saturating_mul(10).saturating_add((byte - b'0') as i32);
-                        self.music_state = MusicState::Note(n, len);
-                    }
-                    b'.' => {
-                        let len = len * 3 / 2;
-                        self.music_state = MusicState::Note(n, len);
-                        self.dotted_note = true;
-                    }
-                    _ => {
-                        self.music_state = MusicState::Default;
-                        let len = if len == 0 { self.cur_length } else { len };
-                        // Calculate frequency index: ANSI octave offset by 2 (O4 = array octave 2)
-                        // O4C = (4-2)*12 + 0 = 24 (C4 = 261.63 Hz)
-                        let freq_index = n + ((self.cur_octave.saturating_sub(2)) * 12);
-                        let freq_index = freq_index.clamp(0, FREQ.len() - 1);
-                        self.cur_music
-                            .as_mut()
-                            .unwrap()
-                            .music_actions
-                            .push(MusicAction::PlayNote(FREQ[freq_index], self.cur_tempo * len, self.dotted_note));
-                        self.dotted_note = false;
-                        self.parse_default_ansi_music(byte, sink);
-                    }
-                }
-            }
-            MusicState::SetLength(x) => {
-                if byte.is_ascii_digit() {
-                    let x = x.saturating_mul(10).saturating_add((byte - b'0') as i32);
-                    self.music_state = MusicState::SetLength(x);
-                } else if byte == b'.' {
-                    let x = x * 3 / 2;
-                    self.music_state = MusicState::SetLength(x);
-                } else {
-                    self.music_state = MusicState::Default;
-                    self.cur_length = x.clamp(1, 64);
-                    self.parse_default_ansi_music(byte, sink);
-                }
-            }
-            MusicState::PlayNoteByNumber(x) => {
-                if byte.is_ascii_digit() {
-                    let x = (x as i32).saturating_mul(10).saturating_add((byte - b'0') as i32) as usize;
-                    self.music_state = MusicState::PlayNoteByNumber(x);
-                } else {
-                    self.music_state = MusicState::Default;
-                    let len = self.cur_length;
-                    // QBASIC N notation: N0 starts at C0, but FREQ table starts at C1 (index 0)
-                    // So there's an offset of 16 semitones: index = note_number - 16
-                    // N49 = A4 (440Hz) = index 33
-                    let note_index = x.saturating_sub(16);
-                    let note_index = note_index.clamp(0, FREQ.len() - 1);
-                    self.cur_music
-                        .as_mut()
-                        .unwrap()
-                        .music_actions
-                        .push(MusicAction::PlayNote(FREQ[note_index], self.cur_tempo * len, false));
-                    self.dotted_note = false;
-                    self.parse_default_ansi_music(byte, sink);
-                }
-            }
-            MusicState::Pause(x) => {
-                if byte.is_ascii_digit() {
-                    let x = x.saturating_mul(10).saturating_add((byte - b'0') as i32);
-                    self.music_state = MusicState::Pause(x);
-                } else if byte == b'.' {
-                    let x = x * 3 / 2;
-                    self.music_state = MusicState::Pause(x);
-                } else {
-                    self.music_state = MusicState::Default;
-                    let pause = x.clamp(1, 64);
-                    self.cur_music.as_mut().unwrap().music_actions.push(MusicAction::Pause(self.cur_tempo * pause));
-                    self.parse_default_ansi_music(byte, sink);
-                }
-            }
-            MusicState::Default => {
-                self.parse_default_ansi_music(byte, sink);
-            }
+        } else {
+            // CTerm discards the string, and the byte that ended it.
+            self.state = ParserState::Default;
+            self.music_string.clear();
+            sink.report_error(
+                ParseError::MalformedSequence {
+                    description: "Invalid character in ANSI music",
+                    sequence: Some(format!("0x{byte:02X}")),
+                    context: Some("Music string discarded".to_string()),
+                },
+                crate::ErrorLevel::Warning,
+            );
         }
     }
 
-    fn parse_default_ansi_music(&mut self, byte: u8, sink: &mut dyn CommandSink) {
-        match byte {
-            0x0E => {
-                // End of ANSI music sequence
-                self.state = ParserState::Default;
-                self.cur_octave = 5;
-                if let Some(music) = self.cur_music.take() {
-                    sink.play_music(music);
-                }
-            }
-            b'T' => self.music_state = MusicState::SetTempo(0),
-            b'L' => self.music_state = MusicState::SetLength(0),
-            b'O' => self.music_state = MusicState::SetOctave,
-            b'C' => self.music_state = MusicState::Note(0, 0),
-            b'D' => self.music_state = MusicState::Note(2, 0),
-            b'E' => self.music_state = MusicState::Note(4, 0),
-            b'F' => self.music_state = MusicState::Note(5, 0),
-            b'G' => self.music_state = MusicState::Note(7, 0),
-            b'A' => self.music_state = MusicState::Note(9, 0),
-            b'B' => self.music_state = MusicState::Note(11, 0),
-            b'M' => self.music_state = MusicState::ParseMusicStyle,
-            b'N' => self.music_state = MusicState::PlayNoteByNumber(0),
-            b'<' => {
-                if self.cur_octave > 0 {
-                    self.cur_octave -= 1;
-                }
-            }
-            b'>' => {
-                if self.cur_octave < 6 {
-                    self.cur_octave += 1;
-                }
-            }
-            b'P' => {
-                self.music_state = MusicState::Pause(0);
-            }
-            b' ' => {}
-            _ => {
-                // Unknown music command - reset state and return to ground
-                self.music_state = MusicState::Default;
-                self.state = ParserState::Default;
-            }
-        }
+    /// Reset the music state that carries over between strings (RIS).
+    pub(crate) fn reset_music(&mut self) {
+        self.music_settings = MusicSettings::default();
     }
 }

@@ -1260,6 +1260,10 @@ pub trait CommandSink {
 /// meaning; adjacent `print` calls may have different boundaries.
 pub trait CommandParser: Send {
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink);
+
+    /// Change which introducers start ANSI music, at run time. Parsers
+    /// without ANSI music ignore it.
+    fn set_music_option(&mut self, _option: MusicOption) {}
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
