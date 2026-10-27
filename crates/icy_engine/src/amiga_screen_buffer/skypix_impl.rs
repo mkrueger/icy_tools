@@ -39,10 +39,10 @@ fn switch_to_custom_font(buf: &mut super::AmigaScreenBuffer, font: std::sync::Ar
 }
 
 /// Amiga 8x8 IBM compatible font for Skypix
-pub const SKYPIX_DEFAULT_FONT_DATA: &str = include_str!("../../data/fonts/Amiga/Amiga8x8_IBM.yaff");
+pub const SKYPIX_DEFAULT_FONT_DATA: &str = font_str!("../../data/fonts/Amiga/Amiga8x8_IBM.yaff");
 
 lazy_static::lazy_static! {
-    pub static ref SKYPIX_DEFAULT_FONT: BitFont = BitFont::from_bytes("Amiga8x8_IBM", SKYPIX_DEFAULT_FONT_DATA.as_bytes()).unwrap();
+    pub static ref SKYPIX_DEFAULT_FONT: BitFont = BitFont::from_embedded("Amiga8x8_IBM", SKYPIX_DEFAULT_FONT_DATA.as_bytes());
 }
 
 pub const SKYPIX_SCREEN_SIZE: Size = Size { width: 640, height: 200 };

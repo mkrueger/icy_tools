@@ -2,20 +2,27 @@ use super::CompactGlyph;
 use crate::{BitFont, BitFontType};
 
 lazy_static::lazy_static! {
-    pub static ref FONT: BitFont = BitFont::from_sauce_name("IBM VGA50").unwrap();
+    pub static ref FONT: BitFont = if cfg!(feature = "embedded-fonts") {
+        BitFont::from_sauce_name("IBM VGA50").unwrap()
+    } else {
+        BitFont::from_sauce_name("IBM VGA50").unwrap_or_default()
+    };
     pub static ref RIPTERM_FONT: BitFont = {
         // See data/fonts/Rip/README.md for the independent JDraw/DOSBox extraction.
         let mut font = FONT.clone();
         font.set_name("RIPterm 8x8");
-        let data = include_bytes!("../../data/fonts/Rip/RIPterm_8x8.raw");
-        for code in 32..256 {
-            let offset = (code - 32) * 8;
-            font.glyph_mut(code as u8 as char).data[..8].copy_from_slice(&data[offset..offset + 8]);
+        let data = font_bytes!("../../data/fonts/Rip/RIPterm_8x8.raw");
+        // The data is empty without the `embedded-fonts` feature; keep FONT's glyphs then.
+        if !data.is_empty() {
+            for code in 32..256 {
+                let offset = (code - 32) * 8;
+                font.glyph_mut(code as u8 as char).data[..8].copy_from_slice(&data[offset..offset + 8]);
+            }
         }
         font
     };
-    pub static ref EGA_7x8: BitFont = BitFont::from_bytes("EGA 7x8", include_bytes!("../../data/fonts/Rip/Bm437_EverexME_7x8.psf")).unwrap();
-    pub static ref VGA_8x14: BitFont = BitFont::from_bytes("VGA 8x14", include_bytes!("../../data/fonts/Rip/IBM_VGA_8x14.psf")).unwrap();
+    pub static ref EGA_7x8: BitFont = BitFont::from_embedded("EGA 7x8", font_bytes!("../../data/fonts/Rip/Bm437_EverexME_7x8.psf"));
+    pub static ref VGA_8x14: BitFont = BitFont::from_embedded("VGA 8x14", font_bytes!("../../data/fonts/Rip/IBM_VGA_8x14.psf"));
 
     /// 7x14 variant: same glyphs but with width=7
     pub static ref VGA_7x14: BitFont = {

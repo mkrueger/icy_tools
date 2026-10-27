@@ -21,7 +21,7 @@ pub use psf_parser::PsfFont;
 use super::Size;
 
 // Re-export key items from submodules
-pub use ansi::{font_height_for_lines, get_ansi_font, ANSI_SLOT_COUNT, ANSI_SLOT_FONTS, CP437, DEFAULT_FONT_NAME};
+pub use ansi::{font_height_for_lines, get_ansi_font, install_ansi_font, ANSI_SLOT_COUNT, ANSI_SLOT_FONTS, CP437, DEFAULT_FONT_NAME};
 pub use legacy::{
     ATARI, ATARI_XEP80, ATARI_XEP80_INT, C128_LOWER, C16_LOWER, C16_UPPER, C64_SHIFTED, C64_UNSHIFTED, PET_LOWER, PET_UPPER, VIC20_LOWER, VIC20_UPPER, VIEWDATA,
 };
@@ -100,8 +100,36 @@ impl PartialEq for BitFont {
 }
 
 impl Default for BitFont {
+    #[cfg(feature = "embedded-fonts")]
     fn default() -> Self {
         BitFont::from_sauce_name("IBM VGA").unwrap()
+    }
+
+    /// Without embedded fonts: the font installed in ANSI slot 0 at 16px, or
+    /// a blank 8x16 font until the embedder installs one.
+    #[cfg(not(feature = "embedded-fonts"))]
+    fn default() -> Self {
+        ansi::get_ansi_font(0, 16).cloned().unwrap_or_else(BitFont::blank_8x16)
+    }
+}
+
+impl BitFont {
+    /// A blank 8x16 font, the stand-in for a font that isn't compiled in.
+    #[cfg(not(feature = "embedded-fonts"))]
+    fn blank_8x16() -> Self {
+        BitFont::create_8("", 8, 16, &[0u8; 256 * 16])
+    }
+
+    /// Parses a font compiled in with `font_bytes!`/`font_str!`. Embedded
+    /// font data is known to be valid, so a failure is a bug (as with the
+    /// `unwrap()` this replaces). Without the `embedded-fonts` feature the
+    /// data is empty and this returns the default font instead.
+    pub(crate) fn from_embedded(name: &str, data: &[u8]) -> Self {
+        #[cfg(not(feature = "embedded-fonts"))]
+        if data.is_empty() {
+            return BitFont::default();
+        }
+        BitFont::from_bytes(name, data).unwrap()
     }
 }
 
@@ -471,3 +499,80 @@ impl FromStr for BitFont {
 
 /// Number of ANSI font slots (legacy alias)
 pub const ANSI_FONTS: usize = 42;
+
+#[cfg(test)]
+mod embedded_fonts_tests {
+    use super::*;
+
+    #[test]
+    fn install_ansi_font_rejects_bad_slot_and_height() {
+        let font = |h: u8| BitFont::create_8("test", 8, h, &vec![0u8; 256 * h as usize]);
+        assert!(install_ansi_font(ansi::ANSI_SLOT_COUNT as u8, font(16)).is_err());
+        assert!(install_ansi_font(3, font(10)).is_err());
+    }
+
+    /// With embedded fonts, an install fills a height that was never loaded and
+    /// leaves the embedded heights alone; a second install is refused.
+    #[cfg(feature = "embedded-fonts")]
+    #[test]
+    fn install_ansi_font_fills_a_slot_height_once() {
+        // Slot 38 is embedded at 16px only, and nothing else asks for it at 8px.
+        let font = BitFont::create_8("Installed", 8, 8, &[0xA5u8; 256 * 8]);
+        install_ansi_font(38, font.clone()).unwrap();
+        assert_eq!(BitFont::from_ansi_font_page(38, 8), Some(&font));
+        assert_ne!(BitFont::from_ansi_font_page(38, 16), Some(&font));
+        assert!(install_ansi_font(38, font).is_err());
+        // A slot height that was already loaded can't be replaced.
+        assert!(BitFont::from_ansi_font_page(0, 16).is_some());
+        assert!(install_ansi_font(0, BitFont::create_8("Late", 8, 16, &[0u8; 256 * 16])).is_err());
+    }
+
+    /// Without the embedded fonts nothing panics, the lookups report the font
+    /// as missing, and an installed slot font is found.
+    #[cfg(not(feature = "embedded-fonts"))]
+    #[test]
+    fn lookups_without_embedded_fonts() {
+        use crate::{ScreenMode, TerminalEmulation, TerminalResolution};
+
+        assert!(BitFont::from_sauce_name("IBM VGA").is_err());
+        assert!(BitFont::from_sauce_name("Amiga Topaz 1+").is_err());
+        assert!(BitFont::from_ansi_font_page(5, 16).is_none());
+        assert!(skypix::get_amiga_font_by_name("Topaz.font", 8).is_none());
+        assert_eq!(BitFont::default().size(), Size::new(8, 16));
+
+        // Every SAUCE name and every slot at every height is reported missing.
+        for name in sauce::get_sauce_font_names() {
+            assert!(BitFont::from_sauce_name(name).is_err(), "{name}");
+        }
+        for slot in 0..ansi::ANSI_SLOT_COUNT as u8 {
+            for height in [8, 14, 16] {
+                assert!(BitFont::from_ansi_font_page(slot, height).is_none(), "slot {slot} at {height}");
+            }
+        }
+
+        // The font statics and the screen modes fall back to the default font.
+        let _ = (&*legacy::C64_UNSHIFTED, &*legacy::ATARI_XEP80, &*rip::RIPTERM_FONT, &*rip::VGA_7x14);
+        let _ = &*crate::igs::ATARI_ST_FONT_8x16;
+        for (mode, emulation) in [
+            (ScreenMode::Vga(80, 25), TerminalEmulation::Ansi),
+            (ScreenMode::Default, TerminalEmulation::Ansi),
+            (ScreenMode::Vic, TerminalEmulation::PETscii),
+            (ScreenMode::Atascii(40), TerminalEmulation::ATAscii),
+            (ScreenMode::Atascii(80), TerminalEmulation::ATAscii),
+            (ScreenMode::Videotex, TerminalEmulation::ViewData),
+            (ScreenMode::Rip, TerminalEmulation::Rip),
+            (ScreenMode::SkyPix, TerminalEmulation::Skypix),
+            (ScreenMode::AtariST(TerminalResolution::Low, true), TerminalEmulation::AtariST),
+        ] {
+            let _ = mode.create_screen(emulation, None);
+        }
+
+        // A slot filled at run time is found, at its own height and as the
+        // fallback for the others.
+        let font = BitFont::create_8("Installed", 8, 14, &[0x5Au8; 256 * 14]);
+        install_ansi_font(7, font.clone()).unwrap();
+        assert_eq!(BitFont::from_ansi_font_page(7, 14), Some(&font));
+        assert_eq!(BitFont::from_ansi_font_page(7, 16), Some(&font));
+        assert!(install_ansi_font(7, font).is_err());
+    }
+}
