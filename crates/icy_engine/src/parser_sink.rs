@@ -916,8 +916,12 @@ impl CommandSink for ScreenSink<'_> {
                         self.screen_mut().set_font(nr as usize, font.clone());
                         self.set_font_selection_success(nr);
                     }
+                    // No built-in font for this slot: a font loaded into it (DCS,
+                    // slots 43 and up) was selected above, otherwise it fails.
                     None => {
-                        self.screen_mut().terminal_state_mut().font_selection_state = FontSelectionState::Failure;
+                        if self.screen().font(nr as usize).is_none() {
+                            self.screen_mut().terminal_state_mut().font_selection_state = FontSelectionState::Failure;
+                        }
                     }
                 }
             }

@@ -1663,3 +1663,26 @@ fn test_render_snapshot_leaves_out_scrollback() {
     let snapshot = snapshot.as_any_mut().downcast_mut::<TextScreen>().unwrap();
     assert!(snapshot.scrollback_buffer.chunks.is_empty());
 }
+
+#[test]
+fn test_selecting_a_dcs_loaded_font_slot_succeeds() {
+    use base64::Engine;
+    use icy_engine::FontSelectionState;
+
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    // A raw 8x16 font into slot 43, the first slot above the built-in ones.
+    let font = base64::engine::general_purpose::STANDARD.encode([0x55u8; 256 * 16]);
+    let load = format!("\x1bPCTerm:Font:43:{font}\x1b\\");
+    parser.parse(load.as_bytes(), &mut ScreenSink::new(&mut screen));
+    assert!(screen.font(43).is_some());
+
+    parser.parse(b"\x1b[0;43 D", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().font_selection_state, FontSelectionState::Success);
+    assert_eq!(screen.caret().font_page(), 43);
+
+    // A slot with nothing in it still fails.
+    parser.parse(b"\x1b[0;44 D", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().font_selection_state, FontSelectionState::Failure);
+}
