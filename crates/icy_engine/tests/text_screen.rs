@@ -238,6 +238,52 @@ fn test_decstbm_reset_preserves_left_right_margins() {
 }
 
 #[test]
+fn test_horizontal_scroll_handles_cleared_and_short_lines() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    // After a clear the lines are gone; scrolling them must treat them as blank.
+    parser.parse(b"\x1b[2J\x1b[ @\x1b[ A", &mut ScreenSink::new(&mut screen));
+
+    // A line shorter than the screen scrolls as if it were padded with blanks.
+    parser.parse(b"\x1b[2J\x1b[HABC\x1b[ @", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, 'B');
+    assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'C');
+    assert_eq!(screen.char_at(Position::new(2, 0)).ch, ' ');
+
+    parser.parse(b"\x1b[ A", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, ' ');
+    assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'B');
+    assert_eq!(screen.char_at(Position::new(2, 0)).ch, 'C');
+}
+
+#[test]
+fn test_margins_are_clamped_to_the_screen() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    // A bottom or right margin past the screen is limited to its last row or column.
+    parser.parse(b"\x1b[2;9999r\x1b[?69h", &mut ScreenSink::new(&mut screen));
+    screen.terminal_state_mut().set_margins_left_right(2, 9999);
+    assert_eq!(screen.terminal_state().margins_top_bottom(), Some((1, 24)));
+    assert_eq!(screen.terminal_state().margins_left_right(), Some((2, 79)));
+    parser.parse(b"\x1b[ @\x1b[ A", &mut ScreenSink::new(&mut screen));
+
+    // A margin that starts past the screen is dropped.
+    parser.parse(b"\x1b[9000;9999r", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().margins_top_bottom(), None);
+
+    // Shrinking the screen clamps margins that no longer fit and drops those that start outside it.
+    parser.parse(b"\x1b[5;20r\x1b[50;70s", &mut ScreenSink::new(&mut screen));
+    screen.terminal_state_mut().set_size(Size::new(60, 10));
+    assert_eq!(screen.terminal_state().margins_top_bottom(), Some((4, 9)));
+    assert_eq!(screen.terminal_state().margins_left_right(), Some((49, 59)));
+    screen.terminal_state_mut().set_size(Size::new(40, 4));
+    assert_eq!(screen.terminal_state().margins_top_bottom(), None);
+    assert_eq!(screen.terminal_state().margins_left_right(), None);
+}
+
+#[test]
 fn test_last_column_flag_delays_wrap_until_next_character() {
     let mut screen = TextScreen::new(Size::new(3, 2));
     screen.terminal_state_mut().last_column_flag_mode = true;

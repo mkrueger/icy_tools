@@ -321,6 +321,7 @@ impl TerminalState {
     pub fn set_width(&mut self, width: i32) {
         self.size.width = width;
         self.reset_tabs();
+        self.clamp_margins();
     }
 
     pub fn height(&self) -> i32 {
@@ -329,6 +330,7 @@ impl TerminalState {
 
     pub fn set_height(&mut self, height: i32) {
         self.size.height = height;
+        self.clamp_margins();
     }
 
     pub fn size(&self) -> Size {
@@ -337,6 +339,7 @@ impl TerminalState {
 
     pub fn set_size(&mut self, size: impl Into<Size>) {
         self.size = size.into();
+        self.clamp_margins();
     }
 
     pub fn tab_count(&self) -> usize {
@@ -416,7 +419,29 @@ impl TerminalState {
     }
 
     pub fn set_margins_top_bottom(&mut self, top: i32, bottom: i32) {
-        self.margins_top_bottom = if top > bottom { None } else { Some((top, bottom)) };
+        self.margins_top_bottom = Self::clamp_margin(top, bottom, self.size.height);
+    }
+
+    /// Limits a margin pair to `0..length`, like xterm limits a bottom margin past the screen
+    /// to its last row. Returns `None` when nothing valid is left.
+    fn clamp_margin(start: i32, end: i32, length: i32) -> Option<(i32, i32)> {
+        let start = start.max(0);
+        let end = if length > 0 { end.min(length - 1) } else { end };
+        if start > end {
+            None
+        } else {
+            Some((start, end))
+        }
+    }
+
+    /// Re-applies the margin limits after a resize, dropping margins that no longer fit.
+    fn clamp_margins(&mut self) {
+        self.margins_top_bottom = self
+            .margins_top_bottom
+            .and_then(|(top, bottom)| Self::clamp_margin(top, bottom, self.size.height));
+        self.margins_left_right = self
+            .margins_left_right
+            .and_then(|(left, right)| Self::clamp_margin(left, right, self.size.width));
     }
 
     /// Returns whether DECLRMM (Left Right Margin Mode) is enabled.
@@ -448,7 +473,7 @@ impl TerminalState {
 
     pub fn set_margins_left_right(&mut self, left: i32, right: i32) {
         if self.dec_left_right_margins {
-            self.margins_left_right = if left > right { None } else { Some((left, right)) };
+            self.margins_left_right = Self::clamp_margin(left, right, self.size.width);
         }
     }
 
@@ -472,6 +497,7 @@ impl TerminalState {
         self.margins_top_bottom = top_bottom;
         self.margins_left_right = left_right;
         self.dec_left_right_margins = enabled;
+        self.clamp_margins();
         true
     }
 

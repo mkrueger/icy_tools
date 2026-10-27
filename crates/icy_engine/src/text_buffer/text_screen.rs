@@ -635,10 +635,15 @@ impl EditableScreen for TextScreen {
                 self.caret.attribute,
             );
         } else {
+            // Missing lines and cells past the end of a line are blank, so they need no shifting.
             for y in start_line..=end_line {
-                let line = &mut layer_ref.lines[y as usize];
+                let Some(line) = layer_ref.lines.get_mut(y as usize) else {
+                    continue;
+                };
                 if line.chars.len() > start_column {
-                    line.chars.insert(end_column as usize, blank);
+                    if line.chars.len() >= end_column as usize {
+                        line.chars.insert(end_column as usize, blank);
+                    }
                     line.chars.remove(start_column);
                 }
             }
@@ -687,11 +692,16 @@ impl EditableScreen for TextScreen {
                 self.caret.attribute,
             );
         } else {
+            // Missing lines and cells past the end of a line are blank, so they need no shifting.
             for y in start_line..=end_line {
-                let line: &mut Line = &mut layer_ref.lines[y as usize];
+                let Some(line) = layer_ref.lines.get_mut(y as usize) else {
+                    continue;
+                };
                 if line.chars.len() > start_column {
                     line.chars.insert(start_column, blank);
-                    line.chars.remove(end_column + 1);
+                    if line.chars.len() > end_column + 1 {
+                        line.chars.remove(end_column + 1);
+                    }
                 }
             }
         }
