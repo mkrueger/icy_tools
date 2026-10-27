@@ -15,7 +15,7 @@ pub mod rip;
 pub mod sauce;
 pub mod skypix;
 
-pub use compact_glyph::CompactGlyph;
+pub use compact_glyph::{CompactGlyph, MAX_GLYPH_HEIGHT};
 pub use psf_parser::PsfFont;
 
 use super::Size;
@@ -304,6 +304,11 @@ impl BitFont {
 impl BitFont {
     /// Load font from bytes (PSF1, PSF2, YAFF, or plain format)
     pub fn from_bytes(name: impl Into<String>, data: &[u8]) -> crate::Result<Self> {
+        // No data is no font. The YAFF parser accepts an empty document, so
+        // without this an empty file or DCS payload became a blank 8x16 font.
+        if data.is_empty() {
+            return Err(FontError::UnknownFontFormat(0).into());
+        }
         let name = name.into();
 
         // Try to parse as PSF font first
@@ -328,8 +333,8 @@ impl BitFont {
             return Ok(Self::from_yaff_font(&yaff, name));
         }
 
-        // Try as raw font data (must be multiple of 256)
-        if data.len().is_multiple_of(256) && !data.is_empty() {
+        // Try as raw font data: 256 glyphs of 1 to 32 rows each
+        if data.len().is_multiple_of(256) && (1..=MAX_GLYPH_HEIGHT).contains(&(data.len() / 256)) {
             let char_height = data.len() / 256;
             return Ok(Self::create_8(name, 8, char_height as u8, data));
         }
@@ -471,3 +476,14 @@ impl FromStr for BitFont {
 
 /// Number of ANSI font slots (legacy alias)
 pub const ANSI_FONTS: usize = 42;
+
+#[cfg(test)]
+mod tests {
+    use super::BitFont;
+
+    #[test]
+    fn from_bytes_rejects_empty_data() {
+        // libyaff accepts an empty document, which made this a blank 8x16 font
+        assert!(BitFont::from_bytes("empty", &[]).is_err());
+    }
+}

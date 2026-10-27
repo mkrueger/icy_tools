@@ -505,7 +505,7 @@ impl EditableScreen for TextScreen {
     fn scroll_up(&mut self) {
         self.finish_grapheme();
         // Add top line to scrollback before scrolling (while data is still there)
-        if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state().is_terminal_buffer {
+        if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state().is_terminal_buffer && self.scrollback_buffer.is_enabled() {
             let font_height = self.font_dimensions().height;
             let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, font_height);
             self.scrollback_buffer.push_chunk(chunk);
@@ -635,10 +635,15 @@ impl EditableScreen for TextScreen {
                 self.caret.attribute,
             );
         } else {
+            // Missing lines and cells past the end of a line are blank, so they need no shifting.
             for y in start_line..=end_line {
-                let line = &mut layer_ref.lines[y as usize];
+                let Some(line) = layer_ref.lines.get_mut(y as usize) else {
+                    continue;
+                };
                 if line.chars.len() > start_column {
-                    line.chars.insert(end_column as usize, blank);
+                    if line.chars.len() >= end_column as usize {
+                        line.chars.insert(end_column as usize, blank);
+                    }
                     line.chars.remove(start_column);
                 }
             }
@@ -687,11 +692,16 @@ impl EditableScreen for TextScreen {
                 self.caret.attribute,
             );
         } else {
+            // Missing lines and cells past the end of a line are blank, so they need no shifting.
             for y in start_line..=end_line {
-                let line: &mut Line = &mut layer_ref.lines[y as usize];
+                let Some(line) = layer_ref.lines.get_mut(y as usize) else {
+                    continue;
+                };
                 if line.chars.len() > start_column {
                     line.chars.insert(start_column, blank);
-                    line.chars.remove(end_column + 1);
+                    if line.chars.len() > end_column + 1 {
+                        line.chars.remove(end_column + 1);
+                    }
                 }
             }
         }
@@ -882,7 +892,7 @@ impl EditableScreen for TextScreen {
 
     fn clear_screen(&mut self) {
         // Add entire screen to scrollback
-        if self.terminal_state().is_terminal_buffer {
+        if self.terminal_state().is_terminal_buffer && self.scrollback_buffer.is_enabled() {
             let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, self.resolution().height);
             self.scrollback_buffer.push_chunk(chunk);
         }

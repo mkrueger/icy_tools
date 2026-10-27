@@ -16,6 +16,8 @@ pub struct AnsiParser {
     state: ParserState,
     params: Vec<u16>,
     parse_buffer: Vec<u8>,
+    /// The OSC/DCS/APS string being collected went past `MAX_STRING_LEN` and is discarded at ST.
+    string_overflow: bool,
     /// The character REP (`CSI n b`) repeats; one byte unless `utf8` is set.
     last_char: [u8; 4],
     last_char_len: u8,
@@ -27,6 +29,8 @@ pub struct AnsiParser {
     macros: std::collections::HashMap<usize, Vec<u8>>,
     /// One bit per macro slot, set while that macro is running.
     in_macro: u64,
+    /// Macro bytes the current top-level invocation may still expand, nested calls included.
+    macro_budget: usize,
 
     // ANSI Music support
     pub music_option: music::MusicOption,
@@ -44,6 +48,7 @@ impl Default for AnsiParser {
             state: ParserState::Default,
             params: Vec::new(),
             parse_buffer: Vec::new(),
+            string_overflow: false,
             last_char: [0; 4],
             last_char_len: 1,
             printed_tail: [0; 4],
@@ -51,6 +56,7 @@ impl Default for AnsiParser {
             utf8: false,
             macros: std::collections::HashMap::new(),
             in_macro: 0,
+            macro_budget: 0,
             music_option: music::MusicOption::Off,
             music_state: music::MusicState::Default,
             cur_music: None,
@@ -98,6 +104,9 @@ impl AnsiParser {
     const MAX_MACRO_ID: usize = 63;
     /// SyncTERM's `MAX_MACRO_LEN`.
     const MAX_MACRO_LEN: usize = 0xF_FFFF;
+    /// Total macro bytes one top-level invocation may expand, counting nested invocations,
+    /// so macros that invoke each other repeatedly cannot multiply into an exponential expansion.
+    const MAX_MACRO_EXPANSION: usize = 4 * Self::MAX_MACRO_LEN;
     /// Ceiling for an OSC/DCS/APS payload, well above any real Sixel or image blob.
     pub const MAX_STRING_LEN: usize = 32 * 1024 * 1024;
 
@@ -108,10 +117,37 @@ impl AnsiParser {
     /// Drops data once the cap is reached, so a peer that never sends ST cannot
     /// grow the buffer without bound. Scanning continues so the parser still resyncs.
     fn push_string_data(&mut self, data: &[u8]) {
-        if self.parse_buffer.len().saturating_add(data.len()) > Self::MAX_STRING_LEN {
+        if self.string_overflow || self.parse_buffer.len().saturating_add(data.len()) > Self::MAX_STRING_LEN {
+            self.string_overflow = true;
+            self.parse_buffer.clear();
             return;
         }
         self.parse_buffer.extend_from_slice(data);
+    }
+
+    /// Starts collecting a new OSC/DCS/APS string.
+    fn begin_string(&mut self) {
+        self.parse_buffer.clear();
+        self.string_overflow = false;
+    }
+
+    /// At ST: a string that went past the cap is reported and dropped instead of being
+    /// dispatched cut short. Returns `true` if the string was dropped.
+    fn discard_overflowed_string(&mut self, sink: &mut dyn CommandSink, introducer: &str) -> bool {
+        if !self.string_overflow {
+            return false;
+        }
+        self.string_overflow = false;
+        self.parse_buffer.clear();
+        sink.report_error(
+            ParseError::MalformedSequence {
+                description: "String longer than the maximum length",
+                sequence: Some(format!("{introducer} ...")),
+                context: Some(format!("Limit is {} bytes; the string was dropped", Self::MAX_STRING_LEN)),
+            },
+            crate::ErrorLevel::Error,
+        );
+        true
     }
 
     /// Set the ANSI music option
@@ -358,7 +394,16 @@ impl AnsiParser {
         if self.in_macro & bit != 0 {
             return;
         }
+        if self.in_macro == 0 {
+            self.macro_budget = Self::MAX_MACRO_EXPANSION;
+        }
         if let Some(macro_data) = self.macros.get(&macro_id).cloned() {
+            if macro_data.len() > self.macro_budget {
+                // Out of budget: drop the rest of this expansion.
+                self.macro_budget = 0;
+                return;
+            }
+            self.macro_budget -= macro_data.len();
             self.in_macro |= bit;
             self.parse(&macro_data, sink);
             self.in_macro &= !bit;
@@ -454,21 +499,21 @@ impl CommandParser for AnsiParser {
                         }
                         b']' => {
                             // OSC - Operating System Command
-                            self.parse_buffer.clear();
+                            self.begin_string();
                             self.state = ParserState::OscString;
                             i += 1;
                             printable_start = i;
                         }
                         b'P' => {
                             // DCS - Device Control String
-                            self.parse_buffer.clear();
+                            self.begin_string();
                             self.state = ParserState::DcsString;
                             i += 1;
                             printable_start = i;
                         }
                         b'_' => {
                             // APS - Application Program String
-                            self.parse_buffer.clear();
+                            self.begin_string();
                             self.state = ParserState::ApsString;
                             i += 1;
                             printable_start = i;
@@ -1430,7 +1475,9 @@ impl CommandParser for AnsiParser {
 
                         if term_byte == BELL {
                             // BEL - End of OSC
-                            self.emit_osc_sequence(sink);
+                            if !self.discard_overflowed_string(sink, "ESC ]") {
+                                self.emit_osc_sequence(sink);
+                            }
                             self.reset();
                             i += term_pos + 1;
                             printable_start = i;
@@ -1448,7 +1495,9 @@ impl CommandParser for AnsiParser {
 
                 ParserState::OscEscape => {
                     if byte == b'\\' {
-                        self.emit_osc_sequence(sink);
+                        if !self.discard_overflowed_string(sink, "ESC ]") {
+                            self.emit_osc_sequence(sink);
+                        }
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -1479,7 +1528,9 @@ impl CommandParser for AnsiParser {
                 ParserState::DcsEscape => {
                     if byte == b'\\' {
                         // ST - String Terminator (ESC \)
-                        self.parse_dcs(sink);
+                        if !self.discard_overflowed_string(sink, "ESC P") {
+                            self.parse_dcs(sink);
+                        }
                         self.parse_buffer.clear();
                         self.reset();
                         i += 1;
@@ -1541,7 +1592,9 @@ impl CommandParser for AnsiParser {
                 ParserState::ApsEscape => {
                     if byte == b'\\' {
                         // ST - String Terminator (ESC \)
-                        if self.parse_buffer == b"SyncTERM:Q;JXL" {
+                        if self.discard_overflowed_string(sink, "ESC _") {
+                            // Dropped and reported.
+                        } else if self.parse_buffer == b"SyncTERM:Q;JXL" {
                             sink.request(TerminalRequest::JxlSupportReport);
                         } else {
                             sink.aps(&self.parse_buffer);

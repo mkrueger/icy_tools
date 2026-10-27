@@ -77,14 +77,35 @@ fn test_unterminated_dcs_payload_is_capped() {
     }
     parser.parse(b"\x1b\\", &mut sink);
 
-    let Some(DeviceControlString::Sixel { sixel_data, .. }) = sink.dcs_commands.first() else {
-        panic!("Expected Sixel");
-    };
-    assert!(sixel_data.len() <= AnsiParser::MAX_STRING_LEN);
+    // The cut-off payload is reported and dropped, not drawn as a partial Sixel.
+    assert!(sink.dcs_commands.is_empty());
+    assert_eq!(sink.errors.len(), 1);
 
     // The parser still resyncs on the terminator.
     parser.parse(b"A", &mut sink);
     assert_eq!(sink.text, b"A");
+}
+
+#[test]
+fn test_oversized_apc_and_osc_strings_are_dropped() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+    let payload = vec![b'x'; AnsiParser::MAX_STRING_LEN + 1];
+
+    parser.parse(b"\x1b_SyncTERM:C;S;audio.ogg;", &mut sink);
+    parser.parse(&payload, &mut sink);
+    parser.parse(b"\x1b\\", &mut sink);
+    assert!(sink.aps_data.is_empty());
+
+    parser.parse(b"\x1b]8;;", &mut sink);
+    parser.parse(&payload, &mut sink);
+    parser.parse(b"\x07", &mut sink);
+    assert!(sink.osc_commands.is_empty());
+    assert_eq!(sink.errors.len(), 2);
+
+    // The next string is dispatched as usual.
+    parser.parse(b"\x1b_short\x1b\\", &mut sink);
+    assert_eq!(sink.aps_data, vec![b"short".to_vec()]);
 }
 
 #[test]
@@ -111,6 +132,27 @@ fn test_mutually_recursive_macros_do_not_recurse() {
     parser.parse(b"\x1b[1*z", &mut sink);
 
     assert_eq!(sink.text, b"AB");
+}
+
+#[test]
+fn test_nested_macro_expansion_is_bounded() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // Macro 0 prints 1000 "A"s, macro 1 invokes macro 0 1000 times, macro 2 invokes macro 1 10 times.
+    // Fully expanded that is 10 MB of output from a few bytes of input; each extra level multiplies it.
+    parser.parse(b"\x1bP0;0;1!z!1000;41;\x1b\\", &mut sink);
+    parser.parse(b"\x1bP1;0;1!z!1000;1B5B302A7A;\x1b\\", &mut sink);
+    parser.parse(b"\x1bP2;0;1!z!10;1B5B312A7A;\x1b\\", &mut sink);
+    parser.parse(b"\x1b[2*z", &mut sink);
+
+    assert!(!sink.text.is_empty());
+    assert!(sink.text.len() < 5 * 1024 * 1024, "expanded {} bytes", sink.text.len());
+
+    // The budget is per top-level invocation, so the next one runs again.
+    sink.text.clear();
+    parser.parse(b"\x1b[0*z", &mut sink);
+    assert_eq!(sink.text.len(), 1000);
 }
 
 #[test]

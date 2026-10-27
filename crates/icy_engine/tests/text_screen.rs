@@ -238,6 +238,52 @@ fn test_decstbm_reset_preserves_left_right_margins() {
 }
 
 #[test]
+fn test_horizontal_scroll_handles_cleared_and_short_lines() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    // After a clear the lines are gone; scrolling them must treat them as blank.
+    parser.parse(b"\x1b[2J\x1b[ @\x1b[ A", &mut ScreenSink::new(&mut screen));
+
+    // A line shorter than the screen scrolls as if it were padded with blanks.
+    parser.parse(b"\x1b[2J\x1b[HABC\x1b[ @", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, 'B');
+    assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'C');
+    assert_eq!(screen.char_at(Position::new(2, 0)).ch, ' ');
+
+    parser.parse(b"\x1b[ A", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.char_at(Position::new(0, 0)).ch, ' ');
+    assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'B');
+    assert_eq!(screen.char_at(Position::new(2, 0)).ch, 'C');
+}
+
+#[test]
+fn test_margins_are_clamped_to_the_screen() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    // A bottom or right margin past the screen is limited to its last row or column.
+    parser.parse(b"\x1b[2;9999r\x1b[?69h", &mut ScreenSink::new(&mut screen));
+    screen.terminal_state_mut().set_margins_left_right(2, 9999);
+    assert_eq!(screen.terminal_state().margins_top_bottom(), Some((1, 24)));
+    assert_eq!(screen.terminal_state().margins_left_right(), Some((2, 79)));
+    parser.parse(b"\x1b[ @\x1b[ A", &mut ScreenSink::new(&mut screen));
+
+    // A margin that starts past the screen is dropped.
+    parser.parse(b"\x1b[9000;9999r", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().margins_top_bottom(), None);
+
+    // Shrinking the screen clamps margins that no longer fit and drops those that start outside it.
+    parser.parse(b"\x1b[5;20r\x1b[50;70s", &mut ScreenSink::new(&mut screen));
+    screen.terminal_state_mut().set_size(Size::new(60, 10));
+    assert_eq!(screen.terminal_state().margins_top_bottom(), Some((4, 9)));
+    assert_eq!(screen.terminal_state().margins_left_right(), Some((49, 59)));
+    screen.terminal_state_mut().set_size(Size::new(40, 4));
+    assert_eq!(screen.terminal_state().margins_top_bottom(), None);
+    assert_eq!(screen.terminal_state().margins_left_right(), None);
+}
+
+#[test]
 fn test_last_column_flag_delays_wrap_until_next_character() {
     let mut screen = TextScreen::new(Size::new(3, 2));
     screen.terminal_state_mut().last_column_flag_mode = true;
@@ -1616,4 +1662,111 @@ fn test_render_snapshot_leaves_out_scrollback() {
     assert_eq!(snapshot.render_region_to_rgba(region, &options), screen.render_region_to_rgba(region, &options));
     let snapshot = snapshot.as_any_mut().downcast_mut::<TextScreen>().unwrap();
     assert!(snapshot.scrollback_buffer.chunks.is_empty());
+}
+
+#[test]
+fn test_selecting_a_dcs_loaded_font_slot_succeeds() {
+    use base64::Engine;
+    use icy_engine::FontSelectionState;
+
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    // A raw 8x16 font into slot 43, the first slot above the built-in ones.
+    let font = base64::engine::general_purpose::STANDARD.encode([0x55u8; 256 * 16]);
+    let load = format!("\x1bPCTerm:Font:43:{font}\x1b\\");
+    parser.parse(load.as_bytes(), &mut ScreenSink::new(&mut screen));
+    assert!(screen.font(43).is_some());
+
+    parser.parse(b"\x1b[0;43 D", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().font_selection_state, FontSelectionState::Success);
+    assert_eq!(screen.caret().font_page(), 43);
+
+    // A slot with nothing in it still fails.
+    parser.parse(b"\x1b[0;44 D", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().font_selection_state, FontSelectionState::Failure);
+}
+
+#[test]
+fn test_dcs_font_load_checks_slot_and_height() {
+    use base64::Engine;
+
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+    let load = |slot: usize, data: &[u8]| format!("\x1bPCTerm:Font:{slot}:{}\x1b\\", base64::engine::general_purpose::STANDARD.encode(data));
+    let font_8x16 = [0x55u8; 256 * 16];
+    let slot_0 = screen.font(0).map(|font| font.name.clone());
+
+    // The built-in slots, and slot 256 (which would wrap to 0), are not loadable.
+    parser.parse(load(0, &font_8x16).as_bytes(), &mut ScreenSink::new(&mut screen));
+    parser.parse(load(256, &font_8x16).as_bytes(), &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.font(0).map(|font| font.name.clone()), slot_0);
+
+    // Raw data of 256 rows per glyph would wrap the height to 0.
+    parser.parse(load(43, &vec![0x55u8; 256 * 256]).as_bytes(), &mut ScreenSink::new(&mut screen));
+    assert!(screen.font(43).is_none());
+
+    // A PSF1 font taller than 32 rows is cut to 32, as PSF2 fonts are.
+    let mut psf1 = vec![0x36, 0x04, 0x00, 40];
+    psf1.extend(std::iter::repeat_n(0xFFu8, 256 * 40));
+    parser.parse(load(44, &psf1).as_bytes(), &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.font(44).map(|font| font.height), Some(32));
+
+    parser.parse(load(45, &font_8x16).as_bytes(), &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.font(45).map(|font| font.height), Some(16));
+}
+
+#[test]
+fn test_font_selection_above_255_does_not_wrap() {
+    use icy_engine::FontSelectionState;
+
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    // 257 would wrap to the built-in font in slot 1.
+    parser.parse(b"\x1b[0;257 D", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().font_selection_state, FontSelectionState::Failure);
+    assert_eq!(screen.caret().font_page(), 0);
+
+    parser.parse(b"\x1b[0;1 D", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().font_selection_state, FontSelectionState::Success);
+    assert_eq!(screen.caret().font_page(), 1);
+}
+
+#[test]
+fn test_scrollback_size_limits_stored_chunks() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    // With a size of 0 nothing is captured, from a clear or from scrolling.
+    screen.set_scrollback_buffer_size(0);
+    parser.parse(b"Hello\x1b[2J", &mut ScreenSink::new(&mut screen));
+    parser.parse(&[b'\n'; 30], &mut ScreenSink::new(&mut screen));
+    assert!(screen.scrollback_buffer.chunks.is_empty());
+
+    screen.set_scrollback_buffer_size(5);
+    for _ in 0..10 {
+        parser.parse(b"Hello\x1b[2J", &mut ScreenSink::new(&mut screen));
+    }
+    assert_eq!(screen.scrollback_buffer.chunks.len(), 5);
+
+    // Shrinking the size drops the oldest chunks right away.
+    screen.set_scrollback_buffer_size(2);
+    assert_eq!(screen.scrollback_buffer.chunks.len(), 2);
+    screen.set_scrollback_buffer_size(0);
+    assert!(screen.scrollback_buffer.chunks.is_empty());
+}
+
+#[test]
+fn test_synchronized_output_mode_starts_and_ends() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    parser.parse(b"\x1b[?2026h", &mut ScreenSink::new(&mut screen));
+    assert!(screen.terminal_state().synchronized_output());
+    assert!(screen.terminal_state().synchronized_output_active());
+
+    parser.parse(b"\x1b[?2026l", &mut ScreenSink::new(&mut screen));
+    assert!(!screen.terminal_state().synchronized_output());
+    assert!(!screen.terminal_state().synchronized_output_active());
 }

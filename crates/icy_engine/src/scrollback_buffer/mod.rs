@@ -81,6 +81,17 @@ impl ScrollbackBuffer {
 
     pub fn set_buffer_size(&mut self, buffer_size: usize) {
         self.buffer_size = buffer_size;
+        self.trim();
+    }
+
+    /// Whether anything is kept, so callers can skip rendering a chunk that would be dropped.
+    pub fn is_enabled(&self) -> bool {
+        self.buffer_size > 0
+    }
+
+    fn trim(&mut self) {
+        let excess = self.chunks.len().saturating_sub(self.buffer_size);
+        self.chunks.drain(..excess);
     }
 
     pub fn add_chunk(&mut self, rgba_data: Vec<u8>, size: Size) {
@@ -92,13 +103,11 @@ impl ScrollbackBuffer {
     }
 
     pub fn push_chunk(&mut self, chunk: ScrollbackChunk) {
-        if chunk.rgba_data.is_empty() {
+        if chunk.rgba_data.is_empty() || !self.is_enabled() {
             return;
         }
         self.chunks.push(chunk);
-        if self.chunks.len() > self.buffer_size {
-            self.chunks.remove(0);
-        }
+        self.trim();
     }
 
     pub fn clear(&mut self) {

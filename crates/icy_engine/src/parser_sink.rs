@@ -81,16 +81,28 @@ fn parse_image_apc_options<'a>(parts: impl Iterator<Item = &'a str>) -> ImageApc
 pub fn decode_image_blob(bytes: &[u8], is_jxl: bool, options: &str, font: Size, screen_size: Size) -> Option<(Position, Sixel)> {
     let options = parse_image_apc_options(options.split([';', ' ']).filter(|part| !part.is_empty()));
 
+    // Check the size from the header first, so a small file claiming a huge image
+    // is rejected before the decoder allocates pixel memory for it.
+    let too_large = |(width, height): (u32, u32)| {
+        let too_large = u64::from(width) * u64::from(height) > MAX_PIXELS;
+        if too_large {
+            log::warn!("Ignoring oversized inline image");
+        }
+        too_large
+    };
     let mut image = if is_jxl {
         let decoder = jxl_oxide::integration::JxlDecoder::new(std::io::Cursor::new(bytes)).ok()?;
+        if too_large(image::ImageDecoder::dimensions(&decoder)) {
+            return None;
+        }
         image::DynamicImage::from_decoder(decoder).ok()?
     } else {
-        image::load_from_memory_with_format(bytes, image::ImageFormat::Pnm).ok()?
+        let reader = || image::ImageReader::with_format(std::io::Cursor::new(bytes), image::ImageFormat::Pnm);
+        if too_large(reader().into_dimensions().ok()?) {
+            return None;
+        }
+        reader().decode().ok()?
     };
-    if u64::from(image.width()) * u64::from(image.height()) > MAX_PIXELS {
-        log::warn!("Ignoring oversized inline image");
-        return None;
-    }
 
     if options.sx >= image.width() || options.sy >= image.height() {
         return None;
@@ -907,7 +919,11 @@ impl CommandSink for ScreenSink<'_> {
                 self.screen.caret_mut().set_font_page(page as u8);
             }
             TerminalCommand::CsiFontSelection { slot: _slot, font_number } => {
-                let nr = font_number as u8;
+                // There are 256 font slots; a larger number must not wrap around to a low slot.
+                let Ok(nr) = u8::try_from(font_number) else {
+                    self.screen_mut().terminal_state_mut().font_selection_state = FontSelectionState::Failure;
+                    return;
+                };
                 if self.screen().font(nr as usize).is_some() {
                     self.set_font_selection_success(nr);
                 }
@@ -916,8 +932,12 @@ impl CommandSink for ScreenSink<'_> {
                         self.screen_mut().set_font(nr as usize, font.clone());
                         self.set_font_selection_success(nr);
                     }
+                    // No built-in font for this slot: a font loaded into it (DCS,
+                    // slots 43 and up) was selected above, otherwise it fails.
                     None => {
-                        self.screen_mut().terminal_state_mut().font_selection_state = FontSelectionState::Failure;
+                        if self.screen().font(nr as usize).is_none() {
+                            self.screen_mut().terminal_state_mut().font_selection_state = FontSelectionState::Failure;
+                        }
                     }
                 }
             }
@@ -1181,8 +1201,16 @@ impl CommandSink for ScreenSink<'_> {
         // DCS handling for font loading and sixel
         match dcs {
             DeviceControlString::LoadFont(slot, data) => {
+                // CTerm loads fonts only into the slots above the built-in ones (43-255).
+                if !(crate::ANSI_SLOT_COUNT..=255).contains(&slot) {
+                    log::error!("Ignoring custom font for slot {slot}, outside {}-255", crate::ANSI_SLOT_COUNT);
+                    return;
+                }
                 // Load custom font from decoded base64 data
                 match crate::BitFont::from_bytes(format!("custom font {slot}"), &data) {
+                    Ok(font) if font.height == 0 || font.height as usize > crate::MAX_GLYPH_HEIGHT => {
+                        log::error!("Ignoring custom font with height {}", font.height);
+                    }
                     Ok(font) => {
                         log::info!("Loaded custom font into slot {slot}");
                         self.screen.set_font(slot, font);

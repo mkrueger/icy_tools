@@ -56,6 +56,8 @@ quantette = { workspace = true }
 imgref = "1.12.2"
 rgb = "0.8.53"
 fastrand.workspace = true
+# std::time::Instant panics on wasm32-unknown-unknown; this is std::time on other targets.
+web-time = "1.1"
 
 [dev-dependencies]
 # Checks that files written by the C zstd library still load.
