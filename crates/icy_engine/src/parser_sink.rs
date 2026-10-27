@@ -1481,6 +1481,22 @@ mod tests {
     }
 
     #[test]
+    fn ris_resets_the_cterm_attribute_modes() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        let mut parser = AnsiParser::new();
+
+        parser.parse(b"\x1b[?31;32;34;35h", &mut ScreenSink::new(&mut screen));
+        assert!(screen.terminal_state().bright_alt_charset && screen.terminal_state().blink_disabled);
+
+        parser.parse(b"\x1bc", &mut ScreenSink::new(&mut screen));
+        let state = screen.terminal_state();
+        assert!(!state.bright_alt_charset);
+        assert!(!state.bright_intensity_disabled);
+        assert!(!state.blink_alt_charset);
+        assert!(!state.blink_disabled);
+    }
+
+    #[test]
     fn osc104_resets_to_the_default_palette() {
         let mut screen = crate::TextScreen::new((80, 25));
         // A 16-color default palette that isn't xterm's (internal DOS order).

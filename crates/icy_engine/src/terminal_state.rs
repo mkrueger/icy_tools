@@ -598,6 +598,12 @@ impl TerminalState {
         self.cleared_screen = true;
         self.inverse_video = false;
 
+        // CTerm attribute modes (CSI ? 31/32/34/35 h) are off after RIS.
+        self.bright_alt_charset = false;
+        self.bright_intensity_disabled = false;
+        self.blink_alt_charset = false;
+        self.blink_disabled = false;
+
         // Recompute tab stops
         self.reset_tabs();
     }
