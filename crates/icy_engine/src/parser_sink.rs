@@ -265,18 +265,20 @@ impl<'a> ScreenSink<'a> {
         }
     }
 
-    fn set_font_selection_success(&mut self, slot: u8) {
-        self.screen.terminal_state_mut().font_selection_state = FontSelectionState::Success;
-        self.screen.caret_mut().set_font_page(slot);
-
-        if self.screen.caret().attribute.is_blinking() && self.screen.caret().attribute.is_bold() {
-            self.screen.terminal_state_mut().high_intensity_blink_attribute_font_slot = slot as usize;
-        } else if self.screen.caret().attribute.is_blinking() {
-            self.screen.terminal_state_mut().blink_attribute_font_slot = slot as usize;
-        } else if self.screen.caret().attribute.is_bold() {
-            self.screen.terminal_state_mut().high_intensity_attribute_font_slot = slot as usize;
-        } else {
-            self.screen.terminal_state_mut().normal_attribute_font_slot = slot as usize;
+    /// Font selection (`CSI Ps1 ; Ps2 SP D`): Ps1 says which font is set.
+    /// 0 is the primary font, 1 the bright-text font (`CSI ? 31 h`), 2 the blink
+    /// font (`CSI ? 34 h`) and 3 the font for text that is both.
+    fn set_font_selection_success(&mut self, font_slot_type: u16, slot: u8) {
+        let state = self.screen.terminal_state_mut();
+        state.font_selection_state = FontSelectionState::Success;
+        match font_slot_type {
+            0 => {
+                state.normal_attribute_font_slot = slot as usize;
+                self.screen.caret_mut().set_font_page(slot);
+            }
+            1 => state.high_intensity_attribute_font_slot = slot as usize,
+            2 => state.blink_attribute_font_slot = slot as usize,
+            _ => state.high_intensity_blink_attribute_font_slot = slot as usize,
         }
     }
 
@@ -906,15 +908,17 @@ impl CommandSink for ScreenSink<'_> {
             TerminalCommand::SetFontPage(page) => {
                 self.screen.caret_mut().set_font_page(page as u8);
             }
-            TerminalCommand::CsiFontSelection { slot: _slot, font_number } => {
+            // Ps1 other than 0-3 isn't defined; CTerm ignores it.
+            TerminalCommand::CsiFontSelection { slot, .. } if slot > 3 => {}
+            TerminalCommand::CsiFontSelection { slot, font_number } => {
                 let nr = font_number as u8;
                 if self.screen().font(nr as usize).is_some() {
-                    self.set_font_selection_success(nr);
+                    self.set_font_selection_success(slot, nr);
                 }
                 match BitFont::from_ansi_font_page(nr, self.screen().font_dimensions().height as u8) {
                     Some(font) => {
                         self.screen_mut().set_font(nr as usize, font.clone());
-                        self.set_font_selection_success(nr);
+                        self.set_font_selection_success(slot, nr);
                     }
                     None => {
                         self.screen_mut().terminal_state_mut().font_selection_state = FontSelectionState::Failure;
@@ -1398,6 +1402,27 @@ mod tests {
         // SGR 43 is DOS brown (6); iCE makes it yellow (14).
         assert_eq!(attr.background_color(), crate::AttributeColor::Palette(14));
         assert!(!attr.is_blinking());
+    }
+
+    #[test]
+    fn font_selection_ps1_sets_the_alternate_slots() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        let mut parser = AnsiParser::new();
+
+        // Ps1 = 1, 2, 3: the bright, blink and bright-blink fonts. Normal text
+        // keeps font 0.
+        parser.parse(b"\x1b[1;37 D\x1b[2;38 D\x1b[3;39 DA", &mut ScreenSink::new(&mut screen));
+        let state = screen.terminal_state();
+        assert_eq!(state.normal_attribute_font_slot, 0);
+        assert_eq!(state.high_intensity_attribute_font_slot, 37);
+        assert_eq!(state.blink_attribute_font_slot, 38);
+        assert_eq!(state.high_intensity_blink_attribute_font_slot, 39);
+        assert_eq!(screen.char_at(Position::new(0, 0)).font_page(), 0);
+
+        // Ps1 = 0 is the primary font.
+        parser.parse(b"\x1b[0;37 DB", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.terminal_state().normal_attribute_font_slot, 37);
+        assert_eq!(screen.char_at(Position::new(1, 0)).font_page(), 37);
     }
 
     #[test]
