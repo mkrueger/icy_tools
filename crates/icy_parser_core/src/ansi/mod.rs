@@ -16,6 +16,8 @@ pub struct AnsiParser {
     state: ParserState,
     params: Vec<u16>,
     parse_buffer: Vec<u8>,
+    /// The OSC/DCS/APS string being collected went past `MAX_STRING_LEN` and is discarded at ST.
+    string_overflow: bool,
     /// The character REP (`CSI n b`) repeats; one byte unless `utf8` is set.
     last_char: [u8; 4],
     last_char_len: u8,
@@ -46,6 +48,7 @@ impl Default for AnsiParser {
             state: ParserState::Default,
             params: Vec::new(),
             parse_buffer: Vec::new(),
+            string_overflow: false,
             last_char: [0; 4],
             last_char_len: 1,
             printed_tail: [0; 4],
@@ -114,10 +117,37 @@ impl AnsiParser {
     /// Drops data once the cap is reached, so a peer that never sends ST cannot
     /// grow the buffer without bound. Scanning continues so the parser still resyncs.
     fn push_string_data(&mut self, data: &[u8]) {
-        if self.parse_buffer.len().saturating_add(data.len()) > Self::MAX_STRING_LEN {
+        if self.string_overflow || self.parse_buffer.len().saturating_add(data.len()) > Self::MAX_STRING_LEN {
+            self.string_overflow = true;
+            self.parse_buffer.clear();
             return;
         }
         self.parse_buffer.extend_from_slice(data);
+    }
+
+    /// Starts collecting a new OSC/DCS/APS string.
+    fn begin_string(&mut self) {
+        self.parse_buffer.clear();
+        self.string_overflow = false;
+    }
+
+    /// At ST: a string that went past the cap is reported and dropped instead of being
+    /// dispatched cut short. Returns `true` if the string was dropped.
+    fn discard_overflowed_string(&mut self, sink: &mut dyn CommandSink, introducer: &str) -> bool {
+        if !self.string_overflow {
+            return false;
+        }
+        self.string_overflow = false;
+        self.parse_buffer.clear();
+        sink.report_error(
+            ParseError::MalformedSequence {
+                description: "String longer than the maximum length",
+                sequence: Some(format!("{introducer} ...")),
+                context: Some(format!("Limit is {} bytes; the string was dropped", Self::MAX_STRING_LEN)),
+            },
+            crate::ErrorLevel::Error,
+        );
+        true
     }
 
     /// Set the ANSI music option
@@ -469,21 +499,21 @@ impl CommandParser for AnsiParser {
                         }
                         b']' => {
                             // OSC - Operating System Command
-                            self.parse_buffer.clear();
+                            self.begin_string();
                             self.state = ParserState::OscString;
                             i += 1;
                             printable_start = i;
                         }
                         b'P' => {
                             // DCS - Device Control String
-                            self.parse_buffer.clear();
+                            self.begin_string();
                             self.state = ParserState::DcsString;
                             i += 1;
                             printable_start = i;
                         }
                         b'_' => {
                             // APS - Application Program String
-                            self.parse_buffer.clear();
+                            self.begin_string();
                             self.state = ParserState::ApsString;
                             i += 1;
                             printable_start = i;
@@ -1445,7 +1475,9 @@ impl CommandParser for AnsiParser {
 
                         if term_byte == BELL {
                             // BEL - End of OSC
-                            self.emit_osc_sequence(sink);
+                            if !self.discard_overflowed_string(sink, "ESC ]") {
+                                self.emit_osc_sequence(sink);
+                            }
                             self.reset();
                             i += term_pos + 1;
                             printable_start = i;
@@ -1463,7 +1495,9 @@ impl CommandParser for AnsiParser {
 
                 ParserState::OscEscape => {
                     if byte == b'\\' {
-                        self.emit_osc_sequence(sink);
+                        if !self.discard_overflowed_string(sink, "ESC ]") {
+                            self.emit_osc_sequence(sink);
+                        }
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -1494,7 +1528,9 @@ impl CommandParser for AnsiParser {
                 ParserState::DcsEscape => {
                     if byte == b'\\' {
                         // ST - String Terminator (ESC \)
-                        self.parse_dcs(sink);
+                        if !self.discard_overflowed_string(sink, "ESC P") {
+                            self.parse_dcs(sink);
+                        }
                         self.parse_buffer.clear();
                         self.reset();
                         i += 1;
@@ -1556,7 +1592,9 @@ impl CommandParser for AnsiParser {
                 ParserState::ApsEscape => {
                     if byte == b'\\' {
                         // ST - String Terminator (ESC \)
-                        if self.parse_buffer == b"SyncTERM:Q;JXL" {
+                        if self.discard_overflowed_string(sink, "ESC _") {
+                            // Dropped and reported.
+                        } else if self.parse_buffer == b"SyncTERM:Q;JXL" {
                             sink.request(TerminalRequest::JxlSupportReport);
                         } else {
                             sink.aps(&self.parse_buffer);

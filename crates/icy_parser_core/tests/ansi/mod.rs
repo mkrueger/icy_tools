@@ -32,6 +32,7 @@ pub struct CollectSink {
     pub aps_data: Vec<Vec<u8>>,
     pub dcs_commands: Vec<DeviceControlString>,
     pub osc_commands: Vec<OperatingSystemCommand>,
+    pub errors: Vec<ParseError>,
 }
 
 impl CollectSink {
@@ -43,6 +44,7 @@ impl CollectSink {
             aps_data: Vec::new(),
             dcs_commands: Vec::new(),
             osc_commands: Vec::new(),
+            errors: Vec::new(),
         }
     }
 }
@@ -70,6 +72,10 @@ impl CommandSink for CollectSink {
 
     fn aps(&mut self, data: &[u8]) {
         self.aps_data.push(data.to_vec());
+    }
+
+    fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
+        self.errors.push(error);
     }
 }
 

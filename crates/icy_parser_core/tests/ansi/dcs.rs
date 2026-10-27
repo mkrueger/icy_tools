@@ -77,14 +77,35 @@ fn test_unterminated_dcs_payload_is_capped() {
     }
     parser.parse(b"\x1b\\", &mut sink);
 
-    let Some(DeviceControlString::Sixel { sixel_data, .. }) = sink.dcs_commands.first() else {
-        panic!("Expected Sixel");
-    };
-    assert!(sixel_data.len() <= AnsiParser::MAX_STRING_LEN);
+    // The cut-off payload is reported and dropped, not drawn as a partial Sixel.
+    assert!(sink.dcs_commands.is_empty());
+    assert_eq!(sink.errors.len(), 1);
 
     // The parser still resyncs on the terminator.
     parser.parse(b"A", &mut sink);
     assert_eq!(sink.text, b"A");
+}
+
+#[test]
+fn test_oversized_apc_and_osc_strings_are_dropped() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+    let payload = vec![b'x'; AnsiParser::MAX_STRING_LEN + 1];
+
+    parser.parse(b"\x1b_SyncTERM:C;S;audio.ogg;", &mut sink);
+    parser.parse(&payload, &mut sink);
+    parser.parse(b"\x1b\\", &mut sink);
+    assert!(sink.aps_data.is_empty());
+
+    parser.parse(b"\x1b]8;;", &mut sink);
+    parser.parse(&payload, &mut sink);
+    parser.parse(b"\x07", &mut sink);
+    assert!(sink.osc_commands.is_empty());
+    assert_eq!(sink.errors.len(), 2);
+
+    // The next string is dispatched as usual.
+    parser.parse(b"\x1b_short\x1b\\", &mut sink);
+    assert_eq!(sink.aps_data, vec![b"short".to_vec()]);
 }
 
 #[test]
