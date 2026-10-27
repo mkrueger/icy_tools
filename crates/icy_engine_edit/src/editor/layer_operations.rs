@@ -811,17 +811,18 @@ impl EditState {
         self.push_undo_action(op)
     }
 
-    /// Returns the make layer transparent of this [`EditState`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if .
+    /// Updates a layer's properties as an undoable operation.
     ///
     /// # Errors
     ///
-    /// This function will return an error if .
+    /// Returns an error if the layer does not exist or its properties cannot be updated.
     pub fn update_layer_properties(&mut self, layer: usize, new_properties: LayerProperties) -> Result<()> {
-        if self.get_buffer().layers.get(layer).is_some_and(Layer::is_group) {
+        let current = self
+            .get_buffer()
+            .layers
+            .get(layer)
+            .ok_or_else(|| crate::EngineError::Generic(format!("Invalid layer index: {layer}")))?;
+        if current.is_group() {
             let _undo = self.begin_atomic_undo(fl!(crate::LANGUAGE_LOADER, "undo-move-layer-group"));
             if new_properties.offset != self.get_buffer().layers[layer].base_offset() {
                 self.move_group(layer, new_properties.offset)?;
