@@ -397,13 +397,14 @@ impl AnsiParser {
         if self.in_macro == 0 {
             self.macro_budget = Self::MAX_MACRO_EXPANSION;
         }
-        if let Some(macro_data) = self.macros.get(&macro_id).cloned() {
+        if let Some(macro_data) = self.macros.get(&macro_id) {
             if macro_data.len() > self.macro_budget {
                 // Out of budget: drop the rest of this expansion.
                 self.macro_budget = 0;
                 return;
             }
             self.macro_budget -= macro_data.len();
+            let macro_data = macro_data.clone();
             self.in_macro |= bit;
             self.parse(&macro_data, sink);
             self.in_macro &= !bit;
