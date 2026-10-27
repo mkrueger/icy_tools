@@ -158,7 +158,8 @@ impl PsfFont {
         }
 
         let width = 8u8;
-        let height = char_size as u8;
+        // Glyphs hold at most 32 rows, as for PSF2.
+        let height = char_size.min(32) as u8;
 
         let mut font = Self {
             name: None,

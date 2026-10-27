@@ -907,7 +907,11 @@ impl CommandSink for ScreenSink<'_> {
                 self.screen.caret_mut().set_font_page(page as u8);
             }
             TerminalCommand::CsiFontSelection { slot: _slot, font_number } => {
-                let nr = font_number as u8;
+                // There are 256 font slots; a larger number must not wrap around to a low slot.
+                let Ok(nr) = u8::try_from(font_number) else {
+                    self.screen_mut().terminal_state_mut().font_selection_state = FontSelectionState::Failure;
+                    return;
+                };
                 if self.screen().font(nr as usize).is_some() {
                     self.set_font_selection_success(nr);
                 }
@@ -1185,8 +1189,16 @@ impl CommandSink for ScreenSink<'_> {
         // DCS handling for font loading and sixel
         match dcs {
             DeviceControlString::LoadFont(slot, data) => {
+                // CTerm loads fonts only into the slots above the built-in ones (43-255).
+                if !(crate::ANSI_SLOT_COUNT..=255).contains(&slot) {
+                    log::error!("Ignoring custom font for slot {slot}, outside {}-255", crate::ANSI_SLOT_COUNT);
+                    return;
+                }
                 // Load custom font from decoded base64 data
                 match crate::BitFont::from_bytes(format!("custom font {slot}"), &data) {
+                    Ok(font) if font.height == 0 || font.height as usize > crate::MAX_GLYPH_HEIGHT => {
+                        log::error!("Ignoring custom font with height {}", font.height);
+                    }
                     Ok(font) => {
                         log::info!("Loaded custom font into slot {slot}");
                         self.screen.set_font(slot, font);

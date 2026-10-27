@@ -1686,3 +1686,49 @@ fn test_selecting_a_dcs_loaded_font_slot_succeeds() {
     parser.parse(b"\x1b[0;44 D", &mut ScreenSink::new(&mut screen));
     assert_eq!(screen.terminal_state().font_selection_state, FontSelectionState::Failure);
 }
+
+#[test]
+fn test_dcs_font_load_checks_slot_and_height() {
+    use base64::Engine;
+
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+    let load = |slot: usize, data: &[u8]| format!("\x1bPCTerm:Font:{slot}:{}\x1b\\", base64::engine::general_purpose::STANDARD.encode(data));
+    let font_8x16 = [0x55u8; 256 * 16];
+    let slot_0 = screen.font(0).map(|font| font.name.clone());
+
+    // The built-in slots, and slot 256 (which would wrap to 0), are not loadable.
+    parser.parse(load(0, &font_8x16).as_bytes(), &mut ScreenSink::new(&mut screen));
+    parser.parse(load(256, &font_8x16).as_bytes(), &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.font(0).map(|font| font.name.clone()), slot_0);
+
+    // Raw data of 256 rows per glyph would wrap the height to 0.
+    parser.parse(load(43, &vec![0x55u8; 256 * 256]).as_bytes(), &mut ScreenSink::new(&mut screen));
+    assert!(screen.font(43).is_none());
+
+    // A PSF1 font taller than 32 rows is cut to 32, as PSF2 fonts are.
+    let mut psf1 = vec![0x36, 0x04, 0x00, 40];
+    psf1.extend(std::iter::repeat_n(0xFFu8, 256 * 40));
+    parser.parse(load(44, &psf1).as_bytes(), &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.font(44).map(|font| font.height), Some(32));
+
+    parser.parse(load(45, &font_8x16).as_bytes(), &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.font(45).map(|font| font.height), Some(16));
+}
+
+#[test]
+fn test_font_selection_above_255_does_not_wrap() {
+    use icy_engine::FontSelectionState;
+
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    // 257 would wrap to the built-in font in slot 1.
+    parser.parse(b"\x1b[0;257 D", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().font_selection_state, FontSelectionState::Failure);
+    assert_eq!(screen.caret().font_page(), 0);
+
+    parser.parse(b"\x1b[0;1 D", &mut ScreenSink::new(&mut screen));
+    assert_eq!(screen.terminal_state().font_selection_state, FontSelectionState::Success);
+    assert_eq!(screen.caret().font_page(), 1);
+}

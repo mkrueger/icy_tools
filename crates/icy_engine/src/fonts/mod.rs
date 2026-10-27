@@ -15,7 +15,7 @@ pub mod rip;
 pub mod sauce;
 pub mod skypix;
 
-pub use compact_glyph::CompactGlyph;
+pub use compact_glyph::{CompactGlyph, MAX_GLYPH_HEIGHT};
 pub use psf_parser::PsfFont;
 
 use super::Size;
@@ -333,8 +333,8 @@ impl BitFont {
             return Ok(Self::from_yaff_font(&yaff, name));
         }
 
-        // Try as raw font data (must be multiple of 256)
-        if data.len().is_multiple_of(256) && !data.is_empty() {
+        // Try as raw font data: 256 glyphs of 1 to 32 rows each
+        if data.len().is_multiple_of(256) && (1..=MAX_GLYPH_HEIGHT).contains(&(data.len() / 256)) {
             let char_height = data.len() / 256;
             return Ok(Self::create_8(name, 8, char_height as u8, data));
         }
