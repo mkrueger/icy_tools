@@ -1732,3 +1732,27 @@ fn test_font_selection_above_255_does_not_wrap() {
     assert_eq!(screen.terminal_state().font_selection_state, FontSelectionState::Success);
     assert_eq!(screen.caret().font_page(), 1);
 }
+
+#[test]
+fn test_scrollback_size_limits_stored_chunks() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    // With a size of 0 nothing is captured, from a clear or from scrolling.
+    screen.set_scrollback_buffer_size(0);
+    parser.parse(b"Hello\x1b[2J", &mut ScreenSink::new(&mut screen));
+    parser.parse(&[b'\n'; 30], &mut ScreenSink::new(&mut screen));
+    assert!(screen.scrollback_buffer.chunks.is_empty());
+
+    screen.set_scrollback_buffer_size(5);
+    for _ in 0..10 {
+        parser.parse(b"Hello\x1b[2J", &mut ScreenSink::new(&mut screen));
+    }
+    assert_eq!(screen.scrollback_buffer.chunks.len(), 5);
+
+    // Shrinking the size drops the oldest chunks right away.
+    screen.set_scrollback_buffer_size(2);
+    assert_eq!(screen.scrollback_buffer.chunks.len(), 2);
+    screen.set_scrollback_buffer_size(0);
+    assert!(screen.scrollback_buffer.chunks.is_empty());
+}

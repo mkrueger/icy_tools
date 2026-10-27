@@ -505,7 +505,7 @@ impl EditableScreen for TextScreen {
     fn scroll_up(&mut self) {
         self.finish_grapheme();
         // Add top line to scrollback before scrolling (while data is still there)
-        if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state().is_terminal_buffer {
+        if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state().is_terminal_buffer && self.scrollback_buffer.is_enabled() {
             let font_height = self.font_dimensions().height;
             let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, font_height);
             self.scrollback_buffer.push_chunk(chunk);
@@ -892,7 +892,7 @@ impl EditableScreen for TextScreen {
 
     fn clear_screen(&mut self) {
         // Add entire screen to scrollback
-        if self.terminal_state().is_terminal_buffer {
+        if self.terminal_state().is_terminal_buffer && self.scrollback_buffer.is_enabled() {
             let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, self.resolution().height);
             self.scrollback_buffer.push_chunk(chunk);
         }

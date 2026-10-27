@@ -654,7 +654,7 @@ impl EditableScreen for PaletteScreenBuffer {
 
         self.mark_dirty();
         // Add top line to scrollback before scrolling (while data is still there)
-        if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state.is_terminal_buffer {
+        if self.terminal_state().margins_top_bottom().is_none() && self.terminal_state.is_terminal_buffer && self.scrollback_buffer.is_enabled() {
             let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, line_height as i32);
             self.scrollback_buffer.push_chunk(chunk);
         }
@@ -741,7 +741,7 @@ impl EditableScreen for PaletteScreenBuffer {
     fn clear_screen(&mut self) {
         self.mark_dirty();
         // Add entire screen to scrollback
-        if self.terminal_state.is_terminal_buffer {
+        if self.terminal_state.is_terminal_buffer && self.scrollback_buffer.is_enabled() {
             let chunk = crate::scrollback_buffer::ScrollbackChunk::from_screen(self, self.pixel_size.height);
             self.scrollback_buffer.push_chunk(chunk);
         }
