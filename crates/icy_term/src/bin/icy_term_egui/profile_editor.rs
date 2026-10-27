@@ -349,7 +349,13 @@ pub(crate) fn terminal(ui: &mut egui::Ui, entry: &mut Address) {
     });
     if matches!(entry.terminal_type, TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi) {
         appearance::combo_row(ui, &tr!("egui-ansi-music"), entry.ansi_music.to_string(), |ui| {
-            for music in [MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both] {
+            for music in [
+                MusicOption::Off,
+                MusicOption::Banana,
+                MusicOption::Conflicting,
+                MusicOption::Both,
+                MusicOption::SyncTerm,
+            ] {
                 ui.selectable_value(&mut entry.ansi_music, music, music.to_string());
             }
         });

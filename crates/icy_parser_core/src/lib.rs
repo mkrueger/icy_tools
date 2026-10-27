@@ -324,10 +324,24 @@ pub enum DecMode {
     /// When set: cursor is visible
     /// When reset: cursor is invisible
     CursorVisible = 25,
-    /// ATT610 - Blinking Cursor (Mode 35)
-    /// When set: cursor stops blinking
-    /// When reset: cursor blinks
-    CursorBlinking = 35,
+    /// ATT610 - Blinking Cursor (Mode 12)
+    /// When set: cursor blinks
+    /// When reset: cursor stops blinking
+    CursorBlinking = 12,
+
+    // CTerm character set and attribute modes
+    /// CTerm bright alternate character set (Mode 31)
+    /// When set: bold text uses the font selected with `CSI 1 ; Ps2 SP D`
+    BrightAltCharset = 31,
+    /// CTerm bright intensity disable (Mode 32)
+    /// When set: bold no longer brightens the foreground
+    BrightIntensityDisable = 32,
+    /// CTerm blink alternate character set (Mode 34)
+    /// When set: blinking text uses the font selected with `CSI 2 ; Ps2 SP D`
+    BlinkAltCharset = 34,
+    /// CTerm blink disabled (Mode 35)
+    /// When set: blinking text no longer blinks
+    BlinkDisabled = 35,
 
     // iCE Colors / Blink Mode
     /// iCE Colors (Mode 33)
@@ -396,8 +410,12 @@ impl DecMode {
             6 => Some(Self::OriginMode),
             7 => Some(Self::AutoWrap),
             25 => Some(Self::CursorVisible),
+            12 => Some(Self::CursorBlinking),
+            31 => Some(Self::BrightAltCharset),
+            32 => Some(Self::BrightIntensityDisable),
             33 => Some(Self::IceColors),
-            35 => Some(Self::CursorBlinking),
+            34 => Some(Self::BlinkAltCharset),
+            35 => Some(Self::BlinkDisabled),
             69 => Some(Self::LeftRightMargin),
             80 => Some(Self::SixelDisplay),
             9 => Some(Self::X10Mouse),
@@ -1050,9 +1068,12 @@ pub enum TerminalRequest {
     /// Terminal should respond with version and hardware info
     SecondaryDeviceAttributes,
 
-    /// Extended Device Attributes: ESC[<c
-    /// Terminal should respond with extended capabilities
-    ExtendedDeviceAttributes,
+    /// Extended Device Attributes (CTDA): ESC[<c or ESC[<0c
+    /// Terminal should respond with extended capabilities.
+    /// Carries the parameters: a reply has the same shape
+    /// (ESC[<0;1;2...c), so a host that echoes it back sends feature numbers,
+    /// which should not be answered again.
+    ExtendedDeviceAttributes(Vec<u16>),
 
     /// Device Status Report (DSR): ESC[5n
     /// Terminal should respond with "\x1b[0n" (terminal OK)
@@ -1128,6 +1149,11 @@ pub enum TerminalRequest {
     /// Font Dimension Report: ESC[=3n
     /// Terminal should respond with current font dimensions
     FontDimensionReport,
+
+    /// Any other CTerm State/Mode Request: ESC[={Ps}[;{Pn}...]n
+    /// Carries `Ps` and the remaining parameters (for example `ESC[=6n`,
+    /// the OSC 8 hyperlink support query). The host decides what to answer.
+    StateModeReport(u16, Vec<u16>),
 
     /// Macro Space Report: ESC[?62n
     /// Terminal should respond with available macro space
@@ -1256,6 +1282,10 @@ pub trait CommandParser: Send {
         self.parse(input, sink);
         input.len()
     }
+
+    /// Change which introducers start ANSI music, at run time. Parsers
+    /// without ANSI music ignore it.
+    fn set_music_option(&mut self, _option: MusicOption) {}
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

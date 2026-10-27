@@ -337,7 +337,13 @@ fn settings(ui: &mut egui::Ui, profile: &mut Address) {
             egui::ComboBox::from_id_salt("info-music")
                 .selected_text(profile.ansi_music.to_string())
                 .show_ui(ui, |ui| {
-                    for value in [MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both] {
+                    for value in [
+                        MusicOption::Off,
+                        MusicOption::Banana,
+                        MusicOption::Conflicting,
+                        MusicOption::Both,
+                        MusicOption::SyncTerm,
+                    ] {
                         ui.selectable_value(&mut profile.ansi_music, value, value.to_string());
                     }
                 });

@@ -236,6 +236,25 @@ impl<'a> ScreenSink<'a> {
             self.screen.caret().attribute
         };
 
+        // CTerm modes 31/34: bold and/or blink text use the alternate fonts
+        // selected with `CSI Ps1 ; Ps2 SP D`. Modes 32/35 then drop the
+        // brightening and the blinking.
+        let state = self.screen.terminal_state();
+        let bright_font = state.bright_alt_charset && attr.is_bold();
+        let blink_font = state.blink_alt_charset && attr.is_blinking();
+        match (bright_font, blink_font) {
+            (true, true) => attr.set_font_page(state.high_intensity_blink_attribute_font_slot as u8),
+            (true, false) => attr.set_font_page(state.high_intensity_attribute_font_slot as u8),
+            (false, true) => attr.set_font_page(state.blink_attribute_font_slot as u8),
+            (false, false) => {}
+        }
+        if state.bright_intensity_disabled {
+            attr.set_is_bold(false);
+        }
+        if state.blink_disabled && !state.ice_colors {
+            attr.set_is_blinking(false);
+        }
+
         // iCE has no blinking; the blink bit only brightens a 16-color background.
         // RGB and extended backgrounds (e.g. PabloDraw's `ESC[0;R;G;Bt`) keep their color.
         if self.screen.terminal_state().ice_colors && attr.is_blinking() {
@@ -277,18 +296,20 @@ impl<'a> ScreenSink<'a> {
         }
     }
 
-    fn set_font_selection_success(&mut self, slot: u8) {
-        self.screen.terminal_state_mut().font_selection_state = FontSelectionState::Success;
-        self.screen.caret_mut().set_font_page(slot);
-
-        if self.screen.caret().attribute.is_blinking() && self.screen.caret().attribute.is_bold() {
-            self.screen.terminal_state_mut().high_intensity_blink_attribute_font_slot = slot as usize;
-        } else if self.screen.caret().attribute.is_blinking() {
-            self.screen.terminal_state_mut().blink_attribute_font_slot = slot as usize;
-        } else if self.screen.caret().attribute.is_bold() {
-            self.screen.terminal_state_mut().high_intensity_attribute_font_slot = slot as usize;
-        } else {
-            self.screen.terminal_state_mut().normal_attribute_font_slot = slot as usize;
+    /// Font selection (`CSI Ps1 ; Ps2 SP D`): Ps1 says which font is set.
+    /// 0 is the primary font, 1 the bright-text font (`CSI ? 31 h`), 2 the blink
+    /// font (`CSI ? 34 h`) and 3 the font for text that is both.
+    fn set_font_selection_success(&mut self, font_slot_type: u16, slot: u8) {
+        let state = self.screen.terminal_state_mut();
+        state.font_selection_state = FontSelectionState::Success;
+        match font_slot_type {
+            0 => {
+                state.normal_attribute_font_slot = slot as usize;
+                self.screen.caret_mut().set_font_page(slot);
+            }
+            1 => state.high_intensity_attribute_font_slot = slot as usize,
+            2 => state.blink_attribute_font_slot = slot as usize,
+            _ => state.high_intensity_blink_attribute_font_slot = slot as usize,
         }
     }
 
@@ -436,6 +457,18 @@ impl<'a> ScreenSink<'a> {
             }
             DecMode::CursorBlinking => {
                 self.screen.caret_mut().blinking = enabled;
+            }
+            DecMode::BrightAltCharset => {
+                self.screen.terminal_state_mut().bright_alt_charset = enabled;
+            }
+            DecMode::BrightIntensityDisable => {
+                self.screen.terminal_state_mut().bright_intensity_disabled = enabled;
+            }
+            DecMode::BlinkAltCharset => {
+                self.screen.terminal_state_mut().blink_alt_charset = enabled;
+            }
+            DecMode::BlinkDisabled => {
+                self.screen.terminal_state_mut().blink_disabled = enabled;
             }
             DecMode::SmoothScroll => {
                 self.screen.terminal_state_mut().scroll_state = if enabled {
@@ -918,19 +951,21 @@ impl CommandSink for ScreenSink<'_> {
             TerminalCommand::SetFontPage(page) => {
                 self.screen.caret_mut().set_font_page(page as u8);
             }
-            TerminalCommand::CsiFontSelection { slot: _slot, font_number } => {
+            // Ps1 other than 0-3 isn't defined; CTerm ignores it.
+            TerminalCommand::CsiFontSelection { slot, .. } if slot > 3 => {}
+            TerminalCommand::CsiFontSelection { slot, font_number } => {
                 // There are 256 font slots; a larger number must not wrap around to a low slot.
                 let Ok(nr) = u8::try_from(font_number) else {
                     self.screen_mut().terminal_state_mut().font_selection_state = FontSelectionState::Failure;
                     return;
                 };
                 if self.screen().font(nr as usize).is_some() {
-                    self.set_font_selection_success(nr);
+                    self.set_font_selection_success(slot, nr);
                 }
                 match BitFont::from_ansi_font_page(nr, self.screen().font_dimensions().height as u8) {
                     Some(font) => {
                         self.screen_mut().set_font(nr as usize, font.clone());
-                        self.set_font_selection_success(nr);
+                        self.set_font_selection_success(slot, nr);
                     }
                     // No built-in font for this slot: a font loaded into it (DCS,
                     // slots 43 and up) was selected above, otherwise it fails.
@@ -1277,17 +1312,17 @@ impl CommandSink for ScreenSink<'_> {
                 log::debug!("OSC: Set palette color {index} to RGB({r}, {g}, {b})");
             }
             OperatingSystemCommand::ResetPaletteColors(indices) => {
-                if indices.is_empty() {
-                    for (index, (_, color)) in crate::XTERM_256_PALETTE.iter().enumerate() {
-                        let palette_index = crate::ansi_to_internal_palette_index(index as u32);
-                        self.screen.palette_mut().set_color(palette_index, color.clone());
-                    }
-                } else {
-                    for index in indices {
-                        let color = crate::XTERM_256_PALETTE[index as usize].1.clone();
-                        let palette_index = crate::ansi_to_internal_palette_index(index as u32);
-                        self.screen.palette_mut().set_color(palette_index, color);
-                    }
+                // Reset to the terminal's default palette where it has an entry,
+                // and to xterm's for the rest.
+                let default_palette = self.screen.terminal_state().default_palette.clone();
+                let indices: Vec<u8> = if indices.is_empty() { (0..=255).collect() } else { indices };
+                for index in indices {
+                    let palette_index = crate::ansi_to_internal_palette_index(index as u32);
+                    let color = match &default_palette {
+                        Some(palette) if (palette_index as usize) < palette.len() => palette.color(palette_index),
+                        _ => crate::XTERM_256_PALETTE[index as usize].1.clone(),
+                    };
+                    self.screen.palette_mut().set_color(palette_index, color);
                 }
                 self.screen.mark_dirty();
             }
@@ -1427,6 +1462,93 @@ mod tests {
         // SGR 43 is DOS brown (6); iCE makes it yellow (14).
         assert_eq!(attr.background_color(), crate::AttributeColor::Palette(14));
         assert!(!attr.is_blinking());
+    }
+
+    fn cterm_font_screen() -> crate::TextScreen {
+        let mut screen = crate::TextScreen::new((80, 25));
+        for slot in 37..=39 {
+            screen.set_font(slot, crate::BitFont::create_8(format!("Alternate {slot}"), 8, 16, &[0xAA; 256 * 16]));
+        }
+        screen
+    }
+
+    #[test]
+    fn font_selection_ps1_sets_the_alternate_slots() {
+        let mut screen = cterm_font_screen();
+        let mut parser = AnsiParser::new();
+
+        // Ps1 = 1, 2, 3: the bright, blink and bright-blink fonts. Normal text
+        // keeps font 0.
+        parser.parse(b"\x1b[1;37 D\x1b[2;38 D\x1b[3;39 DA", &mut ScreenSink::new(&mut screen));
+        let state = screen.terminal_state();
+        assert_eq!(state.normal_attribute_font_slot, 0);
+        assert_eq!(state.high_intensity_attribute_font_slot, 37);
+        assert_eq!(state.blink_attribute_font_slot, 38);
+        assert_eq!(state.high_intensity_blink_attribute_font_slot, 39);
+        assert_eq!(screen.char_at(Position::new(0, 0)).font_page(), 0);
+
+        // Ps1 = 0 is the primary font.
+        parser.parse(b"\x1b[0;37 DB", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.terminal_state().normal_attribute_font_slot, 37);
+        assert_eq!(screen.char_at(Position::new(1, 0)).font_page(), 37);
+    }
+
+    #[test]
+    fn cterm_alt_charset_modes_pick_the_font_and_drop_bright_and_blink() {
+        let mut screen = cterm_font_screen();
+        let mut parser = AnsiParser::new();
+
+        // Bright font 37, blink font 38, bright-blink font 39; primary stays 0.
+        parser.parse(b"\x1b[1;37 D\x1b[2;38 D\x1b[3;39 D", &mut ScreenSink::new(&mut screen));
+        parser.parse(b"\x1b[?31;34h\x1b[1mA\x1b[0;5mB\x1b[1;5mC\x1b[0mD", &mut ScreenSink::new(&mut screen));
+        let font_pages: Vec<u8> = (0..4).map(|x| screen.char_at(Position::new(x, 0)).font_page()).collect();
+        assert_eq!(font_pages, vec![37, 38, 39, 0]);
+        // Without ?32 / ?35 the cells keep bold and blink.
+        assert!(screen.char_at(Position::new(2, 0)).attribute.is_bold());
+        assert!(screen.char_at(Position::new(2, 0)).attribute.is_blinking());
+
+        // ?32 / ?35: bold no longer brightens, blink no longer blinks.
+        parser.parse(b"\x1b[?32;35h\x1b[1;5mE", &mut ScreenSink::new(&mut screen));
+        let e = screen.char_at(Position::new(4, 0));
+        assert_eq!(e.font_page(), 39);
+        assert!(!e.attribute.is_bold());
+        assert!(!e.attribute.is_blinking());
+        // ?35 isn't the cursor blink mode.
+        assert!(screen.caret().blinking);
+    }
+
+    #[test]
+    fn ris_resets_the_cterm_attribute_modes() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        let mut parser = AnsiParser::new();
+
+        parser.parse(b"\x1b[?31;32;34;35h", &mut ScreenSink::new(&mut screen));
+        assert!(screen.terminal_state().bright_alt_charset && screen.terminal_state().blink_disabled);
+
+        parser.parse(b"\x1bc", &mut ScreenSink::new(&mut screen));
+        let state = screen.terminal_state();
+        assert!(!state.bright_alt_charset);
+        assert!(!state.bright_intensity_disabled);
+        assert!(!state.blink_alt_charset);
+        assert!(!state.blink_disabled);
+    }
+
+    #[test]
+    fn osc104_resets_to_the_default_palette() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        // A 16-color default palette that isn't xterm's (internal DOS order).
+        let colors: Vec<crate::Color> = (0..16u8).map(|i| crate::Color::new(i, i, i)).collect();
+        *screen.palette_mut() = crate::Palette::from_slice(&colors);
+        screen.terminal_state_mut().default_palette = Some(crate::Palette::from_slice(&colors));
+        let mut parser = AnsiParser::new();
+
+        // Change ANSI red (internal 4) and palette entry 20, then reset both.
+        parser.parse(b"\x1b]4;1;rgb:ff/00/00\x1b\\\x1b]4;20;rgb:ff/00/00\x1b\\", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.palette().color(4), crate::Color::new(255, 0, 0));
+        parser.parse(b"\x1b]104\x1b\\", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.palette().color(4), crate::Color::new(4, 4, 4));
+        // Entries past the default palette fall back to xterm's.
+        assert_eq!(screen.palette().color(20), crate::XTERM_256_PALETTE[20].1);
     }
 
     #[test]

@@ -217,9 +217,13 @@ fn dec_mode_report_status(screen: &dyn Screen, mode: u16) -> u8 {
         6 => Some(matches!(state.origin_mode, icy_engine::OriginMode::WithinMargins)),
         7 => Some(matches!(state.auto_wrap_mode, icy_engine::AutoWrapMode::AutoWrap)),
         9 => Some(matches!(state.mouse_mode(), icy_engine::MouseMode::X10)),
+        12 => Some(screen.caret().blinking),
         25 => Some(screen.caret().visible),
+        31 => Some(state.bright_alt_charset),
+        32 => Some(state.bright_intensity_disabled),
         33 => Some(state.ice_colors),
-        35 => Some(screen.caret().blinking),
+        34 => Some(state.blink_alt_charset),
+        35 => Some(state.blink_disabled),
         69 => Some(state.dec_left_right_margins()),
         80 => Some(!state.sixel_at_cursor),
         1000 => Some(matches!(state.mouse_mode(), icy_engine::MouseMode::VT200)),
@@ -921,6 +925,7 @@ impl TerminalThread {
                     if let Some(colors) = profile.custom_palette.as_ref().filter(|colors| colors.len() == 16) {
                         let colors: Vec<_> = colors.iter().map(|[red, green, blue]| icy_engine::Color::new(*red, *green, *blue)).collect();
                         *screen.palette_mut() = icy_engine::Palette::from_slice(&colors);
+                        screen.terminal_state_mut().default_palette = Some(icy_engine::Palette::from_slice(&colors));
                     }
                     screen.terminal_state_mut().lf_expand = profile.lf_expand();
                     screen.terminal_state_mut().mouse_state.mouse_tracking_enabled = profile.mouse_reporting_enabled;
@@ -1175,6 +1180,7 @@ impl TerminalThread {
             if let Some(colors) = config.custom_palette.as_ref().filter(|colors| colors.len() == 16) {
                 let colors: Vec<icy_engine::Color> = colors.iter().map(|[r, g, b]| icy_engine::Color::new(*r, *g, *b)).collect();
                 *new_screen.palette_mut() = icy_engine::Palette::from_slice(&colors);
+                new_screen.terminal_state_mut().default_palette = Some(icy_engine::Palette::from_slice(&colors));
             }
             // Set mouse tracking enabled based on connection config
             new_screen.terminal_state_mut().mouse_state.mouse_tracking_enabled = config.mouse_reporting_enabled;
@@ -2345,7 +2351,10 @@ impl TerminalThread {
                 let hardware_options = 1 | 4 | 8 | 128;
                 Some(format!("\x1b[>65;{version};{hardware_options}c").into_bytes())
             }
-            TerminalRequest::ExtendedDeviceAttributes => {
+            // Only CSI < c and CSI < 0 c are requests; anything with feature
+            // numbers is a reply (ours, echoed back) and isn't answered.
+            TerminalRequest::ExtendedDeviceAttributes(params) if !matches!(params.as_slice(), [] | [0]) => None,
+            TerminalRequest::ExtendedDeviceAttributes(_) => {
                 /*
                     Reply: CSI < 0 ; Ps... c, one Ps per feature:
                     1 - Loadable fonts are availabe via Device Control Strings
@@ -2530,10 +2539,19 @@ impl TerminalThread {
                 if screen.caret().visible {
                     params.push("25");
                 }
+                if state.bright_alt_charset {
+                    params.push("31");
+                }
+                if state.bright_intensity_disabled {
+                    params.push("32");
+                }
                 if screen.ice_mode() == icy_engine::IceMode::Ice {
                     params.push("33");
                 }
-                if screen.caret().blinking {
+                if state.blink_alt_charset {
+                    params.push("34");
+                }
+                if state.blink_disabled {
                     params.push("35");
                 }
 
@@ -2573,6 +2591,8 @@ impl TerminalThread {
                 let dim = screen.font_dimensions();
                 Some(format!("\x1B[=3;{};{}n", dim.height, dim.width).into_bytes())
             }
+            // Other CTerm state/mode requests (CSI = Ps n) aren't answered yet.
+            TerminalRequest::StateModeReport(..) => None,
             TerminalRequest::MacroSpaceReport => Some(b"\x1B[32767*{".to_vec()),
             TerminalRequest::MemoryChecksumReport(pid, checksum) => Some(format!("\x1BP{pid}!~{checksum:04X}\x1B\\").into_bytes()),
             TerminalRequest::RipRequestTerminalId => {

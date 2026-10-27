@@ -219,6 +219,17 @@ pub struct TerminalState {
     // Attributes used for determining the real current device attribute:
     pub inverse_video: bool,
     pub ice_colors: bool,
+    /// The palette OSC 104 resets to, set by the embedder (for example an
+    /// Amiga or custom DOS palette). `None` resets to xterm's palette.
+    pub default_palette: Option<crate::Palette>,
+    /// `CSI ? 31 h`: bold text uses `high_intensity_attribute_font_slot`.
+    pub bright_alt_charset: bool,
+    /// `CSI ? 32 h`: bold doesn't brighten the foreground.
+    pub bright_intensity_disabled: bool,
+    /// `CSI ? 34 h`: blinking text uses `blink_attribute_font_slot`.
+    pub blink_alt_charset: bool,
+    /// `CSI ? 35 h`: blinking text doesn't blink.
+    pub blink_disabled: bool,
 
     // Special for Viewdata terminals - they reset colors on row change.
     pub(crate) vd_last_row: i32,
@@ -293,6 +304,11 @@ impl TerminalState {
             cr_is_if: false,
             inverse_video: false,
             ice_colors: false,
+            default_palette: None,
+            bright_alt_charset: false,
+            bright_intensity_disabled: false,
+            blink_alt_charset: false,
+            blink_disabled: false,
             dec_left_right_margins: false,
             vd_last_row: 0,
             viewdata: icy_parser_core::ViewdataState::default(),
@@ -622,6 +638,12 @@ impl TerminalState {
         // Screen cleared flag (buffer will usually act on this)
         self.cleared_screen = true;
         self.inverse_video = false;
+
+        // CTerm attribute modes (CSI ? 31/32/34/35 h) are off after RIS.
+        self.bright_alt_charset = false;
+        self.bright_intensity_disabled = false;
+        self.blink_alt_charset = false;
+        self.blink_disabled = false;
 
         // Recompute tab stops
         self.reset_tabs();

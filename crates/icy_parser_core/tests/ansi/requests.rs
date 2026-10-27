@@ -167,11 +167,24 @@ fn test_extended_device_attributes() {
     parser.parse(b"\x1B[<0c", &mut sink);
 
     assert_eq!(sink.requests.len(), 1);
-    if let TerminalRequest::ExtendedDeviceAttributes = sink.requests[0] {
-        // Success
-    } else {
-        panic!("Expected ExtendedDeviceAttributes");
-    }
+    assert_eq!(sink.requests[0], TerminalRequest::ExtendedDeviceAttributes(vec![0]));
+}
+
+#[test]
+fn test_extended_device_attributes_keep_params() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // A bare request, and a CTDA reply echoed back by the host.
+    parser.parse(b"\x1B[<c\x1B[<0;1;2;3;5c", &mut sink);
+
+    assert_eq!(
+        sink.requests,
+        vec![
+            TerminalRequest::ExtendedDeviceAttributes(vec![]),
+            TerminalRequest::ExtendedDeviceAttributes(vec![0, 1, 2, 3, 5]),
+        ]
+    );
 }
 
 #[test]
@@ -244,4 +257,24 @@ fn test_decrqss_request() {
 
     parser.parse(b"\x1BP$q1;24r\x1B\\", &mut sink);
     assert_eq!(sink.requests, [TerminalRequest::RequestStatusString(b"1;24r".to_vec())]);
+}
+
+#[test]
+fn test_cterm_state_mode_requests_keep_params() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    // CSI = 6 n (OSC 8 support), CSI = 7 n / CSI = 7 ; 3 n (audio state),
+    // and an unknown Ps with extra parameters.
+    parser.parse(b"\x1B[=6n\x1B[=7n\x1B[=7;3n\x1B[=9;1;2n", &mut sink);
+
+    assert_eq!(
+        sink.requests,
+        vec![
+            TerminalRequest::StateModeReport(6, vec![]),
+            TerminalRequest::AudioChannelStateReport(None),
+            TerminalRequest::AudioChannelStateReport(Some(3)),
+            TerminalRequest::StateModeReport(9, vec![1, 2]),
+        ]
+    );
 }

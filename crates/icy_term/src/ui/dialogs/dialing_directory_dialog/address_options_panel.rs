@@ -582,7 +582,13 @@ impl super::DialingDirectoryState {
             // Music option row (only for ANSI/UTF8ANSI)
             if addr.terminal_type == TerminalEmulation::Ansi || addr.terminal_type == TerminalEmulation::Utf8Ansi {
                 let music_pick = pick_list(
-                    vec![MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both],
+                    vec![
+                        MusicOption::Off,
+                        MusicOption::Banana,
+                        MusicOption::Conflicting,
+                        MusicOption::Both,
+                        MusicOption::SyncTerm,
+                    ],
                     Some(addr.ansi_music),
                     move |m| {
                         Message::from(DialingDirectoryMsg::AddressFieldChanged {

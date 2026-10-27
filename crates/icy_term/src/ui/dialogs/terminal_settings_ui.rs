@@ -145,7 +145,13 @@ pub fn build_terminal_settings_ui<'a, M: Clone + 'static>(
 
     // ANSI music picker (only for ANSI/UTF8ANSI)
     if supports_ansi_music(settings.terminal_type) {
-        let music_options = vec![MusicOption::Off, MusicOption::Banana, MusicOption::Conflicting, MusicOption::Both];
+        let music_options = vec![
+            MusicOption::Off,
+            MusicOption::Banana,
+            MusicOption::Conflicting,
+            MusicOption::Both,
+            MusicOption::SyncTerm,
+        ];
 
         let on_change_clone = on_change.clone();
         let music_pick = pick_list(music_options, Some(settings.ansi_music), move |m| {

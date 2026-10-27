@@ -8,8 +8,8 @@ pub mod music;
 pub mod sgr;
 use crate::{
     AnsiMode, BACKSPACE, BELL, BaudEmulation, CARRIAGE_RETURN, CaretShape, Color, CommandParser, CommandSink, CommunicationLine, DELETE, DecMode,
-    DeviceControlString, Direction, ESC, EraseInDisplayMode, EraseInLineMode, FORM_FEED, LINE_FEED, MusicState, OperatingSystemCommand, ParseError,
-    SgrAttribute, TAB, TerminalCommand, TerminalRequest, Wrapping,
+    DeviceControlString, Direction, ESC, EraseInDisplayMode, EraseInLineMode, FORM_FEED, LINE_FEED, OperatingSystemCommand, ParseError, SgrAttribute, TAB,
+    TerminalCommand, TerminalRequest, Wrapping,
 };
 
 pub struct AnsiParser {
@@ -34,14 +34,11 @@ pub struct AnsiParser {
 
     // ANSI Music support
     pub music_option: music::MusicOption,
-    music_state: music::MusicState,
-    cur_music: Option<music::AnsiMusic>,
-    cur_octave: usize,
-    cur_length: i32,
-    cur_tempo: i32,
-    dotted_note: bool,
     /// Set when `play_music` or `aps` was just called, for `parse_until_pause`.
     blocking_construct: bool,
+    music_settings: music::MusicSettings,
+    music_string: Vec<u8>,
+    music_style_prefix: bool,
 }
 
 impl Default for AnsiParser {
@@ -60,13 +57,10 @@ impl Default for AnsiParser {
             in_macro: 0,
             macro_budget: 0,
             music_option: music::MusicOption::Off,
-            music_state: music::MusicState::Default,
-            cur_music: None,
-            cur_octave: 5,
-            cur_length: 4,
-            cur_tempo: 120,
-            dotted_note: false,
             blocking_construct: false,
+            music_settings: music::MusicSettings::default(),
+            music_string: Vec::new(),
+            music_style_prefix: false,
         }
     }
 }
@@ -424,6 +418,10 @@ impl AnsiParser {
 }
 
 impl CommandParser for AnsiParser {
+    fn set_music_option(&mut self, option: music::MusicOption) {
+        self.music_option = option;
+    }
+
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink) {
         self.parse_input(input, sink, false);
     }
@@ -585,6 +583,7 @@ impl AnsiParser {
                         b'c' => {
                             // RIS - Reset to Initial State
                             sink.emit(TerminalCommand::EscReset);
+                            self.reset_music();
                             self.reset();
                             i += 1;
                             printable_start = i;
@@ -1254,7 +1253,7 @@ impl AnsiParser {
                     b'c' => {
                         // Extended Device Attributes: ESC[<...c
                         // Reports terminal capabilities
-                        sink.request(TerminalRequest::ExtendedDeviceAttributes);
+                        sink.request(TerminalRequest::ExtendedDeviceAttributes(self.params.clone()));
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -1361,32 +1360,14 @@ impl AnsiParser {
                         printable_start = i;
                     }
                     b'n' => {
-                        // Font/mode reports: ESC[={n}n
-                        if self.params.len() == 1 {
-                            match self.params.first() {
-                                Some(1) => sink.request(TerminalRequest::FontStateReport),
-                                Some(2) => sink.request(TerminalRequest::FontModeReport),
-                                Some(3) => sink.request(TerminalRequest::FontDimensionReport),
-                                _ => {
-                                    sink.report_error(
-                                        ParseError::MalformedSequence {
-                                            description: "Unsupported CSI = n sequence",
-                                            sequence: Some(format!("CSI = {} n", self.params.first().unwrap_or(&0))),
-                                            context: Some("Font/mode report with unsupported parameter".to_string()),
-                                        },
-                                        crate::ErrorLevel::Error,
-                                    );
-                                }
-                            }
-                        } else {
-                            sink.report_error(
-                                ParseError::MalformedSequence {
-                                    description: "Invalid parameter count for CSI = n",
-                                    sequence: Some(format!("CSI = {:?} n", self.params)),
-                                    context: Some(format!("Expected 1 parameter, got {}", self.params.len())),
-                                },
-                                crate::ErrorLevel::Error,
-                            );
+                        // CTerm State/Mode Request (CTSMRR): ESC[={Ps}[;{Pn}...]n
+                        match self.params.as_slice() {
+                            [] | [1] => sink.request(TerminalRequest::FontStateReport),
+                            [2] => sink.request(TerminalRequest::FontModeReport),
+                            [3] => sink.request(TerminalRequest::FontDimensionReport),
+                            [7] => sink.request(TerminalRequest::AudioChannelStateReport(None)),
+                            [7, channel] => sink.request(TerminalRequest::AudioChannelStateReport(Some(*channel))),
+                            [ps, rest @ ..] => sink.request(TerminalRequest::StateModeReport(*ps, rest.to_vec())),
                         }
                         self.reset();
                         i += 1;
@@ -1407,6 +1388,21 @@ impl AnsiParser {
                     }
                     b'r' => {
                         sink.emit(TerminalCommand::ResetMargins);
+                        self.reset();
+                        i += 1;
+                        printable_start = i;
+                    }
+                    b'M' => {
+                        // CTerm Set ANSI Music (CTSAM): ESC[={Ps}M picks the music
+                        // introducers. Music the embedder turned off stays off.
+                        if self.music_option != music::MusicOption::Off {
+                            match self.params.first().copied().unwrap_or(0) {
+                                0 => self.music_option = music::MusicOption::SyncTerm,
+                                1 => self.music_option = music::MusicOption::Banana,
+                                2 => self.music_option = music::MusicOption::Both,
+                                _ => {}
+                            }
+                        }
                         self.reset();
                         i += 1;
                         printable_start = i;
@@ -2024,9 +2020,7 @@ impl AnsiParser {
                 if (self.music_option == music::MusicOption::Conflicting || self.music_option == music::MusicOption::Both) && self.params.is_empty() {
                     // Start ANSI music parsing — M-style parses one leading
                     // style character (F/B/N/L/S) before the command loop.
-                    self.state = ParserState::AnsiMusic;
-                    self.cur_music = Some(music::AnsiMusic::default());
-                    self.music_state = MusicState::ParseMusicStyle;
+                    self.start_ansi_music(true);
                     return; // Don't reset - stay in AnsiMusic state
                 }
                 // Normal Delete Line
@@ -2037,9 +2031,7 @@ impl AnsiParser {
                 // CSI N for ANSI Music (Banana style)
                 if self.music_option == music::MusicOption::Banana || self.music_option == music::MusicOption::Both {
                     // Start ANSI music parsing
-                    self.state = ParserState::AnsiMusic;
-                    self.cur_music = Some(music::AnsiMusic::default());
-                    self.music_state = MusicState::Default;
+                    self.start_ansi_music(false);
                     return; // Don't reset - stay in AnsiMusic state
                 }
                 // Otherwise, unknown command - ignore
@@ -2220,10 +2212,7 @@ impl AnsiParser {
 
             b'|' => {
                 if self.music_option != music::MusicOption::Off && self.params.is_empty() {
-                    self.state = ParserState::AnsiMusic;
-                    self.dotted_note = false;
-                    self.cur_music = Some(music::AnsiMusic::default());
-                    self.music_state = MusicState::ParseMusicStyle;
+                    self.start_ansi_music(true);
                 }
             }
             _ => {
