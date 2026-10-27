@@ -216,6 +216,9 @@ pub struct TerminalState {
     // Attributes used for determining the real current device attribute:
     pub inverse_video: bool,
     pub ice_colors: bool,
+    /// The palette OSC 104 resets to, set by the embedder (for example an
+    /// Amiga or custom DOS palette). `None` resets to xterm's palette.
+    pub default_palette: Option<crate::Palette>,
     /// `CSI ? 31 h`: bold text uses `high_intensity_attribute_font_slot`.
     pub bright_alt_charset: bool,
     /// `CSI ? 32 h`: bold doesn't brighten the foreground.
@@ -298,6 +301,7 @@ impl TerminalState {
             cr_is_if: false,
             inverse_video: false,
             ice_colors: false,
+            default_palette: None,
             bright_alt_charset: false,
             bright_intensity_disabled: false,
             blink_alt_charset: false,

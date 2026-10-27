@@ -925,6 +925,7 @@ impl TerminalThread {
                     if let Some(colors) = profile.custom_palette.as_ref().filter(|colors| colors.len() == 16) {
                         let colors: Vec<_> = colors.iter().map(|[red, green, blue]| icy_engine::Color::new(*red, *green, *blue)).collect();
                         *screen.palette_mut() = icy_engine::Palette::from_slice(&colors);
+                        screen.terminal_state_mut().default_palette = Some(icy_engine::Palette::from_slice(&colors));
                     }
                     screen.terminal_state_mut().lf_expand = profile.lf_expand();
                     screen.terminal_state_mut().mouse_state.mouse_tracking_enabled = profile.mouse_reporting_enabled;
@@ -1179,6 +1180,7 @@ impl TerminalThread {
             if let Some(colors) = config.custom_palette.as_ref().filter(|colors| colors.len() == 16) {
                 let colors: Vec<icy_engine::Color> = colors.iter().map(|[r, g, b]| icy_engine::Color::new(*r, *g, *b)).collect();
                 *new_screen.palette_mut() = icy_engine::Palette::from_slice(&colors);
+                new_screen.terminal_state_mut().default_palette = Some(icy_engine::Palette::from_slice(&colors));
             }
             // Set mouse tracking enabled based on connection config
             new_screen.terminal_state_mut().mouse_state.mouse_tracking_enabled = config.mouse_reporting_enabled;

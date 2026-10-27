@@ -1284,17 +1284,17 @@ impl CommandSink for ScreenSink<'_> {
                 log::debug!("OSC: Set palette color {index} to RGB({r}, {g}, {b})");
             }
             OperatingSystemCommand::ResetPaletteColors(indices) => {
-                if indices.is_empty() {
-                    for (index, (_, color)) in crate::XTERM_256_PALETTE.iter().enumerate() {
-                        let palette_index = crate::ansi_to_internal_palette_index(index as u32);
-                        self.screen.palette_mut().set_color(palette_index, color.clone());
-                    }
-                } else {
-                    for index in indices {
-                        let color = crate::XTERM_256_PALETTE[index as usize].1.clone();
-                        let palette_index = crate::ansi_to_internal_palette_index(index as u32);
-                        self.screen.palette_mut().set_color(palette_index, color);
-                    }
+                // Reset to the terminal's default palette where it has an entry,
+                // and to xterm's for the rest.
+                let default_palette = self.screen.terminal_state().default_palette.clone();
+                let indices: Vec<u8> = if indices.is_empty() { (0..=255).collect() } else { indices };
+                for index in indices {
+                    let palette_index = crate::ansi_to_internal_palette_index(index as u32);
+                    let color = match &default_palette {
+                        Some(palette) if (palette_index as usize) < palette.len() => palette.color(palette_index),
+                        _ => crate::XTERM_256_PALETTE[index as usize].1.clone(),
+                    };
+                    self.screen.palette_mut().set_color(palette_index, color);
                 }
                 self.screen.mark_dirty();
             }
@@ -1478,6 +1478,24 @@ mod tests {
         assert!(!e.attribute.is_blinking());
         // ?35 isn't the cursor blink mode.
         assert!(screen.caret().blinking);
+    }
+
+    #[test]
+    fn osc104_resets_to_the_default_palette() {
+        let mut screen = crate::TextScreen::new((80, 25));
+        // A 16-color default palette that isn't xterm's (internal DOS order).
+        let colors: Vec<crate::Color> = (0..16u8).map(|i| crate::Color::new(i, i, i)).collect();
+        *screen.palette_mut() = crate::Palette::from_slice(&colors);
+        screen.terminal_state_mut().default_palette = Some(crate::Palette::from_slice(&colors));
+        let mut parser = AnsiParser::new();
+
+        // Change ANSI red (internal 4) and palette entry 20, then reset both.
+        parser.parse(b"\x1b]4;1;rgb:ff/00/00\x1b\\\x1b]4;20;rgb:ff/00/00\x1b\\", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.palette().color(4), crate::Color::new(255, 0, 0));
+        parser.parse(b"\x1b]104\x1b\\", &mut ScreenSink::new(&mut screen));
+        assert_eq!(screen.palette().color(4), crate::Color::new(4, 4, 4));
+        // Entries past the default palette fall back to xterm's.
+        assert_eq!(screen.palette().color(20), crate::XTERM_256_PALETTE[20].1);
     }
 
     #[test]
