@@ -39,6 +39,7 @@ pub struct IgsParser {
     loop_tokens: Vec<Vec<u8>>,
     loop_token_buffer: Vec<u8>,
     reading_chain_gang: bool, // True when reading >XXX@ chain-gang identifier
+    loop_continuation: bool,
 
     param_bounds: ParameterBounds,
     vt52_parser: Vt52Parser,
@@ -56,6 +57,7 @@ impl IgsParser {
             loop_tokens: Vec::new(),
             loop_token_buffer: Vec::new(),
             reading_chain_gang: false,
+            loop_continuation: false,
             vt52_parser: Vt52Parser::new(crate::vt52::VT52Mode::Mixed),
             skip_next_lf: false,
             run_loop: false,
@@ -306,6 +308,15 @@ impl Default for IgsParser {
 impl CommandParser for IgsParser {
     fn parse(&mut self, data: &[u8], sink: &mut dyn CommandSink) {
         for &byte in data {
+            if self.loop_continuation {
+                if byte == b'\r' {
+                    continue;
+                }
+                self.loop_continuation = false;
+                if byte == b'\n' {
+                    continue;
+                }
+            }
             match self.state {
                 State::Default => {
                     match byte {
@@ -859,7 +870,10 @@ impl CommandParser for IgsParser {
                             // Note: Don't push token here
                             // The modifier and following param_count are read together until comma
                         }
-                        ' ' | '\r' | '_' => {
+                        '_' => {
+                            self.loop_continuation = true;
+                        }
+                        ' ' | '\r' => {
                             // ignore these formatting chars entirely for loop tokens
                         }
                         '>' => {

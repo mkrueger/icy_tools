@@ -1,12 +1,19 @@
-use icy_parser_core::{CommandParser, CommandSink, IgsCommand, IgsParameter, IgsParser, ParameterBounds, TerminalCommand, TerminalRequest};
+use icy_parser_core::{
+    CommandParser, CommandSink, ErrorLevel, IgsCommand, IgsParameter, IgsParser, ParameterBounds, ParseError, TerminalCommand, TerminalRequest,
+    encode_igs_stream_checked, parse_igs_stream,
+};
 
 struct TestSink {
     igs_commands: Vec<IgsCommand>,
+    errors: Vec<ParseError>,
 }
 
 impl TestSink {
     fn new() -> Self {
-        Self { igs_commands: Vec::new() }
+        Self {
+            igs_commands: Vec::new(),
+            errors: Vec::new(),
+        }
     }
 }
 
@@ -17,6 +24,9 @@ impl CommandSink for TestSink {
         self.igs_commands.push(cmd);
     }
     fn request(&mut self, _request: TerminalRequest) {}
+    fn report_error(&mut self, error: ParseError, _level: ErrorLevel) {
+        self.errors.push(error);
+    }
 }
 
 /// Helper to parse a loop command and execute it, returning the generated commands.
@@ -26,6 +36,7 @@ fn run_loop(input: &str) -> Vec<IgsCommand> {
 
     // Parse the loop command
     parser.parse(input.as_bytes(), &mut sink);
+    assert!(sink.errors.is_empty(), "{:?}", sink.errors);
 
     // Should get exactly one Loop command
     assert_eq!(sink.igs_commands.len(), 1, "Expected exactly one loop command");
@@ -37,10 +48,47 @@ fn run_loop(input: &str) -> Vec<IgsCommand> {
             let mut run_sink = TestSink::new();
             let bounds = ParameterBounds::default();
             data.run(&mut run_sink, &bounds);
+            assert!(run_sink.errors.is_empty(), "{:?}", run_sink.errors);
             run_sink.igs_commands
         }
         _ => panic!("Expected Loop command, got {:?}", loop_cmd),
     }
+}
+
+#[test]
+fn test_loop_line_continuations() {
+    let inline = b"G#&>0,2,1,0,G,16,3,3,10,20,30,40,50,60:3,3,10,20,30,40,51,61:";
+    for newline in ["\n", "\r\n"] {
+        let continued = format!("G#&>0,2,1,0,G,16,3,3,10,20,30,_{newline}40,50,60:3,3,10,20,_{newline}30,40,51,61:");
+        let items = parse_igs_stream(continued.as_bytes());
+        assert_eq!(items.len(), 1);
+        assert!(items[0].command().is_some());
+        assert_eq!(encode_igs_stream_checked(&items).unwrap(), continued.as_bytes());
+        for run_loop in [false, true] {
+            let parse = |bytes: &[u8], chunk_size| {
+                let mut parser = IgsParser::new();
+                parser.run_loop = run_loop;
+                let mut sink = TestSink::new();
+                for chunk in bytes.chunks(chunk_size) {
+                    parser.parse(chunk, &mut sink);
+                }
+                assert!(sink.errors.is_empty(), "{:?}", sink.errors);
+                sink.igs_commands
+            };
+            let expected = parse(inline, inline.len());
+            assert_eq!(expected.len(), if run_loop { 6 } else { 1 });
+            for chunk_size in [1, 7, continued.len()] {
+                assert_eq!(parse(continued.as_bytes(), chunk_size), expected);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_loop_continuation_prefix_does_not_consume_later_newline() {
+    let commands = run_loop("G#&>0,0,1,0,L,4,_10,20,30,40\n");
+    assert_eq!(commands.len(), 1);
+    assert!(matches!(commands[0], IgsCommand::Line { .. }));
 }
 
 // ========================================
