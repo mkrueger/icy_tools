@@ -31,6 +31,31 @@ pub struct Font {
 }
 
 impl Font {
+    pub(super) fn from_embedded(data: &[u8]) -> Self {
+        #[cfg(not(feature = "embedded-fonts"))]
+        if data.is_empty() {
+            return Self::empty();
+        }
+        Self::load(data).expect("Invalid embedded BGI stroke font")
+    }
+
+    /// A font without characters, used when the stroke font data is not
+    /// compiled in (no `embedded-fonts`). It draws nothing.
+    pub fn empty() -> Self {
+        Self {
+            name: String::new(),
+            size: 0,
+            characters: Vec::new(),
+            org_to_cap: 0,
+            org_to_base: 0,
+            org_to_dec: 0,
+            capital_height: 0,
+            base_height: 0,
+            descender_height: 0,
+            lower_case_height: 0,
+        }
+    }
+
     pub fn height(&self) -> i32 {
         self.org_to_cap.abs() as i32 + self.org_to_dec.abs() as i32
     }

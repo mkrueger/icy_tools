@@ -157,17 +157,17 @@ lazy_static::lazy_static! {
     pub static ref DEFAULT_BITFONT : BitFont = crate::rip::RIPTERM_FONT.clone();
 
     static ref FONTS: Vec<Font> = vec![
-        Font::load(include_bytes!("fonts/SANS.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/TRIP.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/LITT.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/SANS.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/GOTH.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/SCRI.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/SIMP.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/TSCR.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/LCOM.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/EURO.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/BOLD.CHR")).unwrap(),
+        Font::from_embedded(font_bytes!("fonts/SANS.CHR")),
+        Font::from_embedded(font_bytes!("fonts/TRIP.CHR")),
+        Font::from_embedded(font_bytes!("fonts/LITT.CHR")),
+        Font::from_embedded(font_bytes!("fonts/SANS.CHR")),
+        Font::from_embedded(font_bytes!("fonts/GOTH.CHR")),
+        Font::from_embedded(font_bytes!("fonts/SCRI.CHR")),
+        Font::from_embedded(font_bytes!("fonts/SIMP.CHR")),
+        Font::from_embedded(font_bytes!("fonts/TSCR.CHR")),
+        Font::from_embedded(font_bytes!("fonts/LCOM.CHR")),
+        Font::from_embedded(font_bytes!("fonts/EURO.CHR")),
+        Font::from_embedded(font_bytes!("fonts/BOLD.CHR")),
     ];
 }
 
@@ -2753,4 +2753,34 @@ fn already_drawn(fill_lines: &[Vec<LineInfo>], x: i32, y: i32) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(not(feature = "embedded-fonts"))]
+    fn bgi_fonts_absent_do_not_panic() {
+        for t in 0..=12u8 {
+            assert_eq!(FontType::from(t).font().height(), 0);
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "embedded-fonts")]
+    fn embedded_bgi_fonts_have_characters() {
+        for t in 0..=12u8 {
+            let font_type = FontType::from(t);
+            let font = font_type.font();
+            assert!(font.height() > 0);
+            assert!(font.character(b'A').is_some());
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid embedded BGI stroke font")]
+    fn invalid_embedded_bgi_font_is_not_silently_discarded() {
+        Font::from_embedded(b"invalid font");
+    }
 }

@@ -255,9 +255,9 @@ fn test_pause() {
     let music = sink.get_music().expect("Should have music");
     assert_eq!(1, music.music_actions.len());
 
-    if let MusicAction::Pause(len) = music.music_actions[0] {
+    if let MusicAction::Pause(len, dotted) = music.music_actions[0] {
         // Dotted 32nd note: 1.5 times 240000 / (32 * 120) ms
-        assert_eq!(MusicAction::Pause(len).get_duration(), 360000 / (32 * 120));
+        assert_eq!(MusicAction::Pause(len, dotted).get_duration(), 360000 / (32 * 120));
     } else {
         panic!("Expected Pause, got {:?}", music.music_actions[0]);
     }
@@ -482,7 +482,7 @@ fn test_pipe_complex_sequence() {
     assert_eq!(7, music.music_actions.len(), "Should have 7 actions (3 notes + pause + 3 notes)");
 
     // Verify pause is in the sequence
-    let has_pause = music.music_actions.iter().any(|action| matches!(action, MusicAction::Pause(_)));
+    let has_pause = music.music_actions.iter().any(|action| matches!(action, MusicAction::Pause(..)));
     assert!(has_pause, "Should contain a pause action");
 }
 
@@ -649,6 +649,23 @@ fn test_csi_equals_m_selects_music_introducers() {
 }
 
 #[test]
+fn test_ris_restores_the_configured_music_option() {
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Both);
+    let mut sink = TestSink::new();
+
+    // RIS undoes CSI = Ps M and returns to the option the embedder set.
+    parser.parse(b"\x1B[=0M\x1Bc", &mut sink);
+    assert_eq!(parser.music_option(), MusicOption::Both);
+
+    parser.set_music_option(MusicOption::Banana);
+    parser.parse(b"\x1B[=2M\x1Bc\x1B[MC\x0E", &mut sink);
+    assert_eq!(parser.music_option(), MusicOption::Banana);
+    assert!(sink.get_music().is_none());
+    assert!(sink.commands.iter().any(|cmd| matches!(cmd, TerminalCommand::CsiDeleteLine(1))));
+}
+
+#[test]
 fn test_music_option_can_change_through_command_parser() {
     let mut parser: Box<dyn CommandParser> = Box::new(AnsiParser::new());
     let mut sink = TestSink::new();
@@ -657,4 +674,30 @@ fn test_music_option_can_change_through_command_parser() {
     parser.parse(b"\x1B[|C\x0E", &mut sink);
 
     assert!(sink.get_music().is_some());
+}
+
+fn durations(parser: &mut AnsiParser, string: &str) -> Vec<i32> {
+    let mut sink = TestSink::new();
+    parser.parse(format!("\x1B[|{string}\x0E").as_bytes(), &mut sink);
+    sink.get_music().unwrap().music_actions.iter().map(MusicAction::get_duration).collect()
+}
+
+#[test]
+fn test_dotted_pause_lasts_one_and_a_half_times_as_long() {
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::SyncTerm);
+
+    // At tempos like these, 240000 / (tempo * len * 2 / 3) rounds the wrong way.
+    assert_eq!(durations(&mut parser, "T97P1.P4.P8."), vec![3711, 927, 463]);
+    assert_eq!(durations(&mut parser, "T121P1.P4.P16."), vec![2975, 743, 185]);
+
+    // A dotted pause lasts exactly as long as a dotted note, and an undotted one
+    // as long as an undotted note, at every tempo and length.
+    for tempo in 32..=255 {
+        for len in 1..=64 {
+            let (plain, dotted) = (240000 / (tempo * len), 360000 / (tempo * len));
+            let d = durations(&mut parser, &format!("T{tempo}L{len}PCP.C."));
+            assert_eq!(d, vec![plain, plain, dotted, dotted], "T{tempo} L{len}");
+        }
+    }
 }

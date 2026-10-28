@@ -871,7 +871,7 @@ impl SoundBackgroundThreadData {
                             .take_duration(std::time::Duration::from_millis(duration as u64 - pause_length as u64)),
                     );
                 }
-                MusicAction::Pause(_) => {}
+                MusicAction::Pause(..) => {}
             }
             thread::sleep(std::time::Duration::from_millis(duration as u64));
         }

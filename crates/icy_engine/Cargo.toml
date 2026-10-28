@@ -9,7 +9,7 @@ edition.workspace = true
 [features]
 default = [ "minimal", "embedded-fonts"]
 minimal = []
-# Compiles the bitmap fonts under data/fonts into the crate. Without it the
+# Compiles the bitmap and BGI stroke fonts into the crate. Without it the
 # font lookups return None/Err for those fonts, and an embedder supplies its
 # own (see `fonts::install_ansi_font`, `BitFont::from_bytes`).
 embedded-fonts = []

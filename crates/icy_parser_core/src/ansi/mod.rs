@@ -33,7 +33,11 @@ pub struct AnsiParser {
     macro_budget: usize,
 
     // ANSI Music support
+    /// The music introducers in effect; `CSI = Ps M` can change them. Set it
+    /// with `set_music_option`, which also makes it the value RIS restores.
     pub music_option: music::MusicOption,
+    /// The music option the embedder configured, restored on RIS.
+    default_music_option: music::MusicOption,
     /// Set when `play_music` or `aps` was just called, for `parse_until_pause`.
     blocking_construct: bool,
     music_settings: music::MusicSettings,
@@ -57,6 +61,7 @@ impl Default for AnsiParser {
             in_macro: 0,
             macro_budget: 0,
             music_option: music::MusicOption::Off,
+            default_music_option: music::MusicOption::Off,
             blocking_construct: false,
             music_settings: music::MusicSettings::default(),
             music_string: Vec::new(),
@@ -147,9 +152,10 @@ impl AnsiParser {
         true
     }
 
-    /// Set the ANSI music option
+    /// Set the ANSI music option, and the one RIS returns to.
     pub fn set_music_option(&mut self, option: music::MusicOption) {
         self.music_option = option;
+        self.default_music_option = option;
     }
 
     /// Get the current ANSI music option
@@ -419,7 +425,7 @@ impl AnsiParser {
 
 impl CommandParser for AnsiParser {
     fn set_music_option(&mut self, option: music::MusicOption) {
-        self.music_option = option;
+        AnsiParser::set_music_option(self, option);
     }
 
     fn parse(&mut self, input: &[u8], sink: &mut dyn CommandSink) {

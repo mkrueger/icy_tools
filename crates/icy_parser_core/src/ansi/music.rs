@@ -77,8 +77,8 @@ impl MusicStyle {
 pub enum MusicAction {
     /// Play a note: frequency (Hz), tempo * length, is_dotted
     PlayNote(f32, i32, bool),
-    /// Pause for given tempo * length
-    Pause(i32),
+    /// Pause for given tempo * length, is_dotted
+    Pause(i32, bool),
     /// Change music style
     SetStyle(MusicStyle),
 }
@@ -87,14 +87,14 @@ impl MusicAction {
     /// Get the duration of this music action in milliseconds
     pub fn get_duration(&self) -> i32 {
         match self {
-            MusicAction::PlayNote(_, len, dotted) => {
+            // A whole note or pause lasts 240000 / tempo ms; a dotted one 1.5 times that.
+            MusicAction::PlayNote(_, len, dotted) | MusicAction::Pause(len, dotted) => {
                 if *dotted {
                     360000 / *len
                 } else {
                     240000 / *len
                 }
             }
-            MusicAction::Pause(len) => 240000 / *len,
             _ => 0,
         }
     }
@@ -234,10 +234,7 @@ impl MusicSettings {
                     let tempo_length = self.tempo * length.clamp(1, 64);
                     match note.filter(|n| (0..FREQ.len() as i32).contains(n)) {
                         Some(n) => music.music_actions.push(MusicAction::PlayNote(FREQ[n as usize], tempo_length, dotted)),
-                        // Pause lasts 240000 / len ms; a dotted one 1.5 times that.
-                        None => music
-                            .music_actions
-                            .push(MusicAction::Pause(if dotted { (tempo_length * 2 / 3).max(1) } else { tempo_length })),
+                        None => music.music_actions.push(MusicAction::Pause(tempo_length, dotted)),
                     }
                 }
                 // Spaces, and digits or modifiers with nothing to modify.
@@ -283,8 +280,10 @@ impl AnsiParser {
         }
     }
 
-    /// Reset the music state that carries over between strings (RIS).
+    /// Reset the music state that carries over between strings, and the
+    /// introducers `CSI = Ps M` picked (RIS).
     pub(crate) fn reset_music(&mut self) {
         self.music_settings = MusicSettings::default();
+        self.music_option = self.default_music_option;
     }
 }
