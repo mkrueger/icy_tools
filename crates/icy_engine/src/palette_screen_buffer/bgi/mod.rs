@@ -156,18 +156,21 @@ impl FontType {
 lazy_static::lazy_static! {
     pub static ref DEFAULT_BITFONT : BitFont = crate::rip::RIPTERM_FONT.clone();
 
+    // The stroke fonts follow the `embedded-fonts` feature like the other font
+    // data. Without it they are left out, and a font that does not load is an
+    // empty one that draws nothing.
     static ref FONTS: Vec<Font> = vec![
-        Font::load(include_bytes!("fonts/SANS.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/TRIP.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/LITT.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/SANS.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/GOTH.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/SCRI.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/SIMP.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/TSCR.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/LCOM.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/EURO.CHR")).unwrap(),
-        Font::load(include_bytes!("fonts/BOLD.CHR")).unwrap(),
+        Font::load(font_bytes!("fonts/SANS.CHR")).unwrap_or_else(|_| Font::empty()),
+        Font::load(font_bytes!("fonts/TRIP.CHR")).unwrap_or_else(|_| Font::empty()),
+        Font::load(font_bytes!("fonts/LITT.CHR")).unwrap_or_else(|_| Font::empty()),
+        Font::load(font_bytes!("fonts/SANS.CHR")).unwrap_or_else(|_| Font::empty()),
+        Font::load(font_bytes!("fonts/GOTH.CHR")).unwrap_or_else(|_| Font::empty()),
+        Font::load(font_bytes!("fonts/SCRI.CHR")).unwrap_or_else(|_| Font::empty()),
+        Font::load(font_bytes!("fonts/SIMP.CHR")).unwrap_or_else(|_| Font::empty()),
+        Font::load(font_bytes!("fonts/TSCR.CHR")).unwrap_or_else(|_| Font::empty()),
+        Font::load(font_bytes!("fonts/LCOM.CHR")).unwrap_or_else(|_| Font::empty()),
+        Font::load(font_bytes!("fonts/EURO.CHR")).unwrap_or_else(|_| Font::empty()),
+        Font::load(font_bytes!("fonts/BOLD.CHR")).unwrap_or_else(|_| Font::empty()),
     ];
 }
 
@@ -2753,4 +2756,18 @@ fn already_drawn(fill_lines: &[Vec<LineInfo>], x: i32, y: i32) -> bool {
         }
     }
     false
+}
+
+// Without `embedded-fonts` every font type must still resolve, to an empty
+// font, not panic.
+#[cfg(all(test, not(feature = "embedded-fonts")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bgi_fonts_absent_do_not_panic() {
+        for t in 0..=12u8 {
+            assert_eq!(FontType::from(t).font().height(), 0);
+        }
+    }
 }
