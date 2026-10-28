@@ -3,6 +3,18 @@
 //! This module provides an enum-based tool system. Tools are organized in
 //! toggle pairs - clicking on an already-selected tool switches to its partner.
 
+pub fn layer_drag_delta(start: crate::Position, end: crate::Position, constrain: bool) -> crate::Position {
+    let mut delta = end - start;
+    if constrain {
+        if delta.x.abs() >= delta.y.abs() {
+            delta.y = 0;
+        } else {
+            delta.x = 0;
+        }
+    }
+    delta
+}
+
 /// Available editing tools
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Tool {
@@ -42,6 +54,8 @@ pub enum Tool {
     Font,
     /// Tag tool for annotations
     Tag,
+    /// Reposition the selected layer without editing its cells.
+    MoveLayer,
 }
 
 /// A toggle pair of tools sharing one icon slot
@@ -83,8 +97,8 @@ impl ToolPair {
     }
 }
 
-/// The 10 tool slots in the toolbar (each can be a pair or single)
-pub const TOOL_SLOTS: [ToolPair; 10] = [
+/// Tool slots in the toolbar (each can be a pair or single).
+pub const TOOL_SLOTS: [ToolPair; 11] = [
     ToolPair::single(Tool::Click),
     ToolPair::single(Tool::Select),
     ToolPair::single(Tool::Pencil),
@@ -95,6 +109,7 @@ pub const TOOL_SLOTS: [ToolPair; 10] = [
     ToolPair::single(Tool::Pipette),
     ToolPair::single(Tool::Font),
     ToolPair::single(Tool::Tag),
+    ToolPair::single(Tool::MoveLayer),
 ];
 
 impl Tool {
@@ -113,6 +128,7 @@ impl Tool {
             Tool::Pipette => "dropper",
             Tool::Font => "font",
             Tool::Tag => "tag",
+            Tool::MoveLayer => "move",
         }
     }
 
@@ -131,6 +147,7 @@ impl Tool {
             Tool::Pipette => "Pipette",
             Tool::Font => "Font",
             Tool::Tag => "Tag",
+            Tool::MoveLayer => "Move Layer",
         }
     }
 
@@ -149,6 +166,7 @@ impl Tool {
             Tool::Pipette => "Pick color/character",
             Tool::Font => "TDF/Figlet font rendering",
             Tool::Tag => "Add annotation tags",
+            Tool::MoveLayer => "Drag the selected layer; arrows nudge; Shift moves by ten cells",
         }
     }
 
@@ -174,6 +192,7 @@ impl Tool {
             Tool::Pipette => Some('i'),
             Tool::Font => Some('t'),
             Tool::Tag => Some('g'),
+            Tool::MoveLayer => Some('v'),
         }
     }
 
@@ -209,7 +228,14 @@ impl Tool {
     pub fn needs_drag(&self) -> bool {
         matches!(
             self,
-            Tool::Select | Tool::Pencil | Tool::Line | Tool::RectangleOutline | Tool::RectangleFilled | Tool::EllipseOutline | Tool::EllipseFilled
+            Tool::Select
+                | Tool::MoveLayer
+                | Tool::Pencil
+                | Tool::Line
+                | Tool::RectangleOutline
+                | Tool::RectangleFilled
+                | Tool::EllipseOutline
+                | Tool::EllipseFilled
         )
     }
 }

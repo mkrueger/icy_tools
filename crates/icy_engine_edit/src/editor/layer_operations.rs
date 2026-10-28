@@ -456,6 +456,48 @@ impl EditState {
         self.push_undo_action(op)
     }
 
+    /// Moves the current layer by `delta`. With `merge`, a directly preceding move of the same
+    /// layer is folded into this one, so a series of nudges undoes in one step.
+    pub fn nudge_layer(&mut self, delta: Position, merge: bool) -> Result<()> {
+        let index = self.screen.current_layer;
+        if !self.can_move_layer(index) {
+            return Err(crate::EngineError::Generic("The layer position is locked".into()));
+        }
+        let target = self
+            .get_cur_layer()
+            .ok_or_else(|| crate::EngineError::Generic("Invalid layer index".into()))?
+            .offset()
+            + delta;
+        if merge {
+            let group_move = fl!(crate::LANGUAGE_LOADER, "undo-move-layer-group");
+            let previous = {
+                let mut stack = self.undo_stack.lock().unwrap();
+                let mergeable = stack.redo_len() == 0
+                    && stack.is_modified()
+                    && match stack.undo_stack().last() {
+                        Some(EditorUndoOp::MoveLayer { index: last, .. }) => *last == index,
+                        Some(EditorUndoOp::ReplaceLayers {
+                            current_layer, description, ..
+                        }) => *current_layer == index && *description == group_move,
+                        _ => false,
+                    };
+                if mergeable {
+                    stack.pop_undo()
+                } else {
+                    None
+                }
+            };
+            if let Some(mut op) = previous {
+                op.undo(self)?;
+                self.screen.buffer.mark_dirty();
+            }
+        }
+        if self.get_cur_layer().is_some_and(|layer| layer.offset() == target) {
+            return Ok(());
+        }
+        self.move_layer(target)
+    }
+
     /// Set preview offset on the current layer (for drag preview without undo)
     pub fn set_layer_preview_offset(&mut self, offset: Option<Position>) {
         let index = self.screen.current_layer;

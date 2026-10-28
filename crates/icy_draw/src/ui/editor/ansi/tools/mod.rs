@@ -38,6 +38,7 @@
 mod click;
 mod fill;
 mod font;
+mod move_layer;
 mod outline_click;
 pub mod paint;
 mod paste;
@@ -50,6 +51,7 @@ mod tag;
 pub use click::ClickTool;
 pub use fill::FillTool;
 pub use font::FontTool;
+pub use move_layer::MoveLayerTool;
 pub use outline_click::OutlineClickTool;
 pub use paint::{new_shared_brush, new_shared_recent_chars, BrushSettings, RecentChars, SharedBrush, SharedRecentChars, RECENT_CHARS_CAPACITY};
 pub use paste::{PasteAction, PasteTool};
@@ -241,6 +243,7 @@ pub enum ToolId {
     Fill,
     Font,
     Tag,
+    MoveLayer,
     /// Editor-only paste mode (no corresponding engine `Tool`).
     Paste,
 }
@@ -262,6 +265,7 @@ impl ToolId {
             ToolId::Fill => Some(Tool::Fill),
             ToolId::Font => Some(Tool::Font),
             ToolId::Tag => Some(Tool::Tag),
+            ToolId::MoveLayer => Some(Tool::MoveLayer),
             ToolId::Paste => None,
         }
     }
@@ -282,6 +286,7 @@ impl From<Tool> for ToolId {
             Tool::Fill => ToolId::Fill,
             Tool::Font => ToolId::Font,
             Tool::Tag => ToolId::Tag,
+            Tool::MoveLayer => ToolId::MoveLayer,
         }
     }
 }

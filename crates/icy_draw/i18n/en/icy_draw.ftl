@@ -683,6 +683,9 @@ tool-select_name=Select Tool
 tool-select_tooltip=Mutliple and non rectangular selections
 tool-tag_name=Tag Tool
 tool-tag_tooltip=Tags are used to expand strings in output
+tool-move-layer-name=Move Layer
+tool-move-layer-hint=Drag to move the selected layer. Arrows nudge; Shift+arrows move 10 cells. Shift+drag constrains the axis; Esc cancels.
+tool-move-layer-locked=Layer position is locked (or a group contains a position-locked layer).
 tool-tag_show=Show Tags
 tool-tag_edit_button={ menu-edit }
 

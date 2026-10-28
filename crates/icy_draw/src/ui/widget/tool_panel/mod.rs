@@ -536,7 +536,7 @@ const STANDARD_ICONS: &[&[u8]] = &[
     include_bytes!("../../../../data/icons/dropper.svg"),           // 9: Pipette
     include_bytes!("../../../../data/icons/font.svg"),              // 10: Font
     include_bytes!("../../../../data/icons/tag.svg"),               // 11: Tag
-    include_bytes!("../../../../data/icons/cursor.svg"),            // 12: Placeholder (duplicate)
+    include_bytes!("../../../../data/icons/move.svg"),              // 12: Move Layer
     include_bytes!("../../../../data/icons/cursor.svg"),            // 13: Placeholder (duplicate)
     include_bytes!("../../../../data/icons/cursor.svg"),            // 14: Placeholder (duplicate)
     include_bytes!("../../../../data/icons/cursor.svg"),            // 15: Placeholder (duplicate)

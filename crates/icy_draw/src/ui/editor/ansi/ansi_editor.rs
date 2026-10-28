@@ -2060,6 +2060,7 @@ impl AnsiEditorCore {
         match event {
             // Cancel transient shape drag/overlay on focus loss or when the cursor leaves the window.
             icy_ui::Event::Window(icy_ui::window::Event::Unfocused) | icy_ui::Event::Mouse(icy_ui::mouse::Event::CursorLeft) => {
+                self.cancel_layer_move();
                 let _ = self.cancel_shape_drag();
                 // Also reset mouse capture state in case drag ended outside the widget
                 if self.mouse_capture_tool.is_some() {
@@ -2075,6 +2076,7 @@ impl AnsiEditorCore {
                 button: icy_ui::mouse::Button::Left,
                 ..
             }) => {
+                self.cancel_layer_move();
                 if self.mouse_capture_tool.is_some() {
                     self.current_tool.cancel_capture();
                     self.paste_handler.cancel_capture();
@@ -2577,6 +2579,7 @@ impl AnsiEditorCore {
             ToolId::Fill => crate::fl!("tool-hint-fill", brush = mode),
             ToolId::Font => crate::fl!("tool-hint-font"),
             ToolId::Tag => crate::fl!("tool-hint-tag"),
+            ToolId::MoveLayer => crate::fl!("tool-move-layer-hint"),
             ToolId::Paste => crate::fl!("tool-hint-paste"),
         };
         Some(hint)
@@ -2642,6 +2645,15 @@ impl AnsiEditorCore {
         self.change_tool_internal(tool_registry, tool, true);
     }
 
+    fn cancel_layer_move(&mut self) {
+        if self.current_tool.id() == tools::ToolId::MoveLayer {
+            self.with_edit_state(|state| state.set_layer_preview_offset(None));
+            self.current_tool.cancel_capture();
+            self.mouse_capture_tool = None;
+            self.is_dragging = false;
+        }
+    }
+
     fn change_tool_internal(&mut self, tool_registry: &mut tool_registry::ToolRegistry, tool: tools::ToolId, force: bool) {
         // Block tool changes during paste mode - must anchor or cancel first
         if self.is_paste_mode() {
@@ -2677,6 +2689,7 @@ impl AnsiEditorCore {
         }
 
         // Cancels any in-progress shape preview/drag when switching tools.
+        self.cancel_layer_move();
         let _ = self.cancel_shape_drag();
 
         let caret_tool = matches!(tool, tools::ToolId::Click | tools::ToolId::Font);

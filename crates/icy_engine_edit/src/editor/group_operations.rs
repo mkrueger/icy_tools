@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use i18n_embed_fl::fl;
 
-use crate::{EngineError, Layer, Position, Result};
+use crate::{EngineError, Layer, Position, Rectangle, Result, TextPane};
 
 use super::{EditState, EditorUndoOp};
 
@@ -197,6 +197,21 @@ impl EditState {
             && self.get_buffer().layers[self.get_buffer().layer_subtree(index)]
                 .iter()
                 .all(|layer| !layer.properties.is_position_locked)
+    }
+
+    pub fn layer_move_bounds(&self, index: usize) -> Option<Rectangle> {
+        let buffer = self.get_buffer();
+        let layer = buffer.layers.get(index)?;
+        let range = if layer.is_group() { buffer.layer_subtree(index) } else { index..index + 1 };
+        let (start, end) = buffer.layers[range]
+            .iter()
+            .filter(|layer| !layer.is_group())
+            .map(|layer| {
+                let start = layer.offset();
+                (start, start + Position::new(layer.width(), layer.height()))
+            })
+            .reduce(|(a, b), (c, d)| (Position::new(a.x.min(c.x), a.y.min(c.y)), Position::new(b.x.max(d.x), b.y.max(d.y))))?;
+        Some(Rectangle::from(start.x, start.y, end.x - start.x, end.y - start.y))
     }
 
     pub(crate) fn move_group(&mut self, index: usize, to: Position) -> Result<()> {

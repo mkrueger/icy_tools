@@ -36,6 +36,7 @@ const TOOL_ICON_ORDER: &[Tool] = &[
     Tool::Pipette,          // 9
     Tool::Font,             // 10
     Tool::Tag,              // 11
+    Tool::MoveLayer,        // 12
 ];
 
 /// Map tool to atlas index

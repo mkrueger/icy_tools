@@ -2072,6 +2072,7 @@ impl DrawApp {
                 self.pipette_options(ui);
             }
             Tool::Select => self.selection_options(ui, context),
+            Tool::MoveLayer => self.move_layer_options(ui),
 
             Tool::Tag => {
                 if self.icons.button(ui, "tag", &fl!("tag-list-title"), false).clicked() {
@@ -2396,18 +2397,25 @@ impl DrawApp {
     }
 
     fn position(&self, point: egui::Pos2) -> Option<Position> {
+        self.view.terminal.render_info.read().screen_to_terminal_pixels(point.x, point.y)?;
+        let position = self.unclamped_position(point);
+        let (columns, rows) = self.sub_cells();
+        let size = self.document.with_state(|state| state.get_buffer().size());
+        (position.x >= 0 && position.x < size.width * columns && position.y >= 0 && position.y < size.height * rows).then_some(position)
+    }
+
+    /// The document position under `point`, also outside the viewport and the document.
+    fn unclamped_position(&self, point: egui::Pos2) -> Position {
         let info = self.view.terminal.render_info.read();
-        let (horizontal, vertical) = info.screen_to_terminal_pixels(point.x, point.y)?;
+        let (horizontal, vertical) = info.screen_to_terminal_pixels_unclamped(point.x, point.y);
         let vertical = if info.scan_lines { vertical / 2.0 } else { vertical };
         let (columns, rows) = self.sub_cells();
         let width = info.font_width / columns as f32;
         let height = info.font_height / rows as f32;
-        let position = Position::new(
+        Position::new(
             ((horizontal + self.view.terminal.scroll_x()) / width.max(1.0)).floor() as i32,
             ((vertical + self.view.terminal.scroll_y()) / height.max(1.0)).floor() as i32,
-        );
-        let size = self.document.with_state(|state| state.get_buffer().size());
-        (position.x >= 0 && position.x < size.width * columns && position.y >= 0 && position.y < size.height * rows).then_some(position)
+        )
     }
 
     fn canvas(&mut self, ui: &mut egui::Ui, blocked: bool) {
@@ -2439,6 +2447,21 @@ impl DrawApp {
             self.view.show(ui, &self.settings.monitor_settings)
         };
         self.canvas_rect = response.rect;
+        if self.document.tool == Tool::MoveLayer && !blocked {
+            let over_layer = response
+                .hover_pos()
+                .and_then(|point| self.position(point))
+                .is_some_and(|position| self.document.over_current_layer(position));
+            if self.document.stroke_active() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            } else if over_layer {
+                response = response.on_hover_cursor(if self.document.can_move_layer() {
+                    egui::CursorIcon::Grab
+                } else {
+                    egui::CursorIcon::NotAllowed
+                });
+            }
+        }
         if self.document.tool == Tool::Tag && !blocked {
             let hovering_tag = response.hover_pos().and_then(|point| self.position(point)).is_some_and(|position| {
                 self.document
@@ -2781,8 +2804,14 @@ impl DrawApp {
             }
         }
         if self.document.stroke_active() {
-            if let Some(position) = pointer.interact_pos().and_then(|point| self.position(point)) {
-                self.document.update(position);
+            // A moved layer follows the pointer beyond the canvas edges.
+            let position = if self.document.tool == Tool::MoveLayer {
+                pointer.interact_pos().map(|point| self.unclamped_position(point))
+            } else {
+                pointer.interact_pos().and_then(|point| self.position(point))
+            };
+            if let Some(position) = position {
+                self.document.update_with_shift(position, ui.input(|input| input.modifiers.shift));
             }
             if !pointer.any_down() {
                 self.document.finish();
@@ -3176,6 +3205,7 @@ impl DrawApp {
         }
         match key {
             Key::K => self.select_tool(Tool::Click),
+            Key::V => self.select_tool(Tool::MoveLayer),
             Key::B => {
                 if self.document.brush.primary == BrushPrimaryMode::Shading {
                     self.document.brush.primary = BrushPrimaryMode::HalfBlock;

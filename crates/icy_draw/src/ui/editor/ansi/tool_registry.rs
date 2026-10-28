@@ -18,6 +18,7 @@ pub const ANSI_TOOL_SLOTS: &[ToolPair] = &[
     ToolPair::single(Tool::Pipette),
     ToolPair::single(Tool::Font),
     ToolPair::single(Tool::Tag),
+    ToolPair::single(Tool::MoveLayer),
 ];
 
 /// Tool slots for network/collaboration mode (no Tag tool - not compatible with Moebius)
@@ -45,6 +46,7 @@ pub const CHARFONT_TOOL_SLOTS: &[ToolPair] = &[
     ToolPair::single(Tool::Fill),
     ToolPair::single(Tool::Pipette),
     ToolPair::single(Tool::Font),
+    ToolPair::single(Tool::MoveLayer),
 ];
 
 /// Tool slots for Outline font editing (minimal - only Click and Select)
@@ -82,6 +84,7 @@ impl ToolRegistry {
         let mut needs_pipette = false;
         let mut needs_font = false;
         let mut needs_tag = false;
+        let mut needs_move_layer = false;
 
         for pair in slots {
             for tool in [pair.primary, pair.secondary] {
@@ -94,6 +97,7 @@ impl ToolRegistry {
                     Tool::Pipette => needs_pipette = true,
                     Tool::Font => needs_font = true,
                     Tool::Tag => needs_tag = true,
+                    Tool::MoveLayer => needs_move_layer = true,
                 }
             }
         }
@@ -141,6 +145,10 @@ impl ToolRegistry {
         if needs_tag {
             let tag = Box::new(tools::TagTool::new()) as Box<dyn ToolHandler>;
             tools.insert(tag.as_any().type_id(), tag);
+        }
+        if needs_move_layer {
+            let tool = Box::new(tools::MoveLayerTool::default()) as Box<dyn ToolHandler>;
+            tools.insert(tool.as_any().type_id(), tool);
         }
 
         Self {
@@ -236,6 +244,7 @@ impl ToolRegistry {
             ToolId::Fill => TypeId::of::<tools::FillTool>(),
             ToolId::Font => TypeId::of::<tools::FontTool>(),
             ToolId::Tag => TypeId::of::<tools::TagTool>(),
+            ToolId::MoveLayer => TypeId::of::<tools::MoveLayerTool>(),
             ToolId::Line | ToolId::RectangleOutline | ToolId::RectangleFilled | ToolId::EllipseOutline | ToolId::EllipseFilled => {
                 TypeId::of::<tools::ShapeTool>()
             }

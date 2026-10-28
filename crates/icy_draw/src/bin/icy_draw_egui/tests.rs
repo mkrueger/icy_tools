@@ -2080,6 +2080,120 @@ fn selection_toolbar_exposes_appearance_and_sampling_options() {
 }
 
 #[test]
+fn move_layer_tool_is_available_in_text_modes_with_bounds_and_lock_feedback() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    let size = egui::vec2(1280.0, 820.0);
+    for kind in [NewKind::Ansi, NewKind::Petscii, NewKind::Atascii, NewKind::Utf8] {
+        app.create(kind, Size::new(40, 25));
+        app.select_tool(Tool::MoveLayer);
+        assert_eq!(app.document.tool, Tool::MoveLayer);
+        assert_eq!(app.sub_cells(), (1, 1));
+        app.show_layer_bounds = false;
+        assert!(app.editor_markers().show_layer_bounds);
+        frame(&context, &mut app, size, vec![]);
+        let output = frame(&context, &mut app, size, vec![]);
+        assert!(text_position(&output, &fl!("tool-move-layer-hint")).is_some());
+        {
+            let mut info = app.view.terminal.render_info.write();
+            info.display_scale = 2.0;
+            info.viewport_width = app.canvas_rect.width();
+            info.viewport_height = app.canvas_rect.height();
+            info.font_width = 8.0;
+            info.font_height = 16.0;
+            info.bounds_x = app.canvas_rect.left();
+            info.bounds_y = app.canvas_rect.top();
+        }
+        let canvas = app.canvas_rect.center();
+        let output = frame(&context, &mut app, size, vec![egui::Event::PointerMoved(canvas)]);
+        assert_eq!(output.platform_output.cursor_icon, egui::CursorIcon::Grab);
+        app.document
+            .with_state(|state| state.get_cur_layer_mut().unwrap().properties.is_position_locked = true);
+        let output = frame(&context, &mut app, size, vec![egui::Event::PointerMoved(canvas)]);
+        assert_eq!(output.platform_output.cursor_icon, egui::CursorIcon::NotAllowed);
+        assert!(text_position(&output, &fl!("tool-move-layer-locked")).is_some());
+    }
+}
+
+#[test]
+fn move_layer_tool_canvas_drag_commits_once_and_escape_restores_preview() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let mut app = DrawApp::new();
+    app.select_tool(Tool::MoveLayer);
+    let size = egui::vec2(1280.0, 820.0);
+    frame(&context, &mut app, size, vec![]);
+    {
+        let mut info = app.view.terminal.render_info.write();
+        info.display_scale = 2.0;
+        info.viewport_width = app.canvas_rect.width();
+        info.viewport_height = app.canvas_rect.height();
+        info.font_width = 8.0;
+        info.font_height = 16.0;
+        info.bounds_x = app.canvas_rect.left();
+        info.bounds_y = app.canvas_rect.top();
+    }
+    let info = app.view.terminal.render_info.read().clone();
+    let cell = |x: f32, y: f32| {
+        egui::pos2(
+            info.bounds_x + info.viewport_x + info.font_width * info.display_scale * (x + 0.5),
+            info.bounds_y + info.viewport_y + info.font_height * info.display_scale * (y + 0.5),
+        )
+    };
+    let start = cell(4.0, 4.0);
+    let end = cell(7.0, 6.0);
+    frame(&context, &mut app, size, pointer(start, true));
+    let output = frame(&context, &mut app, size, vec![egui::Event::PointerMoved(end)]);
+    assert_eq!(output.platform_output.cursor_icon, egui::CursorIcon::Grabbing);
+    assert_eq!(app.document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::new(3, 2));
+    assert_eq!(
+        app.document.with_state(|state| state.get_cur_layer().unwrap().base_offset()),
+        Position::default()
+    );
+    frame(&context, &mut app, size, pointer(end, false));
+    assert_eq!(app.document.with_state(|state| state.undo_stack_len()), 1);
+    frame(&context, &mut app, size, pointer(start, true));
+    frame(&context, &mut app, size, vec![egui::Event::PointerMoved(end)]);
+    frame(&context, &mut app, size, vec![key_event(Key::Escape, egui::Modifiers::NONE)]);
+    frame(&context, &mut app, size, pointer(end, false));
+    assert_eq!(app.document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::new(3, 2));
+    assert_eq!(app.document.with_state(|state| state.undo_stack_len()), 1);
+    app.document.undo().unwrap();
+    assert_eq!(app.document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::default());
+    app.document.with_state(|state| {
+        state.set_layer_size(0, Size::new(4, 4)).unwrap();
+        state.move_layer(Position::new(2, 2)).unwrap();
+    });
+    for (x, y, expected) in [
+        (2.0, 2.0, egui::CursorIcon::Grab),
+        (1.0, 2.0, egui::CursorIcon::Default),
+        (6.0, 2.0, egui::CursorIcon::Default),
+        (2.0, 6.0, egui::CursorIcon::Default),
+    ] {
+        let output = frame(&context, &mut app, size, vec![egui::Event::PointerMoved(cell(x, y))]);
+        assert_eq!(output.platform_output.cursor_icon, expected);
+    }
+
+    // Dragging outside the layer does nothing.
+    let undo = app.document.with_state(|state| state.undo_stack_len());
+    frame(&context, &mut app, size, pointer(cell(10.0, 10.0), true));
+    frame(&context, &mut app, size, vec![egui::Event::PointerMoved(cell(14.0, 12.0))]);
+    frame(&context, &mut app, size, pointer(cell(14.0, 12.0), false));
+    assert_eq!(app.document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::new(2, 2));
+    assert_eq!(app.document.with_state(|state| state.undo_stack_len()), undo);
+    let outside = egui::pos2(app.canvas_rect.left() - 200.0, app.canvas_rect.top() - 200.0);
+    frame(&context, &mut app, size, pointer(cell(3.0, 3.0), true));
+    frame(&context, &mut app, size, vec![egui::Event::PointerMoved(outside)]);
+    frame(&context, &mut app, size, pointer(outside, false));
+    let offset = app.document.with_state(|state| state.get_cur_layer().unwrap().offset());
+    assert!(offset.x < -2 && offset.y < -2, "{offset:?}");
+    assert_eq!(app.document.with_state(|state| state.undo_stack_len()), undo + 1);
+}
+
+#[test]
 fn select_tool_shows_handle_cursors_and_the_add_mode() {
     use_english();
     let context = egui::Context::default();

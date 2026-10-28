@@ -1,11 +1,16 @@
 # IcyDraw Changelog
 
-## 0.6.1 - 2026-10-27
+## 0.6.1 - 2026-10-28
 
 Changes since 0.6.0.
 
 ### Added
 
+- Dedicated Move Layer tool for text-mode documents, with drag previews,
+  cell-based keyboard nudging, axis-constrained dragging and cancellation.
+  Drags start on the selected layer and can continue past the canvas edges;
+  consecutive arrow-key nudges undo in one step. The cursor shows a grab hand
+  over the selected layer and a grabbing hand while dragging.
 - UTF-8 Art document mode on the start screen, in the New dialog and through
   MCP (`"type": "utf8"`), with terminal-compatible one- and two-cell graphemes,
   wide characters and combining marks.
@@ -21,6 +26,8 @@ Changes since 0.6.0.
 
 ### Fixed
 
+- Fixed IGS loop parameters split across lines with `_` being truncated during
+  playback, causing invalid blit parameters and missing drawing operations.
 - Restored alphabetized plugin category submenus from script metadata, with
   title sorting and description/author tooltips.
 - Corrected SkyPix Amiga font bitmaps, proportional spacing and bearings,

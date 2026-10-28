@@ -16,7 +16,7 @@ use super::{
 };
 
 const TOOLS: [&[ToolPair]; 3] = [
-    &[ToolPair::single(Tool::Click), ToolPair::single(Tool::Select)],
+    &[ToolPair::single(Tool::Click), ToolPair::single(Tool::Select), ToolPair::single(Tool::MoveLayer)],
     &[
         ToolPair::single(Tool::Pencil),
         ToolPair::single(Tool::Line),
@@ -248,6 +248,9 @@ impl DrawApp {
     }
 
     fn vt52_toolbar(&mut self, ui: &mut egui::Ui) {
+        if self.move_layer_toolbar(ui) {
+            return;
+        }
         let Some((brush, set)) = self.vt52.as_ref().map(|editor| (editor.brush, editor.fkey_set)) else {
             return;
         };

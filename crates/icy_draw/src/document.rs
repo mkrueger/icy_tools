@@ -177,6 +177,9 @@ pub struct Document {
     tag_clipboard: Option<(String, Vec<icy_engine::Tag>)>,
     /// Whether text is typed in inverse video, on screens that keep it in the character (ATASCII).
     pub inverse: bool,
+    /// The undo stack length and layer after the last arrow-key nudge, so consecutive nudges
+    /// share one undo step.
+    layer_nudge: Option<(usize, usize)>,
     /// Whether the pencil and shapes draw 2 × 2 pixels per character with quarter blocks
     /// (ATASCII, PETSCII); positions are then in pixels.
     pub quarter_blocks: bool,
@@ -269,6 +272,7 @@ impl Document {
             art_line: None,
             tag_clipboard: None,
             inverse: false,
+            layer_nudge: None,
             quarter_blocks: false,
             reverse_pen: false,
             text_edit: None,
@@ -710,10 +714,17 @@ impl Document {
             self.tool = Tool::Click;
             return;
         }
-        if matches!(self.tool, Tool::Click | Tool::Font | Tool::Select) && button != MouseButton::Left {
+        if matches!(self.tool, Tool::Click | Tool::Font | Tool::Select | Tool::MoveLayer) && button != MouseButton::Left {
             return;
         }
-        if !matches!(self.tool, Tool::Click | Tool::Select | Tool::Font | Tool::Tag) && !self.can_paint() {
+        if self.tool == Tool::MoveLayer && !self.over_current_layer(position) {
+            return;
+        }
+        if self.tool == Tool::MoveLayer && !self.can_move_layer() {
+            log::warn!("{}", crate::fl!("tool-move-layer-locked"));
+            return;
+        }
+        if !matches!(self.tool, Tool::Click | Tool::Select | Tool::Font | Tool::Tag | Tool::MoveLayer) && !self.can_paint() {
             return;
         }
         if self.tool == Tool::Fill {
@@ -772,11 +783,11 @@ impl Document {
             state
                 .get_cur_layer()
                 .filter(|layer| {
-                    (self.tool == Tool::Click || (self.tool == Tool::Font && (layer.is_text() || layer.is_group())))
+                    (matches!(self.tool, Tool::Click | Tool::MoveLayer) || (self.tool == Tool::Font && (layer.is_text() || layer.is_group())))
                         && button == MouseButton::Left
-                        && (self.paste_active() || modifiers.ctrl || modifiers.meta || layer.role == icy_engine::Role::Image)
+                        && (self.tool == Tool::MoveLayer || self.paste_active() || modifiers.ctrl || modifiers.meta || layer.role == icy_engine::Role::Image)
                         && state.get_current_layer().is_ok_and(|index| state.can_move_layer(index))
-                        && (!layer.properties.is_locked || layer.is_text() || layer.is_group())
+                        && (self.tool == Tool::MoveLayer || !layer.properties.is_locked || layer.is_text() || layer.is_group())
                 })
                 .map(|layer| layer.offset())
         });
@@ -831,6 +842,45 @@ impl Document {
         if self.tool == Tool::Pencil {
             self.stamp(position, self.brush, button);
         }
+        self.update(position);
+    }
+
+    pub fn can_move_layer(&self) -> bool {
+        self.with_state(|state| state.get_current_layer().is_ok_and(|index| state.can_move_layer(index)))
+    }
+
+    /// Whether `position` lies on the current layer, or on any layer of the current group.
+    pub fn over_current_layer(&self, position: Position) -> bool {
+        self.with_state(|state| {
+            state
+                .get_current_layer()
+                .ok()
+                .and_then(|index| state.layer_move_bounds(index))
+                .is_some_and(|bounds| bounds.contains_pt(position))
+        })
+    }
+
+    pub fn nudge_layer(&mut self, delta: Position) -> DrawResult<()> {
+        if !self.can_move_layer() {
+            return Err(crate::fl!("tool-move-layer-locked"));
+        }
+        self.finish();
+        let previous = self.layer_nudge.take();
+        self.with_state(|state| {
+            let current = (state.undo_stack_len(), state.get_current_layer()?);
+            state.nudge_layer(delta, previous == Some(current))?;
+            Ok::<_, icy_engine::EngineError>((state.undo_stack_len(), current.1))
+        })
+        .map(|nudge| self.layer_nudge = Some(nudge))
+        .map_err(|error| error.to_string())
+    }
+
+    pub fn update_with_shift(&mut self, position: Position, shift: bool) {
+        let position = if let Some(stroke) = self.stroke.as_ref().filter(|stroke| stroke.tool == Tool::MoveLayer && shift) {
+            stroke.start + icy_engine_edit::tools::layer_drag_delta(stroke.start, position, true)
+        } else {
+            position
+        };
         self.update(position);
     }
 
@@ -1168,10 +1218,17 @@ impl Document {
                 self.new_tag_request = Some((Position::new(left, stroke.start.y), width));
             }
             if let Some(offset) = stroke.layer_offset {
-                self.with_state(|state| {
+                let result = self.with_state(|state| {
                     state.set_layer_preview_offset(None);
-                    let _ = state.move_layer(offset + stroke.last - stroke.start);
+                    let target = offset + stroke.last - stroke.start;
+                    if target != offset {
+                        state.move_layer(target)?;
+                    }
+                    Ok::<(), icy_engine::EngineError>(())
                 });
+                if let Err(error) = result {
+                    log::error!("Could not move layer: {error}");
+                }
             }
             if stroke.selection_drag == SelectionDrag::Create && stroke.start == stroke.last {
                 self.with_state(|state| {
@@ -1247,6 +1304,7 @@ impl Document {
             return self.paste_action(PasteAction::Cancel);
         }
         self.finish();
+        self.layer_nudge = None;
         self.prepare_text_history(false);
         let result = self.edit_tags(|state| state.undo()).map_err(|error| error.to_string());
         self.valid_text_edit();
@@ -1258,6 +1316,7 @@ impl Document {
             return Ok(());
         }
         self.finish();
+        self.layer_nudge = None;
         self.prepare_text_history(true);
         let result = self.edit_tags(|state| state.redo()).map_err(|error| error.to_string());
         self.valid_text_edit();
@@ -2133,6 +2192,98 @@ mod tests {
         assert!(document.with_state(|state| state.is_selected(Position::new(12, 4))));
         assert!(!document.with_state(|state| state.is_selected(Position::new(21, 2))));
         assert!(!document.stroke_active());
+    }
+
+    #[test]
+    fn move_layer_tool_preserves_cells_and_commits_one_undo_step() {
+        for buffer_type in [
+            icy_engine::BufferType::CP437,
+            icy_engine::BufferType::Petscii,
+            icy_engine::BufferType::Atascii,
+            icy_engine::BufferType::Unicode,
+        ] {
+            let mut document = if buffer_type == icy_engine::BufferType::Unicode {
+                Document::new_unicode(Size::new(20, 10))
+            } else {
+                Document::new(Size::new(20, 10))
+            };
+            document.with_state(|state| state.get_buffer_mut().buffer_type = buffer_type);
+            document.type_text("AB").unwrap();
+            let cells = document.with_state(|state| layer_chars(state));
+            let caret = document.with_state(|state| state.get_caret().position());
+            let undo_count = document.with_state(|state| state.undo_stack_len());
+            document.tool = Tool::MoveLayer;
+            document.begin(Position::new(15, 8), MouseButton::Left);
+            document.update(Position::new(10, 4));
+            document.update(Position::new(9, 3));
+            document.with_state(|state| {
+                assert_eq!(state.get_cur_layer().unwrap().base_offset(), Position::default());
+                assert_eq!(state.get_cur_layer().unwrap().offset(), Position::new(-6, -5));
+            });
+            document.finish();
+            assert_eq!(document.with_state(|state| layer_chars(state)), cells);
+            assert_eq!(document.with_state(|state| state.get_caret().position()), caret);
+            assert_eq!(document.with_state(|state| state.undo_stack_len()), undo_count + 1);
+            document.undo().unwrap();
+            assert_eq!(document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::default());
+            document.redo().unwrap();
+            assert_eq!(document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::new(-6, -5));
+        }
+    }
+
+    #[test]
+    fn move_layer_tool_constrains_cancels_and_ignores_clicks() {
+        let mut document = Document::new(Size::new(20, 10));
+        document.tool = Tool::MoveLayer;
+        document.begin(Position::new(3, 3), MouseButton::Right);
+        assert!(!document.stroke_active());
+        document.with_state(|state| state.set_layer_size(0, Size::new(5, 5)).unwrap());
+        let undo = document.with_state(|state| state.undo_stack_len());
+        document.begin(Position::new(8, 8), MouseButton::Left);
+        assert!(!document.stroke_active(), "a drag must start on the layer");
+        document.begin(Position::new(3, 3), MouseButton::Left);
+        document.finish();
+        assert_eq!(document.with_state(|state| state.undo_stack_len()), undo);
+        document.begin(Position::new(3, 3), MouseButton::Left);
+        document.update_with_shift(Position::new(8, 5), true);
+        assert_eq!(document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::new(5, 0));
+        document.update_with_shift(Position::new(5, 9), true);
+        assert_eq!(document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::new(0, 6));
+        document.cancel();
+        assert_eq!(document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::default());
+        assert_eq!(document.with_state(|state| state.undo_stack_len()), undo);
+    }
+
+    #[test]
+    fn move_layer_tool_moves_groups_and_respects_position_not_content_locks() {
+        let mut document = Document::new(Size::new(20, 10));
+        document.tool = Tool::MoveLayer;
+        document.with_state(|state| {
+            state.get_cur_layer_mut().unwrap().properties.is_locked = true;
+            state.group_layer(0).unwrap();
+        });
+        document.begin(Position::new(3, 3), MouseButton::Left);
+        document.update(Position::new(6, 5));
+        document.finish();
+        document.with_state(|state| {
+            for layer in &state.get_buffer().layers {
+                assert_eq!(layer.offset(), Position::new(3, 2));
+            }
+            let bounds = state.layer_move_bounds(1).unwrap();
+            assert_eq!((bounds.start, bounds.size()), (Position::new(3, 2), Size::new(20, 10)));
+        });
+        document.undo().unwrap();
+        document.with_state(|state| {
+            for layer in &state.get_buffer().layers {
+                assert_eq!(layer.offset(), Position::default());
+            }
+            state.get_buffer_mut().layers[0].properties.is_position_locked = true;
+        });
+        let undo_count = document.with_state(|state| state.undo_stack_len());
+        document.begin(Position::new(3, 3), MouseButton::Left);
+        assert!(!document.stroke_active());
+        assert!(document.nudge_layer(Position::new(1, 0)).is_err());
+        assert_eq!(document.with_state(|state| state.undo_stack_len()), undo_count);
     }
 
     #[test]

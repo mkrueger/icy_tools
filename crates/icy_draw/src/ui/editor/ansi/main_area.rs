@@ -46,6 +46,7 @@ fn parse_tool_name(name: &str) -> Option<Tool> {
         "Fill" => Some(Tool::Fill),
         "Font" => Some(Tool::Font),
         "Tag" => Some(Tool::Tag),
+        "MoveLayer" => Some(Tool::MoveLayer),
         _ => None,
     }
 }

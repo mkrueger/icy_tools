@@ -57,6 +57,21 @@ pub fn key(document: &mut Document, fkeys: &mut FKeySets, key: Key, modifiers: M
         }
         return Ok(true);
     }
+    if document.tool == Tool::MoveLayer {
+        if modifiers.alt || modifiers.ctrl || modifiers.command || document.stroke_active() {
+            return Ok(false);
+        }
+        let step = if modifiers.shift { 10 } else { 1 };
+        let delta = match key {
+            Key::ArrowLeft => Position::new(-step, 0),
+            Key::ArrowRight => Position::new(step, 0),
+            Key::ArrowUp => Position::new(0, -step),
+            Key::ArrowDown => Position::new(0, step),
+            _ => return Ok(false),
+        };
+        document.nudge_layer(delta)?;
+        return Ok(true);
+    }
     if document.tool == Tool::Tag && matches!(key, Key::Delete | Key::Backspace) {
         document.delete_selected_tags()?;
         return Ok(true);
@@ -287,6 +302,40 @@ mod tests {
             assert_eq!(document.with_state(|state| state.get_caret().position()), Position::default());
             assert!(!document.modified());
         }
+    }
+
+    #[test]
+    fn move_layer_tool_nudges_without_moving_the_caret_and_escape_cancels() {
+        let mut document = Document::new(Size::new(20, 10));
+        let mut fkeys = FKeySets::default();
+        document.tool = Tool::MoveLayer;
+        assert!(key(&mut document, &mut fkeys, Key::ArrowLeft, Modifiers::NONE).unwrap());
+        assert!(key(&mut document, &mut fkeys, Key::ArrowDown, Modifiers::SHIFT).unwrap());
+        assert_eq!(document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::new(-1, 10));
+        assert_eq!(document.with_state(|state| state.get_caret().position()), Position::default());
+        assert_eq!(document.with_state(|state| state.undo_stack_len()), 1, "consecutive nudges share one undo step");
+        document.begin(Position::new(2, 12), icy_engine::MouseButton::Left);
+        assert!(document.stroke_active());
+        document.update(Position::new(5, 15));
+        key(&mut document, &mut fkeys, Key::Escape, Modifiers::NONE).unwrap();
+        assert!(!document.stroke_active());
+        assert_eq!(document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::new(-1, 10));
+        document.undo().unwrap();
+        assert_eq!(document.with_state(|state| state.get_cur_layer().unwrap().offset()), Position::default());
+
+        // Another edit, an undo or a save between nudges starts a new undo step.
+        document.redo().unwrap();
+        key(&mut document, &mut fkeys, Key::ArrowRight, Modifiers::NONE).unwrap();
+        assert_eq!(document.with_state(|state| state.undo_stack_len()), 2);
+        document.with_state(|state| state.get_undo_stack().lock().unwrap().mark_saved());
+        key(&mut document, &mut fkeys, Key::ArrowRight, Modifiers::NONE).unwrap();
+        assert_eq!(document.with_state(|state| state.undo_stack_len()), 3);
+        assert!(document.modified());
+        key(&mut document, &mut fkeys, Key::ArrowLeft, Modifiers::NONE).unwrap();
+        assert_eq!(document.with_state(|state| state.undo_stack_len()), 2, "returning to the start drops the step");
+        assert!(!document.modified());
+        document.with_state(|state| state.get_cur_layer_mut().unwrap().properties.is_position_locked = true);
+        assert!(key(&mut document, &mut fkeys, Key::ArrowRight, Modifiers::NONE).is_err());
     }
 
     #[test]

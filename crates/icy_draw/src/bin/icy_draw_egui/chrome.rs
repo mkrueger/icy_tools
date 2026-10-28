@@ -120,9 +120,10 @@ const MINIMAP_PIXELS: usize = 512;
 /// Horizontal padding of the right sidebar sections.
 const SECTION_MARGIN: i8 = 12;
 
-const TOOL_SLOTS: [ToolPair; 10] = [
+const TOOL_SLOTS: [ToolPair; 11] = [
     ToolPair::single(Tool::Click),
     ToolPair::single(Tool::Select),
+    ToolPair::single(Tool::MoveLayer),
     ToolPair::single(Tool::Pencil),
     ToolPair::single(Tool::Line),
     ToolPair::new(Tool::RectangleOutline, Tool::RectangleFilled),
@@ -610,6 +611,32 @@ impl DrawApp {
         }
     }
 
+    pub(super) fn move_layer_options(&mut self, ui: &mut egui::Ui) {
+        let offset = self.document.with_state(|state| state.get_cur_layer().map(|layer| layer.offset()));
+        if let Some(offset) = offset {
+            ui.label(format!("X: {}  Y: {}", offset.x, offset.y));
+        }
+        widgets::divider(ui);
+        if self.document.can_move_layer() {
+            ui.weak(fl!("tool-move-layer-hint"));
+        } else {
+            ui.colored_label(ui.visuals().warn_fg_color, fl!("tool-move-layer-locked"));
+        }
+    }
+
+    pub(super) fn move_layer_toolbar(&mut self, ui: &mut egui::Ui) -> bool {
+        if self.document.tool != Tool::MoveLayer || self.document.paste_active() {
+            return false;
+        }
+        ui.horizontal_centered(|ui| {
+            ui.add_space(8.0);
+            ui.strong(tool_label(Tool::MoveLayer));
+            widgets::divider(ui);
+            self.move_layer_options(ui);
+        });
+        true
+    }
+
     pub(super) fn select_tool(&mut self, tool: Tool) {
         if self.document.paste_active() {
             return;
@@ -637,7 +664,7 @@ impl DrawApp {
         let mut markers = icy_engine_gui::EditorMarkers::default();
         let floating = self.document.paste_active();
         markers.paste_mode = floating;
-        markers.show_layer_bounds = floating || self.show_layer_bounds;
+        markers.show_layer_bounds = floating || self.show_layer_bounds || self.document.tool == Tool::MoveLayer;
         markers.layer_border_animated = floating;
         markers.marker_settings = Some(icy_engine_gui::MarkerSettings::default());
         if let Some(image) = &mut self.reference_image {
@@ -690,6 +717,13 @@ impl DrawApp {
                 let bounds = pixels_of(layer.offset(), layer.size());
                 markers.caret_origin_px = (bounds.0, bounds.1);
                 markers.layer_bounds = Some(bounds);
+            }
+            if self.document.tool == Tool::MoveLayer {
+                markers.layer_bounds = state
+                    .get_current_layer()
+                    .ok()
+                    .and_then(|index| state.layer_move_bounds(index))
+                    .map(|bounds| pixels_of(bounds.start, bounds.size()));
             }
         });
         markers
@@ -2194,6 +2228,7 @@ pub(super) fn tool_label(tool: Tool) -> String {
         Tool::Pipette => fl!("tool-pipette_name"),
         Tool::Font => fl!("tool-tdf_name"),
         Tool::Tag => fl!("tool-tag_name"),
+        Tool::MoveLayer => fl!("tool-move-layer-name"),
     }
 }
 
@@ -2212,11 +2247,12 @@ fn tool_hint(tool: Tool) -> String {
         Tool::Pipette => fl!("tool-pipette_tooltip"),
         Tool::Font => fl!("tool-tdf_tooltip"),
         Tool::Tag => fl!("tool-tag_tooltip"),
+        Tool::MoveLayer => fl!("tool-move-layer-hint"),
     }
 }
 
 /// End indices (exclusive) of the tool groups in `TOOL_SLOTS`: navigation, drawing, utilities.
-const TOOL_GROUPS: [usize; 3] = [2, 7, 10];
+const TOOL_GROUPS: [usize; 3] = [3, 8, 11];
 
 /// Padded sidebar section followed by a full-width separator line.
 pub(super) fn section(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
@@ -2605,10 +2641,11 @@ mod tests {
     }
     #[test]
     fn shape_slots_toggle_like_legacy_registry() {
-        assert_eq!(TOOL_SLOTS.len(), 10);
+        assert_eq!(TOOL_SLOTS.len(), 11);
+        assert_eq!(TOOL_SLOTS[2], ToolPair::single(Tool::MoveLayer));
         for (slot, outline, filled) in [
-            (4, Tool::RectangleOutline, Tool::RectangleFilled),
-            (5, Tool::EllipseOutline, Tool::EllipseFilled),
+            (5, Tool::RectangleOutline, Tool::RectangleFilled),
+            (6, Tool::EllipseOutline, Tool::EllipseFilled),
         ] {
             assert!(TOOL_SLOTS[slot].contains(outline));
             assert!(TOOL_SLOTS[slot].contains(filled));

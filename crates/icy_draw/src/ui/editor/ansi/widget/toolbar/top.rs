@@ -375,6 +375,7 @@ impl TopToolbar {
             Tool::Pipette => self.view_pipette_panel(pipette_info),
             Tool::Font => self.view_font_panel(font_panel_info),
             Tool::Tag => self.view_tag_panel(tag_add_mode, selected_tag, tag_selection_count),
+            Tool::MoveLayer => text(crate::fl!("tool-move-layer-hint")).into(),
         };
 
         container(content)

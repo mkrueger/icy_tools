@@ -76,7 +76,7 @@ impl AnsiEditorCore {
 
         // Compute layer bounds and caret origin directly
         let is_paste = self.is_paste_mode();
-        let show_borders = self.show_layer_borders || is_paste;
+        let show_borders = self.show_layer_borders || is_paste || self.current_tool.id() == super::tools::ToolId::MoveLayer;
         markers.show_layer_bounds = show_borders;
         markers.paste_mode = is_paste;
         // Animate layer border when in paste mode (marching ants)
@@ -121,6 +121,16 @@ impl AnsiEditorCore {
                     let h = height as f32 * font_height;
 
                     markers.layer_bounds = Some((x, y, w, h));
+                }
+                if self.current_tool.id() == super::tools::ToolId::MoveLayer {
+                    markers.layer_bounds = edit_state.layer_move_bounds(layer_idx).map(|bounds| {
+                        (
+                            bounds.start.x as f32 * font_width,
+                            bounds.start.y as f32 * font_height,
+                            bounds.size.width as f32 * font_width,
+                            bounds.size.height as f32 * font_height,
+                        )
+                    });
                 }
             }
         }
