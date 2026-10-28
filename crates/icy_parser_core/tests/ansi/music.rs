@@ -649,6 +649,23 @@ fn test_csi_equals_m_selects_music_introducers() {
 }
 
 #[test]
+fn test_ris_restores_the_configured_music_option() {
+    let mut parser = AnsiParser::new();
+    parser.set_music_option(MusicOption::Both);
+    let mut sink = TestSink::new();
+
+    // RIS undoes CSI = Ps M and returns to the option the embedder set.
+    parser.parse(b"\x1B[=0M\x1Bc", &mut sink);
+    assert_eq!(parser.music_option(), MusicOption::Both);
+
+    parser.set_music_option(MusicOption::Banana);
+    parser.parse(b"\x1B[=2M\x1Bc\x1B[MC\x0E", &mut sink);
+    assert_eq!(parser.music_option(), MusicOption::Banana);
+    assert!(sink.get_music().is_none());
+    assert!(sink.commands.iter().any(|cmd| matches!(cmd, TerminalCommand::CsiDeleteLine(1))));
+}
+
+#[test]
 fn test_music_option_can_change_through_command_parser() {
     let mut parser: Box<dyn CommandParser> = Box::new(AnsiParser::new());
     let mut sink = TestSink::new();

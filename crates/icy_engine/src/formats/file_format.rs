@@ -1141,13 +1141,13 @@ impl FileFormat {
             FileFormat::Ansi => {
                 let mut parser = icy_parser_core::AnsiParser::new();
                 if let Some(opt) = music_option {
-                    parser.music_option = opt;
+                    parser.set_music_option(opt);
                 }
                 Some(Box::new(parser))
             }
             FileFormat::AnsiMusic => {
                 let mut parser = icy_parser_core::AnsiParser::new();
-                parser.music_option = music_option.unwrap_or(MusicOption::Both);
+                parser.set_music_option(music_option.unwrap_or(MusicOption::Both));
                 Some(Box::new(parser))
             }
             FileFormat::Ascii => Some(Box::new(icy_parser_core::AsciiParser::new())),

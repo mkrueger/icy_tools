@@ -381,7 +381,7 @@ pub fn get_parser(emulator: &TerminalEmulation, use_ansi_music: Option<MusicOpti
         TerminalEmulation::Ansi | TerminalEmulation::Utf8Ansi => {
             let mut parser = icy_parser_core::AnsiParser::new();
             if let Some(music_opt) = use_ansi_music {
-                parser.music_option = music_opt;
+                parser.set_music_option(music_opt);
             }
             Box::new(parser)
         }

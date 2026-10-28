@@ -280,8 +280,10 @@ impl AnsiParser {
         }
     }
 
-    /// Reset the music state that carries over between strings (RIS).
+    /// Reset the music state that carries over between strings, and the
+    /// introducers `CSI = Ps M` picked (RIS).
     pub(crate) fn reset_music(&mut self) {
         self.music_settings = MusicSettings::default();
+        self.music_option = self.default_music_option;
     }
 }
