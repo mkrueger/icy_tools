@@ -1470,6 +1470,14 @@ button-apply=Übernehmen
 replace-export-file=Exportdatei ersetzen?
 replace-font-file=Fontdatei ersetzen?
 replace-file=Datei ersetzen?
+control-chars-title=Steuerzeichen in der Datei
+control-chars-message={ $file } enthält BEL-, BS- oder TAB-Zeichen außerhalb von Escape-Sequenzen.
+
+    ANSI-Terminals führen sie als Klingel, Rückschritt und Tabulator aus, wodurch sich der Rest der Zeile verschiebt. Zeichenprogramme wie PabloDraw und Moebius zeigen sie stattdessen als CP437-Zeichen •, ◘ und ○ an, und damit erstellte Bilder verlassen sich oft darauf.
+
+    Wie sollen diese Zeichen geladen werden?
+control-chars-display=Als Zeichen anzeigen
+control-chars-execute=Als Steuerzeichen ausführen
 sauce-information=SAUCE-Informationen
 sauce-limit-hint=Bis zu { $limit } Zeichen
 sauce-comments=Kommentare

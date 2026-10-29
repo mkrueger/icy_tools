@@ -1566,6 +1566,14 @@ button-apply=Apply
 replace-export-file=Replace Export File?
 replace-font-file=Replace Font File?
 replace-file=Replace File?
+control-chars-title=Control Characters in File
+control-chars-message={ $file } contains BEL, BS or TAB characters outside escape sequences.
+
+    ANSI terminals execute them as bell, backspace and tab, which shifts the rest of the line. Drawing programs such as PabloDraw and Moebius instead show them as the CP437 glyphs •, ◘ and ○, and pictures made with them often rely on that.
+
+    How should these characters be loaded?
+control-chars-display=Show as Characters
+control-chars-execute=Execute as Control Codes
 sauce-information=SAUCE Information
 sauce-limit-hint=Up to { $limit } characters
 sauce-comments=Comments

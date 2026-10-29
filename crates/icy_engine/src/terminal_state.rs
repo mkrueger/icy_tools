@@ -182,6 +182,8 @@ pub struct TerminalState {
     pub doorway_mode: bool,
     /// CRM `CSI 3 h`: BEL, HT and DEL are displayed as CP437 glyphs.
     pub display_controls: bool,
+    /// Loaded artwork shows BS as a CP437 glyph as well; no escape sequence sets this.
+    pub display_backspace: bool,
     /// DECSDM reset draws sixels at the current text cursor.
     pub sixel_at_cursor: bool,
     /// DEC mode 1070 reset shares color registers between images.
@@ -291,6 +293,7 @@ impl TerminalState {
             suppress_translated_keys: false,
             doorway_mode: false,
             display_controls: false,
+            display_backspace: false,
             sixel_at_cursor: true,
             sixel_shared_palette: false,
             sixel_decoder: icy_sixel::SixelDecoder::new(),
@@ -624,6 +627,7 @@ impl TerminalState {
         self.suppress_translated_keys = false;
         self.doorway_mode = false;
         self.display_controls = false;
+        self.display_backspace = false;
         self.sixel_at_cursor = true;
         self.sixel_shared_palette = false;
         self.sixel_decoder.reset_palette();

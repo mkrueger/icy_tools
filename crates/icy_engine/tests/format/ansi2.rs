@@ -549,3 +549,103 @@ fn test_terminal_width_full_width_rows_unchanged() {
     let reloaded = FileFormat::Ansi.from_bytes(&default, None).unwrap().screen.buffer;
     assert_rows_match(&buf, &reloaded);
 }
+
+#[test]
+fn detects_executed_bel_bs_and_tab_in_ansi_files() {
+    use icy_engine::formats::ansi_contains_control_chars;
+
+    assert!(ansi_contains_control_chars(b"A\x07B"));
+    assert!(ansi_contains_control_chars(b"A\x08B"));
+    assert!(ansi_contains_control_chars(b"A\tB"));
+    assert!(!ansi_contains_control_chars(b"\x1b[1;31mA\r\nB\x1b[0m"));
+    // BEL ending an OSC, after the EOF marker, or in a UTF-8 file isn't a glyph.
+    assert!(!ansi_contains_control_chars(b"\x1b]0;title\x07A"));
+    assert!(!ansi_contains_control_chars(b"A\x1aSAUCE\x07"));
+    assert!(!ansi_contains_control_chars(b"\xEF\xBB\xBFA\x07B"));
+}
+
+#[test]
+fn loading_can_display_bel_bs_and_tab_as_glyphs() {
+    use icy_engine::LoadData;
+
+    let data = b"A\x07\x08\tB\x1b[0m\x7f";
+    let display = FileFormat::Ansi
+        .from_bytes(data, Some(LoadData::default().with_display_control_chars(true)))
+        .unwrap()
+        .screen
+        .buffer;
+    let row: Vec<char> = (0..6).map(|x| display.char_at((x, 0).into()).ch).collect();
+    assert_eq!(row, ['A', '\x07', '\x08', '\x09', 'B', '\x7f']);
+
+    // Executed, BEL is silent, BS steps back over the A and the tab moves B to column 8.
+    let executed = FileFormat::Ansi.from_bytes(data, None).unwrap().screen.buffer;
+    assert_eq!(executed.char_at((8, 0).into()).ch, 'B');
+}
+
+fn control_char_buffer() -> TextBuffer {
+    let mut buf = TextBuffer::new((80, 1));
+    for (x, ch) in "A\x07\x07\x07\x07\x07\x07\x08\x1b\tB".chars().enumerate() {
+        buf.layers[0].set_char((x as i32, 0), AttributedChar::new(ch, TextAttribute::default()));
+    }
+    buf
+}
+
+fn save_control_chars(buf: &TextBuffer, handling: icy_engine::ControlCharHandling) -> Vec<u8> {
+    use icy_engine::formats::{AnsiCompatibilityLevel, AnsiFormatOptions, FormatOptions};
+
+    let mut ansi = AnsiFormatOptions::new(AnsiCompatibilityLevel::IcyTerm);
+    ansi.control_char_handling = handling;
+    let mut options = SaveOptions::new();
+    options.format = FormatOptions::Ansi(ansi);
+    FileFormat::Ansi.to_bytes(buf, &options).unwrap()
+}
+
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|window| window == needle)
+}
+
+#[test]
+fn doorway_export_prefixes_control_chars_with_nul() {
+    let buf = control_char_buffer();
+    let bytes = save_control_chars(&buf, icy_engine::ControlCharHandling::Doorway);
+
+    assert!(bytes.starts_with(b"\x1b[=255h"));
+    assert!(contains(&bytes, b"\x00\x07\x00\x07"));
+    assert!(contains(&bytes, b"\x00\x08\x00\x1b\x00\x09B"));
+    assert!(contains(&bytes, b"\x1b[=255l"));
+    assert!(!contains(&bytes, b"\x1b[3h"));
+    assert_rows_match(&buf, &FileFormat::Ansi.from_bytes(&bytes, None).unwrap().screen.buffer);
+}
+
+#[test]
+fn crm_export_shows_bel_and_tab_and_uses_doorway_for_the_rest() {
+    let buf = control_char_buffer();
+    let bytes = save_control_chars(&buf, icy_engine::ControlCharHandling::ControlRepresentation);
+
+    assert!(bytes.starts_with(b"\x1b[3h\x1b[=255h"));
+    // Six BELs are written out instead of being compressed with REP.
+    assert!(contains(&bytes, b"A\x07\x07\x07\x07\x07\x07\x00\x08\x00\x1b\x09B"));
+    assert!(contains(&bytes, b"\x1b[=255l\x1b[3l"));
+    assert_rows_match(&buf, &FileFormat::Ansi.from_bytes(&bytes, None).unwrap().screen.buffer);
+
+    let mut bel_only = TextBuffer::new((80, 1));
+    bel_only.layers[0].set_char((0, 0), AttributedChar::new('\x07', TextAttribute::default()));
+    let bytes = save_control_chars(&bel_only, icy_engine::ControlCharHandling::ControlRepresentation);
+    assert!(contains(&bytes, b"\x1b[3h"));
+    assert!(!contains(&bytes, b"\x1b[=255h"));
+}
+
+#[test]
+fn control_char_modes_are_only_switched_on_when_needed() {
+    let mut buf = TextBuffer::new((80, 1));
+    buf.layers[0].set_char((0, 0), AttributedChar::new('A', TextAttribute::default()));
+    assert!(!icy_engine::formats::contains_control_chars(&buf, buf.buffer_type));
+    assert!(icy_engine::formats::contains_control_chars(
+        &control_char_buffer(),
+        icy_engine::BufferType::CP437
+    ));
+    for handling in [icy_engine::ControlCharHandling::Doorway, icy_engine::ControlCharHandling::ControlRepresentation] {
+        let bytes = save_control_chars(&buf, handling);
+        assert!(!contains(&bytes, b"\x1b[=255h") && !contains(&bytes, b"\x1b[3h"));
+    }
+}

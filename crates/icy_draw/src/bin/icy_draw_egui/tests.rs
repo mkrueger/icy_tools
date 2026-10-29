@@ -430,6 +430,33 @@ fn failed_open_keeps_original_document() {
 }
 
 #[test]
+fn ansi_files_with_control_chars_ask_how_to_load_them() {
+    let directory = tempfile::tempdir().unwrap();
+    let plain = directory.path().join("plain.ans");
+    std::fs::write(&plain, b"A\x1b[31mB\r\n").unwrap();
+    let mut app = DrawApp::new();
+    app.open(plain);
+    assert!(app.dialog.is_none());
+
+    let art = directory.path().join("art.ans");
+    std::fs::write(&art, b"A\x07\x07B").unwrap();
+    let original = app.document.screen.clone();
+    app.open(art.clone());
+    assert!(matches!(&app.dialog, Some(Dialog::ControlChars(path)) if *path == art));
+    assert!(std::sync::Arc::ptr_eq(&original, &app.document.screen));
+
+    let row = |app: &DrawApp| -> String {
+        app.document
+            .with_state(|state| (0..4).map(|x| state.get_buffer().char_at(Position::new(x, 0)).ch).collect())
+    };
+    app.dialog = None;
+    app.load_ansi_document(&art, true);
+    assert_eq!(row(&app), "A\x07\x07B");
+    app.load_ansi_document(&art, false);
+    assert_eq!(row(&app), "AB  ");
+}
+
+#[test]
 fn dirty_open_prompts_before_replacing() {
     let mut app = DrawApp::new();
     app.document.type_text("KEEP").unwrap();

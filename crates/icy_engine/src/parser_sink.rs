@@ -20,8 +20,8 @@
 use base64::{engine::general_purpose, Engine as _};
 use icy_parser_core::{
     AnsiMode, AnsiMusic, Blink, Color, CommandSink, DecMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode, ErrorLevel, IgsCommand,
-    Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand, Wrapping, BELL,
-    DELETE, TAB,
+    Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand, Wrapping, BACKSPACE,
+    BELL, DELETE, TAB,
 };
 use image::imageops::FilterType;
 
@@ -675,7 +675,11 @@ impl CommandSink for ScreenSink<'_> {
                 }
             }
             TerminalCommand::Backspace => {
-                self.screen.bs();
+                if self.screen.terminal_state().display_backspace && self.screen.buffer_type() == BufferType::CP437 {
+                    self.print(&[BACKSPACE]);
+                } else {
+                    self.screen.bs();
+                }
             }
             TerminalCommand::Tab => {
                 if self.displays_controls() {

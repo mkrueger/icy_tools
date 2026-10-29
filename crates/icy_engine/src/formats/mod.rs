@@ -1,4 +1,5 @@
 pub(crate) mod io;
+pub use io::ansi_contains_control_chars;
 pub use io::save_icy_draw_with_preview;
 pub use io::{atari_st_buffer, atari_st_columns, atari_st_font, atari_st_resolution, atari_st_text_color, atascii_buffer};
 pub use io::{
@@ -21,6 +22,7 @@ mod save_options;
 pub use save_options::*;
 
 pub mod ansi_v2;
+pub use ansi_v2::contains_control_chars;
 
 mod font_specimen;
 mod image_format;
@@ -79,6 +81,7 @@ pub struct LoadData {
     /// If set, the buffer height will be clamped to this value after loading
     max_height: Option<i32>,
     convert_to_utf8: bool,
+    display_control_chars: bool,
 }
 
 impl LoadData {
@@ -88,6 +91,7 @@ impl LoadData {
             default_terminal_width,
             max_height: None,
             convert_to_utf8: false,
+            display_control_chars: false,
         }
     }
 
@@ -101,6 +105,17 @@ impl LoadData {
 
     pub fn convert_to_utf8(&self) -> bool {
         self.convert_to_utf8
+    }
+
+    /// Show BEL, BS and HT in CP437 ANSI files as glyphs instead of executing them,
+    /// like the artwork loaders of `PabloDraw` and Moebius.
+    pub fn with_display_control_chars(mut self, display: bool) -> Self {
+        self.display_control_chars = display;
+        self
+    }
+
+    pub fn display_control_chars(&self) -> bool {
+        self.display_control_chars
     }
 
     /// Interpret ANSI/text input as UTF-8 even when it has no byte-order mark.

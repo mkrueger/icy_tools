@@ -84,6 +84,13 @@ struct PasteState {
     carried: Option<(Position, Vec<usize>, bool)>,
 }
 
+/// `.utf8` files are UTF-8 ANSI without a byte order mark.
+fn is_utf8_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("utf8"))
+}
+
 /// All characters of the current layer.
 fn layer_chars(state: &EditState) -> icy_engine_edit::CharGrid {
     state.get_cur_layer().map_or_else(Vec::new, |layer| {
@@ -280,16 +287,31 @@ impl Document {
     }
 
     pub fn load(path: &Path) -> DrawResult<Self> {
+        Self::load_with_control_chars(path, false)
+    }
+
+    /// Whether `path` is a CP437 ANSI file that executes BEL, BS or HT, which artwork
+    /// editors show as glyphs; the user picks with [`Self::load_with_control_chars`].
+    pub fn has_ambiguous_control_chars(path: &Path) -> std::io::Result<bool> {
+        if FileFormat::from_path(path) != Some(FileFormat::Ansi) || is_utf8_extension(path) {
+            return Ok(false);
+        }
+        Ok(icy_engine::formats::ansi_contains_control_chars(&std::fs::read(path)?))
+    }
+
+    /// Loads `path`, showing BEL, BS and HT in ANSI files as CP437 glyphs when `display_control_chars` is set.
+    pub fn load_with_control_chars(path: &Path, display_control_chars: bool) -> DrawResult<Self> {
         let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
         let format = FileFormat::from_path(path).ok_or_else(|| format!("Unknown file format: {}", path.display()))?;
-        let load_data = if path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("utf8"))
-        {
+        let load_data = if is_utf8_extension(path) {
             Some(icy_engine::LoadData::default().with_convert_to_utf8(true))
         } else {
             crate::screen_profile::atascii_columns(path).map(|columns| icy_engine::LoadData::new(None, Some(columns)))
+        };
+        let load_data = if display_control_chars {
+            Some(load_data.unwrap_or_default().with_display_control_chars(true))
+        } else {
+            load_data
         };
         let loaded = format.from_bytes(&bytes, load_data).map_err(|error| error.to_string())?;
         let mut state = EditState::from_buffer(loaded.screen.buffer);

@@ -83,6 +83,8 @@ enum Dialog {
     Script,
     Monitor,
     Overwrite(PathBuf),
+    /// An ANSI file executes BEL, BS or HT; asks whether to show them as glyphs instead.
+    ControlChars(PathBuf),
     AnimationOverwrite(PathBuf, super::animation::ExportFormat),
     Error(String),
     ReferenceImage,
@@ -725,7 +727,15 @@ impl DrawApp {
             }
             return;
         }
-        match Document::load(&path) {
+        match Document::has_ambiguous_control_chars(&path) {
+            Ok(true) => self.dialog = Some(Dialog::ControlChars(path)),
+            Ok(false) => self.load_ansi_document(&path, false),
+            Err(error) => self.dialog = Some(Dialog::Error(error.to_string())),
+        }
+    }
+
+    fn load_ansi_document(&mut self, path: &Path, display_control_chars: bool) {
+        match Document::load_with_control_chars(path, display_control_chars) {
             Ok(document) => self.replace(document),
             Err(error) => self.dialog = Some(Dialog::Error(error)),
         }
@@ -1097,7 +1107,11 @@ impl DrawApp {
             .with_unicode(
                 self.document
                     .with_state(|state| state.get_buffer().buffer_type == icy_engine::BufferType::Unicode),
-            );
+            )
+            .with_control_chars(self.document.with_state(|state| {
+                let buffer = state.get_buffer();
+                icy_engine::formats::contains_control_chars(buffer, buffer.buffer_type)
+            }));
         // Documents of a home computer's screen export to its own format first.
         match self.document.profile().native_format() {
             Some((format, extension)) => dialog.with_format(format).with_extension(format, extension),
@@ -4174,6 +4188,38 @@ impl DrawApp {
                             keep = false;
                         }
                     }
+                }
+            }
+            Dialog::ControlChars(path) => {
+                #[derive(Clone, Copy)]
+                enum Action {
+                    Cancel,
+                    Execute,
+                    Display,
+                }
+                let response = MessageBox::new(
+                    "control-chars",
+                    MessageKind::Question,
+                    fl!("control-chars-title"),
+                    fl!(
+                        "control-chars-message",
+                        file = path.file_name().unwrap_or_default().to_string_lossy().to_string()
+                    ),
+                )
+                .buttons([
+                    DialogButton::cancel(labels::cancel(), Action::Cancel),
+                    DialogButton::secondary(fl!("control-chars-execute"), Action::Execute),
+                    DialogButton::primary(fl!("control-chars-display"), Action::Display),
+                ])
+                .show(context);
+                match response.action {
+                    Some(action @ (Action::Execute | Action::Display)) => {
+                        let path = path.clone();
+                        self.load_ansi_document(&path, matches!(action, Action::Display));
+                        keep = false;
+                    }
+                    Some(Action::Cancel) => keep = false,
+                    None => keep = !response.dismissed,
                 }
             }
             Dialog::Settings(draft) => {

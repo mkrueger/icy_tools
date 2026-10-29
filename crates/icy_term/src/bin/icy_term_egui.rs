@@ -1761,14 +1761,21 @@ impl TerminalApp {
     }
 
     fn save_screen(&mut self) {
-        let buffer_type = self.terminal.screen.lock().buffer_type();
+        let (buffer_type, control_chars) = {
+            let screen = self.terminal.screen.lock();
+            (
+                screen.buffer_type(),
+                icy_engine::formats::contains_control_chars(&**screen, screen.buffer_type()),
+            )
+        };
         self.save_screen = Some(
             icy_engine_gui::egui::export::ExportDialog::new(
                 FileFormat::save_formats_with_images_for_buffer_type(buffer_type),
                 &self.dialing_directory.options.capture_path,
                 "screen",
             )
-            .with_settings(&self.export_settings),
+            .with_settings(&self.export_settings)
+            .with_control_chars(control_chars),
         );
     }
 

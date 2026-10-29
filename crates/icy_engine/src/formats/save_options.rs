@@ -306,6 +306,13 @@ pub enum ControlCharHandling {
 
     /// Replace control characters with a placeholder (e.g., '.').
     FilterOut,
+
+    /// Show BEL, HT and DEL with Control Representation Mode (`CSI 3 h`); the
+    /// other control characters, which CRM can't show, use DoorWay mode.
+    ControlRepresentation,
+
+    /// Prefix control characters with NUL in DoorWay mode (`CSI = 255 h`).
+    Doorway,
 }
 
 /// Settings for SIXEL image encoding.

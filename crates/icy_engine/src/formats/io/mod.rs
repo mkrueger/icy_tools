@@ -23,6 +23,7 @@ mod vt52;
 mod xbinary;
 
 // Re-export load/save functions for use by FileFormat
+pub use ansi::ansi_contains_control_chars;
 pub(crate) use ansi::{load_ansi, save_ansi};
 pub(crate) use artworx::{load_artworx, save_artworx};
 pub(crate) use ascii::{load_ascii, save_ascii};

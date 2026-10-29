@@ -639,15 +639,20 @@ pub fn sauce_date(sauce: &icy_sauce::SauceRecord) -> Option<String> {
 }
 
 fn export_dialog(options: &Options, preview: &Preview, settings: &icy_engine_gui::ExportSettings) -> ExportDialog {
-    let formats = if preview.image.is_some() {
-        vec![FileFormat::Image(ImageFormat::Png), FileFormat::Image(ImageFormat::Gif)]
+    let (formats, control_chars) = if preview.image.is_some() {
+        (vec![FileFormat::Image(ImageFormat::Png), FileFormat::Image(ImageFormat::Gif)], false)
     } else {
-        FileFormat::save_formats_with_images_for_buffer_type(preview.screen.terminal.screen.lock().buffer_type())
+        let screen = preview.screen.terminal.screen.lock();
+        (
+            FileFormat::save_formats_with_images_for_buffer_type(screen.buffer_type()),
+            icy_engine::formats::contains_control_chars(&**screen, screen.buffer_type()),
+        )
     };
     let name = Path::new(&preview.file).file_stem().unwrap_or_default().to_string_lossy();
     ExportDialog::new(formats, options.export_path(), &name)
         .with_settings(settings)
         .with_sauce(preview.sauce.as_ref().map(|sauce| sauce.metadata().clone()))
+        .with_control_chars(control_chars)
 }
 
 /// Pictures are written as they are, text art in the requested format.

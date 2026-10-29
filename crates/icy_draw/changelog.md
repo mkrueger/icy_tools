@@ -1,5 +1,17 @@
 # IcyDraw Changelog
 
+## Unreleased
+
+### Added
+
+- Opening an ANSI file that contains BEL, BS or TAB outside escape sequences
+  asks whether to show them as CP437 glyphs, as PabloDraw and Moebius do, or to
+  execute them as control codes (#202).
+- ANSI export can write control-character glyphs with Control Representation
+  Mode (`CSI 3 h`, with DoorWay for characters CRM can't show) or DoorWay mode
+  (`CSI = 255 h`). The control character option only appears when the picture
+  contains such characters.
+
 ## 0.6.1 - 2026-10-28
 
 Changes since 0.6.0.

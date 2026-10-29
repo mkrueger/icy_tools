@@ -315,6 +315,30 @@ impl AnsiSaveOptions {
     }
 }
 
+/// Whether the visible picture contains characters ANSI export writes as control
+/// characters, so the control character handling matters.
+pub fn contains_control_chars<T: TextPane + ?Sized>(pane: &T, buffer_type: crate::BufferType) -> bool {
+    (0..pane.height()).any(|y| {
+        (0..pane.width()).any(|x| {
+            let ch = pane.char_at((x, y).into());
+            ch.is_visible() && StringGeneratorV2::CONTROL_CHARS.contains(legacy_char(buffer_type, ch.ch))
+        })
+    })
+}
+
+/// The character a cell is written as in legacy (non UTF-8) output.
+fn legacy_char(buffer_type: crate::BufferType, ch: char) -> char {
+    if ch == '\0' {
+        return ' ';
+    }
+    if buffer_type == crate::BufferType::Unicode {
+        if let Some(cp437) = UNICODE_TO_CP437.get(&ch) {
+            return *cp437 as char;
+        }
+    }
+    ch
+}
+
 fn uses_ice_colors(buf: &TextBuffer) -> bool {
     if buf.ice_mode == crate::IceMode::Ice {
         return true;
@@ -348,6 +372,7 @@ fn save_ansi_v2_internal(buf: &TextBuffer, options: &AnsiSaveOptions) -> Result<
     let mut generator = StringGeneratorV2::new(options.clone());
     generator.use_ice_colors = uses_ice_colors(buf);
     generator.tags = buf.tags.clone();
+    (generator.control_representation, generator.doorway) = generator.control_modes(buf);
 
     generator.screen_prep();
     let state = generator.generate(buf, buf);
@@ -406,6 +431,10 @@ struct StringGeneratorV2 {
     pub line_offsets: Vec<usize>,
     pub tags: Vec<Tag>,
     use_ice_colors: bool,
+    /// Wrap the output in `CSI 3 h` / `CSI 3 l`.
+    control_representation: bool,
+    /// Wrap the output in `CSI = 255 h` / `CSI = 255 l`.
+    doorway: bool,
 }
 
 impl StringGeneratorV2 {
@@ -440,7 +469,36 @@ impl StringGeneratorV2 {
             line_offsets: Vec::new(),
             tags: Vec::new(),
             use_ice_colors: false,
+            control_representation: false,
+            doorway: false,
         }
+    }
+
+    /// Which control-character modes the output needs: (CRM, DoorWay).
+    fn control_modes(&self, buf: &TextBuffer) -> (bool, bool) {
+        let handling = self.options.control_char_handling;
+        if self.level.supports_utf8() || !matches!(handling, ControlCharHandling::ControlRepresentation | ControlCharHandling::Doorway) {
+            return (false, false);
+        }
+        let (mut crm, mut doorway) = (false, false);
+        for y in 0..buf.height() {
+            for x in 0..buf.width() {
+                let ch = buf.char_at((x, y).into());
+                if !ch.is_visible() {
+                    continue;
+                }
+                let ch = legacy_char(buf.buffer_type, ch.ch);
+                if !Self::CONTROL_CHARS.contains(ch) {
+                    continue;
+                }
+                if handling == ControlCharHandling::ControlRepresentation && Self::CRM_CHARS.contains(ch) {
+                    crm = true;
+                } else {
+                    doorway = true;
+                }
+            }
+        }
+        (crm, doorway)
     }
 
     fn data(&self) -> &[u8] {
@@ -452,6 +510,12 @@ impl StringGeneratorV2 {
         // interacting with blink semantics on some terminals).
         if self.use_ice_colors && !self.options.always_use_rgb && self.level.supports_ice_mode_switch() {
             self.push_bytes(b"\x1b[?33h");
+        }
+        if self.control_representation {
+            self.push_bytes(b"\x1b[3h");
+        }
+        if self.doorway {
+            self.push_bytes(b"\x1b[=255h");
         }
 
         match self.options.screen_preparation {
@@ -1102,29 +1166,26 @@ impl StringGeneratorV2 {
                         uni_ch.to_string().as_bytes().to_vec()
                     }
                 } else {
-                    let mut ch = cell.ch;
-                    if ch == '\0' {
-                        ch = ' ';
-                    }
-                    if buf.buffer_type == crate::BufferType::Unicode {
-                        if let Some(tch) = UNICODE_TO_CP437.get(&ch) {
-                            ch = *tch as char;
-                        }
-                    }
-
+                    let ch = legacy_char(buf.buffer_type, cell.ch);
                     if Self::CONTROL_CHARS.contains(ch) {
                         match self.options.control_char_handling {
                             ControlCharHandling::Ignore => vec![ch as u8],
                             ControlCharHandling::IcyTerm => vec![b'\x1B', ch as u8],
                             ControlCharHandling::FilterOut => vec![b'.'],
+                            ControlCharHandling::ControlRepresentation if Self::CRM_CHARS.contains(ch) => vec![ch as u8],
+                            ControlCharHandling::ControlRepresentation | ControlCharHandling::Doorway => vec![0, ch as u8],
                         }
                     } else {
                         vec![ch as u8]
                     }
                 };
+                // REP repeats the last printed character, which CRM and DoorWay glyphs aren't everywhere.
+                let mode_glyph = (self.control_representation || self.doorway)
+                    && !self.level.supports_utf8()
+                    && Self::CONTROL_CHARS.contains(legacy_char(buf.buffer_type, cell.ch));
 
                 // Compression
-                if self.options.compress && grapheme.is_none() {
+                if self.options.compress && grapheme.is_none() && !mode_glyph {
                     let mut rle = x + 1;
                     while rle < len {
                         let next_position = crate::Position::new(area.start.x + rle as i32, area.start.y + y as i32);
@@ -1226,6 +1287,8 @@ impl StringGeneratorV2 {
     }
 
     const CONTROL_CHARS: &'static str = "\x1b\x07\x08\x09\x0C\x7F\r\n";
+    /// The control characters Control Representation Mode displays.
+    const CRM_CHARS: &'static str = "\x07\x09\x7F";
 
     fn screen_end(&mut self, buf: &TextBuffer, mut state: AnsiState) {
         let mut end_tags = 0;
@@ -1262,6 +1325,12 @@ impl StringGeneratorV2 {
             self.cursor_restore();
         }
 
+        if self.doorway {
+            self.output.extend_from_slice(b"\x1b[=255l");
+        }
+        if self.control_representation {
+            self.output.extend_from_slice(b"\x1b[3l");
+        }
         if self.use_ice_colors && self.level.supports_ice_mode_switch() {
             self.output.extend_from_slice(b"\x1b[?33l");
         }

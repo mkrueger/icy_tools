@@ -118,6 +118,8 @@ pub struct ExportDialog {
     /// A format written with another of its extensions, such as XEP80 ATASCII as .xep.
     extension: Option<(FileFormat, &'static str)>,
     unicode: bool,
+    /// The picture contains control characters, which shows how ANSI export writes them.
+    control_chars: bool,
 }
 
 impl ExportDialog {
@@ -145,6 +147,7 @@ impl ExportDialog {
             error: None,
             extension: None,
             unicode: false,
+            control_chars: false,
         };
         dialog.file_name = dialog.stem(name);
         if dialog.file_name.is_empty() {
@@ -188,6 +191,7 @@ impl ExportDialog {
 
     pub fn with_buffer(self, buffer: &icy_engine::TextBuffer) -> Self {
         self.with_buffer_type(buffer.buffer_type)
+            .with_control_chars(icy_engine::formats::contains_control_chars(buffer, buffer.buffer_type))
     }
 
     fn unicode_defaults(&mut self) {
@@ -221,6 +225,13 @@ impl ExportDialog {
     /// The SAUCE record to store; without one the SAUCE option is hidden.
     pub fn with_sauce(mut self, sauce: Option<SauceMetaData>) -> Self {
         self.sauce = sauce;
+        self
+    }
+
+    /// Whether the picture contains characters ANSI export writes as control characters,
+    /// which shows the control character handling.
+    pub fn with_control_chars(mut self, control_chars: bool) -> Self {
+        self.control_chars = control_chars;
         self
     }
 
@@ -409,7 +420,8 @@ impl ExportDialog {
             });
         }
         if kind == ExportOptionKind::Ansi {
-            appearance::group(ui, "ANSI", |ui| ansi_fields(ui, settings));
+            let control_chars = self.control_chars;
+            appearance::group(ui, "ANSI", |ui| ansi_fields(ui, settings, control_chars));
             if self.sixels && settings.ansi_level.supports_sixel() {
                 appearance::group(ui, "Sixel", |ui| {
                     let sixel = &mut settings.sixel_settings;
@@ -448,7 +460,7 @@ fn screen_preparation(ui: &mut egui::Ui, preparation: &mut ScreenPreperation) {
     });
 }
 
-fn ansi_fields(ui: &mut egui::Ui, settings: &mut ExportSettings) {
+fn ansi_fields(ui: &mut egui::Ui, settings: &mut ExportSettings, control_chars: bool) {
     appearance::combo_row(ui, &fl!(LANGUAGE_LOADER, "export-compatibility"), settings.ansi_level.to_string(), |ui| {
         for &level in AnsiCompatibilityLevel::all() {
             ui.selectable_value(&mut settings.ansi_level, level, level.to_string());
@@ -513,10 +525,15 @@ fn ansi_fields(ui: &mut egui::Ui, settings: &mut ExportSettings) {
         },
     );
 
+    if !control_chars {
+        return;
+    }
     let controls = [
         (ControlCharHandling::Ignore, fl!(LANGUAGE_LOADER, "export-controls-keep")),
         (ControlCharHandling::FilterOut, fl!(LANGUAGE_LOADER, "export-controls-filter")),
         (ControlCharHandling::IcyTerm, fl!(LANGUAGE_LOADER, "export-controls-escape")),
+        (ControlCharHandling::ControlRepresentation, fl!(LANGUAGE_LOADER, "export-controls-crm")),
+        (ControlCharHandling::Doorway, fl!(LANGUAGE_LOADER, "export-controls-doorway")),
     ];
     let selected = controls
         .iter()
@@ -591,6 +608,16 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn control_char_handling_is_offered_only_for_pictures_with_control_chars() {
+        let mut buffer = screen().buffer;
+        let dialog = ExportDialog::new(vec![FileFormat::Ansi], ".", "art").with_buffer(&buffer);
+        assert!(!dialog.control_chars);
+        buffer.layers[0].set_char((5, 0), icy_engine::AttributedChar::new('\x07', icy_engine::TextAttribute::default()));
+        let dialog = ExportDialog::new(vec![FileFormat::Ansi], ".", "art").with_buffer(&buffer);
+        assert!(dialog.control_chars);
+    }
+
     #[test]
     fn target_appends_the_format_extension_and_rejects_folders_in_the_name() {
         let directory = tempfile::tempdir().unwrap();

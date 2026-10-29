@@ -28,8 +28,38 @@ pub(crate) fn load_ansi(data: &[u8], load_data_opt: Option<&LoadData>, sauce_opt
         result.buffer.buffer_type = crate::BufferType::Unicode;
         result.set_unicode_width(true);
     }
+    if load_data_opt.is_some_and(LoadData::display_control_chars) {
+        let state = result.terminal_state_mut();
+        state.display_controls = true;
+        state.display_backspace = true;
+    }
     crate::load_with_parser(&mut result, &mut parser, file_data, true, -1)?;
     Ok(result)
+}
+
+/// Whether a CP437 ANSI file executes BEL, BS or HT outside escape sequences.
+///
+/// Artwork loaders such as `PabloDraw` and Moebius show these bytes as CP437 glyphs,
+/// so files drawn with them may rely on that. An OSC ended by BEL doesn't count.
+pub fn ansi_contains_control_chars(data: &[u8]) -> bool {
+    use icy_parser_core::{CommandParser, CommandSink, TerminalCommand};
+
+    struct ControlSink(bool);
+    impl CommandSink for ControlSink {
+        fn print(&mut self, _text: &[u8]) {}
+        fn emit(&mut self, cmd: TerminalCommand) {
+            self.0 |= matches!(cmd, TerminalCommand::Bell | TerminalCommand::Backspace | TerminalCommand::Tab);
+        }
+    }
+
+    let (data, is_unicode) = crate::prepare_data_for_parsing(data);
+    if is_unicode {
+        return false;
+    }
+    let data = data.iter().position(|&b| b == 0x1A).map_or(data, |eof| &data[..eof]);
+    let mut sink = ControlSink(false);
+    icy_parser_core::AnsiParser::new().parse(data, &mut sink);
+    sink.0
 }
 
 /// Save a `TextBuffer` to ANSI format using ANSI exporter v2.
