@@ -1,6 +1,8 @@
 # IcyView Changelog
 
-## Unreleased
+## 0.9.10 - 2026-10-29
+
+Changes since 0.9.9.
 
 ### Changed
 
@@ -8,6 +10,26 @@
   PabloDraw and Moebius do, in the preview and in thumbnails. Art drawn with
   them, such as TDC9.ans (#202), relied on it. Other text files keep the
   controls.
+- ANSI music follows the CTerm manual: notes play at the right pitch (`O4 C`
+  used to sound two octaves low), tempo, octave, length and articulation carry
+  over between music strings, dotted notes and pauses last 1.5 times as long,
+  lower case commands work, and `CSI = Ps M` switches the music introducers.
+- Control Representation Mode (`CSI 3 h`) and DoorWay mode (`CSI = 255 h`)
+  are supported, so files using them to show control characters display
+  correctly.
+
+### Fixed
+
+- Avatar, PCBoard, Ctrl-A and Renegade files use their own parsers in the
+  preview, while seeking and in thumbnails, and binary formats keep their
+  SAUCE information.
+- SkyPix pictures keep their Amiga font glyphs and spacing, and refresh
+  correctly after graphics changes.
+- Scrolling text (`CSI S`/`T`, inserting and deleting lines, line feeds on the
+  bottom row) redraws correctly.
+- Damaged or hostile files are handled safely: oversized OSC, DCS and APC
+  strings, inline images and font loads are checked, and macro expansion is
+  bounded.
 
 ## 0.9.9 - 2026-10-10
 

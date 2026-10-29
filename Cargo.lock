@@ -4236,7 +4236,7 @@ dependencies = [
 
 [[package]]
 name = "icy_view"
-version = "0.9.9"
+version = "0.9.10"
 dependencies = [
  "ab_glyph",
  "anyhow",
