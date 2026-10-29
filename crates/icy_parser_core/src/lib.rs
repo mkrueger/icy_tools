@@ -250,6 +250,11 @@ pub enum Wrapping {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnsiMode {
+    /// CRM - Control Representation Mode (Mode 3), with Linux console semantics
+    /// When set: BEL, HT and DEL are displayed as glyphs instead of being executed
+    /// When reset: they act as control characters
+    ControlRepresentation = 3,
+
     /// IRM - Insert/Replace Mode (Mode 4)
     /// When set: newly received characters are inserted, pushing existing characters to the right
     /// When reset: newly received characters replace (overwrite) existing characters
@@ -264,6 +269,7 @@ pub enum AnsiMode {
 impl AnsiMode {
     fn from_u16(n: u16) -> Option<Self> {
         match n {
+            3 => Some(Self::ControlRepresentation),
             4 => Some(Self::InsertReplace),
             20 => Some(Self::LineFeedNewLine),
             _ => None,

@@ -259,6 +259,25 @@ fn test_line_feed_new_line_mode() {
 }
 
 #[test]
+fn test_control_representation_mode() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B[3h\x1B[3l", &mut sink);
+
+    assert_eq!(
+        sink.cmds,
+        vec![
+            TerminalCommand::CsiSetMode(AnsiMode::ControlRepresentation, true),
+            TerminalCommand::CsiSetMode(AnsiMode::ControlRepresentation, false),
+        ]
+    );
+    assert!(sink.errors.is_empty());
+}
+
+
+
+#[test]
 fn test_last_column_flag_modes() {
     let mut parser = AnsiParser::new();
     let mut sink = CollectSink::new();

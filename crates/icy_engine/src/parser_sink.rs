@@ -20,7 +20,8 @@
 use base64::{engine::general_purpose, Engine as _};
 use icy_parser_core::{
     AnsiMode, AnsiMusic, Blink, Color, CommandSink, DecMode, DeviceControlString, Direction, EraseInDisplayMode, EraseInLineMode, ErrorLevel, IgsCommand,
-    Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand, Wrapping,
+    Intensity, OperatingSystemCommand, ParseError, RipCommand, SgrAttribute, SkypixCommand, TerminalCommand, Underline, ViewDataCommand, Wrapping, BELL,
+    DELETE, TAB,
 };
 use image::imageops::FilterType;
 
@@ -548,8 +549,16 @@ impl<'a> ScreenSink<'a> {
         }
     }
 
+    /// CRM shows controls as glyphs only in CP437; UTF-8 keeps them as controls, like the Linux console.
+    fn displays_controls(&self) -> bool {
+        self.screen.terminal_state().display_controls && self.screen.buffer_type() == BufferType::CP437
+    }
+
     fn set_ansi_mode(&mut self, mode: AnsiMode, enabled: bool) {
         match mode {
+            AnsiMode::ControlRepresentation => {
+                self.screen.terminal_state_mut().display_controls = enabled;
+            }
             AnsiMode::InsertReplace => {
                 self.screen.caret_mut().insert_mode = enabled;
             }
@@ -669,15 +678,23 @@ impl CommandSink for ScreenSink<'_> {
                 self.screen.bs();
             }
             TerminalCommand::Tab => {
-                self.screen.tab_forward();
+                if self.displays_controls() {
+                    self.print(&[TAB]);
+                } else {
+                    self.screen.tab_forward();
+                }
             }
             TerminalCommand::FormFeed => {
                 self.screen.ff();
             }
             TerminalCommand::Bell => {
                 // Bell is typically handled by the application layer
+                if self.displays_controls() {
+                    self.print(&[BELL]);
+                }
             }
             TerminalCommand::Delete => match self.screen.buffer_type() {
+                _ if self.displays_controls() => self.print(&[DELETE]),
                 // DEL is the house glyph in CP437, as in SyncTERM's ANSI-BBS mode.
                 BufferType::CP437 if self.screen.graphics_type() != crate::GraphicsType::Skypix => self.print(&[0x7F]),
                 // xterm ignores DEL on output.

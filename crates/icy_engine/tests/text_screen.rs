@@ -34,6 +34,35 @@ fn test_lnm_controls_whether_line_feed_keeps_the_column() {
 }
 
 #[test]
+fn test_crm_displays_bel_tab_and_del_as_cp437_glyphs() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    parser.parse(b"A\x07\x1b[3h\x07\t\x7fB\x1b[3l\x07\tC", &mut ScreenSink::new(&mut screen));
+
+    let row: Vec<char> = (0..6).map(|x| screen.char_at(Position::new(x, 0)).ch).collect();
+    assert_eq!(row, ['A', '\x07', '\x09', '\x7f', 'B', ' ']);
+    // After CRM is reset, BEL is silent again and HT tabs to column 8.
+    assert_eq!(screen.char_at(Position::new(8, 0)).ch, 'C');
+    assert!(!screen.terminal_state().display_controls);
+
+    parser.parse(b"\x1b[3h\x1bc", &mut ScreenSink::new(&mut screen));
+    assert!(!screen.terminal_state().display_controls);
+}
+
+#[test]
+fn test_crm_keeps_controls_in_unicode_buffers() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    screen.buffer.buffer_type = icy_engine::BufferType::Unicode;
+    let mut parser = AnsiParser::new();
+
+    parser.parse(b"\x1b[3hA\x07B", &mut ScreenSink::new(&mut screen));
+
+    assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'B');
+}
+
+
+#[test]
 fn test_osc8_hyperlink_survives_sink_boundary_and_wraps() {
     let mut screen = TextScreen::new(Size::new(3, 2));
     ScreenSink::new(&mut screen).operating_system_command(OperatingSystemCommand::Hyperlink {

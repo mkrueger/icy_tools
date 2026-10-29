@@ -203,6 +203,7 @@ fn mode_report_status(enabled: Option<bool>) -> u8 {
 
 fn ansi_mode_report_status(screen: &dyn Screen, mode: u16) -> u8 {
     mode_report_status(match mode {
+        3 => Some(screen.terminal_state().display_controls),
         4 => Some(screen.caret().insert_mode),
         20 => Some(screen.terminal_state().lf_expand),
         _ => None,
@@ -3305,6 +3306,7 @@ mod tests {
     #[test]
     fn decrqm_reports_live_and_unknown_modes() {
         let mut screen = TextScreen::new(Size::new(80, 25));
+        assert_eq!(ansi_mode_report_status(&screen, 3), 2);
         assert_eq!(ansi_mode_report_status(&screen, 4), 2);
         assert_eq!(ansi_mode_report_status(&screen, 20), 1);
         assert_eq!(dec_mode_report_status(&screen, 25), 1);
@@ -3321,6 +3323,8 @@ mod tests {
         screen.terminal_state_mut().sixel_shared_palette = true;
         screen.terminal_state_mut().set_synchronized_output(true);
         screen.terminal_state_mut().lf_expand = false;
+        screen.terminal_state_mut().display_controls = true;
+        assert_eq!(ansi_mode_report_status(&screen, 3), 1);
         assert_eq!(ansi_mode_report_status(&screen, 4), 1);
         assert_eq!(ansi_mode_report_status(&screen, 20), 2);
         assert_eq!(dec_mode_report_status(&screen, 25), 2);

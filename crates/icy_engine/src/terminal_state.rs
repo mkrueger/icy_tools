@@ -178,6 +178,8 @@ pub struct TerminalState {
     pub physical_key_reports: bool,
     /// CTerm `CSI = 2 h`: don't send the usual translated key input.
     pub suppress_translated_keys: bool,
+    /// CRM `CSI 3 h`: BEL, HT and DEL are displayed as CP437 glyphs.
+    pub display_controls: bool,
     /// DECSDM reset draws sixels at the current text cursor.
     pub sixel_at_cursor: bool,
     /// DEC mode 1070 reset shares color registers between images.
@@ -285,6 +287,7 @@ impl TerminalState {
             kitty_keyboard: KittyKeyboardState::default(),
             physical_key_reports: false,
             suppress_translated_keys: false,
+            display_controls: false,
             sixel_at_cursor: true,
             sixel_shared_palette: false,
             sixel_decoder: icy_sixel::SixelDecoder::new(),
@@ -616,6 +619,7 @@ impl TerminalState {
         self.kitty_keyboard.reset();
         self.physical_key_reports = false;
         self.suppress_translated_keys = false;
+        self.display_controls = false;
         self.sixel_at_cursor = true;
         self.sixel_shared_palette = false;
         self.sixel_decoder.reset_palette();

@@ -5,6 +5,8 @@
 ### Added
 
 - Native Kermit file transfers for uploads and batch downloads.
+- Control Representation Mode (`CSI 3 h`/`l`) with Linux console semantics:
+  BEL, HT and DEL are displayed as CP437 glyphs instead of being executed.
 
 ### Changed
 
