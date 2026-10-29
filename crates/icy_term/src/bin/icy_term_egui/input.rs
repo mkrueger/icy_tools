@@ -69,7 +69,7 @@ pub fn encode_events(events: &[egui::Event], buffer_type: BufferType, bracketed_
 }
 
 pub fn encode_terminal_events(events: &[egui::Event], buffer_type: BufferType, bracketed_paste: bool, terminal: TerminalEmulation) -> Vec<u8> {
-    encode_protocol_events(events, buffer_type, bracketed_paste, terminal, 0)
+    encode_protocol_events(events, buffer_type, bracketed_paste, terminal, 0, false)
 }
 
 fn kitty_key(key: egui::Key) -> Option<icy_engine_gui::kitty_protocol::KeyId> {
@@ -110,7 +110,92 @@ fn kitty_key(key: egui::Key) -> Option<icy_engine_gui::kitty_protocol::KeyId> {
     })
 }
 
-pub fn encode_protocol_events(events: &[egui::Event], buffer_type: BufferType, bracketed_paste: bool, terminal: TerminalEmulation, kitty_flags: u8) -> Vec<u8> {
+/// BIOS scan code DoorWay mode sends after a NUL for an extended key.
+fn doorway_scan_code(key: egui::Key, modifiers: &egui::Modifiers) -> Option<u8> {
+    use egui::Key as EguiKey;
+    let (shift, ctrl, alt) = (modifiers.shift, modifiers.ctrl, modifiers.alt);
+    let function_key = match key {
+        EguiKey::F1 => Some(1),
+        EguiKey::F2 => Some(2),
+        EguiKey::F3 => Some(3),
+        EguiKey::F4 => Some(4),
+        EguiKey::F5 => Some(5),
+        EguiKey::F6 => Some(6),
+        EguiKey::F7 => Some(7),
+        EguiKey::F8 => Some(8),
+        EguiKey::F9 => Some(9),
+        EguiKey::F10 => Some(10),
+        EguiKey::F11 => Some(11),
+        EguiKey::F12 => Some(12),
+        _ => None,
+    };
+    if let Some(number) = function_key {
+        // F1-F10 and F11/F12 sit in separate BIOS ranges: (plain, shift, ctrl, alt) bases.
+        let (plain, shifted, control, alternate) = if number <= 10 { (58, 83, 93, 103) } else { (122, 124, 126, 128) };
+        let base = if alt {
+            alternate
+        } else if ctrl {
+            control
+        } else if shift {
+            shifted
+        } else {
+            plain
+        };
+        return Some(base + number);
+    }
+    // (plain, ctrl, alt)
+    let navigation = match key {
+        EguiKey::Home => Some((71, 119, 151)),
+        EguiKey::ArrowUp => Some((72, 141, 152)),
+        EguiKey::PageUp => Some((73, 132, 153)),
+        EguiKey::ArrowLeft => Some((75, 115, 155)),
+        EguiKey::ArrowRight => Some((77, 116, 157)),
+        EguiKey::End => Some((79, 117, 159)),
+        EguiKey::ArrowDown => Some((80, 145, 160)),
+        EguiKey::PageDown => Some((81, 118, 161)),
+        EguiKey::Insert => Some((82, 146, 162)),
+        EguiKey::Delete => Some((83, 147, 163)),
+        _ => None,
+    };
+    if let Some((plain, control, alternate)) = navigation {
+        return Some(if alt {
+            alternate
+        } else if ctrl {
+            control
+        } else {
+            plain
+        });
+    }
+    match key {
+        EguiKey::Tab if ctrl => return Some(148),
+        EguiKey::Tab if shift && !alt => return Some(15),
+        EguiKey::Backspace if alt && !ctrl => return Some(14),
+        EguiKey::Enter if alt && !ctrl => return Some(28),
+        _ => {}
+    }
+    if !alt || ctrl {
+        return None;
+    }
+    let name = key.name();
+    let [character] = name.as_bytes() else {
+        return None;
+    };
+    let character = character.to_ascii_uppercase();
+    let row_code = |row: &[u8], first: u8| row.iter().position(|&c| c == character).map(|index| first + index as u8);
+    row_code(b"QWERTYUIOP", 16)
+        .or_else(|| row_code(b"ASDFGHJKL", 30))
+        .or_else(|| row_code(b"ZXCVBNM", 44))
+        .or_else(|| row_code(b"1234567890-=", 120))
+}
+
+pub fn encode_protocol_events(
+    events: &[egui::Event],
+    buffer_type: BufferType,
+    bracketed_paste: bool,
+    terminal: TerminalEmulation,
+    kitty_flags: u8,
+    doorway: bool,
+) -> Vec<u8> {
     let map = match terminal {
         TerminalEmulation::PETscii => C64_KEY_MAP,
         TerminalEmulation::ATAscii => ATASCII_KEY_MAP,
@@ -138,6 +223,27 @@ pub fn encode_protocol_events(events: &[egui::Event], buffer_type: BufferType, b
     for (index, event) in events.iter().enumerate() {
         if consumed_text[index] {
             continue;
+        }
+        if let egui::Event::Key {
+            key, pressed: true, modifiers, ..
+        } = event
+        {
+            if doorway && !modifiers.mac_cmd && !(modifiers.ctrl && modifiers.alt) {
+                if let Some(scan_code) = doorway_scan_code(*key, modifiers) {
+                    output.extend_from_slice(&[0, scan_code]);
+                    // Alt+letter may also produce text, which the scan code replaces.
+                    if let Some((text_index, _)) = events
+                        .iter()
+                        .enumerate()
+                        .skip(index + 1)
+                        .take_while(|(_, event)| !matches!(event, egui::Event::Key { .. }))
+                        .find(|(_, event)| matches!(event, egui::Event::Text(_)))
+                    {
+                        consumed_text[text_index] = true;
+                    }
+                    continue;
+                }
+            }
         }
         if let egui::Event::Key {
             key,
@@ -294,6 +400,36 @@ mod tests {
     }
 
     #[test]
+    fn doorway_mode_sends_extended_keys_as_nul_scan_code() {
+        let doorway = |events: &[egui::Event]| encode_protocol_events(events, BufferType::CP437, false, TerminalEmulation::Ansi, 0, true);
+        let events = [
+            key(egui::Key::A, egui::Modifiers::NONE),
+            egui::Event::Text("a".into()),
+            key(egui::Key::ArrowUp, egui::Modifiers::NONE),
+            key(egui::Key::ArrowLeft, egui::Modifiers::CTRL),
+            key(egui::Key::PageUp, egui::Modifiers::CTRL),
+            key(egui::Key::Delete, egui::Modifiers::NONE),
+            key(egui::Key::F1, egui::Modifiers::NONE),
+            key(egui::Key::F1, egui::Modifiers::SHIFT),
+            key(egui::Key::F10, egui::Modifiers::ALT),
+            key(egui::Key::F12, egui::Modifiers::NONE),
+            key(egui::Key::Tab, egui::Modifiers::SHIFT),
+            key(egui::Key::Enter, egui::Modifiers::NONE),
+        ];
+        assert_eq!(
+            doorway(&events),
+            [b'a', 0, 72, 0, 115, 0, 132, 0, 83, 0, 59, 0, 84, 0, 113, 0, 134, 0, 15, b'\r']
+        );
+        // Alt+letter replaces the text the platform may also send.
+        assert_eq!(doorway(&[key(egui::Key::X, egui::Modifiers::ALT), egui::Event::Text("x".into())]), [0, 45]);
+        assert_eq!(doorway(&[key(egui::Key::Num0, egui::Modifiers::ALT)]), [0, 129]);
+        assert_eq!(
+            encode_events(&[key(egui::Key::ArrowUp, egui::Modifiers::NONE)], BufferType::CP437, false),
+            b"\x1b[A"
+        );
+    }
+
+    #[test]
     fn encodes_text_once_and_special_keys_using_shared_maps() {
         let events = [
             key(egui::Key::A, egui::Modifiers::NONE),
@@ -331,12 +467,13 @@ mod tests {
                 BufferType::Unicode,
                 false,
                 TerminalEmulation::Ansi,
-                DISAMBIGUATE | REPORT_ALL_KEYS | REPORT_EVENT_TYPES
+                DISAMBIGUATE | REPORT_ALL_KEYS | REPORT_EVENT_TYPES,
+                false
             ),
             b"\x1b[97u\x1b[97;1:3u"
         );
         assert_eq!(
-            encode_protocol_events(&events, BufferType::Unicode, false, TerminalEmulation::Ansi, DISAMBIGUATE),
+            encode_protocol_events(&events, BufferType::Unicode, false, TerminalEmulation::Ansi, DISAMBIGUATE, false),
             b"a"
         );
         assert_eq!(
@@ -345,7 +482,8 @@ mod tests {
                 BufferType::Unicode,
                 false,
                 TerminalEmulation::Ansi,
-                REPORT_ALL_KEYS | REPORT_ASSOCIATED_TEXT
+                REPORT_ALL_KEYS | REPORT_ASSOCIATED_TEXT,
+                false
             ),
             b"\x1b[97;1;97u"
         );

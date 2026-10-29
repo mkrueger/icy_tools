@@ -859,6 +859,9 @@ impl CommandSink for ScreenSink<'_> {
             TerminalCommand::CsiSetSuppressTranslatedKeys(enabled) => {
                 self.screen.terminal_state_mut().suppress_translated_keys = enabled;
             }
+            TerminalCommand::CsiSetDoorwayMode(enabled) => {
+                self.screen.terminal_state_mut().doorway_mode = enabled;
+            }
 
             // Tab operations
             TerminalCommand::CsiClearTabulation => {

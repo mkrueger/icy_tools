@@ -1439,6 +1439,7 @@ impl TerminalApp {
                     self.connected && state.bracketed_paste_mode,
                     self.terminal_emulation,
                     if self.connected { state.kitty_keyboard.flags() } else { 0 },
+                    self.connected && state.doorway_mode,
                 ));
                 if self.connected && self.terminal.scroll_x() == 0.0 && self.terminal.scroll_y() == 0.0 {
                     bytes.extend(input::encode_mouse_events(

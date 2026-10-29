@@ -5,6 +5,8 @@
 ### Added
 
 - Native Kermit file transfers for uploads and batch downloads.
+- DoorWay mode (`CSI = 255 h`/`l`): a NUL makes the next byte a literal CP437
+  glyph, and extended keys are sent as NUL plus the BIOS scan code.
 - Control Representation Mode (`CSI 3 h`/`l`) with Linux console semantics:
   BEL, HT and DEL are displayed as CP437 glyphs instead of being executed.
 

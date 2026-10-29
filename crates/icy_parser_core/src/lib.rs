@@ -772,6 +772,11 @@ pub enum TerminalCommand {
     CsiSetPhysicalKeyReports(bool),
     /// CTerm suppression of translated key input: CSI = 2 h/l
     CsiSetSuppressTranslatedKeys(bool),
+    /// BANSI/CTerm DoorWay mode: CSI = 255 h/l
+    ///
+    /// While set, the parser prints the byte after a NUL as a literal glyph, and
+    /// the terminal sends extended keys as NUL followed by the BIOS scan code.
+    CsiSetDoorwayMode(bool),
 
     /// TBC - Tabulation Clear: ESC[0g (clear tab at current position)
     CsiClearTabulation,

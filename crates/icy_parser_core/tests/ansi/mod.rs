@@ -275,7 +275,43 @@ fn test_control_representation_mode() {
     assert!(sink.errors.is_empty());
 }
 
+#[test]
+fn test_doorway_mode_prints_the_byte_after_nul() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
 
+    // Outside DoorWay mode NUL is dropped and BEL stays a control.
+    parser.parse(b"\x00\x07", &mut sink);
+    assert_eq!(sink.cmds, vec![TerminalCommand::Bell]);
+    assert!(sink.text.is_empty());
+
+    sink.cmds.clear();
+    parser.parse(b"\x1B[=255hA\x00\x1B\x00\x07B\x00", &mut sink);
+    // The literal survives a chunk boundary between NUL and the byte.
+    parser.parse(b"\x0C", &mut sink);
+    assert_eq!(sink.text, b"A\x1B\x07B\x0C");
+    assert_eq!(sink.cmds, vec![TerminalCommand::CsiSetDoorwayMode(true)]);
+
+    sink.text.clear();
+    sink.cmds.clear();
+    parser.parse(b"\x1B[=255l\x00\x07", &mut sink);
+    assert_eq!(sink.cmds, vec![TerminalCommand::CsiSetDoorwayMode(false), TerminalCommand::Bell]);
+    assert!(sink.text.is_empty());
+}
+
+#[test]
+fn test_reset_leaves_doorway_mode() {
+    let mut parser = AnsiParser::new();
+    let mut sink = CollectSink::new();
+
+    parser.parse(b"\x1B[=255h\x1Bc\x00\x07", &mut sink);
+
+    assert_eq!(
+        sink.cmds,
+        vec![TerminalCommand::CsiSetDoorwayMode(true), TerminalCommand::EscReset, TerminalCommand::Bell]
+    );
+    assert!(sink.text.is_empty());
+}
 
 #[test]
 fn test_last_column_flag_modes() {

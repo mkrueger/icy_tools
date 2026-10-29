@@ -61,6 +61,20 @@ fn test_crm_keeps_controls_in_unicode_buffers() {
     assert_eq!(screen.char_at(Position::new(1, 0)).ch, 'B');
 }
 
+#[test]
+fn test_doorway_mode_prints_literal_controls_and_resets() {
+    let mut screen = TextScreen::new(Size::new(80, 25));
+    let mut parser = AnsiParser::new();
+
+    parser.parse(b"\x1b[=255hA\x00\x1b\x00\x07\x00\x0cB", &mut ScreenSink::new(&mut screen));
+
+    assert!(screen.terminal_state().doorway_mode);
+    let row: Vec<char> = (0..5).map(|x| screen.char_at(Position::new(x, 0)).ch).collect();
+    assert_eq!(row, ['A', '\x1b', '\x07', '\x0c', 'B']);
+
+    parser.parse(b"\x1bc", &mut ScreenSink::new(&mut screen));
+    assert!(!screen.terminal_state().doorway_mode);
+}
 
 #[test]
 fn test_osc8_hyperlink_survives_sink_boundary_and_wraps() {

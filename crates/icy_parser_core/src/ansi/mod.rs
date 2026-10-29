@@ -43,6 +43,11 @@ pub struct AnsiParser {
     music_settings: music::MusicSettings,
     music_string: Vec<u8>,
     music_style_prefix: bool,
+
+    /// DoorWay mode (`CSI = 255 h`): a NUL makes the next byte a literal glyph.
+    doorway_mode: bool,
+    /// A NUL was received in DoorWay mode; the next byte is printed as is.
+    doorway_literal: bool,
 }
 
 impl Default for AnsiParser {
@@ -66,6 +71,8 @@ impl Default for AnsiParser {
             music_settings: music::MusicSettings::default(),
             music_string: Vec::new(),
             music_style_prefix: false,
+            doorway_mode: false,
+            doorway_literal: false,
         }
     }
 }
@@ -447,9 +454,18 @@ impl AnsiParser {
             let byte = input[i];
             match self.state {
                 ParserState::Default => {
+                    if self.doorway_literal {
+                        self.doorway_literal = false;
+                        self.remember_printed(&[byte]);
+                        sink.print(&[byte]);
+                        i += 1;
+                        printable_start = i;
+                        continue;
+                    }
                     match byte {
                         0 => {
                             self.flush_printable(sink, input, printable_start, i);
+                            self.doorway_literal = self.doorway_mode;
                             i += 1;
                             printable_start = i;
                         }
@@ -590,6 +606,7 @@ impl AnsiParser {
                             // RIS - Reset to Initial State
                             sink.emit(TerminalCommand::EscReset);
                             self.reset_music();
+                            self.doorway_mode = false;
                             self.reset();
                             i += 1;
                             printable_start = i;
@@ -1386,6 +1403,10 @@ impl AnsiParser {
                             Some(2) => sink.emit(TerminalCommand::CsiSetSuppressTranslatedKeys(enabled)),
                             Some(4) => sink.emit(TerminalCommand::CsiSetLastColumnFlag { enabled, forced: false }),
                             Some(5) if enabled => sink.emit(TerminalCommand::CsiSetLastColumnFlag { enabled: true, forced: true }),
+                            Some(255) => {
+                                self.doorway_mode = enabled;
+                                sink.emit(TerminalCommand::CsiSetDoorwayMode(enabled));
+                            }
                             _ => {}
                         }
                         self.reset();

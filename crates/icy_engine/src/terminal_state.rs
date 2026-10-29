@@ -178,6 +178,8 @@ pub struct TerminalState {
     pub physical_key_reports: bool,
     /// CTerm `CSI = 2 h`: don't send the usual translated key input.
     pub suppress_translated_keys: bool,
+    /// BANSI/CTerm `CSI = 255 h`: send extended keys as NUL + BIOS scan code.
+    pub doorway_mode: bool,
     /// CRM `CSI 3 h`: BEL, HT and DEL are displayed as CP437 glyphs.
     pub display_controls: bool,
     /// DECSDM reset draws sixels at the current text cursor.
@@ -287,6 +289,7 @@ impl TerminalState {
             kitty_keyboard: KittyKeyboardState::default(),
             physical_key_reports: false,
             suppress_translated_keys: false,
+            doorway_mode: false,
             display_controls: false,
             sixel_at_cursor: true,
             sixel_shared_palette: false,
@@ -619,6 +622,7 @@ impl TerminalState {
         self.kitty_keyboard.reset();
         self.physical_key_reports = false;
         self.suppress_translated_keys = false;
+        self.doorway_mode = false;
         self.display_controls = false;
         self.sixel_at_cursor = true;
         self.sixel_shared_palette = false;
