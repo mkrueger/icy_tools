@@ -1,5 +1,14 @@
 # IcyView Changelog
 
+## Unreleased
+
+### Changed
+
+- `.ans` and `.ansi` files show BEL, BS and TAB as their CP437 glyphs, as
+  PabloDraw and Moebius do, in the preview and in thumbnails. Art drawn with
+  them, such as TDC9.ans (#202), relied on it. Other text files keep the
+  controls.
+
 ## 0.9.9 - 2026-10-10
 
 Changes since 0.9.1.

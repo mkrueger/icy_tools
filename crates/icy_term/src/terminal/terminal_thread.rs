@@ -1730,6 +1730,8 @@ impl TerminalThread {
                 true
             }
 
+            // With CRM (CSI 3 h) BEL is drawn as a glyph instead of ringing.
+            QueuedCommand::Bell if icy_engine::displays_control_glyphs(&**self.edit_screen.lock()) => false,
             QueuedCommand::Bell => {
                 let _ = self.event_tx.send(TerminalEvent::Beep);
                 true
@@ -3033,6 +3035,29 @@ mod tests {
         for chunk in chunks {
             terminal.process_data(chunk).await;
         }
+    }
+
+    #[tokio::test]
+    async fn crm_draws_bell_instead_of_ringing() {
+        let screen: Arc<Mutex<Box<dyn Screen>>> = Arc::new(Mutex::new(Box::new(TextScreen::new(Size::new(80, 25)))));
+        let (command_tx, command_rx) = mpsc::unbounded_channel();
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+        let mut terminal = TerminalThread::new(
+            screen.clone(),
+            Box::new(icy_parser_core::AnsiParser::new()),
+            Arc::new(Mutex::new(crate::data::AddressBook::default())),
+            command_tx,
+            command_rx,
+            event_tx,
+        );
+        terminal.process_data(b"\x1b[3hA\x07B\x1b[3l\x07").await;
+        let row: String = (0..3).map(|x| screen.lock().char_at((x, 0).into()).ch).collect();
+        assert_eq!(row, "A\x07B");
+        let mut beeps = 0;
+        while let Ok(event) = event_rx.try_recv() {
+            beeps += usize::from(matches!(event, super::TerminalEvent::Beep));
+        }
+        assert_eq!(beeps, 1, "only the BEL after CSI 3 l rings");
     }
 
     #[tokio::test]

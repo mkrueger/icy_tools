@@ -551,7 +551,7 @@ impl<'a> ScreenSink<'a> {
 
     /// CRM shows controls as glyphs only in CP437; UTF-8 keeps them as controls, like the Linux console.
     fn displays_controls(&self) -> bool {
-        self.screen.terminal_state().display_controls && self.screen.buffer_type() == BufferType::CP437
+        displays_control_glyphs(&*self.screen)
     }
 
     fn set_ansi_mode(&mut self, mode: AnsiMode, enabled: bool) {
@@ -594,6 +594,12 @@ impl<'a> ScreenSink<'a> {
             self.screen.set_char(p, ch);
         }
     }
+}
+
+/// Whether `screen` shows BEL, HT and DEL as CP437 glyphs (CRM `CSI 3 h`, or loaded artwork)
+/// instead of executing them. Queued output must then send BEL to the screen, not ring it.
+pub fn displays_control_glyphs<S: crate::Screen + ?Sized>(screen: &S) -> bool {
+    screen.terminal_state().display_controls && screen.buffer_type() == BufferType::CP437
 }
 
 impl CommandSink for ScreenSink<'_> {

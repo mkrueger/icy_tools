@@ -159,6 +159,20 @@ impl Drop for LoadOperation {
     }
 }
 
+/// Whether files with this extension show BEL, BS and TAB as CP437 glyphs, as drawing programs
+/// do and icy_draw does when told to show control characters. `.ans` art made with PabloDraw or
+/// Moebius relies on it; other text files keep the controls, since their tabs are meant as tabs.
+pub fn shows_control_glyphs(ext: &str) -> bool {
+    ext.eq_ignore_ascii_case("ans") || ext.eq_ignore_ascii_case("ansi")
+}
+
+/// Shows or executes BEL, BS and TAB on `screen` (CP437 screens only; UTF-8 keeps them as controls).
+pub fn set_control_glyphs(screen: &mut dyn EditableScreen, show: bool) {
+    let state = screen.terminal_state_mut();
+    state.display_controls = show;
+    state.display_backspace = show;
+}
+
 /// Prepare file data for parser-based loading
 /// - Strips UTF-8 BOM if present and returns whether the file is Unicode
 /// - Crops data at 0x1A (SUB/EOF) for non-PETSCII formats
@@ -593,6 +607,13 @@ impl ViewThread {
                 editable.set_height(height);
                 editable.terminal_state_mut().set_height(window_height);
             }
+            let ext = self
+                .current_load
+                .as_ref()
+                .and_then(|load| load.path.extension())
+                .and_then(|ext| ext.to_str())
+                .unwrap_or_default();
+            set_control_glyphs(editable, format == FileFormat::Ansi && shows_control_glyphs(ext));
         }
         parser
     }
@@ -884,7 +905,10 @@ impl ViewThread {
                 break;
             };
 
-            if fast_forward && (cmd.is_sound() || cmd.is_delay()) {
+            if fast_forward
+                && (cmd.is_sound() || cmd.is_delay())
+                && !(matches!(cmd, QueuedCommand::Bell) && icy_engine::displays_control_glyphs(&**self.screen.lock()))
+            {
                 continue;
             }
 
@@ -947,6 +971,8 @@ impl ViewThread {
                 let _ = self.sound_thread.play_music(music.clone());
                 true
             }
+            // A shown control glyph is drawn rather than heard.
+            QueuedCommand::Bell if icy_engine::displays_control_glyphs(&**self.screen.lock()) => false,
             QueuedCommand::Bell => {
                 let _ = self.sound_thread.beep();
                 true
@@ -1107,6 +1133,31 @@ mod tests {
                 thread.seek(length).await;
                 assert_colored_cell(&thread, format);
                 assert_eq!(thread.current_load.as_ref().unwrap().parser_format, format);
+                thread.stop();
+            }
+        });
+    }
+
+    #[test]
+    fn ans_files_show_control_characters_as_glyphs() {
+        let row = |thread: &ViewThread| -> String { (0..4).map(|x| thread.screen.lock().char_at((x, 0).into()).ch).collect() };
+        runtime().block_on(async {
+            for (name, expected) in [("art.ans", "A\x07\x08\x09"), ("ART.ANSI", "A\x07\x08\x09"), ("readme.nfo", "    ")] {
+                let (mut thread, _events) = view_thread();
+                thread.load_data(PathBuf::from(name), b"A\x07\x08\tB".to_vec()).await;
+                thread.process_next_chunk().await;
+                if name.ends_with(".nfo") {
+                    // Text files keep the controls: BS steps back over the A, TAB moves B to column 8.
+                    assert_eq!(thread.screen.lock().char_at((8, 0).into()).ch, 'B', "{name}");
+                } else {
+                    assert_eq!(row(&thread), expected, "{name}");
+                    // Seeking back recreates the screen with the same setting.
+                    thread.baud_emulator.set_baud_rate(BaudEmulation::Rate(9600));
+                    thread.seek(0).await;
+                    let length = thread.current_load.as_ref().unwrap().file_data.len();
+                    thread.seek(length).await;
+                    assert_eq!(row(&thread), expected, "{name} after seeking");
+                }
                 thread.stop();
             }
         });

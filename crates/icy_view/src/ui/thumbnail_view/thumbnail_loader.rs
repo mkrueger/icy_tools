@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::items::Item;
-use crate::view_thread::{create_parser_screen, prepare_parser_data};
+use crate::view_thread::{create_parser_screen, prepare_parser_data, set_control_glyphs, shows_control_glyphs};
 
 use super::thumbnail::{get_width_multiplier, RgbaData, ThumbnailResult, ThumbnailState, THUMBNAIL_MAX_HEIGHT, THUMBNAIL_RENDER_WIDTH};
 
@@ -41,6 +41,30 @@ mod tests {
         assert_eq!(result.width_multiplier, 1);
         assert!(matches!(result.state, ThumbnailState::Ready { .. }));
         assert!(result.sauce_info.is_some());
+    }
+
+    #[test]
+    fn ans_thumbnails_show_control_characters_as_glyphs() {
+        let token = CancellationToken::new();
+        let pixels = |result: ThumbnailResult| match result.state {
+            ThumbnailState::Ready { rgba } => rgba.data,
+            _ => panic!("Expected a static thumbnail"),
+        };
+        let data = b"A\x07\x07B";
+        let plain = b"A  B";
+        let path = "art.ans".to_string();
+        for render in [
+            |path: &String, data: &[u8], ext: &str, token: &CancellationToken| render_ansi_thumbnail(path, data, ext, "", token),
+            |path: &String, data: &[u8], ext: &str, token: &CancellationToken| render_with_parser(path, data, ext, None, "", token),
+        ] {
+            let glyphs = pixels(render(&path, data, "ans", &token).unwrap());
+            assert_ne!(glyphs, pixels(render(&path, plain, "ans", &token).unwrap()), "the bullets are drawn");
+            // In other text files BEL stays a bell: nothing is drawn, B follows A.
+            assert_eq!(
+                pixels(render(&path, data, "nfo", &token).unwrap()),
+                pixels(render(&path, b"AB", "nfo", &token).unwrap())
+            );
+        }
     }
 
     #[test]
@@ -597,6 +621,7 @@ fn render_with_parser(
         }
 
         editable.terminal_state_mut().is_terminal_buffer = false;
+        set_control_glyphs(editable, format == FileFormat::Ansi && shows_control_glyphs(ext));
         let mut screen_sink: icy_engine::ScreenSink<'_> = icy_engine::ScreenSink::new(editable);
         parser.parse(&file_data, &mut screen_sink);
     }
@@ -649,7 +674,9 @@ fn render_with_format(
     }
 
     // Use max_height limit for thumbnail loading
-    let load_data = LoadData::new(None, None).with_max_height(icy_engine::limits::MAX_BUFFER_HEIGHT);
+    let load_data = LoadData::new(None, None)
+        .with_max_height(icy_engine::limits::MAX_BUFFER_HEIGHT)
+        .with_display_control_chars(format == FileFormat::Ansi && shows_control_glyphs(ext));
     match format.from_bytes(data, Some(load_data)) {
         Ok(loaded_doc) => {
             let buffer = &loaded_doc.screen.buffer;

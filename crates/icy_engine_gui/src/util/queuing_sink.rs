@@ -101,6 +101,10 @@ impl QueuedCommand {
             QueuedCommand::Aps(data) => {
                 screen_sink.aps(&data);
             }
+            // Rings nothing on the screen; with control glyphs shown it is the bullet.
+            QueuedCommand::Bell => {
+                screen_sink.emit(ParserCommand::Bell);
+            }
             _ => {}
         }
         false
