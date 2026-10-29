@@ -12,6 +12,12 @@
   (`CSI = 255 h`). The control character option only appears when the picture
   contains such characters.
 
+### Fixed
+
+- An idle window no longer redraws continuously. The window title was sent
+  every frame, and each title update requested another frame, keeping a CPU
+  core busy (#201).
+
 ## 0.6.1 - 2026-10-28
 
 Changes since 0.6.0.

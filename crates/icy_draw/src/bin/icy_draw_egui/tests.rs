@@ -5541,3 +5541,29 @@ fn gpu_atascii_pixels_follow_the_pointer() {
         assert_eq!(code, 0x09, "the lower right quarter block ▗");
     });
 }
+
+#[test]
+fn idle_window_does_not_repaint_continuously() {
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::vec2(1280.0, 820.0);
+    let mut app = DrawApp::new();
+    let is_title = |output: &egui::FullOutput| {
+        output.viewport_output[&egui::ViewportId::ROOT]
+            .commands
+            .iter()
+            .any(|command| matches!(command, egui::ViewportCommand::Title(_)))
+    };
+    assert!(is_title(&frame(&context, &mut app, size, vec![])));
+    for _ in 0..3 {
+        frame(&context, &mut app, size, vec![]);
+    }
+    for _ in 0..5 {
+        let output = frame(&context, &mut app, size, vec![]);
+        // Every viewport command requests an immediate repaint, so an unchanged title must not be resent.
+        assert!(!is_title(&output));
+        assert!(output.viewport_output[&egui::ViewportId::ROOT].repaint_delay > std::time::Duration::ZERO);
+    }
+    app.document.type_text("X").unwrap();
+    assert!(is_title(&frame(&context, &mut app, size, vec![])));
+}

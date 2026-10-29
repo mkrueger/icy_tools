@@ -334,6 +334,8 @@ pub struct DrawApp {
     icons: Icons,
     dialog: Option<Dialog>,
     picker: bool,
+    /// The window title last sent; a viewport command repaints, so it is only sent on changes.
+    window_title: String,
     /// Moebius' attribute picker, opened by Escape without a selection; the render pass it opened in.
     attribute_picker: Option<u64>,
     /// The replacement list browser of the open tag properties dialog.
@@ -449,6 +451,7 @@ impl DrawApp {
             icons: Icons::default(),
             dialog: None,
             picker: false,
+            window_title: String::new(),
             attribute_picker: None,
             tag_picker: None,
             sender,
@@ -4786,7 +4789,10 @@ impl DrawApp {
         } else {
             format!("{}{} — Icy Draw", if self.modified() { "*" } else { "" }, self.document_name())
         };
-        context.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        if title != self.window_title {
+            context.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.window_title = title;
+        }
         if blocked {
             self.document.finish();
         }
