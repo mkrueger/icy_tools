@@ -707,6 +707,16 @@ never render or execute the referenced stream. Picture attachments can guide
 SkyPix geometry, but the character-canvas converter is not a SkyPix tool.
 OpenAI-compatible connections remain advice-only.
 
+#### ANSI music assistant
+
+In the ANSI music editor the assistant reads and writes the music string. Its tools describe
+the tune (`icy_music_info`), return the command reference (`icy_music_api`), list the
+notes with their timing (`icy_read_music`), replace the whole text (`icy_write_music`)
+or a range of notes, rests and setting changes (`icy_replace_music_events`). Writes that
+contain characters terminals reject are refused. The proposal shows the number of notes,
+the length and a diff of the text; **Listen** plays the draft, **Apply** replaces the
+music as one undo step, and it is refused if the music changed in the meantime.
+
 #### PETSCII, ATASCII and VT52 assistant
 
 These editors already use Copilot's character-canvas draft tools with rendered
@@ -970,6 +980,43 @@ commands in SkyPix mode; there is no SkyPix-specific drawing automation API.
 cargo run -p icy_draw -- drawing.skypix
 ```
 
+### ANSI music editor
+
+**ANSI music** in **New** creates a tune for terminals that play CTerm "ANSI music";
+`.ams` and `.mus` files open in the same editor. The toolbar holds the note and setting
+controls. Below it, the piano roll shows the ruler with bar numbers, a lane with the
+setting changes (tempo, `MN`/`ML`/`MS` articulation, `MF`/`MB`) and the rests, and the
+notes over time. Under the roll is the player, and at the bottom the music string; editing
+either the roll or the string updates the other.
+
+- Click in the grid to put a note in at the nearer end of the note there (or after the
+  last one); a translucent note shows where. Clicking the grid over a rest turns it into
+  a note at that pitch. Drag a note up or down to change its pitch and sideways to move
+  it before or after other notes; a selected range moves as a whole. Drag a note's right
+  end to change its length (it snaps to whole … 64th notes, dotted or not), and
+  right-click to delete it. The text cursor selects the note it is on.
+- Shift+click, Shift+←/→ and Ctrl+A select a range of notes. ↑/↓ transpose the selection
+  (Shift: an octave, as far as the highest and lowest note allow), 1–7 and `.` change
+  its lengths, Delete removes it, and Ctrl+C/X/V copy, cut and paste it as music text,
+  also between files and other programs.
+- The keys Z to M enter the notes of the keyboard octave (Page Up/Down) after the
+  selection, R a rest.
+- The ruler shows bars of the chosen time signature (2/4 to 12/8; ANSI music has none,
+  so it is not saved). Clicking it sets where playback starts; dragging on it sets the
+  range playback plays, snapped to the notes. **Selection as range** in the player turns
+  the selected notes into the range; Esc or the button beside it clears it.
+- Space or the play button plays the range, else the selected notes, else from the start
+  mark (the last picked note or ruler click) to the end. Home goes back to the beginning.
+  The player shows time and bar.beat, and the loop button (or L) repeats playback. Tempo
+  and articulation changes apply from the selected note on.
+- The toolbar picks the introducer saving writes: SyncTERM's `ESC [ |`, BananaCom's
+  `ESC [ N` or the common but ambiguous `ESC [ M`. Each line of the text becomes
+  one music string; lines longer than CTerm's 1022 characters are split at command
+  boundaries. Characters terminals reject are underlined, and saving refuses them.
+
+Opening and saving an unchanged file keeps it byte for byte; text between music
+strings is not kept. Unsaved music is autosaved and offered for recovery after a crash.
+
 ### Graphics startup logging
 
 Both `icy_draw` and `icy_draw_egui` suppress wgpu backend-probing warnings by
@@ -1224,7 +1271,7 @@ The egui frontend currently includes:
   explicit overwrite confirmation. Save uses `.icy`, `.tdf`, or `.psf` as
   appropriate; ANSI and image formats use Export.
 - Autosave and crash recovery for drawings, RIP and IGS graphics, TheDraw fonts, bitmap
-  fonts and animations. While a document has unsaved changes, a snapshot is written in the
+  fonts, animations and ANSI music. While a document has unsaved changes, a snapshot is written in the
   background at most every 2 seconds (less often for very large documents) to the
   `recovery` folder of the local data directory, and removed once the document is
   saved, all changes are undone, or you discard them when closing. Snapshots
@@ -1298,6 +1345,7 @@ IcyDraw is the spiritual successor to **MysticDraw** (1996–2003), completely r
 | Renegade | ✅ | ✅ |
 | PNG | — | ✅ |
 | IcyDraw (.iced) | ✅ | ✅ |
+| ANSI music (.ams, .mus) | ✅ | ✅ |
 
 ### Typography
 - **Full CP437 support** — Complete DOS character set

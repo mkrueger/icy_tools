@@ -27,6 +27,8 @@ mod igs;
 mod input;
 #[path = "icy_draw_egui/log_bridge.rs"]
 mod log_bridge;
+#[path = "icy_draw_egui/music.rs"]
+mod music;
 #[cfg(target_os = "linux")]
 #[path = "icy_draw_egui/native_drop.rs"]
 mod native_drop;

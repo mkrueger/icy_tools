@@ -303,7 +303,13 @@ impl DrawApp {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button(menu_title(fl!("menu-file")), |ui| self.file_menu(ui, context));
                 ui.menu_button(menu_title(fl!("menu-edit")), |ui| self.edit_menu(ui, context));
-                if self.animation.is_none() && self.font_editor.is_none() && self.rip.is_none() && self.igs.is_none() && self.skypix.is_none() {
+                if self.animation.is_none()
+                    && self.font_editor.is_none()
+                    && self.rip.is_none()
+                    && self.igs.is_none()
+                    && self.skypix.is_none()
+                    && self.music.is_none()
+                {
                     ui.menu_button(menu_title(fl!("menu-selection")), |ui| self.selection_menu(ui));
                     // ATASCII screens have no per-character colors for the color menu and plugins to set.
                     if self.atascii.is_none() && self.vt52.is_none() && self.petscii.is_none() {
@@ -359,7 +365,7 @@ impl DrawApp {
         if item(ui, &fl!("menu-ai-import"), None, true) {
             self.open_ai_import();
         }
-        if self.animation.is_none() && self.charfont.is_none() && self.rip.is_none() && self.igs.is_none() && self.skypix.is_none() {
+        if self.animation.is_none() && self.charfont.is_none() && self.rip.is_none() && self.igs.is_none() && self.skypix.is_none() && self.music.is_none() {
             let bitmap_fonts = self
                 .document
                 .with_state(|state| state.get_buffer().buffer_type != icy_engine::BufferType::Unicode);
@@ -402,6 +408,7 @@ impl DrawApp {
             && self.rip.is_none()
             && self.igs.is_none()
             && self.skypix.is_none()
+            && self.music.is_none()
             && item(ui, &fl!("menu-export"), Some(&EXPORT), true)
         {
             self.dialog = Some(Dialog::Export);
@@ -478,6 +485,33 @@ impl DrawApp {
             }
             if item(ui, &fl!("igs-editor-delete"), None, editor.has_selection()) {
                 editor.delete_selection();
+            }
+            return;
+        }
+        if let Some(editor) = &mut self.music {
+            if item(ui, &fl!("menu-undo"), Some(&UNDO), editor.can_undo()) {
+                editor.undo(false);
+            }
+            if item(ui, &fl!("menu-redo"), Some(&REDO), editor.can_redo()) {
+                editor.undo(true);
+            }
+            ui.separator();
+            let selected = editor.has_selection();
+            if item(ui, &fl!("menu-cut"), Some(&CUT), selected) {
+                editor.copy(context, true);
+            }
+            if item(ui, &fl!("menu-copy"), Some(&COPY), selected) {
+                editor.copy(context, false);
+            }
+            if item(ui, &fl!("menu-paste"), Some(&PASTE), true) {
+                context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
+            if item(ui, &fl!("music-delete"), None, selected) {
+                editor.delete_selected();
+            }
+            ui.separator();
+            if item(ui, &fl!("menu-select-all"), Some(&SELECT_ALL), true) {
+                editor.select_all();
             }
             return;
         }
@@ -1079,7 +1113,8 @@ impl DrawApp {
     pub(super) fn command_key(&mut self, context: &egui::Context, key: Key, modifiers: Modifiers) -> bool {
         let shift = modifiers.shift;
         // Canvas commands only apply to the ANSI editor.
-        let animation = self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() || self.igs.is_some() || self.skypix.is_some();
+        let animation =
+            self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() || self.igs.is_some() || self.skypix.is_some() || self.music.is_some();
         let zoomable = !animation || self.rip.is_some() || self.skypix.is_some();
         match key {
             Key::N if shift => self.new_window(),
@@ -1146,7 +1181,8 @@ impl DrawApp {
         }
         #[cfg(target_os = "macos")]
         let _ = context;
-        if self.animation.is_some() || self.rip.is_some() || self.igs.is_some() || self.skypix.is_some() || self.document.paste_active() {
+        if self.animation.is_some() || self.rip.is_some() || self.igs.is_some() || self.skypix.is_some() || self.music.is_some() || self.document.paste_active()
+        {
             return false;
         }
         if let Some(operation) = AreaOp::ALL.into_iter().find(|operation| {

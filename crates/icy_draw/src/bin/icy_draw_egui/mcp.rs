@@ -61,7 +61,13 @@ impl DrawApp {
     pub(super) fn mcp_command(&mut self, command: McpCommand) {
         let unavailable = if self.picker {
             Some("A native file dialog is open")
-        } else if self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() || self.igs.is_some() || self.skypix.is_some() {
+        } else if self.animation.is_some()
+            || self.font_editor.is_some()
+            || self.rip.is_some()
+            || self.igs.is_some()
+            || self.skypix.is_some()
+            || self.music.is_some()
+        {
             Some("Not in ANSI editor mode")
         } else if self.dialog.is_some() || self.layer_properties_open() || self.document.paste_active() {
             Some("Close the editor dialog before using ANSI automation")

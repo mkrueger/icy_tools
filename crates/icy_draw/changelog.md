@@ -4,6 +4,19 @@
 
 ### Added
 
+- ANSI music editor for `.ams` and `.mus` files and in **New**: a piano roll and
+  the music string side by side, keyboard note entry, playback with a moving
+  playhead, tempo and articulation changes, and a choice of `ESC [ |`, `ESC [ N`
+  or `ESC [ M` when saving. Unchanged files are saved byte for byte.
+- The ANSI music editor selects ranges of notes to transpose, change, copy, cut
+  and paste; inserts notes anywhere with a click; changes lengths by dragging a
+  note's end; plays the selection, also in a loop; and takes part in crash recovery.
+- The ANSI music editor has a player under the roll, a ruler with bars of a chosen time
+  signature on which a click sets where playback starts and a drag the range it plays,
+  and lanes for setting changes and rests. Notes and selected ranges move sideways
+  by dragging.
+- The AI assistant works in the ANSI music editor: it reads and writes the music
+  string, and its proposals can be listened to before they are applied.
 - Opening an ANSI file that contains BEL, BS or TAB outside escape sequences
   asks whether to show them as CP437 glyphs, as PabloDraw and Moebius do, or to
   execute them as control codes (#202).

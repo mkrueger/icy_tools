@@ -110,6 +110,7 @@ enum FileAction {
     SaveRip,
     SaveIgs,
     SaveSkypix,
+    SaveMusic,
     ExportAnimation(super::animation::ExportFormat),
     ExportFont {
         file_name: String,
@@ -252,6 +253,7 @@ pub enum NewKind {
     Igs,
     Skypix,
     Animation,
+    Music,
     BitmapFont,
     TheDraw,
 }
@@ -261,7 +263,7 @@ impl NewKind {
         [
             (fl!("new-group-ansi"), &[Self::Ansi, Self::Utf8, Self::AiImport, Self::Animation, Self::Rip]),
             (fl!("new-group-retro"), &[Self::Atascii, Self::Vt52, Self::Igs, Self::Petscii, Self::Skypix]),
-            (fl!("new-group-fonts"), &[Self::BitmapFont, Self::TheDraw]),
+            (fl!("new-group-fonts"), &[Self::BitmapFont, Self::TheDraw, Self::Music]),
         ]
     }
 
@@ -277,6 +279,7 @@ impl NewKind {
             NewKind::Igs => fl!("igs-editor-title"),
             NewKind::Skypix => fl!("skypix-editor-title"),
             NewKind::Animation => fl!("new-file-editor-animation"),
+            NewKind::Music => fl!("music-editor-title"),
             NewKind::BitmapFont => fl!("new-file-template-bit_font-title"),
             NewKind::TheDraw => fl!("new-file-editor-tdf"),
         }
@@ -294,6 +297,7 @@ impl NewKind {
             NewKind::Igs => fl!("igs-editor-description"),
             NewKind::Skypix => fl!("skypix-editor-description"),
             NewKind::Animation => fl!("new-kind-animation-description"),
+            NewKind::Music => fl!("music-editor-description"),
             NewKind::BitmapFont => fl!("new-kind-bitfont-description"),
             NewKind::TheDraw => fl!("new-kind-tdf-description"),
         }
@@ -311,6 +315,7 @@ impl NewKind {
             NewKind::Igs => "ellipse_filled",
             NewKind::Skypix => "paint_brush",
             NewKind::Animation => "play",
+            NewKind::Music => "music_note",
             NewKind::BitmapFont => "font",
             NewKind::TheDraw => "paint_brush",
         }
@@ -365,6 +370,7 @@ pub struct DrawApp {
     rip: Option<super::rip::RipEditor>,
     igs: Option<super::igs::IgsEditor>,
     skypix: Option<super::skypix::SkypixEditor>,
+    music: Option<super::music::MusicEditor>,
     /// The ATASCII editor's state while the document is an ATASCII screen.
     pub(super) atascii: Option<atascii::AtasciiEditor>,
     /// The VT52 editor's state while the document is an Atari ST text screen.
@@ -478,6 +484,7 @@ impl DrawApp {
             rip: None,
             igs: None,
             skypix: None,
+            music: None,
             atascii: None,
             vt52: None,
             new_vt52_resolution: icy_parser_core::TerminalResolution::Medium,
@@ -568,6 +575,10 @@ impl DrawApp {
                 self.replace(Document::new(Size::new(80, 25)));
                 self.animation = Some(super::animation::AnimationEditor::new());
             }
+            NewKind::Music => {
+                self.replace(Document::new(Size::new(80, 25)));
+                self.music = Some(super::music::MusicEditor::new());
+            }
             NewKind::BitmapFont => {
                 self.replace(Document::new(Size::new(80, 25)));
                 // New fonts start from the IBM VGA font (CP437), like the classic editor.
@@ -596,6 +607,7 @@ impl DrawApp {
         self.rip = None;
         self.igs = None;
         self.skypix = None;
+        self.music = None;
         self.font_editor = None;
         self.document = document;
         self.chrome = chrome::Chrome::default();
@@ -678,6 +690,19 @@ impl DrawApp {
                 Ok(editor) => {
                     self.replace(Document::new(Size::new(80, 25)));
                     self.rip = Some(editor);
+                }
+                Err(error) => self.dialog = Some(Dialog::Error(error)),
+            }
+            return;
+        }
+        if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("ams") || extension.eq_ignore_ascii_case("mus"))
+        {
+            match super::music::MusicEditor::load(&path) {
+                Ok(editor) => {
+                    self.replace(Document::new(Size::new(80, 25)));
+                    self.music = Some(editor);
                 }
                 Err(error) => self.dialog = Some(Dialog::Error(error)),
             }
@@ -795,6 +820,10 @@ impl DrawApp {
                     .add_filter(fl!("skypix-editor-title"), &["skypix"])
                     .set_file_name(format!("{untitled}.skypix"))
                     .save_file(),
+                FileAction::SaveMusic => dialog
+                    .add_filter(fl!("music-file-filter"), &["ams", "mus"])
+                    .set_file_name(format!("{untitled}.ams"))
+                    .save_file(),
                 FileAction::ExportAnimation(format) => dialog
                     .add_filter(format.name(), &[format.extension()])
                     .set_file_name(format!("{untitled}.{}", format.extension()))
@@ -869,6 +898,14 @@ impl DrawApp {
             }
             return;
         }
+        if let Some(editor) = &self.music {
+            if let Some(path) = editor.path().filter(|_| !save_as).map(Path::to_path_buf) {
+                self.save_path(context, path, false);
+            } else {
+                self.choose(context, FileAction::SaveMusic);
+            }
+            return;
+        }
         if let Some(editor) = &mut self.font_editor {
             editor.finish();
             match editor.path.clone().filter(|_| !save_as && !editor.apply_target) {
@@ -913,6 +950,8 @@ impl DrawApp {
         } else if let Some(editor) = &mut self.rip {
             editor.save(&path, overwrite)
         } else if let Some(editor) = &mut self.igs {
+            editor.save(&path, overwrite)
+        } else if let Some(editor) = &mut self.music {
             editor.save(&path, overwrite)
         } else if let Some(editor) = &mut self.font_editor {
             editor.save(&path, overwrite)
@@ -1283,6 +1322,7 @@ impl DrawApp {
             || self.rip.as_ref().is_some_and(|editor| editor.modified())
             || self.igs.as_ref().is_some_and(|editor| editor.modified())
             || self.skypix.as_ref().is_some_and(|editor| editor.modified())
+            || self.music.as_ref().is_some_and(|editor| editor.modified())
             || self.charfont.as_ref().is_some_and(|font| font.modified())
             || self.animation.as_ref().is_some_and(|editor| editor.modified())
     }
@@ -1297,6 +1337,10 @@ impl DrawApp {
             return;
         }
         if let Some(editor) = &mut self.igs {
+            editor.undo(redo);
+            return;
+        }
+        if let Some(editor) = &mut self.music {
             editor.undo(redo);
             return;
         }
@@ -2352,6 +2396,12 @@ impl DrawApp {
                 .map_or_else(|| fl!("unsaved-title"), |name| name.to_string_lossy().into_owned());
         }
         if let Some(editor) = &self.rip {
+            return editor
+                .path()
+                .and_then(|path| path.file_name())
+                .map_or_else(|| fl!("unsaved-title"), |name| name.to_string_lossy().into_owned());
+        }
+        if let Some(editor) = &self.music {
             return editor
                 .path()
                 .and_then(|path| path.file_name())
@@ -4358,7 +4408,7 @@ impl DrawApp {
                 let current = self.document.with_state(|state| state.get_buffer().size());
                 let response = appearance::Dialog::new(if resize { "resize" } else { "new" })
                     .size(if resize { DialogSize::Medium } else { DialogSize::Width(780.0) })
-                    .max_height(if resize { 560.0 } else { 660.0 })
+                    .max_height(if resize { 560.0 } else { 720.0 })
                     .confirm_on_enter(true)
                     .show(context, |dialog| {
                         dialog.content(|ui| {
@@ -4653,6 +4703,16 @@ impl DrawApp {
                             self.save_path(context, path, false);
                         }
                     }
+                    FileAction::SaveMusic => {
+                        if path.extension().is_none() {
+                            path.set_extension("ams");
+                        }
+                        if path.exists() {
+                            self.dialog = Some(Dialog::Overwrite(path));
+                        } else {
+                            self.save_path(context, path, false);
+                        }
+                    }
                     FileAction::SaveSkypix => {
                         if path.extension().is_none() {
                             path.set_extension("skypix");
@@ -4863,6 +4923,25 @@ impl DrawApp {
                 {
                     editor.undo(true);
                 }
+                self.keys(context);
+            }
+            self.dialogs(context);
+            return;
+        }
+        if let Some(editor) = &mut self.music {
+            editor.show(context, blocked);
+            self.canvas_focus = false;
+            if !blocked && !context.wants_keyboard_input() {
+                if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Z)) {
+                    editor.undo(false);
+                }
+                if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT), Key::Z))
+                    || context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Y))
+                {
+                    editor.undo(true);
+                }
+            }
+            if !blocked {
                 self.keys(context);
             }
             self.dialogs(context);

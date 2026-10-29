@@ -19,6 +19,8 @@ pub(super) mod canvas;
 mod font_tools;
 #[path = "ai_igs.rs"]
 mod igs_tools;
+#[path = "ai_music.rs"]
+mod music_tools;
 #[path = "ai_rip.rs"]
 mod rip_tools;
 #[path = "ai_skypix.rs"]
@@ -113,6 +115,10 @@ impl Proposal {
             Workspace::Rip(draft) => (draft.changes(), None),
             Workspace::Igs(draft) => (draft.changes(), None),
             Workspace::Skypix(draft) => (draft.changes(), None),
+            Workspace::Music(draft) => {
+                let diff = draft.diff();
+                (diff.removed.max(diff.added), Some(diff))
+            }
         };
         Self {
             workspace,
@@ -130,6 +136,8 @@ impl Proposal {
 enum ProposalAction {
     Accept,
     Discard,
+    /// Plays a music draft.
+    Listen,
 }
 
 #[derive(Default)]
@@ -1030,7 +1038,19 @@ impl Chat {
                         ui.add_space(4.0);
                         script_diff(ui, diff);
                     }
-                    (Workspace::Animation(_), None) => {}
+                    (Workspace::Animation(_) | Workspace::Music(_), None) => {}
+                    (Workspace::Music(draft), Some(diff)) => {
+                        let (notes, seconds) = draft.summary();
+                        ui.label(appearance::bold(
+                            ui,
+                            fl!("ai-chat-proposal-music", notes = notes, seconds = format!("{seconds:.1}")),
+                        ));
+                        if ui.button(fl!("ai-chat-listen")).clicked() {
+                            action = Some(ProposalAction::Listen);
+                        }
+                        ui.add_space(4.0);
+                        script_diff(ui, diff);
+                    }
                     (Workspace::Tdf(draft), _) => {
                         ui.label(appearance::bold(ui, fl!("ai-chat-proposal-font", count = proposal.changes)));
                         let pages = 94_usize.div_ceil(tdf_tools::PAGE_SIZE);
@@ -1810,6 +1830,11 @@ impl DrawApp {
         match self.ai_chat.proposal_action.take() {
             Some(ProposalAction::Accept) => self.accept_ai_proposal(),
             Some(ProposalAction::Discard) => self.ai_chat.proposal = None,
+            Some(ProposalAction::Listen) => {
+                if let (Some(Workspace::Music(draft)), Some(editor)) = (self.ai_chat.proposal.as_ref().map(|proposal| &proposal.workspace), &mut self.music) {
+                    editor.listen(draft.music());
+                }
+            }
             None => {}
         }
         // A proposal belongs to the document and editor it was made in.
@@ -1854,7 +1879,7 @@ impl DrawApp {
     /// macros are Icy Board screens.
     fn ai_editor_knowledge(&self) -> knowledge::EditorKnowledge {
         use knowledge::EditorKnowledge as Knowledge;
-        if self.show_start || self.animation.is_some() || self.font_editor.is_some() {
+        if self.show_start || self.animation.is_some() || self.font_editor.is_some() || self.music.is_some() {
             return Knowledge::None;
         }
         if self.rip.is_some() {
@@ -1893,7 +1918,14 @@ impl DrawApp {
 
     /// The character-based editor the AI may draw in, if one is open.
     fn ai_drawable_kind(&self) -> Option<&'static str> {
-        if self.show_start || self.animation.is_some() || self.font_editor.is_some() || self.rip.is_some() || self.igs.is_some() || self.skypix.is_some() {
+        if self.show_start
+            || self.animation.is_some()
+            || self.font_editor.is_some()
+            || self.rip.is_some()
+            || self.igs.is_some()
+            || self.skypix.is_some()
+            || self.music.is_some()
+        {
             return None;
         }
         Some(if self.charfont.is_some() {
@@ -1917,6 +1949,7 @@ impl DrawApp {
                 Workspace::Rip(_) => self.rip.is_some() && self.font_editor.is_none() && self.animation.is_none() && !self.show_start,
                 Workspace::Igs(_) => self.igs.is_some() && self.font_editor.is_none() && self.animation.is_none() && !self.show_start,
                 Workspace::Skypix(_) => self.skypix.is_some() && self.font_editor.is_none() && self.animation.is_none() && !self.show_start,
+                Workspace::Music(_) => self.music.is_some() && !self.show_start,
                 Workspace::Font(ref draft) => {
                     !self.show_start
                         && self.font_editor.as_ref().is_some_and(|editor| {
@@ -1980,6 +2013,13 @@ impl DrawApp {
         if let Some(editor) = self.skypix.as_ref().filter(|_| !self.show_start) {
             return Some((Workspace::Skypix(skypix_tools::SkypixDraft::new(&editor.document)), document));
         }
+        if let Some(editor) = self.music.as_ref().filter(|_| !self.show_start) {
+            let file_name = editor.path().and_then(|path| path.file_name()).map(|name| name.to_string_lossy().into_owned());
+            return Some((
+                Workspace::Music(music_tools::MusicDraft::new(editor.text(), editor.introducer(), file_name, editor.selected)),
+                document,
+            ));
+        }
         let kind = self.ai_drawable_kind()?;
         let draft = self.document.with_state(|state| {
             let selection = state.selection().map(|selection| {
@@ -2028,6 +2068,14 @@ impl DrawApp {
             Workspace::Skypix(draft) => match &mut self.skypix {
                 Some(editor) if draft.matches(&editor.document) => draft.validate().and_then(|()| editor.apply_ai_items(draft.items().to_vec())),
                 _ => Err(fl!("ai-chat-apply-stale-skypix")),
+            },
+            // Replacing the whole music would silently drop edits made since the proposal.
+            Workspace::Music(draft) => match &mut self.music {
+                Some(editor) if editor.text() == draft.original => {
+                    editor.apply_text(draft.text.clone());
+                    Ok(())
+                }
+                _ => Err(fl!("ai-chat-apply-stale-music")),
             },
         };
         if let Err(error) = result {
@@ -3745,6 +3793,54 @@ mod tests {
         app.document.undo().unwrap();
         assert_eq!(app.document.with_state(|state| state.get_buffer().char_at(Position::new(0, 0)).ch), ' ');
         assert!(!app.document.modified(), "one undo removes the whole drawing");
+    }
+
+    #[test]
+    fn music_proposals_play_and_apply_as_one_undo_step() {
+        super::super::tests::use_english();
+        let context = egui::Context::default();
+        let size = egui::vec2(1280.0, 820.0);
+        let mut app = DrawApp::new();
+        app.create(NewKind::Music, Size::new(80, 25));
+        app.music.as_mut().unwrap().apply_text("T120 CDE".into());
+        let (mut workspace, document) = app.ai_draft().expect("music draft");
+        assert!(matches!(workspace, Workspace::Music(_)));
+        assert!(app.ai_drawable_kind().is_none(), "ANSI canvas tools stay off");
+        workspace
+            .call(
+                "icy_replace_music_events",
+                &serde_json::json!({ "start": 4, "events": [{ "type": "note", "pitch": "O4 G", "length": 2 }] }),
+            )
+            .unwrap();
+        app.ai_chat.pending_document = document;
+        app.ai_chat.handle(Ok(Response::Proposal("Composed".into(), Box::new(workspace))));
+        assert_eq!(app.music.as_ref().unwrap().text(), "T120 CDE", "a proposal does not touch the music");
+
+        app.ai_chat.visible = true;
+        app.ai_chat.connection.provider = AiProvider::Copilot;
+        app.ai_chat.auto_connected = true;
+        app.ai_chat.connected = true;
+        app.ai_chat.settings_open = false;
+        let output = frame(&context, &mut app, size, vec![]);
+        let shown = output.shapes.iter().any(|shape| match &shape.shape {
+            egui::Shape::Text(text) => {
+                let text = text.galley.text().replace(['\u{2068}', '\u{2069}'], "");
+                text.contains("Proposed music") && text.contains("4 notes") && text.contains("2.5 s")
+            }
+            _ => false,
+        });
+        assert!(shown, "the proposal names notes and length");
+        app.ai_chat.proposal_action = Some(ProposalAction::Listen);
+        frame(&context, &mut app, size, vec![]);
+        let played = &app.music.as_ref().unwrap().player.played;
+        assert_eq!(played.last().map(|music| music.music_actions.len()), Some(4), "the draft plays");
+
+        app.ai_chat.proposal_action = Some(ProposalAction::Accept);
+        frame(&context, &mut app, size, vec![]);
+        assert!(app.ai_chat.proposal.is_none());
+        assert_eq!(app.music.as_ref().unwrap().text(), "T120CDEG2");
+        app.music.as_mut().unwrap().undo(false);
+        assert_eq!(app.music.as_ref().unwrap().text(), "T120 CDE", "one undo removes the proposal");
     }
 
     #[test]

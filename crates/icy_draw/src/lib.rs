@@ -1,3 +1,4 @@
+pub mod ansi_music;
 pub mod atari_font;
 pub mod box_lines;
 pub mod brush;

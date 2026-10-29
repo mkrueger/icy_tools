@@ -4,8 +4,8 @@
 use serde_json::Value;
 
 use super::{
-    animation_tools::AnimationDraft, canvas::Draft, font_tools::FontDraft, igs_tools::IgsDraft, rip_tools::RipDraft, skypix_tools::SkypixDraft,
-    tdf_tools::TdfDraft,
+    animation_tools::AnimationDraft, canvas::Draft, font_tools::FontDraft, igs_tools::IgsDraft, music_tools::MusicDraft, rip_tools::RipDraft,
+    skypix_tools::SkypixDraft, tdf_tools::TdfDraft,
 };
 
 #[derive(Clone)]
@@ -17,6 +17,7 @@ pub enum Workspace {
     Rip(RipDraft),
     Igs(IgsDraft),
     Skypix(SkypixDraft),
+    Music(MusicDraft),
 }
 
 impl Workspace {
@@ -29,6 +30,7 @@ impl Workspace {
             Self::Rip(_) => "RIP",
             Self::Igs(_) => "IGS",
             Self::Skypix(_) => "SkyPix",
+            Self::Music(_) => "ANSI music",
         }
     }
 
@@ -41,6 +43,7 @@ impl Workspace {
             Self::Rip(_) => super::rip_tools::tool_specs(),
             Self::Igs(_) => super::igs_tools::tool_specs(),
             Self::Skypix(_) => super::skypix_tools::tool_specs(),
+            Self::Music(_) => super::music_tools::tool_specs(),
         };
         specs
             .into_iter()
@@ -60,6 +63,7 @@ impl Workspace {
             Self::Rip(draft) => draft.changed(),
             Self::Igs(draft) => draft.changed(),
             Self::Skypix(draft) => draft.changed(),
+            Self::Music(draft) => draft.changed(),
         }
     }
 
@@ -79,6 +83,7 @@ impl Workspace {
             Self::Rip(draft) => draft.call(tool, arguments),
             Self::Igs(draft) => draft.call(tool, arguments),
             Self::Skypix(draft) => draft.call(tool, arguments),
+            Self::Music(draft) => draft.call(tool, arguments),
         }
     }
 }
@@ -92,6 +97,7 @@ pub fn tool_specs() -> Vec<(&'static str, &'static str, Value)> {
     specs.extend(super::rip_tools::tool_specs());
     specs.extend(super::igs_tools::tool_specs());
     specs.extend(super::skypix_tools::tool_specs());
+    specs.extend(super::music_tools::tool_specs());
     specs
 }
 
@@ -185,6 +191,14 @@ pub fn editor_hint(workspace: Option<&Workspace>) -> String {
              not ANSI cells. Preserve read-only prefixes; wire fields are fixed-width base-36.]",
             workspace.tool_names().join(", ")
         ),
+        Some(workspace @ Workspace::Music(_)) => format!(
+            "[icy_draw: the open editor is ANSI music; its tools are {}. Read icy_music_info and icy_music_api, \
+             then icy_read_music. ANSI music is one monophonic voice of music commands, NOT ANSI cells or \
+             escape sequences; the editor adds the introducer when saving. Write with icy_write_music or \
+             icy_replace_music_events and check icy_music_info afterwards. You cannot hear the result; \
+             the user listens to the draft and applies or discards it.]",
+            workspace.tool_names().join(", ")
+        ),
         Some(workspace @ Workspace::Font(_)) => format!(
             "[icy_draw: the open editor is \"bitmap font\"; its tools are {}. \
              Use icy_transform_glyphs for mechanical font-wide changes. Otherwise prefer \
@@ -259,5 +273,11 @@ mod tests {
         assert!(igs.call("icy_igs_info", &json!({})).is_ok());
         assert!(igs.call("icy_replace_rip_commands", &json!({})).unwrap_err().contains("IGS"));
         assert!(names.contains(&"icy_preview_igs"));
+        let mut music = Workspace::Music(MusicDraft::new("CDE", icy_draw::ansi_music::Introducer::SyncTerm, None, None));
+        assert_eq!(music.editor(), "ANSI music");
+        assert!(editor_hint(Some(&music)).contains("icy_write_music"));
+        assert!(music.call("icy_music_info", &json!({})).is_ok());
+        assert!(music.call("icy_set_cells", &json!({})).unwrap_err().contains("ANSI music"));
+        assert!(names.contains(&"icy_replace_music_events"));
     }
 }

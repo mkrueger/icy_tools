@@ -64,6 +64,26 @@ fn diff_lines(before: &[&str], after: &[&str]) -> Vec<(char, String)> {
     lines
 }
 
+/// The changed lines between two texts.
+pub fn text_diff(original: &str, source: &str) -> Diff {
+    let before: Vec<_> = original.split('\n').collect();
+    let after: Vec<_> = source.split('\n').collect();
+    let prefix = before.iter().zip(&after).take_while(|(a, b)| a == b).count();
+    let suffix = before[prefix..]
+        .iter()
+        .rev()
+        .zip(after[prefix..].iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let lines = diff_lines(&before[prefix..before.len() - suffix], &after[prefix..after.len() - suffix]);
+    Diff {
+        line: prefix + 1,
+        removed: lines.iter().filter(|(kind, _)| *kind == '-').count(),
+        added: lines.iter().filter(|(kind, _)| *kind == '+').count(),
+        lines,
+    }
+}
+
 impl AnimationDraft {
     pub fn new(source: &str, file_name: Option<String>, frame_count: usize, error: Option<String>) -> Self {
         Self {
@@ -80,22 +100,7 @@ impl AnimationDraft {
     }
 
     pub fn diff(&self) -> Diff {
-        let before: Vec<_> = self.original.split('\n').collect();
-        let after: Vec<_> = self.source.split('\n').collect();
-        let prefix = before.iter().zip(&after).take_while(|(a, b)| a == b).count();
-        let suffix = before[prefix..]
-            .iter()
-            .rev()
-            .zip(after[prefix..].iter().rev())
-            .take_while(|(a, b)| a == b)
-            .count();
-        let lines = diff_lines(&before[prefix..before.len() - suffix], &after[prefix..after.len() - suffix]);
-        Diff {
-            line: prefix + 1,
-            removed: lines.iter().filter(|(kind, _)| *kind == '-').count(),
-            added: lines.iter().filter(|(kind, _)| *kind == '+').count(),
-            lines,
-        }
+        text_diff(&self.original, &self.source)
     }
 
     pub fn call(&mut self, tool: &str, arguments: &Value) -> Result<String, String> {

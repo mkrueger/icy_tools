@@ -50,6 +50,9 @@ pub enum RecoveryKind {
     Igs,
     /// A SkyPix command drawing; the payload is the `.skypix` stream.
     Skypix,
+    /// ANSI music; the payload is the introducer (0 `ESC [ |`, 1 `ESC [ N`, 2 `ESC [ M`)
+    /// followed by the UTF-8 music text.
+    Music,
 }
 
 /// Size and checksum of the file on disk the document was loaded from or last saved to.

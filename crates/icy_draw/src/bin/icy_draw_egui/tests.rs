@@ -4922,7 +4922,7 @@ fn new_document_groups_cover_all_editors_in_the_same_order() {
     let groups = NewKind::groups();
     assert!(groups[0].1 == [NewKind::Ansi, NewKind::Utf8, NewKind::AiImport, NewKind::Animation, NewKind::Rip]);
     assert!(groups[1].1 == [NewKind::Atascii, NewKind::Vt52, NewKind::Igs, NewKind::Petscii, NewKind::Skypix]);
-    assert!(groups[2].1 == [NewKind::BitmapFont, NewKind::TheDraw]);
+    assert!(groups[2].1 == [NewKind::BitmapFont, NewKind::TheDraw, NewKind::Music]);
     let welcome = frame(&context, &mut app, size, vec![]);
     for (title, kinds) in &groups {
         let header = text_position(&welcome, &title.to_uppercase()).unwrap();
@@ -5566,4 +5566,186 @@ fn idle_window_does_not_repaint_continuously() {
     }
     app.document.type_text("X").unwrap();
     assert!(is_title(&frame(&context, &mut app, size, vec![])));
+}
+
+#[test]
+fn music_new_open_edit_and_save_use_the_music_editor() {
+    use_english();
+    let context = egui::Context::default();
+    let size = egui::vec2(1280.0, 820.0);
+    let mut app = DrawApp::new();
+    app.dialog = Some(Dialog::New);
+    let output = frame(&context, &mut app, size, vec![]);
+    assert!(
+        text_position(&output, "Tunes for terminals that play ANSI music").is_some(),
+        "File › New offers music"
+    );
+    app.dialog = None;
+    app.create(NewKind::Music, size_of_new());
+    assert!(app.music.is_some() && app.rip.is_none());
+    assert!(!app.modified());
+    let output = frame(&context, &mut app, size, vec![]);
+    assert!(text_position(&output, "Music string").is_some());
+    assert!(text_position(&output, "Introducer").is_some());
+
+    // A click past the end of the music adds a note; the window title marks the change.
+    let roll = egui::pos2(700.0, 380.0);
+    frame(&context, &mut app, size, vec![egui::Event::PointerMoved(roll)]);
+    for pressed in [true, false] {
+        frame(&context, &mut app, size, pointer(roll, pressed));
+    }
+    assert_eq!(app.music.as_ref().unwrap().events().len(), 1);
+    assert!(app.modified());
+    let undo = egui::Event::Key {
+        key: Key::Z,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND,
+    };
+    frame(&context, &mut app, size, vec![undo]);
+    assert!(app.music.as_ref().unwrap().events().is_empty());
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("tune.ams");
+    let bytes = b"\x1b[MFT150L8CDEFG\x0e";
+    std::fs::write(&path, bytes).unwrap();
+    app.open(path.clone());
+    assert!(app.music.is_some());
+    assert_eq!(app.document_name(), "tune.ams");
+    assert_eq!(app.music.as_ref().unwrap().text(), "MFT150L8CDEFG");
+    frame(&context, &mut app, size, vec![]);
+    let copy = directory.path().join("copy.ams");
+    app.save_path(&context, copy.clone(), false);
+    assert_eq!(std::fs::read(&copy).unwrap(), bytes);
+    assert!(!app.modified());
+
+    app.create(NewKind::Ansi, size_of_new());
+    assert!(app.music.is_none());
+}
+
+fn size_of_new() -> Size {
+    Size::new(80, 25)
+}
+
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn gpu_music_editor_renders_roll_markers_and_text() {
+    use_english();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut gpu = Gpu::new().await;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("tune.ams");
+        std::fs::write(&path, b"\x1b[|T140L8O4CDEF G4 P8. MS >C<BAG MN T100 F2 E4 D C1\x0e").unwrap();
+        let mut app = DrawApp::new();
+        app.open(path);
+        app.music.as_mut().unwrap().selected = Some(5);
+        for _ in 0..3 {
+            gpu.capture(&mut app, [1280, 820], 1.0, vec![], "music-warmup");
+        }
+        let pixels = gpu.capture(&mut app, [1280, 820], 1.0, vec![], "music-editor");
+        // The notes are drawn in their blue.
+        assert!(pixels.as_chunks::<4>().0.iter().any(|pixel| pixel[0] < 100 && pixel[1] > 130 && pixel[2] > 230));
+    });
+}
+
+#[test]
+fn music_clicks_insert_between_notes_and_unsaved_music_is_recovered() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::vec2(1280.0, 820.0);
+    let directory = tempfile::tempdir().unwrap();
+    let store = directory.path().join("recovery");
+    let path = directory.path().join("tune.ams");
+    std::fs::write(&path, b"\x1b[NC1\x0e").unwrap();
+    let mut app = recovering_app(&store);
+    app.open(path.clone());
+    frame(&context, &mut app, size, vec![]);
+    // The whole note starts the roll; a click high above it, in its first half, puts a note before it.
+    let click = egui::pos2(75.0, 200.0);
+    frame(&context, &mut app, size, vec![egui::Event::PointerMoved(click)]);
+    for pressed in [true, false] {
+        frame(&context, &mut app, size, pointer(click, pressed));
+    }
+    let events = app.music.as_ref().unwrap().events().to_vec();
+    assert_eq!(events.len(), 2);
+    assert!(matches!(events[0], icy_draw::ansi_music::Event::Note { pitch: Some(pitch), length: 4, .. } if pitch > 48));
+    assert_eq!(events[1], icy_draw::ansi_music::Event::note(48, 1, false));
+    assert!(app.modified());
+
+    frame(&context, &mut app, size, vec![]);
+    flush_recovery(&app);
+    assert_eq!(recovery_files(&store).len(), 1);
+    let text = app.music.as_ref().unwrap().text().to_owned();
+    drop(app);
+
+    let mut restored = recovering_app(&store);
+    restored.show_start = true;
+    restored.offer_recovery();
+    assert_eq!(restored.offers.len(), 1);
+    frame(&context, &mut restored, size, vec![]);
+    click_text(&context, &mut restored, size, "Restore");
+    let editor = restored.music.as_ref().expect("the music editor is restored");
+    assert_eq!(editor.text(), text);
+    assert_eq!(editor.introducer(), icy_draw::ansi_music::Introducer::Banana);
+    assert_eq!(editor.path(), Some(path.as_path()));
+    assert!(restored.modified());
+}
+
+/// The note bars the music editor drew, from left to right.
+fn music_note_bars(output: &egui::FullOutput) -> Vec<egui::Rect> {
+    let mut bars: Vec<egui::Rect> = output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if rect.fill == crate::music::NOTE_COLOR => Some(rect.rect),
+            _ => None,
+        })
+        .collect();
+    bars.sort_by(|a, b| a.left().total_cmp(&b.left()));
+    bars
+}
+
+#[test]
+fn music_ruler_sets_start_and_range_and_notes_move_sideways() {
+    use_english();
+    let context = egui::Context::default();
+    appearance::apply(&context);
+    let size = egui::vec2(1280.0, 820.0);
+    let mut app = DrawApp::new();
+    app.create(NewKind::Music, Size::new(80, 25));
+    app.music.as_mut().unwrap().apply_text("CDEFG".into());
+    frame(&context, &mut app, size, vec![]);
+    let output = frame(&context, &mut app, size, vec![]);
+    let bars = music_note_bars(&output);
+    assert_eq!(bars.len(), 5);
+    let ruler = text_position(&output, "1").expect("bar 1 on the ruler").y;
+    let drag = |app: &mut DrawApp, from: egui::Pos2, to: egui::Pos2| {
+        frame(&context, app, size, vec![egui::Event::PointerMoved(from)]);
+        frame(&context, app, size, pointer(from, true));
+        for step in 1..=4 {
+            frame(&context, app, size, vec![egui::Event::PointerMoved(from.lerp(to, step as f32 / 4.0))]);
+        }
+        frame(&context, app, size, pointer(to, false));
+    };
+
+    // Dragging on the ruler from D to the end of F sets the range, snapped to the notes.
+    drag(&mut app, egui::pos2(bars[1].left() + 2.0, ruler), egui::pos2(bars[3].right() - 2.0, ruler));
+    let editor = app.music.as_ref().unwrap();
+    assert_eq!(editor.range_set(), Some((0.25, 1.0)));
+    // A click sets where playback starts instead.
+    let click = egui::pos2(bars[2].left() + 3.0, ruler);
+    frame(&context, &mut app, size, vec![egui::Event::PointerMoved(click)]);
+    for pressed in [true, false] {
+        frame(&context, &mut app, size, pointer(click, pressed));
+    }
+    let editor = app.music.as_ref().unwrap();
+    assert_eq!((editor.range_set(), editor.cursor()), (None, 0.5));
+
+    // E dragged past the middle of G goes after it, as one undo step.
+    drag(&mut app, bars[2].center(), egui::pos2(bars[4].right() + 4.0, bars[2].center().y));
+    assert_eq!(app.music.as_ref().unwrap().text(), "CDFGE");
+    app.music.as_mut().unwrap().undo(false);
+    assert_eq!(app.music.as_ref().unwrap().text(), "CDEFG");
 }
