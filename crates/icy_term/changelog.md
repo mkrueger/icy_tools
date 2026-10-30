@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.9.1 - 2026-10-30
+
+Changes since 0.9.0.
+
 ### Added
 
 - Native Kermit file transfers for uploads and batch downloads.
@@ -17,11 +21,18 @@
   download folder instead of asking for a folder first.
 - Kermit negotiates long packets up to 4096 bytes and repeat compression,
   avoiding the latency bottleneck of classic short packets.
+- ANSI music follows the CTerm manual for pitch, persistent playback settings,
+  dotted notes and pauses, lowercase commands, and music introducer selection.
 
 ### Fixed
 
 - Windows release builds no longer open an extra console window alongside the
   terminal, including when using the `icy_term_egui` compatibility alias.
+- Scrolling text redraws correctly, and reducing the scrollback limit trims
+  existing history.
+- Terminal resets restore the configured music option and clear CTerm attribute
+  modes; palette resets restore the terminal's default palette.
+- IGS loop parameters continue across underscore line breaks.
 - RIP text, erase, scroll, and palette updates invalidate cached pixels even
   when they arrive without a RIP graphics command.
 - SkyPix output refreshes after incoming text and graphics instead of remaining
