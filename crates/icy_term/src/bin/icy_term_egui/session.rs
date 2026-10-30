@@ -354,6 +354,141 @@ mod tests {
     }
 
     #[test]
+    fn iemsi_login_roundtrip_and_retry() {
+        use icy_net::iemsi::{decode_ici, EmsiISI, EMSI_2ACK, EMSI_IRQ, EMSI_NAK};
+
+        for fragmented in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let mut entry = icy_term::Address::new("IEMSI loopback");
+            entry.protocol = ConnectionType::Raw;
+            entry.address = listener.local_addr().unwrap().to_string();
+            entry.user_name = "Test User".into();
+            entry.password = "test-password".into();
+            let config = entry_connection_config(&entry, &icy_term::Options::default()).unwrap();
+            assert!(config.iemsi_auto_login);
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                if fragmented {
+                    for byte in EMSI_IRQ.to_ascii_lowercase() {
+                        stream.write_all(&[byte]).unwrap();
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                } else {
+                    stream.write_all(EMSI_IRQ).unwrap();
+                }
+                for attempt in 0..=usize::from(fragmented) {
+                    let mut header = [0; 14];
+                    stream.read_exact(&mut header).unwrap();
+                    assert_eq!(&header[..10], b"**EMSI_ICI");
+                    let length = usize::from_str_radix(std::str::from_utf8(&header[10..]).unwrap(), 16).unwrap();
+                    assert!(length <= 2048);
+                    let mut packet = header.to_vec();
+                    packet.resize(header.len() + length + 9, 0);
+                    stream.read_exact(&mut packet[header.len()..]).unwrap();
+                    let ici = decode_ici(&packet).unwrap();
+                    assert_eq!(ici.user.name, "Test User");
+                    assert_eq!(ici.user.password, "test-password");
+                    if fragmented && attempt == 0 {
+                        stream.write_all(EMSI_NAK).unwrap();
+                    }
+                }
+                let isi = EmsiISI {
+                    id: "MockBBS,1.0".into(),
+                    name: "IEMSI Test BBS".into(),
+                    location: "Loopback".into(),
+                    operator: "Test Sysop".into(),
+                    notice: "Welcome".into(),
+                    ..Default::default()
+                };
+                let packet = isi.encode().unwrap();
+                if fragmented {
+                    for chunk in packet.chunks(7) {
+                        stream.write_all(chunk).unwrap();
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                } else {
+                    stream.write_all(&packet).unwrap();
+                }
+                let mut ack = [0; 30];
+                stream.read_exact(&mut ack).unwrap();
+                assert_eq!(&ack, EMSI_2ACK);
+                stream.write_all(b"READY").unwrap();
+                let mut response = [0; 3];
+                stream.read_exact(&mut response).unwrap();
+                assert_eq!(&response, b"OK\r");
+            });
+            let screen: Arc<Mutex<Box<dyn Screen>>> = Arc::new(Mutex::new(Box::new(TextScreen::default())));
+            let session = Session::start(screen.clone(), config, egui::Context::default());
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                match session.events.recv_timeout(deadline.saturating_duration_since(Instant::now())).unwrap() {
+                    TerminalEvent::EmsiLogin(info) => {
+                        assert_eq!(info.id, "MockBBS,1.0");
+                        assert_eq!(info.name, "IEMSI Test BBS");
+                        assert_eq!(info.location, "Loopback");
+                        assert_eq!(info.operator, "Test Sysop");
+                        assert_eq!(info.notice, "Welcome");
+                        let mut tools = super::super::tools::Tools::default();
+                        tools.event(&TerminalEvent::EmsiLogin(info));
+                        assert!(tools.host_info.unwrap().iter().any(|(_, value)| value == "IEMSI Test BBS"));
+                        break;
+                    }
+                    TerminalEvent::Disconnected(error) => panic!("Unexpected disconnect: {error:?}"),
+                    _ => {}
+                }
+            }
+            session.send(b"OK\r".to_vec()).unwrap();
+            server.join().unwrap();
+            drop(session);
+        }
+    }
+
+    #[test]
+    fn iemsi_login_can_be_disabled() {
+        use icy_net::iemsi::EMSI_IRQ;
+
+        for disable_in_script in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let mut entry = icy_term::Address::new("IEMSI disabled");
+            entry.protocol = ConnectionType::Raw;
+            entry.address = listener.local_addr().unwrap().to_string();
+            entry.user_name = "Test User".into();
+            entry.password = "test-password".into();
+            entry.auto_login = if disable_in_script { "@IG" } else { "G" }.into();
+            let mut options = icy_term::Options::default();
+            options.iemsi.autologin = disable_in_script;
+            let config = entry_connection_config(&entry, &options).unwrap();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut ready = [0];
+                stream.read_exact(&mut ready).unwrap();
+                assert_eq!(&ready, b"G");
+                stream.write_all(EMSI_IRQ).unwrap();
+                stream.write_all(b"READY").unwrap();
+                let mut response = [0; 3];
+                stream.read_exact(&mut response).unwrap();
+                assert_eq!(&response, b"OK\r", "Disabled IEMSI must not send a handshake");
+            });
+            let screen: Arc<Mutex<Box<dyn Screen>>> = Arc::new(Mutex::new(Box::new(TextScreen::default())));
+            let session = Session::start(screen.clone(), config, egui::Context::default());
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                let event = session.events.recv_timeout(deadline.saturating_duration_since(Instant::now())).unwrap();
+                assert!(!matches!(event, TerminalEvent::EmsiLogin(_) | TerminalEvent::Disconnected(_)), "{event:?}");
+                let row: String = (0..80).map(|x| screen.lock().char_at((x, 0).into()).ch).collect();
+                if row.contains("READY") {
+                    break;
+                }
+            }
+            session.send(b"OK\r".to_vec()).unwrap();
+            server.join().unwrap();
+            drop(session);
+        }
+    }
+
+    #[test]
     fn secure_websocket_reports_invalid_tls_without_panicking() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let mut entry = icy_term::Address::new("TLS loopback");
