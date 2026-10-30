@@ -15,7 +15,7 @@ serde = { workspace = true }
 mlua = { workspace = true }
 image = { workspace = true, features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dds", "qoi"] }
 regex = { workspace = true }
-web-time = "1.1"
+web-time = { workspace = true }
 parking_lot = { workspace = true }
 
 lazy_static = { workspace = true }

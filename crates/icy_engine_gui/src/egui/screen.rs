@@ -72,7 +72,7 @@ impl ScreenView {
             .min_scrolled_height(0.0)
             .min_scrolled_width(0.0)
             .scroll_source(egui::scroll_area::ScrollSource {
-                drag: false,
+                drag: egui::scroll_area::DragScroll::Never,
                 ..Default::default()
             });
         if let Some(offset) = self.scroll_to.take() {
@@ -94,7 +94,7 @@ impl ScreenView {
                         interaction_bounds.max.y = (interaction_bounds.max.y - bar_width).max(interaction_bounds.min.y);
                     }
                 }
-                let response = ui.interact(interaction_bounds, ui.id().with("screen"), egui::Sense::click_and_drag());
+                let response = ui.interact(interaction_bounds, ui.scope_id().with("screen"), egui::Sense::click_and_drag());
                 self.terminal
                     .update_scroll_viewport([self.offset.x, self.offset.y, bounds.width(), bounds.height()], self.zoom);
                 let mut settings = settings.clone();

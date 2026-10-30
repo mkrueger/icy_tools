@@ -135,7 +135,7 @@ fn toggle(ui: &mut egui::Ui, rect: egui::Rect, icon: Icon, tooltip: &str, solid:
         egui::Color32::from_gray(200)
     };
     icons.image(ui.ctx(), icon, 16.0).tint(tint).paint_at(ui, rect.shrink(3.0));
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tooltip));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tooltip));
     response.clicked()
 }
 

@@ -1,6 +1,9 @@
 //! Explicit, bounded chat reference imports. A drop is staged before any attachment is replaced.
 
-use std::{path::Path, sync::mpsc};
+use std::{
+    path::{Path, PathBuf},
+    sync::{mpsc, Arc},
+};
 
 use eframe::egui;
 use serde::Serialize;
@@ -47,14 +50,54 @@ impl FileReferences {
     }
 }
 
-pub fn is_picture(file: &egui::DroppedFile) -> bool {
-    let name = file.path.as_deref().unwrap_or_else(|| Path::new(&file.name));
+#[derive(Debug)]
+struct LocalFile(PathBuf);
+
+impl egui::DroppedFile for LocalFile {
+    fn path(&self) -> &Path {
+        &self.0
+    }
+
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|error| error.to_string())
+    }
+}
+
+pub fn local_file(path: PathBuf) -> egui::DroppedFileHandle {
+    Arc::new(LocalFile(path))
+}
+
+#[cfg(test)]
+pub(crate) fn memory_file(name: impl AsRef<Path>, bytes: impl Into<Arc<[u8]>>) -> egui::DroppedFileHandle {
+    #[derive(Debug)]
+    struct MemoryFile {
+        name: PathBuf,
+        bytes: Arc<[u8]>,
+    }
+
+    impl egui::DroppedFile for MemoryFile {
+        fn path(&self) -> &Path {
+            &self.name
+        }
+
+        fn bytes(&self) -> Result<Vec<u8>, String> {
+            Ok(self.bytes.to_vec())
+        }
+    }
+
+    Arc::new(MemoryFile {
+        name: name.as_ref().file_name().unwrap_or_default().into(),
+        bytes: bytes.into(),
+    })
+}
+
+pub fn is_picture(file: &egui::DroppedFileHandle) -> bool {
+    let name = file.path();
     let extension = name.extension().and_then(|extension| extension.to_str()).unwrap_or("").to_ascii_lowercase();
-    file.mime.starts_with("image/")
-        || matches!(
-            extension.as_str(),
-            "png" | "jpg" | "jpeg" | "jpe" | "jfif" | "bmp" | "webp" | "gif" | "tif" | "tiff" | "svg" | "avif"
-        )
+    matches!(
+        extension.as_str(),
+        "png" | "jpg" | "jpeg" | "jpe" | "jfif" | "bmp" | "webp" | "gif" | "tif" | "tiff" | "svg" | "avif"
+    )
 }
 
 pub struct Attachments {
@@ -73,7 +116,7 @@ impl Import {
         (Self { receiver }, sender)
     }
 
-    pub fn start(files: Vec<egui::DroppedFile>, previous: Option<FileReferences>, context: egui::Context) -> Self {
+    pub fn start(files: Vec<egui::DroppedFileHandle>, previous: Option<FileReferences>, context: egui::Context) -> Self {
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || {
             let result = read_drop(files, previous);
@@ -92,7 +135,7 @@ impl Import {
     }
 }
 
-fn read_drop(files: Vec<egui::DroppedFile>, previous: Option<FileReferences>) -> Result<Attachments, String> {
+fn read_drop(files: Vec<egui::DroppedFileHandle>, previous: Option<FileReferences>) -> Result<Attachments, String> {
     if files.is_empty() {
         return Err("Drop at least one reference file.".into());
     }
@@ -111,17 +154,16 @@ fn read_drop(files: Vec<egui::DroppedFile>, previous: Option<FileReferences>) ->
             continue;
         }
         let name = file
-            .path
-            .as_deref()
-            .unwrap_or_else(|| Path::new(&file.name))
+            .path()
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| "reference.txt".into());
-        let content = if let Some(bytes) = file.bytes {
-            knowledge::reference_from_bytes(Path::new(&name), &bytes)
+        // Native drops expose absolute paths; keep their disk reads bounded.
+        let content = if file.path().is_absolute() {
+            knowledge::read_reference(file.path())
         } else {
-            knowledge::read_reference(file.path.as_deref().ok_or("Dropped reference has neither local data nor a local path.")?)
+            file.bytes().and_then(|bytes| knowledge::reference_from_bytes(Path::new(&name), &bytes))
         }
         .map_err(|error| format!("Cannot attach {name}: {error}"))?;
         references.push(ReferenceFile { name, content });
@@ -141,12 +183,8 @@ mod tests {
     use super::*;
     use base64::Engine as _;
 
-    fn file(name: &str, bytes: &[u8]) -> egui::DroppedFile {
-        egui::DroppedFile {
-            name: name.into(),
-            bytes: Some(bytes.to_vec().into()),
-            ..Default::default()
-        }
+    fn file(name: &str, bytes: &[u8]) -> egui::DroppedFileHandle {
+        memory_file(name, bytes.to_vec())
     }
 
     #[test]
@@ -261,14 +299,7 @@ mod tests {
         assert!(read_drop(vec![file("source.rs", &vec![b'x'; knowledge::MAX_KNOWLEDGE_BYTES + 1])], None).is_err());
         assert!(read_drop(vec![file("escaped.txt", &vec![b'\\'; knowledge::MAX_KNOWLEDGE_BYTES / 2])], None).is_err());
         let directory = tempfile::tempdir().unwrap();
-        assert!(read_drop(
-            vec![egui::DroppedFile {
-                path: Some(directory.path().to_owned()),
-                ..Default::default()
-            }],
-            None
-        )
-        .is_err());
+        assert!(read_drop(vec![local_file(directory.path().to_owned())], None).is_err());
     }
 
     #[test]

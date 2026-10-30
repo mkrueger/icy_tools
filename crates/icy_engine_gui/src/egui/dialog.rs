@@ -57,7 +57,7 @@ pub mod labels {
 }
 
 pub fn dialog_frame(context: &egui::Context) -> egui::Frame {
-    egui::Frame::window(&context.style()).inner_margin(DIALOG_PADDING).corner_radius(10)
+    egui::Frame::window(&context.global_style()).inner_margin(DIALOG_PADDING).corner_radius(10)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -180,9 +180,9 @@ pub struct Dialog {
 
 impl Dialog {
     /// A titleless dialog, with its body and buttons styled by the shared shell.
-    pub fn new(id: impl std::hash::Hash) -> Self {
+    pub fn new(id: impl std::hash::Hash + std::fmt::Debug) -> Self {
         Self {
-            id: egui::Id::new(id),
+            id: egui::Id::unique(id),
             title: None,
             subtitle: None,
             icon: None,
@@ -196,7 +196,7 @@ impl Dialog {
     }
 
     /// Alias for [`Self::new`], kept for callers that distinguish tabbed dialogs.
-    pub fn untitled(id: impl std::hash::Hash) -> Self {
+    pub fn untitled(id: impl std::hash::Hash + std::fmt::Debug) -> Self {
         Self::new(id)
     }
 
@@ -516,7 +516,7 @@ fn header(ui: &mut egui::Ui, title: &str, subtitle: Option<&str>, icon: Option<&
         .rect;
     let rect = egui::Rect::from_center_size(egui::pos2(right - CLOSE_SIZE / 2.0, row.center().y), egui::Vec2::splat(CLOSE_SIZE));
     let response = ui
-        .interact(rect, ui.id().with("dialog-close"), egui::Sense::click())
+        .interact(rect, ui.scope_id().with("dialog-close"), egui::Sense::click())
         .on_hover_text(labels::close());
     let visuals = ui.style().interact(&response);
     if response.hovered() {
@@ -621,9 +621,9 @@ pub struct MessageBox<A> {
 }
 
 impl<A: Clone> MessageBox<A> {
-    pub fn new(id: impl std::hash::Hash, kind: MessageKind, title: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn new(id: impl std::hash::Hash + std::fmt::Debug, kind: MessageKind, title: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
-            id: egui::Id::new(id),
+            id: egui::Id::unique(id),
             kind,
             title: title.into(),
             message: message.into(),
@@ -744,14 +744,14 @@ mod tests {
 
     fn frame(context: &egui::Context, size: egui::Vec2, events: Vec<egui::Event>, ok_enabled: bool) -> Frame {
         let mut response = None;
-        let output = context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
                 events,
                 ..Default::default()
             },
             |context| {
-                response = Some(Dialog::new("test").confirm_on_enter(true).show(context, |dialog| {
+                response = Some(Dialog::new("test").confirm_on_enter(true).show(context.ctx(), |dialog| {
                     dialog.content(|ui| ui.label("Body"));
                     dialog.buttons([
                         DialogButton::secondary("Restore Defaults", Action::Reset).leading(),
@@ -761,6 +761,7 @@ mod tests {
                 }));
             },
         );
+        output.textures_delta.clear();
         let texts = output
             .shapes
             .iter()
@@ -795,7 +796,7 @@ mod tests {
         let context = egui::Context::default();
         let show = |events: Vec<egui::Event>| {
             let mut response = None;
-            let _ = context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))),
                     events,
@@ -808,10 +809,11 @@ mod tests {
                                 DialogButton::cancel("Cancel", Action::Cancel),
                                 DialogButton::destructive("Delete", Action::Reset),
                             ])
-                            .show(context),
+                            .show(context.ctx()),
                     );
                 },
             );
+            output.textures_delta.clear();
             response.unwrap().action
         };
         show(vec![]);
@@ -852,18 +854,19 @@ mod tests {
         let size = egui::vec2(800.0, 600.0);
         let show = |events: Vec<egui::Event>| {
             let mut response = None;
-            let output = context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
                     events,
                     ..Default::default()
                 },
                 |context| {
-                    response = Some(Dialog::new("plain").title("Plain").show::<()>(context, |dialog| {
+                    response = Some(Dialog::new("plain").title("Plain").show::<()>(context.ctx(), |dialog| {
                         dialog.content(|ui| ui.label("Body"));
                     }));
                 },
             );
+            output.textures_delta.clear();
             let response = response.unwrap();
             // The close button sits at the right edge, centred on the title.
             let close = output.shapes.iter().find_map(|shape| match &shape.shape {

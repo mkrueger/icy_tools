@@ -216,15 +216,17 @@ mod tests {
 
     fn frame(context: &egui::Context, app: &mut DrawApp, events: Vec<egui::Event>) -> egui::FullOutput {
         let time = context.input(|input| input.time) + 0.05;
-        context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 900.0))),
                 events,
                 time: Some(time),
                 ..Default::default()
             },
-            |context| app.show(context),
-        )
+            |ui| app.show(ui),
+        );
+        output.textures_delta.clear();
+        output
     }
 
     fn text_position(output: &egui::FullOutput, label: &str) -> Option<egui::Pos2> {

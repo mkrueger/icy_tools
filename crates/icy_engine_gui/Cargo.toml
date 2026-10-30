@@ -10,21 +10,21 @@ license.workspace = true
 [dependencies]
 icy_engine = { workspace = true }
 icy_parser_core = { workspace = true }
-icy_engine_gui_macros = { path = "../icy_engine_gui_macros" }
+icy_engine_gui_macros = { workspace = true }
 codepages = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
-tempfile = "3"
-rustybuzz = "0.20.1"
-ttf-parser = "0.25.1"
-fontdb = "0.23"
-unicode-width = "0.2.2"
-tiny-skia = "0.12"
+tempfile = { workspace = true }
+rustybuzz = { workspace = true }
+ttf-parser = { workspace = true }
+fontdb = { workspace = true }
+unicode-width = { workspace = true }
+tiny-skia = { workspace = true }
 parking_lot = { workspace = true}
 bitflags = { workspace = true}
 
 icy_ui = { workspace = true, optional = true, features = [ "tokio", "svg", "image", "advanced", "debug", "canvas", "lazy", "wgpu"  ]  }
-wgpu = { version = "27.0.1", default-features = false, features = ["std", "wgsl"] }
+wgpu = { workspace = true }
 
 lazy_static = { workspace = true }
  
@@ -44,8 +44,8 @@ regex = { workspace = true }
 
 bytemuck = { workspace = true, features = ["derive"] }
 
-egui = { version = "0.33.3", optional = true, default-features = false }
-egui-wgpu = { version = "0.33.3", optional = true, default-features = false }
+egui = { workspace = true, optional = true }
+egui-wgpu = { workspace = true, optional = true }
 clipboard-rs = { workspace = true, optional = true }
 
 # Sound/Music dependencies
@@ -76,7 +76,7 @@ system-clipboard = ["dep:clipboard-rs"]
 opus-audio = ["dep:opus", "dep:symphonia"]
 
 [dev-dependencies]
-criterion = { version = "0.8.2", features = ["html_reports"] }
+criterion = { workspace = true }
 
 [[bench]]
 name = "parser_pipeline"

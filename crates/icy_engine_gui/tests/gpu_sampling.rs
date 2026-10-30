@@ -14,6 +14,46 @@ struct Gpu {
     queue: wgpu::Queue,
 }
 
+#[cfg(feature = "legacy-ui")]
+#[test]
+#[ignore = "requires a working wgpu adapter"]
+fn legacy_renderer_accepts_the_shared_frame_and_shader() {
+    use icy_engine_gui::terminal::shader_legacy;
+    use icy_ui::wgpu;
+
+    let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    runtime.block_on(async {
+        let instance = wgpu::Instance::default();
+        let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions::default()).await.unwrap();
+        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor::default()).await.unwrap();
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let (terminal, state) = terminal(|screen| fill(screen, |_, _| ('A', 15, 0)));
+        let frame = shader_legacy::TerminalShader(frame(&terminal, &state, settings(ScalingMode::Manual(1.0), true), [640, 400], 1.0));
+        let mut renderer = shader_legacy::TerminalShaderRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+        frame.prepare_frame(&mut renderer, &device, &queue, [0.0, 0.0, 640.0, 400.0], 1.0);
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("legacy renderer target"),
+            size: wgpu::Extent3d {
+                width: 640,
+                height: 400,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&Default::default());
+        let mut encoder = device.create_command_encoder(&Default::default());
+        frame.render_to_target(&renderer, &mut encoder, &view, [0, 0, 640, 400]);
+        queue.submit([encoder.finish()]);
+        device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+        assert!(device.pop_error_scope().await.is_none(), "legacy GPU pipeline must validate");
+    });
+}
+
 impl Gpu {
     fn new() -> Self {
         let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
@@ -74,6 +114,7 @@ impl Gpu {
         let pixels = buffer
             .slice(..)
             .get_mapped_range()
+            .expect("GPU readback range must be mapped")
             .chunks(stride as usize)
             .flat_map(|row| row[..size[0] as usize * 4].to_vec())
             .collect();

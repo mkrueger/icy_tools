@@ -1661,7 +1661,7 @@ impl IgsEditor {
     }
 
     fn commit_attribute_draft(&mut self, context: &egui::Context) {
-        let busy = context.input(|input| input.pointer.any_down()) || context.wants_keyboard_input();
+        let busy = context.input(|input| input.pointer.any_down()) || context.egui_wants_keyboard_input();
         if !busy {
             if let Some(wanted) = self.attribute_draft.take() {
                 self.set_attributes(wanted);
@@ -2534,7 +2534,7 @@ impl IgsEditor {
     /// The sidebar width that fits its labels in the current language: at least the tool
     /// buttons, at most [`SIDEBAR_MAX_WIDTH`], beyond which labels are truncated.
     fn sidebar_width(context: &egui::Context) -> f32 {
-        let style = context.style();
+        let style = context.global_style();
         let spacing = &style.spacing;
         let gap = spacing.item_spacing.x;
         let text = |text: String, text_style: egui::TextStyle| {
@@ -2564,15 +2564,16 @@ impl IgsEditor {
         (content + 2.0 * SIDEBAR_MARGIN).ceil().clamp(SIDEBAR_WIDTH, SIDEBAR_MAX_WIDTH)
     }
 
-    fn sidebar(&mut self, context: &egui::Context, blocked: bool) {
-        let panel_fill = context.style().visuals.panel_fill;
+    fn sidebar(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        let context = &ui.ctx().clone();
+        let panel_fill = context.global_style().visuals.panel_fill;
         // Content wider than a side panel is clipped but still takes its width, which is left
         // unpainted, so the panel is sized to its labels and they truncate beyond that.
-        egui::SidePanel::left("igs-tools")
-            .exact_width(Self::sidebar_width(context))
+        egui::Panel::left("igs-tools")
+            .exact_size(Self::sidebar_width(context))
             .resizable(false)
             .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::same(SIDEBAR_MARGIN as i8)))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 ui.add_enabled_ui(!blocked, |ui| {
                     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.sidebar_content(ui));
                 });
@@ -2725,185 +2726,182 @@ impl IgsEditor {
         }
     }
 
-    fn command_list(&mut self, context: &egui::Context, blocked: bool, editing_blocked: bool) {
-        egui::SidePanel::right("igs-commands")
-            .default_width(300.0)
-            .min_width(220.0)
-            .show(context, |ui| {
-                if blocked {
-                    ui.disable();
-                }
-                let count = self.document.len();
-                // The items the filter keeps, or all of them.
-                let filter = self.command_filter.trim().to_lowercase();
-                let rows: Option<Vec<usize>> = (!filter.is_empty()).then(|| {
-                    self.document
-                        .items()
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, item)| format!("{} {}", item_name(item), item_summary(item)).to_lowercase().contains(&filter))
-                        .map(|(index, _)| index)
-                        .collect()
-                });
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.label(icy_engine_gui::egui::appearance::bold(ui, fl!("igs-editor-commands")));
-                    ui.weak(match &rows {
-                        Some(rows) => format!("{} / {count}", rows.len()),
-                        None => count.to_string(),
-                    });
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing.x = 2.0;
-                        let selected = self.selected.filter(|index| *index < count && !editing_blocked);
-                        let mut action = None;
-                        let mut template = None;
-                        let mut open_tune = false;
-                        ui.add_enabled_ui(selected.is_some(), |ui| {
-                            if self.icons.button_sized(ui, "delete", &fl!("igs-editor-delete"), false, 26.0).clicked() {
-                                action = Some(0);
-                            }
-                        });
-                        ui.add_enabled_ui(selected.is_some_and(|index| index + 1 < count), |ui| {
-                            if self.icons.button_sized(ui, "move_down", &fl!("igs-editor-down"), false, 26.0).clicked() {
-                                action = Some(1);
-                            }
-                        });
-                        ui.add_enabled_ui(selected.is_some_and(|index| index > 0), |ui| {
-                            if self.icons.button_sized(ui, "move_up", &fl!("igs-editor-up"), false, 26.0).clicked() {
-                                action = Some(-1);
-                            }
-                        });
-                        ui.add_enabled_ui(selected.is_some(), |ui| {
-                            if self.icons.button_sized(ui, "file_copy", &fl!("igs-editor-duplicate"), false, 26.0).clicked() {
-                                action = Some(2);
-                            }
-                        });
-                        let add = ui
-                            .add_enabled_ui(!editing_blocked, |ui| self.icons.button_sized(ui, "add", &fl!("igs-editor-add"), false, 26.0))
-                            .inner;
-                        egui::Popup::menu(&add).id(egui::Id::new("igs-add-command")).show(|ui| {
-                            ui.set_min_width(220.0);
-                            ui.weak(fl!("igs-editor-add-hint"));
-                            for (group, commands) in templates() {
-                                ui.menu_button(group, |ui| {
-                                    for (name, source) in commands {
-                                        if ui.button(name).clicked() {
-                                            template = Some(source);
-                                            ui.close();
-                                        }
-                                    }
-                                });
-                            }
-                            ui.separator();
-                            if ui.button(fl!("igs-tune-open")).on_hover_text(fl!("igs-tune-open-tooltip")).clicked() {
-                                open_tune = true;
-                                ui.close();
-                            }
-                        });
-                        widgets::divider(ui);
-                        let through = self.preview_to_selection && !self.animating();
-                        if self
-                            .icons
-                            .button_sized(ui, "visibility", &fl!("igs-editor-preview-through"), through, 26.0)
-                            .clicked()
-                        {
-                            self.toggle_preview();
-                        }
-                        match action {
-                            Some(0) => self.delete_selected(),
-                            Some(2) => self.duplicate_selected(),
-                            Some(delta) => self.move_selected(delta),
-                            None => {}
-                        }
-                        if let Some(source) = template {
-                            self.insert_source(source);
-                        }
-                        if open_tune {
-                            self.open_tune_dialog(None);
-                        }
-                    });
-                });
-                ui.add(
-                    icy_engine_gui::egui::appearance::text_edit(&mut self.command_filter)
-                        .hint_text(fl!("igs-editor-filter"))
-                        .desired_width(ui.available_width()),
-                );
-                ui.separator();
-
-                let previous = self.selected;
-                let count = self.document.len();
-                let shown = rows.as_ref().map_or(count, Vec::len);
-                let index_at = |position: usize| rows.as_ref().map_or(position, |rows| rows[position]);
-                let position_of = |index: usize| rows.as_ref().map_or(Some(index), |rows| rows.iter().position(|&row| row == index));
-                // The selected item's properties go below the list; without one the list fills the panel.
-                let reserved = if self.selected.is_some_and(|index| index < count) { 280.0 } else { 8.0 };
-                let list_height = (ui.available_height() - reserved).max(120.0);
-                let mut scroll = egui::ScrollArea::vertical()
-                    .id_salt("igs-command-list")
-                    .auto_shrink([false, false])
-                    .max_height(list_height);
-                // A shape picked on the canvas is scrolled into view in the list.
-                if self.selected != self.listed_selection {
-                    if let Some(position) = self.selected.and_then(position_of).filter(|position| !self.visible_rows.contains(position)) {
-                        scroll = scroll.vertical_scroll_offset((position as f32 * COMMAND_ROW_HEIGHT - list_height / 2.0).max(0.0));
-                    }
-                }
-                let mut clicked = None;
-                let mut double_clicked = None;
-                let frame = self.frame();
-                ui.scope(|ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    scroll.show_rows(ui, COMMAND_ROW_HEIGHT, shown, |ui, positions| {
-                        self.visible_rows = positions.clone();
-                        for index in positions.map(index_at) {
-                            let Some(item) = self.document.items().get(index) else {
-                                break;
-                            };
-                            let swatch = item_swatch(item, &self.palette, self.canvas.resolution);
-                            let response = command_row(
-                                ui,
-                                &mut self.icons,
-                                index,
-                                item,
-                                self.selected == Some(index),
-                                RowMark::new(index, frame),
-                                swatch,
-                            );
-                            if response.double_clicked() {
-                                double_clicked = Some(index);
-                            } else if response.clicked() {
-                                clicked = Some(index);
-                            }
-                        }
-                    });
-                });
-                if let Some(index) = double_clicked {
-                    // Double-clicking runs the animation up to the item.
-                    self.seek_playback(index, ui.input(|input| input.time));
-                    self.sync_selection();
-                    self.select_item(Some(index));
-                } else if let Some(index) = clicked.filter(|_| editing_blocked) {
-                    self.select_item(Some(index));
-                } else if let Some(index) = clicked {
-                    self.finish_text();
-                    // Mouse zones are edited with their own tool, other shapes with the select tool.
-                    let command = self.document.command(index);
-                    let zone = command.is_some_and(is_zone);
-                    let shape = command.is_some_and(|command| shape_tool(command).is_some());
-                    if zone && self.tool != Tool::Zone {
-                        self.select_tool(Tool::Zone);
-                    } else if !zone && shape && self.tool == Tool::Zone {
-                        self.select_tool(Tool::Select);
-                    }
-                    self.select_item(Some(index));
-                }
-                self.listed_selection = self.selected;
-                if self.selected != previous {
-                    self.editing = None;
-                    self.source = None;
-                }
-                ui.add_enabled_ui(!editing_blocked, |ui| self.property_panel(ui));
+    fn command_list(&mut self, ui: &mut egui::Ui, blocked: bool, editing_blocked: bool) {
+        egui::Panel::right("igs-commands").default_size(300.0).min_size(220.0).show(ui, |ui| {
+            if blocked {
+                ui.disable();
+            }
+            let count = self.document.len();
+            // The items the filter keeps, or all of them.
+            let filter = self.command_filter.trim().to_lowercase();
+            let rows: Option<Vec<usize>> = (!filter.is_empty()).then(|| {
+                self.document
+                    .items()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| format!("{} {}", item_name(item), item_summary(item)).to_lowercase().contains(&filter))
+                    .map(|(index, _)| index)
+                    .collect()
             });
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(icy_engine_gui::egui::appearance::bold(ui, fl!("igs-editor-commands")));
+                ui.weak(match &rows {
+                    Some(rows) => format!("{} / {count}", rows.len()),
+                    None => count.to_string(),
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    let selected = self.selected.filter(|index| *index < count && !editing_blocked);
+                    let mut action = None;
+                    let mut template = None;
+                    let mut open_tune = false;
+                    ui.add_enabled_ui(selected.is_some(), |ui| {
+                        if self.icons.button_sized(ui, "delete", &fl!("igs-editor-delete"), false, 26.0).clicked() {
+                            action = Some(0);
+                        }
+                    });
+                    ui.add_enabled_ui(selected.is_some_and(|index| index + 1 < count), |ui| {
+                        if self.icons.button_sized(ui, "move_down", &fl!("igs-editor-down"), false, 26.0).clicked() {
+                            action = Some(1);
+                        }
+                    });
+                    ui.add_enabled_ui(selected.is_some_and(|index| index > 0), |ui| {
+                        if self.icons.button_sized(ui, "move_up", &fl!("igs-editor-up"), false, 26.0).clicked() {
+                            action = Some(-1);
+                        }
+                    });
+                    ui.add_enabled_ui(selected.is_some(), |ui| {
+                        if self.icons.button_sized(ui, "file_copy", &fl!("igs-editor-duplicate"), false, 26.0).clicked() {
+                            action = Some(2);
+                        }
+                    });
+                    let add = ui
+                        .add_enabled_ui(!editing_blocked, |ui| self.icons.button_sized(ui, "add", &fl!("igs-editor-add"), false, 26.0))
+                        .inner;
+                    egui::Popup::menu(&add).id(egui::Id::new("igs-add-command")).show(|ui| {
+                        ui.set_min_width(220.0);
+                        ui.weak(fl!("igs-editor-add-hint"));
+                        for (group, commands) in templates() {
+                            ui.menu_button(group, |ui| {
+                                for (name, source) in commands {
+                                    if ui.button(name).clicked() {
+                                        template = Some(source);
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        }
+                        ui.separator();
+                        if ui.button(fl!("igs-tune-open")).on_hover_text(fl!("igs-tune-open-tooltip")).clicked() {
+                            open_tune = true;
+                            ui.close();
+                        }
+                    });
+                    widgets::divider(ui);
+                    let through = self.preview_to_selection && !self.animating();
+                    if self
+                        .icons
+                        .button_sized(ui, "visibility", &fl!("igs-editor-preview-through"), through, 26.0)
+                        .clicked()
+                    {
+                        self.toggle_preview();
+                    }
+                    match action {
+                        Some(0) => self.delete_selected(),
+                        Some(2) => self.duplicate_selected(),
+                        Some(delta) => self.move_selected(delta),
+                        None => {}
+                    }
+                    if let Some(source) = template {
+                        self.insert_source(source);
+                    }
+                    if open_tune {
+                        self.open_tune_dialog(None);
+                    }
+                });
+            });
+            ui.add(
+                icy_engine_gui::egui::appearance::text_edit(&mut self.command_filter)
+                    .hint_text(fl!("igs-editor-filter"))
+                    .desired_width(ui.available_width()),
+            );
+            ui.separator();
+
+            let previous = self.selected;
+            let count = self.document.len();
+            let shown = rows.as_ref().map_or(count, Vec::len);
+            let index_at = |position: usize| rows.as_ref().map_or(position, |rows| rows[position]);
+            let position_of = |index: usize| rows.as_ref().map_or(Some(index), |rows| rows.iter().position(|&row| row == index));
+            // The selected item's properties go below the list; without one the list fills the panel.
+            let reserved = if self.selected.is_some_and(|index| index < count) { 280.0 } else { 8.0 };
+            let list_height = (ui.available_height() - reserved).max(120.0);
+            let mut scroll = egui::ScrollArea::vertical()
+                .id_salt("igs-command-list")
+                .auto_shrink([false, false])
+                .max_height(list_height);
+            // A shape picked on the canvas is scrolled into view in the list.
+            if self.selected != self.listed_selection {
+                if let Some(position) = self.selected.and_then(position_of).filter(|position| !self.visible_rows.contains(position)) {
+                    scroll = scroll.vertical_scroll_offset((position as f32 * COMMAND_ROW_HEIGHT - list_height / 2.0).max(0.0));
+                }
+            }
+            let mut clicked = None;
+            let mut double_clicked = None;
+            let frame = self.frame();
+            ui.scope(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                scroll.show_rows(ui, COMMAND_ROW_HEIGHT, shown, |ui, positions| {
+                    self.visible_rows = positions.clone();
+                    for index in positions.map(index_at) {
+                        let Some(item) = self.document.items().get(index) else {
+                            break;
+                        };
+                        let swatch = item_swatch(item, &self.palette, self.canvas.resolution);
+                        let response = command_row(
+                            ui,
+                            &mut self.icons,
+                            index,
+                            item,
+                            self.selected == Some(index),
+                            RowMark::new(index, frame),
+                            swatch,
+                        );
+                        if response.double_clicked() {
+                            double_clicked = Some(index);
+                        } else if response.clicked() {
+                            clicked = Some(index);
+                        }
+                    }
+                });
+            });
+            if let Some(index) = double_clicked {
+                // Double-clicking runs the animation up to the item.
+                self.seek_playback(index, ui.input(|input| input.time));
+                self.sync_selection();
+                self.select_item(Some(index));
+            } else if let Some(index) = clicked.filter(|_| editing_blocked) {
+                self.select_item(Some(index));
+            } else if let Some(index) = clicked {
+                self.finish_text();
+                // Mouse zones are edited with their own tool, other shapes with the select tool.
+                let command = self.document.command(index);
+                let zone = command.is_some_and(is_zone);
+                let shape = command.is_some_and(|command| shape_tool(command).is_some());
+                if zone && self.tool != Tool::Zone {
+                    self.select_tool(Tool::Zone);
+                } else if !zone && shape && self.tool == Tool::Zone {
+                    self.select_tool(Tool::Select);
+                }
+                self.select_item(Some(index));
+            }
+            self.listed_selection = self.selected;
+            if self.selected != previous {
+                self.editing = None;
+                self.source = None;
+            }
+            ui.add_enabled_ui(!editing_blocked, |ui| self.property_panel(ui));
+        });
     }
 
     fn property_panel(&mut self, ui: &mut egui::Ui) {
@@ -3050,7 +3048,8 @@ impl IgsEditor {
 }
 
 impl IgsEditor {
-    pub fn show(&mut self, context: &egui::Context, blocked: bool) {
+    pub fn show(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        let context = &ui.ctx().clone();
         self.advance_playback(context);
         let now = context.input(|input| input.time);
         if let Some(next) = self.sound.update(now) {
@@ -3059,20 +3058,20 @@ impl IgsEditor {
         self.sync_selection();
         let blocked = blocked || self.palette_dialog.is_some() || self.pattern_dialog.is_some() || self.tune_dialog.is_some();
         let editing_blocked = blocked || self.animating();
-        let panel_fill = context.style().visuals.panel_fill;
-        egui::TopBottomPanel::top("igs-toolbar")
-            .exact_height(TOOLBAR_HEIGHT)
+        let panel_fill = context.global_style().visuals.panel_fill;
+        egui::Panel::top("igs-toolbar")
+            .exact_size(TOOLBAR_HEIGHT)
             .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if editing_blocked {
                     ui.disable();
                 }
                 self.toolbar(ui);
             });
         self.sync_selection();
-        self.sidebar(context, editing_blocked);
+        self.sidebar(ui, editing_blocked);
         // The command list follows and seeks the animation; only its editing waits.
-        self.command_list(context, blocked, editing_blocked);
+        self.command_list(ui, blocked, editing_blocked);
         if !editing_blocked {
             self.commit_attribute_draft(context);
             if let Some(slot) = self.pattern_request.take() {
@@ -3118,16 +3117,16 @@ impl IgsEditor {
             }
         }
         // The player sits under the canvas, between the side panels.
-        egui::TopBottomPanel::bottom("igs-transport")
-            .exact_height(super::playback::PLAYER_HEIGHT)
+        egui::Panel::bottom("igs-transport")
+            .exact_size(super::playback::PLAYER_HEIGHT)
             .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if blocked {
                     ui.disable();
                 }
                 self.transport(ui);
             });
-        egui::CentralPanel::default().show(context, |ui| {
+        egui::CentralPanel::default_margins().show(ui, |ui| {
             if let Some(error) = &self.error {
                 ui.colored_label(ui.visuals().error_fg_color, error);
             }
@@ -3622,14 +3621,17 @@ mod tests {
     }
 
     fn run(context: &egui::Context, editor: &mut IgsEditor, events: Vec<egui::Event>) {
-        let _ = context.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
-                events,
-                ..Default::default()
-            },
-            |context| editor.show(context, false),
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events: std::iter::once(egui::Event::ModifiersChanged(egui::Modifiers::NONE)).chain(events).collect(),
+                    ..Default::default()
+                },
+                |ui| editor.show(ui, false),
+            )
+            .textures_delta
+            .clear();
     }
 
     fn button_event(pos: egui::Pos2, button: egui::PointerButton, pressed: bool) -> egui::Event {
@@ -3744,12 +3746,15 @@ mod tests {
                 ));
             }
             let context = egui::Context::default();
-            let _ = context.run(egui::RawInput::default(), |context| {
-                egui::CentralPanel::default().show(context, |ui| {
-                    let mut draft = shape.clone();
-                    assert!(properties::command(ui, &mut draft, &editor.palette, TerminalResolution::Low), "{tool:?}");
-                });
-            });
+            let _ = context
+                .run_ui(egui::RawInput::default(), |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
+                        let mut draft = shape.clone();
+                        assert!(properties::command(ui, &mut draft, &editor.palette, TerminalResolution::Low), "{tool:?}");
+                    });
+                })
+                .textures_delta
+                .clear();
             let reopened = IgsDocument::from_bytes(&editor.document.to_bytes().unwrap()).unwrap();
             assert_eq!(
                 reopened.items().iter().filter_map(IgsItem::command).cloned().collect::<Vec<_>>(),
@@ -3835,32 +3840,41 @@ mod tests {
         let mut wanted = editor.current();
         wanted.fill_color = 5;
         editor.draft_attributes(wanted);
-        let _ = context.run(
-            egui::RawInput {
-                events: vec![egui::Event::PointerButton {
-                    pos: egui::pos2(5.0, 5.0),
-                    button: egui::PointerButton::Primary,
-                    pressed: true,
-                    modifiers: egui::Modifiers::NONE,
-                }],
-                ..Default::default()
-            },
-            |context| editor.commit_attribute_draft(context),
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    events: vec![egui::Event::PointerButton {
+                        pos: egui::pos2(5.0, 5.0),
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    }],
+                    ..Default::default()
+                },
+                |ui| editor.commit_attribute_draft(ui.ctx()),
+            )
+            .textures_delta
+            .clear();
         assert_eq!(editor.document.len(), before, "nothing is added while the pointer is down");
-        let _ = context.run(
-            egui::RawInput {
-                events: vec![egui::Event::PointerButton {
-                    pos: egui::pos2(5.0, 5.0),
-                    button: egui::PointerButton::Primary,
-                    pressed: false,
-                    modifiers: egui::Modifiers::NONE,
-                }],
-                ..Default::default()
-            },
-            |_| {},
-        );
-        let _ = context.run(egui::RawInput::default(), |context| editor.commit_attribute_draft(context));
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    events: vec![egui::Event::PointerButton {
+                        pos: egui::pos2(5.0, 5.0),
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::NONE,
+                    }],
+                    ..Default::default()
+                },
+                |_| {},
+            )
+            .textures_delta
+            .clear();
+        let _ = context
+            .run_ui(egui::RawInput::default(), |ui| editor.commit_attribute_draft(ui.ctx()))
+            .textures_delta
+            .clear();
         assert_eq!(editor.document.command(before), Some(&IgsCommand::ColorSet { pen: PenType::Fill, color: 5 }));
         assert!(editor.attribute_draft.is_none());
     }
@@ -4117,14 +4131,17 @@ mod tests {
     }
 
     fn run_at(context: &egui::Context, editor: &mut IgsEditor, time: f64) {
-        let _ = context.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
-                time: Some(time),
-                ..Default::default()
-            },
-            |context| editor.show(context, false),
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |ui| editor.show(ui, false),
+            )
+            .textures_delta
+            .clear();
     }
 
     #[test]
@@ -4288,15 +4305,17 @@ mod tests {
         let mut editor = IgsEditor::new(TerminalResolution::Low);
         run(&context, &mut editor, vec![]);
         let shifted = |editor: &mut IgsEditor, events: Vec<egui::Event>| {
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
-                    events,
-                    modifiers: egui::Modifiers::SHIFT,
-                    ..Default::default()
-                },
-                |context| editor.show(context, false),
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                        events: std::iter::once(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT)).chain(events).collect(),
+                        ..Default::default()
+                    },
+                    |ui| editor.show(ui, false),
+                )
+                .textures_delta
+                .clear();
         };
         let shifted_drag = |editor: &mut IgsEditor, from: Point, to: Point| {
             let (start, end) = (screen(editor, from), screen(editor, to));
@@ -4541,15 +4560,17 @@ mod tests {
         let context = egui::Context::default();
         let mut editor = lines(60);
         let frame = |editor: &mut IgsEditor, time: f64, events: Vec<egui::Event>| {
-            context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                     time: Some(time),
                     events,
                     ..Default::default()
                 },
-                |context| editor.show(context, false),
-            )
+                |ui| editor.show(ui, false),
+            );
+            output.textures_delta.clear();
+            output
         };
         let output = frame(&mut editor, 0.0, vec![]);
         let row = output
@@ -4759,14 +4780,16 @@ mod tests {
         let context = egui::Context::default();
         let mut editor = IgsEditor::new(TerminalResolution::Low);
         let frame = |editor: &mut IgsEditor, events: Vec<egui::Event>| {
-            context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                     events,
                     ..Default::default()
                 },
-                |context| editor.show(context, false),
-            )
+                |ui| editor.show(ui, false),
+            );
+            output.textures_delta.clear();
+            output
         };
         let find = |output: &egui::FullOutput, label: &str| {
             output.shapes.iter().find_map(|shape| match &shape.shape {
@@ -4874,25 +4897,27 @@ mod tests {
                 .count()
         };
         let pos = screen(&editor, (100, 80));
-        let output = context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                 events: vec![egui::Event::PointerMoved(pos)],
                 ..Default::default()
             },
-            |context| editor.show(context, false),
+            |ui| editor.show(ui, false),
         );
+        output.textures_delta.clear();
         assert_eq!(count(&output), marker::pixels(PolymarkerKind::Star, 2, 100, 80).len());
         let before = editor.document.len();
         editor.select_tool(Tool::Line);
-        let output = context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                 events: vec![egui::Event::PointerMoved(pos)],
                 ..Default::default()
             },
-            |context| editor.show(context, false),
+            |ui| editor.show(ui, false),
         );
+        output.textures_delta.clear();
         assert_eq!(count(&output), 0, "other tools show no marker preview");
         assert_eq!(editor.document.len(), before, "hovering adds nothing");
     }
@@ -4993,14 +5018,16 @@ mod tests {
         let context = egui::Context::default();
         let mut editor = IgsEditor::new(TerminalResolution::Low);
         let frame = |editor: &mut IgsEditor, events: Vec<egui::Event>| {
-            context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                     events,
                     ..Default::default()
                 },
-                |context| editor.show(context, false),
-            )
+                |ui| editor.show(ui, false),
+            );
+            output.textures_delta.clear();
+            output
         };
         let find = |output: &egui::FullOutput, label: &str| {
             output.shapes.iter().find_map(|shape| match &shape.shape {
@@ -5029,7 +5056,9 @@ mod tests {
             .max_by(|a, b| a.top().total_cmp(&b.top()))
             .expect("the sidebar shows the line row");
         // The picker fills the rest of its row, after the pen.
-        let sidebar = egui::containers::panel::PanelState::load(&context, egui::Id::new("igs-tools")).unwrap().rect;
+        let sidebar = egui::containers::panel::PanelState::load(&context, context.viewport_id().root_ui_id().with("igs-tools"))
+            .unwrap()
+            .outer_rect;
         click(&mut editor, egui::pos2(sidebar.right() - SIDEBAR_MARGIN - 30.0, label.center().y));
         // A popup grows over frames to what its content asks for.
         let output = (0..4).fold(frame(&mut editor, vec![]), |_, _| frame(&mut editor, vec![]));
@@ -5098,14 +5127,16 @@ mod tests {
 
         // The switch in the sidebar sets it too.
         let frame = |editor: &mut IgsEditor, events: Vec<egui::Event>| {
-            context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                     events,
                     ..Default::default()
                 },
-                |context| editor.show(context, false),
-            )
+                |ui| editor.show(ui, false),
+            );
+            output.textures_delta.clear();
+            output
         };
         let output = frame(&mut editor, vec![]);
         let label = output
@@ -5236,15 +5267,18 @@ mod tests {
             modifiers: egui::Modifiers::NONE,
         };
         let frame = |editor: &mut IgsEditor, time: f64, events: Vec<egui::Event>| {
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
-                    events,
-                    time: Some(time),
-                    ..Default::default()
-                },
-                |context| editor.show(context, false),
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                        events,
+                        time: Some(time),
+                        ..Default::default()
+                    },
+                    |ui| editor.show(ui, false),
+                )
+                .textures_delta
+                .clear();
         };
         frame(&mut editor, 0.0, vec![]);
         frame(&mut editor, 0.1, vec![key(egui::Key::F1, true), key(egui::Key::F1, false)]);
@@ -5266,15 +5300,17 @@ mod tests {
         let mut time = 0.0;
         let mut frame = |editor: &mut IgsEditor, events: Vec<egui::Event>| {
             time += 0.05;
-            context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                     events,
                     time: Some(time),
                     ..Default::default()
                 },
-                |context| editor.show(context, false),
-            )
+                |ui| editor.show(ui, false),
+            );
+            output.textures_delta.clear();
+            output
         };
         // The dialog finds its place in the first frames.
         let output = (0..3).fold(frame(&mut editor, vec![]), |_, _| frame(&mut editor, vec![]));
@@ -5331,14 +5367,15 @@ mod tests {
         editor.select_tool(Tool::Polygon);
         run(&context, &mut editor, vec![]);
         click(&context, &mut editor, (50, 50));
-        let output = context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                 events: vec![egui::Event::PointerMoved(screen(&editor, (100, 60)))],
                 ..Default::default()
             },
-            |context| editor.show(context, false),
+            |ui| editor.show(ui, false),
         );
+        output.textures_delta.clear();
         let corner = screen(&editor, (50, 50));
         assert!(
             output.shapes.iter().any(
@@ -5417,13 +5454,14 @@ mod tests {
             .filter(|item| matches!(item.command(), Some(IgsCommand::SetPenColor { .. })))
             .count();
         editor.command_filter = fl!("igs-command-pen-color").to_uppercase();
-        let output = context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                 ..Default::default()
             },
-            |context| editor.show(context, false),
+            |ui| editor.show(ui, false),
         );
+        output.textures_delta.clear();
         let header = format!("{pen_colors} / {count}");
         assert!(
             output
@@ -5524,22 +5562,27 @@ mod tests {
     fn the_tool_sidebar_widens_to_fit_its_labels() {
         let context = egui::Context::default();
         // Large text stands in for long translations such as "IGS-Palette bearbeiten…".
-        context.style_mut(|style| {
+        context.global_style_mut(|style| {
             for font in style.text_styles.values_mut() {
                 font.size *= 1.8;
             }
         });
         let mut editor = IgsEditor::new(TerminalResolution::Low);
-        let sidebar = || egui::containers::panel::PanelState::load(&context, egui::Id::new("igs-tools")).unwrap().rect;
+        let sidebar = || {
+            egui::containers::panel::PanelState::load(&context, context.viewport_id().root_ui_id().with("igs-tools"))
+                .unwrap()
+                .outer_rect
+        };
         // The widest clip region along the left edge is where the sidebar is painted.
         let frame = |editor: &mut IgsEditor| {
-            let output = context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                     ..Default::default()
                 },
-                |context| editor.show(context, false),
+                |ui| editor.show(ui, false),
             );
+            output.textures_delta.clear();
             output
                 .shapes
                 .iter()
@@ -5664,15 +5707,18 @@ mod tests {
             let document = IgsDocument::from_bytes(source).unwrap();
             assert_eq!(document.len(), 1, "{}", String::from_utf8_lossy(source));
             let mut command = document.command(0).unwrap().clone();
-            let _ = context.run(egui::RawInput::default(), |context| {
-                egui::CentralPanel::default().show(context, |ui| {
-                    assert!(
-                        properties::command(ui, &mut command, &palette, TerminalResolution::Low),
-                        "{}",
-                        String::from_utf8_lossy(source)
-                    );
-                });
-            });
+            let _ = context
+                .run_ui(egui::RawInput::default(), |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
+                        assert!(
+                            properties::command(ui, &mut command, &palette, TerminalResolution::Low),
+                            "{}",
+                            String::from_utf8_lossy(source)
+                        );
+                    });
+                })
+                .textures_delta
+                .clear();
             assert_eq!(&command, document.command(0).unwrap(), "showing the panel changes nothing");
         }
     }

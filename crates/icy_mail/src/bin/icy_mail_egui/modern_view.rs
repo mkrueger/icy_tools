@@ -35,7 +35,7 @@ fn link_rects(galley: &egui::Galley, range: Range<usize>, position: egui::Pos2) 
                 .translate(position.to_vec2()),
             );
         }
-        offset += row.char_count_including_newline();
+        offset += row.char_count_including_newline().0;
     }
     rects
 }
@@ -54,7 +54,7 @@ fn text_label(ui: &mut egui::Ui, mut job: egui::text::LayoutJob, needle: &str, p
         label = label.extend();
     }
     let (position, galley, response) = label.layout_in_ui(ui);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), galley.text()));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, ui.is_enabled(), galley.text()));
     if ui.is_rect_visible(response.rect) {
         let hovered_link = response.hover_pos().and_then(|pointer| {
             links.iter().find(|range| {
@@ -865,12 +865,6 @@ impl MailApp {
                 })
                 .inner
         });
-        if copy_selection {
-            ui.ctx().input_mut(|input| {
-                let event = input.events.pop();
-                debug_assert!(matches!(event, Some(egui::Event::Copy)));
-            });
-        }
         {
             let plugin = ui.ctx().plugin::<egui::text_selection::LabelSelectionState>();
             let mut selection = plugin.lock();
@@ -890,7 +884,7 @@ impl MailApp {
             }
         }
         let max = (output.content_size - output.inner_rect.size()).max(egui::Vec2::ZERO);
-        self.screen.offset = output.state.offset.min(max);
+        self.screen.offset = output.state.offset().min(max);
         self.screen.max_offset = max;
         self.modern_layout_pending = false;
         self.content_rect = output.inner_rect;

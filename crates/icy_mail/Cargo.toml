@@ -30,12 +30,11 @@ legacy-ui = ["dep:icy_ui", "dep:rfd", "icy_engine_gui/legacy-ui"]
 egui = ["dep:eframe", "dep:rfd", "dep:resvg", "icy_engine_gui/egui"]
 
 [dependencies]
-jamjam = { git = "https://github.com/mkrueger/jamjam", rev = "fbe459511e761baffeb7b4e89732c49d4bb07e67" }
-#jamjam = { path ="../../../jamjam" }
+jamjam = { workspace = true }
 
 icy_ui = { workspace = true, optional = true, features = [ "tokio", "svg", "image", "wgpu" ] }
-eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
-resvg = { version = "0.48.1", optional = true, default-features = false }
+eframe = { workspace = true, optional = true }
+resvg = { workspace = true, optional = true }
 
 tokio = { workspace = true }
 serde = { workspace = true }
@@ -43,13 +42,13 @@ versions = { workspace = true }
 regex = { workspace = true }
 semver = { workspace = true }
 webbrowser = { workspace = true }
-icy_engine_gui = { path = "../icy_engine_gui", default-features = false, features = ["opus-audio"] }
+icy_engine_gui = { workspace = true, features = ["opus-audio"] }
 icy_parser_core = { workspace = true }
 parking_lot = { workspace = true }
 rayon = { workspace = true }
 bstr = { workspace = true }
 crc32fast = { workspace = true }
-bincode = "1.3.3"
+bincode = { workspace = true }
 clap = { workspace = true }
 #sound
 rodio = { workspace = true }
@@ -60,9 +59,9 @@ image = { workspace = true  }
 
 lazy_static = { workspace = true }
 notify = { workspace = true }
-human_bytes = { version = "0.4", default-features = false }
+human_bytes = { workspace = true }
 
-chrono = { workspace = true }  # Utc hanldung
+chrono = { workspace = true, features = ["default", "serde"] }  # Utc hanldung
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 
@@ -75,35 +74,29 @@ unarc-rs = { workspace = true }
 fastrand = { workspace = true }
 
 log = { workspace = true }
-log4rs = "1.4.0"
-web-time = "1.1.0"
+log4rs = { workspace = true }
+web-time = { workspace = true }
 
 # WebSocket support
-tungstenite = { version = "0.30.0", features = [
-    "rustls-tls-webpki-roots", # webpki root CAs
-    "__rustls-tls",            # use Rustls
-]}
+tungstenite = { workspace = true }
 
-http = "1.5.0"
-url = "2.5.8"
-rustls = { version = "0.23.43", features = [
-    "tls12",
- #   "dangerous_configuration"  # Allow invalid certs/etc.
-]}
-webpki-roots = "1.0.9"
-getrandom =  { version = "0.4.3" }
+http = { workspace = true }
+url = { workspace = true }
+rustls = { workspace = true, features = ["tls12"] }
+webpki-roots = { workspace = true }
+getrandom = { workspace = true }
 
 directories = { workspace = true }
 open =  { workspace = true }
 rfd =  { workspace = true, optional = true }
 
-tracing-subscriber = "0.3"
-async-recursion = "1.1.1"
-unicode-width = "0.2.2"
+tracing-subscriber = { workspace = true }
+async-recursion = { workspace = true }
+unicode-width = { workspace = true }
 
 [build-dependencies]
-winres = "0.1"
-chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+winres = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
 
 [package.metadata.bundle]
 name = "Icy Mail"

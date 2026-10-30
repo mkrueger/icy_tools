@@ -1022,8 +1022,8 @@ impl DrawApp {
             .map(|user| (user.user.id, display_nick(&user.user.nick), user.user.group.clone(), user.status))
             .collect();
         // A panel sizes the own entry itself; a guessed height made the chat panel grow every frame.
-        egui::TopBottomPanel::bottom("collab-own-user")
-            .exact_height(OWN_ENTRY_MARGIN + AVATAR_SIZE + 8.0)
+        egui::Panel::bottom("collab-own-user")
+            .exact_size(OWN_ENTRY_MARGIN + AVATAR_SIZE + 8.0)
             .frame(egui::Frame::new().inner_margin(egui::Margin {
                 top: OWN_ENTRY_MARGIN as i8,
                 ..Default::default()
@@ -1110,12 +1110,12 @@ impl DrawApp {
 
     /// Discord-style chat pane: user list on the left, grouped messages and input on the right.
     pub(super) fn chat_panel(&mut self, ui: &mut egui::Ui) {
-        egui::SidePanel::left("collab-users")
-            .exact_width(USER_LIST_WIDTH)
+        egui::Panel::left("collab-users")
+            .exact_size(USER_LIST_WIDTH)
             .resizable(false)
             .frame(egui::Frame::new().inner_margin(egui::Margin::same(6)))
             .show_inside(ui, |ui| self.user_list(ui));
-        egui::TopBottomPanel::bottom("collab-input")
+        egui::Panel::bottom("collab-input")
             .frame(egui::Frame::new().inner_margin(egui::Margin {
                 left: 12,
                 right: 12,

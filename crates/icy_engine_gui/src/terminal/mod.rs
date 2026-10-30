@@ -6,6 +6,8 @@ pub mod shader;
 pub use shader::*;
 #[cfg(feature = "legacy-ui")]
 mod shader_adapter;
+#[cfg(feature = "legacy-ui")]
+pub mod shader_legacy;
 
 #[cfg(feature = "egui")]
 pub mod egui;

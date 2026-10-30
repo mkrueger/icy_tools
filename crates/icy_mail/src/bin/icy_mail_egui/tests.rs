@@ -108,7 +108,15 @@ fn utf8_replies_are_written_with_input_methods_saved_previewed_and_exported() {
     frame(&context, &mut mail, size, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
     frame(&context, &mut mail, size, vec![egui::Event::Text("Ответ ".into())]);
     frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Enabled)]);
-    frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Preedit("にほん".into()))]);
+    frame(
+        &context,
+        &mut mail,
+        size,
+        vec![egui::Event::Ime(egui::ImeEvent::Preedit {
+            text: "にほん".into(),
+            active_range_chars: None,
+        })],
+    );
     frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Commit("日本".into()))]);
     let body = mail.composer.as_ref().unwrap().draft.body.clone();
     assert_eq!(body, " ДЛ> Привет あい\nОтвет 日本");
@@ -155,7 +163,15 @@ fn utf8_ime_input_leaves_quote_navigation_before_consuming_keys() {
     assert!(mail.composer.as_ref().unwrap().text.as_ref().unwrap().quotes.open);
 
     frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Enabled)]);
-    frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Preedit("にほん".into()))]);
+    frame(
+        &context,
+        &mut mail,
+        size,
+        vec![egui::Event::Ime(egui::ImeEvent::Preedit {
+            text: "にほん".into(),
+            active_range_chars: None,
+        })],
+    );
     frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Commit("日本".into()))]);
     frame(&context, &mut mail, size, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
     let composer = mail.composer.as_ref().unwrap();
@@ -520,7 +536,7 @@ fn highlighted(output: &egui::FullOutput) -> Vec<String> {
                     .sections
                     .iter()
                     .filter(|section| section.format.background != egui::Color32::TRANSPARENT)
-                    .map(|section| text.galley.job.text[section.byte_range.clone()].to_string())
+                    .map(|section| text.galley.job.text[section.byte_range.start.0..section.byte_range.end.0].to_string())
                     .collect::<Vec<_>>(),
             ),
             _ => None,
@@ -597,7 +613,7 @@ fn message_search_highlights_body_and_clears_with_filter() {
     settle(&context, &mut mail, egui::vec2(1100.0, 760.0));
     {
         let screen = mail.screen.terminal.screen.lock();
-        let color = widgets::search_highlight_color(context.style().visuals.dark_mode);
+        let color = widgets::search_highlight_color(context.global_style().visuals.dark_mode);
         for column in 0..6 {
             assert_eq!(
                 screen.char_at((column, 1).into()).attribute.background_color(),
@@ -758,6 +774,8 @@ fn command_wheel_zooms_the_message() {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, 100.0),
                 modifiers: egui::Modifiers::COMMAND,
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
             },
         ],
     );
@@ -927,7 +945,8 @@ fn modern_art_upload_respects_gpu_limits_without_losing_pixels() {
             max_texture_side: Some(max_side.max(2048)),
             ..Default::default()
         };
-        let output = context.run(input, |context| {
+        let mut output = context.run_ui(input, |ui| {
+            let context = ui.ctx();
             items = modern_view::upload_with_limit(context, vec![modern_view::PreparedItem::Art(image.clone())], max_side);
         });
         let [modern_view::Item::Art(art)] = items.as_slice() else {
@@ -939,7 +958,7 @@ fn modern_art_upload_respects_gpu_limits_without_losing_pixels() {
         for (offset, texture) in &art.tiles {
             let [width, height] = texture.size();
             assert!(width <= max_side && height <= max_side);
-            let delta = &output.textures_delta.set.iter().find(|(id, _)| *id == texture.id()).unwrap().1;
+            let delta = output.textures_delta.set.get(&texture.id()).unwrap().last().unwrap();
             let egui::ImageData::Color(tile) = &delta.image;
             assert_eq!(tile.size, [width, height]);
             for y in 0..height {
@@ -948,6 +967,7 @@ fn modern_art_upload_respects_gpu_limits_without_losing_pixels() {
             }
         }
         assert_eq!(reconstructed, image.pixels, "tiling must preserve every source pixel");
+        output.textures_delta.clear();
     }
 }
 
@@ -960,13 +980,17 @@ fn modern_art_tiles_share_one_layout_rect_at_each_zoom() {
     let size = egui::vec2(1100.0, 2400.0);
     settle(&context, &mut mail, size);
     let mut items = Vec::new();
-    let _ = context.run(egui::RawInput::default(), |context| {
-        items = modern_view::upload_with_limit(
-            context,
-            vec![modern_view::PreparedItem::Art(egui::ColorImage::filled([540, 560], egui::Color32::WHITE))],
-            512,
-        );
-    });
+    let _ = context
+        .run_ui(egui::RawInput::default(), |ui| {
+            let context = ui.ctx();
+            items = modern_view::upload_with_limit(
+                context,
+                vec![modern_view::PreparedItem::Art(egui::ColorImage::filled([540, 560], egui::Color32::WHITE))],
+                512,
+            );
+        })
+        .textures_delta
+        .clear();
     let modern_view::Item::Art(art) = &items[0] else { unreachable!() };
     let textures: Vec<_> = art.tiles.iter().map(|(_, texture)| texture.id()).collect();
     assert_eq!(textures.len(), 4);
@@ -1571,8 +1595,8 @@ fn subscription_only_outbox_is_exportable_and_requests_survive_reload() {
     let mut zip = zip::ZipWriter::new(std::fs::File::create(&capable).unwrap());
     for index in 0..source.len() {
         let mut entry = source.by_index(index).unwrap();
-        zip.start_file(entry.name(), zip::write::SimpleFileOptions::default()).unwrap();
-        if entry.name() == "DOOR.ID" {
+        zip.start_file(entry.name().unwrap(), zip::write::SimpleFileOptions::default()).unwrap();
+        if entry.name().unwrap() == "DOOR.ID" {
             zip.write_all(b"CONTROLNAME = OFFLINE\r\nCONTROLTYPE = ADD\r\nCONTROLTYPE = DROP\r\n").unwrap();
         } else {
             std::io::copy(&mut entry, &mut zip).unwrap();
@@ -2342,16 +2366,17 @@ fn frame(context: &egui::Context, mail: &mut app::MailApp, size: egui::Vec2, eve
             _ => None,
         })
         .unwrap_or_default();
-    context.run(
+    let mut output = context.run_ui(
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
             time: Some(time),
-            events,
-            modifiers,
+            events: std::iter::once(egui::Event::ModifiersChanged(modifiers)).chain(events).collect(),
             ..Default::default()
         },
-        |context| mail.show(context),
-    )
+        |ui| mail.show(ui),
+    );
+    output.textures_delta.clear();
+    output
 }
 
 fn label(output: &egui::FullOutput, label: &str) -> egui::Rect {
@@ -2434,6 +2459,8 @@ fn large_bulletins_scroll_between_sections_without_page_controls() {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, delta),
                 modifiers: egui::Modifiers::NONE,
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
             },
         ]
     };
@@ -3248,15 +3275,16 @@ impl Gpu {
                 egui::vec2(size[0] as f32 / scale, size[1] as f32 / scale),
             )),
             time: Some(time),
-            events,
-            modifiers,
+            events: std::iter::once(egui::Event::ModifiersChanged(modifiers)).chain(events).collect(),
             ..Default::default()
         };
         input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().native_pixels_per_point = Some(scale);
-        let output = self.context.run(input, |context| mail.show(context));
+        let mut output = self.context.run_ui(input, |ui| mail.show(ui));
         let jobs = self.context.tessellate(output.shapes.clone(), output.pixels_per_point);
-        for (id, delta) in &output.textures_delta.set {
-            self.renderer.update_texture(&self.device, &self.queue, *id, delta);
+        for (id, deltas) in output.textures_delta.set.drain() {
+            for delta in deltas {
+                self.renderer.update_texture(&self.device, &self.queue, id, &delta);
+            }
         }
         let descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: size,
@@ -3323,12 +3351,13 @@ impl Gpu {
         let pixels: Vec<_> = buffer
             .slice(..)
             .get_mapped_range()
+            .unwrap()
             .chunks(stride as usize)
             .flat_map(|row| row[..size[0] as usize * 4].iter().copied())
             .collect();
         buffer.unmap();
-        for id in &output.textures_delta.free {
-            self.renderer.free_texture(id);
+        for id in output.textures_delta.free.drain() {
+            self.renderer.free_texture(&id);
         }
         if let Some(directory) = std::env::var_os("ICY_EGUI_SCREENSHOTS") {
             std::fs::create_dir_all(&directory).unwrap();
@@ -3641,6 +3670,7 @@ fn gpu_long_message_scroll_and_selection_copy() {
     // The classic terminal view is what this test is about.
     mail.reading_mode = icy_mail::options::ReadingMode::Classic;
     let body = format!("\x1b[31mHELLO WORLD\x1b[0m\n{}THE END", "more text\n".repeat(200));
+    wait(&mut mail, &gpu.context);
     mail.screen = icy_engine_gui::egui::screen::ScreenView::new(icy_mail::reader::render_body(body.as_bytes()).unwrap());
     mail.focus = Pane::Content;
     for _ in 0..3 {
@@ -3746,6 +3776,8 @@ fn gpu_long_message_scroll_and_selection_copy() {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, -300.0),
                 modifiers: egui::Modifiers::NONE,
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
             },
         ],
         "long-wheel",
@@ -3760,7 +3792,7 @@ fn gpu_long_message_scroll_and_selection_copy() {
 fn ui_font_covers_every_cp437_character() {
     let context = egui::Context::default();
     appearance::apply(&context);
-    let _ = context.run(Default::default(), |_| {});
+    let _ = context.run_ui(Default::default(), |_| {}).textures_delta.clear();
     let missing: String = (128u8..=255)
         .map(icy_mail::editor::cp437_char)
         .filter(|&ch| !context.fonts_mut(|fonts| fonts.has_glyph(&egui::FontId::proportional(13.0), ch)))
@@ -4017,7 +4049,7 @@ fn dragging_a_file_over_the_start_page_highlights_the_drop_zone() {
     let size = egui::vec2(1100.0, 760.0);
     let output = settle(&context, &mut mail, size);
     assert_eq!(count(&output, "Release to open the packet"), 0);
-    let output = context.run(
+    let mut output = context.run_ui(
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
             hovered_files: vec![egui::HoveredFile {
@@ -4026,8 +4058,9 @@ fn dragging_a_file_over_the_start_page_highlights_the_drop_zone() {
             }],
             ..Default::default()
         },
-        |context| mail.show(context),
+        |ui| mail.show(ui),
     );
+    output.textures_delta.clear();
     label(&output, "Release to open the packet");
 }
 
@@ -4542,7 +4575,7 @@ fn modern_reader_links_wrap_and_keep_selection_and_context_menus() {
             let glyph = &row.glyphs[first];
             points.push(position + row.pos.to_vec2() + egui::vec2(glyph.pos.x + glyph.advance_width / 2.0, row.size.y / 2.0));
         }
-        offset += row.char_count_including_newline();
+        offset += row.char_count_including_newline().0;
     }
     assert!(points.len() >= 2, "the URL must wrap for this test");
     let opens_url = |output: &egui::FullOutput| {
@@ -4743,6 +4776,8 @@ fn gpu_modern_reading_mode() {
         b"--- Icy Mail\r\n * Origin: Somewhere (21:2/150)\r\n",
     ]
     .concat();
+    mail.reading_mode = icy_mail::options::ReadingMode::Modern;
+    wait(&mut mail, &gpu.context);
     let package = mail.reader.package.clone().unwrap();
     let cache_key = (
         Arc::as_ptr(&package) as usize,
@@ -4754,6 +4789,17 @@ fn gpu_modern_reading_mode() {
         cache_key,
         modern_view::items(&gpu.context, &classic, modern_view::blocks(&classic, &wide), true),
     ));
+    let table_texture = mail
+        .modern_items
+        .as_ref()
+        .unwrap()
+        .1
+        .iter()
+        .find_map(|item| match item {
+            modern_view::Item::Art(image) => image.tiles.first().map(|(_, texture)| texture.id()),
+            _ => None,
+        })
+        .expect("the box-drawing table is rendered as art");
     mail.reading_mode = icy_mail::options::ReadingMode::Modern;
     for (theme, font, name) in [
         (egui::Theme::Dark, icy_mail::options::ModernFont::Proportional, "modern-dark"),
@@ -4766,10 +4812,12 @@ fn gpu_modern_reading_mode() {
             gpu.capture(&mut mail, [1100, 760], 1.0, vec![], "warmup");
         }
         let (_, output) = gpu.capture(&mut mail, [1100, 760], 1.0, vec![], name);
-        assert!(output
-            .shapes
-            .iter()
-            .any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text().contains("\u{250c}\u{2500}"))));
+        assert!(
+            output.shapes.iter().any(
+                |shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.brush.as_ref().is_some_and(|brush| brush.fill_texture_id == table_texture))
+            ),
+            "{name}: the table artwork must be painted"
+        );
     }
     gpu.context.set_theme(egui::Theme::Dark);
     mail.modern_font = icy_mail::options::ModernFont::Proportional;

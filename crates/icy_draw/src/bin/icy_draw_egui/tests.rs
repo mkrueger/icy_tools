@@ -156,25 +156,27 @@ fn utf8_character_picker_draws_text_without_prerendered_page_textures() {
             data.insert_temp(egui::Id::new("unicode-character-picker"), (page, code.to_owned()));
         });
         let started = std::time::Instant::now();
-        let outputs: Vec<_> = (0..3)
+        let mut outputs: Vec<_> = (0..3)
             .map(|_| {
-                context.run(
+                context.run_ui(
                     egui::RawInput {
                         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                         ..Default::default()
                     },
-                    |context| {
+                    |ui| {
+                        let context = ui.ctx();
                         assert!(!app.unicode_character_dialog(context));
                     },
                 )
             })
             .collect();
         eprintln!("Unicode picker page {page:X} (3 frames): {:?}", started.elapsed());
-        for output in &outputs {
+        for output in &mut outputs {
             assert!(
                 output.textures_delta.set.iter().all(|(id, _)| *id == egui::TextureId::Managed(0)),
                 "The picker must only update egui's shared font atlas"
             );
+            output.textures_delta.clear();
         }
         assert!(outputs.last().unwrap().shapes.iter().any(|shape| matches!(
             &shape.shape,
@@ -207,7 +209,8 @@ fn utf8_character_picker_selects_text_cells_directly() {
 fn utf8_shape_previews_draw_unicode_glyphs_like_the_canvas() {
     let context = egui::Context::default();
     let mut shapes = Vec::new();
-    let output = context.run(egui::RawInput::default(), |context| {
+    let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+        let context = ui.ctx();
         let painter = context.layer_painter(egui::LayerId::background());
         for (index, character) in ['\u{2591}', '\u{2580}', '\u{754c}', ' '].into_iter().enumerate() {
             let cell = egui::Rect::from_min_size(egui::pos2(index as f32 * 40.0, 0.0), egui::vec2(16.0, 32.0));
@@ -223,9 +226,9 @@ fn utf8_shape_previews_draw_unicode_glyphs_like_the_canvas() {
         output
             .textures_delta
             .set
-            .iter()
-            .find(|(texture, _)| *texture == id)
-            .map(|(_, delta)| match &delta.image {
+            .get(&id)
+            .and_then(|deltas| deltas.last())
+            .map(|delta| match &delta.image {
                 egui::ImageData::Color(image) => image.clone(),
             })
             .unwrap()
@@ -240,6 +243,7 @@ fn utf8_shape_previews_draw_unicode_glyphs_like_the_canvas() {
     assert_eq!(image(shapes[2].0).size, [32, 32]);
     assert_eq!(shapes[2].1.width(), 32.0, "wide characters cover two cells");
     assert_eq!(shapes[0].1.width(), 16.0);
+    output.textures_delta.clear();
 }
 
 #[test]
@@ -357,7 +361,7 @@ pub(super) fn use_english() {
     });
 }
 
-pub(super) fn frame(context: &egui::Context, app: &mut DrawApp, size: egui::Vec2, events: Vec<egui::Event>) -> egui::FullOutput {
+pub(super) fn frame(context: &egui::Context, app: &mut DrawApp, size: egui::Vec2, mut events: Vec<egui::Event>) -> egui::FullOutput {
     let time = context.input(|input| input.time) + 0.05;
     let modifiers = events
         .iter()
@@ -366,16 +370,20 @@ pub(super) fn frame(context: &egui::Context, app: &mut DrawApp, size: egui::Vec2
             _ => None,
         })
         .unwrap_or_default();
-    context.run(
+    if context.input(|input| input.modifiers) != modifiers {
+        events.insert(0, egui::Event::ModifiersChanged(modifiers));
+    }
+    let mut output = context.run_ui(
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
             events,
-            modifiers,
             time: Some(time),
             ..Default::default()
         },
-        |context| app.show(context),
-    )
+        |ui| app.show(ui),
+    );
+    output.textures_delta.clear();
+    output
 }
 
 #[test]
@@ -414,6 +422,8 @@ fn command_wheel_zooms_the_canvas() {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, 100.0),
                 modifiers: egui::Modifiers::COMMAND,
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
             },
         ],
     );
@@ -605,7 +615,7 @@ fn font_panel_highlights_and_selection_counts_follow_keyboard_focus_in_both_layo
         state.set_charset_selection(Some((Position::new(1, 4), Position::new(3, 5), false)));
         state.set_focused_panel(BitFontFocusedPanel::CharSet);
         let active_panel = |output: &egui::FullOutput| {
-            let color = context.style().visuals.selection.stroke.color;
+            let color = context.global_style().visuals.selection.stroke.color;
             let borders: Vec<_> = output
                 .shapes
                 .iter()
@@ -1172,7 +1182,8 @@ fn native_close_commits_shape_and_waits_for_picker() {
             .unwrap()
             .events
             .push(egui::ViewportEvent::Close);
-        let output = context.run(input, |context| app.show(context));
+        let mut output = context.run_ui(input, |ui| app.show(ui));
+        output.textures_delta.clear();
         assert!(app.document.modified());
         assert!(output.viewport_output[&egui::ViewportId::ROOT]
             .commands
@@ -1762,13 +1773,16 @@ fn font_tool_typing_after_structural_undo_creates_a_new_layer() {
     });
     app.document.begin_text_edit(Position::default(), Some(source), false).unwrap();
     app.document.text_edit_insert("A").unwrap();
-    let _ = context.run(
-        egui::RawInput {
-            events: vec![key_event(Key::Z, egui::Modifiers::COMMAND), egui::Event::Text("A".into())],
-            ..Default::default()
-        },
-        |context| app.keys(context),
-    );
+    let _ = context
+        .run_ui(
+            egui::RawInput {
+                events: vec![key_event(Key::Z, egui::Modifiers::COMMAND), egui::Event::Text("A".into())],
+                ..Default::default()
+            },
+            |ui| app.keys(ui.ctx()),
+        )
+        .textures_delta
+        .clear();
     app.document.with_state(|state| {
         assert_eq!(state.get_buffer().layers.len(), 3);
         assert_eq!(state.get_buffer().layers[1].live_text().unwrap().text, "B");
@@ -1811,7 +1825,10 @@ fn inline_text_caret_scrolls_with_its_full_height() {
     let source = icy_engine::LiveText::new(&font, icy_engine::TextAttribute::default()).unwrap();
     app.document.begin_text_edit(Position::new(3, 2), Some(source), false).unwrap();
     let keys = |app: &mut DrawApp, events| {
-        let _ = context.run(egui::RawInput { events, ..Default::default() }, |context| app.keys(context));
+        let _ = context
+            .run_ui(egui::RawInput { events, ..Default::default() }, |ui| app.keys(ui.ctx()))
+            .textures_delta
+            .clear();
     };
     keys(&mut app, vec![egui::Event::Text("A".into())]);
     assert_eq!(app.document.text_caret(), Some((Position::new(5, 2), 2)));
@@ -2247,16 +2264,17 @@ fn select_tool_shows_handle_cursors_and_the_add_mode() {
     };
     let hover = |app: &mut DrawApp, position: egui::Pos2, modifiers: egui::Modifiers| {
         let time = context.input(|input| input.time) + 0.05;
-        context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
-                events: vec![egui::Event::PointerMoved(position)],
-                modifiers,
+                events: vec![egui::Event::ModifiersChanged(modifiers), egui::Event::PointerMoved(position)],
                 time: Some(time),
                 ..Default::default()
             },
-            |context| app.show(context),
-        )
+            |ui| app.show(ui),
+        );
+        output.textures_delta.clear();
+        output
     };
     app.document.tool = Tool::Select;
     app.document
@@ -2301,19 +2319,21 @@ fn toolbar_color_switcher_swaps_and_opens_palette_popup() {
     };
     let origin = std::cell::Cell::new(egui::Pos2::ZERO);
     let draw = |app: &mut DrawApp, events: Vec<egui::Event>| {
-        context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 100.0))),
                 events,
                 ..Default::default()
             },
-            |context| {
-                egui::CentralPanel::default().show(context, |ui| {
+            |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| {
                     origin.set(ui.cursor().min);
                     app.color_switcher(ui);
                 });
             },
-        )
+        );
+        output.textures_delta.clear();
+        output
     };
     draw(&mut app, vec![]);
     let swap = origin.get() + egui::vec2(33.0, 7.0);
@@ -2345,17 +2365,18 @@ fn pipette_toolbar_previews_hovered_character_and_colors() {
     });
     app.pipette_hover = Some((Position::default(), egui::Modifiers::NONE));
 
-    let output = context.run(
+    let mut output = context.run_ui(
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 100.0))),
             ..Default::default()
         },
-        |context| {
-            egui::CentralPanel::default().show(context, |ui| {
+        |ui| {
+            egui::CentralPanel::default_margins().show(ui, |ui| {
                 ui.horizontal_centered(|ui| app.pipette_options(ui));
             });
         },
     );
+    output.textures_delta.clear();
     let labels: Vec<_> = output
         .shapes
         .iter()
@@ -2589,7 +2610,7 @@ fn canvas_reports_editor_selection_markers_instead_of_terminal_selection() {
 fn character_assignment_keyboard_commits_or_cancels_without_typing() {
     let context = egui::Context::default();
     appearance::apply(&context);
-    context.style_mut(|style| style.animation_time = 0.0);
+    context.global_style_mut(|style| style.animation_time = 0.0);
     let mut app = DrawApp::new();
     let size = egui::vec2(1280.0, 820.0);
     let set = app.settings.fkeys.current_set;
@@ -2654,7 +2675,7 @@ fn canvas_keeps_keyboard_after_toolbar_and_palette_clicks() {
     use_english();
     let context = egui::Context::default();
     appearance::apply(&context);
-    context.style_mut(|style| style.animation_time = 0.0);
+    context.global_style_mut(|style| style.animation_time = 0.0);
     let mut app = DrawApp::new();
     let size = egui::vec2(1280.0, 820.0);
     app.document.tool = Tool::Click;
@@ -2761,22 +2782,25 @@ fn text_tool_yields_to_focused_text_fields() {
     .into_iter()
     .enumerate()
     {
-        let _ = context.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
-                events,
-                ..Default::default()
-            },
-            |context| {
-                egui::TopBottomPanel::top("focus-test-panel").show(context, |ui| {
-                    let response = ui.add(egui::TextEdit::singleline(&mut value).id(field));
-                    if index == 0 {
-                        response.request_focus();
-                    }
-                });
-                app.show(context);
-            },
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::Panel::top("focus-test-panel").show(ui, |ui| {
+                        let response = ui.add(egui::TextEdit::singleline(&mut value).id(field));
+                        if index == 0 {
+                            response.request_focus();
+                        }
+                    });
+                    app.show(ui);
+                },
+            )
+            .textures_delta
+            .clear();
         assert_eq!(context.memory(|memory| memory.focused()), Some(field));
         assert!(!app.canvas_focus);
     }
@@ -2797,23 +2821,26 @@ fn canvas_keyboard_is_not_blocked_by_a_focused_button() {
         let size = egui::vec2(1280.0, 820.0);
         let mut activated = false;
         for events in [vec![], vec![egui::Event::Text("A".into())], vec![key_event(Key::Enter, egui::Modifiers::NONE)]] {
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
-                    events,
-                    ..Default::default()
-                },
-                |context| {
-                    egui::TopBottomPanel::top("focus-test-button-panel").show(context, |ui| {
-                        let response = ui.button("Not a text field");
-                        if !app.document.modified() {
-                            response.request_focus();
-                        }
-                        activated |= response.clicked();
-                    });
-                    app.show(context);
-                },
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        egui::Panel::top("focus-test-button-panel").show(ui, |ui| {
+                            let response = ui.button("Not a text field");
+                            if !app.document.modified() {
+                                response.request_focus();
+                            }
+                            activated |= response.clicked();
+                        });
+                        app.show(ui);
+                    },
+                )
+                .textures_delta
+                .clear();
             assert!(app.canvas_focus, "{os:?}: button focus must not block canvas input");
         }
         assert!(!activated, "{os:?}: Enter must reach the canvas, not activate the button");
@@ -2839,22 +2866,25 @@ fn canvas_keyboard_returns_after_text_field_submission_without_reusing_enter() {
     .into_iter()
     .enumerate()
     {
-        let _ = context.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
-                events,
-                ..Default::default()
-            },
-            |context| {
-                egui::TopBottomPanel::top("focus-test-submit-panel").show(context, |ui| {
-                    let response = ui.add(egui::TextEdit::singleline(&mut value).id(field));
-                    if index == 0 {
-                        response.request_focus();
-                    }
-                });
-                app.show(context);
-            },
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::Panel::top("focus-test-submit-panel").show(ui, |ui| {
+                        let response = ui.add(egui::TextEdit::singleline(&mut value).id(field));
+                        if index == 0 {
+                            response.request_focus();
+                        }
+                    });
+                    app.show(ui);
+                },
+            )
+            .textures_delta
+            .clear();
         assert_eq!(app.canvas_focus, index == 3);
     }
     assert_eq!(value, "field");
@@ -2878,21 +2908,24 @@ fn canvas_keyboard_yields_to_clicked_numeric_fields() {
             4 => vec![egui::Event::Text("42".into())],
             _ => vec![],
         };
-        let _ = context.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
-                events,
-                ..Default::default()
-            },
-            |context| {
-                egui::TopBottomPanel::top("focus-test-number-panel").show(context, |ui| {
-                    let response = ui.add(egui::DragValue::new(&mut value));
-                    field_rect = response.rect;
-                    field_id = Some(response.id);
-                });
-                app.show(context);
-            },
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::Panel::top("focus-test-number-panel").show(ui, |ui| {
+                        let response = ui.add(egui::DragValue::new(&mut value));
+                        field_rect = response.rect;
+                        field_id = Some(response.id);
+                    });
+                    app.show(ui);
+                },
+            )
+            .textures_delta
+            .clear();
         if index >= 3 {
             assert_eq!(context.memory(|memory| memory.focused()), field_id);
             assert!(!app.canvas_focus);
@@ -3051,7 +3084,7 @@ fn tdf_changes_switch_and_save_through_the_app() {
 fn characters_dialog_shrinks_after_desktop_layout() {
     let context = egui::Context::default();
     appearance::apply(&context);
-    context.style_mut(|style| style.animation_time = 0.0);
+    context.global_style_mut(|style| style.animation_time = 0.0);
     let mut app = DrawApp::new();
     app.dialog = Some(Dialog::Characters);
     for size in [egui::vec2(1280.0, 820.0), egui::vec2(440.0, 700.0)] {
@@ -3413,7 +3446,7 @@ impl Gpu {
             .insert(TerminalShaderRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm));
         let context = egui::Context::default();
         appearance::apply(&context);
-        context.style_mut(|style| style.animation_time = 0.0);
+        context.global_style_mut(|style| style.animation_time = 0.0);
         Self {
             context,
             device,
@@ -3434,10 +3467,12 @@ impl Gpu {
             ..Default::default()
         };
         input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().native_pixels_per_point = Some(scale);
-        let output = self.context.run(input, |context| app.show(context));
+        let mut output = self.context.run_ui(input, |ui| app.show(ui));
         let jobs = self.context.tessellate(output.shapes, output.pixels_per_point);
-        for (id, delta) in &output.textures_delta.set {
-            self.renderer.update_texture(&self.device, &self.queue, *id, delta);
+        for (id, deltas) in output.textures_delta.set.drain() {
+            for delta in deltas {
+                self.renderer.update_texture(&self.device, &self.queue, id, &delta);
+            }
         }
         let descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: size,
@@ -3504,12 +3539,13 @@ impl Gpu {
         let pixels: Vec<_> = buffer
             .slice(..)
             .get_mapped_range()
+            .unwrap()
             .chunks(stride as usize)
             .flat_map(|row| row[..size[0] as usize * 4].iter().copied())
             .collect();
         buffer.unmap();
-        for id in &output.textures_delta.free {
-            self.renderer.free_texture(id);
+        for id in output.textures_delta.free.drain() {
+            self.renderer.free_texture(&id);
         }
         if let Some(directory) = std::env::var_os("ICY_EGUI_SCREENSHOTS") {
             std::fs::create_dir_all(&directory).unwrap();
@@ -4113,7 +4149,8 @@ fn chat_panel_keeps_its_default_height() {
     for step in 0..12 {
         let pointer = egui::Event::PointerMoved(egui::pos2(500.0, 300.0 + step as f32));
         frame(&context, &mut app, egui::vec2(1178.0, 768.0), vec![pointer]);
-        let height = egui::containers::panel::PanelState::load(&context, egui::Id::new("chat")).map(|state| state.rect.height());
+        let height =
+            egui::containers::panel::PanelState::load(&context, context.viewport_id().root_ui_id().with("chat")).map(|state| state.outer_rect.height());
         assert_eq!(height, Some(220.0), "chat panel grew on frame {step}");
     }
 }
@@ -4195,6 +4232,8 @@ fn rip_zoom_menu_shortcuts_and_wheel_reach_the_graphical_canvas() {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, 100.0),
                 modifiers: egui::Modifiers::COMMAND,
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
             },
         ]
     };
@@ -4406,7 +4445,8 @@ fn skypix_edits_undo_redo_and_close_confirmation_stay_in_the_graphical_editor() 
         .unwrap()
         .events
         .push(egui::ViewportEvent::Close);
-    let output = context.run(input, |context| app.show(context));
+    let mut output = context.run_ui(input, |ui| app.show(ui));
+    output.textures_delta.clear();
     assert!(output.viewport_output[&egui::ViewportId::ROOT]
         .commands
         .contains(&egui::ViewportCommand::CancelClose));
@@ -4659,6 +4699,8 @@ fn tdf_font_selector_shows_eight_rows_and_scrolls_to_more_fonts() {
                     unit: egui::MouseWheelUnit::Point,
                     delta: egui::vec2(0.0, -300.0),
                     modifiers: egui::Modifiers::NONE,
+                    phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Unknown,
                 },
             ],
         );
@@ -5555,14 +5597,19 @@ fn idle_window_does_not_repaint_continuously() {
             .any(|command| matches!(command, egui::ViewportCommand::Title(_)))
     };
     assert!(is_title(&frame(&context, &mut app, size, vec![])));
-    for _ in 0..3 {
+    // Let egui's startup scrollbar animations finish before checking idle repainting.
+    for _ in 0..20 {
         frame(&context, &mut app, size, vec![]);
     }
     for _ in 0..5 {
         let output = frame(&context, &mut app, size, vec![]);
         // Every viewport command requests an immediate repaint, so an unchanged title must not be resent.
         assert!(!is_title(&output));
-        assert!(output.viewport_output[&egui::ViewportId::ROOT].repaint_delay > std::time::Duration::ZERO);
+        assert!(
+            output.viewport_output[&egui::ViewportId::ROOT].repaint_delay > std::time::Duration::ZERO,
+            "{:?}",
+            context.repaint_causes()
+        );
     }
     app.document.type_text("X").unwrap();
     assert!(is_title(&frame(&context, &mut app, size, vec![])));

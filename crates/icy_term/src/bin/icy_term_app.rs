@@ -802,7 +802,7 @@ impl TerminalApp {
             .wheel_scroll_multiplier(egui::vec2(wheel_direction, wheel_direction))
             .scroll_source(egui::scroll_area::ScrollSource {
                 mouse_wheel: !remote_mouse,
-                drag: false,
+                drag: egui::scroll_area::DragScroll::Never,
                 ..Default::default()
             })
             .auto_shrink([false, false])
@@ -915,7 +915,8 @@ impl TerminalApp {
             });
     }
 
-    fn show(&mut self, context: &egui::Context) {
+    fn show(&mut self, ui: &mut egui::Ui) {
+        let context = &ui.ctx().clone();
         let blocked_at_start = self.blocks_terminal();
         if !self.styled {
             self.styled = true;
@@ -974,24 +975,24 @@ impl TerminalApp {
             }
         }
         let directory_was_open = self.dialing_directory.open;
-        if let Some(path) = context.input(|input| input.raw.dropped_files.iter().find_map(|file| file.path.clone())) {
+        if let Some(path) = context.input(|input| input.raw.dropped_files.first().map(|file| file.path().to_path_buf())) {
             self.load(path);
         }
         if !directory_was_open {
-            egui::TopBottomPanel::top("toolbar")
+            egui::Panel::top("toolbar")
                 .frame(
                     egui::Frame::NONE
-                        .fill(context.style().visuals.panel_fill)
+                        .fill(context.global_style().visuals.panel_fill)
                         .inner_margin(egui::Margin::symmetric(10, 5)),
                 )
-                .show(context, |ui| self.toolbar(ui));
-            egui::TopBottomPanel::bottom("status")
+                .show(ui, |ui| self.toolbar(ui));
+            egui::Panel::bottom("status")
                 .frame(
                     egui::Frame::NONE
-                        .fill(context.style().visuals.panel_fill)
+                        .fill(context.global_style().visuals.panel_fill)
                         .inner_margin(egui::Margin::symmetric(12, 5)),
                 )
-                .show(context, |ui| {
+                .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().interact_size.y = 20.0;
                         let wide = ui.available_width() > 640.0;
@@ -1098,14 +1099,14 @@ impl TerminalApp {
                 || self.preferences.is_some()
                 || self.tools.blocks_input()
                 || self.transfers.open;
-            let terminal_bounds = context.available_rect();
+            let terminal_bounds = ui.available_rect_before_wrap();
             egui::Area::new(egui::Id::new("find-overlay"))
                 .order(egui::Order::Foreground)
                 .pivot(egui::Align2::RIGHT_TOP)
                 .fixed_pos(terminal_bounds.right_top() + egui::vec2(-8.0, 8.0))
                 .constrain_to(terminal_bounds)
                 .movable(false)
-                .show(context, |ui| {
+                .show(ui, |ui| {
                     egui::Frame::popup(ui.style()).corner_radius(4).inner_margin(12).show(ui, |ui| {
                         if search_blocked {
                             ui.disable();
@@ -1184,13 +1185,11 @@ impl TerminalApp {
                 });
         }
         if !self.dialing_directory.open {
-            egui::CentralPanel::default()
-                .frame(egui::Frame::NONE)
-                .show(context, |ui| self.terminal_view(ui));
+            egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| self.terminal_view(ui));
             self.monitor(context);
         }
         self.dialing_directory.message_blocked = self.messages.is_open() || self.error.is_some() || self.confirm_close || self.pending_link.is_some();
-        if let Some(request) = self.dialing_directory.show(context, self.connected || self.connecting) {
+        if let Some(request) = self.dialing_directory.show(ui, self.connected || self.connecting) {
             match request {
                 dialing_directory::DialRequest::Quick(entry, options) | dialing_directory::DialRequest::Entry(entry, options) => {
                     match session::entry_connection_config(&entry, &options) {
@@ -1897,8 +1896,8 @@ impl TerminalApp {
 }
 
 impl eframe::App for TerminalApp {
-    fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
-        self.show(context);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.show(ui);
     }
 }
 
@@ -1947,7 +1946,10 @@ fn main() -> anyhow::Result<()> {
         renderer: eframe::Renderer::Wgpu,
         wgpu_options: egui_wgpu::WgpuConfiguration {
             // Waiting for vsync halves the frame rate while the compositor resizes the window.
-            present_mode: egui_wgpu::wgpu::PresentMode::AutoNoVsync,
+            surface: egui_wgpu::SurfaceConfig {
+                present_mode: egui_wgpu::wgpu::PresentMode::AutoNoVsync,
+                ..egui_wgpu::SurfaceConfig::LOW_LATENCY
+            },
             ..Default::default()
         },
         multisampling: 0,
@@ -2022,15 +2024,17 @@ mod tests {
                 let context = egui::Context::default();
                 let mut app = TerminalApp::new(TextScreen::default(), "transfer focus".into());
                 let run = |app: &mut TerminalApp, events| {
-                    context.run(
+                    let mut output = context.run_ui(
                         egui::RawInput {
                             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 720.0))),
                             focused: true,
                             events,
                             ..Default::default()
                         },
-                        |context| app.show(context),
-                    )
+                        |ui| app.show(ui),
+                    );
+                    output.textures_delta.clear();
+                    output
                 };
                 run(&mut app, vec![]);
                 run(&mut app, vec![]);
@@ -2102,25 +2106,28 @@ mod tests {
         let context = egui::Context::default();
         let mut app = TerminalApp::new(TextScreen::default(), "selection".into());
         let run = |app: &mut TerminalApp, escape: bool| {
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 720.0))),
-                    focused: true,
-                    events: if escape {
-                        vec![egui::Event::Key {
-                            key: egui::Key::Escape,
-                            physical_key: None,
-                            pressed: true,
-                            repeat: false,
-                            modifiers: egui::Modifiers::NONE,
-                        }]
-                    } else {
-                        vec![]
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 720.0))),
+                        focused: true,
+                        events: if escape {
+                            vec![egui::Event::Key {
+                                key: egui::Key::Escape,
+                                physical_key: None,
+                                pressed: true,
+                                repeat: false,
+                                modifiers: egui::Modifiers::NONE,
+                            }]
+                        } else {
+                            vec![]
+                        },
+                        ..Default::default()
                     },
-                    ..Default::default()
-                },
-                |context| app.show(context),
-            );
+                    |ui| app.show(ui),
+                )
+                .textures_delta
+                .clear();
         };
         run(&mut app, false);
         run(&mut app, false);
@@ -2169,15 +2176,18 @@ mod tests {
         let input_row = screen.caret.position().y;
         let mut app = TerminalApp::new(screen, "offline".into());
         let run = |app: &mut TerminalApp, events| {
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 720.0))),
-                    events,
-                    focused: true,
-                    ..Default::default()
-                },
-                |context| app.show(context),
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 720.0))),
+                        events,
+                        focused: true,
+                        ..Default::default()
+                    },
+                    |ui| app.show(ui),
+                )
+                .textures_delta
+                .clear();
         };
         run(&mut app, vec![]);
         run(&mut app, vec![]);
@@ -2264,7 +2274,8 @@ mod tests {
         context.set_embed_viewports(false);
         let mut app = TerminalApp::new(TextScreen::default(), "parent".into());
         app.new_window = true;
-        let output = context.run(egui::RawInput::default(), |context| app.windows(context));
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| app.windows(ui.ctx()));
+        output.textures_delta.clear();
         assert_eq!(app.children.len(), 1);
         let (id, child) = &app.children[0];
         assert!(output.viewport_output.contains_key(id));
@@ -2277,7 +2288,7 @@ mod tests {
         child.shutdown_window();
         assert!(child.closed && child.session.is_none());
         drop(child);
-        let _ = context.run(egui::RawInput::default(), |context| app.windows(context));
+        let _ = context.run_ui(egui::RawInput::default(), |ui| app.windows(ui.ctx())).textures_delta.clear();
         assert!(app.children.is_empty());
     }
 
@@ -2312,15 +2323,18 @@ mod tests {
         app.address = address;
         app.connect(&context);
         let run = |app: &mut TerminalApp, events| {
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 720.0))),
-                    events,
-                    focused: true,
-                    ..Default::default()
-                },
-                |context| app.show(context),
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 720.0))),
+                        events,
+                        focused: true,
+                        ..Default::default()
+                    },
+                    |ui| app.show(ui),
+                )
+                .textures_delta
+                .clear();
         };
         let deadline = Instant::now() + Duration::from_secs(5);
         while !app.connected {
@@ -2396,13 +2410,14 @@ mod tests {
         let context = egui::Context::default();
         for (width, height, pixels_per_point) in [(1000.0, 720.0, 1.0), (360.0, 640.0, 1.0), (800.0, 600.0, 2.0)] {
             context.set_pixels_per_point(pixels_per_point);
-            let output = context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height))),
                     ..Default::default()
                 },
-                |context| app.show(context),
+                |ui| app.show(ui),
             );
+            output.textures_delta.clear();
             assert!(output.shapes.iter().any(|shape| matches!(shape.shape, egui::Shape::Callback(_))));
             let frame = CRTShaderProgram::new(&app.terminal, Arc::new(app.settings.clone()), None).frame(
                 &app.shader_state,

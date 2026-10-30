@@ -106,7 +106,10 @@ fn main() -> anyhow::Result<()> {
                 .with_min_inner_size([440.0, 300.0])
                 .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../../build/linux/256x256.png"))?),
             wgpu_options: egui_wgpu::WgpuConfiguration {
-                present_mode: egui_wgpu::wgpu::PresentMode::AutoNoVsync,
+                surface: egui_wgpu::SurfaceConfig {
+                    present_mode: egui_wgpu::wgpu::PresentMode::AutoNoVsync,
+                    ..egui_wgpu::SurfaceConfig::LOW_LATENCY
+                },
                 ..Default::default()
             },
             ..Default::default()

@@ -398,7 +398,7 @@ impl MailApp {
                     ui.colored_label(ui.visuals().error_fg_color, error);
                     ui.add_space(4.0);
                 }
-                egui::TopBottomPanel::bottom("composer-tagline")
+                egui::Panel::bottom("composer-tagline")
                     .frame(egui::Frame::new().inner_margin(egui::Margin { top: 6, ..Default::default() }))
                     .show_separator_line(false)
                     .show_inside(ui, |ui| {

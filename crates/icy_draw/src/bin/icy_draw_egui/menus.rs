@@ -294,9 +294,10 @@ pub(super) fn zoom_label(mode: ScalingMode) -> String {
 }
 
 impl DrawApp {
-    pub(super) fn menu(&mut self, context: &egui::Context) {
+    pub(super) fn menu(&mut self, ui: &mut egui::Ui) {
+        let context = &ui.ctx().clone();
         let blocked = self.dialog.is_some() || self.picker || self.layer_properties_open() || self.document.paste_active();
-        egui::TopBottomPanel::top("menu").show(context, |ui| {
+        egui::Panel::top("menu").show(ui, |ui| {
             if blocked {
                 ui.disable();
             }
@@ -457,14 +458,14 @@ impl DrawApp {
                 editor.undo(true);
             }
             ui.separator();
-            let selected = editable && editor.has_selection() && !context.wants_keyboard_input();
+            let selected = editable && editor.has_selection() && !context.egui_wants_keyboard_input();
             if item(ui, &fl!("menu-cut"), Some(&CUT), selected) {
                 editor.copy(context, true);
             }
             if item(ui, &fl!("menu-copy"), Some(&COPY), selected) {
                 editor.copy(context, false);
             }
-            if item(ui, &fl!("menu-paste"), Some(&PASTE), editable && !context.wants_keyboard_input()) {
+            if item(ui, &fl!("menu-paste"), Some(&PASTE), editable && !context.egui_wants_keyboard_input()) {
                 editor.request_paste(context);
             }
             if item(ui, &fl!("rip-editor-duplicate"), None, selected) {
@@ -1569,18 +1570,19 @@ mod tests {
 
     fn plugin_frame(context: &egui::Context, plugins: &[Plugin], enabled: bool, events: Vec<egui::Event>) -> (egui::FullOutput, Option<usize>) {
         let mut selected = None;
-        let output = context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))),
                 events,
                 ..Default::default()
             },
-            |context| {
-                egui::CentralPanel::default().show(context, |ui| {
+            |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| {
                     selected = super::plugin_menu(ui, plugins, enabled);
                 });
             },
         );
+        output.textures_delta.clear();
         (output, selected)
     }
 
@@ -1675,7 +1677,8 @@ mod tests {
     fn assistant_uses_a_persistent_material_sidebar_icon() {
         let context = eframe::egui::Context::default();
         let mut app = super::DrawApp::new();
-        let output = context.run(Default::default(), |context| app.menu(context));
+        let mut output = context.run_ui(Default::default(), |ui| app.menu(ui));
+        output.textures_delta.clear();
         assert!(app.icons.loaded("dock_right"));
         assert!(!app.icons.loaded("navigate_prev"));
         assert!(!output
@@ -1684,7 +1687,7 @@ mod tests {
             .any(|shape| matches!(&shape.shape, eframe::egui::Shape::Text(text) if text.galley.text() == icy_draw::fl!("ai-chat-title"))));
 
         app.ai_chat.visible = true;
-        let _ = context.run(Default::default(), |context| app.menu(context));
+        let _ = context.run_ui(Default::default(), |ui| app.menu(ui)).textures_delta.clear();
         assert!(app.icons.loaded("dock_right"));
         assert!(!app.icons.loaded("navigate_next"));
     }
@@ -1698,7 +1701,8 @@ mod tests {
         assert!(matches!(app.dialog, Some(super::Dialog::About)));
         let mut found = false;
         for _ in 0..3 {
-            let output = context.run(Default::default(), |context| app.show(context));
+            let mut output = context.run_ui(Default::default(), |ui| app.show(ui));
+            output.textures_delta.clear();
             let close = icy_engine_gui::egui::appearance::labels::close();
             found = output
                 .shapes

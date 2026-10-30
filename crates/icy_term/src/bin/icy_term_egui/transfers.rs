@@ -1104,15 +1104,19 @@ mod tests {
         let mut size = egui::Vec2::ZERO;
         // The first frame only lays the modal out, the size is known afterwards.
         for _ in 0..3 {
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 800.0))),
-                    ..Default::default()
-                },
-                |context| {
-                    transfers.show(context, options, true);
-                },
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 800.0))),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let context = ui.ctx();
+                        transfers.show(context, options, true);
+                    },
+                )
+                .textures_delta
+                .clear();
             size = context
                 .memory(|memory| memory.area_rect(egui::Id::new("transfer")))
                 .map(|rect| rect.size())
@@ -1248,16 +1252,20 @@ mod tests {
                 })
                 .into_iter()
                 .collect();
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 800.0))),
-                    events,
-                    ..Default::default()
-                },
-                |context| {
-                    transfers.show(context, &options, true);
-                },
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 800.0))),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let context = ui.ctx();
+                        transfers.show(context, &options, true);
+                    },
+                )
+                .textures_delta
+                .clear();
         };
         transfers.choose(false);
         frame(&mut transfers, None);

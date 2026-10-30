@@ -252,7 +252,7 @@ pub fn pill(ui: &mut egui::Ui, on: bool, label: &str) -> Response {
             .corner_radius(11)
             .min_size(egui::vec2(0.0, 22.0));
         let response = ui.add(button);
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), on, label));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), on, label));
         response
     })
     .inner
@@ -706,7 +706,7 @@ pub fn format_ranges(job: &mut egui::text::LayoutJob, ranges: &[std::ops::Range<
     }
     let mut sections = Vec::with_capacity(job.sections.len() + ranges.len() * 2);
     for section in std::mem::take(&mut job.sections) {
-        let mut start = section.byte_range.start;
+        let mut start = section.byte_range.start.0;
         let mut leading_space = section.leading_space;
         let mut push = |sections: &mut Vec<egui::text::LayoutSection>, range: std::ops::Range<usize>, marked: bool| {
             if range.is_empty() {
@@ -718,12 +718,12 @@ pub fn format_ranges(job: &mut egui::text::LayoutJob, ranges: &[std::ops::Range<
             }
             sections.push(egui::text::LayoutSection {
                 leading_space: std::mem::take(&mut leading_space),
-                byte_range: range,
+                byte_range: range.start.into()..range.end.into(),
                 format,
             });
         };
         for found in ranges {
-            let (from, to) = (found.start.max(start), found.end.min(section.byte_range.end));
+            let (from, to) = (found.start.max(start), found.end.min(section.byte_range.end.0));
             if from >= to {
                 continue;
             }
@@ -731,7 +731,7 @@ pub fn format_ranges(job: &mut egui::text::LayoutJob, ranges: &[std::ops::Range<
             push(&mut sections, from..to, true);
             start = to;
         }
-        push(&mut sections, start..section.byte_range.end, false);
+        push(&mut sections, start..section.byte_range.end.0, false);
     }
     job.sections = sections;
 }
@@ -741,14 +741,14 @@ fn dim(job: &mut egui::text::LayoutJob, end: usize, color: Color32) {
     let mut sections = Vec::with_capacity(job.sections.len() + 1);
     for mut section in std::mem::take(&mut job.sections) {
         let range = section.byte_range.clone();
-        if range.end <= end {
+        if range.end.0 <= end {
             section.format.color = color;
             sections.push(section);
-        } else if range.start < end {
+        } else if range.start.0 < end {
             let mut head = section.clone();
-            head.byte_range = range.start..end;
+            head.byte_range = range.start..end.into();
             head.format.color = color;
-            section.byte_range = end..range.end;
+            section.byte_range = end.into()..range.end;
             section.leading_space = 0.0;
             sections.push(head);
             sections.push(section);

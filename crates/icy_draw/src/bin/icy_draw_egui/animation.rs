@@ -380,7 +380,8 @@ impl AnimationEditor {
         (current, delays.sum())
     }
 
-    pub fn show(&mut self, context: &egui::Context, blocked: bool) {
+    pub fn show(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        let context = &ui.ctx().clone();
         let locked = blocked || self.export_dialog.is_some();
         if !locked {
             let history = context.input_mut(|input| {
@@ -414,28 +415,28 @@ impl AnimationEditor {
         if self.compiling.is_some() || self.pending || self.playing || self.export_job.is_some() {
             context.request_repaint_after(Duration::from_millis(16));
         }
-        self.status_bar(context, locked);
-        let source_frame = egui::Frame::new().fill(context.style().visuals.extreme_bg_color);
+        self.status_bar(ui, locked);
+        let source_frame = egui::Frame::new().fill(context.global_style().visuals.extreme_bg_color);
         let width = context.content_rect().width();
         if width >= 850.0 {
-            egui::SidePanel::left("animation-source")
-                .default_width((width * 0.45).clamp(420.0, 700.0))
-                .width_range(260.0..=900.0)
+            egui::Panel::left("animation-source")
+                .default_size((width * 0.45).clamp(420.0, 700.0))
+                .size_range(260.0..=900.0)
                 .resizable(true)
                 .frame(source_frame)
-                .show(context, |ui| self.source_pane(ui, locked));
+                .show(ui, |ui| self.source_pane(ui, locked));
         } else {
-            egui::TopBottomPanel::top("animation-source-compact")
+            egui::Panel::top("animation-source-compact")
                 .resizable(true)
-                .default_height(220.0)
-                .min_height(80.0)
+                .default_size(220.0)
+                .min_size(80.0)
                 .frame(source_frame)
-                .show(context, |ui| self.source_pane(ui, locked));
+                .show(ui, |ui| self.source_pane(ui, locked));
         }
-        let panel_fill = context.style().visuals.panel_fill;
+        let panel_fill = context.global_style().visuals.panel_fill;
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(panel_fill).inner_margin(8))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if locked {
                     ui.disable();
                 }
@@ -445,12 +446,13 @@ impl AnimationEditor {
     }
 
     /// Caret position, the latest log line (toggling the log) and the modified state.
-    fn status_bar(&mut self, context: &egui::Context, locked: bool) {
-        let visuals = context.style().visuals.clone();
-        egui::TopBottomPanel::bottom("animation-status")
-            .exact_height(STATUS_HEIGHT)
+    fn status_bar(&mut self, ui: &mut egui::Ui, locked: bool) {
+        let context = &ui.ctx().clone();
+        let visuals = context.global_style().visuals.clone();
+        egui::Panel::bottom("animation-status")
+            .exact_size(STATUS_HEIGHT)
             .frame(egui::Frame::new().fill(visuals.panel_fill).inner_margin(egui::Margin::symmetric(10, 0)))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if locked {
                     ui.disable();
                 }
@@ -525,10 +527,10 @@ impl AnimationEditor {
         }
         if self.log_visible {
             let visuals = ui.visuals().clone();
-            egui::TopBottomPanel::bottom("animation-log")
+            egui::Panel::bottom("animation-log")
                 .resizable(true)
-                .default_height(140.0)
-                .height_range(60.0..=400.0)
+                .default_size(140.0)
+                .size_range(60.0..=400.0)
                 .frame(
                     egui::Frame::new()
                         .fill(visuals.panel_fill)
@@ -590,14 +592,14 @@ impl AnimationEditor {
             let output = egui::TextEdit::multiline(&mut self.source)
                 .id(egui::Id::new("animation-source-editor"))
                 .code_editor()
-                .frame(false)
+                .frame(egui::Frame::NONE)
                 .margin(egui::Margin::symmetric(12, 10))
                 .desired_width(f32::INFINITY)
                 .desired_rows(30)
                 .layouter(&mut layouter)
                 .show(ui);
             if let Some(range) = output.cursor_range {
-                let index = range.primary.index;
+                let index = range.primary.index.0;
                 let before: String = self.source.chars().take(index).collect();
                 let line = before.matches('\n').count();
                 let col = before.rsplit('\n').next().map_or(0, |line| line.chars().count());

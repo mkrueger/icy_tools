@@ -455,7 +455,7 @@ impl Preview {
                 }
                 response
             });
-            self.screen.offset = result.state.offset;
+            self.screen.offset = result.state.offset();
             result.inner
         } else {
             let mut settings = options.monitor_settings.clone();
@@ -596,15 +596,18 @@ mod tests {
             ..Default::default()
         };
         let frame = |preview: &mut Preview| {
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 400.0))),
-                    ..Default::default()
-                },
-                |context| {
-                    egui::CentralPanel::default().show(context, |ui| preview.show(ui, &options));
-                },
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 400.0))),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        egui::CentralPanel::default_margins().show(ui, |ui| preview.show(ui, &options));
+                    },
+                )
+                .textures_delta
+                .clear();
         };
         for _ in 0..2 {
             frame(&mut preview);
@@ -698,15 +701,18 @@ mod tests {
             ..Default::default()
         };
         let frame = |preview: &mut Preview| {
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 240.0))),
-                    ..Default::default()
-                },
-                |context| {
-                    egui::CentralPanel::default().show(context, |ui| preview.show(ui, &options));
-                },
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 240.0))),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        egui::CentralPanel::default_margins().show(ui, |ui| preview.show(ui, &options));
+                    },
+                )
+                .textures_delta
+                .clear();
         };
         frame(&mut preview);
         frame(&mut preview);

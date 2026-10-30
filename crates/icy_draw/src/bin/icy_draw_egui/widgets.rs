@@ -66,7 +66,7 @@ impl Icons {
         image
             .tint(tint)
             .paint_at(ui, egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(icon)));
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, selected, label));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, selected, label));
         response.on_hover_text(label).on_disabled_hover_text(label)
     }
 
@@ -307,7 +307,7 @@ pub fn outline_key(ui: &mut egui::Ui, font: &icy_engine::BitFont, key: &str, cod
             );
         }
     }
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), key));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), key));
     response
 }
 
@@ -352,7 +352,7 @@ pub fn segmented<T: PartialEq + Copy, S: AsRef<str>>(ui: &mut egui::Ui, current:
             visuals.weak_text_color()
         };
         ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, enabled, selected, label.as_ref()));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::ListBoxOption, enabled, selected, label.as_ref()));
         let response = if tooltip.as_ref().is_empty() {
             response
         } else {
@@ -408,7 +408,7 @@ pub fn segmented_grid<T: PartialEq + Copy, S: AsRef<str>>(ui: &mut egui::Ui, cur
         ui.painter()
             .with_clip_rect(rect.shrink(2.0))
             .galley(rect.center() - galley.size() / 2.0, galley, color);
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, enabled, selected, label.as_ref()));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::ListBoxOption, enabled, selected, label.as_ref()));
         let response = if tooltip.as_ref().is_empty() {
             response
         } else {
@@ -451,7 +451,7 @@ pub fn toggle(ui: &mut egui::Ui, label: &str, value: &mut bool, tooltip: &str) -
     ui.painter().rect_filled(rect, 6, fill);
     ui.painter().rect_stroke(rect, 6, stroke, egui::StrokeKind::Inside);
     ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, enabled, *value, label));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, enabled, *value, label));
     response.on_hover_text(tooltip)
 }
 
@@ -488,7 +488,7 @@ pub fn status_button(ui: &mut egui::Ui, label: &str, tooltip: &str) -> Response 
         visuals.weak_text_color()
     };
     ui.painter().galley(rect.center() - galley.size() / 2.0, galley, color);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
     response.on_hover_text(tooltip)
 }
 
@@ -510,7 +510,7 @@ pub fn fkey(ui: &mut egui::Ui, font: &icy_engine::BitFont, code: char, index: us
         egui::FontId::proportional(10.0),
         visuals.weak_text_color(),
     );
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &label));
     response.union(glyph_response).on_hover_text(format!("{label}: character {}", code as u32))
 }
 
@@ -671,7 +671,7 @@ pub fn transport_button(icons: &mut Icons, ui: &mut egui::Ui, icon: &str, toolti
     image
         .tint(tint)
         .paint_at(ui, egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(18.0)));
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, active, tooltip));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, active, tooltip));
     response.on_hover_text(tooltip)
 }
 
@@ -698,7 +698,7 @@ pub fn play_button(icons: &mut Icons, ui: &mut egui::Ui, playing: bool, enabled:
         ui,
         egui::Rect::from_center_size(rect.center() + egui::vec2(offset, 0.0), egui::Vec2::splat(22.0)),
     );
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, enabled, playing, label));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, playing, label));
     response.on_hover_text(label)
 }
 
@@ -709,4 +709,25 @@ pub fn paint_vertices(ui: &egui::Ui, points: impl IntoIterator<Item = egui::Pos2
         ui.painter().rect_filled(handle, 1.0, Color32::WHITE);
         ui.painter().rect_stroke(handle, 1.0, Stroke::new(1.5_f32, accent), egui::StrokeKind::Middle);
     }
+}
+pub fn wheel_delta(ui: &egui::Ui) -> egui::Vec2 {
+    let line_speed = ui.ctx().options(|options| options.input_options.line_scroll_speed);
+    let page_height = ui.ctx().content_rect().height();
+    ui.input(|input| {
+        input
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                egui::Event::MouseWheel { unit, delta, .. } => Some(
+                    *delta
+                        * match unit {
+                            egui::MouseWheelUnit::Point => 1.0,
+                            egui::MouseWheelUnit::Line => line_speed,
+                            egui::MouseWheelUnit::Page => page_height,
+                        },
+                ),
+                _ => None,
+            })
+            .fold(egui::Vec2::ZERO, |sum, delta| sum + delta)
+    })
 }

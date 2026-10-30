@@ -1298,11 +1298,10 @@ mod tests {
     fn file_references_replay_as_text_without_cli_file_attachments() {
         let mut chat = super::super::Chat::new(icy_draw::AiChatSettings::default());
         chat.reference_import = Some(super::super::file_attachment::Import::start(
-            vec![egui::DroppedFile {
-                name: "/private/layout.lua".into(),
-                bytes: Some(b"print('reference only')".to_vec().into()),
-                ..Default::default()
-            }],
+            vec![super::super::file_attachment::memory_file(
+                "/private/layout.lua",
+                b"print('reference only')".to_vec(),
+            )],
             None,
             egui::Context::default(),
         ));

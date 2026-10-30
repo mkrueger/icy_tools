@@ -739,11 +739,14 @@ mod tests {
         for index in 0..20 {
             let effect = SoundEffect::try_from(index).unwrap();
             let mut command = IgsCommand::BellsAndWhistles { sound_effect: effect };
-            let _ = context.run(egui::RawInput::default(), |context| {
-                egui::CentralPanel::default().show(context, |ui| {
-                    assert!(super::command(ui, &mut command, &palette, TerminalResolution::Low));
-                });
-            });
+            let _ = context
+                .run_ui(egui::RawInput::default(), |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
+                        assert!(super::command(ui, &mut command, &palette, TerminalResolution::Low));
+                    });
+                })
+                .textures_delta
+                .clear();
             assert_eq!(command.to_string(), format!("G#b>{index}:"));
         }
     }

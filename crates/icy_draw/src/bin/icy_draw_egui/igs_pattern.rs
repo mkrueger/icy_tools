@@ -119,7 +119,7 @@ pub fn picker(ui: &mut egui::Ui, id: &str, current: PatternType, border: bool, u
     ));
     let label = format!("{}: {}", fl!("igs-fill"), super::pattern_name(current));
     let response = response.on_hover_text(&label);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, &label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &label));
     egui::Popup::menu(&response)
         .id(egui::Id::new(id))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)

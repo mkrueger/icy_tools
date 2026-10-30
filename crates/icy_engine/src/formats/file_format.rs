@@ -463,6 +463,7 @@ impl FileFormat {
                 ArchiveFormat::Tbz => "tbz",
                 ArchiveFormat::TarZ => "tar.z",
                 ArchiveFormat::Uc2 => "uc2",
+                _ => arc.extension(),
             },
         }
     }
@@ -540,6 +541,7 @@ impl FileFormat {
             FileFormat::Archive(ArchiveFormat::Tbz) => &["tbz", "tbz2", "tar.bz2"],
             FileFormat::Archive(ArchiveFormat::TarZ) => &["tar.z"],
             FileFormat::Archive(ArchiveFormat::Uc2) => &["uc2"],
+            FileFormat::Archive(arc) => arc.extensions(),
         }
     }
 
@@ -597,6 +599,7 @@ impl FileFormat {
                 ArchiveFormat::TarZ => "TAR.Z Archive",
                 ArchiveFormat::Uc2 => "UC2 Archive",
                 ArchiveFormat::PackIce => "Pack-Ice Archive",
+                _ => arc.name(),
             },
         }
     }

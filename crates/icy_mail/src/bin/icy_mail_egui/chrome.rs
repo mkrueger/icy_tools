@@ -201,7 +201,7 @@ impl MailApp {
                     [edit_width.max(20.0), 26.0],
                     egui::TextEdit::singleline(&mut self.reader.filter)
                         .id(id)
-                        .frame(false)
+                        .frame(egui::Frame::NONE)
                         .margin(egui::vec2(4.0, 4.0))
                         .hint_text(search_hint(self.reader.search_fields)),
                 );

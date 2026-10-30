@@ -336,17 +336,19 @@ mod tests {
         let mut thumbnails = crate::thumbnails::Thumbnails::new(&context);
         let mut icons = crate::icons::Icons::default();
         let mut draw = |browser: &Browser, grid: &mut crate::tile_grid::TileGrid| {
-            context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(760.0, 640.0))),
                     ..Default::default()
                 },
-                |context| {
-                    egui::CentralPanel::default().show(context, |ui| {
+                |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
                         grid.show(ui, browser, &mut thumbnails, &mut icons, &Default::default(), false);
                     });
                 },
-            )
+            );
+            output.textures_delta.clear();
+            output
         };
         for _ in 0..3 {
             let _ = draw(&browser, &mut grid);
@@ -388,17 +390,18 @@ mod tests {
         let mut icons = crate::icons::Icons::default();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         loop {
-            let output = context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(760.0, 640.0))),
                     ..Default::default()
                 },
-                |context| {
-                    egui::CentralPanel::default().show(context, |ui| {
+                |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
                         grid.show(ui, &browser, &mut thumbnails, &mut icons, &Default::default(), false);
                     });
                 },
             );
+            output.textures_delta.clear();
             if !browser.loading {
                 if let Some(error) = &browser.error {
                     // The pack endpoint is reached over a redirect and can time out under load.

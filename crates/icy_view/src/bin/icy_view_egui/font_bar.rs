@@ -88,7 +88,20 @@ impl FontBar {
                 }
             })
             .response;
-        let wheel = if combo.hovered() { ui.input(|input| input.raw_scroll_delta.y) } else { 0.0 };
+        let wheel = if combo.hovered() {
+            ui.input(|input| {
+                input
+                    .events
+                    .iter()
+                    .filter_map(|event| match event {
+                        egui::Event::MouseWheel { delta, .. } => Some(delta.y),
+                        _ => None,
+                    })
+                    .sum::<f32>()
+            })
+        } else {
+            0.0
+        };
         if wheel != 0.0 {
             let last = self.fonts.len() - 1;
             selected = match (selected, wheel < 0.0) {
@@ -168,7 +181,7 @@ fn paint_swatch(ui: &egui::Ui, rect: egui::Rect, color: Option<u8>) {
 
 /// A DOS colour picker; `None` keeps the font's own colours.
 fn color_combo(ui: &mut egui::Ui, id: &str, label: &str, color: &mut Option<u8>) {
-    let swatch = egui::Id::new(id).with("swatch");
+    let swatch = egui::IdSalt::new((id, "swatch"));
     let button = egui::Button::new((egui::Atom::custom(swatch, egui::vec2(14.0, 14.0)), label)).atom_ui(ui);
     if let Some(rect) = button.rect(swatch) {
         paint_swatch(ui, rect, *color);

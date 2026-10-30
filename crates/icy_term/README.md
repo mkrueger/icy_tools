@@ -235,7 +235,7 @@ copies locally as text, RTF, an image and Icy data (which pastes with colors int
 Icy Draw), while Ctrl+C without a selection retains terminal semantics.
 Window resizing changes display scale, not negotiated terminal dimensions.
 
-Known platform limits: egui 0.33 does not expose distinct keypad locations or
+Known platform limits: egui does not expose distinct keypad locations or
 left/right modifier-key events, so those Kitty details cannot match the legacy
 frontend. Host-key enrollment remains an explicit trusted-SSH-client step.
 RIP file APC replies remain unimplemented in the shared backend. Hardware serial,
@@ -243,9 +243,11 @@ modem and audible output still require testing on the target machine.
 
 Both frontends share the existing WGSL shader, texture uploads, tile cache, and
 frame preparation. egui draws through a direct wgpu paint callback, without a
-per-frame GPU readback. `eframe`/`egui-wgpu` 0.33.3 use wgpu 27, matching the current
-UI. `icy_engine_gui` can now build without either UI: `terminal/frame.rs` owns
-frame preparation, and `terminal/shader.rs` depends directly on wgpu. Terminal
+per-frame GPU readback. `eframe`/`egui-wgpu` 0.37 use wgpu 30; the legacy UI retains
+its wgpu 27 backend. Both compile `terminal/shader_backend.rs`, with separate GPU
+resource types and a shared frame representation in `terminal/shader.rs`.
+`icy_engine_gui` can also build without either UI: `terminal/frame.rs` owns
+frame preparation. Terminal
 state, tile caches, monitor settings, and mouse coordinate calculations are
 available without `icy_ui`. The egui path passes pixel density explicitly per
 frame instead of relying on the legacy global scale factor.

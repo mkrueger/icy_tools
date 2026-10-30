@@ -106,7 +106,7 @@ impl Icons {
             let image = egui::ColorImage::from_rgba_premultiplied([48, 48], pixels.data());
             context.load_texture(name, image, egui::TextureOptions::LINEAR)
         });
-        egui::Image::new((texture.id(), egui::Vec2::splat(size))).tint(context.style().visuals.text_color())
+        egui::Image::new((texture.id(), egui::Vec2::splat(size))).tint(context.global_style().visuals.text_color())
     }
 
     /// Flat toolbar button: only hovered, pressed or selected buttons get a background.

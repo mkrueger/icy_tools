@@ -281,9 +281,13 @@ mod tests {
     fn poll_with(events: Vec<egui::Event>, terminal_has_keyboard: bool) -> Vec<Action> {
         let context = egui::Context::default();
         let mut seen = Vec::new();
-        let _ = context.run(egui::RawInput { events, ..Default::default() }, |context| {
-            seen = poll(context, terminal_has_keyboard)
-        });
+        let _ = context
+            .run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+                let context = ui.ctx();
+                seen = poll(context, terminal_has_keyboard)
+            })
+            .textures_delta
+            .clear();
         seen
     }
 
@@ -328,16 +332,20 @@ mod tests {
 
         let context = egui::Context::default();
         let mut remaining = 1;
-        let _ = context.run(
-            egui::RawInput {
-                events: vec![press(egui::Key::D, egui::Modifiers::ALT)],
-                ..Default::default()
-            },
-            |context| {
-                poll(context, false);
-                remaining = context.input(|input| input.events.len());
-            },
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    events: vec![press(egui::Key::D, egui::Modifiers::ALT)],
+                    ..Default::default()
+                },
+                |ui| {
+                    let context = ui.ctx();
+                    poll(context, false);
+                    remaining = context.input(|input| input.events.len());
+                },
+            )
+            .textures_delta
+            .clear();
         assert_eq!(remaining, 0, "a handled shortcut must not reach the terminal");
     }
 

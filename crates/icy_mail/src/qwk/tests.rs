@@ -358,7 +358,7 @@ pub(crate) fn write_packet_with_newfiles(dir: &std::path::Path, newfiles: Option
     let path = dir.join("TEST.QWK");
     let file = std::fs::File::create(&path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
-    let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     zip.start_file("CONTROL.DAT", options).unwrap();
     zip.write_all(&control_dat()).unwrap();
@@ -383,8 +383,8 @@ fn capabilities_survive_cold_warm_and_cloned_packages() {
     let mut destination = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
     for index in 0..source.len() {
         let mut entry = source.by_index(index).unwrap();
-        destination.start_file(entry.name(), zip::write::SimpleFileOptions::default()).unwrap();
-        if entry.name() == "DOOR.ID" {
+        destination.start_file(entry.name().unwrap(), zip::write::SimpleFileOptions::default()).unwrap();
+        if entry.name().unwrap() == "DOOR.ID" {
             destination
                 .write_all(b"CONTROLNAME=CUSTOM\r\nCONTROLTYPE=ADD\r\nCONTROLTYPE=DROP\r\nCONTROLTYPE=QWKE\r\n")
                 .unwrap();
@@ -546,7 +546,7 @@ fn index_extracts_extended_subjects_for_the_message_list() {
     let path = dir.path().join("LONG.QWK");
     let file = std::fs::File::create(&path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
-    let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     zip.start_file("CONTROL.DAT", options).unwrap();
     zip.write_all(&control_dat()).unwrap();
     zip.start_file("MESSAGES.DAT", options).unwrap();
@@ -571,7 +571,7 @@ fn message_bodies_keep_hidden_lines_until_they_are_read() {
     let path = dir.path().join("KLUDGE.QWK");
     let file = std::fs::File::create(&path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
-    let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     zip.start_file("CONTROL.DAT", options).unwrap();
     zip.write_all(&control_dat()).unwrap();
     zip.start_file("MESSAGES.DAT", options).unwrap();

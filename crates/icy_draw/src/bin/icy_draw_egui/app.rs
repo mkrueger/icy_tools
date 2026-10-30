@@ -1428,11 +1428,7 @@ impl DrawApp {
         }
         response.widget_info(|| {
             egui::WidgetInfo::selected(
-                if dropdown {
-                    egui::WidgetType::ComboBox
-                } else {
-                    egui::WidgetType::SelectableLabel
-                },
+                if dropdown { egui::Role::ComboBox } else { egui::Role::ListBoxOption },
                 ui.is_enabled(),
                 selected,
                 format!("{label}, {}", tdf_type_label(kind)),
@@ -1473,7 +1469,7 @@ impl DrawApp {
         picked
     }
 
-    fn charfont_bar(&mut self, context: &egui::Context) {
+    fn charfont_bar(&mut self, ui: &mut egui::Ui) {
         let Some(font) = &self.charfont else {
             return;
         };
@@ -1488,7 +1484,7 @@ impl DrawApp {
         let mut character = font.state.selected_char().unwrap_or('A');
         let mut name = font.state.selected_font().map(|font| font.name.clone()).unwrap_or_default();
         let mut spacing = font.state.selected_font().map_or(0, |font| font.spacing);
-        egui::TopBottomPanel::top("tdf-fonts").show(context, |ui| {
+        egui::Panel::top("tdf-fonts").show(ui, |ui| {
             if self.dialog.is_some() || self.picker || self.layer_properties_open() || self.document.paste_active() {
                 ui.disable();
             }
@@ -3212,8 +3208,8 @@ impl DrawApp {
                     Key::O if !modifiers.shift && !modifiers.alt => self.choose(context, FileAction::Open),
                     Key::N if !modifiers.shift && !modifiers.alt => self.request_new(),
                     Key::S if !modifiers.alt => self.save(context, modifiers.shift),
-                    Key::Z if self.canvas_focus || (self.skypix.is_some() && !context.wants_keyboard_input()) => self.undo(modifiers.shift),
-                    Key::Y if self.canvas_focus || (self.skypix.is_some() && !context.wants_keyboard_input()) => self.undo(true),
+                    Key::Z if self.canvas_focus || (self.skypix.is_some() && !context.egui_wants_keyboard_input()) => self.undo(modifiers.shift),
+                    Key::Y if self.canvas_focus || (self.skypix.is_some() && !context.egui_wants_keyboard_input()) => self.undo(true),
                     Key::A if self.canvas_focus && !self.document.paste_active() => self.select_all(),
                     _ if !self.document.paste_active() && self.command_key(context, key, modifiers) => {}
                     _ if self.canvas_focus => {
@@ -4565,7 +4561,8 @@ impl DrawApp {
         let _ = command;
     }
 
-    pub fn show(&mut self, context: &egui::Context) {
+    pub fn show(&mut self, ui: &mut egui::Ui) {
+        let context = &ui.ctx().clone();
         if self.dialog.is_none() && !self.picker {
             if let Some(error) = self.autosave_error.take() {
                 self.dialog = Some(Dialog::Error(fl!("recovery-failed", error = error)));
@@ -4573,17 +4570,18 @@ impl DrawApp {
                 self.dialog = Some(Dialog::Recovery);
             }
         }
-        self.show_ui(context);
+        self.show_ui(ui);
         self.autosave(context);
     }
 
     /// The panels of the ANSI editor around the canvas.
-    fn ansi_panels(&mut self, context: &egui::Context, blocked: bool) {
-        let panel_fill = context.style().visuals.panel_fill;
-        egui::TopBottomPanel::top("toolbar")
-            .exact_height(chrome::TOOLBAR_HEIGHT)
+    fn ansi_panels(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        let context = &ui.ctx().clone();
+        let panel_fill = context.global_style().visuals.panel_fill;
+        egui::Panel::top("toolbar")
+            .exact_size(chrome::TOOLBAR_HEIGHT)
             .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if blocked {
                     ui.disable();
                 }
@@ -4591,33 +4589,33 @@ impl DrawApp {
             });
         let sidebar = self.show_inspector && context.content_rect().width() >= 850.0;
         if !sidebar {
-            self.charfont_bar(context);
+            self.charfont_bar(ui);
         }
-        egui::TopBottomPanel::bottom("status")
-            .exact_height(chrome::STATUS_HEIGHT)
+        egui::Panel::bottom("status")
+            .exact_size(chrome::STATUS_HEIGHT)
             .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if blocked {
                     ui.disable();
                 }
                 self.status_bar(ui);
             });
-        egui::SidePanel::left("sidebar")
-            .exact_width(chrome::SIDEBAR_WIDTH)
+        egui::Panel::left("sidebar")
+            .exact_size(chrome::SIDEBAR_WIDTH)
             .frame(egui::Frame::new().fill(panel_fill))
             .resizable(false)
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if blocked || self.document.paste_active() {
                     ui.disable();
                 }
                 self.sidebar(ui);
             });
         if sidebar {
-            egui::SidePanel::right("panel")
-                .exact_width(chrome::PANEL_WIDTH)
+            egui::Panel::right("panel")
+                .exact_size(chrome::PANEL_WIDTH)
                 .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin { top: 4, ..Default::default() }))
                 .resizable(false)
-                .show(context, |ui| {
+                .show(ui, |ui| {
                     if blocked || self.document.paste_active() {
                         ui.disable();
                     }
@@ -4626,7 +4624,8 @@ impl DrawApp {
         }
     }
 
-    fn show_ui(&mut self, context: &egui::Context) {
+    fn show_ui(&mut self, ui: &mut egui::Ui) {
+        let context = &ui.ctx().clone();
         // Ctrl+Plus/Minus zoom the canvas instead of the whole user interface.
         context.options_mut(|options| options.zoom_with_keyboard = false);
         if !context.will_discard() {
@@ -4835,10 +4834,8 @@ impl DrawApp {
         self.ai_chat.route_file_drop(context, drop_blocked, native_position);
         if self.dialog.is_none() && !self.picker {
             for file in context.input(|input| input.raw.dropped_files.clone()) {
-                if let Some(path) = file.path {
-                    self.open(path);
-                    break;
-                }
+                self.open(file.path().to_path_buf());
+                break;
             }
         }
         let blocked = self.dialog.is_some() || self.picker || self.layer_properties_open();
@@ -4857,16 +4854,16 @@ impl DrawApp {
             self.document.finish();
         }
         if !self.show_start {
-            self.menu(context);
+            self.menu(ui);
         }
-        self.ai_chat_panel(context, blocked);
+        self.ai_chat_panel(ui, blocked);
         if let Some(editor) = &mut self.font_editor {
             let layout = super::font::Layout {
                 toolbar_height: chrome::TOOLBAR_HEIGHT,
                 status_height: chrome::STATUS_HEIGHT,
                 rail_width: chrome::SIDEBAR_WIDTH,
             };
-            let action = editor.show(context, blocked, layout);
+            let action = editor.show(ui, blocked, layout);
             self.canvas_focus = false;
             match action {
                 Some(super::font::Action::Apply(font)) => match self.document.with_state(|state| state.set_font(*font)) {
@@ -4883,7 +4880,7 @@ impl DrawApp {
             return;
         }
         if let Some(editor) = &mut self.skypix {
-            editor.show(context, blocked);
+            editor.show(ui, blocked);
             self.canvas_rect = editor.canvas_rect();
             self.canvas_focus = false;
             if !blocked {
@@ -4894,7 +4891,7 @@ impl DrawApp {
         }
         if let Some(editor) = &mut self.rip {
             editor.set_scaling(self.settings.monitor_settings.scaling_mode, self.settings.monitor_settings.use_integer_scaling);
-            editor.show(context, blocked);
+            editor.show(ui, blocked);
             self.settings.monitor_settings.scaling_mode = editor.scaling_mode();
             self.canvas_focus = false;
             if !blocked {
@@ -4912,7 +4909,7 @@ impl DrawApp {
             return;
         }
         if let Some(editor) = &mut self.igs {
-            editor.show(context, blocked);
+            editor.show(ui, blocked);
             self.canvas_focus = false;
             if !blocked {
                 if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Z)) {
@@ -4929,9 +4926,9 @@ impl DrawApp {
             return;
         }
         if let Some(editor) = &mut self.music {
-            editor.show(context, blocked);
+            editor.show(ui, blocked);
             self.canvas_focus = false;
-            if !blocked && !context.wants_keyboard_input() {
+            if !blocked && !context.egui_wants_keyboard_input() {
                 if context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, Key::Z)) {
                     editor.undo(false);
                 }
@@ -4948,7 +4945,7 @@ impl DrawApp {
             return;
         }
         if let Some(editor) = &mut self.animation {
-            editor.show(context, blocked || self.dialog.is_some() || self.picker);
+            editor.show(ui, blocked || self.dialog.is_some() || self.picker);
             match editor.take_request() {
                 Some(super::animation::Request::Browse(format)) => self.choose(context, FileAction::ExportAnimation(format)),
                 Some(super::animation::Request::Export(path, format)) if path.exists() => {
@@ -4966,13 +4963,13 @@ impl DrawApp {
         }
         if self.show_start {
             self.canvas_focus = false;
-            let style = context.style();
+            let style = context.global_style();
             let mut frame = egui::Frame::central_panel(&style);
             if style.visuals.dark_mode {
                 // Black like the logo.
                 frame = frame.fill(Color32::BLACK);
             }
-            egui::CentralPanel::default().frame(frame).show(context, |ui| {
+            egui::CentralPanel::default().frame(frame).show(ui, |ui| {
                 if blocked {
                     ui.disable();
                 }
@@ -4984,29 +4981,29 @@ impl DrawApp {
             self.dialogs(context);
             return;
         }
-        let panel_fill = context.style().visuals.panel_fill;
+        let panel_fill = context.global_style().visuals.panel_fill;
         if self.atascii.is_some() {
-            self.atascii_panels(context, blocked);
+            self.atascii_panels(ui, blocked);
         } else if self.vt52.is_some() {
-            self.vt52_panels(context, blocked);
+            self.vt52_panels(ui, blocked);
         } else if self.petscii.is_some() {
-            self.petscii_panels(context, blocked);
+            self.petscii_panels(ui, blocked);
         } else {
-            self.ansi_panels(context, blocked);
+            self.ansi_panels(ui, blocked);
         }
-        let well = if context.style().visuals.dark_mode {
+        let well = if context.global_style().visuals.dark_mode {
             Color32::from_gray(22)
         } else {
             Color32::from_gray(212)
         };
         *self.view.terminal.background_color.write() = well.to_array().map(|channel| f32::from(channel) / 255.0);
         if self.collab.active && self.collab.chat_visible {
-            egui::TopBottomPanel::bottom("chat")
+            egui::Panel::bottom("chat")
                 .resizable(true)
-                .default_height(220.0)
-                .height_range(120.0..=520.0)
+                .default_size(220.0)
+                .size_range(120.0..=520.0)
                 .frame(egui::Frame::new().fill(panel_fill))
-                .show(context, |ui| {
+                .show(ui, |ui| {
                     if blocked {
                         ui.disable();
                     }
@@ -5016,7 +5013,7 @@ impl DrawApp {
         if let Some(font) = &self.charfont {
             font.sync_display_color(&self.document);
         }
-        egui::CentralPanel::default().frame(egui::Frame::new().fill(well)).show(context, |ui| {
+        egui::CentralPanel::default().frame(egui::Frame::new().fill(well)).show(ui, |ui| {
             let blocked = blocked || self.dialog.is_some() || self.picker || self.layer_properties_open();
             if !self.document.outline_font {
                 self.canvas(ui, blocked);
@@ -5074,8 +5071,8 @@ impl DrawApp {
 }
 
 impl eframe::App for DrawApp {
-    fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
-        self.show(context);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.show(ui);
     }
 }
 

@@ -6,7 +6,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use bincode::Options;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +23,35 @@ const INDEX_FILE: &str = "index-v6.bin";
 const INDEX_VERSION: u32 = 9;
 const MAX_INDEX_SIZE: u64 = 1024 * 1024 * 1024;
 const INDEX_CHUNK_MESSAGES: usize = 4096;
+
+fn decode_index<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Res<T> {
+    let (value, consumed) = bincode::serde::borrow_decode_from_slice(bytes, bincode::config::legacy().with_limit::<{ MAX_INDEX_SIZE as usize }>())?;
+    if consumed != bytes.len() {
+        return Err(invalid("trailing bytes in metadata cache").into());
+    }
+    Ok(value)
+}
+
+fn encode_index<T: Serialize>(value: &T, limit: usize) -> Result<Vec<u8>, bincode::error::EncodeError> {
+    struct LimitedWriter {
+        bytes: Vec<u8>,
+        limit: usize,
+    }
+
+    impl bincode::enc::write::Writer for LimitedWriter {
+        fn write(&mut self, bytes: &[u8]) -> Result<(), bincode::error::EncodeError> {
+            if bytes.len() > self.limit - self.bytes.len() {
+                return Err(bincode::error::EncodeError::Other("metadata cache exceeds size limit"));
+            }
+            self.bytes.extend_from_slice(bytes);
+            Ok(())
+        }
+    }
+
+    let mut writer = LimitedWriter { bytes: Vec::new(), limit };
+    bincode::serde::encode_into_writer(value, &mut writer, bincode::config::legacy())?;
+    Ok(writer.bytes)
+}
 
 fn chunk_checksums(bytes: &[u8]) -> Vec<u32> {
     bytes.par_chunks(CHUNK_SIZE).map(crc32fast::hash).collect()
@@ -366,10 +394,7 @@ impl ExtractionCache {
         if payload.get(..4) != Some(INDEX_VERSION.to_le_bytes().as_slice()) {
             return Err(invalid("unsupported metadata cache version").into());
         }
-        let record: IndexRecord<BorrowedChunks<'_>> = bincode::DefaultOptions::new()
-            .with_fixint_encoding()
-            .with_limit(MAX_INDEX_SIZE)
-            .deserialize(payload)?;
+        let record: IndexRecord<BorrowedChunks<'_>> = decode_index(payload)?;
         if record.version != INDEX_VERSION
             || record.language != index_language()
             || record.source != identity.source
@@ -382,13 +407,10 @@ impl ExtractionCache {
             .index
             .chunks
             .par_iter()
-            .map(|bytes| {
-                let part: MetadataIndex = bincode::DefaultOptions::new()
-                    .with_fixint_encoding()
-                    .with_limit(MAX_INDEX_SIZE)
-                    .deserialize(bytes)?;
+            .map(|bytes| -> Res<MetadataIndex> {
+                let part: MetadataIndex = decode_index(bytes)?;
                 if part.infos.len() > INDEX_CHUNK_MESSAGES || part.descriptors.len() != part.infos.len() || part.threads.len() != part.infos.len() {
-                    return Err(Box::new(bincode::ErrorKind::Custom("invalid metadata chunk lengths".into())));
+                    return Err(invalid("invalid metadata chunk lengths").into());
                 }
                 Ok(part)
             })
@@ -452,14 +474,14 @@ impl ExtractionCache {
             .map(|(chunk, infos)| {
                 let start = chunk * INDEX_CHUNK_MESSAGES;
                 let end = start + infos.len();
-                bincode::DefaultOptions::new()
-                    .with_fixint_encoding()
-                    .with_limit(MAX_INDEX_SIZE)
-                    .serialize(&MetadataRef {
+                encode_index(
+                    &MetadataRef {
                         descriptors: &package.descriptors[start..end],
                         infos,
                         threads: &threads[start..end],
-                    })
+                    },
+                    MAX_INDEX_SIZE as usize,
+                )
             })
             .collect::<Result<Vec<_>, _>>()?;
         let record = IndexRecord {
@@ -470,10 +492,7 @@ impl ExtractionCache {
             messages_crc32: identity.messages_crc32,
             index: IndexChunks { chunks },
         };
-        let payload = bincode::DefaultOptions::new()
-            .with_fixint_encoding()
-            .with_limit(MAX_INDEX_SIZE - 4)
-            .serialize(&record)?;
+        let payload = encode_index(&record, (MAX_INDEX_SIZE - 4) as usize)?;
         let checksum = crc32fast::hash(&payload).to_le_bytes();
         crate::drafts::atomic_write(&directory.join(INDEX_FILE), |file| {
             #[cfg(unix)]
@@ -697,6 +716,24 @@ mod tests {
     use icy_engine::TextPane;
 
     #[test]
+    fn index_codec_preserves_legacy_bytes_and_limits() {
+        let value = (1_u32, "cache", vec![2_u16, 3]);
+        let mut expected = 1_u32.to_le_bytes().to_vec();
+        expected.extend(5_u64.to_le_bytes());
+        expected.extend(b"cache");
+        expected.extend(2_u64.to_le_bytes());
+        expected.extend(2_u16.to_le_bytes());
+        expected.extend(3_u16.to_le_bytes());
+        assert_eq!(encode_index(&value, expected.len()).unwrap(), expected);
+        assert_eq!(decode_index::<(u32, &str, Vec<u16>)>(&expected).unwrap(), value);
+        assert!(encode_index(&value, expected.len() - 1).is_err());
+        assert!(decode_index::<(u32, &str, Vec<u16>)>(&expected[..expected.len() - 1]).is_err());
+        expected.push(0);
+        assert!(decode_index::<(u32, &str, Vec<u16>)>(&expected).is_err());
+        assert!(decode_index::<Vec<u8>>(&u64::MAX.to_le_bytes()).is_err());
+    }
+
+    #[test]
     #[ignore = "requires ICY_MAIL_TEST_PACKET with an existing default-directory extraction cache"]
     fn existing_packet_cache_timings() {
         let path = PathBuf::from(std::env::var("ICY_MAIL_TEST_PACKET").expect("set ICY_MAIL_TEST_PACKET to the cached packet"));
@@ -917,9 +954,9 @@ mod tests {
 
     fn rewrite_metadata(directory: &Path, mutate: impl FnOnce(&mut IndexRecord<IndexChunks>)) {
         let bytes = fs::read(directory.join(INDEX_FILE)).unwrap();
-        let mut record: IndexRecord<IndexChunks> = bincode::DefaultOptions::new().with_fixint_encoding().deserialize(&bytes[4..]).unwrap();
+        let mut record: IndexRecord<IndexChunks> = decode_index(&bytes[4..]).unwrap();
         mutate(&mut record);
-        let payload = bincode::DefaultOptions::new().with_fixint_encoding().serialize(&record).unwrap();
+        let payload = encode_index(&record, MAX_INDEX_SIZE as usize).unwrap();
         let mut output = crc32fast::hash(&payload).to_le_bytes().to_vec();
         output.extend(payload);
         fs::write(directory.join(INDEX_FILE), output).unwrap();
@@ -947,12 +984,9 @@ mod tests {
         let directory = entry(&cache, &path);
         let timestamp = chrono::DateTime::parse_from_rfc3339("2030-01-01T00:15:00Z").unwrap().timestamp();
         rewrite_metadata(&directory, |record| {
-            let mut index: MetadataIndex = bincode::DefaultOptions::new()
-                .with_fixint_encoding()
-                .deserialize(&record.index.chunks[0])
-                .unwrap();
+            let mut index: MetadataIndex = decode_index(&record.index.chunks[0]).unwrap();
             index.infos[0].ftn.utc_timestamp = Some(timestamp);
-            record.index.chunks[0] = bincode::DefaultOptions::new().with_fixint_encoding().serialize(&index).unwrap();
+            record.index.chunks[0] = encode_index(&index, MAX_INDEX_SIZE as usize).unwrap();
         });
         let warm = QwkPackage::load_from_file_cached(&path, &cache).unwrap();
         let date = chrono::DateTime::from_timestamp(timestamp, 0)
@@ -1018,17 +1052,14 @@ mod tests {
                 "source" => rewrite_metadata(&directory, |record| record.source.size += 1),
                 "binding" => rewrite_metadata(&directory, |record| record.messages_crc32 ^= 1),
                 "lengths" | "offset" | "thread" => rewrite_metadata(&directory, |record| {
-                    let mut index: MetadataIndex = bincode::DefaultOptions::new()
-                        .with_fixint_encoding()
-                        .deserialize(&record.index.chunks[0])
-                        .unwrap();
+                    let mut index: MetadataIndex = decode_index(&record.index.chunks[0]).unwrap();
                     match corruption {
                         "lengths" => index.infos.pop().map(|_| ()).unwrap(),
                         "offset" => index.descriptors[0].offset = record.messages_size + 128,
                         "thread" => index.threads[1].index = index.threads[0].index,
                         _ => unreachable!(),
                     }
-                    record.index.chunks[0] = bincode::DefaultOptions::new().with_fixint_encoding().serialize(&index).unwrap();
+                    record.index.chunks[0] = encode_index(&index, MAX_INDEX_SIZE as usize).unwrap();
                 }),
                 "truncated" => fs::write(directory.join(INDEX_FILE), b"partial").unwrap(),
                 _ => unreachable!(),

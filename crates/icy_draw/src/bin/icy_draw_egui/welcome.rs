@@ -70,7 +70,7 @@ pub(super) fn kind_row(icons: &mut Icons, ui: &mut egui::Ui, kind: NewKind, sele
         egui::FontId::proportional(12.0),
         weak,
     );
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), selected, kind.name()));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::ListBoxOption, ui.is_enabled(), selected, kind.name()));
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
@@ -113,7 +113,7 @@ fn tile(icons: &mut Icons, ui: &mut egui::Ui, icon: &str, title: &str, subtitle:
     } else {
         response
     };
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), title));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), title));
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
@@ -295,7 +295,7 @@ impl DrawApp {
                 let position = egui::pos2(rect.left() + 32.0, top);
                 painter.galley(position, galley, color);
             }
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &name));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &name));
             let response = response
                 .on_hover_text(path.display().to_string())
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -380,11 +380,12 @@ mod tests {
             Path::new("/one/a.ans").to_path_buf(),
             Path::new("/two/a-very-long-document-name-that-must-be-truncated.ans").to_path_buf(),
         ];
-        let output = context.run(Default::default(), |context| {
-            egui::CentralPanel::default().show(context, |ui| {
+        let mut output = context.run_ui(Default::default(), |ui| {
+            egui::CentralPanel::default_margins().show(ui, |ui| {
                 app.start_recent_section(ui, &recent, RECENT_MIN_WIDTH, &mut None);
             });
         });
+        output.textures_delta.clear();
         let text: Vec<_> = output
             .shapes
             .iter()

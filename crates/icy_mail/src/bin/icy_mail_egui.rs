@@ -92,7 +92,10 @@ fn main() -> anyhow::Result<()> {
             renderer: eframe::Renderer::Wgpu,
             viewport: viewport(),
             wgpu_options: egui_wgpu::WgpuConfiguration {
-                present_mode: egui_wgpu::wgpu::PresentMode::AutoNoVsync,
+                surface: egui_wgpu::SurfaceConfig {
+                    present_mode: egui_wgpu::wgpu::PresentMode::AutoNoVsync,
+                    ..egui_wgpu::SurfaceConfig::LOW_LATENCY
+                },
                 ..Default::default()
             },
             ..Default::default()

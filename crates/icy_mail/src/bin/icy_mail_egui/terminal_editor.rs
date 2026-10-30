@@ -207,25 +207,25 @@ impl TerminalEditor {
         if self.chars.open {
             let frame = egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 4));
             if wide {
-                egui::SidePanel::right("editor-chars")
+                egui::Panel::right("editor-chars")
                     .resizable(false)
-                    .exact_width(CHAR_PANEL_WIDTH)
+                    .exact_size(CHAR_PANEL_WIDTH)
                     .frame(frame)
                     .show_inside(ui, |ui| self.char_panel(ui, icons));
             } else {
-                egui::TopBottomPanel::bottom("editor-chars")
+                egui::Panel::bottom("editor-chars")
                     .resizable(false)
-                    .exact_height(280.0)
+                    .exact_size(280.0)
                     .frame(frame)
                     .show_inside(ui, |ui| self.char_panel(ui, icons));
             }
         }
         if self.quotes.open {
             let height = ui.available_height();
-            egui::TopBottomPanel::bottom("editor-quotes")
+            egui::Panel::bottom("editor-quotes")
                 .resizable(true)
-                .default_height((height * 0.38).max(120.0))
-                .height_range(90.0..=(height - 120.0).max(90.0))
+                .default_size((height * 0.38).max(120.0))
+                .size_range(90.0..=(height - 120.0).max(90.0))
                 .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 6)))
                 .show_inside(ui, |ui| self.quote_panel(ui, icons));
         }
@@ -1122,7 +1122,14 @@ impl TerminalEditor {
                 input.pointer.primary_pressed(),
                 input.pointer.primary_down(),
                 input.modifiers.shift,
-                input.raw_scroll_delta.y,
+                input
+                    .events
+                    .iter()
+                    .filter_map(|event| match event {
+                        egui::Event::MouseWheel { delta, .. } => Some(delta.y),
+                        _ => None,
+                    })
+                    .sum::<f32>(),
             )
         });
         let Some(position) = position else {
@@ -1372,7 +1379,7 @@ fn color_button(ui: &mut egui::Ui, fg: Color32, bg: Color32, open: bool) -> egui
         visuals.text_color(),
         egui::Stroke::NONE,
     ));
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, fl!(LANGUAGE_LOADER, "editor-text-color")));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, fl!(LANGUAGE_LOADER, "editor-text-color")));
     response
 }
 

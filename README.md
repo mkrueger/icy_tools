@@ -16,6 +16,16 @@ a tool that shows icy draw animations on cmd line/bbs.
 
 # Build instructions
 
+Use the current stable Rust toolchain. The egui 0.37 desktop frontend requires
+Rust 1.95 or newer.
+
+Dependency versions and sources are maintained in `[workspace.dependencies]` in
+the root `Cargo.toml`. Member crates inherit them with `workspace = true` and
+keep crate-specific features and optional flags locally. Shared dependencies
+with differing default-feature needs (such as `chrono` and `resvg`) disable
+defaults at the workspace level; members opt in with `features = ["default"]`.
+The legacy UI continues to use the egui/wgpu versions provided by `icy_ui`.
+
 ## Windows
 
 Install the Rust MSVC toolchain and Visual Studio (or Build Tools) with the

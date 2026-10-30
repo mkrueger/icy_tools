@@ -209,36 +209,37 @@ impl DrawApp {
     }
 
     /// The panels of the VT52 editor around the canvas.
-    pub(super) fn vt52_panels(&mut self, context: &egui::Context, blocked: bool) {
+    pub(super) fn vt52_panels(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        let context = &ui.ctx().clone();
         if let Some(editor) = &mut self.vt52 {
             editor.pipette.track(self.document.tool);
         }
-        let panel_fill = context.style().visuals.panel_fill;
-        egui::TopBottomPanel::top("toolbar")
-            .exact_height(chrome::TOOLBAR_HEIGHT)
+        let panel_fill = context.global_style().visuals.panel_fill;
+        egui::Panel::top("toolbar")
+            .exact_size(chrome::TOOLBAR_HEIGHT)
             .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if blocked {
                     ui.disable();
                 }
                 self.vt52_toolbar(ui);
             });
-        egui::TopBottomPanel::bottom("status")
-            .exact_height(chrome::STATUS_HEIGHT)
+        egui::Panel::bottom("status")
+            .exact_size(chrome::STATUS_HEIGHT)
             .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if blocked {
                     ui.disable();
                 }
                 self.vt52_status_bar(ui);
             });
-        self.screen_tool_rail(context, &TOOLS, blocked);
+        self.screen_tool_rail(ui, &TOOLS, blocked);
         if context.content_rect().width() >= 850.0 {
-            egui::SidePanel::right("panel")
-                .exact_width(chrome::PANEL_WIDTH)
+            egui::Panel::right("panel")
+                .exact_size(chrome::PANEL_WIDTH)
                 .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin { top: 4, ..Default::default() }))
                 .resizable(false)
-                .show(context, |ui| {
+                .show(ui, |ui| {
                     if blocked || self.document.paste_active() {
                         ui.disable();
                     }

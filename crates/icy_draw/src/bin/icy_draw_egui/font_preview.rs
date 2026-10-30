@@ -30,20 +30,21 @@ impl Default for FontPreview {
 }
 
 impl FontPreview {
-    pub fn show(&mut self, context: &egui::Context, state: &BitFontEditState, colors: (u32, u32), interactive: bool) {
+    pub fn show(&mut self, ui: &mut egui::Ui, state: &BitFontEditState, colors: (u32, u32), interactive: bool) {
+        let context = &ui.ctx().clone();
         if !self.visible {
             return;
         }
-        egui::TopBottomPanel::bottom("font-live-preview")
-            .default_height(160.0)
-            .height_range(100.0..=320.0)
+        egui::Panel::bottom("font-live-preview")
+            .default_size(160.0)
+            .size_range(100.0..=320.0)
             .resizable(true)
             .frame(
                 egui::Frame::new()
-                    .fill(context.style().visuals.panel_fill)
+                    .fill(context.global_style().visuals.panel_fill)
                     .inner_margin(egui::Margin::symmetric(12, 8)),
             )
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if !interactive {
                     ui.disable();
                 }
@@ -316,26 +317,20 @@ mod tests {
         let mut preview = FontPreview::default();
         let update = |preview: &mut FontPreview, state: &BitFontEditState, colors| {
             let layout = preview_layout(&preview.text);
-            context.run(Default::default(), |context| preview.update_texture(context, state, colors, &layout))
+            let mut output = context.run_ui(Default::default(), |ui| preview.update_texture(ui.ctx(), state, colors, &layout));
+            let updated = output.textures_delta.set.contains_key(&preview.texture.as_ref().unwrap().1.id());
+            output.textures_delta.clear();
+            updated
         };
-        let first = update(&mut preview, &state, (7, 0));
+        assert!(update(&mut preview, &state, (7, 0)));
         let id = preview.texture.as_ref().unwrap().1.id();
-        assert!(first.textures_delta.set.iter().any(|(texture, _)| *texture == id));
         let original_key = preview.texture.as_ref().unwrap().0;
         state.set_selected_char('B');
         preview.scale = 2;
-        assert!(!update(&mut preview, &state, (7, 0))
-            .textures_delta
-            .set
-            .iter()
-            .any(|(texture, _)| *texture == id));
+        assert!(!update(&mut preview, &state, (7, 0)));
         let pixel = state.get_glyph_pixels('A')[0][0];
         state.set_pixel('A', 0, 0, !pixel).unwrap();
-        assert!(update(&mut preview, &state, (7, 0))
-            .textures_delta
-            .set
-            .iter()
-            .any(|(texture, _)| *texture == id));
+        assert!(update(&mut preview, &state, (7, 0)));
         let changed_key = preview.texture.as_ref().unwrap().0;
         assert_ne!(changed_key, original_key);
         state.undo().unwrap();
@@ -367,15 +362,17 @@ mod tests {
             state.set_letter_spacing(false);
             let mut preview = FontPreview::default();
             let render = |preview: &mut FontPreview, events| {
-                context.run(
+                let mut output = context.run_ui(
                     egui::RawInput {
                         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
                         events,
                         time: Some(context.input(|input| input.time) + 0.05),
                         ..Default::default()
                     },
-                    |context| preview.show(context, &state, (7, 0), true),
-                )
+                    |ui| preview.show(ui, &state, (7, 0), true),
+                );
+                output.textures_delta.clear();
+                output
             };
             let click = |preview: &mut FontPreview, label: &str| {
                 let output = render(preview, vec![]);

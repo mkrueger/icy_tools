@@ -102,7 +102,8 @@ impl Viewer {
         })
     }
 
-    pub fn show(&mut self, context: &egui::Context) {
+    pub fn show(&mut self, ui: &mut egui::Ui) {
+        let context = &ui.ctx().clone();
         let blocked = self.dialogs.mode.is_some() || self.dialogs.error.is_some() || self.browser.error.is_some();
         if self.revision != self.browser.revision() {
             self.revision = self.browser.revision();
@@ -151,41 +152,41 @@ impl Viewer {
         self.library.save_if_due();
         self.hovered = None;
         if !blocked {
-            let paths: Vec<_> = context.input(|input| input.raw.dropped_files.iter().filter_map(|file| file.path.clone()).collect());
+            let paths: Vec<_> = context.input(|input| input.raw.dropped_files.iter().map(|file| file.path().to_path_buf()).collect());
             if let Some(path) = paths.first() {
                 self.open_path(path.clone(), context);
             }
         }
         let narrow = context.content_rect().width() < 680.0;
-        let style = context.style();
-        egui::TopBottomPanel::top("navigation")
+        let style = context.global_style();
+        egui::Panel::top("navigation")
             .frame(egui::Frame::side_top_panel(&style).inner_margin(egui::Margin::symmetric(8, 6)))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 ui.add_enabled_ui(!blocked, |ui| self.toolbar(ui, narrow));
             });
         let status_fill = style.visuals.panel_fill.lerp_to_gamma(style.visuals.faint_bg_color, 0.45);
-        egui::TopBottomPanel::bottom("status")
+        egui::Panel::bottom("status")
             .frame(
                 egui::Frame::side_top_panel(&style)
                     .fill(status_fill)
                     .inner_margin(egui::Margin::symmetric(10, 3)),
             )
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 ui.add_enabled_ui(!blocked, |ui| self.status(ui, narrow));
             });
         let preview_only = self.shuffle.is_some() || (self.show_preview && (narrow || self.options.view_mode == ViewMode::Tiles));
         if !narrow && !preview_only && self.options.view_mode == ViewMode::List {
-            egui::SidePanel::left(egui::Id::new(("files", self.options.sauce_mode)))
+            egui::Panel::left(egui::IdSalt::new(("files", self.options.sauce_mode)))
                 .resizable(true)
-                .default_width(if self.options.sauce_mode { 906.0 } else { 300.0 })
-                .width_range(200.0..=(context.content_rect().width() - 200.0))
-                .show(context, |ui| {
+                .default_size(if self.options.sauce_mode { 906.0 } else { 300.0 })
+                .size_range(200.0..=(context.content_rect().width() - 200.0))
+                .show(ui, |ui| {
                     ui.add_enabled_ui(!blocked, |ui| self.list(ui));
                 });
         }
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(context.style().visuals.panel_fill))
-            .show(context, |ui| {
+            .frame(egui::Frame::NONE.fill(context.global_style().visuals.panel_fill))
+            .show(ui, |ui| {
                 ui.add_enabled_ui(!blocked, |ui| {
                     let viewing_preview = preview_only || (!narrow && self.options.view_mode == ViewMode::List && self.folder.is_none());
                     if viewing_preview && ui.rect_contains_pointer(ui.max_rect()) && ui.input(|input| input.pointer.any_pressed()) {
@@ -452,7 +453,7 @@ impl Viewer {
                         return ui.add(
                             egui::TextEdit::singleline(&mut self.path_input)
                                 .id(id)
-                                .frame(false)
+                                .frame(egui::Frame::NONE)
                                 .margin(egui::vec2(2.0, 4.0))
                                 .desired_width(f32::INFINITY),
                         );
@@ -562,7 +563,7 @@ impl Viewer {
             ui.add(
                 egui::TextEdit::singleline(&mut self.browser.filter)
                     .id(id)
-                    .frame(false)
+                    .frame(egui::Frame::NONE)
                     .margin(egui::vec2(2.0, 4.0))
                     .hint_text(text("filter-entries-hint-text"))
                     .desired_width(f32::INFINITY),
@@ -783,7 +784,7 @@ impl Viewer {
             return;
         }
         let context = ui.ctx().clone();
-        let response = egui::Area::new("tile-toolbar".into())
+        let response = egui::Area::new(egui::Id::unique("tile-toolbar"))
             .order(egui::Order::Middle)
             .fixed_pos(area.min + egui::vec2(4.0, 4.0))
             .show(&context, |ui| {
@@ -1121,7 +1122,7 @@ impl Viewer {
     }
 
     fn keyboard(&mut self, context: &egui::Context) {
-        let editing = context.wants_keyboard_input();
+        let editing = context.egui_wants_keyboard_input();
         let actions: Vec<_> = COMMANDS
             .iter()
             .copied()
@@ -1345,7 +1346,10 @@ impl Viewer {
             };
             let scroll = &ui.spacing().scroll;
             let bar_width = scroll.bar_width + scroll.bar_inner_margin + scroll.bar_outer_margin;
-            input.raw_scroll_delta != egui::Vec2::ZERO
+            input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::MouseWheel { delta, .. } if *delta != egui::Vec2::ZERO))
                 || input.smooth_scroll_delta != egui::Vec2::ZERO
                 || (input.pointer.primary_pressed()
                     && ((self.preview.screen.max_offset.y > 0.0 && pointer.x >= area.right() - bar_width)
@@ -1459,7 +1463,20 @@ impl Viewer {
                             }
                         })
                         .response;
-                    let wheel = if combo.hovered() { ui.input(|input| input.raw_scroll_delta.y) } else { 0.0 };
+                    let wheel = if combo.hovered() {
+                        ui.input(|input| {
+                            input
+                                .events
+                                .iter()
+                                .filter_map(|event| match event {
+                                    egui::Event::MouseWheel { delta, .. } => Some(delta.y),
+                                    _ => None,
+                                })
+                                .sum::<f32>()
+                        })
+                    } else {
+                        0.0
+                    };
                     combo.on_hover_text(text("egui-baud-emulation"));
                     if wheel != 0.0 {
                         let index = BAUD_RATES.iter().position(|rate| *rate == baud).unwrap_or(0);
@@ -1810,7 +1827,7 @@ fn pill(ui: &mut egui::Ui, on: bool, label: &str, height: f32) -> egui::Response
             .corner_radius(height / 2.0)
             .min_size(egui::vec2(0.0, height));
         let response = ui.add(button);
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), on, label));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), on, label));
         response
     })
     .inner
@@ -1923,8 +1940,8 @@ pub(super) fn format_size(size: u64) -> String {
 }
 
 impl eframe::App for Viewer {
-    fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
-        self.show(context);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.show(ui);
     }
 }
 
@@ -1973,7 +1990,7 @@ mod tests {
         let colour = |value: &str| {
             job.sections
                 .iter()
-                .find(|section| &job.text[section.byte_range.clone()] == value)
+                .find(|section| &job.text[section.byte_range.start.0..section.byte_range.end.0] == value)
                 .map(|section| section.format.color)
         };
         assert_eq!(colour("TITLE"), Some(palette.title));

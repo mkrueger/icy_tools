@@ -729,16 +729,10 @@ impl ImportDialog {
     }
 
     pub fn load(&mut self, context: &egui::Context, path: &Path) {
-        self.load_file(
-            context,
-            egui::DroppedFile {
-                path: Some(path.to_path_buf()),
-                ..Default::default()
-            },
-        );
+        self.load_file(context, super::ai_chat::file_attachment::local_file(path.to_path_buf()));
     }
 
-    fn load_file(&mut self, context: &egui::Context, file: egui::DroppedFile) {
+    fn load_file(&mut self, context: &egui::Context, file: egui::DroppedFileHandle) {
         self.source = None;
         self.source_texture = None;
         self.changed_at = None;
@@ -755,7 +749,7 @@ impl ImportDialog {
             return;
         }
         let files = context.input_mut(|input| std::mem::take(&mut input.raw.dropped_files));
-        if let Some(file) = files.into_iter().find(|file| file.path.is_some() || file.bytes.is_some()) {
+        if let Some(file) = files.into_iter().next() {
             self.load_file(context, file);
         }
     }
@@ -1731,11 +1725,7 @@ mod tests {
         let input = std::env::var("ICY_IMPORT_REFERENCE").expect("path to a local reference picture");
         let output = std::path::PathBuf::from(std::env::var("ICY_IMPORT_OUTPUT").expect("preview output directory"));
         std::fs::create_dir_all(&output).unwrap();
-        let source = image_attachment::read_drop(egui::DroppedFile {
-            path: Some(input.into()),
-            ..Default::default()
-        })
-        .unwrap();
+        let source = image_attachment::read_drop(super::super::ai_chat::file_attachment::local_file(input.into())).unwrap();
         for (name, preset, glyphs) in [
             ("scene-blocks", Preset::Scene, Glyphs::Blocks),
             ("shaded-blocks", Preset::Shaded, Glyphs::Blocks),
@@ -2113,18 +2103,20 @@ mod tests {
             ..Default::default()
         };
         let render = |dialog: &mut ImportDialog, events| {
-            context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 900.0))),
                     events,
                     ..Default::default()
                 },
-                |context| {
-                    egui::CentralPanel::default().show(context, |ui| {
+                |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
                         ui.columns(2, |columns| dialog.source_preview(&mut columns[0], 450.0));
                     });
                 },
-            )
+            );
+            output.textures_delta.clear();
+            output
         };
         let output = render(&mut dialog, vec![]);
         let texture = dialog.source_texture.as_ref().unwrap().id();
@@ -2474,14 +2466,17 @@ mod tests {
     fn image_import_live_preview_waits_for_settings_to_rest_and_discards_outdated_conversions() {
         let context = egui::Context::default();
         let run = |dialog: &mut ImportDialog, time: f64, events: Vec<egui::Event>| {
-            let _ = context.run(
-                egui::RawInput {
-                    time: Some(time),
-                    events,
-                    ..Default::default()
-                },
-                |context| dialog.update_preview(context),
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        time: Some(time),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| dialog.update_preview(ui.ctx()),
+                )
+                .textures_delta
+                .clear();
         };
         let mut dialog = ImportDialog {
             source: Some(source()),
@@ -2523,17 +2518,17 @@ mod tests {
         let mut app = DrawApp::new();
         app.dialog = Some(Dialog::AiImport(Box::default()));
         let size = egui::vec2(1280.0, 900.0);
-        let _ = context.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
-                dropped_files: vec![egui::DroppedFile {
-                    path: Some(path),
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    dropped_files: vec![super::super::ai_chat::file_attachment::local_file(path)],
                     ..Default::default()
-                }],
-                ..Default::default()
-            },
-            |context| app.show(context),
-        );
+                },
+                |ui| app.show(ui),
+            )
+            .textures_delta
+            .clear();
         wait(&mut app, &context, size);
         let Some(Dialog::AiImport(dialog)) = &app.dialog else { panic!("import") };
         assert_eq!(dialog.source.as_ref().map(|source| source.name.as_str()), Some("dropped.png"));

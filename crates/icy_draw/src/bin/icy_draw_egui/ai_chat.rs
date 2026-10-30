@@ -33,7 +33,7 @@ use workspace::Workspace;
 #[path = "ai_connection.rs"]
 mod connection;
 #[path = "ai_attachment.rs"]
-mod file_attachment;
+pub(super) mod file_attachment;
 #[path = "ai_image.rs"]
 pub(super) mod image_attachment;
 #[path = "ai_knowledge.rs"]
@@ -536,7 +536,7 @@ impl Chat {
     pub(super) fn route_file_drop(&mut self, context: &egui::Context, blocked: bool, native_position: Option<Option<egui::Pos2>>) {
         let panel = self
             .visible
-            .then(|| egui::containers::panel::PanelState::load(context, egui::Id::new("ai-chat")))
+            .then(|| egui::containers::panel::PanelState::load(context, context.viewport_id().root_ui_id().with("ai-chat")))
             .flatten();
         let Some(panel) = panel else {
             self.drop_hovered = false;
@@ -553,10 +553,10 @@ impl Chat {
             self.drop_hovered = false;
         } else if hovering {
             if let Some(position) = position {
-                self.drop_hovered = panel.rect.contains(position) && !blocked;
+                self.drop_hovered = panel.outer_rect.contains(position) && !blocked;
             }
         }
-        let target = native_position != Some(None) && position.map_or(self.drop_hovered, |position| panel.rect.contains(position));
+        let target = native_position != Some(None) && position.map_or(self.drop_hovered, |position| panel.outer_rect.contains(position));
         if dropping && target {
             let files = context.input_mut(|input| std::mem::take(&mut input.raw.dropped_files));
             self.drop_hovered = false;
@@ -566,7 +566,7 @@ impl Chat {
         }
     }
 
-    fn import_references(&mut self, context: &egui::Context, files: Vec<egui::DroppedFile>, blocked: bool) {
+    fn import_references(&mut self, context: &egui::Context, files: Vec<egui::DroppedFileHandle>, blocked: bool) {
         if files.is_empty() {
             return;
         }
@@ -1328,7 +1328,7 @@ impl Chat {
                     ui.add(
                         egui::TextEdit::multiline(&mut self.input)
                             .id(prompt)
-                            .frame(false)
+                            .frame(egui::Frame::NONE)
                             .margin(egui::Margin::ZERO)
                             .desired_rows(1)
                             .desired_width(f32::INFINITY)
@@ -1389,10 +1389,7 @@ impl Chat {
                 .pick_files()
                 .unwrap_or_default()
                 .into_iter()
-                .map(|path| egui::DroppedFile {
-                    path: Some(path),
-                    ..Default::default()
-                })
+                .map(file_attachment::local_file)
                 .collect();
             self.import_references(ui.ctx(), files, false);
         }
@@ -1756,7 +1753,8 @@ fn inline(ui: &egui::Ui, line: &str) -> egui::text::LayoutJob {
 }
 
 impl DrawApp {
-    pub(super) fn ai_chat_panel(&mut self, context: &egui::Context, blocked: bool) {
+    pub(super) fn ai_chat_panel(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        let context = &ui.ctx().clone();
         self.ai_chat.poll();
         if !blocked && std::mem::take(&mut self.ai_chat.auto_apply_font) {
             self.accept_ai_proposal();
@@ -1776,11 +1774,11 @@ impl DrawApp {
         let can_attach = !self.show_start;
         let mut attach = false;
         let Self { ai_chat: chat, icons, .. } = self;
-        egui::SidePanel::right("ai-chat")
-            .default_width(380.0)
-            .width_range(280.0..=760.0)
+        egui::Panel::right("ai-chat")
+            .default_size(380.0)
+            .size_range(280.0..=760.0)
             .resizable(true)
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if blocked {
                     ui.disable();
                 }
@@ -1790,24 +1788,24 @@ impl DrawApp {
                     chat.settings_view(ui, context);
                     return;
                 }
-                egui::TopBottomPanel::bottom("ai-chat-compose")
+                egui::Panel::bottom("ai-chat-compose")
                     .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 6)))
                     .show_separator_line(false)
                     .show_inside(ui, |ui| attach = chat.composer(ui, icons, can_attach));
                 chat.history(ui, icons);
             });
         if self.ai_chat.drop_hovered && !blocked {
-            if let Some(panel) = egui::containers::panel::PanelState::load(context, egui::Id::new("ai-chat")) {
+            if let Some(panel) = egui::containers::panel::PanelState::load(context, context.viewport_id().root_ui_id().with("ai-chat")) {
                 let painter = context.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("ai-image-drop")));
-                painter.rect_filled(panel.rect, 0, Color32::from_rgba_unmultiplied(32, 100, 160, 80));
+                painter.rect_filled(panel.outer_rect, 0, Color32::from_rgba_unmultiplied(32, 100, 160, 80));
                 painter.rect_stroke(
-                    panel.rect.shrink(2.0),
+                    panel.outer_rect.shrink(2.0),
                     4,
                     egui::Stroke::new(2.0_f32, appearance::PRIMARY),
                     egui::StrokeKind::Inside,
                 );
                 painter.text(
-                    panel.rect.center(),
+                    panel.outer_rect.center(),
                     egui::Align2::CENTER_CENTER,
                     fl!("ai-chat-image-drop"),
                     egui::FontId::proportional(16.0),
@@ -2356,18 +2354,27 @@ mod tests {
         assert_eq!(chat.entries[1].text, "Use blue blocks.");
     }
 
-    fn drop_frame(context: &egui::Context, app: &mut DrawApp, position: Option<egui::Pos2>, files: Vec<egui::DroppedFile>, hovered: Vec<egui::HoveredFile>) {
-        let _ = context.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
-                events: vec![position.map_or(egui::Event::PointerGone, egui::Event::PointerMoved)],
-                dropped_files: files,
-                hovered_files: hovered,
-                time: Some(context.input(|input| input.time) + 0.05),
-                ..Default::default()
-            },
-            |context| app.show(context),
-        );
+    fn drop_frame(
+        context: &egui::Context,
+        app: &mut DrawApp,
+        position: Option<egui::Pos2>,
+        files: Vec<egui::DroppedFileHandle>,
+        hovered: Vec<egui::HoveredFile>,
+    ) {
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events: vec![position.map_or(egui::Event::PointerGone, egui::Event::PointerMoved)],
+                    dropped_files: files,
+                    hovered_files: hovered,
+                    time: Some(context.input(|input| input.time) + 0.05),
+                    ..Default::default()
+                },
+                |ui| app.show(ui),
+            )
+            .textures_delta
+            .clear();
     }
 
     fn wait_for_references(chat: &mut Chat) {
@@ -2395,56 +2402,66 @@ mod tests {
         let context = egui::Context::default();
         let mut app = image_chat_app();
         frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
-        let panel = egui::containers::panel::PanelState::load(&context, egui::Id::new("ai-chat")).unwrap().rect;
+        let panel = egui::containers::panel::PanelState::load(&context, context.viewport_id().root_ui_id().with("ai-chat"))
+            .unwrap()
+            .outer_rect;
         let outside = panel.min - egui::vec2(30.0, 30.0);
         for stale in [Some(outside), None] {
-            let _ = context.run(
-                egui::RawInput {
-                    events: vec![stale.map_or(egui::Event::PointerGone, egui::Event::PointerMoved)],
-                    hovered_files: vec![egui::HoveredFile::default()],
-                    ..Default::default()
-                },
-                |context| {
-                    app.ai_chat.route_file_drop(context, false, Some(Some(panel.center())));
-                    assert!(app.ai_chat.drop_hovered);
-                    app.ai_chat.route_file_drop(context, false, Some(Some(outside)));
-                    assert!(!app.ai_chat.drop_hovered);
-                },
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        events: vec![stale.map_or(egui::Event::PointerGone, egui::Event::PointerMoved)],
+                        hovered_files: vec![egui::HoveredFile::default()],
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let context = ui.ctx();
+                        app.ai_chat.route_file_drop(context, false, Some(Some(panel.center())));
+                        assert!(app.ai_chat.drop_hovered);
+                        app.ai_chat.route_file_drop(context, false, Some(Some(outside)));
+                        assert!(!app.ai_chat.drop_hovered);
+                    },
+                )
+                .textures_delta
+                .clear();
         }
         // A stale pointer over chat must not consume a native drop outside chat.
-        let file = egui::DroppedFile {
-            name: "reference.txt".into(),
-            bytes: Some(b"reference".to_vec().into()),
-            ..Default::default()
-        };
-        let _ = context.run(
-            egui::RawInput {
-                events: vec![egui::Event::PointerMoved(panel.center())],
-                dropped_files: vec![file.clone()],
-                ..Default::default()
-            },
-            |context| {
-                app.ai_chat.route_file_drop(context, false, Some(Some(outside)));
-                assert_eq!(context.input(|input| input.raw.dropped_files.len()), 1);
-                assert!(app.ai_chat.reference_import.is_none());
-                app.ai_chat.drop_hovered = true;
-                app.ai_chat.route_file_drop(context, false, Some(None));
-                assert!(!app.ai_chat.drop_hovered);
-                assert_eq!(context.input(|input| input.raw.dropped_files.len()), 1);
-            },
-        );
-        let _ = context.run(
-            egui::RawInput {
-                events: vec![egui::Event::PointerGone],
-                dropped_files: vec![file],
-                ..Default::default()
-            },
-            |context| {
-                app.ai_chat.route_file_drop(context, false, Some(Some(panel.center())));
-                assert!(context.input(|input| input.raw.dropped_files.is_empty()));
-            },
-        );
+        let file = file_attachment::memory_file("reference.txt", b"reference".to_vec());
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    events: vec![egui::Event::PointerMoved(panel.center())],
+                    dropped_files: vec![file.clone()],
+                    ..Default::default()
+                },
+                |ui| {
+                    let context = ui.ctx();
+                    app.ai_chat.route_file_drop(context, false, Some(Some(outside)));
+                    assert_eq!(context.input(|input| input.raw.dropped_files.len()), 1);
+                    assert!(app.ai_chat.reference_import.is_none());
+                    app.ai_chat.drop_hovered = true;
+                    app.ai_chat.route_file_drop(context, false, Some(None));
+                    assert!(!app.ai_chat.drop_hovered);
+                    assert_eq!(context.input(|input| input.raw.dropped_files.len()), 1);
+                },
+            )
+            .textures_delta
+            .clear();
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    events: vec![egui::Event::PointerGone],
+                    dropped_files: vec![file],
+                    ..Default::default()
+                },
+                |ui| {
+                    let context = ui.ctx();
+                    app.ai_chat.route_file_drop(context, false, Some(Some(panel.center())));
+                    assert!(context.input(|input| input.raw.dropped_files.is_empty()));
+                },
+            )
+            .textures_delta
+            .clear();
         wait_for_references(&mut app.ai_chat);
         assert_eq!(app.ai_chat.files.as_ref().unwrap().files[0].content, "reference");
         assert!(app.ai_chat.job.is_none());
@@ -2463,11 +2480,7 @@ mod tests {
         assert_eq!(chat.error.as_deref(), Some("previous error"));
         assert!(chat.image.is_some());
         assert!(chat.reference_import.is_none());
-        let file = egui::DroppedFile {
-            name: "menu.toml".into(),
-            bytes: Some(b"title = 'Icy Board'".to_vec().into()),
-            ..Default::default()
-        };
+        let file = file_attachment::memory_file("menu.toml", b"title = 'Icy Board'".to_vec());
         chat.import_references(&context, vec![file.clone()], true);
         assert_eq!(chat.error, Some(fl!("ai-chat-image-blocked")));
         assert!(chat.reference_import.is_none());
@@ -2496,15 +2509,14 @@ mod tests {
         frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
         app.native_drop_error = Some("X11 connection unavailable".into());
         let original = app.document.screen.clone();
-        let panel = egui::containers::panel::PanelState::load(&context, egui::Id::new("ai-chat")).unwrap().rect;
+        let panel = egui::containers::panel::PanelState::load(&context, context.viewport_id().root_ui_id().with("ai-chat"))
+            .unwrap()
+            .outer_rect;
         drop_frame(
             &context,
             &mut app,
             Some(panel.center()),
-            vec![egui::DroppedFile {
-                path: Some(std::path::PathBuf::from("reference.png")),
-                ..Default::default()
-            }],
+            vec![file_attachment::local_file(std::path::PathBuf::from("reference.png"))],
             vec![],
         );
         assert!(app.ai_chat.error.as_ref().unwrap().contains("X11 connection unavailable"));
@@ -2636,19 +2648,12 @@ mod tests {
         let mut app = image_chat_app();
         app.ai_chat.input = "Use blue shading".into();
         frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
-        let panel = egui::containers::panel::PanelState::load(&context, egui::Id::new("ai-chat")).unwrap().rect;
+        let panel = egui::containers::panel::PanelState::load(&context, context.viewport_id().root_ui_id().with("ai-chat"))
+            .unwrap()
+            .outer_rect;
         let original = app.document.screen.clone();
         let before = app.ai_editor_context();
-        drop_frame(
-            &context,
-            &mut app,
-            Some(panel.center()),
-            vec![egui::DroppedFile {
-                path: Some(path),
-                ..Default::default()
-            }],
-            vec![],
-        );
+        drop_frame(&context, &mut app, Some(panel.center()), vec![file_attachment::local_file(path)], vec![]);
         assert!(std::sync::Arc::ptr_eq(&original, &app.document.screen));
         assert_eq!(app.ai_editor_context(), before);
         assert!(app.ai_chat.job.is_none());
@@ -2672,7 +2677,9 @@ mod tests {
         app.ai_chat.input = "Use these references".into();
         app.ai_chat.attachment = Some("editor snapshot".into());
         frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
-        let panel = egui::containers::panel::PanelState::load(&context, egui::Id::new("ai-chat")).unwrap().rect;
+        let panel = egui::containers::panel::PanelState::load(&context, context.viewport_id().root_ui_id().with("ai-chat"))
+            .unwrap()
+            .outer_rect;
         let original = app.document.screen.clone();
         let before = app.ai_editor_context();
         let image = image_attachment::test_image();
@@ -2682,20 +2689,9 @@ mod tests {
             &mut app,
             Some(panel.center()),
             vec![
-                egui::DroppedFile {
-                    path: Some(path.clone()),
-                    ..Default::default()
-                },
-                egui::DroppedFile {
-                    name: "config.toml".into(),
-                    bytes: Some(b"color = 'blue'".to_vec().into()),
-                    ..Default::default()
-                },
-                egui::DroppedFile {
-                    name: image.name.clone(),
-                    bytes: Some(bytes.into()),
-                    ..Default::default()
-                },
+                file_attachment::local_file(path.clone()),
+                file_attachment::memory_file("config.toml", b"color = 'blue'".to_vec()),
+                file_attachment::memory_file(image.name.clone(), bytes),
             ],
             vec![],
         );
@@ -2751,16 +2747,8 @@ mod tests {
             &mut app,
             Some(panel.center()),
             vec![
-                egui::DroppedFile {
-                    name: "new.txt".into(),
-                    bytes: Some(b"new".to_vec().into()),
-                    ..Default::default()
-                },
-                egui::DroppedFile {
-                    name: "bad.rs".into(),
-                    bytes: Some(vec![0xff].into()),
-                    ..Default::default()
-                },
+                file_attachment::memory_file("new.txt", b"new".to_vec()),
+                file_attachment::memory_file("bad.rs", vec![0xff]),
             ],
             vec![],
         );
@@ -2802,11 +2790,7 @@ mod tests {
         .await;
         let mut chat = Chat::new(settings);
         chat.reference_import = Some(file_attachment::Import::start(
-            vec![egui::DroppedFile {
-                name: "/private/rules.lua".into(),
-                bytes: Some(b"print('reference')".to_vec().into()),
-                ..Default::default()
-            }],
+            vec![file_attachment::memory_file("/private/rules.lua", b"print('reference')".to_vec())],
             None,
             egui::Context::default(),
         ));
@@ -2866,15 +2850,14 @@ mod tests {
         let context = egui::Context::default();
         let mut app = image_chat_app();
         frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
-        let panel = egui::containers::panel::PanelState::load(&context, egui::Id::new("ai-chat")).unwrap().rect;
+        let panel = egui::containers::panel::PanelState::load(&context, context.viewport_id().root_ui_id().with("ai-chat"))
+            .unwrap()
+            .outer_rect;
         drop_frame(
             &context,
             &mut app,
             Some(egui::pos2(panel.left() - 20.0, panel.center().y)),
-            vec![egui::DroppedFile {
-                path: Some(path.clone()),
-                ..Default::default()
-            }],
+            vec![file_attachment::local_file(path.clone())],
             vec![],
         );
         assert_eq!(app.document.path.as_ref(), Some(&path));
@@ -2887,7 +2870,9 @@ mod tests {
         let context = egui::Context::default();
         let mut app = image_chat_app();
         frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
-        let panel = egui::containers::panel::PanelState::load(&context, egui::Id::new("ai-chat")).unwrap().rect;
+        let panel = egui::containers::panel::PanelState::load(&context, context.viewport_id().root_ui_id().with("ai-chat"))
+            .unwrap()
+            .outer_rect;
         drop_frame(
             &context,
             &mut app,
@@ -2901,17 +2886,7 @@ mod tests {
         assert!(app.ai_chat.drop_hovered);
         let image = image_attachment::test_image();
         let bytes = base64::engine::general_purpose::STANDARD.decode(&*image.data).unwrap();
-        drop_frame(
-            &context,
-            &mut app,
-            None,
-            vec![egui::DroppedFile {
-                name: image.name.clone(),
-                bytes: Some(bytes.into()),
-                ..Default::default()
-            }],
-            vec![],
-        );
+        drop_frame(&context, &mut app, None, vec![file_attachment::memory_file(image.name.clone(), bytes)], vec![]);
         wait_for_references(&mut app.ai_chat);
         assert_eq!(app.ai_chat.image, Some(image));
         assert!(!app.ai_chat.drop_hovered);
@@ -2922,14 +2897,12 @@ mod tests {
         let context = egui::Context::default();
         let mut app = image_chat_app();
         frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
-        let panel = egui::containers::panel::PanelState::load(&context, egui::Id::new("ai-chat")).unwrap().rect;
+        let panel = egui::containers::panel::PanelState::load(&context, context.viewport_id().root_ui_id().with("ai-chat"))
+            .unwrap()
+            .outer_rect;
         let before = app.ai_editor_context();
         app.ai_chat.input = "keep this prompt".into();
-        let invalid = egui::DroppedFile {
-            name: "bad.png".into(),
-            bytes: Some(b"invalid picture".to_vec().into()),
-            ..Default::default()
-        };
+        let invalid = file_attachment::memory_file("bad.png", b"invalid picture".to_vec());
         drop_frame(&context, &mut app, Some(panel.center()), vec![invalid.clone()], vec![]);
         wait_for_references(&mut app.ai_chat);
         assert!(app.ai_chat.error.is_some());
@@ -3013,7 +2986,7 @@ mod tests {
             assert!(app.ai_chat.attachment.is_none());
             frame(&context, &mut app, egui::vec2(1280.0, 820.0), vec![]);
             assert!(
-                egui::containers::panel::PanelState::load(&context, egui::Id::new("ai-chat")).is_some(),
+                egui::containers::panel::PanelState::load(&context, context.viewport_id().root_ui_id().with("ai-chat")).is_some(),
                 "{label}"
             );
         }
@@ -3099,18 +3072,19 @@ mod tests {
                 ]
             });
             let mut rect = egui::Rect::NOTHING;
-            let output = context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 400.0))),
                     events,
                     ..Default::default()
                 },
-                |context| {
-                    egui::CentralPanel::default().show(context, |ui| {
+                |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
                         rect = chat.model_picker(ui, COMPOSER_MODEL_WIDTH).rect;
                     });
                 },
             );
+            output.textures_delta.clear();
             (output, rect)
         }
         fn text_rect(output: &egui::FullOutput, label: &str) -> egui::Rect {
@@ -3170,9 +3144,9 @@ mod tests {
         for _ in 0..3 {
             frame(&context, &mut app, egui::vec2(640.0, 480.0), vec![]);
         }
-        let panel = egui::containers::panel::PanelState::load(&context, egui::Id::new("ai-chat")).unwrap();
-        assert!(panel.rect.bottom() <= 480.0);
-        assert!(panel.rect.width() <= 640.0);
+        let panel = egui::containers::panel::PanelState::load(&context, context.viewport_id().root_ui_id().with("ai-chat")).unwrap();
+        assert!(panel.outer_rect.bottom() <= 480.0);
+        assert!(panel.outer_rect.width() <= 640.0);
     }
 
     #[test]
@@ -3304,17 +3278,19 @@ mod tests {
             chat.input = input.into();
             let mut output = None;
             for _ in 0..2 {
-                output = Some(context.run(
+                let mut frame_output = context.run_ui(
                     egui::RawInput {
                         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(600.0, 400.0))),
                         ..Default::default()
                     },
-                    |context| {
-                        egui::CentralPanel::default().show(context, |ui| {
+                    |ui| {
+                        egui::CentralPanel::default_margins().show(ui, |ui| {
                             chat.composer(ui, &mut icons, true);
                         });
                     },
-                ));
+                );
+                frame_output.textures_delta.clear();
+                output = Some(frame_output);
             }
             let mut frames = Vec::new();
             let mut texts = Vec::new();
@@ -3369,7 +3345,10 @@ mod tests {
         app.ai_chat.handle(Ok(Response::Proposal("Full TDF font".into(), Box::new(workspace.clone()))));
         assert!(app.ai_chat.proposal.as_ref().unwrap().preview.is_none());
         app.ai_chat.proposal.as_mut().unwrap().preview_error = Some("Preview unavailable".into());
-        app.ai_chat_panel(&egui::Context::default(), false);
+        egui::Context::default()
+            .run_ui(Default::default(), |ui| app.ai_chat_panel(ui, false))
+            .textures_delta
+            .clear();
         assert!(app.ai_chat.proposal.is_none());
         assert!(app.ai_chat.error.is_none(), "{:?}", app.ai_chat.error);
         assert_eq!(app.ai_chat.entries.last().unwrap().text, fl!("ai-chat-font-applied", count = 94));
@@ -3421,16 +3400,16 @@ mod tests {
         app.change_charfont(|state| state.select_char('B'));
         assert!(app.ai_proposal_fits(app.ai_chat.proposal.as_ref().unwrap()));
         let context = egui::Context::default();
-        app.ai_chat_panel(&context, true);
+        context.run_ui(Default::default(), |ui| app.ai_chat_panel(ui, true)).textures_delta.clear();
         assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_none());
         assert!(app.ai_chat.auto_apply_font);
-        app.ai_chat_panel(&context, false);
+        context.run_ui(Default::default(), |ui| app.ai_chat_panel(ui, false)).textures_delta.clear();
         assert!(app.ai_chat.error.is_none());
         assert!(app.ai_chat.proposal.is_none());
         assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_some());
         app.undo(false);
         assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_none());
-        app.ai_chat_panel(&context, false);
+        context.run_ui(Default::default(), |ui| app.ai_chat_panel(ui, false)).textures_delta.clear();
         assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_none(), "must not reapply after undo");
         app.undo(true);
         assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_some());
@@ -3453,7 +3432,10 @@ mod tests {
                 2 => app.document.type_text("User edit").unwrap(),
                 _ => app.show_start = true,
             }
-            app.ai_chat_panel(&egui::Context::default(), false);
+            egui::Context::default()
+                .run_ui(Default::default(), |ui| app.ai_chat_panel(ui, false))
+                .textures_delta
+                .clear();
             assert!(app.ai_chat.error.is_some(), "target conflict must be reported: {case}");
             assert!(!app.ai_chat.auto_apply_font);
             assert!(app.charfont.as_ref().unwrap().state.fonts().iter().all(|font| font.glyph('B').is_none()));
@@ -3471,7 +3453,10 @@ mod tests {
         app.create(NewKind::TheDraw, Size::new(80, 25));
         propose_tdf_glyph(&mut app);
         app.ai_chat.clear();
-        app.ai_chat_panel(&egui::Context::default(), false);
+        egui::Context::default()
+            .run_ui(Default::default(), |ui| app.ai_chat_panel(ui, false))
+            .textures_delta
+            .clear();
         assert!(app.charfont.as_ref().unwrap().state.get_glyph('B').is_none());
         assert!(app.ai_chat.entries.is_empty());
     }
@@ -3517,14 +3502,14 @@ mod tests {
                     },
                 ]
             });
-            let output = context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 900.0))),
                     events,
                     ..Default::default()
                 },
-                |context| {
-                    egui::CentralPanel::default().show(context, |ui| {
+                |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
                         if chips {
                             chat.knowledge_chips(ui);
                         } else {
@@ -3533,6 +3518,7 @@ mod tests {
                     });
                 },
             );
+            output.textures_delta.clear();
             output.shapes.into_iter().map(|clipped| clipped.shape).collect()
         }
         let context = egui::Context::default();
@@ -3582,18 +3568,21 @@ mod tests {
             vec![],
             vec![egui::Event::Paste("Use blue.\nKeep hotkeys white.".into())],
         ] {
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))),
-                    events,
-                    ..Default::default()
-                },
-                |context| {
-                    egui::CentralPanel::default().show(context, |ui| {
-                        chat.knowledge_settings(ui);
-                    });
-                },
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        egui::CentralPanel::default_margins().show(ui, |ui| {
+                            chat.knowledge_settings(ui);
+                        });
+                    },
+                )
+                .textures_delta
+                .clear();
             context.memory_mut(|memory| memory.request_focus(egui::Id::new("ai-instructions")));
         }
         assert_eq!(chat.connection.knowledge.custom_instructions, "Use blue.\nKeep hotkeys white.");
@@ -3691,13 +3680,16 @@ mod tests {
     #[test]
     fn markdown_inline_formatting_drops_markers() {
         let context = egui::Context::default();
-        let _ = context.run(Default::default(), |context| {
-            egui::CentralPanel::default().show(context, |ui| {
-                let job = inline(ui, "Use **bold** and `code` here");
-                assert_eq!(job.text, "Use bold and code here");
-                assert_eq!(job.sections.len(), 5);
-            });
-        });
+        let _ = context
+            .run_ui(Default::default(), |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| {
+                    let job = inline(ui, "Use **bold** and `code` here");
+                    assert_eq!(job.text, "Use bold and code here");
+                    assert_eq!(job.sections.len(), 5);
+                });
+            })
+            .textures_delta
+            .clear();
     }
 
     #[test]
@@ -4203,11 +4195,7 @@ mod tests {
         let mut chat = Chat::new(settings);
         chat.import_references(
             &egui::Context::default(),
-            vec![egui::DroppedFile {
-                name: "/private/menu.rip".into(),
-                bytes: Some(b"!|c0B|L00002S2S\r\n".to_vec().into()),
-                ..Default::default()
-            }],
+            vec![file_attachment::memory_file("/private/menu.rip", b"!|c0B|L00002S2S\r\n".to_vec())],
             false,
         );
         wait_for_references(&mut chat);
@@ -4350,7 +4338,10 @@ mod tests {
         app.ai_chat.handle(Ok(Response::Proposal("Full font".into(), Box::new(workspace))));
         assert_eq!(app.ai_chat.proposal.as_ref().unwrap().changes, original.len());
         assert_eq!(app.font_editor.as_ref().unwrap().state.get_all_glyph_data(), &original);
-        app.ai_chat_panel(&egui::Context::default(), false);
+        egui::Context::default()
+            .run_ui(Default::default(), |ui| app.ai_chat_panel(ui, false))
+            .textures_delta
+            .clear();
         assert!(app.ai_chat.proposal.is_none());
         let editor = app.font_editor.as_mut().unwrap();
         assert_eq!(editor.state.get_all_glyph_data(), &expected);
@@ -4369,7 +4360,10 @@ mod tests {
             .set_pixel(last, 0, 0, !original[original.len() - 1][0][0])
             .unwrap();
         let before_accept = app.font_editor.as_ref().unwrap().state.get_all_glyph_data().clone();
-        app.ai_chat_panel(&egui::Context::default(), false);
+        egui::Context::default()
+            .run_ui(Default::default(), |ui| app.ai_chat_panel(ui, false))
+            .textures_delta
+            .clear();
         assert!(app.ai_chat.proposal.is_some());
         assert!(app.ai_chat.error.is_some());
         assert!(!app.ai_chat.auto_apply_font, "failed application must not retry every frame");

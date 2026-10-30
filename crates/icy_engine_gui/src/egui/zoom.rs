@@ -20,7 +20,7 @@ pub fn mouse_wheel(ui: &mut egui::Ui, enabled: bool, current_zoom: f32, use_inte
                 .events
                 .iter()
                 .filter_map(|event| match event {
-                    egui::Event::MouseWheel { unit, delta, modifiers } if modifiers.command => Some((*unit, delta.x + delta.y)),
+                    egui::Event::MouseWheel { unit, delta, modifiers, .. } if modifiers.command => Some((*unit, delta.x + delta.y)),
                     _ => None,
                 })
                 .fold((0, 0.0), |(steps, smooth), (unit, delta)| {
@@ -31,7 +31,7 @@ pub fn mouse_wheel(ui: &mut egui::Ui, enabled: bool, current_zoom: f32, use_inte
                     }
                 })
         });
-        let id = ui.id().with("icy-wheel-zoom");
+        let id = ui.scope_id().with("icy-wheel-zoom");
         let mut accumulated = ui.data(|data| data.get_temp::<f32>(id)).unwrap_or_default() + smooth;
         let smooth_steps = (accumulated / INTEGER_TRACKPAD_THRESHOLD).trunc() as i32;
         accumulated -= smooth_steps as f32 * INTEGER_TRACKPAD_THRESHOLD;
@@ -43,7 +43,6 @@ pub fn mouse_wheel(ui: &mut egui::Ui, enabled: bool, current_zoom: f32, use_inte
     if zoom.is_some() {
         ui.input_mut(|input| {
             input.smooth_scroll_delta = egui::Vec2::ZERO;
-            input.raw_scroll_delta = egui::Vec2::ZERO;
         });
     }
     zoom.map(ScalingMode::Manual)
@@ -103,7 +102,7 @@ mod tests {
         let context = egui::Context::default();
         let frame = |delta| {
             let mut result = None;
-            let _ = context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 300.0))),
                     events: vec![
@@ -111,6 +110,8 @@ mod tests {
                         egui::Event::MouseWheel {
                             unit: egui::MouseWheelUnit::Point,
                             delta: egui::vec2(0.0, delta),
+                            phase: egui::TouchPhase::Move,
+                            source: egui::MouseWheelSource::Unknown,
                             modifiers: egui::Modifiers {
                                 command: true,
                                 ctrl: true,
@@ -121,11 +122,12 @@ mod tests {
                     ..Default::default()
                 },
                 |context| {
-                    egui::CentralPanel::default().show(context, |ui| {
+                    egui::CentralPanel::default_margins().show(context, |ui| {
                         result = mouse_wheel(ui, true, 1.0, true, 0.5..=4.0);
                     });
                 },
             );
+            output.textures_delta.clear();
             result
         };
 
@@ -136,19 +138,16 @@ mod tests {
     #[test]
     fn command_wheel_over_ui_changes_zoom_and_consumes_scroll() {
         let context = egui::Context::default();
-        let _ = context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 300.0))),
-                modifiers: egui::Modifiers {
-                    command: true,
-                    ctrl: true,
-                    ..Default::default()
-                },
                 events: vec![
                     egui::Event::PointerMoved(egui::pos2(100.0, 100.0)),
                     egui::Event::MouseWheel {
                         unit: egui::MouseWheelUnit::Point,
                         delta: egui::vec2(0.0, 100.0),
+                        phase: egui::TouchPhase::Move,
+                        source: egui::MouseWheelSource::Unknown,
                         modifiers: egui::Modifiers {
                             command: true,
                             ctrl: true,
@@ -159,13 +158,13 @@ mod tests {
                 ..Default::default()
             },
             |context| {
-                egui::CentralPanel::default().show(context, |ui| {
+                egui::CentralPanel::default_margins().show(context, |ui| {
                     let mode = mouse_wheel(ui, true, 1.0, false, 0.5..=4.0);
                     assert!(matches!(mode, Some(crate::ScalingMode::Manual(zoom)) if zoom > 1.0));
                     assert_eq!(ui.input(|input| input.smooth_scroll_delta), egui::Vec2::ZERO);
-                    assert_eq!(ui.input(|input| input.raw_scroll_delta), egui::Vec2::ZERO);
                 });
             },
         );
+        output.textures_delta.clear();
     }
 }

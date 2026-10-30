@@ -51,18 +51,16 @@ impl ReferenceImage {
     }
 }
 
-pub(in crate::app) fn read_drop(file: egui::DroppedFile) -> Result<ReferenceImage, String> {
+pub(in crate::app) fn read_drop(file: egui::DroppedFileHandle) -> Result<ReferenceImage, String> {
     let name = file
-        .path
-        .as_ref()
-        .and_then(|path| path.file_name())
+        .path()
+        .file_name()
         .map(|name| name.to_string_lossy().into_owned())
-        .or_else(|| std::path::Path::new(&file.name).file_name().map(|name| name.to_string_lossy().into_owned()))
         .unwrap_or_else(|| "reference.png".into());
-    if let Some(bytes) = file.bytes {
-        return prepare(&name, &bytes);
+    if !file.path().is_absolute() {
+        return prepare(&name, &file.bytes()?);
     }
-    let path = file.path.ok_or("Dropped picture has neither local file data nor a local path.")?;
+    let path = file.path();
     if !std::fs::metadata(&path).map_err(|error| error.to_string())?.is_file() {
         return Err("Drop a regular image file, not a directory.".into());
     }
@@ -187,21 +185,12 @@ mod tests {
 
     #[test]
     fn supports_memory_drops_and_does_not_keep_local_directories() {
-        let image = read_drop(egui::DroppedFile {
-            name: "/private/folder/example.png".into(),
-            bytes: Some(picture(20, 10).into()),
-            ..Default::default()
-        })
-        .unwrap();
+        let image = read_drop(super::super::file_attachment::memory_file("/private/folder/example.png", picture(20, 10))).unwrap();
         assert_eq!(image.name, "example.png");
         assert!(!image.note().contains("/private"));
         assert!(image.data_url().starts_with("data:image/png;base64,"));
-        assert!(read_drop(egui::DroppedFile::default()).is_err());
+        assert!(read_drop(super::super::file_attachment::memory_file("", Vec::new())).is_err());
         let directory = tempfile::tempdir().unwrap();
-        assert!(read_drop(egui::DroppedFile {
-            path: Some(directory.path().to_owned()),
-            ..Default::default()
-        })
-        .is_err());
+        assert!(read_drop(super::super::file_attachment::local_file(directory.path().to_owned())).is_err());
     }
 }

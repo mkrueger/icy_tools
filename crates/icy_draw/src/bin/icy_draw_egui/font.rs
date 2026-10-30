@@ -568,55 +568,56 @@ impl FontEditor {
 
     /// Shows the editor as the window's editing mode: tool rail, tool bar, glyph editor with the
     /// character set, tile preview and status bar, like the classic Icy Draw bitmap font editor.
-    pub fn show(&mut self, context: &egui::Context, blocked: bool, layout: Layout) -> Option<Action> {
+    pub fn show(&mut self, ui: &mut egui::Ui, blocked: bool, layout: Layout) -> Option<Action> {
+        let context = &ui.ctx().clone();
         let mut action = None;
         let interactive = !blocked && !self.confirm_close;
         if interactive {
             self.handle_events(context);
         }
-        let panel_fill = context.style().visuals.panel_fill;
-        egui::TopBottomPanel::top("font-toolbar")
-            .exact_height(layout.toolbar_height)
+        let panel_fill = context.global_style().visuals.panel_fill;
+        egui::Panel::top("font-toolbar")
+            .exact_size(layout.toolbar_height)
             .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if !interactive {
                     ui.disable();
                 }
                 action = self.toolbar(ui).or(action.take());
             });
-        egui::TopBottomPanel::bottom("font-status")
-            .exact_height(layout.status_height)
+        egui::Panel::bottom("font-status")
+            .exact_size(layout.status_height)
             .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if !interactive {
                     ui.disable();
                 }
                 self.status_bar(ui);
             });
-        egui::SidePanel::left("font-tools")
-            .exact_width(layout.rail_width)
+        egui::Panel::left("font-tools")
+            .exact_size(layout.rail_width)
             .resizable(false)
             .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if !interactive {
                     ui.disable();
                 }
                 self.tool_rail(ui);
             });
         if context.content_rect().width() >= 760.0 {
-            egui::SidePanel::right("font-tiles")
-                .exact_width(200.0)
+            egui::Panel::right("font-tiles")
+                .exact_size(200.0)
                 .resizable(false)
                 .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::symmetric(12, 8)))
-                .show(context, |ui| self.tile_view(ui));
+                .show(ui, |ui| self.tile_view(ui));
         }
-        self.live_preview.show(context, &self.state, self.colors, interactive);
-        let well = if context.style().visuals.dark_mode {
+        self.live_preview.show(ui, &self.state, self.colors, interactive);
+        let well = if context.global_style().visuals.dark_mode {
             Color32::from_gray(22)
         } else {
             Color32::from_gray(212)
         };
-        egui::CentralPanel::default().frame(egui::Frame::new().fill(well)).show(context, |ui| {
+        egui::CentralPanel::default().frame(egui::Frame::new().fill(well)).show(ui, |ui| {
             if !interactive {
                 ui.disable();
             }
@@ -1496,8 +1497,8 @@ mod tests {
             editor.state.set_pixel(ch, 7, 0, true).unwrap();
         }
         let render = |editor: &mut FontEditor| {
-            context.run(Default::default(), |context| {
-                egui::CentralPanel::default().show(context, |ui| editor.tile_view(ui));
+            context.run_ui(Default::default(), |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| editor.tile_view(ui));
             })
         };
         for (spacing, character, columns) in [(false, 'A', 8), (true, 'A', 9), (true, char::from(0xC4), 9), (false, char::from(0xC4), 8)] {
@@ -1505,9 +1506,9 @@ mod tests {
             if editor.state.use_letter_spacing() != spacing {
                 editor.toggle_letter_spacing();
             }
-            let output = render(&mut editor);
+            let mut output = render(&mut editor);
             let id = editor.textures.tiles.as_ref().unwrap().1.id();
-            let delta = &output.textures_delta.set.iter().find(|(texture, _)| *texture == id).unwrap().1;
+            let delta = output.textures_delta.set.get(&id).unwrap().last().unwrap();
             let egui::ImageData::Color(image) = &delta.image;
             assert_eq!(image.size, [columns * 8, 16 * 8]);
             for y in 0..image.size[1] {
@@ -1516,6 +1517,7 @@ mod tests {
                     assert_eq!(image[(x, y)], palette_color(if set { 7 } else { 0 }), "tile pixel {x}, {y}");
                 }
             }
+            output.textures_delta.clear();
         }
     }
 
@@ -1533,11 +1535,12 @@ mod tests {
         let foreground = cursor_colors(palette_color(7), palette_color(0)).0;
         for character in ['A', char::from(0xC4)] {
             editor.state.set_selected_char(character);
-            let output = context.run(Default::default(), |context| {
-                egui::CentralPanel::default().show(context, |ui| {
+            let mut output = context.run_ui(Default::default(), |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| {
                     editor.charset(ui, egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::splat(RULER) + cell * 16.0), cell);
                 });
             });
+            output.textures_delta.clear();
             let code = character as u32;
             let ninth_pixel = egui::Rect::from_min_size(
                 egui::pos2(RULER + (code % 16) as f32 * cell.x + 16.0, RULER + (code / 16) as f32 * cell.y),
@@ -1561,15 +1564,15 @@ mod tests {
         let original = editor.state.get_all_glyph_data().clone();
         let undo = editor.state.undo_stack_len();
         let render = |editor: &mut FontEditor, events| {
-            context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                     time: Some(context.input(|input| input.time) + 0.05),
                     events,
                     ..Default::default()
                 },
-                |context| {
-                    egui::CentralPanel::default().show(context, |ui| {
+                |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
                         editor.edit_grid(
                             ui,
                             egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(RULER + 9.0 * 32.0, RULER + 16.0 * 32.0)),
@@ -1577,7 +1580,9 @@ mod tests {
                         );
                     });
                 },
-            )
+            );
+            output.textures_delta.clear();
+            output
         };
         render(&mut editor, vec![]);
         let click = |editor: &mut FontEditor, column: f32, button| {
@@ -1837,16 +1842,19 @@ mod tests {
             modifiers,
         };
         let run = |editor: &mut FontEditor, events: Vec<Event>| {
-            let _ = context.run(
-                RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
-                    events,
-                    ..Default::default()
-                },
-                |context| {
-                    editor.show(context, false, layout);
-                },
-            );
+            let _ = context
+                .run_ui(
+                    RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        editor.show(ui, false, layout);
+                    },
+                )
+                .textures_delta
+                .clear();
         };
         run(&mut editor, vec![]);
         run(&mut editor, vec![]);
@@ -1870,9 +1878,12 @@ mod tests {
         }
 
         // A blocking dialog must get Tab back for its own widgets.
-        let _ = context.run(Default::default(), |context| {
-            editor.show(context, true, layout);
-        });
+        let _ = context
+            .run_ui(Default::default(), |ui| {
+                editor.show(ui, true, layout);
+            })
+            .textures_delta
+            .clear();
         assert_eq!(focused(), None);
     }
 

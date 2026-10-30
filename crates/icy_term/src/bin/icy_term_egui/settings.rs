@@ -691,15 +691,19 @@ mod tests {
             ] {
                 settings.page = page;
                 for _ in 0..3 {
-                    let _ = context.run(
-                        egui::RawInput {
-                            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, viewport)),
-                            ..Default::default()
-                        },
-                        |context| {
-                            settings.show(context);
-                        },
-                    );
+                    let _ = context
+                        .run_ui(
+                            egui::RawInput {
+                                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, viewport)),
+                                ..Default::default()
+                            },
+                            |ui| {
+                                let context = ui.ctx();
+                                settings.show(context);
+                            },
+                        )
+                        .textures_delta
+                        .clear();
                 }
                 sizes.push((page, settings.bounds.unwrap().size()));
             }
@@ -729,9 +733,13 @@ mod tests {
                 modifiers: egui::Modifiers::NONE,
             }],
         ] {
-            let _ = context.run(egui::RawInput { events, ..Default::default() }, |context| {
-                saved = saved.take().or(settings.show(context));
-            });
+            let _ = context
+                .run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+                    let context = ui.ctx();
+                    saved = saved.take().or(settings.show(context));
+                })
+                .textures_delta
+                .clear();
         }
         assert!(settings.closed, "Escape must close the dialog");
         assert!(saved.is_none() && !path.exists(), "Escape must not save");
@@ -747,25 +755,28 @@ mod tests {
         let mut drafts = std::collections::HashMap::new();
         let mut invalid = std::collections::HashSet::new();
         let mut heights = Vec::new();
-        let _ = context.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))),
-                ..Default::default()
-            },
-            |context| {
-                egui::CentralPanel::default().show(context, |ui| {
-                    ui.set_width(600.0);
-                    let mut row = |name: &str, add: &mut dyn FnMut(&mut egui::Ui)| {
-                        let before = ui.cursor().top();
-                        add(ui);
-                        heights.push((name.to_owned(), ui.cursor().top() - before));
-                    };
-                    row("text", &mut |ui| text_field(ui, "A", &mut plain));
-                    row("path", &mut |ui| path_field(ui, "B", &mut path));
-                    row("command", &mut |ui| command_field(ui, "C", &mut command, &mut drafts, &mut invalid));
-                });
-            },
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))),
+                    ..Default::default()
+                },
+                |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
+                        ui.set_width(600.0);
+                        let mut row = |name: &str, add: &mut dyn FnMut(&mut egui::Ui)| {
+                            let before = ui.cursor().top();
+                            add(ui);
+                            heights.push((name.to_owned(), ui.cursor().top() - before));
+                        };
+                        row("text", &mut |ui| text_field(ui, "A", &mut plain));
+                        row("path", &mut |ui| path_field(ui, "B", &mut path));
+                        row("command", &mut |ui| command_field(ui, "C", &mut command, &mut drafts, &mut invalid));
+                    });
+                },
+            )
+            .textures_delta
+            .clear();
         let (_, first) = &heights[0];
         for (name, height) in &heights {
             assert!(
@@ -783,12 +794,15 @@ mod tests {
         let mut drafts = std::collections::HashMap::new();
         let mut invalid = std::collections::HashSet::new();
         for (text, is_invalid) in [("^", true), ("AT^M", false)] {
-            let _ = context.run(egui::RawInput::default(), |context| {
-                egui::CentralPanel::default().show(context, |ui| {
-                    drafts.insert(ui.id().with("Init"), text.into());
-                    command_field(ui, "Init", &mut command, &mut drafts, &mut invalid);
-                });
-            });
+            let _ = context
+                .run_ui(egui::RawInput::default(), |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
+                        drafts.insert(ui.id().with("Init"), text.into());
+                        command_field(ui, "Init", &mut command, &mut drafts, &mut invalid);
+                    });
+                })
+                .textures_delta
+                .clear();
             assert_eq!(!invalid.is_empty(), is_invalid);
             if is_invalid {
                 assert_eq!(command.to_string(), original);

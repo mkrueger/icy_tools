@@ -33,25 +33,26 @@ icy_net = { git = "https://github.com/mkrueger/icy_board", rev = "46461702f01ea8
 icy_terminal_emulation = { git = "https://github.com/mkrueger/icy_board", rev = "46461702f01ea8b7a7aef55506338db776064a14" }
 #icy_net = { path = "../icy_board/crates/icy_net" }
 #unarc-rs = { path ="../unarc-rs" }
-unarc-rs = {  version = "0.7.0", default-features = false }
+unarc-rs = {  version = "0.8.1", default-features = false }
 retrofont = { git = "https://github.com/mkrueger/retrofont", default-features = false, features = ["pure-rust", "convert"] }
 #retrofont = { path ="../retrofont/crates/retrofont" }
 
-icy_engine_gui = { path = "crates/icy_engine_gui" }
-icy_engine_edit = { path = "crates/icy_engine_edit" }
+icy_engine_gui = { path = "crates/icy_engine_gui", default-features = false }
+icy_engine_gui_macros = { path = "crates/icy_engine_gui_macros" }
+icy_engine_edit = { path = "crates/icy_engine_edit", default-features = false }
 
 #libyaff = { path = "../libyaff" }
 libyaff = { git = "https://github.com/mkrueger/libyaff" }
 
 codepages = { git = "https://github.com/mkrueger/icy_board" }
-zip = "8.6.0"
-lazy_static = "1.5.0"
+zip = "9.1.3"
+lazy_static = "1.5.1"
 semver = "1.0.28"
 thiserror = "2.0.21"
-clap = { version = "4.6.6", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive"] }
 log = "0.4.34"
 flexi_logger = "0.31.10"
-chrono = { version = "0.4.45", features = ["serde"] }
+chrono = { version = "0.4.45", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 walkdir = "2.5.0"
 i18n-embed = { version = "0.16.0", features = [
@@ -60,60 +61,128 @@ i18n-embed = { version = "0.16.0", features = [
 ] }
 i18n-embed-fl = "0.10.1"
 fluent-bundle = "0.16.0"
-rust-embed = { version = "8.12.0", features = ["debug-embed"] }
+rust-embed = { version = "8.13.0", features = ["debug-embed"] }
 once_cell = "1.21.4"
-toml = "1.1.4"
-bstr = "1.13.0"
+toml = "1.1.8"
+bstr = "1.13.1"
 fastrand = "2.5.0"
 base64 = "0.23.1"
 opus = "0.4.0"
-symphonia = { version = "0.5.5", default-features = false, features = ["ogg"] }
-rmcp = "3.5.0"
-serde_json = "1.0.151"
+symphonia = { version = "0.6.1", default-features = false, features = ["ogg"] }
+rmcp = "3.8.0"
+serde_json = "1.0.154"
 image = "0.25.10"
 clipboard-rs = { version = "0.3.5", features = ["wayland"] }
 jxl-oxide = { version = "0.12.6", features = ["image"] }
 bitflags = "2.13.2"
 rfd = "0.17.2"
-open = "5.4.1"
+open = "5.4.5"
 bytemuck = "1.25.2"
 
 regex = "1.13.1"
 directories = "6.0.0"
-tokio = { version = "1.53.1", features = ["full"] }
+tokio = { version = "1.54.1", features = ["full"] }
 tokio-tungstenite = "0.30.0"
 futures-util = "0.3"
 anstream = "1.0.0"
-rodio = { version = "0.22.2" }
+rodio = { version = "0.23.0" }
 # Tracker modules (MOD/XM/S3M/IT); SID and David Whittaker importers left out
-xmrs = { version = "0.14", default-features = false, features = ["std", "import_mod", "import_xm", "import_s3m", "import_it"] }
-xmrsplayer = { version = "0.14", default-features = false, features = ["std", "import_mod", "import_xm", "import_s3m", "import_it"] }
+xmrs = { version = "0.15", default-features = false, features = ["std", "import_mod", "import_xm", "import_s3m", "import_it"] }
+xmrsplayer = { version = "0.15", default-features = false, features = ["std", "import_mod", "import_xm", "import_s3m", "import_it"] }
 # Pinned to whatever rodio depends on; a mismatch makes Device types incompatible.
-cpal = "0.17.3"
+cpal = "0.18.2"
 # Atari ST GIST sound emulation (IGS)
 ym2149-gist-replayer = "0.9.1"
 anyhow = "1.0.104"
-webbrowser = "1.2.4"
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "blocking"] }
+webbrowser = "1.2.5"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "blocking"] }
 rayon = "1.12.0"
-notify = "8.2.0"
-mlua = { version = "0.12.0", features = ["lua54", "vendored"] }
+notify = "8.2.1"
+mlua = { version = "0.12.2", features = ["lua54", "vendored"] }
 string-interner = "0.20.0"
 cascada = "0.3.1"
 gif = "0.14.2"
 quantette = "0.6.0"
-crc32fast = "1.5.1"
+crc32fast = "1.5.3"
 
 # SVG and font rendering
-resvg = "0.48.1"
+resvg = { version = "0.49.0", default-features = false }
 ab_glyph = "0.2"
+
+# Current GUI stack; the legacy UI uses the versions re-exported by icy_ui.
+eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
+egui = { version = "0.37.0", default-features = false }
+egui-wgpu = { version = "0.37.0", default-features = false }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl"] }
+winit = { version = "0.30.13", default-features = false, features = ["x11"] }
+x11rb = { version = "0.14.0", default-features = false }
+raw-window-handle = "0.6"
 
 #icy_ui = { path = "../icy_ui/crates/icy_ui" }
 icy_ui = { git = "https://github.com/mkrueger/icy_ui", branch = "master" }
 
 versions = "8.0.1"
-parking_lot = "0.12.5"
+parking_lot = "0.13.0"
 clap-i18n-richformatter = { git = "https://github.com/eatradish/clap-i18n-richformatter" }
+
+# Additional application and library dependencies
+async-recursion = "1.2.0"
+async-trait = "0.1"
+axum = "0.8"
+# 3.0.0 is a compile_error placeholder, not a usable release.
+bincode = { version = "2.0.1", default-features = false, features = ["std", "serde"] }
+bitcode = { version = "0.6", features = ["serde"] }
+byteorder = "1"
+flate2 = "1"
+fontdb = "0.24"
+fontdue = "0.9"
+futures = "0.3"
+getrandom = "0.4.3"
+# Uses the user's installed Copilot CLI; no runtime is downloaded or bundled.
+github-copilot-sdk = { version = "1.0.28", default-features = false }
+http = "1.5.0"
+human_bytes = { version = "0.4", default-features = false }
+imgref = "1.12.3"
+jamjam = { git = "https://github.com/mkrueger/jamjam", rev = "fbe459511e761baffeb7b4e89732c49d4bb07e67" }
+log4rs = "1.4.0"
+lodepng = { version = "3.12.2", default-features = false, features = ["cfzlib"] }
+md5 = "0.8.1"
+memchr = "2.8"
+num_cpus = "1.17"
+png = "0.18.1"
+proc-macro2 = "1.0"
+quote = "1.0"
+# NOTE: `rav1e/asm` requires `nasm` at build time on x86_64.
+rav1e = { version = "0.8", default-features = false }
+rfind_url = "0.4.4"
+rgb = "0.8.53"
+rustls = "0.23.46"
+rustybuzz = "0.20.1"
+# ICY v1 chunk compression; pure Rust so icy_engine also builds for wasm32.
+ruzstd = "0.9"
+schemars = "1.2"
+syn = { version = "3.0", features = ["full", "parsing", "extra-traits"] }
+tempfile = "3"
+tiny-skia = "0.12"
+tokio-util = "0.7"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+ttf-parser = "0.25.1"
+tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots", "__rustls-tls"] }
+unicode-segmentation = "1.13.3"
+unicode-width = "0.2.3"
+url = "2.5.8"
+usvg = "0.49.0"
+utf8parse = "0.2"
+web-time = "1.1.0"
+webpki-roots = "1.0.11"
+
+# Build and test dependencies
+criterion = { version = "0.8.2", features = ["html_reports"] }
+env_logger = "0.11"
+pretty_assertions = "1.4.1"
+winres = "0.1"
+zstd = "0.14"
 
 [profile.release]
 opt-level = 'z'   # Optimize for size

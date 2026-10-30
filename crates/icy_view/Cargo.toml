@@ -30,9 +30,9 @@ legacy-ui = ["dep:icy_ui", "dep:rfd", "icy_engine_gui/legacy-ui"]
 egui = ["dep:eframe", "dep:rfd", "icy_engine_gui/egui"]
 
 [dependencies]
-eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
+eframe = { workspace = true, optional = true }
 icy_engine = { workspace = true }
-icy_engine_gui = { path = "../icy_engine_gui", default-features = false, features = ["opus-audio"] }
+icy_engine_gui = { workspace = true, features = ["opus-audio"] }
 icy_sauce = { workspace = true }
 icy_parser_core = { workspace = true }
 icy_net = { workspace = true }
@@ -67,15 +67,15 @@ tokio = { workspace = true, features = [
     "sync",
     "fs",
 ] }
-tokio-util = "0.7"
-async-trait = "0.1"
+tokio-util = { workspace = true }
+async-trait = { workspace = true }
 bytemuck = { workspace = true, features = ["derive"] }
 retrofont = { workspace = true }
 rfd = { workspace = true, optional = true }
 string-interner = { workspace = true }
 
 # SVG and font rendering for shader-based list
-resvg = { workspace = true }
+resvg = { workspace = true, features = ["default"] }
 ab_glyph = { workspace = true }
 
 thiserror = { workspace = true }
@@ -85,11 +85,11 @@ fastrand = { workspace = true }
 
 reqwest = { workspace = true, features = ["json"] }
 serde_json = { workspace = true }
-futures = "0.3"
+futures = { workspace = true }
 
 [build-dependencies]
-chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
-winres = "0.1"
+chrono = { workspace = true, features = ["clock"] }
+winres = { workspace = true }
 
 [dev-dependencies]
 zip = { workspace = true }

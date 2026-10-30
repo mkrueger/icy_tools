@@ -24,8 +24,8 @@ bitflags = { workspace = true}
 lazy_static = { workspace = true }
 log = { workspace = true }
 base64 = { workspace = true }
-unicode-segmentation = "1.13.3"
-unicode-width = "0.2.2"
+unicode-segmentation = { workspace = true }
+unicode-width = { workspace = true }
 
 # UI framework for clipboard API
 icy_ui = { workspace = true, optional = true }
@@ -37,7 +37,7 @@ once_cell = { workspace = true }
 bstr = { workspace = true }
 rayon = { workspace = true }
 
-anyhow = "1.0.104"
+anyhow = { workspace = true }
 
 # Collaboration dependencies
 tokio = { workspace = true }
@@ -47,8 +47,8 @@ serde_json = { workspace = true }
 anstream = { workspace = true }
 
 [dev-dependencies]
-png = "0.18.1"
-criterion = { version = "0.8", features = ["html_reports"] }
+png = { workspace = true }
+criterion = { workspace = true }
 
 [[bench]]
 name = "flip_table"

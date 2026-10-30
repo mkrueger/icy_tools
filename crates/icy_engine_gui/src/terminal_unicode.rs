@@ -86,7 +86,7 @@ pub fn request_unicode_ui_fonts(context: &egui::Context, characters: &[char]) {
     }
 
     let loader = context.data_mut(|data| {
-        data.get_temp_mut_or_default::<Arc<Mutex<Loader>>>(egui::Id::new("unicode-ui-font-loader"))
+        data.get_temp_mut_or_default::<Arc<Mutex<Loader>>>(egui::Id::unique("unicode-ui-font-loader"))
             .clone()
     });
     let mut state = loader.lock();
@@ -560,7 +560,7 @@ mod tests {
         definitions.families.insert(egui::FontFamily::Monospace, vec!["test-fira".into()]);
         let proportional = definitions.families[&egui::FontFamily::Proportional].clone();
         context.set_fonts(definitions);
-        let _ = context.run(egui::RawInput::default(), |_| {});
+        context.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
         let font = egui::FontId::monospace(20.0);
         let character = '\u{2801}';
         assert!(!context.fonts_mut(|fonts| fonts.has_glyph(&font, character)));
@@ -569,7 +569,7 @@ mod tests {
         while !context.fonts_mut(|fonts| fonts.has_glyph(&font, character)) {
             assert!(std::time::Instant::now() < deadline, "Fallback font did not become available");
             std::thread::sleep(std::time::Duration::from_millis(1));
-            let _ = context.run(egui::RawInput::default(), |_| {});
+            context.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
         }
         let count = context.fonts(|fonts| {
             assert_eq!(fonts.definitions().families[&egui::FontFamily::Proportional], proportional);
@@ -577,7 +577,7 @@ mod tests {
             fonts.definitions().font_data.len()
         });
         request_unicode_ui_fonts(&context, &[character]);
-        let _ = context.run(egui::RawInput::default(), |_| {});
+        context.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
         assert_eq!(context.fonts(|fonts| fonts.definitions().font_data.len()), count);
     }
 

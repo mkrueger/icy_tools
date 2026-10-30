@@ -91,7 +91,7 @@ pub fn check(ui: &mut egui::Ui, value: &mut bool) -> egui::Response {
         *value = !*value;
         response.mark_changed();
     }
-    response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *value, ""));
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), *value, ""));
     if ui.is_rect_visible(rect) {
         let square = egui::Rect::from_center_size(rect.center(), egui::vec2(side, side));
         let painter = ui.painter();
@@ -433,21 +433,23 @@ mod tests {
     use super::*;
 
     fn render(context: &egui::Context, page: &mut u8, events: Vec<egui::Event>) -> egui::FullOutput {
-        context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 200.0))),
                 events,
                 ..Default::default()
             },
             |context| {
-                egui::CentralPanel::default().show(context, |ui| {
+                egui::CentralPanel::default_margins().show(context, |ui| {
                     ui.horizontal(|ui| {
                         tab(ui, page, 0, "First");
                         tab(ui, page, 1, "Second");
                     });
                 });
             },
-        )
+        );
+        output.textures_delta.clear();
+        output
     }
 
     fn label_center(output: &egui::FullOutput, label: &str) -> egui::Pos2 {
@@ -482,19 +484,20 @@ mod tests {
     /// Renders a check box above a slider and returns their rectangles.
     fn controls(context: &egui::Context, events: Vec<egui::Event>, checked: &mut bool, value: &mut f32) -> (egui::Rect, egui::Rect) {
         let mut rects = (egui::Rect::NOTHING, egui::Rect::NOTHING);
-        let _ = context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 200.0))),
                 events,
                 ..Default::default()
             },
             |context| {
-                egui::CentralPanel::default().show(context, |ui| {
+                egui::CentralPanel::default_margins().show(context, |ui| {
                     rects.0 = check(ui, checked).rect;
                     rects.1 = slider(ui, value, 0.0..=100.0, 200.0).rect;
                 });
             },
         );
+        output.textures_delta.clear();
         rects
     }
 

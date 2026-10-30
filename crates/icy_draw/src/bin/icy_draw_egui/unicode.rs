@@ -47,8 +47,8 @@ mod tests {
     #[test]
     fn character_buttons_only_layout_visible_glyphs() {
         let context = egui::Context::default();
-        let output = context.run(egui::RawInput::default(), |context| {
-            egui::CentralPanel::default().show(context, |ui| {
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+            egui::CentralPanel::default_margins().show(ui, |ui| {
                 let top = ui.cursor().min;
                 ui.set_clip_rect(egui::Rect::from_min_size(top, egui::vec2(80.0, 28.0)));
                 for character in ['A', 'B', 'C', 'D'] {
@@ -56,6 +56,7 @@ mod tests {
                 }
             });
         });
+        output.textures_delta.clear();
         let characters: Vec<_> = output
             .shapes
             .iter()

@@ -29,12 +29,11 @@ required-features = ["legacy-ui"]
 [dependencies]
 # Frontends
 icy_ui = { workspace = true, optional = true, features = ["wgpu", "highlighter"] }
-eframe = { version = "0.33.3", optional = true, default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
+eframe = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
-# Uses the user's installed Copilot CLI; no runtime is downloaded or bundled.
-github-copilot-sdk = { version = "1.0.16", optional = true, default-features = false }
-async-trait = { version = "0.1", optional = true }
-tracing = "0.1"
+github-copilot-sdk = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+tracing = { workspace = true }
 
 # GPU/Shader support
 bytemuck = { workspace = true, features = ["derive"] }
@@ -43,9 +42,9 @@ bytemuck = { workspace = true, features = ["derive"] }
 cascada = { workspace = true }
 
 # SVG rendering for icons
-resvg = "0.48.1"
-tiny-skia = "0.12"
-usvg = "0.48.1"
+resvg = { workspace = true, features = ["default"] }
+tiny-skia = { workspace = true }
+usvg = { workspace = true }
 
 # Logging
 log = { workspace = true }
@@ -59,8 +58,8 @@ clap-i18n-richformatter = { workspace = true }
 icy_engine = { workspace = true }
 icy_parser_core = { workspace = true }
 fastrand = { workspace = true }
-icy_engine_edit = { path = "../icy_engine_edit", default-features = false }
-icy_engine_gui = { path = "../icy_engine_gui", default-features = false, features = ["opus-audio"] }
+icy_engine_edit = { workspace = true }
+icy_engine_gui = { workspace = true, features = ["opus-audio"] }
 icy_engine_scripting = { workspace = true }
 
 # WebSocket for collaboration
@@ -82,7 +81,7 @@ libyaff = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
-bitcode = { version = "0.6", features = ["serde"] }
+bitcode = { workspace = true }
 
 # CRC32 for autosave path hashing
 crc32fast = { workspace = true }
@@ -97,7 +96,7 @@ once_cell = { workspace = true }
 tokio = { workspace = true }
 
 # Utilities
-chrono = { workspace = true }
+chrono = { workspace = true, features = ["default", "serde"] }
 directories = { workspace = true }
 semver = { workspace = true }
 thiserror = { workspace = true }
@@ -108,32 +107,31 @@ gif = { workspace = true }
 quantette = { workspace = true, features = ["image"] }
 
 # AV1 video export (pure Rust, outputs IVF container)
-# NOTE: `rav1e/asm` requires `nasm` at build time on x86_64.
-rav1e = { version = "0.8", default-features = false }
-num_cpus = "1.17"
+rav1e = { workspace = true }
+num_cpus = { workspace = true }
 
 # Parallel iteration for performance
 rayon = { workspace = true }
 
 # TTF font rasterization
-fontdue = "0.9"
+fontdue = { workspace = true }
 
 # File handling
 walkdir = { workspace = true }
-tempfile = "3"
+tempfile = { workspace = true }
 notify = { workspace = true }
 rfd = { workspace = true, optional = true }
 open = { workspace = true }
 
 # MCP (rmcp + HTTP server)
 rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
-axum = "0.8"
-schemars = "1.2"
+axum = { workspace = true }
+schemars = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-winit = { version = "0.30.13", optional = true, default-features = false, features = ["x11"] }
-x11rb = { version = "0.13.2", optional = true, default-features = false }
-raw-window-handle = { version = "0.6", optional = true }
+winit = { workspace = true, optional = true }
+x11rb = { workspace = true, optional = true }
+raw-window-handle = { workspace = true, optional = true }
 
 [features]
 default = ["egui"]
@@ -144,8 +142,8 @@ egui = ["dep:eframe", "dep:rfd", "dep:reqwest", "dep:github-copilot-sdk", "dep:a
 rav1e-asm = ["rav1e/asm"]
 
 [build-dependencies]
-winres = "0.1"
-chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+winres = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
 
 [package.metadata.bundle]
 name = "Icy Draw"

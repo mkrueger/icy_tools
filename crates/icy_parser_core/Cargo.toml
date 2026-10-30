@@ -15,7 +15,7 @@ default = []
 [dependencies]
 log = { workspace = true }
 base64 = { workspace = true }
-memchr = "2.8"
+memchr = { workspace = true }
 lazy_static = { workspace = true }
 serde = { workspace = true }
 bitflags = { workspace = true }
@@ -23,8 +23,8 @@ fastrand = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-criterion = { version = "0.8.2", features = ["html_reports"] }
-pretty_assertions = "1.4.1"
+criterion = { workspace = true }
+pretty_assertions = { workspace = true }
 
 [[bench]]
 name = "ascii"

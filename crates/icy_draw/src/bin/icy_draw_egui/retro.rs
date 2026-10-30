@@ -97,7 +97,7 @@ impl DrawApp {
             egui::FontId::proportional(10.0),
             ui.visuals().weak_text_color(),
         );
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &label));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &label));
         response.on_hover_text(format!("{label} · #{code:02X}"))
     }
 
@@ -172,12 +172,13 @@ impl DrawApp {
     }
 
     /// The left rail with `groups` of tools.
-    pub(super) fn screen_tool_rail(&mut self, context: &egui::Context, groups: &[&[ToolPair]], blocked: bool) {
-        egui::SidePanel::left("sidebar")
-            .exact_width(chrome::SIDEBAR_WIDTH)
-            .frame(egui::Frame::new().fill(context.style().visuals.panel_fill))
+    pub(super) fn screen_tool_rail(&mut self, ui: &mut egui::Ui, groups: &[&[ToolPair]], blocked: bool) {
+        let context = &ui.ctx().clone();
+        egui::Panel::left("sidebar")
+            .exact_size(chrome::SIDEBAR_WIDTH)
+            .frame(egui::Frame::new().fill(context.global_style().visuals.panel_fill))
             .resizable(false)
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if blocked || self.document.paste_active() {
                     ui.disable();
                 }

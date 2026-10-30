@@ -688,7 +688,8 @@ impl MusicEditor {
         (starts, position)
     }
 
-    pub fn show(&mut self, context: &egui::Context, blocked: bool) {
+    pub fn show(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        let context = &ui.ctx().clone();
         let now = context.input(|input| input.time);
         if let Some(playback) = &self.playback {
             if playback.position(now) < playback.end() {
@@ -701,36 +702,36 @@ impl MusicEditor {
                 self.playback = None;
             }
         }
-        if !blocked && !context.wants_keyboard_input() {
+        if !blocked && !context.egui_wants_keyboard_input() {
             self.keyboard(context, now);
         }
-        egui::TopBottomPanel::top("music-toolbar").exact_height(44.0).show(context, |ui| {
+        egui::Panel::top("music-toolbar").exact_size(44.0).show(ui, |ui| {
             if blocked {
                 ui.disable();
             }
             ui.horizontal_centered(|ui| self.toolbar(ui));
         });
         // Bottom panels stack upwards: the music string at the bottom, the player above it.
-        egui::TopBottomPanel::bottom("music-text")
+        egui::Panel::bottom("music-text")
             .resizable(true)
-            .default_height(150.0)
-            .min_height(90.0)
-            .show(context, |ui| {
+            .default_size(150.0)
+            .min_size(90.0)
+            .show(ui, |ui| {
                 if blocked {
                     ui.disable();
                 }
                 self.text_view(ui);
             });
-        egui::TopBottomPanel::bottom("music-player")
-            .exact_height(PLAYER_HEIGHT)
+        egui::Panel::bottom("music-player")
+            .exact_size(PLAYER_HEIGHT)
             .show_separator_line(false)
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if blocked {
                     ui.disable();
                 }
                 self.player_bar(ui, now);
             });
-        egui::CentralPanel::default().show(context, |ui| {
+        egui::CentralPanel::default_margins().show(ui, |ui| {
             if blocked {
                 ui.disable();
             }
@@ -1110,7 +1111,7 @@ impl MusicEditor {
         // The note at the text cursor is the selected one.
         if output.response.has_focus() {
             if let Some(range) = output.cursor_range {
-                let byte = self.text.char_indices().nth(range.primary.index).map_or(self.text.len(), |(byte, _)| byte);
+                let byte = self.text.char_indices().nth(range.primary.index.0).map_or(self.text.len(), |(byte, _)| byte);
                 if let Some(index) = self.parsed.spans.iter().position(|span| span.start <= byte && byte <= span.end) {
                     if self.selected != Some(index) {
                         self.select(Some(index), false);
@@ -1147,7 +1148,8 @@ impl MusicEditor {
             self.scrolled_to_notes = true;
         }
         if response.hovered() {
-            let (delta, modifiers) = ui.input(|input| (input.raw_scroll_delta, input.modifiers));
+            let delta = super::widgets::wheel_delta(ui);
+            let modifiers = ui.input(|input| input.modifiers);
             if modifiers.command || modifiers.ctrl {
                 if delta.y != 0.0 {
                     self.zoom = (self.zoom * (1.0 + delta.y * 0.002)).clamp(0.25, 8.0);
@@ -1751,13 +1753,16 @@ mod tests {
                 repeat: false,
                 modifiers: egui::Modifiers::NONE,
             };
-            let _ = context.run(
-                egui::RawInput {
-                    events: vec![event],
-                    ..Default::default()
-                },
-                |context| editor.keyboard(context, 0.0),
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        events: vec![event],
+                        ..Default::default()
+                    },
+                    |ui| editor.keyboard(ui.ctx(), 0.0),
+                )
+                .textures_delta
+                .clear();
         }
     }
 
@@ -1808,18 +1813,23 @@ mod tests {
         let playback = editor.playback.as_ref().unwrap();
         assert_eq!(MusicEditor::playing_event(&playback.timing, playback.position(10.5)), Some((2, 0.5)));
         let context = egui::Context::default();
-        let _ = context.run(
-            egui::RawInput {
-                time: Some(13.1),
-                ..Default::default()
-            },
-            |context| editor.show(context, false),
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    time: Some(13.1),
+                    ..Default::default()
+                },
+                |ui| editor.show(ui, false),
+            )
+            .textures_delta
+            .clear();
         assert!(!editor.playing());
     }
 
     fn run(context: &egui::Context, editor: &mut MusicEditor, events: Vec<egui::Event>) -> egui::FullOutput {
-        context.run(egui::RawInput { events, ..Default::default() }, |context| editor.keyboard(context, 0.0))
+        let mut output = context.run_ui(egui::RawInput { events, ..Default::default() }, |ui| editor.keyboard(ui.ctx(), 0.0));
+        output.textures_delta.clear();
+        output
     }
 
     fn shift_key(key: Key) -> egui::Event {
@@ -1906,13 +1916,16 @@ mod tests {
         let played = editor.player.played.last().unwrap().music_actions.clone();
         assert_eq!(played, ansi_music::to_ansi_music(&editor.events()[..4], 2).music_actions);
         let context = egui::Context::default();
-        let _ = context.run(
-            egui::RawInput {
-                time: Some(2.5),
-                ..Default::default()
-            },
-            |context| editor.show(context, false),
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    time: Some(2.5),
+                    ..Default::default()
+                },
+                |ui| editor.show(ui, false),
+            )
+            .textures_delta
+            .clear();
         assert!(editor.playing(), "loop playback starts over");
         assert_eq!(editor.player.played.len(), 2);
         assert_eq!(editor.playback.as_ref().unwrap().started, 2.5);

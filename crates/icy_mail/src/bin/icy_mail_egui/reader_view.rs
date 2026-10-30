@@ -750,7 +750,16 @@ impl MailApp {
         let document = Document::File(self.selected_file.unwrap_or(0), self.selected_file_page);
         let response = self.document_body(ui, document);
         if navigate.is_none() && ui.is_enabled() && response.hovered() && !ui.ctx().will_discard() {
-            let wheel = ui.input(|input| input.raw_scroll_delta.y);
+            let wheel = ui.input(|input| {
+                input
+                    .events
+                    .iter()
+                    .filter_map(|event| match event {
+                        egui::Event::MouseWheel { delta, .. } => Some(delta.y),
+                        _ => None,
+                    })
+                    .sum::<f32>()
+            });
             if wheel != 0.0 {
                 if wheel < 0.0 && self.screen.offset.y + 1.0 >= self.screen.max_offset.y {
                     self.change_file_page(true);

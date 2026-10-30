@@ -16,34 +16,41 @@ fn command_wheel_zooms_the_terminal() {
     let context = egui::Context::default();
     let mut app = TerminalApp::new(TextScreen::default(), "Icy Term".into());
     let size = egui::vec2(1000.0, 720.0);
-    let _ = context.run(
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
-            ..Default::default()
-        },
-        |context| {
-            egui::CentralPanel::default().show(context, |ui| app.terminal_view(ui));
-        },
-    );
+    let _ = context
+        .run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                ..Default::default()
+            },
+            |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| app.terminal_view(ui));
+            },
+        )
+        .textures_delta
+        .clear();
     let before = app.terminal.get_zoom();
-    let _ = context.run(
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
-            events: vec![
-                egui::Event::PointerMoved(egui::pos2(500.0, 300.0)),
-                egui::Event::MouseWheel {
-                    unit: egui::MouseWheelUnit::Point,
-                    delta: egui::vec2(0.0, 100.0),
-                    modifiers: egui::Modifiers::COMMAND,
-                },
-            ],
-            modifiers: egui::Modifiers::COMMAND,
-            ..Default::default()
-        },
-        |context| {
-            egui::CentralPanel::default().show(context, |ui| app.terminal_view(ui));
-        },
-    );
+    let _ = context
+        .run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                events: vec![
+                    egui::Event::PointerMoved(egui::pos2(500.0, 300.0)),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: egui::vec2(0.0, 100.0),
+                        modifiers: egui::Modifiers::COMMAND,
+                        phase: egui::TouchPhase::Move,
+                        source: egui::MouseWheelSource::Unknown,
+                    },
+                ],
+                ..Default::default()
+            },
+            |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| app.terminal_view(ui));
+            },
+        )
+        .textures_delta
+        .clear();
     assert!(matches!(app.settings.scaling_mode, ScalingMode::Manual(zoom) if zoom > before));
 }
 
@@ -250,7 +257,9 @@ async fn gpu_find_overlay_preserves_terminal_area() {
             screen.set_char((column as i32, 0).into(), icy_engine::AttributedChar::new(character, Default::default()));
         }
         let mut app = TerminalApp::new(screen, "Icy Term".into());
-        harness.capture(&mut app, size, scale, vec![], "find-baseline-warmup");
+        for _ in 0..6 {
+            harness.capture(&mut app, size, scale, vec![], "find-baseline-warmup");
+        }
         harness.capture(&mut app, size, scale, vec![], "find-baseline");
         let before = app.terminal.render_info.read().clone();
         app.navigation.find_open = true;
@@ -940,7 +949,7 @@ async fn gpu_transfer_dialog_states() {
     app.transfers.choose(false);
     capture_all(&mut harness, &mut app, "upload", &tr!("egui-choose-files"));
     app.transfers.choose(true);
-    capture_all(&mut harness, &mut app, "download", &tr!("egui-choose-files"));
+    capture_all(&mut harness, &mut app, "download", &tr!("egui-start-download"));
 
     let mut state = TransferState::new("Zmodem".to_string());
     state.recieve_state.file_name = "DOORS.TXT".into();
@@ -1174,7 +1183,7 @@ impl Harness {
             ..Default::default()
         };
         input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().native_pixels_per_point = Some(scale);
-        input.modifiers = input
+        let modifiers = input
             .events
             .iter()
             .rev()
@@ -1183,7 +1192,8 @@ impl Harness {
                 _ => None,
             })
             .unwrap_or_default();
-        let output = self.context.run(input, |context| app.show(context));
+        input.events.insert(0, egui::Event::ModifiersChanged(modifiers));
+        let mut output = self.context.run_ui(input, |ui| app.show(ui));
         let ui_finished = std::time::Instant::now();
         assert_eq!(output.pixels_per_point, scale);
         self.controls.clear();
@@ -1198,8 +1208,10 @@ impl Harness {
             }
         }
         let jobs = self.context.tessellate(output.shapes, output.pixels_per_point);
-        for (id, delta) in &output.textures_delta.set {
-            self.renderer.update_texture(&self.device, &self.queue, *id, delta);
+        for (id, deltas) in output.textures_delta.set.drain() {
+            for delta in deltas {
+                self.renderer.update_texture(&self.device, &self.queue, id, &delta);
+            }
         }
         let screen = egui_wgpu::ScreenDescriptor {
             size_in_pixels: size,
@@ -1274,11 +1286,12 @@ impl Harness {
         let pixels: Vec<u8> = buffer
             .slice(..)
             .get_mapped_range()
+            .unwrap()
             .chunks(stride as usize)
             .flat_map(|row| row[..size[0] as usize * 4].iter().copied())
             .collect();
         buffer.unmap();
-        for id in output.textures_delta.free {
+        for id in output.textures_delta.free.drain() {
             self.renderer.free_texture(&id);
         }
         if let Some(directory) = std::env::var_os("ICY_EGUI_SCREENSHOTS") {
@@ -1413,6 +1426,8 @@ async fn gpu_render_resize_scroll_and_effects() {
             unit: egui::MouseWheelUnit::Point,
             delta: egui::vec2(-200.0, -2400.0),
             modifiers: egui::Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Unknown,
         },
     ];
     harness.capture(&mut app, [800, 600], 1.0, events, "scroll-event");

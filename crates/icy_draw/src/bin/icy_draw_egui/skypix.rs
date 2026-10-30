@@ -669,8 +669,8 @@ impl SkypixEditor {
             });
     }
 
-    fn sidebar(&mut self, context: &egui::Context, blocked: bool) {
-        egui::SidePanel::left("skypix-tools").default_width(192.0).resizable(true).show(context, |ui| {
+    fn sidebar(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        egui::Panel::left("skypix-tools").default_size(192.0).resizable(true).show(ui, |ui| {
             if blocked {
                 ui.disable();
             }
@@ -756,12 +756,12 @@ impl SkypixEditor {
         });
     }
 
-    fn command_panel(&mut self, context: &egui::Context, blocked: bool) {
-        egui::SidePanel::right("skypix-commands")
-            .default_width(300.0)
-            .min_width(220.0)
+    fn command_panel(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        egui::Panel::right("skypix-commands")
+            .default_size(300.0)
+            .min_size(220.0)
             .resizable(true)
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if blocked {
                     ui.disable();
                 }
@@ -1330,7 +1330,8 @@ impl SkypixEditor {
         });
     }
 
-    pub fn show(&mut self, context: &egui::Context, blocked: bool) {
+    pub fn show(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        let context = &ui.ctx().clone();
         let cancel_drag = !blocked && self.drag.is_some() && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
         if blocked || cancel_drag {
             self.drag = None;
@@ -1341,7 +1342,7 @@ impl SkypixEditor {
             }
         }
         self.refresh_preview(context);
-        egui::TopBottomPanel::top("skypix-toolbar").exact_height(44.0).show(context, |ui| {
+        egui::Panel::top("skypix-toolbar").exact_size(44.0).show(ui, |ui| {
             if blocked {
                 ui.disable();
             }
@@ -1361,12 +1362,12 @@ impl SkypixEditor {
                 ui.checkbox(&mut self.aspect, fl!("skypix-editor-aspect"));
             });
         });
-        self.sidebar(context, blocked);
-        self.command_panel(context, blocked);
-        egui::TopBottomPanel::bottom("skypix-status").show(context, |ui| {
+        self.sidebar(ui, blocked);
+        self.command_panel(ui, blocked);
+        egui::Panel::bottom("skypix-status").show(ui, |ui| {
             ui.add(egui::Label::new(egui::RichText::new(fl!("skypix-editor-unsupported")).weak()).wrap());
         });
-        egui::CentralPanel::default().show(context, |ui| {
+        egui::CentralPanel::default_margins().show(ui, |ui| {
             if let Some(error) = &self.error {
                 ui.colored_label(ui.visuals().error_fg_color, error);
             }
@@ -1386,7 +1387,7 @@ impl SkypixEditor {
             }
             self.canvas(ui, blocked);
         });
-        if !blocked && !context.wants_keyboard_input() {
+        if !blocked && !context.egui_wants_keyboard_input() {
             if context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
                 self.drag = None;
                 self.drag_handle = None;
@@ -1454,24 +1455,24 @@ mod tests {
 
     fn frame(context: &egui::Context, editor: &mut SkypixEditor, events: Vec<egui::Event>, blocked: bool) -> egui::FullOutput {
         let time = context.input(|input| input.time) + 0.05;
-        context.run(
+        context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                 time: Some(time),
                 events,
                 ..Default::default()
             },
-            |context| editor.show(context, blocked),
+            |ui| editor.show(ui, blocked),
         )
     }
 
     fn canvas_image<'a>(output: &'a egui::FullOutput, editor: &SkypixEditor) -> &'a egui::ColorImage {
         let id = editor.texture.as_ref().unwrap().id();
-        let (_, delta) = output
+        let delta = output
             .textures_delta
             .set
-            .iter()
-            .find(|(texture, _)| *texture == id)
+            .get(&id)
+            .and_then(|deltas| deltas.last())
             .expect("canvas texture update");
         let egui::ImageData::Color(image) = &delta.image;
         image
@@ -1532,7 +1533,7 @@ mod tests {
         let context = egui::Context::default();
         icy_engine_gui::egui::appearance::apply(&context);
         let mut editor = SkypixEditor::new();
-        frame(&context, &mut editor, vec![], true);
+        frame(&context, &mut editor, vec![], true).textures_delta.clear();
         assert!(editor.canvas_rect().is_positive());
         assert!(!editor.modified());
     }
@@ -1545,7 +1546,7 @@ mod tests {
         editor.set_zoom(1.0);
         editor.tool = Tool::Pixel;
         editor.pen = 5;
-        frame(&context, &mut editor, vec![], false);
+        frame(&context, &mut editor, vec![], false).textures_delta.clear();
         let point = editor.canvas_rect().min + egui::vec2(10.5, 41.0);
         for blocked in [true, false] {
             for pressed in [true, false] {
@@ -1562,7 +1563,9 @@ mod tests {
                         },
                     ],
                     blocked,
-                );
+                )
+                .textures_delta
+                .clear();
             }
             assert_eq!(editor.modified(), !blocked);
         }
@@ -1593,7 +1596,7 @@ mod tests {
         editor.set_zoom(1.0);
         editor.tool = Tool::FilledRectangle;
         editor.pen = 4;
-        frame(&context, &mut editor, vec![], false);
+        frame(&context, &mut editor, vec![], false).textures_delta.clear();
         let origin = editor.canvas_rect().min;
         let press = origin + egui::vec2(10.5, 21.0);
         let release = origin + egui::vec2(30.5, 61.0);
@@ -1610,8 +1613,12 @@ mod tests {
                 },
             ],
             false,
-        );
-        frame(&context, &mut editor, vec![egui::Event::PointerMoved(origin + egui::vec2(20.5, 41.0))], false);
+        )
+        .textures_delta
+        .clear();
+        frame(&context, &mut editor, vec![egui::Event::PointerMoved(origin + egui::vec2(20.5, 41.0))], false)
+            .textures_delta
+            .clear();
         frame(
             &context,
             &mut editor,
@@ -1625,7 +1632,9 @@ mod tests {
                 },
             ],
             false,
-        );
+        )
+        .textures_delta
+        .clear();
         let preview = editor.document.preview().unwrap();
         assert_eq!(preview.pixel_index(10, 10), Some(4));
         assert_eq!(preview.pixel_index(30, 30), Some(4));
@@ -1660,7 +1669,7 @@ mod tests {
         let mut editor = SkypixEditor::from_document(document);
         let context = egui::Context::default();
         icy_engine_gui::egui::appearance::apply(&context);
-        frame(&context, &mut editor, vec![], false);
+        frame(&context, &mut editor, vec![], false).textures_delta.clear();
         assert!(!editor.warnings.is_empty());
         assert!(editor.texture.is_some());
         assert_eq!(editor.document.to_bytes().unwrap(), bytes);
@@ -1674,7 +1683,7 @@ mod tests {
         editor.set_zoom(1.1447);
         for aspect in [true, false] {
             editor.aspect = aspect;
-            frame(&context, &mut editor, vec![], false);
+            frame(&context, &mut editor, vec![], false).textures_delta.clear();
             let rect = editor.canvas_rect();
             assert!((rect.width() - 640.0 * editor.zoom()).abs() < 0.05, "actual {rect:?}, zoom {}", editor.zoom());
             assert!(
@@ -1699,10 +1708,11 @@ mod tests {
         let mut editor = SkypixEditor::new();
         editor.set_zoom(1.0);
         editor.add_shape((117, 16), (302, 86));
-        let accent = context.style().visuals.selection.stroke.color;
+        let accent = context.global_style().visuals.selection.stroke.color;
         for tool in [Tool::Line, Tool::Select] {
             editor.tool = tool;
-            let output = frame(&context, &mut editor, vec![], false);
+            let mut output = frame(&context, &mut editor, vec![], false);
+            output.textures_delta.clear();
             let canvas = CanvasTransform { rect: editor.canvas_rect() };
             let rects: Vec<_> = output
                 .shapes
@@ -1733,7 +1743,7 @@ mod tests {
         editor.select(Some(2));
         editor.tool = Tool::Select;
         let before = editor.document.to_bytes().unwrap();
-        frame(&context, &mut editor, vec![], false);
+        frame(&context, &mut editor, vec![], false).textures_delta.clear();
         let canvas = CanvasTransform { rect: editor.canvas_rect() };
         let press = canvas.position((20, 10));
         let release = canvas.position((30, 30));
@@ -1750,10 +1760,12 @@ mod tests {
                 },
             ],
             false,
-        );
+        )
+        .textures_delta
+        .clear();
         let revision = editor.document.revision();
         for endpoint in [(25, 20), (30, 30)] {
-            let output = frame(&context, &mut editor, vec![egui::Event::PointerMoved(canvas.position(endpoint))], false);
+            let mut output = frame(&context, &mut editor, vec![egui::Event::PointerMoved(canvas.position(endpoint))], false);
             let image = canvas_image(&output, &editor);
             let (r, g, b) = editor.palette.rgb(7);
             assert_eq!(image[(endpoint.0 as usize, endpoint.1 as usize)], Color32::from_rgb(r, g, b));
@@ -1766,6 +1778,7 @@ mod tests {
                 .any(|shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.rect == handle)));
             assert_eq!(editor.document.to_bytes().unwrap(), before);
             assert_eq!(editor.document.revision(), revision);
+            output.textures_delta.clear();
         }
         frame(
             &context,
@@ -1780,7 +1793,9 @@ mod tests {
                 },
             ],
             false,
-        );
+        )
+        .textures_delta
+        .clear();
         assert_eq!(bounds(editor.document.items(), editor.selected.unwrap()), Some(((10, 10), (30, 30))));
         let preview = editor.document.preview().unwrap();
         assert_eq!(preview.pixel_index(25, 25), Some(7));
@@ -1800,7 +1815,7 @@ mod tests {
             editor.tool = Tool::Select;
             let before = editor.document.to_bytes().unwrap();
             let revision = editor.document.revision();
-            frame(&context, &mut editor, vec![], false);
+            frame(&context, &mut editor, vec![], false).textures_delta.clear();
             let canvas = CanvasTransform { rect: editor.canvas_rect() };
             let press = canvas.position((10, 10)) + egui::vec2(2.0, 1.0);
             frame(
@@ -1816,13 +1831,16 @@ mod tests {
                     },
                 ],
                 false,
-            );
+            )
+            .textures_delta
+            .clear();
             let moved = press + canvas.scale() * egui::vec2(0.0, 10.0);
-            let output = frame(&context, &mut editor, vec![egui::Event::PointerMoved(moved)], false);
+            let mut output = frame(&context, &mut editor, vec![egui::Event::PointerMoved(moved)], false);
             let (r, g, b) = editor.palette.rgb(7);
             assert_eq!(canvas_image(&output, &editor)[(10, 20)], Color32::from_rgb(r, g, b));
             assert_eq!(canvas_image(&output, &editor)[(10, 10)], Color32::BLACK);
             assert_eq!(editor.dragged_line(), Some(((10, 20), (20, 10))));
+            output.textures_delta.clear();
             let events = if blocked {
                 vec![]
             } else {
@@ -1834,8 +1852,8 @@ mod tests {
                     modifiers: egui::Modifiers::NONE,
                 }]
             };
-            let cancelled = frame(&context, &mut editor, events, blocked);
-            let output = frame(&context, &mut editor, vec![], blocked);
+            let mut cancelled = frame(&context, &mut editor, events, blocked);
+            let mut output = frame(&context, &mut editor, vec![], blocked);
             assert!(editor.drag.is_none(), "drag must be cancelled (blocked={blocked})");
             assert_eq!(editor.document.to_bytes().unwrap(), before);
             let id = editor.texture.as_ref().unwrap().id();
@@ -1853,6 +1871,8 @@ mod tests {
                 image[(10, 10)],
                 expected[(10, 10)]
             );
+            output.textures_delta.clear();
+            cancelled.textures_delta.clear();
             frame(
                 &context,
                 &mut editor,
@@ -1863,7 +1883,9 @@ mod tests {
                     modifiers: egui::Modifiers::NONE,
                 }],
                 false,
-            );
+            )
+            .textures_delta
+            .clear();
             assert!(editor.drag.is_none());
             assert_eq!(editor.document.to_bytes().unwrap(), before);
             assert_eq!(editor.document.revision(), revision);
@@ -1907,12 +1929,12 @@ mod tests {
         editor.select(Some(59));
         let bytes = editor.document.to_bytes().unwrap();
         for _ in 0..2 {
-            frame(&context, &mut editor, vec![], false);
+            frame(&context, &mut editor, vec![], false).textures_delta.clear();
         }
         assert!(editor.visible_rows.contains(&59));
         editor.command_filter = "59, 10".to_owned();
         for _ in 0..2 {
-            frame(&context, &mut editor, vec![], false);
+            frame(&context, &mut editor, vec![], false).textures_delta.clear();
         }
         assert_eq!(editor.visible_rows, 0..1);
         assert_eq!(editor.document.to_bytes().unwrap(), bytes);
@@ -1934,7 +1956,8 @@ mod tests {
         let before = editor.document.to_bytes().unwrap();
         editor.line_start = Some((11, 12));
         editor.draft = Some(SkypixItem::command(SkypixCommand::DrawLine { x: 30, y: 30 }));
-        let output = frame(&context, &mut editor, vec![], false);
+        let mut output = frame(&context, &mut editor, vec![], false);
+        output.textures_delta.clear();
         let apply = output
             .shapes
             .iter()
@@ -1957,7 +1980,9 @@ mod tests {
                     },
                 ],
                 false,
-            );
+            )
+            .textures_delta
+            .clear();
         }
         assert_eq!(bounds(editor.document.items(), editor.selected.unwrap()), Some(((11, 12), (30, 30))));
         assert_eq!(editor.document.preview().unwrap().pixel_index(20, 15), Some(7));
@@ -1975,7 +2000,8 @@ mod tests {
             SkypixItem::command(SkypixCommand::SetPixel { x: 20, y: 20 }),
         ]);
         editor.select(None);
-        let output = frame(&context, &mut editor, vec![], false);
+        let mut output = frame(&context, &mut editor, vec![], false);
+        output.textures_delta.clear();
         let label = format!("{}{}", item_name(&editor.document.items()[1]), item_summary(editor.document.items(), 1));
         let row = output
             .shapes
@@ -2000,7 +2026,9 @@ mod tests {
                         },
                     ],
                     false,
-                );
+                )
+                .textures_delta
+                .clear();
             }
         }
         assert_eq!(editor.selected, Some(1));

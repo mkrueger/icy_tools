@@ -471,7 +471,8 @@ mod tests {
         let before = editor.document.commands().to_vec();
         let rgb = editor.document.preview().unwrap().rgba();
         let context = egui::Context::default();
-        let output = context.run(egui::RawInput::default(), |context| editor.copy(context, true));
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| editor.copy(ui.ctx(), true));
+        output.textures_delta.clear();
         assert!(editor.error.is_some(), "XOR cut must report its underlying-pixel dependency");
         assert!(!output
             .platform_output
@@ -539,7 +540,8 @@ mod tests {
         assert_eq!(editor.document.commands(), duplicate);
         editor.selected = duplicate.iter().position(|command| matches!(command, RipCommand::Line { x0: 28, .. }));
         let context = egui::Context::default();
-        let output = context.run(egui::RawInput::default(), |context| editor.copy(context, true));
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| editor.copy(ui.ctx(), true));
+        output.textures_delta.clear();
         let copied = output
             .platform_output
             .commands
@@ -566,31 +568,39 @@ mod tests {
         let context = egui::Context::default();
         let text = encode(&before, editor.selected.unwrap()).unwrap();
         editor.mutation_blocked = true;
-        let _ = context.run(
-            egui::RawInput {
-                events: vec![egui::Event::Cut, egui::Event::Paste(text.clone())],
-                ..Default::default()
-            },
-            |context| {
-                editor.clipboard_input(context);
-                editor.duplicate_selected();
-                assert_eq!(context.input(|input| input.events.len()), 2);
-            },
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    events: vec![egui::Event::Cut, egui::Event::Paste(text.clone())],
+                    ..Default::default()
+                },
+                |ui| {
+                    let context = ui.ctx();
+                    editor.clipboard_input(context);
+                    editor.duplicate_selected();
+                    assert_eq!(context.input(|input| input.events.len()), 2);
+                },
+            )
+            .textures_delta
+            .clear();
         assert_eq!(editor.document.commands(), before);
         editor.mutation_blocked = false;
         editor.begin_text((100, 100));
-        let _ = context.run(
-            egui::RawInput {
-                events: vec![egui::Event::Paste("typed text".into())],
-                ..Default::default()
-            },
-            |context| {
-                editor.clipboard_input(context);
-                assert!(context.input(|input| input.events.iter().any(|event| matches!(event, egui::Event::Paste(_)))));
-                editor.type_text(context);
-            },
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    events: vec![egui::Event::Paste("typed text".into())],
+                    ..Default::default()
+                },
+                |ui| {
+                    let context = ui.ctx();
+                    editor.clipboard_input(context);
+                    assert!(context.input(|input| input.events.iter().any(|event| matches!(event, egui::Event::Paste(_)))));
+                    editor.type_text(context);
+                },
+            )
+            .textures_delta
+            .clear();
         assert_eq!(editor.text_edit.as_ref().unwrap().text, "typed text");
     }
 
@@ -604,40 +614,51 @@ mod tests {
         let context = egui::Context::default();
         let mut field = String::new();
         let id = egui::Id::new("rip-native-clipboard-field");
-        let _ = context.run(egui::RawInput::default(), |context| {
-            egui::CentralPanel::default().show(context, |ui| {
-                ui.add(egui::TextEdit::singleline(&mut field).id(id)).request_focus();
-            });
-        });
-        let _ = context.run(
-            egui::RawInput {
-                events: vec![egui::Event::Paste("native text".into())],
-                ..Default::default()
-            },
-            |context| {
-                assert!(context.wants_keyboard_input());
-                editor.clipboard_input(context);
-                egui::CentralPanel::default().show(context, |ui| {
-                    ui.add(egui::TextEdit::singleline(&mut field).id(id));
+        let _ = context
+            .run_ui(egui::RawInput::default(), |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| {
+                    ui.add(egui::TextEdit::singleline(&mut field).id(id)).request_focus();
                 });
-            },
-        );
+            })
+            .textures_delta
+            .clear();
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    events: vec![egui::Event::Paste("native text".into())],
+                    ..Default::default()
+                },
+                |ui| {
+                    let context = &ui.ctx().clone();
+                    assert!(context.egui_wants_keyboard_input());
+                    editor.clipboard_input(context);
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
+                        ui.add(egui::TextEdit::singleline(&mut field).id(id));
+                    });
+                },
+            )
+            .textures_delta
+            .clear();
         assert_eq!(field, "native text");
         assert_eq!(editor.document.commands(), before);
         context.memory_mut(|memory| memory.surrender_focus(id));
         editor.transport_action(super::super::Action::PlayPause, 0.0);
-        let _ = context.run(
-            egui::RawInput {
-                events: vec![egui::Event::Cut, egui::Event::Paste(text)],
-                ..Default::default()
-            },
-            |context| {
-                editor.clipboard_input(context);
-                editor.copy(context, true);
-                editor.duplicate_selected();
-                assert!(context.input(|input| input.events.iter().any(|event| matches!(event, egui::Event::Cut))));
-            },
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    events: vec![egui::Event::Cut, egui::Event::Paste(text)],
+                    ..Default::default()
+                },
+                |ui| {
+                    let context = ui.ctx();
+                    editor.clipboard_input(context);
+                    editor.copy(context, true);
+                    editor.duplicate_selected();
+                    assert!(context.input(|input| input.events.iter().any(|event| matches!(event, egui::Event::Cut))));
+                },
+            )
+            .textures_delta
+            .clear();
         assert_eq!(editor.document.commands(), before);
     }
 
@@ -653,7 +674,8 @@ mod tests {
         editor.duplicate_selected();
         assert!(editor.error.is_some());
         let context = egui::Context::default();
-        let output = context.run(egui::RawInput::default(), |context| editor.copy(context, true));
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| editor.copy(ui.ctx(), true));
+        output.textures_delta.clear();
         assert!(editor.error.is_some());
         assert!(!output
             .platform_output
@@ -671,14 +693,16 @@ mod tests {
         editor.tool = Tool::Select;
         let before = editor.document.commands().to_vec();
         let frame = |editor: &mut RipEditor, events, blocked| {
-            context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0))),
                     events,
                     ..Default::default()
                 },
-                |context| editor.show(context, blocked),
-            )
+                |ui| editor.show(ui, blocked),
+            );
+            output.textures_delta.clear();
+            output
         };
         let copied = frame(&mut editor, vec![egui::Event::Copy], false);
         let text = copied

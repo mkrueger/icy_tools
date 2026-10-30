@@ -124,7 +124,7 @@ pub fn picker(ui: &mut egui::Ui, id: &str, style: LineStyle, user: &[Vec<u16>; 8
         ends_name(style.ends)
     );
     let response = response.on_hover_text(&label);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, &label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &label));
     egui::Popup::menu(&response)
         .id(egui::Id::new(id))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)

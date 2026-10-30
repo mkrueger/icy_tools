@@ -662,7 +662,8 @@ impl TuneDialog {
         let rows = f32::from(HIGHEST_PITCH - LOWEST_PITCH + 1) * ROW_HEIGHT;
         self.scroll.1 = self.scroll.1.clamp(0.0, (rows - grid.height()).max(0.0));
         if response.hovered() {
-            let (delta, modifiers) = ui.input(|input| (input.raw_scroll_delta, input.modifiers));
+            let delta = super::widgets::wheel_delta(ui);
+            let modifiers = ui.input(|input| input.modifiers);
             if modifiers.command || modifiers.ctrl {
                 if delta.y != 0.0 {
                     self.zoom = (self.zoom * (1.0 + delta.y * 0.002)).clamp(0.1, 6.0);

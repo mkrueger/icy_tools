@@ -991,10 +991,10 @@ impl DrawApp {
             // A TDF glyph is edited on a single layer, so neither the minimap nor the layer list apply.
             return;
         }
-        egui::TopBottomPanel::top("minimap")
+        egui::Panel::top("minimap")
             .resizable(true)
-            .default_height(340.0)
-            .height_range(160.0..=520.0)
+            .default_size(340.0)
+            .size_range(160.0..=520.0)
             .frame(egui::Frame::new().inner_margin(egui::Margin {
                 left: SECTION_MARGIN,
                 right: SECTION_MARGIN,
@@ -1135,8 +1135,8 @@ impl DrawApp {
                 ui.weak(rows.len().to_string());
             });
         });
-        egui::TopBottomPanel::bottom("layer-actions")
-            .exact_height(40.0)
+        egui::Panel::bottom("layer-actions")
+            .exact_size(40.0)
             .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 0)))
             .show_inside(ui, |ui| {
                 ui.horizontal_centered(|ui| {
@@ -2660,19 +2660,22 @@ mod tests {
         let mut app = DrawApp::new();
         let mut origin = egui::Pos2::ZERO;
         let mut draw = |app: &mut DrawApp, width: f32, events: Vec<egui::Event>| {
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(240.0, 400.0))),
-                    events,
-                    ..Default::default()
-                },
-                |context| {
-                    egui::CentralPanel::default().show(context, |ui| {
-                        origin = ui.cursor().min;
-                        app.palette_grid(ui, width);
-                    });
-                },
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(240.0, 400.0))),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        egui::CentralPanel::default_margins().show(ui, |ui| {
+                            origin = ui.cursor().min;
+                            app.palette_grid(ui, width);
+                        });
+                    },
+                )
+                .textures_delta
+                .clear();
             origin
         };
         // Eight columns are row-major: the high colors form the second row.
@@ -2740,7 +2743,8 @@ mod tests {
         });
         let signature = app.document.with_state(|state| signature(state.get_buffer()));
         app.chrome.previews.resize_with(2, || None);
-        let output = context.run(Default::default(), |context| {
+        let mut output = context.run_ui(Default::default(), |ui| {
+            let context = ui.ctx();
             app.ensure_layer_preview(context, 1, signature);
             app.ensure_layer_preview(context, 0, signature);
         });
@@ -2752,13 +2756,14 @@ mod tests {
             .collect();
         assert_ne!(ids[0], ids[1]);
         for (index, palette_index) in [4, 1].into_iter().enumerate() {
-            let (_, delta) = output.textures_delta.set.iter().find(|(id, _)| *id == ids[index]).unwrap();
+            let delta = output.textures_delta.set.get(&ids[index]).unwrap().last().unwrap();
             let egui::ImageData::Color(image) = &delta.image;
             let (red, green, blue) = app.document.with_state(|state| state.get_buffer().palette.rgb(palette_index));
             assert!(image.pixels.contains(&Color32::from_rgb(red, green, blue)));
         }
         app.ensure_layer_preview(&context, 1, signature);
         assert_eq!(app.chrome.previews[1].as_ref().unwrap().1.as_ref().unwrap().id(), ids[1]);
+        output.textures_delta.clear();
         app.chrome.layer_properties = Some((0, LayerProperties::default(), icy_engine::Size::new(80, 25)));
         app.replace(icy_draw::document::Document::new(icy_engine::Size::new(2, 2)));
         assert!(app.chrome.previews.is_empty());

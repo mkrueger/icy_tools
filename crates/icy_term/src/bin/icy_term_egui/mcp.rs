@@ -350,7 +350,7 @@ mod tests {
         );
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
-            let _ = context.run(egui::RawInput::default(), |context| app.show(context));
+            let _ = context.run_ui(egui::RawInput::default(), |ui| app.show(ui)).textures_delta.clear();
             if let Ok(result) = receiver.try_recv() {
                 assert!(result.is_ok());
                 break;

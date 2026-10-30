@@ -114,7 +114,7 @@ impl Palette {
         let mut outcome = Outcome::Open;
         let modal = egui::Modal::new(egui::Id::new("palette"))
             .area(area)
-            .frame(egui::Frame::popup(&context.style()).inner_margin(8).corner_radius(10))
+            .frame(egui::Frame::popup(&context.global_style()).inner_margin(8).corner_radius(10))
             .show(context, |ui| {
                 ui.set_width(width);
                 let hint = text(match self.kind {

@@ -403,7 +403,7 @@ impl MailApp {
                         });
                     }
                 });
-                self.message_view = egui::vec2(output.state.offset.y, output.inner_rect.height());
+                self.message_view = egui::vec2(output.state.offset().y, output.inner_rect.height());
                 if self.reader.messages.is_empty() {
                     let detail = if self.loader.searching {
                         fl!(LANGUAGE_LOADER, "search-bodies-running")
@@ -561,7 +561,7 @@ impl MailApp {
                         });
                     }
                 });
-                self.message_view = egui::vec2(output.state.offset.y, output.inner_rect.height());
+                self.message_view = egui::vec2(output.state.offset().y, output.inner_rect.height());
                 if store.drafts().is_empty() {
                     let image = self.icons.image(&context, Icon::Export, 40.0);
                     ui.scope_builder(egui::UiBuilder::new().max_rect(output.inner_rect), |ui| {
@@ -647,7 +647,7 @@ impl MailApp {
                         }
                     }
                 });
-                self.message_view = egui::vec2(output.state.offset.y, output.inner_rect.height());
+                self.message_view = egui::vec2(output.state.offset().y, output.inner_rect.height());
             });
         let picked = select.is_some();
         if let Some((position, open)) = select {

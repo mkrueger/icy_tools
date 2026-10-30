@@ -256,17 +256,18 @@ mod tests {
         let item = icy_view::items::SixteenColorsFile::new("font.tdf".into(), "pack".into(), "font.tdf".into(), String::new());
         let context = eframe::egui::Context::default();
         for (location, expected) in [(NavPoint::web("pack"), true), (NavPoint::file("/pack"), false)] {
-            let output = context.run(
+            let mut output = context.run_ui(
                 eframe::egui::RawInput {
                     screen_rect: Some(eframe::egui::Rect::from_min_size(eframe::egui::Pos2::ZERO, eframe::egui::vec2(400.0, 300.0))),
                     ..Default::default()
                 },
-                |context| {
-                    eframe::egui::CentralPanel::default().show(context, |ui| {
+                |ui| {
+                    eframe::egui::CentralPanel::default_margins().show(ui, |ui| {
                         context_menu(ui, &Library::default(), &location, &item);
                     });
                 },
             );
+            output.textures_delta.clear();
             let has_download = output
                 .shapes
                 .iter()

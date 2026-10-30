@@ -1,6 +1,6 @@
 use icy_ui::{advanced::graphics::Viewport, wgpu, widget::shader, Rectangle};
 
-use super::{TerminalShader, TerminalShaderRenderer};
+use super::shader_legacy::{TerminalShader, TerminalShaderRenderer};
 
 impl shader::Pipeline for TerminalShaderRenderer {
     fn new(device: &wgpu::Device, _queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {

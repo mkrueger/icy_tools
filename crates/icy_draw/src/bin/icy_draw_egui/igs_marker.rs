@@ -147,7 +147,7 @@ pub fn picker(ui: &mut egui::Ui, id: &str, kind: PolymarkerKind, size: u8, color
     ));
     let label = format!("{}: {}, {} {size}", fl!("igs-marker"), super::marker_name(kind), fl!("igs-size"));
     let response = response.on_hover_text(&label);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, true, &label));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &label));
     egui::Popup::menu(&response)
         .id(egui::Id::new(id))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)

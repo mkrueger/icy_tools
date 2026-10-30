@@ -79,6 +79,15 @@ fn file_format_all_extensions_contain_primary() {
 }
 
 #[test]
+fn archive_format_metadata_covers_all_dependency_formats() {
+    for archive in unarc_rs::unified::ArchiveFormat::ALL {
+        let format = FileFormat::Archive(*archive);
+        assert!(!format.name().is_empty());
+        assert!(format.all_extensions().contains(&format.primary_extension()), "{archive:?}");
+    }
+}
+
+#[test]
 fn file_format_buffer_type_compatibility() {
     // CP437 formats
     assert!(FileFormat::Ansi.is_compatible_with(BufferType::CP437));

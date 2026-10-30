@@ -55,34 +55,41 @@ fn command_wheel_zooms_the_preview() {
     viewer.preview.load("art.ans".into(), b"ZOOM".to_vec(), false, &context);
     wait_preview(&mut viewer.preview, &context);
     let size = egui::vec2(1100.0, 760.0);
-    let _ = context.run(
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
-            ..Default::default()
-        },
-        |context| {
-            egui::CentralPanel::default().show(context, |ui| viewer.preview(ui));
-        },
-    );
+    let _ = context
+        .run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                ..Default::default()
+            },
+            |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| viewer.preview(ui));
+            },
+        )
+        .textures_delta
+        .clear();
     let before = viewer.preview.screen.zoom;
-    let _ = context.run(
-        egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
-            events: vec![
-                egui::Event::PointerMoved(egui::pos2(size.x / 2.0, size.y / 2.0)),
-                egui::Event::MouseWheel {
-                    unit: egui::MouseWheelUnit::Point,
-                    delta: egui::vec2(0.0, 100.0),
-                    modifiers: egui::Modifiers::COMMAND,
-                },
-            ],
-            modifiers: egui::Modifiers::COMMAND,
-            ..Default::default()
-        },
-        |context| {
-            egui::CentralPanel::default().show(context, |ui| viewer.preview(ui));
-        },
-    );
+    let _ = context
+        .run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                events: vec![
+                    egui::Event::PointerMoved(egui::pos2(size.x / 2.0, size.y / 2.0)),
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: egui::vec2(0.0, 100.0),
+                        modifiers: egui::Modifiers::COMMAND,
+                        phase: egui::TouchPhase::Move,
+                        source: egui::MouseWheelSource::Unknown,
+                    },
+                ],
+                ..Default::default()
+            },
+            |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| viewer.preview(ui));
+            },
+        )
+        .textures_delta
+        .clear();
     assert!(matches!(viewer.options.monitor_settings.scaling_mode, ScalingMode::Manual(zoom) if zoom > before));
 }
 
@@ -140,15 +147,17 @@ fn list_double_click_enters_containers_without_invalidating_remaining_rows() {
             let mut time = 0.0;
             let mut frame = |viewer: &mut app::Viewer, events| {
                 time += 0.05;
-                context.run(
+                let mut output = context.run_ui(
                     egui::RawInput {
                         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
                         time: Some(time),
                         events,
                         ..Default::default()
                     },
-                    |context| viewer.show(context),
-                )
+                    |ui| viewer.show(ui),
+                );
+                output.textures_delta.clear();
+                output
             };
             for _ in 0..3 {
                 frame(&mut viewer, vec![]);
@@ -298,25 +307,29 @@ fn shortcuts_use_exact_modifiers_and_all_viewer_commands_resolve() {
     }
     let context = egui::Context::default();
     let mut matched = true;
-    let _ = context.run(
-        egui::RawInput {
-            events: vec![egui::Event::Key {
-                key: egui::Key::F3,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: egui::Modifiers::SHIFT,
-            }],
-            ..Default::default()
-        },
-        |context| {
-            matched = icy_engine_gui::egui::shortcuts::consume(context, commands.get("playback.baud_rate").unwrap());
-            assert!(icy_engine_gui::egui::shortcuts::consume(
-                context,
-                commands.get("playback.baud_rate_back").unwrap()
-            ));
-        },
-    );
+    let _ = context
+        .run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::F3,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::SHIFT,
+                }],
+                ..Default::default()
+            },
+            |ui| {
+                let context = ui.ctx();
+                matched = icy_engine_gui::egui::shortcuts::consume(context, commands.get("playback.baud_rate").unwrap());
+                assert!(icy_engine_gui::egui::shortcuts::consume(
+                    context,
+                    commands.get("playback.baud_rate_back").unwrap()
+                ));
+            },
+        )
+        .textures_delta
+        .clear();
     assert!(!matched);
 }
 
@@ -363,7 +376,7 @@ impl Gpu {
             ..Default::default()
         };
         input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().native_pixels_per_point = Some(scale);
-        let output = self.context.run(input, |context| app.show(context));
+        let mut output = self.context.run_ui(input, |ui| app.show(ui));
         for command in &output.platform_output.commands {
             if let egui::OutputCommand::CopyText(text) = command {
                 self.copied.push(text.clone());
@@ -379,8 +392,10 @@ impl Gpu {
             }
         }
         let jobs = self.context.tessellate(output.shapes, output.pixels_per_point);
-        for (id, delta) in &output.textures_delta.set {
-            self.renderer.update_texture(&self.device, &self.queue, *id, delta);
+        for (id, deltas) in output.textures_delta.set.drain() {
+            for delta in deltas {
+                self.renderer.update_texture(&self.device, &self.queue, id, &delta);
+            }
         }
         let descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: size,
@@ -447,11 +462,12 @@ impl Gpu {
         let pixels: Vec<_> = buffer
             .slice(..)
             .get_mapped_range()
+            .unwrap()
             .chunks(stride as usize)
             .flat_map(|row| row[..size[0] as usize * 4].iter().copied())
             .collect();
         buffer.unmap();
-        for id in output.textures_delta.free {
+        for id in output.textures_delta.free.drain() {
             self.renderer.free_texture(&id);
         }
         if let Some(directory) = std::env::var_os("ICY_EGUI_SCREENSHOTS") {
@@ -705,6 +721,8 @@ fn gpu_original_masonry_and_sauce_list_navigation() {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, -4000.0),
                 modifiers: egui::Modifiers::NONE,
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
             },
         ],
         "masonry-scrolling",
@@ -765,15 +783,18 @@ fn tile_toolbar_overlays_the_grid_and_returns_through_the_hover_zone() {
     let mut time = 0.0;
     let mut frame = |viewer: &mut app::Viewer, events| {
         time += 0.05;
-        let _ = context.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
-                time: Some(time),
-                events,
-                ..Default::default()
-            },
-            |context| viewer.show(context),
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    time: Some(time),
+                    events,
+                    ..Default::default()
+                },
+                |ui| viewer.show(ui),
+            )
+            .textures_delta
+            .clear();
     };
     for _ in 0..3 {
         frame(&mut viewer, vec![]);
@@ -981,11 +1002,13 @@ fn gpu_viewer_and_dialogs_fit_desktop_narrow_short_and_hidpi() {
                                     unit: egui::MouseWheelUnit::Point,
                                     delta: egui::vec2(0.0, 4000.0),
                                     modifiers: egui::Modifiers::NONE,
+                                    phase: egui::TouchPhase::Move,
+                                    source: egui::MouseWheelSource::Wheel,
                                 },
                             ],
                             "export-scroll-top",
                         );
-                        for _ in 0..5 {
+                        for _ in 0..20 {
                             gpu.capture(&mut app, size, scale, vec![], "export-scroll-top-settle");
                         }
                         let path = *gpu
@@ -1016,15 +1039,17 @@ fn gpu_viewer_and_dialogs_fit_desktop_narrow_short_and_hidpi() {
                                     unit: egui::MouseWheelUnit::Point,
                                     delta: egui::vec2(0.0, -400.0),
                                     modifiers: egui::Modifiers::NONE,
+                                    phase: egui::TouchPhase::Move,
+                                    source: egui::MouseWheelSource::Wheel,
                                 },
                             ],
                             "export-scroll",
                         );
-                        for _ in 0..5 {
+                        for _ in 0..20 {
                             gpu.capture(&mut app, size, scale, vec![], "export-scroll-settle");
                         }
                         assert!(
-                            gpu.labels.contains_key(&icy_engine_gui::LANGUAGE_LOADER.get("export-control-chars")),
+                            gpu.labels.contains_key(&icy_engine_gui::LANGUAGE_LOADER.get("export-line-ending")),
                             "{name}: export options must scroll into view"
                         );
                         assert_eq!(gpu.labels[&action], footer, "{name}: scrolling must not move the footer");
@@ -1170,7 +1195,9 @@ fn gpu_info_panel_ratings_palette_minimap_and_font_preview() {
     let mut app = app::Viewer::new(fixture.0.clone(), options, &gpu.context).unwrap();
     wait_browser(&mut app.browser, &gpu.context);
     let size = [1100, 760];
-    gpu.capture(&mut app, size, 1.0, vec![], "features-warmup");
+    for _ in 0..3 {
+        gpu.capture(&mut app, size, 1.0, vec![], "features-warmup");
+    }
     let name = fixture.0.file_name().unwrap().to_string_lossy().to_string();
     assert!(
         gpu.labels.contains_key(&name),
@@ -1401,6 +1428,8 @@ fn gpu_playback_bar_controls_streamed_files() {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::vec2(0.0, 250.0),
                 modifiers: egui::Modifiers::NONE,
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
             },
         ],
         "playback-manual-wheel",

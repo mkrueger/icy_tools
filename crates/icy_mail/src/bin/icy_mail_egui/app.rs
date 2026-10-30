@@ -1891,7 +1891,8 @@ impl MailApp {
         context.send_viewport_cmd(egui::ViewportCommand::Close);
     }
 
-    pub fn show(&mut self, context: &egui::Context) {
+    pub fn show(&mut self, ui: &mut egui::Ui) {
+        let context = &ui.ctx().clone();
         if !context.will_discard() {
             self.poll(context);
         }
@@ -1909,30 +1910,30 @@ impl MailApp {
                 self.composer_keys(context);
             } else {
                 self.keys(context);
-                let dropped = context.input(|input| input.raw.dropped_files.iter().find_map(|file| file.path.clone()));
+                let dropped = context.input(|input| input.raw.dropped_files.first().map(|file| file.path().to_path_buf()));
                 if let Some(path) = dropped {
                     self.open(path, context);
                 }
             }
         }
         let composing = self.composer.is_some();
-        egui::TopBottomPanel::top("toolbar")
-            .frame(egui::Frame::side_top_panel(&context.style()).inner_margin(egui::Margin::symmetric(8, 6)))
-            .show(context, |ui| {
+        egui::Panel::top("toolbar")
+            .frame(egui::Frame::side_top_panel(&context.global_style()).inner_margin(egui::Margin::symmetric(8, 6)))
+            .show(ui, |ui| {
                 ui.add_enabled_ui(!blocked && !composing, |ui| self.toolbar(ui));
             });
         if !blocked && !context.will_discard() {
             self.search_bodies(context);
         }
-        egui::TopBottomPanel::bottom("status")
-            .frame(egui::Frame::side_top_panel(&context.style()).inner_margin(egui::Margin::symmetric(8, 2)))
-            .exact_height(26.0)
-            .show(context, |ui| {
+        egui::Panel::bottom("status")
+            .frame(egui::Frame::side_top_panel(&context.global_style()).inner_margin(egui::Margin::symmetric(8, 2)))
+            .exact_size(26.0)
+            .show(ui, |ui| {
                 ui.add_enabled_ui(!blocked, |ui| self.status_bar(ui));
             });
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(context.style().visuals.panel_fill))
-            .show(context, |ui| {
+            .frame(egui::Frame::new().fill(context.global_style().visuals.panel_fill))
+            .show(ui, |ui| {
                 ui.add_enabled_ui(!blocked && self.loading.is_none(), |ui| {
                     if self.reader.package.is_none() {
                         self.welcome(ui);
@@ -1941,27 +1942,27 @@ impl MailApp {
                     } else if ui.available_width() < 760.0 || ui.available_height() < 300.0 {
                         self.narrow(ui);
                     } else {
-                        egui::SidePanel::left("sidebar")
-                            .default_width(240.0)
-                            .width_range(180.0..=380.0)
+                        egui::Panel::left("sidebar")
+                            .default_size(240.0)
+                            .size_range(180.0..=380.0)
                             .frame(egui::Frame::new().fill(sidebar_fill(ui.visuals())))
                             .show_inside(ui, |ui| {
                                 self.sidebar(ui);
                             });
                         if self.reading_pane_right(ui.available_width()) {
                             let width = ui.available_width();
-                            egui::SidePanel::left("messages-side")
-                                .default_width((width * 0.45).clamp(MIN_SIDE_LIST_WIDTH, 720.0))
-                                .width_range(MIN_SIDE_LIST_WIDTH..=(width - MIN_SIDE_READER_WIDTH).max(MIN_SIDE_LIST_WIDTH))
+                            egui::Panel::left("messages-side")
+                                .default_size((width * 0.45).clamp(MIN_SIDE_LIST_WIDTH, 720.0))
+                                .size_range(MIN_SIDE_LIST_WIDTH..=(width - MIN_SIDE_READER_WIDTH).max(MIN_SIDE_LIST_WIDTH))
                                 .resizable(true)
                                 .frame(egui::Frame::new())
                                 .show_inside(ui, |ui| {
                                     self.list(ui);
                                 });
                         } else {
-                            egui::TopBottomPanel::top("messages")
-                                .default_height(260.0)
-                                .height_range(120.0..=(ui.available_height() - 140.0).max(120.0))
+                            egui::Panel::top("messages")
+                                .default_size(260.0)
+                                .size_range(120.0..=(ui.available_height() - 140.0).max(120.0))
                                 .resizable(true)
                                 .frame(egui::Frame::new())
                                 .show_inside(ui, |ui| {
@@ -2612,7 +2613,7 @@ pub fn key(context: &egui::Context, key: Key, command: bool, shift: bool) -> boo
 }
 
 impl eframe::App for MailApp {
-    fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
-        self.show(context);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.show(ui);
     }
 }

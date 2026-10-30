@@ -351,11 +351,12 @@ mod tests {
         };
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            let output = context.run(input(), |context| {
-                egui::CentralPanel::default().show(context, |ui| {
+            let mut output = context.run_ui(input(), |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| {
                     list.show(ui, &browser, &mut icons, &Default::default(), true, false);
                 });
             });
+            output.textures_delta.clear();
             if output
                 .shapes
                 .iter()
@@ -374,9 +375,13 @@ mod tests {
         let mut options = icy_view::Options::default();
         dialogs.open(crate::dialogs::Mode::Sauce, &options, &preview);
         for _ in 0..2 {
-            let _ = context.run(input(), |context| dialogs.show(context, &mut options, &mut preview));
+            let _ = context
+                .run_ui(input(), |ui| dialogs.show(ui.ctx(), &mut options, &mut preview))
+                .textures_delta
+                .clear();
         }
-        let output = context.run(input(), |context| dialogs.show(context, &mut options, &mut preview));
+        let mut output = context.run_ui(input(), |ui| dialogs.show(ui.ctx(), &mut options, &mut preview));
+        output.textures_delta.clear();
         assert!(
             output
                 .shapes
@@ -394,6 +399,6 @@ mod tests {
         assert!(job
             .sections
             .iter()
-            .any(|section| section.format.color == egui::Color32::BLUE && &job.text[section.byte_range.clone()] == "Ärt"));
+            .any(|section| section.format.color == egui::Color32::BLUE && &job.text[section.byte_range.start.0..section.byte_range.end.0] == "Ärt"));
     }
 }

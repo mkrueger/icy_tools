@@ -537,7 +537,10 @@ mod tests {
     #[test]
     fn ime_sends_only_committed_text() {
         let events = [
-            egui::Event::Ime(egui::ImeEvent::Preedit("pending".into())),
+            egui::Event::Ime(egui::ImeEvent::Preedit {
+                text: "pending".into(),
+                active_range_chars: None,
+            }),
             egui::Event::Ime(egui::ImeEvent::Commit("\u{65e5}".into())),
         ];
         assert_eq!(encode_events(&events, BufferType::Unicode, false), "\u{65e5}".as_bytes());
@@ -752,11 +755,15 @@ mod mouse_tests {
             pressed: true,
             modifiers: egui::Modifiers::NONE,
         }];
-        let _ = context.run(egui::RawInput { events, ..Default::default() }, |context| {
-            assert_eq!(context.input(|input| encode_mouse_events(input, &state, &render)), b"\x1b[<0;3;3M");
-            state.mouse_tracking_enabled = false;
-            assert!(context.input(|input| encode_mouse_events(input, &state, &render)).is_empty());
-        });
+        let _ = context
+            .run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+                let context = ui.ctx();
+                assert_eq!(context.input(|input| encode_mouse_events(input, &state, &render)), b"\x1b[<0;3;3M");
+                state.mouse_tracking_enabled = false;
+                assert!(context.input(|input| encode_mouse_events(input, &state, &render)).is_empty());
+            })
+            .textures_delta
+            .clear();
         state.mouse_tracking_enabled = true;
         let events = vec![egui::Event::PointerButton {
             pos: egui::pos2(32.0, 64.0),
@@ -764,15 +771,18 @@ mod mouse_tests {
             pressed: true,
             modifiers: egui::Modifiers::SHIFT,
         }];
-        let _ = context.run(
-            egui::RawInput {
-                events,
-                modifiers: egui::Modifiers::SHIFT,
-                ..Default::default()
-            },
-            |context| {
-                assert!(context.input(|input| encode_mouse_events(input, &state, &render)).is_empty());
-            },
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    events: std::iter::once(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT)).chain(events).collect(),
+                    ..Default::default()
+                },
+                |ui| {
+                    let context = ui.ctx();
+                    assert!(context.input(|input| encode_mouse_events(input, &state, &render)).is_empty());
+                },
+            )
+            .textures_delta
+            .clear();
     }
 }

@@ -282,7 +282,7 @@ impl FontSelector {
 
     fn keyboard(&mut self, context: &egui::Context) -> Option<Action> {
         let page = self.page_rows.max(1) as isize;
-        let typing = context.wants_keyboard_input();
+        let typing = context.egui_wants_keyboard_input();
         let pressed = |key| context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, key));
         if pressed(egui::Key::ArrowUp) {
             self.step(-1);

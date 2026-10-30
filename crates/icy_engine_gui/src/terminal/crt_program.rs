@@ -1,4 +1,5 @@
-use crate::{CRTShaderState, TerminalMessage, TerminalMouseEvent, TerminalShader};
+use super::shader_legacy::TerminalShader;
+use crate::{CRTShaderState, TerminalMessage, TerminalMouseEvent};
 use icy_engine::{KeyModifiers, MouseButton};
 use icy_ui::{mouse, widget::shader, window, Rectangle};
 use std::time::Duration;
@@ -17,7 +18,7 @@ impl CRTShaderProgram<'_> {
     }
 
     fn internal_draw(&self, state: &CRTShaderState, _cursor: mouse::Cursor, bounds: Rectangle) -> TerminalShader {
-        self.frame(state, [bounds.width, bounds.height], crate::get_scale_factor())
+        TerminalShader(self.frame(state, [bounds.width, bounds.height], crate::get_scale_factor()))
     }
 
     /// Simplified internal_update that only handles coordinate mapping and event emission.

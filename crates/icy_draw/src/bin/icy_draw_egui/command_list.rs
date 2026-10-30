@@ -35,7 +35,7 @@ pub struct CommandRow<'a> {
 impl CommandRow<'_> {
     pub fn show(self, ui: &mut egui::Ui, icons: &mut Icons) -> egui::Response {
         let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_HEIGHT), egui::Sense::click());
-        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), self.selected, self.name));
+        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::ListBoxOption, ui.is_enabled(), self.selected, self.name));
         if !ui.is_rect_visible(rect) {
             return response;
         }
@@ -136,13 +136,13 @@ mod tests {
     #[test]
     fn shared_command_rows_stay_single_line_and_inside_narrow_panels() {
         let context = egui::Context::default();
-        let output = context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(220.0, 300.0))),
                 ..Default::default()
             },
-            |context| {
-                egui::CentralPanel::default().show(context, |ui| {
+            |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| {
                     let mut icons = Icons::default();
                     for layout in [SwatchLayout::ReplaceIcon, SwatchLayout::AfterIcon] {
                         let width = ui.available_width();
@@ -165,6 +165,7 @@ mod tests {
                 });
             },
         );
+        output.textures_delta.clear();
         for shape in output.shapes {
             if let egui::Shape::Text(text) = shape.shape {
                 assert_eq!(text.galley.rows.len(), 1);

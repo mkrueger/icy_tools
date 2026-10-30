@@ -73,7 +73,7 @@ impl TextEditor {
         let index = state
             .cursor
             .char_range()
-            .map_or(total, |range| range.primary.index.max(range.secondary.index))
+            .map_or(total, |range| range.primary.index.0.max(range.secondary.index.0))
             .min(total);
         let byte = self.text.char_indices().nth(index).map_or(self.text.len(), |(byte, _)| byte);
         let mut insert = String::new();
@@ -97,7 +97,7 @@ impl TextEditor {
             input.events.iter().any(|event| {
                 matches!(
                     event,
-                    egui::Event::Ime(egui::ImeEvent::Enabled | egui::ImeEvent::Preedit(_) | egui::ImeEvent::Commit(_))
+                    egui::Event::Ime(egui::ImeEvent::Enabled | egui::ImeEvent::Preedit { .. } | egui::ImeEvent::Commit(_))
                 )
             })
         }) {
@@ -221,7 +221,7 @@ impl TextEditor {
             output.changed = true;
         }
         if let Some(range) = edit.cursor_range {
-            self.cursor = range.primary.index;
+            self.cursor = range.primary.index.0;
         }
         let guide = edit.galley_pos.x + margin;
         if guide < edit.response.rect.right() {
@@ -312,34 +312,41 @@ mod tests {
     fn ime_events_leave_quote_keys_for_the_text_editor() {
         for event in [
             egui::ImeEvent::Enabled,
-            egui::ImeEvent::Preedit("にほん".into()),
+            egui::ImeEvent::Preedit {
+                text: "にほん".into(),
+                active_range_chars: None,
+            },
             egui::ImeEvent::Commit("日本".into()),
         ] {
             let context = egui::Context::default();
             let mut editor = TextEditor::new("", vec![" AB> quote".into()], true);
-            let _ = context.run(
-                egui::RawInput {
-                    events: vec![
-                        egui::Event::Ime(event),
-                        egui::Event::Key {
-                            key: Key::Enter,
-                            physical_key: None,
-                            pressed: true,
-                            repeat: false,
-                            modifiers: Modifiers::NONE,
-                        },
-                    ],
-                    ..Default::default()
-                },
-                |context| {
-                    let mut output = EditorOutput::default();
-                    editor.keyboard(context, &mut output);
-                    assert!(!editor.quotes.open);
-                    assert!(context.input(|input| input.key_pressed(Key::Enter)));
-                    assert!(!output.changed);
-                    assert!(editor.text.is_empty());
-                },
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        events: vec![
+                            egui::Event::Ime(event),
+                            egui::Event::Key {
+                                key: Key::Enter,
+                                physical_key: None,
+                                pressed: true,
+                                repeat: false,
+                                modifiers: Modifiers::NONE,
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let context = ui.ctx();
+                        let mut output = EditorOutput::default();
+                        editor.keyboard(context, &mut output);
+                        assert!(!editor.quotes.open);
+                        assert!(context.input(|input| input.key_pressed(Key::Enter)));
+                        assert!(!output.changed);
+                        assert!(editor.text.is_empty());
+                    },
+                )
+                .textures_delta
+                .clear();
         }
     }
 

@@ -1227,7 +1227,7 @@ impl RipEditor {
     }
 
     pub fn copy(&mut self, context: &egui::Context, cut: bool) {
-        if !self.can_edit() || context.wants_keyboard_input() || self.text_edit.is_some() {
+        if !self.can_edit() || context.egui_wants_keyboard_input() || self.text_edit.is_some() {
             return;
         }
         if self.document.preserved_commands() != 0 {
@@ -1251,7 +1251,7 @@ impl RipEditor {
     }
 
     pub fn request_paste(&self, context: &egui::Context) {
-        if self.can_edit() && !context.wants_keyboard_input() && self.text_edit.is_none() {
+        if self.can_edit() && !context.egui_wants_keyboard_input() && self.text_edit.is_none() {
             context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
     }
@@ -1308,7 +1308,7 @@ impl RipEditor {
     }
 
     fn clipboard_input(&mut self, context: &egui::Context) {
-        if !self.can_edit() || context.wants_keyboard_input() || self.text_edit.is_some() {
+        if !self.can_edit() || context.egui_wants_keyboard_input() || self.text_edit.is_some() {
             return;
         }
         let events = context.input_mut(|input| {
@@ -2322,252 +2322,248 @@ impl RipEditor {
         }
     }
 
-    fn command_list(&mut self, context: &egui::Context, blocked: bool, editing_blocked: bool) {
-        egui::SidePanel::right("rip-commands")
-            .default_width(280.0)
-            .min_width(220.0)
-            .show(context, |ui| {
-                if blocked {
-                    ui.disable();
-                }
-                let count = self.document.commands().len();
-                let preserved = self.document.preserved_commands();
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.label(icy_engine_gui::egui::appearance::bold(ui, fl!("rip-editor-commands")));
-                    ui.weak(count.to_string());
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing.x = 2.0;
-                        let editable = !editing_blocked && self.selected.is_some_and(|index| index >= preserved && index < count);
-                        let mut action = None;
-                        ui.add_enabled_ui(editable, |ui| {
-                            if self.icons.button_sized(ui, "delete", &fl!("rip-editor-delete"), false, 26.0).clicked() {
-                                action = Some(0);
-                            }
-                        });
-                        ui.add_enabled_ui(editable && self.selected.is_some_and(|index| index + 1 < count), |ui| {
-                            if self.icons.button_sized(ui, "move_down", &fl!("rip-editor-down"), false, 26.0).clicked() {
-                                action = Some(1);
-                            }
-                        });
-                        ui.add_enabled_ui(editable && self.selected.is_some_and(|index| index > preserved), |ui| {
-                            if self.icons.button_sized(ui, "move_up", &fl!("rip-editor-up"), false, 26.0).clicked() {
-                                action = Some(-1);
-                            }
-                        });
-                        widgets::divider(ui);
-                        let through = self.preview_to_selection && !self.transport.animating();
-                        if self
-                            .icons
-                            .button_sized(ui, "visibility", &fl!("rip-editor-preview-through"), through, 26.0)
-                            .clicked()
-                        {
-                            self.toggle_preview();
-                        }
-                        match action {
-                            Some(0) => self.delete_selected_command(),
-                            Some(delta) => self.move_selected_command(delta),
-                            None => {}
+    fn command_list(&mut self, ui: &mut egui::Ui, blocked: bool, editing_blocked: bool) {
+        egui::Panel::right("rip-commands").default_size(280.0).min_size(220.0).show(ui, |ui| {
+            if blocked {
+                ui.disable();
+            }
+            let count = self.document.commands().len();
+            let preserved = self.document.preserved_commands();
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(icy_engine_gui::egui::appearance::bold(ui, fl!("rip-editor-commands")));
+                ui.weak(count.to_string());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    let editable = !editing_blocked && self.selected.is_some_and(|index| index >= preserved && index < count);
+                    let mut action = None;
+                    ui.add_enabled_ui(editable, |ui| {
+                        if self.icons.button_sized(ui, "delete", &fl!("rip-editor-delete"), false, 26.0).clicked() {
+                            action = Some(0);
                         }
                     });
+                    ui.add_enabled_ui(editable && self.selected.is_some_and(|index| index + 1 < count), |ui| {
+                        if self.icons.button_sized(ui, "move_down", &fl!("rip-editor-down"), false, 26.0).clicked() {
+                            action = Some(1);
+                        }
+                    });
+                    ui.add_enabled_ui(editable && self.selected.is_some_and(|index| index > preserved), |ui| {
+                        if self.icons.button_sized(ui, "move_up", &fl!("rip-editor-up"), false, 26.0).clicked() {
+                            action = Some(-1);
+                        }
+                    });
+                    widgets::divider(ui);
+                    let through = self.preview_to_selection && !self.transport.animating();
+                    if self
+                        .icons
+                        .button_sized(ui, "visibility", &fl!("rip-editor-preview-through"), through, 26.0)
+                        .clicked()
+                    {
+                        self.toggle_preview();
+                    }
+                    match action {
+                        Some(0) => self.delete_selected_command(),
+                        Some(delta) => self.move_selected_command(delta),
+                        None => {}
+                    }
                 });
-                if preserved > 0 {
-                    ui.add(egui::Label::new(egui::RichText::new(fl!("rip-editor-preserved")).small().weak()).wrap());
-                }
-                ui.separator();
-
-                let previous = self.selected;
-                let selected_button = self.selected.and_then(|index| ButtonTarget::owning(self.document.commands(), index));
-                let count = self.document.commands().len();
-                let list_height = (ui.available_height() - 250.0).max(120.0);
-                let mut scroll = egui::ScrollArea::vertical()
-                    .id_salt("rip-command-list")
-                    .auto_shrink([false, false])
-                    .max_height(list_height);
-                // A shape picked on the canvas is scrolled into view in the list.
-                if self.selected != self.listed_selection {
-                    if let Some(index) = self.selected.filter(|index| !self.visible_rows.contains(index)) {
-                        scroll = scroll.vertical_scroll_offset((index as f32 * COMMAND_ROW_HEIGHT - list_height / 2.0).max(0.0));
-                    }
-                }
-                let frame = self.frame();
-                let mut double_clicked = None;
-                ui.scope(|ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    scroll.show_rows(ui, COMMAND_ROW_HEIGHT, count, |ui, rows| {
-                        self.visible_rows = rows.clone();
-                        for index in rows {
-                            let Some(command) = self.document.commands().get(index) else {
-                                break;
-                            };
-                            // A button's style and font commands are highlighted with it.
-                            let related =
-                                selected_button.is_some_and(|target| target.button == index || target.style == Some(index) || target.font == Some(index));
-                            let row = CommandRow {
-                                index,
-                                command,
-                                selected: self.selected == Some(index),
-                                mark: RowMark::new(index, frame),
-                                related,
-                                preserved: index < preserved,
-                            };
-                            let mouse = is_mouse_region(command);
-                            let shape = select::geometry(command, (0, 0)).is_some();
-                            let response = row.show(ui, &mut self.icons, &self.palette);
-                            if response.double_clicked() {
-                                double_clicked = Some(index);
-                            } else if response.clicked() && editing_blocked {
-                                self.selected = Some(index);
-                            } else if response.clicked() {
-                                self.finish_text();
-                                // Mouse regions are edited with their own tool, shapes with the select tool.
-                                if mouse && self.tool != Tool::Mouse {
-                                    self.select_tool(Tool::Mouse);
-                                } else if !mouse && self.tool == Tool::Mouse && shape {
-                                    self.select_tool(Tool::Select);
-                                }
-                                self.selected = Some(index);
-                            }
-                            if index < preserved {
-                                response.on_hover_text(fl!("rip-editor-preserved"));
-                            }
-                        }
-                    });
-                });
-                if let Some(index) = double_clicked {
-                    // Double-clicking runs the animation up to the command.
-                    self.transport_action(Action::Seek(index), ui.input(|input| input.time));
-                    self.sync_selection();
-                    self.selected = Some(index);
-                }
-                self.listed_selection = self.selected;
-                // The command list follows and seeks the animation; only its editing waits.
-                if editing_blocked {
-                    ui.disable();
-                }
-                if self.selected != previous {
-                    // An edit still in a focused field is kept when another command is chosen;
-                    // restyling a text can add or remove commands before the new selection.
-                    let (chosen, edited, before) = (self.selected, self.editing.as_ref().map(|(index, _)| *index), self.document.commands().len());
-                    self.commit_properties();
-                    let shift = self.document.commands().len() as isize - before as isize;
-                    self.selected = chosen.map(|index| {
-                        if edited.is_some_and(|edited| index > edited) {
-                            (index as isize + shift).max(0) as usize
-                        } else {
-                            index
-                        }
-                    });
-                    self.editing = None;
-                    if self.preview_to_selection {
-                        self.preview_dirty = true;
-                    }
-                }
-                if self.editing.is_none() {
-                    self.editing = self
-                        .selected
-                        .and_then(|index| self.document.commands().get(index).cloned().map(|cmd| (index, cmd)));
-                    self.editing_style = None;
-                }
-                // Text also edits the font and color it is drawn with.
-                let text_index = self
-                    .editing
-                    .as_ref()
-                    .filter(|(index, draft)| *index >= preserved && matches!(draft, RipCommand::TextXY { .. }))
-                    .map(|(index, _)| *index);
-                match text_index {
-                    Some(index) if self.editing_style.map(|style| style.0) != Some(index) => {
-                        let commands = self.document.commands();
-                        self.editing_style = Some((index, font_before(commands, index), color_before(commands, index)));
-                    }
-                    None => self.editing_style = None,
-                    _ => {}
-                }
-                let button_target = self.selected.and_then(|index| ButtonTarget::owning(self.document.commands(), index));
-                let mut open_button = None;
-                let mut open_palette = None;
-                let mut apply = None;
-                if let Some((index, draft)) = self.editing.as_mut() {
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        if let Some(icon) = command_icon(draft) {
-                            ui.add(self.icons.image(ui, icon, 16.0));
-                        }
-                        ui.label(icy_engine_gui::egui::appearance::bold(ui, command_name(draft)));
-                        ui.weak(format!("#{}", *index + 1));
-                    });
-                    ui.add_space(4.0);
-                    let original = self.document.commands().get(*index);
-                    if *index < preserved {
-                        ui.weak(fl!("rip-editor-preserved"));
-                    } else if let Some(target) = button_target {
-                        ui.weak(fl!("rip-button-edit-hint"));
-                        if ui
-                            .add(egui::Button::new(fl!("rip-button-edit")).min_size(egui::vec2(ui.available_width(), 28.0)))
-                            .clicked()
-                        {
-                            open_button = Some(target);
-                        }
-                    } else if matches!(draft, RipCommand::SetPalette { .. }) {
-                        if ui
-                            .add(egui::Button::new(fl!("rip-palette-edit")).min_size(egui::vec2(ui.available_width(), 28.0)))
-                            .clicked()
-                        {
-                            open_palette = Some(*index);
-                        }
-                    } else {
-                        let mut supported = true;
-                        let area = egui::ScrollArea::vertical()
-                            .id_salt("rip-properties")
-                            .max_height((ui.available_height() - 8.0).max(60.0))
-                            .show(ui, |ui| {
-                                supported = command_properties(ui, draft);
-                                if !supported {
-                                    ui.weak(fl!("rip-editor-unsupported-properties"));
-                                }
-                                if let Some((_, font, color)) = self.editing_style.as_mut() {
-                                    ui.add_space(4.0);
-                                    text_style_properties(ui, &self.palette, font, color);
-                                }
-                            });
-                        if supported {
-                            let commands = self.document.commands();
-                            let restyled = self
-                                .editing_style
-                                .is_some_and(|(index, font, color)| (font, color) != (font_before(commands, index), color_before(commands, index)));
-                            let changed = original != Some(&*draft) || restyled;
-                            // Changes apply without a confirmation, once a drag ends or a field
-                            // of the panel is left (Enter, Tab or a click elsewhere).
-                            let context = ui.ctx().clone();
-                            let dragging = context.input(|input| input.pointer.any_down());
-                            let typing = context
-                                .memory(|memory| memory.focused())
-                                .and_then(|id| context.read_response(id))
-                                .is_some_and(|response| area.inner_rect.intersects(response.rect));
-                            if changed && !dragging && !typing {
-                                apply = Some((*index, draft.clone()));
-                            }
-                        }
-                    }
-                }
-                if let Some((index, command)) = apply {
-                    if let Some((_, font, color)) = self.editing_style.filter(|style| style.0 == index) {
-                        let (commands, index) = restyle_text(self.document.commands(), preserved, index, command, font, color);
-                        self.apply_editable(commands[preserved..].to_vec(), index);
-                    } else {
-                        match self.document.replace(index, command) {
-                            Ok(()) => self.preview_dirty = true,
-                            Err(error) => self.error = Some(error.to_string()),
-                        }
-                    }
-                }
-                if let Some(target) = open_button {
-                    self.open_button_dialog(Some(target));
-                }
-                if let Some(index) = open_palette {
-                    self.open_palette_dialog(Some(index));
-                }
             });
+            if preserved > 0 {
+                ui.add(egui::Label::new(egui::RichText::new(fl!("rip-editor-preserved")).small().weak()).wrap());
+            }
+            ui.separator();
+
+            let previous = self.selected;
+            let selected_button = self.selected.and_then(|index| ButtonTarget::owning(self.document.commands(), index));
+            let count = self.document.commands().len();
+            let list_height = (ui.available_height() - 250.0).max(120.0);
+            let mut scroll = egui::ScrollArea::vertical()
+                .id_salt("rip-command-list")
+                .auto_shrink([false, false])
+                .max_height(list_height);
+            // A shape picked on the canvas is scrolled into view in the list.
+            if self.selected != self.listed_selection {
+                if let Some(index) = self.selected.filter(|index| !self.visible_rows.contains(index)) {
+                    scroll = scroll.vertical_scroll_offset((index as f32 * COMMAND_ROW_HEIGHT - list_height / 2.0).max(0.0));
+                }
+            }
+            let frame = self.frame();
+            let mut double_clicked = None;
+            ui.scope(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                scroll.show_rows(ui, COMMAND_ROW_HEIGHT, count, |ui, rows| {
+                    self.visible_rows = rows.clone();
+                    for index in rows {
+                        let Some(command) = self.document.commands().get(index) else {
+                            break;
+                        };
+                        // A button's style and font commands are highlighted with it.
+                        let related = selected_button.is_some_and(|target| target.button == index || target.style == Some(index) || target.font == Some(index));
+                        let row = CommandRow {
+                            index,
+                            command,
+                            selected: self.selected == Some(index),
+                            mark: RowMark::new(index, frame),
+                            related,
+                            preserved: index < preserved,
+                        };
+                        let mouse = is_mouse_region(command);
+                        let shape = select::geometry(command, (0, 0)).is_some();
+                        let response = row.show(ui, &mut self.icons, &self.palette);
+                        if response.double_clicked() {
+                            double_clicked = Some(index);
+                        } else if response.clicked() && editing_blocked {
+                            self.selected = Some(index);
+                        } else if response.clicked() {
+                            self.finish_text();
+                            // Mouse regions are edited with their own tool, shapes with the select tool.
+                            if mouse && self.tool != Tool::Mouse {
+                                self.select_tool(Tool::Mouse);
+                            } else if !mouse && self.tool == Tool::Mouse && shape {
+                                self.select_tool(Tool::Select);
+                            }
+                            self.selected = Some(index);
+                        }
+                        if index < preserved {
+                            response.on_hover_text(fl!("rip-editor-preserved"));
+                        }
+                    }
+                });
+            });
+            if let Some(index) = double_clicked {
+                // Double-clicking runs the animation up to the command.
+                self.transport_action(Action::Seek(index), ui.input(|input| input.time));
+                self.sync_selection();
+                self.selected = Some(index);
+            }
+            self.listed_selection = self.selected;
+            // The command list follows and seeks the animation; only its editing waits.
+            if editing_blocked {
+                ui.disable();
+            }
+            if self.selected != previous {
+                // An edit still in a focused field is kept when another command is chosen;
+                // restyling a text can add or remove commands before the new selection.
+                let (chosen, edited, before) = (self.selected, self.editing.as_ref().map(|(index, _)| *index), self.document.commands().len());
+                self.commit_properties();
+                let shift = self.document.commands().len() as isize - before as isize;
+                self.selected = chosen.map(|index| {
+                    if edited.is_some_and(|edited| index > edited) {
+                        (index as isize + shift).max(0) as usize
+                    } else {
+                        index
+                    }
+                });
+                self.editing = None;
+                if self.preview_to_selection {
+                    self.preview_dirty = true;
+                }
+            }
+            if self.editing.is_none() {
+                self.editing = self
+                    .selected
+                    .and_then(|index| self.document.commands().get(index).cloned().map(|cmd| (index, cmd)));
+                self.editing_style = None;
+            }
+            // Text also edits the font and color it is drawn with.
+            let text_index = self
+                .editing
+                .as_ref()
+                .filter(|(index, draft)| *index >= preserved && matches!(draft, RipCommand::TextXY { .. }))
+                .map(|(index, _)| *index);
+            match text_index {
+                Some(index) if self.editing_style.map(|style| style.0) != Some(index) => {
+                    let commands = self.document.commands();
+                    self.editing_style = Some((index, font_before(commands, index), color_before(commands, index)));
+                }
+                None => self.editing_style = None,
+                _ => {}
+            }
+            let button_target = self.selected.and_then(|index| ButtonTarget::owning(self.document.commands(), index));
+            let mut open_button = None;
+            let mut open_palette = None;
+            let mut apply = None;
+            if let Some((index, draft)) = self.editing.as_mut() {
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if let Some(icon) = command_icon(draft) {
+                        ui.add(self.icons.image(ui, icon, 16.0));
+                    }
+                    ui.label(icy_engine_gui::egui::appearance::bold(ui, command_name(draft)));
+                    ui.weak(format!("#{}", *index + 1));
+                });
+                ui.add_space(4.0);
+                let original = self.document.commands().get(*index);
+                if *index < preserved {
+                    ui.weak(fl!("rip-editor-preserved"));
+                } else if let Some(target) = button_target {
+                    ui.weak(fl!("rip-button-edit-hint"));
+                    if ui
+                        .add(egui::Button::new(fl!("rip-button-edit")).min_size(egui::vec2(ui.available_width(), 28.0)))
+                        .clicked()
+                    {
+                        open_button = Some(target);
+                    }
+                } else if matches!(draft, RipCommand::SetPalette { .. }) {
+                    if ui
+                        .add(egui::Button::new(fl!("rip-palette-edit")).min_size(egui::vec2(ui.available_width(), 28.0)))
+                        .clicked()
+                    {
+                        open_palette = Some(*index);
+                    }
+                } else {
+                    let mut supported = true;
+                    let area = egui::ScrollArea::vertical()
+                        .id_salt("rip-properties")
+                        .max_height((ui.available_height() - 8.0).max(60.0))
+                        .show(ui, |ui| {
+                            supported = command_properties(ui, draft);
+                            if !supported {
+                                ui.weak(fl!("rip-editor-unsupported-properties"));
+                            }
+                            if let Some((_, font, color)) = self.editing_style.as_mut() {
+                                ui.add_space(4.0);
+                                text_style_properties(ui, &self.palette, font, color);
+                            }
+                        });
+                    if supported {
+                        let commands = self.document.commands();
+                        let restyled = self
+                            .editing_style
+                            .is_some_and(|(index, font, color)| (font, color) != (font_before(commands, index), color_before(commands, index)));
+                        let changed = original != Some(&*draft) || restyled;
+                        // Changes apply without a confirmation, once a drag ends or a field
+                        // of the panel is left (Enter, Tab or a click elsewhere).
+                        let context = ui.ctx().clone();
+                        let dragging = context.input(|input| input.pointer.any_down());
+                        let typing = context
+                            .memory(|memory| memory.focused())
+                            .and_then(|id| context.read_response(id))
+                            .is_some_and(|response| area.inner_rect.intersects(response.rect));
+                        if changed && !dragging && !typing {
+                            apply = Some((*index, draft.clone()));
+                        }
+                    }
+                }
+            }
+            if let Some((index, command)) = apply {
+                if let Some((_, font, color)) = self.editing_style.filter(|style| style.0 == index) {
+                    let (commands, index) = restyle_text(self.document.commands(), preserved, index, command, font, color);
+                    self.apply_editable(commands[preserved..].to_vec(), index);
+                } else {
+                    match self.document.replace(index, command) {
+                        Ok(()) => self.preview_dirty = true,
+                        Err(error) => self.error = Some(error.to_string()),
+                    }
+                }
+            }
+            if let Some(target) = open_button {
+                self.open_button_dialog(Some(target));
+            }
+            if let Some(index) = open_palette {
+                self.open_palette_dialog(Some(index));
+            }
+        });
     }
 
     /// Applies a changed property draft of the command list, e.g. before another one is chosen.
@@ -2593,13 +2589,14 @@ impl RipEditor {
         }
     }
 
-    fn sidebar(&mut self, context: &egui::Context, blocked: bool) {
-        let panel_fill = context.style().visuals.panel_fill;
-        egui::SidePanel::left("rip-tools")
-            .exact_width(136.0)
+    fn sidebar(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        let context = &ui.ctx().clone();
+        let panel_fill = context.global_style().visuals.panel_fill;
+        egui::Panel::left("rip-tools")
+            .exact_size(136.0)
             .resizable(false)
             .frame(egui::Frame::new().fill(panel_fill).inner_margin(egui::Margin::symmetric(6, 6)))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 ui.add_enabled_ui(!blocked, |ui| {
                     for (id, label, color) in [
                         ("draw", fl!("rip-editor-color"), &mut self.draw_color),
@@ -2646,25 +2643,26 @@ impl RipEditor {
             });
     }
 
-    pub fn show(&mut self, context: &egui::Context, blocked: bool) {
+    pub fn show(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        let context = &ui.ctx().clone();
         self.advance_playback(context);
         self.sync_selection();
         let blocked = blocked || self.button_dialog.is_some() || self.palette_dialog.is_some();
         let editing_blocked = blocked || self.transport.animating();
         self.mutation_blocked = editing_blocked;
-        let panel_fill = context.style().visuals.panel_fill;
-        egui::TopBottomPanel::top("rip-toolbar")
-            .exact_height(TOOLBAR_HEIGHT)
+        let panel_fill = context.global_style().visuals.panel_fill;
+        egui::Panel::top("rip-toolbar")
+            .exact_size(TOOLBAR_HEIGHT)
             .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if editing_blocked {
                     ui.disable();
                 }
                 self.toolbar(ui);
             });
         self.sync_selection();
-        self.sidebar(context, editing_blocked);
-        self.command_list(context, blocked, editing_blocked);
+        self.sidebar(ui, editing_blocked);
+        self.command_list(ui, blocked, editing_blocked);
         if !blocked && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
             self.cancel();
         }
@@ -2700,16 +2698,16 @@ impl RipEditor {
             }
         }
         // The player sits under the canvas, between the side panels.
-        egui::TopBottomPanel::bottom("rip-transport")
-            .exact_height(super::playback::PLAYER_HEIGHT)
+        egui::Panel::bottom("rip-transport")
+            .exact_size(super::playback::PLAYER_HEIGHT)
             .frame(egui::Frame::new().fill(panel_fill))
-            .show(context, |ui| {
+            .show(ui, |ui| {
                 if blocked {
                     ui.disable();
                 }
                 self.transport_bar(ui);
             });
-        egui::CentralPanel::default().show(context, |ui| {
+        egui::CentralPanel::default_margins().show(ui, |ui| {
             if let Some(error) = &self.error {
                 ui.colored_label(ui.visuals().error_fg_color, error);
             }
@@ -3145,13 +3143,15 @@ mod tests {
         let border = egui::Id::new(("rip-color", "border"));
         let fill = egui::Id::new(("rip-color", "fill"));
         let frame = |editor: &mut RipEditor| {
-            context.run(
+            let mut output = context.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0))),
                     ..Default::default()
                 },
-                |context| editor.sidebar(context, false),
-            )
+                |ui| editor.sidebar(ui, false),
+            );
+            output.textures_delta.clear();
+            output
         };
         frame(&mut editor);
         assert!(!egui::Popup::is_id_open(&context, draw));
@@ -3573,6 +3573,8 @@ mod tests {
                         unit: egui::MouseWheelUnit::Point,
                         delta: egui::vec2(0.0, -100.0),
                         modifiers: egui::Modifiers::NONE,
+                        phase: egui::TouchPhase::Move,
+                        source: egui::MouseWheelSource::Unknown,
                     },
                 ],
             );
@@ -3705,12 +3707,15 @@ mod tests {
                 assert_eq!(preview.pixel_index(120, 90), Some(5), "{tool:?}");
             }
             let context = egui::Context::default();
-            let _ = context.run(egui::RawInput::default(), |context| {
-                egui::CentralPanel::default().show(context, |ui| {
-                    let mut draft = commands.last().unwrap().clone();
-                    assert!(command_properties(ui, &mut draft), "{tool:?}");
-                });
-            });
+            let _ = context
+                .run_ui(egui::RawInput::default(), |ui| {
+                    egui::CentralPanel::default_margins().show(ui, |ui| {
+                        let mut draft = commands.last().unwrap().clone();
+                        assert!(command_properties(ui, &mut draft), "{tool:?}");
+                    });
+                })
+                .textures_delta
+                .clear();
             let loaded = RipDocument::from_bytes(&editor.document.to_bytes().unwrap()).unwrap();
             assert_eq!(loaded.commands(), commands, "{tool:?}");
             editor.undo(false);
@@ -3738,14 +3743,15 @@ mod tests {
         };
         click(&mut editor, (30, 30));
         // From the first corner on, the placed corners and the edge to the pointer show.
-        let output = context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                 events: vec![egui::Event::PointerMoved(at((120, 30)))],
                 ..Default::default()
             },
-            |context| editor.show(context, false),
+            |ui| editor.show(ui, false),
         );
+        output.textures_delta.clear();
         assert!(
             output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Rect(handle) if handle.rect.size() == egui::Vec2::splat(7.0) && handle.rect.center() == at((30, 30)))),
             "the first corner is marked"
@@ -3877,11 +3883,14 @@ mod tests {
             RipCommand::Comment { text: "Read-only".into() },
         ];
         let supported = std::cell::RefCell::new(Vec::new());
-        let _ = context.run(egui::RawInput::default(), |context| {
-            egui::CentralPanel::default().show(context, |ui| {
-                *supported.borrow_mut() = commands.iter_mut().map(|command| command_properties(ui, command)).collect();
-            });
-        });
+        let _ = context
+            .run_ui(egui::RawInput::default(), |ui| {
+                egui::CentralPanel::default_margins().show(ui, |ui| {
+                    *supported.borrow_mut() = commands.iter_mut().map(|command| command_properties(ui, command)).collect();
+                });
+            })
+            .textures_delta
+            .clear();
         assert_eq!(*supported.borrow(), vec![true; 12].into_iter().chain([false]).collect::<Vec<_>>());
     }
 
@@ -3959,14 +3968,17 @@ mod tests {
         let context = egui::Context::default();
         let mut editor = RipEditor::new();
         let run = |editor: &mut RipEditor, events: Vec<egui::Event>| {
-            let _ = context.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
-                    events,
-                    ..Default::default()
-                },
-                |context| editor.show(context, false),
-            );
+            let _ = context
+                .run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| editor.show(ui, false),
+                )
+                .textures_delta
+                .clear();
         };
         run(&mut editor, vec![]);
         let rect = editor.canvas_rect.unwrap();
@@ -4010,14 +4022,17 @@ mod tests {
     }
 
     fn run(context: &egui::Context, editor: &mut RipEditor, events: Vec<egui::Event>) {
-        let _ = context.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
-                events,
-                ..Default::default()
-            },
-            |context| editor.show(context, false),
-        );
+        let _ = context
+            .run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
+                    events,
+                    ..Default::default()
+                },
+                |ui| editor.show(ui, false),
+            )
+            .textures_delta
+            .clear();
     }
 
     fn button_event(pos: egui::Pos2, button: egui::PointerButton, pressed: bool) -> egui::Event {
@@ -4048,15 +4063,17 @@ mod tests {
     }
 
     fn run_at(context: &egui::Context, editor: &mut RipEditor, time: f64, events: Vec<egui::Event>) -> egui::FullOutput {
-        context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 820.0))),
                 time: Some(time),
                 events,
                 ..Default::default()
             },
-            |context| editor.show(context, false),
-        )
+            |ui| editor.show(ui, false),
+        );
+        output.textures_delta.clear();
+        output
     }
 
     fn lines(count: u16) -> RipEditor {

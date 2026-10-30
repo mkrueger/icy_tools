@@ -18,15 +18,15 @@ embedded-fonts = []
 lazy_static = { workspace = true }
 base64 =  { workspace = true }
 log = { workspace = true }
-rfind_url = "0.4.4"
-chrono = { workspace = true }
-png = "0.18.1"
-flate2 = "1"
+rfind_url = { workspace = true }
+chrono = { workspace = true, features = ["default", "serde"] }
+png = { workspace = true }
+flate2 = { workspace = true }
 regex = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-byteorder = "1"
+byteorder = { workspace = true }
 bstr = { workspace = true }
 codepages = { workspace = true }
 rayon = { workspace = true }
@@ -38,38 +38,37 @@ icy_sauce = { workspace = true }
 icy_sixel = { workspace = true }
 icy_parser_core = { workspace = true }
 bitflags = { workspace = true }
-utf8parse = "0.2"
-unicode-segmentation = "1.13.3"
-unicode-width = "0.2.2"
+utf8parse = { workspace = true }
+unicode-segmentation = { workspace = true }
+unicode-width = { workspace = true }
 unarc-rs = { workspace = true }
 
 libyaff = { workspace = true }
 
-# ICY v1 chunk compression; pure Rust so icy_engine also builds for wasm32.
-ruzstd = "0.9"
+ruzstd = { workspace = true }
 
 # Image export support
 image = { workspace = true }
 jxl-oxide = { workspace = true }
-lodepng = {version ="3.12.2", default-features = false, features = ["cfzlib"] }
+lodepng = { workspace = true }
 
 # GIF encoding (replaces gifski)
 gif = { workspace = true }
 quantette = { workspace = true }
 
-imgref = "1.12.2"
-rgb = "0.8.53"
+imgref = { workspace = true }
+rgb = { workspace = true }
 fastrand.workspace = true
 # std::time::Instant panics on wasm32-unknown-unknown; this is std::time on other targets.
-web-time = "1.1"
+web-time = { workspace = true }
 
 [dev-dependencies]
 # Checks that files written by the C zstd library still load.
-zstd = "0.13"
+zstd = { workspace = true }
 walkdir = { workspace = true }
-pretty_assertions = "1.4.1"
-env_logger = "0.11"
-criterion = { version = "0.8", features = ["html_reports"] }
+pretty_assertions = { workspace = true }
+env_logger = { workspace = true }
+criterion = { workspace = true }
 
 [[bench]]
 name = "render_region"

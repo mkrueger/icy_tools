@@ -477,7 +477,7 @@ impl DraftStore {
             let files = crate::blue_wave::reply_files(packet, &replies)?;
             atomic_write(destination, |file| {
                 let mut zip = zip::ZipWriter::new(file);
-                let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default()
+                let options = zip::write::SimpleFileOptions::default()
                     .compression_method(zip::CompressionMethod::Stored)
                     .last_modified_time(zip::DateTime::default());
                 for (name, data) in &files {
@@ -554,7 +554,7 @@ impl DraftStore {
         }
         atomic_write(destination, |file| {
             let mut zip = zip::ZipWriter::new(file);
-            let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default()
+            let options = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Stored)
                 .last_modified_time(zip::DateTime::default());
             zip.start_file(format!("{}.MSG", self.bbs_id), options)?;

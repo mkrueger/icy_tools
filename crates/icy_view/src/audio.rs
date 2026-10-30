@@ -4,10 +4,10 @@
 use std::{io::Cursor, path::Path, sync::Arc, time::Duration};
 
 use symphonia::core::{
-    formats::FormatOptions,
+    formats::{probe::Hint, FormatOptions, TrackType},
     io::MediaSourceStream,
-    meta::{MetadataOptions, MetadataRevision, StandardTagKey},
-    probe::Hint,
+    meta::{MetadataOptions, MetadataRevision, StandardTag},
+    units::Duration as StreamDuration,
 };
 
 pub const EXTENSIONS: &[&str] = &["mp3", "ogg", "oga", "flac", "wav", "m4a", "aac"];
@@ -45,14 +45,21 @@ fn format_name(extension: Option<&str>) -> &'static str {
     }
 }
 
-const SHOWN_TAGS: [(StandardTagKey, &str); 6] = [
-    (StandardTagKey::Artist, "Artist"),
-    (StandardTagKey::Album, "Album"),
-    (StandardTagKey::Date, "Date"),
-    (StandardTagKey::Genre, "Genre"),
-    (StandardTagKey::Comment, "Comment"),
-    (StandardTagKey::Copyright, "Copyright"),
-];
+const SHOWN_TAGS: [&str; 6] = ["Artist", "Album", "Date", "Genre", "Comment", "Copyright"];
+
+fn shown_tag(tag: &StandardTag) -> Option<(&'static str, &str)> {
+    let (label, value) = match tag {
+        StandardTag::TrackTitle(value) => ("Title", value),
+        StandardTag::Artist(value) => ("Artist", value),
+        StandardTag::Album(value) => ("Album", value),
+        StandardTag::RecordingDate(value) | StandardTag::ReleaseDate(value) => ("Date", value),
+        StandardTag::Genre(value) => ("Genre", value),
+        StandardTag::Comment(value) => ("Comment", value),
+        StandardTag::Copyright(value) => ("Copyright", value),
+        _ => return None,
+    };
+    Some((label, value.as_str()))
+}
 
 /// iTunes stores loudness and gapless data as comments of hexadecimal words.
 fn is_encoder_data(value: &str) -> bool {
@@ -70,60 +77,72 @@ impl AudioFile {
         if let Some(hint) = &hint {
             probe_hint.with_extension(hint);
         }
-        let mut probed = symphonia::default::get_probe()
-            .format(&probe_hint, source, &FormatOptions::default(), &MetadataOptions::default())
+        let mut format = symphonia::default::get_probe()
+            .probe(&probe_hint, source, FormatOptions::default(), MetadataOptions::default())
             .map_err(|error| anyhow::anyhow!("not a playable audio file: {error}"))?;
-        let track = probed
-            .format
-            .default_track()
+        let track = format
+            .default_track(TrackType::Audio)
             .ok_or_else(|| anyhow::anyhow!("the audio file has no audio track"))?;
-        let params = track.codec_params.clone();
+        let params = track
+            .codec_params
+            .as_ref()
+            .and_then(|params| params.audio())
+            .ok_or_else(|| anyhow::anyhow!("the audio track has no codec parameters"))?;
         let track_id = track.id;
         let sample_rate = params.sample_rate.unwrap_or(0);
-        let channels = params.channels.map_or(0, |channels| channels.count());
+        let channels = params.channels.as_ref().map_or(0, |channels| channels.count());
+        let time_base = track.time_base;
+        let track_duration = track.duration;
+        let num_frames = track.num_frames;
 
         let mut revisions: Vec<MetadataRevision> = Vec::new();
-        if let Some(metadata) = probed.metadata.get() {
-            revisions.extend(metadata.current().cloned());
+        let mut metadata = format.metadata();
+        while let Some(revision) = metadata.pop() {
+            revisions.push(revision);
         }
-        revisions.extend(probed.format.metadata().current().cloned());
-        let tag = |key: StandardTagKey| {
+        revisions.extend(metadata.current().cloned());
+        let tag = |label: &str| {
             revisions
                 .iter()
-                .flat_map(|revision| revision.tags())
-                .find(|tag| tag.std_key == Some(key))
-                .map(|tag| tag.value.to_string().trim().to_owned())
+                .flat_map(|revision| {
+                    revision.media.tags.iter().chain(
+                        revision
+                            .per_track
+                            .iter()
+                            .filter(|metadata| metadata.track_id == u64::from(track_id))
+                            .flat_map(|metadata| &metadata.metadata.tags),
+                    )
+                })
+                .filter_map(|tag| tag.std.as_ref().and_then(shown_tag))
+                .find(|(key, _)| *key == label)
+                .map(|(_, value)| value.trim().to_owned())
                 .filter(|value| !value.is_empty())
         };
-        let title = tag(StandardTagKey::TrackTitle).unwrap_or_default();
+        let title = tag("Title").unwrap_or_default();
         let tags = SHOWN_TAGS
             .iter()
-            .filter_map(|(key, label)| tag(*key).map(|value| (*label, value)))
+            .filter_map(|label| tag(label).map(|value| (*label, value)))
             .filter(|(_, value)| !is_encoder_data(value))
             .collect();
 
-        let frames = match params.n_frames {
-            Some(frames) => frames,
-            // Without a frame count (e.g. MP3 without a Xing header) add up the packet lengths;
-            // demuxing is cheap compared to decoding.
-            None => {
-                let mut frames = 0;
-                while let Ok(packet) = probed.format.next_packet() {
-                    if packet.track_id() == track_id {
-                        frames += packet.dur;
+        let duration = track_duration
+            .and_then(|duration| time_base?.calc_duration(duration))
+            .map(|time| time.as_secs_f64())
+            .or_else(|| num_frames.filter(|_| sample_rate > 0).map(|frames| frames as f64 / sample_rate as f64))
+            .unwrap_or_else(|| {
+                // Without a duration (e.g. MP3 without a Xing header), add up packet
+                // lengths in timebase units; demuxing is cheaper than decoding.
+                let mut duration = StreamDuration::ZERO;
+                while let Ok(Some(packet)) = format.next_packet() {
+                    if packet.track_id == track_id {
+                        duration = duration.saturating_add(packet.dur);
                     }
                 }
-                frames
-            }
-        };
-        let duration = match (params.time_base, sample_rate) {
-            (Some(time_base), _) => {
-                let time = time_base.calc_time(frames);
-                time.seconds as f64 + time.frac
-            }
-            (None, rate) if rate > 0 => frames as f64 / rate as f64,
-            _ => 0.0,
-        };
+                time_base
+                    .and_then(|time_base| time_base.calc_duration(duration))
+                    .map(|time| time.as_secs_f64())
+                    .unwrap_or(0.0)
+            });
         let mut file = Self {
             data,
             format: format_name(hint.as_deref()),

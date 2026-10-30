@@ -183,7 +183,8 @@ impl DialingDirectory {
         }
     }
 
-    pub fn show(&mut self, context: &egui::Context, _connected: bool) -> Option<DialRequest> {
+    pub fn show(&mut self, ui: &mut egui::Ui, _connected: bool) -> Option<DialRequest> {
+        let context = &ui.ctx().clone();
         if !self.open {
             return None;
         }
@@ -191,14 +192,14 @@ impl DialingDirectory {
         if self.icons.is_none() {
             self.icons = Some(Icons::load(context));
         }
-        let screen = context.available_rect();
+        let screen = ui.available_rect_before_wrap();
         let width = (screen.width() - 32.0).max(260.0);
         let height = (screen.height() - 32.0).max(100.0);
         let narrow = width < 640.0;
         let mut request = None;
         let _response = egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(context.style().visuals.panel_fill).inner_margin(16))
-            .show(context, |ui| {
+            .frame(egui::Frame::NONE.fill(context.global_style().visuals.panel_fill).inner_margin(16))
+            .show(ui, |ui| {
                 if self.message_blocked || self.confirmation.is_some() || self.error.is_some() {
                     ui.disable();
                 }
@@ -346,7 +347,7 @@ impl DialingDirectory {
                             ui.add(
                                 egui::TextEdit::singleline(&mut book.query)
                                     .id(search_id)
-                                    .frame(false)
+                                    .frame(egui::Frame::NONE)
                                     .hint_text(&*tr!("dialing_directory-filter-placeholder"))
                                     .desired_width((ui.available_width() - reserved).max(40.0)),
                             ),
@@ -1262,16 +1263,17 @@ mod tests {
         connected: bool,
     ) -> (egui::FullOutput, Option<DialRequest>) {
         let mut request = None;
-        let output = context.run(
+        let mut output = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 800.0))),
                 events,
                 ..Default::default()
             },
-            |context| {
-                request = dialog.show(context, connected);
+            |ui| {
+                request = dialog.show(ui, connected);
             },
         );
+        output.textures_delta.clear();
         (output, request)
     }
 
@@ -1712,7 +1714,7 @@ mod tests {
         let context = egui::Context::default();
         frame(&mut dialog, &context, vec![]);
         let (output, _) = frame(&mut dialog, &context, vec![]);
-        let fill = context.style().visuals.extreme_bg_color;
+        let fill = context.global_style().visuals.extreme_bg_color;
         // The editor occupies the right column of the 1000px test viewport.
         let heights: Vec<f32> = output
             .shapes

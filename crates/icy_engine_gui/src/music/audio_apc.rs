@@ -560,7 +560,7 @@ fn is_ogg_opus(data: &[u8]) -> bool {
 /// go through libopus and the result is resampled to [`SAMPLE_RATE`].
 #[cfg(feature = "opus-audio")]
 fn decode_ogg_opus(data: &[u8]) -> Option<Vec<f32>> {
-    use symphonia::core::codecs::CODEC_TYPE_OPUS;
+    use symphonia::core::codecs::audio::well_known::CODEC_ID_OPUS;
     use symphonia::core::formats::FormatReader;
     use symphonia::core::io::MediaSourceStream;
 
@@ -570,24 +570,35 @@ fn decode_ogg_opus(data: &[u8]) -> Option<Vec<f32>> {
     const MAX_FRAME_SAMPLES: usize = 5760;
 
     let source = MediaSourceStream::new(Box::new(Cursor::new(data.to_vec())), Default::default());
-    let mut reader = match symphonia::default::formats::OggReader::try_new(source, &Default::default()) {
+    let mut reader = match symphonia::default::formats::OggReader::try_new(source, Default::default()) {
         Ok(reader) => reader,
         Err(err) => {
             log::warn!("Audio APC: Ogg demux failed: {err}");
             return None;
         }
     };
-    let Some(track) = reader.tracks().iter().find(|track| track.codec_params.codec == CODEC_TYPE_OPUS) else {
+    let Some(track) = reader.tracks().iter().find(|track| {
+        track
+            .codec_params
+            .as_ref()
+            .and_then(|params| params.audio())
+            .is_some_and(|params| params.codec == CODEC_ID_OPUS)
+    }) else {
         log::warn!("Audio APC: Ogg stream contains no Opus track");
         return None;
     };
     let track_id = track.id;
-    let Some(track_channels) = track.codec_params.channels else {
+    let Some(track_channels) = track
+        .codec_params
+        .as_ref()
+        .and_then(|params| params.audio())
+        .and_then(|params| params.channels.as_ref())
+    else {
         log::warn!("Audio APC: Opus track has no channel layout");
         return None;
     };
     let channels = track_channels.count().min(2) as u16;
-    let mut pre_skip = track.codec_params.delay.unwrap_or(0) as usize;
+    let mut pre_skip = track.delay.unwrap_or(0) as usize;
 
     let mode = if channels >= 2 { opus::Channels::Stereo } else { opus::Channels::Mono };
     let mut decoder = match opus::Decoder::new(OPUS_RATE, mode) {
@@ -601,11 +612,11 @@ fn decode_ogg_opus(data: &[u8]) -> Option<Vec<f32>> {
 
     let mut decoded: Vec<f32> = Vec::new();
     let limit = (MAX_PATCH_FRAMES as u64 * u64::from(OPUS_RATE) / u64::from(SAMPLE_RATE)) as usize * channels as usize;
-    while let Ok(packet) = reader.next_packet() {
-        if packet.track_id() != track_id {
+    while let Ok(Some(packet)) = reader.next_packet() {
+        if packet.track_id != track_id {
             continue;
         }
-        let count = match decoder.decode_float(packet.buf(), &mut scratch, false) {
+        let count = match decoder.decode_float(&packet.data, &mut scratch, false) {
             Ok(count) => count,
             Err(err) => {
                 log::warn!("Audio APC: Opus packet dropped: {err}");
