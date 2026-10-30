@@ -20,6 +20,8 @@
 
 ### Fixed
 
+- Windows release builds no longer open an extra console window alongside the
+  terminal, including when using the `icy_term_egui` compatibility alias.
 - RIP text, erase, scroll, and palette updates invalidate cached pixels even
   when they arrive without a RIP graphics command.
 - SkyPix output refreshes after incoming text and graphics instead of remaining
