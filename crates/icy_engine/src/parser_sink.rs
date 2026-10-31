@@ -42,6 +42,49 @@ struct ImageApcOptions {
     flip_y: bool,
     zoom_x: u32,
     zoom_y: u32,
+    mask_x: u32,
+    mask_y: u32,
+    use_mask_buffer: bool,
+}
+
+/// Bitmap loaded by `SyncTERM:C;LoadPBMBlob` and applied by image APCs carrying `MBUF`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImageMask {
+    width: u32,
+    height: u32,
+    bits: Vec<bool>,
+}
+
+impl ImageMask {
+    /// Decodes a PBM; black (1) pixels are drawn, white (0) pixels leave the screen untouched.
+    pub fn from_pbm(bytes: &[u8]) -> Option<Self> {
+        if !(bytes.starts_with(b"P1") || bytes.starts_with(b"P4")) {
+            return None;
+        }
+        let reader = || image::ImageReader::with_format(std::io::Cursor::new(bytes), image::ImageFormat::Pnm);
+        let (width, height) = reader().into_dimensions().ok()?;
+        if width == 0 || height == 0 || u64::from(width) * u64::from(height) > MAX_PIXELS {
+            return None;
+        }
+        let image = reader().decode().ok()?.into_luma8();
+        Some(Self {
+            width,
+            height,
+            bits: image.pixels().map(|pixel| pixel.0[0] < 128).collect(),
+        })
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn is_set(&self, x: u32, y: u32) -> bool {
+        x < self.width && y < self.height && self.bits[(y * self.width + x) as usize]
+    }
 }
 
 fn parse_image_apc_options<'a>(parts: impl Iterator<Item = &'a str>) -> ImageApcOptions {
@@ -59,6 +102,10 @@ fn parse_image_apc_options<'a>(parts: impl Iterator<Item = &'a str>) -> ImageApc
             options.flip_y = true;
             continue;
         }
+        if part.eq_ignore_ascii_case("MBUF") {
+            options.use_mask_buffer = true;
+            continue;
+        }
         let Some((key, value)) = part.split_once('=') else { continue };
         match key.to_ascii_uppercase().as_str() {
             "SX" => options.sx = value.parse().unwrap_or(0),
@@ -69,6 +116,8 @@ fn parse_image_apc_options<'a>(parts: impl Iterator<Item = &'a str>) -> ImageApc
             "DY" => options.dy = value.parse().unwrap_or(0),
             "ZX" => options.zoom_x = value.parse().unwrap_or(0),
             "ZY" => options.zoom_y = value.parse().unwrap_or(0),
+            "MX" => options.mask_x = value.parse().unwrap_or(0),
+            "MY" => options.mask_y = value.parse().unwrap_or(0),
             _ => {}
         }
     }
@@ -80,6 +129,20 @@ fn parse_image_apc_options<'a>(parts: impl Iterator<Item = &'a str>) -> ImageApc
 /// Takes no screen reference so callers can run the decode without holding the render lock.
 /// `screen_size` is in characters; `options` is the `;`-separated argument list without the payload.
 pub fn decode_image_blob(bytes: &[u8], is_jxl: bool, options: &str, font: Size, screen_size: Size) -> Option<(Position, Sixel)> {
+    decode_image_blob_masked(bytes, is_jxl, options, font, screen_size, None)
+}
+
+/// Like [`decode_image_blob`], applying `mask_buffer` when `options` contain `MBUF`.
+///
+/// As in SyncTERM, `MBUF` without a loaded mask draws the image unmasked.
+pub fn decode_image_blob_masked(
+    bytes: &[u8],
+    is_jxl: bool,
+    options: &str,
+    font: Size,
+    screen_size: Size,
+    mask_buffer: Option<&ImageMask>,
+) -> Option<(Position, Sixel)> {
     let options = parse_image_apc_options(options.split([';', ' ']).filter(|part| !part.is_empty()));
 
     // Check the size from the header first, so a small file claiming a huge image
@@ -114,6 +177,21 @@ pub fn decode_image_blob(bytes: &[u8], is_jxl: bool, options: &str, font: Size, 
         return None;
     }
     image = image.crop_imm(options.sx, options.sy, width, height);
+
+    // The mask follows source pixels, so it is applied before flipping and zooming.
+    if let Some(mask) = mask_buffer.filter(|_| options.use_mask_buffer) {
+        if options.mask_x >= mask.width() || options.mask_y >= mask.height() || width > mask.width() - options.mask_x || height > mask.height() - options.mask_y
+        {
+            return None;
+        }
+        let mut rgba = image.to_rgba8();
+        for (x, y, pixel) in rgba.enumerate_pixels_mut() {
+            if !mask.is_set(options.mask_x + x, options.mask_y + y) {
+                pixel.0[3] = 0;
+            }
+        }
+        image = image::DynamicImage::ImageRgba8(rgba);
+    }
 
     if options.flip_x {
         image = image.fliph();
@@ -171,6 +249,11 @@ pub fn decode_image_blob(bytes: &[u8], is_jxl: bool, options: &str, font: Size, 
 
 /// Decodes a base64 `DrawPPMBlob` / `DrawJXLBlob` APC payload.
 pub fn decode_image_apc(data: &[u8], font: Size, screen_size: Size) -> Option<(Position, Sixel)> {
+    decode_image_apc_masked(data, font, screen_size, None)
+}
+
+/// Like [`decode_image_apc`], applying `mask_buffer` when the APC carries `MBUF`.
+pub fn decode_image_apc_masked(data: &[u8], font: Size, screen_size: Size, mask_buffer: Option<&ImageMask>) -> Option<(Position, Sixel)> {
     const PPM_PREFIX: &str = "SyncTERM:C;DrawPPMBlob";
     const JXL_PREFIX: &str = "SyncTERM:C;DrawJXLBlob";
 
@@ -192,7 +275,7 @@ pub fn decode_image_apc(data: &[u8], font: Size, screen_size: Size) -> Option<(P
         return None;
     }
     let bytes = general_purpose::STANDARD.decode(encoded).ok()?;
-    decode_image_blob(&bytes, is_jxl, options, font, screen_size)
+    decode_image_blob_masked(&bytes, is_jxl, options, font, screen_size, mask_buffer)
 }
 
 /// Adapter that implements `CommandSink` for any type implementing `EditableScreen`.

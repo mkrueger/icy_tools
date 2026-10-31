@@ -740,6 +740,32 @@ impl EditableScreen for TextScreen {
         let vec = &mut self.buffer.layers[0].sixels;
 
         let screen_rect = sixel.screen_rect(font_dims);
+        if !sixel.is_opaque() {
+            // Masked or transparent pixels keep what lies beneath them visible, so fold
+            // fully covered older images into the new one instead of dropping them. An
+            // image that only partially overlaps must stay between them, which stops it.
+            let mut i = vec.len();
+            while i > 0 {
+                i -= 1;
+                let old_rect = vec[i].screen_rect(font_dims);
+                if screen_rect.contains_rect(&old_rect) {
+                    let offset = old_rect.start - screen_rect.start;
+                    if !sixel.composite_under(&vec[i], offset) {
+                        break;
+                    }
+                    vec.remove(i);
+                } else if old_rect.start.x < screen_rect.start.x + screen_rect.size.width
+                    && screen_rect.start.x < old_rect.start.x + old_rect.size.width
+                    && old_rect.start.y < screen_rect.start.y + screen_rect.size.height
+                    && screen_rect.start.y < old_rect.start.y + old_rect.size.height
+                {
+                    break;
+                }
+            }
+            vec.push(sixel);
+            return;
+        }
+
         let mut sixel_count = vec.len();
         // remove old sixel that are shadowed by the new one
         let mut i = 0;

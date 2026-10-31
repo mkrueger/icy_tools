@@ -40,6 +40,8 @@ use tokio::sync::mpsc;
 const MIN_PAUSE_DISPLAY_MS: u64 = 500;
 const MAX_CACHED_MEDIA_SIZE: usize = 12 * 1024 * 1024;
 const MAX_CACHE_FILENAME_LEN: usize = 128;
+// Door feature gates: blob media (1.329), pixel mouse (1.330), image zoom (1.332).
+const CTERM_COMPATIBLE_REVISION: &str = "1;332";
 
 /// Client pixel buffers a board may load a frame into, addressed by `B=`.
 const PIXEL_BUFFERS: usize = 2;
@@ -47,17 +49,29 @@ const PIXEL_BUFFERS: usize = 2;
 enum CachedMediaCommand<'a> {
     Store { filename: &'a str, encoded: &'a str },
     DrawJxl { filename: &'a str, options: &'a str },
-    LoadBlob { buffer: usize, encoded: &'a str },
+    LoadBlob { buffer: usize, encoded: &'a str, is_jxl: bool },
+    LoadMaskBlob { encoded: &'a str },
     PasteBlob { buffer: usize, options: &'a str },
     List { pattern: &'a str },
 }
 
+/// Image held in a client pixel buffer until `SyncTERM:P;Paste` places it.
+struct PixelBuffer {
+    bytes: Vec<u8>,
+    is_jxl: bool,
+}
+
+/// The `B=` buffer an image APC addresses; SyncTERM defaults to buffer 0.
 fn image_buffer(options: &str) -> Option<usize> {
-    options
-        .split(';')
-        .find_map(|option| option.strip_prefix("B="))
-        .and_then(|buffer| buffer.parse::<usize>().ok())
-        .filter(|buffer| *buffer < PIXEL_BUFFERS)
+    match options.split(';').find_map(|option| option.strip_prefix("B=")) {
+        Some(buffer) => buffer.parse::<usize>().ok().filter(|buffer| *buffer < PIXEL_BUFFERS),
+        None => Some(0),
+    }
+}
+
+fn parse_load_blob(arguments: &str, is_jxl: bool) -> Option<CachedMediaCommand<'_>> {
+    let (options, encoded) = arguments.rsplit_once(';').unwrap_or(("", arguments));
+    image_buffer(options).map(|buffer| CachedMediaCommand::LoadBlob { buffer, encoded, is_jxl })
 }
 
 /// Validates a cache-relative name. Audio doors namespace their uploads
@@ -85,14 +99,22 @@ fn parse_cached_media_command(data: &[u8]) -> Option<CachedMediaCommand<'_>> {
         return valid_cache_filename(filename).then_some(CachedMediaCommand::DrawJxl { filename, options });
     }
     if let Some(arguments) = command.strip_prefix("SyncTERM:C;LoadJXLBlob;") {
-        let (options, encoded) = arguments.split_once(';')?;
-        return image_buffer(options).map(|buffer| CachedMediaCommand::LoadBlob { buffer, encoded });
+        return parse_load_blob(arguments, true);
+    }
+    if let Some(arguments) = command.strip_prefix("SyncTERM:C;LoadPPMBlob;") {
+        return parse_load_blob(arguments, false);
+    }
+    if let Some(encoded) = command.strip_prefix("SyncTERM:C;LoadPBMBlob;") {
+        return Some(CachedMediaCommand::LoadMaskBlob { encoded });
     }
     if let Some(options) = command.strip_prefix("SyncTERM:P;Paste;") {
         return image_buffer(options).map(|buffer| CachedMediaCommand::PasteBlob { buffer, options });
     }
-    // Last of the `C;` verbs, so it cannot swallow `LoadJXLBlob`.
+    // Only the bare list verb, so other `C;L...` verbs never trigger a cache listing.
     if let Some(arguments) = command.strip_prefix("SyncTERM:C;L") {
+        if !arguments.is_empty() && !arguments.starts_with(';') {
+            return None;
+        }
         return Some(CachedMediaCommand::List {
             pattern: arguments.strip_prefix(';').unwrap_or("*"),
         });
@@ -570,8 +592,10 @@ pub struct TerminalThread {
     audio_queue_generation: [u32; audio_apc::CHANNELS],
     /// Generation an `Update` command is waiting to see advance.
     audio_notify_generation: [Option<u32>; audio_apc::CHANNELS],
-    /// Frames held by `SyncTERM:C;LoadJXLBlob` until a `SyncTERM:P;Paste` places them.
-    pixel_buffers: [Option<Vec<u8>>; PIXEL_BUFFERS],
+    /// Images held by `SyncTERM:C;LoadJXLBlob` / `LoadPPMBlob` until a `SyncTERM:P;Paste` places them.
+    pixel_buffers: [Option<PixelBuffer>; PIXEL_BUFFERS],
+    /// Mask loaded by `SyncTERM:C;LoadPBMBlob`, applied by image APCs carrying `MBUF`.
+    mask_buffer: Option<icy_engine::ImageMask>,
 }
 
 impl TerminalThread {
@@ -617,6 +641,7 @@ impl TerminalThread {
             audio_queue_generation: [0; audio_apc::CHANNELS],
             audio_notify_generation: [None; audio_apc::CHANNELS],
             pixel_buffers: std::array::from_fn(|_| None),
+            mask_buffer: None,
         }
     }
 
@@ -1917,18 +1942,27 @@ impl TerminalThread {
         };
 
         let decoded = match parse_cached_media_command(data) {
-            Some(CachedMediaCommand::LoadBlob { buffer, encoded }) => {
+            Some(CachedMediaCommand::LoadBlob { buffer, encoded, is_jxl }) => {
                 self.pixel_buffers[buffer] = general_purpose::STANDARD
                     .decode(encoded)
                     .ok()
-                    .filter(|bytes| bytes.len() <= MAX_CACHED_MEDIA_SIZE);
+                    .filter(|bytes| bytes.len() <= MAX_CACHED_MEDIA_SIZE)
+                    .map(|bytes| PixelBuffer { bytes, is_jxl });
+                return false;
+            }
+            Some(CachedMediaCommand::LoadMaskBlob { encoded }) => {
+                self.mask_buffer = general_purpose::STANDARD
+                    .decode(encoded)
+                    .ok()
+                    .filter(|bytes| bytes.len() <= MAX_CACHED_MEDIA_SIZE)
+                    .and_then(|bytes| icy_engine::ImageMask::from_pbm(&bytes));
                 return false;
             }
             Some(CachedMediaCommand::PasteBlob { buffer, options }) => {
-                let Some(bytes) = self.pixel_buffers[buffer].as_deref() else {
+                let Some(image) = &self.pixel_buffers[buffer] else {
                     return false;
                 };
-                icy_engine::decode_image_blob(bytes, true, options, font, screen_size)
+                icy_engine::decode_image_blob_masked(&image.bytes, image.is_jxl, options, font, screen_size, self.mask_buffer.as_ref())
             }
             Some(CachedMediaCommand::List { pattern }) => {
                 let listing = self
@@ -1956,12 +1990,15 @@ impl TerminalThread {
                         let Some(bytes) = read_cached_media(&cache_directory, filename).await else {
                             return false;
                         };
-                        icy_engine::decode_image_blob(&bytes, true, options, font, screen_size)
+                        icy_engine::decode_image_blob_masked(&bytes, true, options, font, screen_size, self.mask_buffer.as_ref())
                     }
-                    CachedMediaCommand::LoadBlob { .. } | CachedMediaCommand::PasteBlob { .. } | CachedMediaCommand::List { .. } => return false,
+                    CachedMediaCommand::LoadBlob { .. }
+                    | CachedMediaCommand::LoadMaskBlob { .. }
+                    | CachedMediaCommand::PasteBlob { .. }
+                    | CachedMediaCommand::List { .. } => return false,
                 }
             }
-            None => icy_engine::decode_image_apc(data, font, screen_size),
+            None => icy_engine::decode_image_apc_masked(data, font, screen_size, self.mask_buffer.as_ref()),
         };
 
         let Some((position, sixel)) = decoded else {
@@ -2336,10 +2373,10 @@ impl TerminalThread {
         use std::fmt::Write as _;
         let response: Option<Vec<u8>> = match &request {
             TerminalRequest::DeviceAttributes => {
-                // respond with IcyTerm as ASCII followed by the package version.
-
+                // Doors recognize the CTerm prefix before probing JXL. Keep our
+                // identity/version in trailing extension fields, as CTerm specifies.
                 let version = format!(
-                    "\x1b[=73;99;121;84;101;114;109;{};{};{}c",
+                    "\x1b[=67;84;101;114;109;{CTERM_COMPATIBLE_REVISION};73;99;121;84;101;114;109;{};{};{}c",
                     env!("CARGO_PKG_VERSION_MAJOR"),
                     env!("CARGO_PKG_VERSION_MINOR"),
                     env!("CARGO_PKG_VERSION_PATCH")
@@ -3171,6 +3208,122 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn duke3d_capability_probe_reports_cterm_then_jxl_across_chunks() {
+        // The capture probes TRACE, then DA1; JXL is only queried after
+        // the door recognizes the primary device-attributes reply.
+        let input = b"\x1b_TERMinator:TRACE;Query\x1b\\\x1b[c";
+        let expected = format!(
+            "\x1b[=67;84;101;114;109;1;332;73;99;121;84;101;114;109;{};{};{}c",
+            env!("CARGO_PKG_VERSION_MAJOR"),
+            env!("CARGO_PKG_VERSION_MINOR"),
+            env!("CARGO_PKG_VERSION_PATCH")
+        );
+
+        for plan in [ChunkPlan::Whole, ChunkPlan::SplitAt(vec![1, 14, 25, 29]), ChunkPlan::Bytewise] {
+            let (mut terminal, sent, _) = test_terminal();
+            match plan {
+                ChunkPlan::Whole => terminal.process_data(input).await,
+                ChunkPlan::SplitAt(boundaries) => {
+                    let mut start = 0;
+                    for end in boundaries.into_iter().chain(std::iter::once(input.len())) {
+                        terminal.process_data(&input[start..end]).await;
+                        start = end;
+                    }
+                }
+                ChunkPlan::Bytewise => {
+                    for byte in input {
+                        terminal.process_data(std::slice::from_ref(byte)).await;
+                    }
+                }
+            }
+            assert_eq!(&*sent.lock(), expected.as_bytes());
+
+            sent.lock().clear();
+            process_chunks(&mut terminal, &[b"\x1b[0c\x1b_SyncTERM:Q;", b"JXL\x1b", b"\\"]).await;
+            let mut expected_followup = expected.as_bytes().to_vec();
+            expected_followup.extend_from_slice(b"\x1b[=1;1-n");
+            assert_eq!(&*sent.lock(), &expected_followup);
+        }
+    }
+
+    #[tokio::test]
+    async fn secondary_device_attributes_keep_icy_term_version() {
+        let (mut terminal, sent, _) = test_terminal();
+        terminal.process_data(b"\x1b[>c").await;
+
+        let major: u32 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap();
+        let minor: u32 = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap();
+        let patch: u32 = env!("CARGO_PKG_VERSION_PATCH").parse().unwrap();
+        let expected = format!("\x1b[>65;{};141c", major * 100 + minor * 10 + patch);
+        assert_eq!(&*sent.lock(), expected.as_bytes());
+    }
+
+    fn image_apc(command: &str, payload: &[u8]) -> Vec<u8> {
+        format!("\x1b_SyncTERM:{command};{}\x1b\\", general_purpose::STANDARD.encode(payload)).into_bytes()
+    }
+
+    fn top_left_pixels(screen: &Arc<Mutex<Box<dyn Screen>>>) -> Vec<Vec<u8>> {
+        let mut screen = screen.lock();
+        let text = screen.as_any_mut().downcast_mut::<TextScreen>().unwrap();
+        let sixels = &text.buffer.layers[0].sixels;
+        assert_eq!(sixels.len(), 1);
+        sixels[0].picture_data.chunks_exact(4).map(<[u8]>::to_vec).collect()
+    }
+
+    const RED_GREEN_PPM: &[u8] = b"P3\n2 1\n255\n255 0 0  0 255 0\n";
+    const LEFT_ONLY_PBM: &[u8] = b"P1\n2 1\n1 0\n";
+
+    #[tokio::test]
+    async fn pastes_loaded_ppm_through_the_loaded_pbm_mask() {
+        let (mut terminal, _, screen) = test_terminal();
+        process_chunks(
+            &mut terminal,
+            &[
+                &image_apc("C;LoadPPMBlob;B=1", RED_GREEN_PPM),
+                &image_apc("C;LoadPBMBlob", LEFT_ONLY_PBM),
+                b"\x1b_SyncTERM:P;Paste;B=1;MBUF\x1b\\",
+            ],
+        )
+        .await;
+
+        assert_eq!(top_left_pixels(&screen), [vec![255, 0, 0, 255], vec![0, 255, 0, 0]]);
+    }
+
+    #[tokio::test]
+    async fn mask_follows_source_pixels_through_flip_and_zoom() {
+        let (mut terminal, _, screen) = test_terminal();
+        process_chunks(
+            &mut terminal,
+            &[
+                &image_apc("C;LoadPPMBlob", RED_GREEN_PPM),
+                &image_apc("C;LoadPBMBlob", LEFT_ONLY_PBM),
+                b"\x1b_SyncTERM:P;Paste;FX;ZX=2;MBUF\x1b\\",
+            ],
+        )
+        .await;
+
+        let alpha: Vec<u8> = top_left_pixels(&screen).iter().map(|pixel| pixel[3]).collect();
+        assert_eq!(alpha, [0, 0, 255, 255]);
+    }
+
+    #[tokio::test]
+    async fn masked_paste_keeps_covered_pixels_visible() {
+        let (mut terminal, _, screen) = test_terminal();
+        process_chunks(
+            &mut terminal,
+            &[
+                &image_apc("C;DrawPPMBlob", b"P3\n2 1\n255\n0 0 255  0 0 255\n"),
+                &image_apc("C;LoadPPMBlob", RED_GREEN_PPM),
+                &image_apc("C;LoadPBMBlob", LEFT_ONLY_PBM),
+                b"\x1b_SyncTERM:P;Paste;MBUF\x1b\\",
+            ],
+        )
+        .await;
+
+        assert_eq!(top_left_pixels(&screen), [vec![255, 0, 0, 255], vec![0, 0, 255, 255]]);
+    }
+
+    #[tokio::test]
     async fn remote_queries_report_geometry_across_chunk_boundaries() {
         let (mut terminal, sent, _) = test_terminal();
 
@@ -3397,8 +3550,37 @@ mod tests {
     fn parses_the_client_pixel_buffer_commands() {
         assert!(matches!(
             parse_cached_media_command(b"SyncTERM:C;LoadJXLBlob;B=1;YWJj"),
-            Some(CachedMediaCommand::LoadBlob { buffer: 1, encoded: "YWJj" })
+            Some(CachedMediaCommand::LoadBlob {
+                buffer: 1,
+                encoded: "YWJj",
+                is_jxl: true
+            })
         ));
+        assert!(matches!(
+            parse_cached_media_command(b"SyncTERM:C;LoadPPMBlob;B=1;YWJj"),
+            Some(CachedMediaCommand::LoadBlob {
+                buffer: 1,
+                encoded: "YWJj",
+                is_jxl: false
+            })
+        ));
+        assert!(matches!(
+            parse_cached_media_command(b"SyncTERM:C;LoadPPMBlob;YWJj"),
+            Some(CachedMediaCommand::LoadBlob {
+                buffer: 0,
+                encoded: "YWJj",
+                is_jxl: false
+            })
+        ));
+        assert!(matches!(
+            parse_cached_media_command(b"SyncTERM:C;LoadPBMBlob;YWJj"),
+            Some(CachedMediaCommand::LoadMaskBlob { encoded: "YWJj" })
+        ));
+        assert!(matches!(
+            parse_cached_media_command(b"SyncTERM:C;L;*.jxl"),
+            Some(CachedMediaCommand::List { pattern: "*.jxl" })
+        ));
+        assert!(parse_cached_media_command(b"SyncTERM:C;LoadPPM;B=0;frame.ppm").is_none());
         assert!(matches!(
             parse_cached_media_command(b"SyncTERM:P;Paste;B=0;SX=2;SY=3;DX=20;DY=30"),
             Some(CachedMediaCommand::PasteBlob {

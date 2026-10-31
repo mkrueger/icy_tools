@@ -124,6 +124,55 @@ impl Sixel {
         self.size = size;
     }
 
+    /// Whether every pixel fully hides whatever lies beneath it.
+    pub fn is_opaque(&self) -> bool {
+        self.picture_data.chunks_exact(4).all(|pixel| pixel[3] == 255)
+    }
+
+    /// Composites `below` beneath this image, keeping how the stacked pair renders.
+    /// `offset` is the pixel position of `below` inside this image. Returns false,
+    /// leaving this image unchanged, unless `below` lies fully inside it and both
+    /// RGBA buffers match their sizes.
+    pub fn composite_under(&mut self, below: &Sixel, offset: Position) -> bool {
+        let consistent = |sixel: &Sixel| {
+            sixel.size.width >= 0 && sixel.size.height >= 0 && sixel.picture_data.len() == sixel.size.width as usize * sixel.size.height as usize * 4
+        };
+        if !consistent(self)
+            || !consistent(below)
+            || offset.x < 0
+            || offset.y < 0
+            || offset.x + below.width() > self.width()
+            || offset.y + below.height() > self.height()
+        {
+            return false;
+        }
+
+        let width = self.size.width as usize;
+        let below_width = below.size.width as usize;
+        for y in 0..below.size.height as usize {
+            for x in 0..below_width {
+                let top = ((offset.y as usize + y) * width + offset.x as usize + x) * 4;
+                let bottom = (y * below_width + x) * 4;
+                let top_alpha = u32::from(self.picture_data[top + 3]);
+                let bottom_alpha = u32::from(below.picture_data[bottom + 3]);
+                if top_alpha == 255 || bottom_alpha == 0 {
+                    continue;
+                }
+                let under = (bottom_alpha * (255 - top_alpha) + 127) / 255;
+                let alpha = top_alpha + under;
+                if alpha == 0 {
+                    continue;
+                }
+                for channel in 0..3 {
+                    let color = u32::from(self.picture_data[top + channel]) * top_alpha + u32::from(below.picture_data[bottom + channel]) * under;
+                    self.picture_data[top + channel] = ((color + alpha / 2) / alpha) as u8;
+                }
+                self.picture_data[top + 3] = alpha.min(255) as u8;
+            }
+        }
+        true
+    }
+
     /// Apply raster scaling without exceeding the decoded-image memory budget.
     /// Invalid dimensions, inconsistent RGBA data and allocation failures are errors.
     /// The image is unchanged on error.
