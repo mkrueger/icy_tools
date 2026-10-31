@@ -89,6 +89,7 @@ struct TerminalApp {
     session: Option<session::Session>,
     connected: bool,
     focus_terminal: bool,
+    pending_paste: Option<String>,
     terminal_input_id: Option<egui::Id>,
     dialing_directory: dialing_directory::DialingDirectory,
     connected_size: (u16, u16),
@@ -147,6 +148,7 @@ impl TerminalApp {
             session: None,
             connected: false,
             focus_terminal: true,
+            pending_paste: None,
             terminal_input_id: None,
             dialing_directory: Default::default(),
             connected_size: (80, 25),
@@ -349,8 +351,7 @@ impl TerminalApp {
                 .add(egui::Button::new(&*tr!("terminal-menu-paste")).shortcut_text(hotkeys::shortcut(hotkeys::Action::Paste)))
                 .clicked()
             {
-                ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);
-                self.focus_terminal = true;
+                self.request_paste(ui.ctx());
                 ui.close();
             }
             if ui.button(&*tr!("egui-select-all")).clicked() {
@@ -492,6 +493,21 @@ impl TerminalApp {
         }
     }
 
+    fn request_paste(&mut self, context: &egui::Context) {
+        self.focus_terminal = true;
+        // Some backends emit both the shortcut key and a paste event.
+        if context.input(|input| input.events.iter().any(|event| matches!(event, egui::Event::Paste(_)))) {
+            return;
+        }
+        match icy_engine_gui::system_clipboard::read_text() {
+            Ok(text) => self.pending_paste = Some(text),
+            Err(error) => {
+                log::warn!("could not read text from the system clipboard: {error}");
+                context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
+        }
+    }
+
     fn toggle_scrollback(&mut self) {
         if navigation::toggle_scrollback(&mut self.terminal) {
             self.navigation.saved_scaling = Some(self.settings.scaling_mode);
@@ -538,6 +554,7 @@ impl TerminalApp {
     fn disconnect(&mut self) {
         self.finish_call();
         self.finish_script_response(Err("Disconnected".into()));
+        self.pending_paste = None;
         self.session = None;
         self.connected = false;
         self.connecting = false;
@@ -1404,6 +1421,9 @@ impl TerminalApp {
         if self.connecting || self.terminal.is_in_scrollback_mode() {
             return;
         }
+        if let Some(text) = self.pending_paste.take() {
+            context.input_mut(|input| input.events.push(egui::Event::Paste(text)));
+        }
         let bytes = {
             let screen = self.terminal.screen.lock();
             let state = screen.terminal_state();
@@ -1529,8 +1549,7 @@ impl TerminalApp {
             .add(egui::Button::new(&*tr!("terminal-menu-paste")).shortcut_text(hotkeys::shortcut(hotkeys::Action::Paste)))
             .clicked()
         {
-            context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
-            self.focus_terminal = true;
+            self.request_paste(&context);
             ui.close();
         }
         ui.separator();
@@ -1687,8 +1706,7 @@ impl TerminalApp {
             Action::CloseWindow => context.send_viewport_cmd(egui::ViewportCommand::Close),
             Action::Copy => self.copy_selection(context),
             Action::Paste => {
-                context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
-                self.focus_terminal = true;
+                self.request_paste(context);
             }
         }
     }
@@ -2166,6 +2184,52 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn connected_clipboard_commands_copy_locally_and_do_not_duplicate_native_paste() {
+        use icy_engine::{EditableScreen, Screen};
+
+        let context = egui::Context::default();
+        let mut screen = TextScreen::default();
+        screen.set_char((0, 0).into(), icy_engine::AttributedChar::new('H', Default::default()));
+        screen.set_selection(icy_engine::Selection::new((0, 0))).unwrap();
+        let mut app = TerminalApp::new(screen, "clipboard".into());
+        app.connected = true;
+        app.terminal.has_focus = true;
+        let key = |key| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+        };
+        let run = |app: &mut TerminalApp, events| context.run_ui(egui::RawInput { events, ..Default::default() }, |ui| app.shortcuts(ui.ctx()));
+        let mut output = run(&mut app, vec![key(egui::Key::C)]);
+        assert!(output.platform_output.commands.contains(&egui::OutputCommand::CopyText("H".into())));
+        output.textures_delta.clear();
+        assert!(app.session.is_none(), "copy must not send a terminal control character");
+
+        let mut output = run(&mut app, vec![key(egui::Key::V), egui::Event::Paste("native".into())]);
+        assert!(app.pending_paste.is_none(), "native paste must not queue a second copy");
+        assert!(!output.viewport_output[&egui::ViewportId::ROOT]
+            .commands
+            .contains(&egui::ViewportCommand::RequestPaste));
+        assert_eq!(
+            context.input(|input| input.events.iter().filter(|event| matches!(event, egui::Event::Paste(_))).count()),
+            1
+        );
+        output.textures_delta.clear();
+
+        let mut output = run(&mut app, vec![key(egui::Key::V)]);
+        assert!(
+            output.viewport_output[&egui::ViewportId::ROOT]
+                .commands
+                .contains(&egui::ViewportCommand::RequestPaste),
+            "unavailable clipboard must fall back to egui"
+        );
+        output.textures_delta.clear();
+    }
+
+    #[test]
     fn offline_input_reaches_the_modem_without_bypassing_focus() {
         let context = egui::Context::default();
         let (wake_tx, wake_rx) = std::sync::mpsc::channel();
@@ -2253,7 +2317,19 @@ mod tests {
             screen.clear_screen();
             screen.terminal_state_mut().bracketed_paste_mode = true;
         }
-        run(&mut app, vec![egui::Event::Paste("AT".into())]);
+        app.pending_paste = Some("AT".into());
+        app.show_monitor = true;
+        run(&mut app, vec![]);
+        assert_eq!(app.pending_paste.as_deref(), Some("AT"), "dialogs must not receive terminal pastes");
+        assert!(app.session.is_none());
+        app.show_monitor = false;
+        context.memory_mut(|memory| memory.request_focus(egui::Id::new("other-widget")));
+        run(&mut app, vec![]);
+        assert_eq!(app.pending_paste.as_deref(), Some("AT"), "wait until the terminal regains focus");
+        app.focus_terminal = true;
+        run(&mut app, vec![]);
+        run(&mut app, vec![]);
+        assert!(app.pending_paste.is_none(), "queued paste must be delivered once");
         run(
             &mut app,
             vec![egui::Event::Key {

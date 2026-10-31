@@ -106,6 +106,11 @@ pub fn copy_text(text: &str) -> Result<(), String> {
     write(vec![ClipboardContent::Text(text.to_string())])
 }
 
+/// Reads only plain text, even when richer formats are also available.
+pub fn read_text() -> Result<String, String> {
+    with_context(|context| context.get_text())
+}
+
 pub fn copy_image(image: &image::RgbaImage) -> Result<(), String> {
     let image = png_image(image).ok_or_else(|| "the image could not be encoded".to_string())?;
     write(vec![ClipboardContent::Image(image)])
@@ -236,6 +241,7 @@ mod tests {
             icy_data: Some(vec![9, 8, 7]),
         };
         copy_data(&data).unwrap();
+        assert_eq!(read_text().unwrap(), "ICY");
         assert_eq!(
             read(),
             Some(PasteContent::Icy {
@@ -249,6 +255,7 @@ mod tests {
         assert_eq!(read_format("application/x-icy-bitfont"), Some(vec![4, 5]));
         assert_eq!(read(), Some(PasteContent::Text("glyph".into())));
         copy_text("plain").unwrap();
+        assert_eq!(read_text().unwrap(), "plain");
         assert_eq!(read_format(ICY_CLIPBOARD_TYPE), None, "copying elsewhere drops the Icy data");
         assert_eq!(read(), Some(PasteContent::Text("plain".into())));
     }

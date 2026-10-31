@@ -87,13 +87,13 @@ pub fn shortcut(action: Action) -> String {
 }
 
 /// Shortcuts that stay available while the terminal owns the keyboard.
-/// Mirrors the legacy rule: Alt combinations and help are application level,
-/// everything else may be claimed by the terminal key maps first.
+/// Clipboard shortcuts, Alt combinations and help are application level;
+/// plain control combinations stay available to the terminal key maps.
 fn works_while_connected(action: Action) -> bool {
     if matches!(action, Action::CloseWindow) {
         return false;
     }
-    if matches!(action, Action::Help) {
+    if matches!(action, Action::Help | Action::Copy | Action::Paste) {
         return true;
     }
     command(action)
@@ -359,5 +359,16 @@ mod tests {
             "Ctrl+W must reach the connection as 0x17"
         );
         assert_eq!(poll_with(vec![press(egui::Key::W, egui::Modifiers::CTRL)], false), vec![Action::CloseWindow]);
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn clipboard_shortcuts_work_while_connected() {
+        let modifiers = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
+        assert_eq!(poll_with(vec![press(egui::Key::C, modifiers)], true), vec![Action::Copy]);
+        assert_eq!(poll_with(vec![press(egui::Key::V, modifiers)], true), vec![Action::Paste]);
+        for key in [egui::Key::C, egui::Key::X, egui::Key::V] {
+            assert!(poll_with(vec![press(key, egui::Modifiers::CTRL)], true).is_empty());
+        }
     }
 }

@@ -218,8 +218,9 @@ opens the same context menu as the legacy client.
 
 Keyboard shortcuts come from the same `commands_icy_term.toml` table the legacy
 frontend uses, so both clients stay identical; press F1 for the generated
-overview. As before, Alt combinations and F1 stay application level while
-connected, and other control combinations are left to the terminal, so Ctrl+C
+overview. Clipboard shortcuts, Alt combinations and F1 stay application level
+while connected. Ctrl+Shift+C/V (Cmd+C/V on macOS) copy/paste locally; other
+control combinations are left to the terminal, so Ctrl+C without a selection
 and Ctrl+W still reach the host.
 
 Overlay controls follow the legacy layout: a scrollback position indicator above
@@ -238,6 +239,10 @@ to select and copy text in BBSes without resetting the current screen.
 Ctrl/Cmd+Shift+F opens search; F11 toggles fullscreen. Copy/Cut with a selection
 copies locally as text, RTF, an image and Icy data (which pastes with colors into
 Icy Draw), while Ctrl+C without a selection retains terminal semantics.
+Paste from the menus or clipboard shortcut reads plain text through
+`clipboard-rs`, retaining terminal character encoding, newline conversion and
+the host's bracketed-paste mode. Paste waits for terminal focus and never goes
+to an open dialog.
 Window resizing changes display scale, not negotiated terminal dimensions.
 
 Known platform limits: egui does not expose distinct keypad locations or
