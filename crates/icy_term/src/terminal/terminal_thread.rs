@@ -40,8 +40,6 @@ use tokio::sync::mpsc;
 const MIN_PAUSE_DISPLAY_MS: u64 = 500;
 const MAX_CACHED_MEDIA_SIZE: usize = 12 * 1024 * 1024;
 const MAX_CACHE_FILENAME_LEN: usize = 128;
-// Door feature gates: blob media (1.329), pixel mouse (1.330), image zoom (1.332).
-const CTERM_COMPATIBLE_REVISION: &str = "1;332";
 
 /// Client pixel buffers a board may load a frame into, addressed by `B=`.
 const PIXEL_BUFFERS: usize = 2;
@@ -2373,10 +2371,10 @@ impl TerminalThread {
         use std::fmt::Write as _;
         let response: Option<Vec<u8>> = match &request {
             TerminalRequest::DeviceAttributes => {
-                // Doors recognize the CTerm prefix before probing JXL. Keep our
-                // identity/version in trailing extension fields, as CTerm specifies.
+                // respond with IcyTerm as ASCII followed by the package version.
+
                 let version = format!(
-                    "\x1b[=67;84;101;114;109;{CTERM_COMPATIBLE_REVISION};73;99;121;84;101;114;109;{};{};{}c",
+                    "\x1b[=73;99;121;84;101;114;109;{};{};{}c",
                     env!("CARGO_PKG_VERSION_MAJOR"),
                     env!("CARGO_PKG_VERSION_MINOR"),
                     env!("CARGO_PKG_VERSION_PATCH")
@@ -3208,12 +3206,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn duke3d_capability_probe_reports_cterm_then_jxl_across_chunks() {
-        // The capture probes TRACE, then DA1; JXL is only queried after
-        // the door recognizes the primary device-attributes reply.
+    async fn duke3d_capability_probe_reports_icy_term_then_jxl_across_chunks() {
+        // The Duke3D lobby capture probes TRACE, then DA1. JXL support is only
+        // reported through the explicit SyncTERM:Q;JXL query.
         let input = b"\x1b_TERMinator:TRACE;Query\x1b\\\x1b[c";
         let expected = format!(
-            "\x1b[=67;84;101;114;109;1;332;73;99;121;84;101;114;109;{};{};{}c",
+            "\x1b[=73;99;121;84;101;114;109;{};{};{}c",
             env!("CARGO_PKG_VERSION_MAJOR"),
             env!("CARGO_PKG_VERSION_MINOR"),
             env!("CARGO_PKG_VERSION_PATCH")

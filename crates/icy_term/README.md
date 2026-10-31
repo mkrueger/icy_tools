@@ -43,11 +43,9 @@ IcyTERM follows current SyncTERM/CTerm behavior for common door games (SyncDoom,
 - **Cached JPEG XL**: SyncTERM APC cache store/draw (`SyncTERM:C;S` / `DrawJXL`)
 - **Inline images**: `DrawPPMBlob` / `DrawJXLBlob`, plus `LoadPPMBlob` / `LoadJXLBlob`
   into paste buffers and `LoadPBMBlob` masks applied by `SyncTERM:P;Paste;MBUF`
-- **Capability detection**: Primary device attributes (`CSI c` / `CSI 0 c`)
-  report a CTerm-compatible `1;332` prefix for door feature gates, followed by
-  Icy Term's ASCII identity and package version as extension fields. The explicit
-  `SyncTERM:Q;JXL` probe reports JPEG XL support; secondary device attributes
-  continue to report Icy Term's package version.
+- **JPEG XL detection**: Answers the explicit `SyncTERM:Q;JXL` probe. Primary
+  device attributes report IcyTerm, not CTerm, so hosts that only send the probe
+  to CTerm terminals won't detect JPEG XL.
 - **Audio APC**: PCM plus Ogg Opus music (requires `libopus`; enabled by default)
 - **Kitty keyboard**: Progressive enhancement (`CSI > u` / `CSI ? u`)
 - **Pixel mouse**: SGR and DECSET 1016 pixel coordinates
