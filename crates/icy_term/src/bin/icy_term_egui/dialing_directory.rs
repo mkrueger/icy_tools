@@ -333,8 +333,10 @@ impl DialingDirectory {
                 .corner_radius(4)
                 .inner_margin(egui::Margin::symmetric(8, 0))
                 .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.set_min_height(CONTROL_HEIGHT);
+                    // A fixed-height row centers its content; `horizontal` would align it to the top.
+                    let row = egui::vec2(ui.available_width(), CONTROL_HEIGHT);
+                    ui.allocate_ui_with_layout(row, egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.set_height(CONTROL_HEIGHT);
                         ui.spacing_mut().item_spacing.x = 6.0;
                         let weak = ui.visuals().weak_text_color();
                         let (glyph, _) = ui.allocate_exact_size(egui::vec2(13.0, 20.0), egui::Sense::hover());
@@ -348,7 +350,9 @@ impl DialingDirectory {
                                 egui::TextEdit::singleline(&mut book.query)
                                     .id(search_id)
                                     .frame(egui::Frame::NONE)
-                                    .hint_text(&*tr!("dialing_directory-filter-placeholder"))
+                                    .font(egui::FontId::proportional(SEARCH_FONT_SIZE))
+                                    .align(egui::Align2::LEFT_CENTER)
+                                    .hint_text(egui::RichText::new(tr!("dialing_directory-filter-placeholder")).size(SEARCH_FONT_SIZE))
                                     .desired_width((ui.available_width() - reserved).max(40.0)),
                             ),
                         );
@@ -945,7 +949,8 @@ struct RowResponse {
 
 pub(super) const ICON_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg"];
 /// Shared height for the filter controls; `Button` would otherwise size each one by its own content.
-const CONTROL_HEIGHT: f32 = 30.0;
+const CONTROL_HEIGHT: f32 = 28.0;
+const SEARCH_FONT_SIZE: f32 = 15.0;
 const ICON_SIZE: usize = 64;
 const MAX_ICON_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -1755,6 +1760,47 @@ mod tests {
             "the search field and filter controls must line up: {heights:?}"
         );
         assert!((heights[0] - CONTROL_HEIGHT).abs() < 0.5, "{heights:?}");
+    }
+
+    #[test]
+    fn the_search_placeholder_is_readable_and_vertically_centered() {
+        let fixture = Fixture::new();
+        let mut book = fixture.load();
+        add(&mut book, "Alpha");
+        let mut dialog = DialingDirectory {
+            phonebook: Some(book),
+            open: true,
+            ..Default::default()
+        };
+        let context = egui::Context::default();
+        frame(&mut dialog, &context, vec![]);
+        let (output, _) = frame(&mut dialog, &context, vec![]);
+        let fill = context.global_style().visuals.extreme_bg_color;
+        let field = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Rect(rect) if rect.fill == fill && (rect.rect.height() - CONTROL_HEIGHT).abs() < 0.5 => Some(rect.rect),
+                _ => None,
+            })
+            .expect("search field frame");
+        let placeholder = tr!("dialing_directory-filter-placeholder");
+        let (position, galley) = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.text() == placeholder.as_str() => Some((text.pos, text.galley.clone())),
+                _ => None,
+            })
+            .expect("search placeholder");
+        let size = galley.job.sections[0].format.font_id.size;
+        assert!((size - SEARCH_FONT_SIZE).abs() < 0.01, "placeholder font size {size}");
+        let text_center = position.y + galley.rect.center().y;
+        assert!(
+            (text_center - field.center().y).abs() <= 2.0,
+            "placeholder center {text_center} must match the field center {}",
+            field.center().y
+        );
     }
 
     #[test]
