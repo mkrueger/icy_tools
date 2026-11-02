@@ -150,7 +150,7 @@ impl MailApp {
     }
 
     fn search(&mut self, ui: &mut egui::Ui, width: f32) {
-        let id = egui::Id::new("mail-search");
+        let id = egui::Id::unique("mail-search");
         let weak = ui.visuals().weak_text_color();
         let enabled = self.reader.package.is_some();
         ui.add_enabled_ui(enabled, |ui| {

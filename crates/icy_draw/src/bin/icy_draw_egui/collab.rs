@@ -1028,7 +1028,7 @@ impl DrawApp {
                 top: OWN_ENTRY_MARGIN as i8,
                 ..Default::default()
             }))
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 let own_id = self.collab.core.our_user_id.unwrap_or(0);
                 let nick = display_nick(&self.collab.nick);
                 let detail = if self.collab.group.is_empty() {
@@ -1038,7 +1038,7 @@ impl DrawApp {
                 };
                 self.user_entry(ui, own_id, &nick, &detail, 0, false);
             });
-        egui::CentralPanel::default().frame(egui::Frame::new()).show_inside(ui, |ui| {
+        egui::CentralPanel::default().frame(egui::Frame::new()).show(ui, |ui| {
             egui::ScrollArea::vertical()
                 .id_salt("collab-user-list")
                 .auto_shrink([false, false])
@@ -1114,7 +1114,7 @@ impl DrawApp {
             .exact_size(USER_LIST_WIDTH)
             .resizable(false)
             .frame(egui::Frame::new().inner_margin(egui::Margin::same(6)))
-            .show_inside(ui, |ui| self.user_list(ui));
+            .show(ui, |ui| self.user_list(ui));
         egui::Panel::bottom("collab-input")
             .frame(egui::Frame::new().inner_margin(egui::Margin {
                 left: 12,
@@ -1123,7 +1123,7 @@ impl DrawApp {
                 bottom: 8,
             }))
             .show_separator_line(false)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 let response = ui.add(
                     appearance::text_edit(&mut self.collab.chat_input)
                         .id_salt("collab-chat-input")
@@ -1145,7 +1145,7 @@ impl DrawApp {
                 top: 8,
                 bottom: 4,
             }))
-            .show_inside(ui, |ui| self.chat_messages(ui));
+            .show(ui, |ui| self.chat_messages(ui));
     }
 
     pub(super) fn toggle_chat(&mut self) {

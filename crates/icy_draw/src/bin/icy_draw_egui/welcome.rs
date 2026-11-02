@@ -310,7 +310,7 @@ impl DrawApp {
 /// The Icy Draw logo with the version filled in, on a black screen like the other Icy tools.
 /// Returns false when the logo could not be rendered.
 fn logo(ui: &mut egui::Ui) -> bool {
-    let id = egui::Id::new("start-logo");
+    let id = egui::Id::unique("start-logo");
     let texture = ui.ctx().data(|data| data.get_temp::<egui::TextureHandle>(id)).or_else(|| {
         let texture = ui
             .ctx()

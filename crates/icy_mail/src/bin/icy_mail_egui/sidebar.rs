@@ -44,7 +44,7 @@ impl MailApp {
                 });
             })
             .response;
-        let header = ui.interact(header.rect, ui.id().with("packet-header"), egui::Sense::click());
+        let header = ui.interact(header.rect, ui.scope_id().with("packet-header"), egui::Sense::click());
         if header.hovered() {
             ui.painter()
                 .rect_filled(header.rect.shrink(4.0), 6.0, ui.visuals().widgets.hovered.weak_bg_fill.gamma_multiply(0.5));

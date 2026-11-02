@@ -1459,7 +1459,7 @@ impl MailApp {
         }
         self.composer = Some(composer);
         self.notice = None;
-        context.memory_mut(|memory| memory.surrender_focus(egui::Id::new("mail-search")));
+        context.memory_mut(|memory| memory.surrender_focus(egui::Id::unique("mail-search")));
     }
 
     pub fn delete_draft(&mut self, context: &egui::Context, id: u64) {
@@ -1865,7 +1865,7 @@ impl MailApp {
 
     pub fn set_focus(&mut self, pane: Pane, context: &egui::Context) {
         self.focus = pane;
-        context.memory_mut(|memory| memory.request_focus(egui::Id::new(format!("mail-pane-{pane:?}"))));
+        context.memory_mut(|memory| memory.request_focus(egui::Id::unique(format!("mail-pane-{pane:?}"))));
     }
 
     /// Whether leaving now would lose typed text, in this window or one it opened.
@@ -1946,7 +1946,7 @@ impl MailApp {
                             .default_size(240.0)
                             .size_range(180.0..=380.0)
                             .frame(egui::Frame::new().fill(sidebar_fill(ui.visuals())))
-                            .show_inside(ui, |ui| {
+                            .show(ui, |ui| {
                                 self.sidebar(ui);
                             });
                         if self.reading_pane_right(ui.available_width()) {
@@ -1956,7 +1956,7 @@ impl MailApp {
                                 .size_range(MIN_SIDE_LIST_WIDTH..=(width - MIN_SIDE_READER_WIDTH).max(MIN_SIDE_LIST_WIDTH))
                                 .resizable(true)
                                 .frame(egui::Frame::new())
-                                .show_inside(ui, |ui| {
+                                .show(ui, |ui| {
                                     self.list(ui);
                                 });
                         } else {
@@ -1965,11 +1965,11 @@ impl MailApp {
                                 .size_range(120.0..=(ui.available_height() - 140.0).max(120.0))
                                 .resizable(true)
                                 .frame(egui::Frame::new())
-                                .show_inside(ui, |ui| {
+                                .show(ui, |ui| {
                                     self.list(ui);
                                 });
                         }
-                        egui::CentralPanel::default().frame(egui::Frame::new()).show_inside(ui, |ui| self.content(ui));
+                        egui::CentralPanel::default().frame(egui::Frame::new()).show(ui, |ui| self.content(ui));
                     }
                 });
             });
@@ -2282,7 +2282,7 @@ impl MailApp {
             });
         }
         if key(context, Key::F, true, false) {
-            context.memory_mut(|memory| memory.request_focus(egui::Id::new("mail-search")));
+            context.memory_mut(|memory| memory.request_focus(egui::Id::unique("mail-search")));
         }
         if key(context, Key::F5, false, false) {
             self.reload(context);
@@ -2290,7 +2290,7 @@ impl MailApp {
         if self.composer.is_some() || self.loading.is_some() || egui::Popup::is_any_open(context) {
             return;
         }
-        if context.memory(|memory| memory.focused() == Some(egui::Id::new("mail-search"))) {
+        if context.memory(|memory| memory.focused() == Some(egui::Id::unique("mail-search"))) {
             if key(context, Key::Escape, false, false) {
                 self.reader.filter.clear();
                 self.filter_changed();

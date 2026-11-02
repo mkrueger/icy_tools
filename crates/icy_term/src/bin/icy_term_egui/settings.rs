@@ -536,7 +536,7 @@ fn command_field(
     drafts: &mut std::collections::HashMap<egui::Id, String>,
     invalid: &mut std::collections::HashSet<egui::Id>,
 ) {
-    let id = ui.id().with(label);
+    let id = ui.scope_id().with(label);
     let value = drafts.entry(id).or_insert_with(|| command.to_string());
     ui.push_id(id, |ui| {
         super::appearance::form_row(ui, label, |ui| {
@@ -797,7 +797,7 @@ mod tests {
             let _ = context
                 .run_ui(egui::RawInput::default(), |ui| {
                     egui::CentralPanel::default_margins().show(ui, |ui| {
-                        drafts.insert(ui.id().with("Init"), text.into());
+                        drafts.insert(ui.scope_id().with("Init"), text.into());
                         command_field(ui, "Init", &mut command, &mut drafts, &mut invalid);
                     });
                 })

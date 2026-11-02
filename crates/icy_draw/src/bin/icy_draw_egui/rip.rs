@@ -3139,9 +3139,9 @@ mod tests {
     fn sidebar_palette_opens_only_for_the_chosen_color() {
         let context = egui::Context::default();
         let mut editor = RipEditor::new();
-        let draw = egui::Id::new(("rip-color", "draw"));
-        let border = egui::Id::new(("rip-color", "border"));
-        let fill = egui::Id::new(("rip-color", "fill"));
+        let draw = egui::Id::unique(("rip-color", "draw"));
+        let border = egui::Id::unique(("rip-color", "border"));
+        let fill = egui::Id::unique(("rip-color", "fill"));
         let frame = |editor: &mut RipEditor| {
             let mut output = context.run_ui(
                 egui::RawInput {

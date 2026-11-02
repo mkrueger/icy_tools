@@ -147,7 +147,7 @@ impl MailApp {
             if dialog.selected.is_some() && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Enter)) {
                 action = Some(if dialog.pick { Action::Use } else { Action::Edit });
             }
-            if focused != Some(egui::Id::new(FILTER_ID))
+            if focused != Some(egui::Id::unique(FILTER_ID))
                 && dialog.selected.is_some()
                 && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Delete))
             {
@@ -185,7 +185,7 @@ impl MailApp {
                     ui.horizontal(|ui| {
                         let buttons = 150.0;
                         let edit = appearance::text_edit(text)
-                            .id(egui::Id::new(EDIT_ID))
+                            .id(egui::Id::unique(EDIT_ID))
                             .hint_text(fl!(LANGUAGE_LOADER, "taglines-edit-hint"))
                             .char_limit(TAGLINE_LENGTH)
                             .desired_width((ui.available_width() - buttons).max(120.0));
@@ -214,7 +214,7 @@ impl MailApp {
                 } else {
                     ui.horizontal(|ui| {
                         let edit = appearance::text_edit(&mut dialog.filter)
-                            .id(egui::Id::new(FILTER_ID))
+                            .id(egui::Id::unique(FILTER_ID))
                             .hint_text(fl!(LANGUAGE_LOADER, "taglines-filter-hint"))
                             .desired_width((ui.available_width() - 170.0).max(120.0));
                         let response = ui.add(edit);

@@ -147,7 +147,7 @@ impl SettingsDialogState {
                             new_options.master_volume = value;
                             on_msg6(SettingsDialogMessage::UpdateOptions(new_options))
                         })
-                        .step(0.01)
+                        .step(0.01_f32)
                         .width(Length::Fill),
                         text(format!("{}%", (master_volume * 100.0).round() as u32)).width(Length::Fixed(48.0)),
                     ]

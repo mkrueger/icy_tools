@@ -47,7 +47,7 @@ pub fn pen_picker(ui: &mut egui::Ui, id: &str, palette: &icy_engine::Palette, re
             .min_size(size)
             .stroke(ui.visuals().widgets.noninteractive.bg_stroke),
     );
-    egui::Popup::menu(&response).id(egui::Id::new(("igs-pen", id))).show(|ui| {
+    egui::Popup::menu(&response).id(egui::Id::unique(("igs-pen", id))).show(|ui| {
         egui::Grid::new(("igs-pen-grid", id)).spacing(egui::vec2(6.0, 6.0)).show(ui, |ui| {
             for pen in 0..pen_count(resolution) {
                 let response = pen_swatch(ui, pen_color(palette, resolution, pen), *value == pen);

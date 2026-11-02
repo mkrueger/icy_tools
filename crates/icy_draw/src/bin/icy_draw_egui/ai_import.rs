@@ -1140,7 +1140,7 @@ impl ImportDialog {
     fn drop_zone(&self, ui: &mut egui::Ui, rect: egui::Rect, dragging_files: bool, locked: bool) -> bool {
         let loading = self.worker.is_some();
         let sense = if locked || loading { egui::Sense::hover() } else { egui::Sense::click() };
-        let response = ui.interact(rect, ui.id().with("ai-import-drop"), sense);
+        let response = ui.interact(rect, ui.scope_id().with("ai-import-drop"), sense);
         let active = dragging_files || (response.hovered() && ui.is_enabled() && !loading);
         let fill = if dragging_files {
             appearance::PRIMARY.gamma_multiply(0.12)
@@ -1384,7 +1384,7 @@ impl ImportDialog {
         let (area, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), height), egui::Sense::hover());
         let rect = egui::Rect::from_center_size(area.center(), fit_preview(texture.size_vec2(), area.size()));
         let sense = if self.ai_job.is_some() { egui::Sense::hover() } else { egui::Sense::drag() };
-        let response = ui.interact(rect, ui.id().with("import-focus"), sense);
+        let response = ui.interact(rect, ui.scope_id().with("import-focus"), sense);
         egui::Image::new(&*texture).paint_at(ui, rect);
         let normalize = |point: egui::Pos2| {
             let delta = (point - rect.min) / rect.size();

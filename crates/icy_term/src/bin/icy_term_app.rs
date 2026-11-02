@@ -832,7 +832,7 @@ impl TerminalApp {
                 let origin = ui.cursor().min;
                 ui.allocate_space(content_size);
                 let bounds = egui::Rect::from_min_size(origin + viewport.min.to_vec2(), viewport.size());
-                let response = ui.interact(bounds, ui.id().with("terminal"), egui::Sense::click_and_drag());
+                let response = ui.interact(bounds, ui.scope_id().with("terminal"), egui::Sense::click_and_drag());
                 self.terminal_input_id = Some(response.id);
                 if (response.clicked() || self.focus_terminal) && !self.dialing_directory.open {
                     response.request_focus();
@@ -1117,7 +1117,7 @@ impl TerminalApp {
                 || self.tools.blocks_input()
                 || self.transfers.open;
             let terminal_bounds = ui.available_rect_before_wrap();
-            egui::Area::new(egui::Id::new("find-overlay"))
+            egui::Area::new(egui::Id::unique("find-overlay"))
                 .order(egui::Order::Foreground)
                 .pivot(egui::Align2::RIGHT_TOP)
                 .fixed_pos(terminal_bounds.right_top() + egui::vec2(-8.0, 8.0))
@@ -2163,7 +2163,7 @@ mod tests {
         run(&mut app, true);
         assert!(app.terminal.screen.lock().selection().is_some(), "dialog input must not clear the selection");
         app.show_monitor = false;
-        context.memory_mut(|memory| memory.request_focus(egui::Id::new("other-widget")));
+        context.memory_mut(|memory| memory.request_focus(egui::Id::unique("other-widget")));
         run(&mut app, true);
         assert!(app.terminal.screen.lock().selection().is_some(), "another widget owns the keyboard");
         app.focus_terminal = true;
@@ -2259,7 +2259,7 @@ mod tests {
         app.show_monitor = true;
         run(&mut app, vec![egui::Event::Text("dialog".into())]);
         app.show_monitor = false;
-        context.memory_mut(|memory| memory.request_focus(egui::Id::new("other-widget")));
+        context.memory_mut(|memory| memory.request_focus(egui::Id::unique("other-widget")));
         run(&mut app, vec![egui::Event::Text("unfocused".into())]);
         assert!(app.session.is_none());
         app.focus_terminal = true;
@@ -2323,7 +2323,7 @@ mod tests {
         assert_eq!(app.pending_paste.as_deref(), Some("AT"), "dialogs must not receive terminal pastes");
         assert!(app.session.is_none());
         app.show_monitor = false;
-        context.memory_mut(|memory| memory.request_focus(egui::Id::new("other-widget")));
+        context.memory_mut(|memory| memory.request_focus(egui::Id::unique("other-widget")));
         run(&mut app, vec![]);
         assert_eq!(app.pending_paste.as_deref(), Some("AT"), "wait until the terminal regains focus");
         app.focus_terminal = true;
@@ -2424,7 +2424,7 @@ mod tests {
         app.dialing_directory.open = true;
         run(&mut app, vec![egui::Event::Text("phonebook-only".into())]);
         app.dialing_directory.open = false;
-        context.memory_mut(|memory| memory.request_focus(egui::Id::new("other-widget")));
+        context.memory_mut(|memory| memory.request_focus(egui::Id::unique("other-widget")));
         run(&mut app, vec![egui::Event::Text("unfocused".into())]);
         app.focus_terminal = true;
         run(&mut app, Vec::new());

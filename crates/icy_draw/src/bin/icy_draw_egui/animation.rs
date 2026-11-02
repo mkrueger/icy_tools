@@ -486,7 +486,7 @@ impl AnimationEditor {
                 let width = (14.0 + 4.0 + galley.size().x).min(third * 2.0);
                 let toggle = egui::Rect::from_center_size(rect.center(), egui::vec2(width + 8.0, rect.height() - 4.0));
                 let response = ui
-                    .interact(toggle, egui::Id::new("animation-log-toggle"), egui::Sense::click())
+                    .interact(toggle, egui::Id::unique("animation-log-toggle"), egui::Sense::click())
                     .on_hover_text(fl!("animation-toggle-log"))
                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                 if response.hovered() {
@@ -537,7 +537,7 @@ impl AnimationEditor {
                         .inner_margin(egui::Margin::symmetric(10, 6))
                         .stroke(visuals.widgets.noninteractive.bg_stroke),
                 )
-                .show_inside(ui, |ui| self.log(ui));
+                .show(ui, |ui| self.log(ui));
         }
         self.code(ui);
     }
@@ -590,7 +590,7 @@ impl AnimationEditor {
         };
         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
             let output = egui::TextEdit::multiline(&mut self.source)
-                .id(egui::Id::new("animation-source-editor"))
+                .id(egui::Id::unique("animation-source-editor"))
                 .code_editor()
                 .frame(egui::Frame::NONE)
                 .margin(egui::Margin::symmetric(12, 10))

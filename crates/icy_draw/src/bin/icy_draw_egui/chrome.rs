@@ -478,13 +478,13 @@ impl DrawApp {
         let swap = egui::Rect::from_min_size(egui::pos2(rect.right() - 14.0, rect.top()), egui::Vec2::splat(14.0));
         let default = egui::Rect::from_min_size(egui::pos2(rect.left(), rect.bottom() - 14.0), egui::Vec2::splat(14.0));
         let colors = ui
-            .interact(foreground_rect.union(background_rect), ui.id().with("caret-colors"), egui::Sense::click())
+            .interact(foreground_rect.union(background_rect), ui.scope_id().with("caret-colors"), egui::Sense::click())
             .on_hover_text(fl!("color-switcher-tooltip"));
         let swap_response = ui
-            .interact(swap, ui.id().with("swap-colors"), egui::Sense::click())
+            .interact(swap, ui.scope_id().with("swap-colors"), egui::Sense::click())
             .on_hover_text(fl!("menu-toggle_color"));
         let default_response = ui
-            .interact(default, ui.id().with("default-colors"), egui::Sense::click())
+            .interact(default, ui.scope_id().with("default-colors"), egui::Sense::click())
             .on_hover_text(fl!("menu-default_color"));
 
         let visuals = ui.visuals().clone();
@@ -1001,7 +1001,7 @@ impl DrawApp {
                 top: 8,
                 bottom: 10,
             }))
-            .show_inside(ui, |ui| self.minimap(ui, signature));
+            .show(ui, |ui| self.minimap(ui, signature));
         self.layers(ui, signature);
     }
 
@@ -1024,7 +1024,7 @@ impl DrawApp {
         let Some(layout) = MinimapLayout::new(area, texture.size(), self.content_size(), viewport, self.view.offset, max_offset) else {
             return;
         };
-        let id = ui.id().with("minimap-image");
+        let id = ui.scope_id().with("minimap-image");
         let response = ui.interact(layout.image.intersect(area), id, egui::Sense::click_and_drag());
         let painter = ui.painter_at(area);
         painter.image(
@@ -1138,7 +1138,7 @@ impl DrawApp {
         egui::Panel::bottom("layer-actions")
             .exact_size(40.0)
             .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 0)))
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
                     if self.icons.button(ui, "add_layer", &fl!("add_layer_tooltip"), false).clicked() {
@@ -1224,7 +1224,7 @@ impl DrawApp {
                     // The twisty is clicked before the row, which would otherwise take the click.
                     let twisty = (has_groups && groups[index].is_some()).then(|| {
                         let area = layer_twisty(ui.painter(), content_x, outer.center().y, depth).expand(5.0);
-                        (area, ui.interact(area, ui.id().with(("layer-twisty", index)), egui::Sense::click()))
+                        (area, ui.interact(area, ui.scope_id().with(("layer-twisty", index)), egui::Sense::click()))
                     });
                     if has_groups {
                         // Lines bridge the spacing between rows so connectors stay continuous.
@@ -1545,7 +1545,7 @@ impl DrawApp {
                     egui::CursorIcon::NoDrop
                 });
                 if let Some(position) = pointer {
-                    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("layer-drag")));
+                    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("layer-drag")));
                     let galley = painter.layout_no_wrap(rows[source].0.title.clone(), egui::FontId::proportional(13.0), ui.visuals().text_color());
                     let label = egui::Rect::from_min_size(position + egui::vec2(14.0, 6.0), galley.size()).expand2(egui::vec2(8.0, 4.0));
                     painter.rect_filled(label, 6, ui.visuals().window_fill.gamma_multiply(0.95));

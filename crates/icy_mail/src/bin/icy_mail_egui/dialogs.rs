@@ -485,7 +485,7 @@ impl MailApp {
                 dialog.content(|ui| {
                     egui::ScrollArea::vertical().max_height(440.0).show(ui, |ui| {
                         let rows = |ui: &mut egui::Ui, rows: &[(String, String)]| {
-                            egui::Grid::new(ui.id().with("rows")).num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
+                            egui::Grid::new(ui.scope_id().with("rows")).num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
                                 for (label, value) in rows {
                                     ui.label(egui::RichText::new(label).weak());
                                     ui.add(egui::Label::new(value).wrap());

@@ -153,7 +153,7 @@ fn utf8_character_picker_draws_text_without_prerendered_page_textures() {
     app.create(NewKind::Utf8, Size::new(20, 4));
     for (page, code) in [(0, "0041"), (0x4E, "4E00"), (0x1F6, "1F600"), (0, "0041")] {
         context.data_mut(|data| {
-            data.insert_temp(egui::Id::new("unicode-character-picker"), (page, code.to_owned()));
+            data.insert_temp(egui::Id::unique("unicode-character-picker"), (page, code.to_owned()));
         });
         let started = std::time::Instant::now();
         let mut outputs: Vec<_> = (0..3)
@@ -194,7 +194,7 @@ fn utf8_character_picker_selects_text_cells_directly() {
     app.create(NewKind::Utf8, Size::new(20, 4));
     app.dialog = Some(Dialog::Characters);
     context.data_mut(|data| {
-        data.insert_temp(egui::Id::new("unicode-character-picker"), (3_u32, "0391".to_owned()));
+        data.insert_temp(egui::Id::unique("unicode-character-picker"), (3_u32, "0391".to_owned()));
     });
     let size = egui::vec2(1280.0, 820.0);
     for _ in 0..3 {
@@ -272,7 +272,7 @@ fn click_tool_character_button_inserts_and_the_table_replaces_it() {
     for (tool, expected) in [(Tool::Click, "\u{2605}\u{2605}\u{263A} "), (Tool::Pencil, "\u{2605}\u{2605}\u{263A} ")] {
         app.document.tool = tool;
         app.dialog = Some(Dialog::Characters);
-        context.data_mut(|data| data.insert_temp(egui::Id::new("unicode-character-picker"), (0x26_u32, "263A".to_owned())));
+        context.data_mut(|data| data.insert_temp(egui::Id::unique("unicode-character-picker"), (0x26_u32, "263A".to_owned())));
         for _ in 0..3 {
             frame(&context, &mut app, size, vec![]);
         }
@@ -302,7 +302,7 @@ fn utf8_character_picker_accepts_supplementary_codepoints() {
     app.create(NewKind::Utf8, Size::new(20, 4));
     app.dialog = Some(Dialog::Characters);
     context.data_mut(|data| {
-        data.insert_temp(egui::Id::new("unicode-character-picker"), (0x1F6_u32, "1F600".to_owned()));
+        data.insert_temp(egui::Id::unique("unicode-character-picker"), (0x1F6_u32, "1F600".to_owned()));
     });
     let size = egui::vec2(1280.0, 820.0);
     for _ in 0..3 {
@@ -2805,7 +2805,7 @@ fn text_tool_yields_to_focused_text_fields() {
     let context = egui::Context::default();
     let mut app = DrawApp::new();
     let mut value = String::new();
-    let field = egui::Id::new("focus-test-field");
+    let field = egui::Id::unique("focus-test-field");
     for (index, events) in [
         vec![],
         vec![egui::Event::Text("xy".into())],
@@ -2889,7 +2889,7 @@ fn canvas_keyboard_returns_after_text_field_submission_without_reusing_enter() {
     let context = egui::Context::default();
     let mut app = DrawApp::new();
     let mut value = String::new();
-    let field = egui::Id::new("focus-test-submit-field");
+    let field = egui::Id::unique("focus-test-submit-field");
     for (index, events) in [
         vec![],
         vec![egui::Event::Text("field".into())],

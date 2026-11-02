@@ -85,7 +85,7 @@ impl Minimap {
         let view_height = area.height();
         let geometry = geometry(image.size, height, offset.y, max_offset.y, view_height);
         let strip = egui::Rect::from_min_size(rect.min, egui::vec2(WIDTH, geometry.strip_height.min(height)));
-        let response = ui.interact(strip, ui.id().with("minimap"), egui::Sense::click_and_drag());
+        let response = ui.interact(strip, ui.scope_id().with("minimap"), egui::Sense::click_and_drag());
         let visuals = ui.visuals().clone();
         let painter = ui.painter().with_clip_rect(strip.expand(1.0));
         painter.rect_filled(
@@ -120,7 +120,7 @@ impl Minimap {
 /// Small dark round button over the art; `solid` keeps it readable when nothing is behind it.
 fn toggle(ui: &mut egui::Ui, rect: egui::Rect, icon: Icon, tooltip: &str, solid: bool, icons: &mut Icons) -> bool {
     let response = ui
-        .interact(rect, ui.id().with(("minimap-toggle", solid)), egui::Sense::click())
+        .interact(rect, ui.scope_id().with(("minimap-toggle", solid)), egui::Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(tooltip);
     let alpha = match (response.hovered(), solid) {

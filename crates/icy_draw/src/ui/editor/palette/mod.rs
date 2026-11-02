@@ -466,13 +466,13 @@ impl Dialog<Message> for PaletteEditorDialog {
         let (r, g, b) = self.selected_rgb();
 
         let r_slider = slider(0.0..=255.0, r as f32, |v| palette_msg(PaletteEditorMessage::SetR(v)))
-            .step(1.0)
+            .step(1.0_f32)
             .width(Length::Fill);
         let g_slider = slider(0.0..=255.0, g as f32, |v| palette_msg(PaletteEditorMessage::SetG(v)))
-            .step(1.0)
+            .step(1.0_f32)
             .width(Length::Fill);
         let b_slider = slider(0.0..=255.0, b as f32, |v| palette_msg(PaletteEditorMessage::SetB(v)))
-            .step(1.0)
+            .step(1.0_f32)
             .width(Length::Fill);
 
         let rgb_sliders = column![

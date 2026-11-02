@@ -388,16 +388,6 @@ impl AnsiEditorMainArea {
         self.core.get_mirror_mode()
     }
 
-    /// Get the undo description for menu display
-    pub fn undo_description(&self) -> Option<String> {
-        self.with_edit_state_readonly(icy_engine_edit::UndoState::undo_description)
-    }
-
-    /// Get the redo description for menu display
-    pub fn redo_description(&self) -> Option<String> {
-        self.with_edit_state_readonly(icy_engine_edit::UndoState::redo_description)
-    }
-
     /// Get mirror mode state for menu display
     pub fn mirror_mode(&self) -> bool {
         self.get_mirror_mode()
@@ -820,10 +810,6 @@ impl AnsiEditorMainArea {
         let task = self.core.copy(on_complete);
         self.refresh_selection_display();
         task
-    }
-
-    pub fn paste(&mut self) -> Result<(), String> {
-        self.core.paste()
     }
 
     pub fn paste_icy_data(&mut self, data: &[u8]) -> Result<(), String> {

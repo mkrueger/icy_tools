@@ -1087,7 +1087,7 @@ impl MusicEditor {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 egui::TextEdit::multiline(&mut self.text)
-                    .id(egui::Id::new("music-text-editor"))
+                    .id(egui::Id::unique("music-text-editor"))
                     .code_editor()
                     .desired_width(f32::INFINITY)
                     .desired_rows(4)
@@ -1243,7 +1243,7 @@ impl MusicEditor {
         let extend = ui.input(|input| input.modifiers.shift);
         if pressed {
             if let Some(pos) = ui.input(|input| input.pointer.interact_pos()) {
-                ui.memory_mut(|memory| memory.surrender_focus(egui::Id::new("music-text-editor")));
+                ui.memory_mut(|memory| memory.surrender_focus(egui::Id::unique("music-text-editor")));
                 let events = self.parsed.events.clone();
                 if ruler.contains(pos) {
                     self.drag = Some((

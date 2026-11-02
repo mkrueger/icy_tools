@@ -17,7 +17,7 @@ pub fn help(context: &egui::Context, open: &mut bool) {
 }
 
 pub fn baud(context: &egui::Context, open: &mut bool, current: BaudEmulation) -> Option<BaudEmulation> {
-    let id = egui::Id::new("bps-custom");
+    let id = egui::Id::unique("bps-custom");
     let mut selected = None;
     let response = Dialog::new("bps").size(DialogSize::Small).fixed_height(390.0).show(context, |dialog| {
         let mut custom = dialog.ui().data(|data| data.get_temp::<u32>(id)).unwrap_or(match current {

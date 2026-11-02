@@ -234,7 +234,7 @@ pub fn view_frame_slider(editor: &AnimationEditor) -> Element<'_, AnimationEdito
         // Create a styled progress slider
         let progress_slider = slider(0.0..=max_frame, current_frame as f32, |v| AnimationEditorMessage::SeekFrame(v as usize))
             .width(Length::Fill)
-            .step(1.0);
+            .step(1.0_f32);
 
         container(progress_slider).width(Length::Fill).padding([0, 4]).into()
     } else {

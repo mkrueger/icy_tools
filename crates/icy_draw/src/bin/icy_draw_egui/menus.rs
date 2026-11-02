@@ -522,7 +522,7 @@ impl DrawApp {
         let paint = self.document.can_paint();
         if item(ui, &fl!("menu-cut"), Some(&CUT), animation || (selected && paint)) {
             if animation {
-                context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
+                context.memory_mut(|memory| memory.request_focus(egui::Id::unique("animation-source-editor")));
                 context.input_mut(|input| input.events.push(egui::Event::Cut));
             } else {
                 self.cut(context);
@@ -533,7 +533,7 @@ impl DrawApp {
         }
         if item(ui, &fl!("menu-paste"), Some(&PASTE), animation || paint) {
             if animation {
-                context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
+                context.memory_mut(|memory| memory.request_focus(egui::Id::unique("animation-source-editor")));
                 context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             } else {
                 self.paste_clipboard(context);
@@ -542,7 +542,7 @@ impl DrawApp {
         if animation {
             ui.separator();
             if item(ui, &fl!("menu-select-all"), Some(&SELECT_ALL), true) {
-                context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
+                context.memory_mut(|memory| memory.request_focus(egui::Id::unique("animation-source-editor")));
                 context.input_mut(|input| {
                     input.events.push(egui::Event::Key {
                         key: Key::A,

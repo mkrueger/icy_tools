@@ -316,7 +316,7 @@ pub fn color_picker_sized(ui: &mut egui::Ui, id: &str, palette: &icy_engine::Pal
             .min_size(size)
             .stroke(ui.visuals().widgets.noninteractive.bg_stroke),
     );
-    egui::Popup::menu(&response).id(egui::Id::new(("rip-color", id))).show(|ui| {
+    egui::Popup::menu(&response).id(egui::Id::unique(("rip-color", id))).show(|ui| {
         egui::Grid::new(("rip-color-grid", id)).spacing(egui::vec2(3.0, 3.0)).show(ui, |ui| {
             for color in 0..16u16 {
                 let selected = *value == color;

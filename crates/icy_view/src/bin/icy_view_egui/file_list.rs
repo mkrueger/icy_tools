@@ -97,7 +97,7 @@ impl FileList {
                     let sortable = column == 0 || (!sauce_mode && column == 1);
                     let clicked = ui.interact(
                         rect,
-                        ui.id().with(("header", column)),
+                        ui.scope_id().with(("header", column)),
                         if sortable { egui::Sense::click() } else { egui::Sense::hover() },
                     );
                     if clicked.clicked() {

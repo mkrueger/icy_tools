@@ -608,8 +608,8 @@ impl DrawApp {
         ui.horizontal(|ui| {
             let (outer, _) = ui.allocate_exact_size(egui::vec2(64.0, 46.0), egui::Sense::hover());
             let inner = outer.shrink2(egui::vec2(12.0, 10.0));
-            let border_response = ui.interact(outer, ui.id().with("petscii-border"), egui::Sense::click());
-            let screen_response = ui.interact(inner, ui.id().with("petscii-screen"), egui::Sense::click());
+            let border_response = ui.interact(outer, ui.scope_id().with("petscii-border"), egui::Sense::click());
+            let screen_response = ui.interact(inner, ui.scope_id().with("petscii-screen"), egui::Sense::click());
             let painter = ui.painter();
             painter.rect_filled(outer, 4, color(border));
             painter.rect_filled(inner, 2, color(background));

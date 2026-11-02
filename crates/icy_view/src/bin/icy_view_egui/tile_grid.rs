@@ -144,7 +144,7 @@ impl TileGrid {
                 if !ui.is_rect_visible(rect) {
                     continue;
                 }
-                let response = ui.interact(rect, ui.id().with(tile.index), egui::Sense::click());
+                let response = ui.interact(rect, ui.scope_id().with(tile.index), egui::Sense::click());
                 let visuals = ui.style().interact_selectable(&response, selected);
                 ui.painter()
                     .rect_filled(rect.translate(egui::vec2(3.0, 4.0)), 6.0, egui::Color32::from_black_alpha(45));

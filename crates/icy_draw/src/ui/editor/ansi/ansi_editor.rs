@@ -1077,22 +1077,6 @@ impl AnsiEditorCore {
         )
     }
 
-    /// Scroll the canvas to show a character position (col, row)
-    pub fn scroll_to_position(&mut self, col: i32, row: i32) {
-        let (buf_width, buf_height) = {
-            let mut screen_guard = self.screen.lock();
-            let state = screen_guard
-                .as_any_mut()
-                .downcast_mut::<EditState>()
-                .expect("AnsiEditor screen should always be EditState");
-            let buffer = state.get_buffer();
-            (buffer.width().max(1) as f32, buffer.height().max(1) as f32)
-        };
-        let norm_x: f32 = (col as f32 + 0.5) / buf_width;
-        let norm_y: f32 = (row as f32 + 0.5) / buf_height;
-        self.scroll_canvas_to_normalized(norm_x.clamp(0.0, 1.0), norm_y.clamp(0.0, 1.0));
-    }
-
     fn scroll_caret_into_view(&mut self) {
         // Gather caret position in document coordinates and font dimensions.
         let (col, row, font_width, font_height) = {
@@ -1147,33 +1131,6 @@ impl AnsiEditorCore {
                 Named::ArrowUp | Named::ArrowDown | Named::ArrowLeft | Named::ArrowRight | Named::Home | Named::End | Named::PageUp | Named::PageDown
             )
         )
-    }
-
-    /// Scroll the canvas to a normalized position (0.0-1.0)
-    /// The viewport will be centered on this position
-    pub(super) fn scroll_canvas_to_normalized(&mut self, norm_x: f32, norm_y: f32) {
-        let cache = self.canvas.terminal.render_cache.read();
-        let content_width = (cache.content_width as f32).max(1.0);
-        let content_height = cache.content_height.max(1.0);
-        let visible_width = cache.visible_width.max(1.0);
-        let visible_height = cache.visible_height.max(1.0);
-        drop(cache);
-
-        // Keep current X when horizontal scrolling isn't possible.
-        let current_scroll_x = self.canvas.terminal.scroll_x();
-
-        let target_x = if content_width > visible_width {
-            norm_x * content_width - visible_width / 2.0
-        } else {
-            current_scroll_x
-        };
-
-        // Convert normalized position to content coordinates
-        // Center the viewport on the clicked position
-        let target_y = norm_y * content_height - visible_height / 2.0;
-
-        // Scroll to the target position (clamping is done internally)
-        self.canvas.scroll_to(target_x, target_y);
     }
 
     /// Update the editor state with a core message

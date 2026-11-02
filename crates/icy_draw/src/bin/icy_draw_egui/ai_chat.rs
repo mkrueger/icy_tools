@@ -674,7 +674,7 @@ impl Chat {
                 ui.label(fl!("ai-chat-model"));
                 self.model_picker(ui, f32::INFINITY);
                 let manual = appearance::text_edit(self.model_mut())
-                    .id(egui::Id::new("ai-model-id"))
+                    .id(egui::Id::unique("ai-model-id"))
                     .desired_width(f32::INFINITY)
                     .hint_text(fl!("ai-chat-model-id"));
                 if ui.add(manual).lost_focus() {
@@ -700,7 +700,7 @@ impl Chat {
                 .add(
                     egui::TextEdit::multiline(&mut self.connection.knowledge.custom_instructions)
                         .margin(appearance::FIELD_MARGIN)
-                        .id(egui::Id::new("ai-instructions"))
+                        .id(egui::Id::unique("ai-instructions"))
                         .desired_width(f32::INFINITY)
                         .desired_rows(5)
                         .hint_text(fl!("ai-knowledge-instructions-hint")),
@@ -788,7 +788,7 @@ impl Chat {
     fn openai_settings(&mut self, ui: &mut egui::Ui) {
         ui.label(fl!("ai-chat-endpoint"));
         let endpoint = appearance::text_edit(&mut self.connection.endpoint)
-            .id(egui::Id::new("ai-url"))
+            .id(egui::Id::unique("ai-url"))
             .desired_width(f32::INFINITY)
             .hint_text("https://api.openai.com/v1");
         if ui.add(endpoint).changed() {
@@ -801,7 +801,7 @@ impl Chat {
         ui.add_space(6.0);
         ui.label(fl!("ai-chat-key"));
         let key = appearance::text_edit(&mut self.key)
-            .id(egui::Id::new("ai-key"))
+            .id(egui::Id::unique("ai-key"))
             .desired_width(f32::INFINITY)
             .password(true);
         if ui.add(key).changed() {
@@ -816,7 +816,7 @@ impl Chat {
         ui.label(fl!("ai-chat-copilot-path"));
         let detected = copilot::find_cli("").map(|path| path.display().to_string());
         let path = appearance::text_edit(&mut self.connection.copilot_path)
-            .id(egui::Id::new("ai-copilot-path"))
+            .id(egui::Id::unique("ai-copilot-path"))
             .desired_width(f32::INFINITY)
             .hint_text(detected.clone().unwrap_or_else(|| fl!("ai-chat-copilot-not-found")));
         if ui.add(path).changed() {
@@ -848,7 +848,7 @@ impl Chat {
             .on_hover_text(format!("{}: {selected}", fl!("ai-chat-model")));
         let mut manage = false;
         egui::Popup::menu(&button)
-            .id(egui::Id::new("ai-model-menu"))
+            .id(egui::Id::unique("ai-model-menu"))
             .width(ui.ctx().content_rect().width().min(280.0))
             .show(|ui| {
                 ui.set_max_width(ui.available_width());
@@ -1189,7 +1189,7 @@ impl Chat {
             ui.add_space(4.0);
         }
         self.knowledge_chips(ui);
-        let prompt = egui::Id::new("ai-prompt");
+        let prompt = egui::Id::unique("ai-prompt");
         let focused = ui.memory(|memory| memory.has_focus(prompt));
         let visuals = ui.visuals();
         let stroke = if focused {
@@ -1341,7 +1341,7 @@ impl Chat {
                     ui.spacing_mut().button_padding.y = 0.0;
                     let add = icons.button_sized(ui, "add", &fl!("ai-chat-add-menu"), false, 24.0);
                     egui::Popup::menu(&add)
-                        .id(egui::Id::new("ai-add-menu"))
+                        .id(egui::Id::unique("ai-add-menu"))
                         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| attach = self.add_menu(ui, can_attach));
                     let model_width = (ui.available_width() - 24.0 - ui.spacing().item_spacing.x).clamp(0.0, COMPOSER_MODEL_WIDTH);
@@ -1765,7 +1765,7 @@ impl DrawApp {
             return;
         }
         if opened && !self.ai_chat.settings_open {
-            context.memory_mut(|memory| memory.request_focus(egui::Id::new("ai-prompt")));
+            context.memory_mut(|memory| memory.request_focus(egui::Id::unique("ai-prompt")));
         }
         self.ai_chat.editor_knowledge = self.ai_editor_knowledge();
         let chat = &mut self.ai_chat;
@@ -1791,12 +1791,12 @@ impl DrawApp {
                 egui::Panel::bottom("ai-chat-compose")
                     .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 6)))
                     .show_separator_line(false)
-                    .show_inside(ui, |ui| attach = chat.composer(ui, icons, can_attach));
+                    .show(ui, |ui| attach = chat.composer(ui, icons, can_attach));
                 chat.history(ui, icons);
             });
         if self.ai_chat.drop_hovered && !blocked {
             if let Some(panel) = egui::containers::panel::PanelState::load(context, context.viewport_id().root_ui_id().with("ai-chat")) {
-                let painter = context.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("ai-image-drop")));
+                let painter = context.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("ai-image-drop")));
                 painter.rect_filled(panel.outer_rect, 0, Color32::from_rgba_unmultiplied(32, 100, 160, 80));
                 painter.rect_stroke(
                     panel.outer_rect.shrink(2.0),
@@ -2291,7 +2291,7 @@ fn chat_has_focus(context: &egui::Context) -> bool {
         memory.focused().is_some_and(|focused| {
             ["ai-url", "ai-key", "ai-model-id", "ai-prompt", "ai-instructions"]
                 .iter()
-                .any(|id| focused == egui::Id::new(id))
+                .any(|id| focused == egui::Id::unique(id))
         })
     })
 }
@@ -3004,7 +3004,7 @@ mod tests {
             let context = egui::Context::default();
             let size = egui::vec2(1280.0, 820.0);
             frame(&context, &mut app, size, vec![]);
-            context.memory_mut(|memory| memory.request_focus(egui::Id::new("ai-prompt")));
+            context.memory_mut(|memory| memory.request_focus(egui::Id::unique("ai-prompt")));
             let before = app.ai_editor_context();
             frame(
                 &context,
@@ -3123,7 +3123,7 @@ mod tests {
         run(&context, &mut chat, Some(choice.center()));
         assert_eq!(chat.model(), "another-model");
         assert!(chat.persist);
-        assert!(!egui::Popup::is_id_open(&context, egui::Id::new("ai-model-menu")));
+        assert!(!egui::Popup::is_id_open(&context, egui::Id::unique("ai-model-menu")));
 
         *chat.model_mut() = chat.models[2].clone();
         let (_, button) = run(&context, &mut chat, None);
@@ -3583,7 +3583,7 @@ mod tests {
                 )
                 .textures_delta
                 .clear();
-            context.memory_mut(|memory| memory.request_focus(egui::Id::new("ai-instructions")));
+            context.memory_mut(|memory| memory.request_focus(egui::Id::unique("ai-instructions")));
         }
         assert_eq!(chat.connection.knowledge.custom_instructions, "Use blue.\nKeep hotkeys white.");
         assert!(chat.knowledge_persist);
@@ -3663,7 +3663,7 @@ mod tests {
         let context = egui::Context::default();
         let size = egui::vec2(1280.0, 820.0);
         frame(&context, &mut app, size, vec![]);
-        context.memory_mut(|memory| memory.request_focus(egui::Id::new("ai-prompt")));
+        context.memory_mut(|memory| memory.request_focus(egui::Id::unique("ai-prompt")));
         frame(&context, &mut app, size, vec![egui::Event::Text("line".into())]);
         frame(&context, &mut app, size, vec![key(egui::Key::Enter, egui::Modifiers::SHIFT)]);
         assert!(app.ai_chat.pending.is_none());

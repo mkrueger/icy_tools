@@ -70,7 +70,7 @@ impl Osd {
         let opacity = self.opacity();
         let width = (area.width() - 32.0).clamp(160.0, 460.0);
         let mut action = None;
-        let response = egui::Area::new(egui::Id::new("viewer-osd"))
+        let response = egui::Area::new(egui::Id::unique("viewer-osd"))
             .order(egui::Order::Middle)
             .pivot(egui::Align2::LEFT_BOTTOM)
             .fixed_pos(area.left_bottom() + egui::vec2(16.0, -16.0))

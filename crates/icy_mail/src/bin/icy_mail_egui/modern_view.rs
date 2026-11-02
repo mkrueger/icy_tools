@@ -884,12 +884,12 @@ impl MailApp {
             }
         }
         let max = (output.content_size - output.inner_rect.size()).max(egui::Vec2::ZERO);
-        self.screen.offset = output.state.offset().min(max);
+        self.screen.offset = output.state.clamped_offset().min(max);
         self.screen.max_offset = max;
         self.modern_layout_pending = false;
         self.content_rect = output.inner_rect;
         // Hovering anywhere in the pane counts, e.g. for turning bulletin pages with the wheel.
-        let area = ui.interact(output.inner_rect, ui.id().with("modern-area"), egui::Sense::hover());
+        let area = ui.interact(output.inner_rect, ui.scope_id().with("modern-area"), egui::Sense::hover());
         area.union(output.inner)
     }
 }

@@ -40,7 +40,7 @@ impl MailApp {
             .map(|recent| (recent.packets.clone(), recent.summaries.clone()))
             .unwrap_or_default();
         let dragging = context.input(|input| !input.raw.hovered_files.is_empty());
-        let height_id = egui::Id::new("welcome-content-height");
+        let height_id = egui::Id::unique("welcome-content-height");
         let mut remove = None;
         let mut open = None;
         egui::ScrollArea::vertical().id_salt("welcome").auto_shrink([false, false]).show(ui, |ui| {
@@ -165,7 +165,7 @@ impl MailApp {
         }
 
         let close = egui::Rect::from_center_size(egui::pos2(rect.right() - 20.0, rect.center().y), egui::vec2(26.0, 26.0));
-        let close_response = ui.interact(close, ui.id().with(("forget", path)), egui::Sense::click());
+        let close_response = ui.interact(close, ui.scope_id().with(("forget", path)), egui::Sense::click());
         let text_left = rect.left() + 60.0;
         let text_right = rect.right() - 44.0;
         let lines = if summary.is_some() { 3 } else { 2 };
@@ -310,7 +310,7 @@ fn created_date(created: &str, today: chrono::NaiveDate) -> Option<String> {
 /// The Icy Mail logo with the version filled in, on a black screen like Icy View's welcome page.
 /// Returns false when the logo could not be rendered.
 fn logo(ui: &mut egui::Ui) -> bool {
-    let id = egui::Id::new("welcome-logo");
+    let id = egui::Id::unique("welcome-logo");
     let texture = ui.ctx().data(|data| data.get_temp::<egui::TextureHandle>(id)).or_else(|| {
         let texture = ui.ctx().load_texture("welcome-logo", render_logo()?, egui::TextureOptions::NEAREST);
         ui.ctx().data_mut(|data| data.insert_temp(id, texture.clone()));

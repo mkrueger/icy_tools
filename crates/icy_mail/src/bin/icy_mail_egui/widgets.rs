@@ -581,7 +581,11 @@ pub fn header(ui: &mut egui::Ui, widths: &[f32], labels: &[&str], active: Option
         if label.is_empty() {
             continue;
         }
-        let response = ui.interact(cell, ui.id().with(("header", index)), if enabled { Sense::click() } else { Sense::hover() });
+        let response = ui.interact(
+            cell,
+            ui.scope_id().with(("header", index)),
+            if enabled { Sense::click() } else { Sense::hover() },
+        );
         let sorted = active.filter(|(column, _)| *column == index);
         let text = match sorted {
             Some((_, direction)) => format!("{label} {}", arrow(direction)),

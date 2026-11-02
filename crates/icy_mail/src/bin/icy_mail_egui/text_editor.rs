@@ -41,7 +41,7 @@ impl TextEditor {
     }
 
     pub fn id() -> egui::Id {
-        egui::Id::new("composer-utf8-text")
+        egui::Id::unique("composer-utf8-text")
     }
 
     pub fn request_focus(&mut self) {
@@ -94,12 +94,10 @@ impl TextEditor {
     /// Quote panel keys, taken before the text editor sees them, as in the BBS editor.
     fn keyboard(&mut self, context: &egui::Context, output: &mut EditorOutput) {
         if context.input(|input| {
-            input.events.iter().any(|event| {
-                matches!(
-                    event,
-                    egui::Event::Ime(egui::ImeEvent::Enabled | egui::ImeEvent::Preedit { .. } | egui::ImeEvent::Commit(_))
-                )
-            })
+            input
+                .events
+                .iter()
+                .any(|event| matches!(event, egui::Event::Ime(egui::ImeEvent::Preedit { .. } | egui::ImeEvent::Commit(_))))
         }) {
             self.quotes.open = false;
             return;
@@ -311,7 +309,6 @@ mod tests {
     #[test]
     fn ime_events_leave_quote_keys_for_the_text_editor() {
         for event in [
-            egui::ImeEvent::Enabled,
             egui::ImeEvent::Preedit {
                 text: "にほん".into(),
                 active_range_chars: None,

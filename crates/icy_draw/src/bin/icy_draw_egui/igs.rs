@@ -2779,7 +2779,7 @@ impl IgsEditor {
                     let add = ui
                         .add_enabled_ui(!editing_blocked, |ui| self.icons.button_sized(ui, "add", &fl!("igs-editor-add"), false, 26.0))
                         .inner;
-                    egui::Popup::menu(&add).id(egui::Id::new("igs-add-command")).show(|ui| {
+                    egui::Popup::menu(&add).id(egui::Id::unique("igs-add-command")).show(|ui| {
                         ui.set_min_width(220.0);
                         ui.weak(fl!("igs-editor-add-hint"));
                         for (group, commands) in templates() {

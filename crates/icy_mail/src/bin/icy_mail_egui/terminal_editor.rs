@@ -211,13 +211,13 @@ impl TerminalEditor {
                     .resizable(false)
                     .exact_size(CHAR_PANEL_WIDTH)
                     .frame(frame)
-                    .show_inside(ui, |ui| self.char_panel(ui, icons));
+                    .show(ui, |ui| self.char_panel(ui, icons));
             } else {
                 egui::Panel::bottom("editor-chars")
                     .resizable(false)
                     .exact_size(280.0)
                     .frame(frame)
-                    .show_inside(ui, |ui| self.char_panel(ui, icons));
+                    .show(ui, |ui| self.char_panel(ui, icons));
             }
         }
         if self.quotes.open {
@@ -227,7 +227,7 @@ impl TerminalEditor {
                 .default_size((height * 0.38).max(120.0))
                 .size_range(90.0..=(height - 120.0).max(90.0))
                 .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 6)))
-                .show_inside(ui, |ui| self.quote_panel(ui, icons));
+                .show(ui, |ui| self.quote_panel(ui, icons));
         }
         self.terminal(ui, settings, enabled, modern);
         if enabled && self.colors.is_some() {
@@ -681,7 +681,7 @@ impl TerminalEditor {
 
     fn find_bar(&mut self, ui: &mut egui::Ui, icons: &mut Icons) {
         let context = ui.ctx().clone();
-        let id = egui::Id::new(FIND_ID);
+        let id = egui::Id::unique(FIND_ID);
         let focused = context.memory(|memory| memory.has_focus(id));
         // egui drops the focus on Escape before widgets run, so ask about the previous frame.
         if std::mem::take(&mut self.find_focused) && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Escape)) {
@@ -848,7 +848,7 @@ impl TerminalEditor {
         } else {
             fl!(LANGUAGE_LOADER, "editor-text-color")
         };
-        let area = egui::Area::new(egui::Id::new("editor-colors"))
+        let area = egui::Area::new(egui::Id::unique("editor-colors"))
             .order(egui::Order::Foreground)
             .fixed_pos(self.color_button.left_bottom() + egui::vec2(0.0, 4.0))
             .constrain(true)

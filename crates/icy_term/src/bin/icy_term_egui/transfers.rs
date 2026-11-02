@@ -1118,7 +1118,7 @@ mod tests {
                 .textures_delta
                 .clear();
             size = context
-                .memory(|memory| memory.area_rect(egui::Id::new("transfer")))
+                .memory(|memory| memory.area_rect(egui::Id::unique("transfer")))
                 .map(|rect| rect.size())
                 .unwrap_or_default();
         }

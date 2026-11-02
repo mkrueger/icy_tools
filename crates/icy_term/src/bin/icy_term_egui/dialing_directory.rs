@@ -887,7 +887,7 @@ impl DialingDirectory {
 }
 
 fn pane_bar_id(ui: &egui::Ui) -> egui::Id {
-    ui.id().with("pane-bottom-bar")
+    ui.scope_id().with("pane-bottom-bar")
 }
 
 /// Content of the entry pane, sized so the following [`pane_bar`] sits at the bottom edge.

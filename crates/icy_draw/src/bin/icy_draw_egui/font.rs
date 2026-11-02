@@ -973,7 +973,7 @@ impl FontEditor {
         let columns = self.display_width();
         let character = self.state.selected_char();
         let grid = egui::Rect::from_min_max(rect.min + egui::Vec2::splat(RULER), rect.max);
-        let response = ui.interact(grid, ui.id().with("font-edit-grid"), egui::Sense::click_and_drag());
+        let response = ui.interact(grid, ui.scope_id().with("font-edit-grid"), egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect.expand(2.0));
         let focused = self.state.focused_panel() == BitFontFocusedPanel::EditGrid;
         let (cursor_column, cursor_row) = self.state.cursor_pos();
@@ -1084,7 +1084,7 @@ impl FontEditor {
         let height = self.state.font_height().max(1) as usize;
         let columns = self.display_width() as usize;
         let grid = egui::Rect::from_min_size(rect.min + egui::Vec2::splat(RULER), cell * 16.0);
-        let response = ui.interact(grid, ui.id().with("font-charset"), egui::Sense::click_and_drag());
+        let response = ui.interact(grid, ui.scope_id().with("font-charset"), egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect.expand(2.0));
         let focused = self.state.focused_panel() == BitFontFocusedPanel::CharSet;
         let (cursor_column, cursor_row) = self.state.charset_cursor();
@@ -1261,7 +1261,7 @@ const EDITOR_KEYS: egui::EventFilter = egui::EventFilter {
 /// One focus target for both editor areas: egui applies a lock filter only to a widget that kept
 /// focus since the previous frame, so switching between two widgets would leak repeated Tabs.
 fn editor_focus_id() -> egui::Id {
-    egui::Id::new("font-editor-focus")
+    egui::Id::unique("font-editor-focus")
 }
 
 /// Keeps keyboard focus on the editor areas while no other widget uses it, like the ANSI canvas.

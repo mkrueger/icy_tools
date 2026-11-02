@@ -1260,7 +1260,7 @@ impl DrawApp {
         let mut selected = None;
         let mut target = None;
         egui::Window::new(fl!("font-slots-title"))
-            .id(egui::Id::new("font-slots"))
+            .id(egui::Id::unique("font-slots"))
             .open(&mut open)
             .default_width(280.0)
             .default_height(360.0)
@@ -1741,7 +1741,7 @@ impl DrawApp {
                     self.edit(|state| state.flip_y());
                 }
                 let justify = self.icons.button(ui, "format_align_center", &fl!("select-justify"), false);
-                egui::Popup::menu(&justify).id(egui::Id::new("select-justify")).show(|ui| {
+                egui::Popup::menu(&justify).id(egui::Id::unique("select-justify")).show(|ui| {
                     if ui.button(fl!("menu-justifyleft")).clicked() {
                         self.edit(|state| state.justify_left());
                         ui.close();
@@ -2920,7 +2920,7 @@ impl DrawApp {
 
     fn copy(&mut self, context: &egui::Context) {
         if self.animation.is_some() {
-            context.memory_mut(|memory| memory.request_focus(egui::Id::new("animation-source-editor")));
+            context.memory_mut(|memory| memory.request_focus(egui::Id::unique("animation-source-editor")));
             context.input_mut(|input| input.events.push(egui::Event::Copy));
             return;
         }
@@ -3653,7 +3653,7 @@ impl DrawApp {
                                     let chip_rect = egui::Rect::from_min_size(egui::pos2(x, left.top() + 24.0), egui::vec2(chip_width(ui, label), 20.0));
                                     x = chip_rect.right() + 4.0;
                                     let chip = ui
-                                        .interact(chip_rect, ui.id().with(("font-variant", variant)), egui::Sense::click())
+                                        .interact(chip_rect, ui.scope_id().with(("font-variant", variant)), egui::Sense::click())
                                         .on_hover_text(*variant_name);
                                     let current = variant == index;
                                     let visuals = if current {
@@ -3700,7 +3700,7 @@ impl DrawApp {
                                 ui.visuals().weak_text_color(),
                             );
                             let star_rect = egui::Rect::from_center_size(egui::pos2(preview_left - 16.0, rect.bottom() - 18.0), egui::Vec2::splat(26.0));
-                            let star = ui.interact(star_rect, ui.id().with(("font-favorite", index)), egui::Sense::click());
+                            let star = ui.interact(star_rect, ui.scope_id().with(("font-favorite", index)), egui::Sense::click());
                             ui.painter().text(
                                 star_rect.center(),
                                 egui::Align2::CENTER_CENTER,
@@ -4310,7 +4310,7 @@ impl DrawApp {
                 let initial = target
                     .map(|(set, slot)| char::from_u32(self.settings.fkeys.code_at(set, slot) as u32).unwrap_or(' '))
                     .unwrap_or(self.document.brush.paint_char);
-                let cursor_id = egui::Id::new("character-dialog-cursor");
+                let cursor_id = egui::Id::unique("character-dialog-cursor");
                 let mut cursor = context.data(|data| data.get_temp::<u32>(cursor_id)).unwrap_or(initial as u32).min(255);
                 let mut chosen = None;
                 for event in context.input(|input| input.events.clone()) {

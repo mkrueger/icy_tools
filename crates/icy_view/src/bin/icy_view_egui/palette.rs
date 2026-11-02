@@ -108,11 +108,11 @@ impl Palette {
                 .map_or(Outcome::Open, |index| Outcome::Activate(entries[*index].target.clone()));
         }
         let width = (context.content_rect().width() - 40.0).clamp(280.0, 620.0);
-        let area = egui::Modal::default_area(egui::Id::new("palette-area"))
+        let area = egui::Modal::default_area(egui::Id::unique("palette-area"))
             .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 64.0))
             .default_width(width);
         let mut outcome = Outcome::Open;
-        let modal = egui::Modal::new(egui::Id::new("palette"))
+        let modal = egui::Modal::new(egui::Id::unique("palette"))
             .area(area)
             .frame(egui::Frame::popup(&context.global_style()).inner_margin(8).corner_radius(10))
             .show(context, |ui| {
@@ -123,7 +123,7 @@ impl Palette {
                 });
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut self.query)
-                        .id(egui::Id::new("palette-query"))
+                        .id(egui::Id::unique("palette-query"))
                         .hint_text(hint)
                         .margin(egui::vec2(8.0, 6.0))
                         .desired_width(f32::INFINITY),

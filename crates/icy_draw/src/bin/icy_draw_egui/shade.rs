@@ -79,7 +79,7 @@ impl DrawApp {
             paint_chars(ui, font, chars.as_slice(), index, cell)
         })
         .on_hover_text(fl!("shade-characters-tooltip"));
-        egui::Popup::menu(&button).id(egui::Id::new("shade-char-ramps")).show(|ui| {
+        egui::Popup::menu(&button).id(egui::Id::unique("shade-char-ramps")).show(|ui| {
             for ramp in self.settings.shade_ramps.char_ramps() {
                 let row = ramp_button(ui, ramp.len(), RAMP_CELL, "", |ui, index, cell| {
                     paint_chars(ui, font, ramp.as_slice(), index, cell)
@@ -105,7 +105,7 @@ impl DrawApp {
             paint_swatch(ui, &palette, colors.as_slice(), index, cell)
         })
         .on_hover_text(fl!("shade-colors-tooltip"));
-        egui::Popup::menu(&button).id(egui::Id::new("shade-color-ramps")).show(|ui| {
+        egui::Popup::menu(&button).id(egui::Id::unique("shade-color-ramps")).show(|ui| {
             if ui.selectable_label(colors.is_empty(), fl!("shade-brush-color")).clicked() {
                 self.document.brush.shade_colors = ColorRamp::default();
                 ui.close();

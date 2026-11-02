@@ -143,7 +143,7 @@ impl MailApp {
                     Action::Edit
                 });
             }
-            if focused != Some(egui::Id::new(FILTER_ID))
+            if focused != Some(egui::Id::unique(FILTER_ID))
                 && dialog.selected.is_some()
                 && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Delete))
             {
@@ -181,7 +181,7 @@ impl MailApp {
                 } else {
                     ui.horizontal(|ui| {
                         let edit = appearance::text_edit(&mut dialog.filter)
-                            .id(egui::Id::new(FILTER_ID))
+                            .id(egui::Id::unique(FILTER_ID))
                             .hint_text(fl!(LANGUAGE_LOADER, "address-filter-hint"))
                             .desired_width((ui.available_width() - 130.0).max(120.0));
                         let response = ui.add(edit);
@@ -399,7 +399,7 @@ fn contact_form(ui: &mut egui::Ui, heading: &str, contact: &mut Contact, error: 
         let name = field_row(ui, label_width, &name_label, |ui| {
             ui.add(
                 appearance::text_edit(&mut contact.name)
-                    .id(egui::Id::new(NAME_ID))
+                    .id(egui::Id::unique(NAME_ID))
                     .hint_text(fl!(LANGUAGE_LOADER, "address-name-hint"))
                     .char_limit(FIELD_LENGTH)
                     .desired_width(ui.available_width()),

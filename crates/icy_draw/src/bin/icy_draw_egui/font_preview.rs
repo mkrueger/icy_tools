@@ -171,7 +171,7 @@ impl Preset {
 }
 
 pub(super) fn text_id() -> egui::Id {
-    egui::Id::new("font-live-preview-text")
+    egui::Id::unique("font-live-preview-text")
 }
 
 struct PreviewLayout {

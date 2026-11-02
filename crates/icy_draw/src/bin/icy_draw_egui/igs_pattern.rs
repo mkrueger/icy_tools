@@ -121,7 +121,7 @@ pub fn picker(ui: &mut egui::Ui, id: &str, current: PatternType, border: bool, u
     let response = response.on_hover_text(&label);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &label));
     egui::Popup::menu(&response)
-        .id(egui::Id::new(id))
+        .id(egui::Id::unique(id))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);

@@ -121,11 +121,11 @@ impl Composer {
     fn first_field(&self) -> Option<egui::Id> {
         // A message base opened on its own may not know who writes.
         if self.draft.from.trim().is_empty() {
-            Some(egui::Id::new("composer-From"))
+            Some(egui::Id::unique("composer-From"))
         } else if self.draft.to.trim().is_empty() {
-            Some(egui::Id::new("composer-To"))
+            Some(egui::Id::unique("composer-To"))
         } else if self.draft.subject.trim().is_empty() {
-            Some(egui::Id::new("composer-Subject"))
+            Some(egui::Id::unique("composer-Subject"))
         } else {
             None
         }
@@ -350,7 +350,7 @@ impl MailApp {
                         let counter_width = 44.0 + if field == DraftField::To { 34.0 } else { 0.0 };
                         let width = (ui.available_width() - counter_width - 8.0).max(80.0);
                         let mut edit = appearance::text_edit(value)
-                            .id(egui::Id::new(format!("composer-{id_label}")))
+                            .id(egui::Id::unique(format!("composer-{id_label}")))
                             .desired_width(width);
                         if invalid {
                             edit = edit.text_color(ui.visuals().error_fg_color);
@@ -381,7 +381,7 @@ impl MailApp {
                         .any(|issue| issue.field == DraftField::Address && !draft.address.trim().is_empty());
                     row(ui, &fl!(LANGUAGE_LOADER, "draft-field-address"), &mut |ui| {
                         let mut edit = appearance::text_edit(&mut draft.address)
-                            .id(egui::Id::new("composer-Address"))
+                            .id(egui::Id::unique("composer-Address"))
                             .hint_text("2:240/1")
                             .desired_width((ui.available_width() - 8.0).clamp(80.0, 220.0));
                         if invalid {
@@ -401,7 +401,7 @@ impl MailApp {
                 egui::Panel::bottom("composer-tagline")
                     .frame(egui::Frame::new().inner_margin(egui::Margin { top: 6, ..Default::default() }))
                     .show_separator_line(false)
-                    .show_inside(ui, |ui| {
+                    .show(ui, |ui| {
                         egui::CollapsingHeader::new(fl!(LANGUAGE_LOADER, "composer-signature"))
                             .id_salt("composer-signature")
                             .default_open(!composer.draft.signature.is_empty())

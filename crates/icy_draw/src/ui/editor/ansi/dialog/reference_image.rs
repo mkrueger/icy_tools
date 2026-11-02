@@ -138,7 +138,7 @@ impl Dialog<Message> for ReferenceImageDialog {
         let alpha_slider = slider(0.0..=1.0, self.alpha, |v| {
             msg(AnsiEditorMessage::ReferenceImageDialog(ReferenceImageDialogMessage::SetAlpha(v)))
         })
-        .step(0.01)
+        .step(0.01_f32)
         .width(Length::Fixed(200.0));
 
         let alpha_percent = format!("{:.0}%", self.alpha * 100.0);

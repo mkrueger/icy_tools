@@ -203,7 +203,7 @@ fn outline_style_cell(ui: &mut egui::Ui, style: usize, selected: bool, scale: f3
 fn outline_style_texture(context: &egui::Context, font: &icy_engine::BitFont, style: usize) -> egui::TextureHandle {
     const COLUMNS: usize = 8;
     const ROWS: usize = 6;
-    let key = egui::Id::new(("outline-style-texture", style));
+    let key = egui::Id::unique(("outline-style-texture", style));
     if let Some(texture) = context.data(|data| data.get_temp::<egui::TextureHandle>(key)) {
         return texture;
     }
@@ -331,7 +331,7 @@ pub fn segmented<T: PartialEq + Copy, S: AsRef<str>>(ui: &mut egui::Ui, current:
     for (((value, label, tooltip), galley), width) in options.iter().zip(galleys).zip(widths) {
         let rect = egui::Rect::from_min_size(egui::pos2(left, track.top() + inset), egui::vec2(width, CONTROL_HEIGHT - inset * 2.0));
         left += width;
-        let response = ui.interact(rect, ui.id().with(("segment", label.as_ref())), egui::Sense::click());
+        let response = ui.interact(rect, ui.scope_id().with(("segment", label.as_ref())), egui::Sense::click());
         let selected = *current == *value;
         let enabled = ui.is_enabled();
         let fill = if selected {
@@ -385,7 +385,7 @@ pub fn segmented_grid<T: PartialEq + Copy, S: AsRef<str>>(ui: &mut egui::Ui, cur
     for (index, (value, label, tooltip)) in options.iter().enumerate() {
         let min = track.min + egui::vec2(inset + (index % columns) as f32 * cell_width, inset + (index / columns) as f32 * cell_height);
         let rect = egui::Rect::from_min_size(min, egui::vec2(cell_width, cell_height));
-        let response = ui.interact(rect, ui.id().with(("segment", label.as_ref())), egui::Sense::click());
+        let response = ui.interact(rect, ui.scope_id().with(("segment", label.as_ref())), egui::Sense::click());
         let selected = *current == *value;
         let fill = if selected {
             Some(PRIMARY)
@@ -559,7 +559,7 @@ pub fn paint_glyph_on(painter: &egui::Painter, font: &icy_engine::BitFont, code:
     let context = painter.ctx();
     let dimensions = font.size();
     // Keyed per font so previews in the default font and buffer glyphs do not evict each other.
-    let key = egui::Id::new(("glyph-atlas", font.name().to_string(), dimensions.width, dimensions.height));
+    let key = egui::Id::unique(("glyph-atlas", font.name().to_string(), dimensions.width, dimensions.height));
     let existing = context.data(|data| data.get_temp::<std::sync::Arc<GlyphAtlas>>(key));
     let atlas = if let Some(atlas) = existing.filter(|atlas| atlas.font == *font) {
         atlas
@@ -600,7 +600,7 @@ pub fn paint_unicode_glyph_on(painter: &egui::Painter, character: char, target: 
     let pixels = (target.size() * context.pixels_per_point()).round();
     let (width, height) = ((pixels.x as u32).clamp(1, 512), (pixels.y as u32).clamp(1, 512));
     let textures = context.data_mut(|data| {
-        data.get_temp_mut_or_default::<UnicodeGlyphTextures>(egui::Id::new("unicode-preview-glyphs"))
+        data.get_temp_mut_or_default::<UnicodeGlyphTextures>(egui::Id::unique("unicode-preview-glyphs"))
             .clone()
     });
     let mut textures = textures.lock();

@@ -455,7 +455,7 @@ impl Preview {
                 }
                 response
             });
-            self.screen.offset = result.state.offset();
+            self.screen.offset = result.state.clamped_offset();
             result.inner
         } else {
             let mut settings = options.monitor_settings.clone();

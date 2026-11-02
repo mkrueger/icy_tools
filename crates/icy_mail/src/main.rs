@@ -23,6 +23,7 @@
 pub use icy_mail::{perf, qwk, Res};
 #[cfg(test)]
 #[path = "qwk/tests.rs"]
+#[allow(dead_code)] // Packet loaders are shared with other test targets.
 mod qwk_tests;
 #[cfg(test)]
 pub use icy_mail::threading;

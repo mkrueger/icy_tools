@@ -107,7 +107,6 @@ fn utf8_replies_are_written_with_input_methods_saved_previewed_and_exported() {
     frame(&context, &mut mail, size, vec![key(egui::Key::ArrowDown, egui::Modifiers::NONE)]);
     frame(&context, &mut mail, size, vec![key(egui::Key::Enter, egui::Modifiers::NONE)]);
     frame(&context, &mut mail, size, vec![egui::Event::Text("Ответ ".into())]);
-    frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Enabled)]);
     frame(
         &context,
         &mut mail,
@@ -162,7 +161,6 @@ fn utf8_ime_input_leaves_quote_navigation_before_consuming_keys() {
     settle(&context, &mut mail, size);
     assert!(mail.composer.as_ref().unwrap().text.as_ref().unwrap().quotes.open);
 
-    frame(&context, &mut mail, size, vec![egui::Event::Ime(egui::ImeEvent::Enabled)]);
     frame(
         &context,
         &mut mail,
@@ -721,9 +719,9 @@ fn reader_escape_deselects_without_clearing_filter_or_dismissing_dialogs() {
     assert_eq!(mail.reader.filter, "Coffee");
 
     settle(&context, &mut mail, size);
-    context.memory_mut(|memory| memory.request_focus(egui::Id::new("mail-search")));
+    context.memory_mut(|memory| memory.request_focus(egui::Id::unique("mail-search")));
     settle(&context, &mut mail, size);
-    assert_eq!(context.memory(|memory| memory.focused()), Some(egui::Id::new("mail-search")));
+    assert_eq!(context.memory(|memory| memory.focused()), Some(egui::Id::unique("mail-search")));
     frame(&context, &mut mail, size, vec![key(egui::Key::Escape, egui::Modifiers::NONE)]);
     assert!(mail.reader.filter.is_empty(), "search Escape must still clear the filter");
     assert_eq!(mail.focus, Pane::Messages);
@@ -2158,7 +2156,7 @@ fn color_picker_buttons_fit_side_by_side() {
     click_label(&context, &mut mail, size, "Aa");
     let output = settle(&context, &mut mail, size);
     let popup = context
-        .memory(|memory| memory.area_rect(egui::Id::new("editor-colors")))
+        .memory(|memory| memory.area_rect(egui::Id::unique("editor-colors")))
         .expect("color picker is open");
     let buttons: Vec<_> = ["editor-default"]
         .into_iter()

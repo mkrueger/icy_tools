@@ -107,7 +107,7 @@ pub fn show(context: &egui::Context, center: egui::Pos2, colors: &Colors, keys: 
     };
     let grid = egui::vec2((colors.backgrounds + 1) as f32 * CELL, (colors.foregrounds + 1) as f32 * CELL);
     let size = grid + egui::vec2(0.0, FOOTER);
-    let area = egui::Area::new(egui::Id::new("attribute-picker"))
+    let area = egui::Area::new(egui::Id::unique("attribute-picker"))
         .order(egui::Order::Foreground)
         .fixed_pos(center - size / 2.0)
         .constrain(true)

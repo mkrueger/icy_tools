@@ -613,7 +613,7 @@ mod tests {
         let text = encode(&before, editor.selected.unwrap()).unwrap();
         let context = egui::Context::default();
         let mut field = String::new();
-        let id = egui::Id::new("rip-native-clipboard-field");
+        let id = egui::Id::unique("rip-native-clipboard-field");
         let _ = context
             .run_ui(egui::RawInput::default(), |ui| {
                 egui::CentralPanel::default_margins().show(ui, |ui| {

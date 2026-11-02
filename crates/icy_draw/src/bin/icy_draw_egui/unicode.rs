@@ -93,7 +93,7 @@ impl DrawApp {
             Select,
         }
 
-        let id = egui::Id::new("unicode-character-picker");
+        let id = egui::Id::unique("unicode-character-picker");
         let initial = self.document.brush.paint_char as u32;
         let (mut page, mut code) = context
             .data(|data| data.get_temp::<(u32, String)>(id))

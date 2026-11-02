@@ -149,7 +149,7 @@ pub fn picker(ui: &mut egui::Ui, id: &str, kind: PolymarkerKind, size: u8, color
     let response = response.on_hover_text(&label);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &label));
     egui::Popup::menu(&response)
-        .id(egui::Id::new(id))
+        .id(egui::Id::unique(id))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(6.0, 4.0);

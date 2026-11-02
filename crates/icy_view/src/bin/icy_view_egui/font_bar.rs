@@ -186,7 +186,7 @@ fn color_combo(ui: &mut egui::Ui, id: &str, label: &str, color: &mut Option<u8>)
     if let Some(rect) = button.rect(swatch) {
         paint_swatch(ui, rect, *color);
     }
-    egui::Popup::menu(&button.response).id(egui::Id::new(id).with("popup")).show(|ui| {
+    egui::Popup::menu(&button.response).id(egui::Id::unique(id).with("popup")).show(|ui| {
         if ui.selectable_label(color.is_none(), text("egui-font-default-color")).clicked() {
             *color = None;
         }

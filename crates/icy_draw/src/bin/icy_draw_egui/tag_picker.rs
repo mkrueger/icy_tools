@@ -186,7 +186,7 @@ fn entry_row(ui: &mut egui::Ui, index: usize, entry: &TagReplacement) -> egui::R
         })
         .response
         .rect;
-    let response = ui.interact(rect, ui.id().with(("tag-replacement", index)), egui::Sense::click());
+    let response = ui.interact(rect, ui.scope_id().with(("tag-replacement", index)), egui::Sense::click());
     if response.hovered() {
         ui.painter()
             .set(background, egui::Shape::rect_filled(rect, 4, ui.visuals().widgets.hovered.weak_bg_fill));

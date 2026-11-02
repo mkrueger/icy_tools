@@ -412,7 +412,7 @@ impl Viewer {
     /// Address field with the 16colors toggle in front of the path, like the location bar of a browser.
     /// The path shows as clickable crumbs; clicking the free space or Ctrl+L edits it as text.
     fn location_field(&mut self, ui: &mut egui::Ui, width: f32, context: &egui::Context) {
-        let id = egui::Id::new("location-input");
+        let id = egui::Id::unique("location-input");
         let web = self.browser.location.point.is_web();
         let here = Place::from_point(&self.browser.location.point);
         let pinned = self.library.is_favorite(&here);
@@ -555,7 +555,7 @@ impl Viewer {
     }
 
     fn filter_field(&mut self, ui: &mut egui::Ui, width: f32, context: &egui::Context) {
-        let id = egui::Id::new("filter-input");
+        let id = egui::Id::unique("filter-input");
         let response = field(ui, width, id, |ui| {
             ui.add_space(4.0);
             let tint = ui.visuals().weak_text_color();

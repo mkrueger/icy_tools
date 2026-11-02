@@ -296,7 +296,7 @@ impl MailApp {
                         if threaded {
                             if let Some(twisty) = paint_tree(ui, cells[2], &row, collapsed, colors.weak) {
                                 let hit = ui
-                                    .interact(twisty.expand(4.0), ui.id().with(("thread-twisty", row.index)), egui::Sense::click())
+                                    .interact(twisty.expand(4.0), ui.scope_id().with(("thread-twisty", row.index)), egui::Sense::click())
                                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                                 if hit.clicked() {
                                     toggle = Some(row.index);
@@ -312,7 +312,7 @@ impl MailApp {
                         let starred = self.reader.is_starred(row.index);
                         let star_rect = egui::Rect::from_center_size(egui::pos2(flags.left() + 27.0, flags.center().y), egui::Vec2::splat(16.0));
                         let star_hit = ui
-                            .interact(star_rect.expand(3.0), ui.id().with(("message-star", row.index)), egui::Sense::click())
+                            .interact(star_rect.expand(3.0), ui.scope_id().with(("message-star", row.index)), egui::Sense::click())
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .on_hover_text(&star_tooltip);
                         if starred {
@@ -403,7 +403,7 @@ impl MailApp {
                         });
                     }
                 });
-                self.message_view = egui::vec2(output.state.offset().y, output.inner_rect.height());
+                self.message_view = egui::vec2(output.state.clamped_offset().y, output.inner_rect.height());
                 if self.reader.messages.is_empty() {
                     let detail = if self.loader.searching {
                         fl!(LANGUAGE_LOADER, "search-bodies-running")
@@ -561,7 +561,7 @@ impl MailApp {
                         });
                     }
                 });
-                self.message_view = egui::vec2(output.state.offset().y, output.inner_rect.height());
+                self.message_view = egui::vec2(output.state.clamped_offset().y, output.inner_rect.height());
                 if store.drafts().is_empty() {
                     let image = self.icons.image(&context, Icon::Export, 40.0);
                     ui.scope_builder(egui::UiBuilder::new().max_rect(output.inner_rect), |ui| {
@@ -647,7 +647,7 @@ impl MailApp {
                         }
                     }
                 });
-                self.message_view = egui::vec2(output.state.offset().y, output.inner_rect.height());
+                self.message_view = egui::vec2(output.state.clamped_offset().y, output.inner_rect.height());
             });
         let picked = select.is_some();
         if let Some((position, open)) = select {
