@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 0.9.2 - 2026-11-02
+
+Changes since 0.9.1.
+
+### Added
+
+- `LoadPPMBlob` fills a SyncTERM paste buffer, and `LoadPBMBlob` loads the mask
+  that `SyncTERM:P;Paste;MBUF` applies (with `MX`/`MY`), following the source
+  pixels through flips and zoom.
+
+### Changed
+
+- Pasted smart quotes and typographic symbols that the terminal's character
+  set cannot display become plain text: `'` `"` `<-` `->` `-` `--` `(c)` `(r)`
+  `TM` `1/4` `1/2` `3/4` `...` `^`. Glyphs the character set has are kept, such
+  as `¼` and `½` in CP437; PETSCII, ATASCII and SkyPix use the plain-text
+  forms.
+- Ctrl+Shift+C/V (Cmd+C/V on macOS) copy and paste locally while connected,
+  and paste waits for terminal focus instead of going to an open dialog.
+
+### Fixed
+
+- The offline modem prompt echoes characters above ASCII, such as CP437
+  `½` or `é`, instead of dropping them.
+- Transparent overlays fold the images they cover instead of dropping them.
+
 ## 0.9.1 - 2026-10-30
 
 Changes since 0.9.0.
