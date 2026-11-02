@@ -521,6 +521,7 @@ impl Editor {
 
     /// Inserts pasted text. Returns the number of characters replaced by `?`.
     pub fn insert_text(&mut self, text: &str) -> usize {
+        let text = icy_engine::clipboard::normalize_paste_text(text, BufferType::CP437);
         self.checkpoint(false);
         self.delete_selected();
         let mut replaced = 0;
@@ -1350,6 +1351,22 @@ mod tests {
         assert_eq!(editor.to_body(), "hello world");
         assert!(editor.redo());
         assert!(editor.to_body().contains("\x1b[0;1;32m"));
+    }
+
+    #[test]
+    fn paste_normalizes_smart_punctuation_as_one_undo_step() {
+        let mut editor = Editor::default();
+        let text = "\u{2018}Single smart quotes\u{2019} or \u{201c}Double smart quotes\u{201d} \u{2190} \u{2192} \u{2013} \u{2014} \u{00a9} \u{00ae} \u{2122} \u{00bc} \u{00bd} \u{00be} \u{2026} \u{02c6}";
+        assert_eq!(editor.insert_text(text), 0);
+        assert_eq!(
+            editor.plain_text(),
+            "'Single smart quotes' or \"Double smart quotes\" <- -> - -- (c) (r) TM \u{bc} \u{bd} 3/4 ... ^"
+        );
+        assert!(editor.undo());
+        assert_eq!(editor.plain_text(), "");
+        assert!(editor.redo());
+        assert_eq!(editor.insert_text("\n\u{00e9}\u{2500}\u{1f600}"), 1);
+        assert!(editor.plain_text().ends_with("\n\u{00e9}\u{2500}?"));
     }
 
     #[test]

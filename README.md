@@ -14,6 +14,24 @@ a viewer to browse/view Ansi screens.
 [Icy Play](https://github.com/mkrueger/icy_tools/blob/master/crates/icy_play/README.md)
 a tool that shows icy draw animations on cmd line/bbs.
 
+## Plain-text paste
+
+Icy Term, Icy Mail and Icy Draw adapt pasted smart quotes and common
+typographic symbols to the target encoding. A symbol the encoding has a
+printable glyph for is kept (for example `½`/`¼` in CP437, `←`/`→`/`½` in
+Viewdata, `©`/`®`/`™` on the Atari ST); otherwise it falls back to plain text:
+quotes become straight quotes, arrows become `<-` and `->`, en/em dashes become
+`-` and `--`, copyright/registered/trademark symbols become `(c)`, `(r)` and
+`TM`, fractions become `1/4`, `1/2` and `3/4`, ellipses become `...`, and
+modifier circumflexes become `^`. Glyphs that sit on control codes (CP437 and
+ATASCII arrows) are never sent. PETSCII and Icy Term's SkyPix (Amiga) mode
+always use the plain-text forms. UTF-8 text and rich Icy clipboard data are
+unchanged.
+
+The shared routines are `icy_engine::clipboard::normalize_paste_text` and, for
+text sent to a terminal host, `normalize_terminal_paste_text`; callers apply
+them before converting plain clipboard text to the destination encoding.
+
 # Build instructions
 
 Use the current stable Rust toolchain. The egui 0.37 desktop frontend requires

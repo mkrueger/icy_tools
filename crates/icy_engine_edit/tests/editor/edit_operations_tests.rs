@@ -15,6 +15,25 @@ fn char_at(state: &EditState, x: i32, y: i32) -> char {
 }
 
 #[test]
+fn paste_text_normalizes_legacy_punctuation_and_preserves_cp437_cells() {
+    let mut state = create_test_state(80, 5);
+    state
+        .paste_text("\u{201c}Hi\u{201d} \u{2190}\u{2192} \u{00bd}\u{2026}\r\n\u{00e9}\u{2500}")
+        .unwrap();
+    let layer = state.get_cur_layer().unwrap();
+    let expected = "\"Hi\" <--> \u{ab}...";
+    for (x, ch) in expected.chars().enumerate() {
+        assert_eq!(layer.char_at(Position::new(x as i32, 0)).ch, ch);
+    }
+    assert_eq!(layer.char_at(Position::new(0, 1)).ch, '\u{82}');
+    assert_eq!(layer.char_at(Position::new(1, 1)).ch, '\u{c4}');
+    state.undo().unwrap();
+    assert_eq!(state.get_buffer().layers.len(), 1);
+    state.redo().unwrap();
+    assert_eq!(state.get_cur_layer().unwrap().char_at(Position::default()).ch, '"');
+}
+
+#[test]
 fn selection_mask_covers_exactly_the_selected_cells() {
     let mut state = create_test_state(20, 10);
     let selection = icy_engine::Selection::from(icy_engine::Rectangle::from(2, 3, 4, 2));

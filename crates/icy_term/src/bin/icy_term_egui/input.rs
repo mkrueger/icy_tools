@@ -305,6 +305,7 @@ pub fn encode_protocol_events(
         match event {
             egui::Event::Text(text) | egui::Event::Ime(egui::ImeEvent::Commit(text)) => output.extend(encode_text(text)),
             egui::Event::Paste(text) if !text.is_empty() => {
+                let text = icy_engine::clipboard::normalize_terminal_paste_text(text, buffer_type, terminal);
                 let text = text.replace("\r\n", "\n").replace('\r', "\n");
                 if bracketed_paste {
                     output.extend_from_slice(b"\x1b[200~");
@@ -511,6 +512,22 @@ mod tests {
         let events = [egui::Event::Paste("one\r\ntwo\nthree".into())];
         assert_eq!(encode_events(&events, BufferType::CP437, false), b"one\rtwo\rthree");
         assert_eq!(encode_events(&events, BufferType::CP437, true), b"\x1b[200~one\rtwo\rthree\x1b[201~");
+    }
+
+    #[test]
+    fn paste_normalizes_legacy_punctuation_but_not_unicode_or_typing() {
+        let text = "\u{2018}Hi\u{2019} \u{2190}\u{2192} \u{00bd}\u{2026}\r\n\u{00e9}\u{2500}";
+        let events = [egui::Event::Paste(text.into())];
+        assert_eq!(
+            encode_events(&events, BufferType::CP437, true),
+            b"\x1b[200~'Hi' <--> \xab...\r\x82\xc4\x1b[201~"
+        );
+        assert_eq!(encode_events(&events, BufferType::Unicode, false), text.replace("\r\n", "\r").as_bytes());
+        assert_eq!(
+            encode_terminal_events(&events, BufferType::CP437, false, TerminalEmulation::Skypix),
+            b"'Hi' <--> 1/2...\r\x82\xc4"
+        );
+        assert_eq!(encode_events(&[egui::Event::Text("\u{00bd}".into())], BufferType::CP437, false), [0xab]);
     }
 
     #[test]

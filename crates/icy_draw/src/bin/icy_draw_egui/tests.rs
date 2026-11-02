@@ -1750,6 +1750,39 @@ fn canvas_context_menu_opens_for_text_and_selection_tools() {
 }
 
 #[test]
+fn inline_text_paste_normalizes_legacy_punctuation() {
+    use retrofont::{
+        tdf::{TdfFont, TdfFontType},
+        Glyph, GlyphPart,
+    };
+    let mut font = TdfFont::new("Paste", TdfFontType::Block, 1);
+    for ch in "\"Hi 3/4.".chars() {
+        let mut glyph = Glyph::new(1, 1);
+        glyph.parts = vec![GlyphPart::Char('X')];
+        font.add_glyph(ch, glyph);
+    }
+    let source = icy_engine::LiveText::new(&font, icy_engine::TextAttribute::default()).unwrap();
+    let context = egui::Context::default();
+    let mut app = DrawApp::new();
+    app.document.tool = Tool::Font;
+    app.canvas_focus = true;
+    assert!(app.document.begin_text_edit(Position::default(), Some(source), false).unwrap());
+    let _ = context
+        .run_ui(
+            egui::RawInput {
+                events: vec![egui::Event::Paste("\u{201c}Hi\u{201d} \u{00be}\u{2026}".into())],
+                ..Default::default()
+            },
+            |ui| app.keys(ui.ctx()),
+        )
+        .textures_delta
+        .clear();
+    app.document.with_state(|state| {
+        assert_eq!(state.get_cur_layer().unwrap().live_text().unwrap().text, "\"Hi\" 3/4...");
+    });
+}
+
+#[test]
 fn font_tool_typing_after_structural_undo_creates_a_new_layer() {
     use retrofont::{
         tdf::{TdfFont, TdfFontType},

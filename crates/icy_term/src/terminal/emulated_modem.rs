@@ -350,7 +350,8 @@ impl EmulatedModem {
                         other => return other,
                     }
                 }
-                32..=126 => {
+                // High bytes are printable CP437 glyphs or parts of UTF-8 sequences.
+                32..=126 | 128..=255 => {
                     self.local_command_buffer.push(byte);
                     if self.echo_enabled {
                         out_vec.push(byte);
@@ -389,5 +390,23 @@ fn parse_numeric_param(s: &str, default: u8) -> (usize, u8) {
         (0, default)
     } else {
         (consumed, value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_echo_keeps_high_bytes_and_drops_controls() {
+        let mut modem = EmulatedModem::default();
+        let ModemCommand::Output(output) = modem.process_local_input(b"TM \xac \xab \x01\x7f\x82") else {
+            panic!("expected local echo");
+        };
+        assert_eq!(output, b"TM \xac \xab \x82");
+        let ModemCommand::Output(output) = modem.process_local_input("½".as_bytes()) else {
+            panic!("expected local echo");
+        };
+        assert_eq!(output, "½".as_bytes());
     }
 }

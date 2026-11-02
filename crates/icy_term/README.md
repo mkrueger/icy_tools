@@ -241,8 +241,10 @@ copies locally as text, RTF, an image and Icy data (which pastes with colors int
 Icy Draw), while Ctrl+C without a selection retains terminal semantics.
 Paste from the menus or clipboard shortcut reads plain text through
 `clipboard-rs`, retaining terminal character encoding, newline conversion and
-the host's bracketed-paste mode. Paste waits for terminal focus and never goes
-to an open dialog.
+the host's bracketed-paste mode. Smart quotes and typographic symbols the
+terminal's character set cannot display become plain-text equivalents (`½`
+stays in CP437 but becomes `1/2` in PETSCII or SkyPix). Paste waits for
+terminal focus and never goes to an open dialog.
 Window resizing changes display scale, not negotiated terminal dimensions.
 
 Known platform limits: egui does not expose distinct keypad locations or

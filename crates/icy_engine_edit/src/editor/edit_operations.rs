@@ -288,11 +288,16 @@ impl EditState {
 
         let mut parser = AnsiParser::new();
 
-        let text = text
-            .chars()
-            .map(|ch| self.screen.buffer.buffer_type.convert_from_unicode(ch))
-            .collect::<String>();
-        load_with_parser(&mut result, &mut parser, text.as_bytes(), true, 0)?;
+        let buffer_type = self.screen.buffer.buffer_type;
+        let text = clipboard::normalize_paste_text(text, buffer_type);
+        let text = if buffer_type == crate::BufferType::Unicode {
+            text.as_bytes().to_vec()
+        } else {
+            text.chars()
+                .map(|ch| u8::try_from(buffer_type.convert_from_unicode(ch) as u32).unwrap_or(b'?'))
+                .collect::<Vec<_>>()
+        };
+        load_with_parser(&mut result, &mut parser, &text, true, 0)?;
 
         let mut layer: Layer = result.buffer.layers.remove(0);
         layer.properties.has_alpha_channel = true;

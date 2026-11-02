@@ -1293,6 +1293,7 @@ impl MainWindow {
 
     fn convert_clipboard_text(&mut self, text: String) -> Vec<u8> {
         let buffer_type = self.terminal_window.terminal.screen.lock().buffer_type();
+        let text = icy_engine::clipboard::normalize_terminal_paste_text(&text, buffer_type, self.terminal_emulation);
         let enter_bytes = parse_key_string(self.terminal_emulation, "enter").unwrap_or(vec![b'\r']);
 
         let mut result = Vec::new();
@@ -1309,6 +1310,8 @@ impl MainWindow {
             } else if ch == '\n' {
                 // Unix EOL
                 result.extend(&enter_bytes);
+            } else if buffer_type == icy_engine::BufferType::Unicode {
+                result.extend_from_slice(ch.encode_utf8(&mut [0; 4]).as_bytes());
             } else {
                 let converted_byte = buffer_type.convert_from_unicode(ch);
                 // Skip NUL characters (used to indicate unmappable characters)

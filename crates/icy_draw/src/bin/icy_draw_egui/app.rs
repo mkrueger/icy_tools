@@ -3185,6 +3185,8 @@ impl DrawApp {
                     key, pressed: true, modifiers, ..
                 } if self.text_edit_key(key, modifiers) => {}
                 egui::Event::Paste(text) if self.canvas_focus && self.document.tool == Tool::Font && self.document.text_edit.is_some() => {
+                    let buffer_type = self.document.with_state(|state| state.get_buffer().buffer_type);
+                    let text = icy_engine::clipboard::normalize_paste_text(&text, buffer_type);
                     let result = self.document.text_edit_insert(&text);
                     self.result(result);
                 }

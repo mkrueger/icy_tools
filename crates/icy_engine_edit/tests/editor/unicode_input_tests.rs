@@ -394,6 +394,17 @@ fn unicode_layer_resize_keeps_offset_and_restores_clipped_text() {
 }
 
 #[test]
+fn unicode_paste_keeps_smart_quotes_and_symbols() {
+    let mut state = editor(40, 3);
+    let text = "\u{2018}Hi\u{2019} \u{2190}\u{2192} \u{00bd}\u{2026}";
+    state.paste_text(text).unwrap();
+    let layer = state.get_cur_layer().unwrap();
+    for (x, ch) in text.chars().enumerate() {
+        assert_eq!(layer.char_at(Position::new(x as i32, 0)).ch, ch);
+    }
+}
+
+#[test]
 fn unicode_plain_text_paste_floats_then_anchors_at_document_offset() {
     let mut state = editor(12, 3);
     state.get_buffer_mut().layers[0].set_offset(Position::new(2, 1));
