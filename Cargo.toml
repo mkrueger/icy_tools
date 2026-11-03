@@ -110,7 +110,8 @@ resvg = { version = "0.49.0", default-features = false }
 ab_glyph = "0.2"
 
 # Current GUI stack; the legacy UI uses the versions re-exported by icy_ui.
-eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
+# `clipboard` lets egui widgets and Cmd/Ctrl+V use the system clipboard.
+eframe = { version = "0.37.0", default-features = false, features = ["clipboard", "default_fonts", "wgpu", "x11", "wayland"] }
 egui = { version = "0.37.0", default-features = false }
 egui-wgpu = { version = "0.37.0", default-features = false }
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl"] }

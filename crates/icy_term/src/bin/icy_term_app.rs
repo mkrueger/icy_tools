@@ -1917,6 +1917,49 @@ impl eframe::App for TerminalApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.show(ui);
     }
+
+    fn raw_input_hook(&mut self, _context: &egui::Context, raw_input: &mut egui::RawInput) {
+        translate_clipboard_shortcuts(&mut raw_input.events, self.terminal.has_focus, || {
+            icy_engine_gui::system_clipboard::read_text()
+                .map_err(|error| log::warn!("could not read text from the system clipboard: {error}"))
+                .ok()
+        });
+    }
+}
+
+/// Replaces egui-winit's clipboard shortcuts, which are disabled in `main`.
+///
+/// egui-winit reads its own clipboard for Cmd/Ctrl+V and swallows the key when that
+/// read fails, so neither text fields nor the terminal saw a macOS paste. Pastes are
+/// read through `system_clipboard` like the menu entry. In the terminal, Cmd/Ctrl+V
+/// stays a key: on macOS it is the paste shortcut, elsewhere Ctrl+V goes to the host.
+fn translate_clipboard_shortcuts(events: &mut Vec<egui::Event>, terminal_focused: bool, mut read_clipboard: impl FnMut() -> Option<String>) {
+    let windows = cfg!(target_os = "windows");
+    let mut translated = Vec::with_capacity(events.len());
+    for event in events.drain(..) {
+        let egui::Event::Key {
+            key, pressed: true, modifiers, ..
+        } = &event
+        else {
+            translated.push(event);
+            continue;
+        };
+        let command = modifiers.command_only();
+        if *key == egui::Key::Cut || command && *key == egui::Key::X || windows && modifiers.shift && *key == egui::Key::Delete {
+            translated.push(egui::Event::Cut);
+        } else if *key == egui::Key::Copy || command && *key == egui::Key::C || windows && modifiers.ctrl && *key == egui::Key::Insert {
+            translated.push(egui::Event::Copy);
+        } else if *key == egui::Key::Paste || command && *key == egui::Key::V || windows && modifiers.shift && *key == egui::Key::Insert {
+            if terminal_focused && command && *key == egui::Key::V {
+                translated.push(event);
+            } else if let Some(text) = read_clipboard().map(|text| text.replace("\r\n", "\n")).filter(|text| !text.is_empty()) {
+                translated.push(egui::Event::Paste(text));
+            }
+        } else {
+            translated.push(event);
+        }
+    }
+    *events = translated;
 }
 
 impl Drop for TerminalApp {
@@ -1971,6 +2014,8 @@ fn main() -> anyhow::Result<()> {
             ..Default::default()
         },
         multisampling: 0,
+        // Handled by `translate_clipboard_shortcuts`.
+        clipboard_shortcuts: false,
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1000.0, 720.0])
             .with_min_inner_size([360.0, 240.0])
@@ -2181,6 +2226,90 @@ mod tests {
         run(&mut app, true);
         assert!(!app.terminal.is_in_scrollback_mode(), "next Escape must leave scrollback");
         assert!(app.session.is_none());
+    }
+
+    #[test]
+    fn clipboard_shortcuts_read_the_system_clipboard_outside_the_terminal() {
+        let key = |key, modifiers, pressed| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers,
+        };
+        let command = egui::Modifiers::COMMAND;
+        let mut reads = 0;
+        let mut events = vec![
+            key(egui::Key::V, command, true),
+            key(egui::Key::V, command, false),
+            key(egui::Key::C, command, true),
+            key(egui::Key::X, command, true),
+            key(egui::Key::V, command | egui::Modifiers::SHIFT, true),
+            egui::Event::Text("a".into()),
+        ];
+        translate_clipboard_shortcuts(&mut events, false, || {
+            reads += 1;
+            Some("one\r\ntwo".into())
+        });
+        assert_eq!(reads, 1);
+        assert_eq!(
+            events,
+            vec![
+                egui::Event::Paste("one\ntwo".into()),
+                key(egui::Key::V, command, false),
+                egui::Event::Copy,
+                egui::Event::Cut,
+                key(egui::Key::V, command | egui::Modifiers::SHIFT, true),
+                egui::Event::Text("a".into()),
+            ]
+        );
+
+        let mut events = vec![key(egui::Key::V, command, true), key(egui::Key::Paste, egui::Modifiers::NONE, true)];
+        translate_clipboard_shortcuts(&mut events, false, || None);
+        assert!(events.is_empty(), "an empty clipboard pastes nothing");
+    }
+
+    #[test]
+    fn terminal_keeps_command_v_for_its_paste_shortcut() {
+        let press = egui::Event::Key {
+            key: egui::Key::V,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        };
+        let mut events = vec![
+            press.clone(),
+            egui::Event::Key {
+                key: egui::Key::Paste,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ];
+        translate_clipboard_shortcuts(&mut events, true, || Some("text".into()));
+        assert_eq!(events, vec![press, egui::Event::Paste("text".into())]);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn command_v_pastes_into_the_terminal_on_macos() {
+        let context = egui::Context::default();
+        let mut events = vec![egui::Event::Key {
+            key: egui::Key::V,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::MAC_CMD | egui::Modifiers::COMMAND,
+        }];
+        translate_clipboard_shortcuts(&mut events, true, || unreachable!("the shortcut reads the clipboard"));
+        let _ = context
+            .run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+                assert_eq!(hotkeys::poll(ui.ctx(), true), vec![hotkeys::Action::Paste]);
+            })
+            .textures_delta
+            .clear();
     }
 
     #[test]
