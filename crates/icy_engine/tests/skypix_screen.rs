@@ -128,6 +128,143 @@ fn parse_skypix(input: &[u8]) -> Box<dyn EditableScreen> {
 }
 
 #[test]
+fn skypix_backspace_echo_erases_a_full_cell_away_from_origin() {
+    let screen = parse_skypix(b"\x1b[10;20HAB\x08 \x08");
+    let expected = parse_skypix(b"\x1b[10;20HA");
+    assert_eq!(screen.screen(), expected.screen());
+    assert_eq!(screen.caret().position(), (160, 72).into());
+    let screen = parse_skypix(b"\x08A");
+    assert_eq!(screen.caret().position(), (8, 0).into());
+}
+
+#[test]
+fn skypix_ansi_cursor_positions_are_one_based_and_preserve_the_row() {
+    for command in [&b"\x1b[10;20H"[..], b"\x1b[10;20f", b"\x1b[10;1H\x1b[20G"] {
+        let mut input = command.to_vec();
+        input.push(b'A');
+        let screen = parse_skypix(&input);
+        assert_eq!(screen.caret().position(), (160, 72).into(), "{command:?}");
+        let expected = parse_skypix(b"\x1b[19;152;72!A");
+        assert_eq!(screen.screen(), expected.screen(), "{command:?}");
+    }
+    let screen = parse_skypix(b"\x1b[10;20H\x1b[H");
+    assert_eq!(screen.caret().position(), (0, 0).into());
+    let screen = parse_skypix(b"\x1b[10;20H\x1b[G");
+    assert_eq!(screen.caret().position(), (0, 72).into());
+}
+
+#[test]
+fn skypix_full_width_line_defers_wrap_until_next_printable_character() {
+    let (mut screen, mut parser) = ScreenMode::SkyPix.create_screen(TerminalEmulation::Skypix, None);
+    screen.terminal_state_mut().is_terminal_buffer = true;
+    for _ in 0..80 {
+        parser.parse(b"A", &mut ScreenSink::new(&mut *screen));
+    }
+    assert_eq!(screen.size(), Size::new(80, 25));
+    assert_eq!(screen.caret().position(), (632, 0).into());
+    assert!(screen.terminal_state().wrap_pending);
+    parser.parse(b"B", &mut ScreenSink::new(&mut *screen));
+    assert_eq!(screen.caret().position(), (8, 8).into());
+    assert!(!screen.terminal_state().wrap_pending);
+}
+
+#[test]
+fn skypix_full_width_line_followed_by_crlf_advances_only_once() {
+    for ending in [&b"\r\nB"[..], b"\nB", b"\rB", b"\x1b[5;3HB", b"\x1b[19;16;32!B"] {
+        let mut input = vec![b'A'; 80];
+        input.extend_from_slice(ending);
+        let screen = parse_skypix(&input);
+        let expected = match ending {
+            b"\rB" => (8, 0),
+            b"\x1b[5;3HB" | b"\x1b[19;16;32!B" => (24, 32),
+            _ => (8, 8),
+        };
+        assert_eq!(screen.caret().position(), expected.into(), "{ending:?}");
+    }
+}
+
+#[test]
+fn skypix_deferred_wrap_scrolls_only_when_output_requires_it() {
+    let (mut screen, mut parser) = ScreenMode::SkyPix.create_screen(TerminalEmulation::Skypix, None);
+    screen.terminal_state_mut().is_terminal_buffer = true;
+    parser.parse(b"\x1b[1;0;0!\x1b[25;1H", &mut ScreenSink::new(&mut *screen));
+    parser.parse(&[b'A'; 80], &mut ScreenSink::new(&mut *screen));
+    assert_eq!(screen.screen()[0], 2, "writing the last cell must not scroll");
+    assert_eq!(screen.caret().position(), (632, 192).into());
+    parser.parse(b"B", &mut ScreenSink::new(&mut *screen));
+    assert_eq!(screen.screen()[0], 0);
+    assert_eq!(screen.caret().position(), (8, 192).into());
+}
+
+#[test]
+fn skypix_disabled_autowrap_overwrites_the_last_cell() {
+    let (mut screen, mut parser) = ScreenMode::SkyPix.create_screen(TerminalEmulation::Skypix, None);
+    screen.terminal_state_mut().auto_wrap_mode = icy_engine::AutoWrapMode::NoWrap;
+    parser.parse(&[b'A'; 81], &mut ScreenSink::new(&mut *screen));
+    assert_eq!(screen.caret().position(), (632, 0).into());
+    assert!(!screen.terminal_state().wrap_pending);
+}
+
+#[test]
+fn skypix_ansi_bright_black_renders_gray_without_changing_native_pen_eight() {
+    for prefix in [&b"\x1b[1;30m"[..], b"\x1b[30;1m", b"\x1b[90m"] {
+        let mut input = prefix.to_vec();
+        input.push(b'A');
+        let screen = parse_skypix(&input);
+        let (_, pixels) = screen.render_to_rgba(&RenderOptions::default());
+        assert!(pixels.chunks_exact(4).any(|pixel| pixel == [85, 85, 85, 255]), "{prefix:?}");
+        assert_eq!(screen.palette().rgb(8), (0, 187, 102));
+    }
+    let screen = parse_skypix(b"\x1b[1;30m\x1b[15;8!A");
+    assert!(screen.screen().contains(&8));
+    assert_eq!(screen.palette().rgb(8), (0, 187, 102));
+    let screen = parse_skypix(b"\x1b[1;30m\x1b[22mA");
+    assert!(screen.screen().iter().all(|&pixel| pixel == 0));
+}
+
+#[test]
+fn skypix_ansi_bright_colors_work_with_inverse_and_backgrounds() {
+    for input in [&b"\x1b[1;30;7mA"[..], b"\x1b[100mA"] {
+        let screen = parse_skypix(input);
+        let (_, pixels) = screen.render_to_rgba(&RenderOptions::default());
+        assert_eq!(&pixels[..4], &[85, 85, 85, 255]);
+    }
+    let screen = parse_skypix(b"\x1b[100m\x1b[2J");
+    let (_, pixels) = screen.render_to_rgba(&RenderOptions::default());
+    assert!(pixels.chunks_exact(4).all(|pixel| pixel == [85, 85, 85, 255]));
+    for (sgr, pen) in [(30, 0), (31, 3), (32, 4), (33, 6), (34, 1), (35, 7), (36, 5), (37, 2)] {
+        let screen = parse_skypix(format!("\x1b[{sgr}mA").as_bytes());
+        assert_eq!(screen.caret().attribute.foreground(), pen);
+    }
+}
+
+#[test]
+fn skypix_palette_resets_preserve_rendered_ansi_bright_colors() {
+    for reset in [&b"\x1b[12!"[..], b"\x1b[17;2!", b"\x1b[11;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0!"] {
+        let mut input = b"\x1b[90mA".to_vec();
+        input.extend_from_slice(reset);
+        let screen = parse_skypix(&input);
+        let (_, pixels) = screen.render_to_rgba(&RenderOptions::default());
+        assert!(pixels.chunks_exact(4).any(|pixel| pixel == [85, 85, 85, 255]), "{reset:?}");
+    }
+}
+
+#[test]
+fn skypix_cursor_motion_cancels_pending_wrap_and_clamps_to_full_cells() {
+    for command in [&b"\x08"[..], b"\x1b[D", b"\x1b[80G", b"\x1b[H", b"\x1b[2J"] {
+        let mut input = vec![b'A'; 80];
+        input.extend_from_slice(command);
+        input.push(b'B');
+        let screen = parse_skypix(&input);
+        assert_eq!(screen.caret().y, 0, "{command:?}");
+    }
+    let screen = parse_skypix(b"\x1b[999;999H");
+    assert_eq!(screen.caret().position(), (632, 192).into());
+    let screen = parse_skypix(b"\x1b[999A");
+    assert_eq!(screen.caret().position(), (0, 0).into());
+}
+
+#[test]
 fn skypix_reign_of_fire_title_matches_original_amiga_glyphs() {
     let screen = parse_skypix(b"\x1b[10;19!Sapphire.font!\x1b[15;6!\x1b[19;25;25!Reign \x1b[15;2!of \x1b[15;3!Fire \x1b[15;2!BBS");
     let reference = image::open("tests/output/skypix/files/rof/rof_main.png").unwrap().to_rgba8();

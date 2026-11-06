@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- SkyPix text backspacing moves by a full character cell, ANSI cursor positions
+  use the correct row and column, and full 80-column lines defer wrapping.
+- SkyPix renders ANSI bright colors (including dark gray) without replacing
+  native SkyPix pen colors.
+
 ## 0.9.2 - 2026-11-02
 
 Changes since 0.9.1.

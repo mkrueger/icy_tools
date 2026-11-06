@@ -309,16 +309,19 @@ impl<'a> ScreenSink<'a> {
 
     /// Get the current caret attribute with `inverse_video` applied if active
     fn display_attribute(&self) -> crate::TextAttribute {
-        let mut attr = if self.screen.terminal_state().inverse_video {
-            let mut attr = self.screen.caret().attribute;
-            let fg = attr.foreground();
-            let bg = attr.background();
-            attr.set_foreground(bg);
-            attr.set_background(fg);
-            attr
-        } else {
-            self.screen.caret().attribute
-        };
+        let mut attr = self.screen.caret().attribute;
+        if self.screen.graphics_type() == crate::GraphicsType::Skypix && attr.is_bold() {
+            if let crate::AttributeColor::Palette(index) = attr.foreground_color() {
+                if let Some(ansi_index) = crate::amiga_screen_buffer::skypix_impl::ANSI_TO_SKYPIX.iter().position(|&color| color == index) {
+                    attr.set_foreground_color(crate::amiga_screen_buffer::skypix_impl::ansi_color(ansi_index as u8 + 8));
+                }
+            }
+        }
+        if self.screen.terminal_state().inverse_video {
+            let fg = attr.foreground_color();
+            attr.set_foreground_color(attr.background_color());
+            attr.set_background_color(fg);
+        }
 
         // CTerm modes 31/34: bold and/or blink text use the alternate fonts
         // selected with `CSI Ps1 ; Ps2 SP D`. Modes 32/35 then drop the
@@ -398,6 +401,7 @@ impl<'a> ScreenSink<'a> {
     }
 
     fn apply_sgr(&mut self, sgr: SgrAttribute) {
+        let skypix = self.screen.graphics_type() == crate::GraphicsType::Skypix;
         let attr = &mut self.screen.caret_mut().attribute;
         match sgr {
             SgrAttribute::Reset => {
@@ -453,6 +457,10 @@ impl<'a> ScreenSink<'a> {
             SgrAttribute::Foreground(color) => {
                 match color {
                     Color::Base(c) => {
+                        if skypix {
+                            attr.set_foreground_color(crate::amiga_screen_buffer::skypix_impl::ansi_color(c));
+                            return;
+                        }
                         let col = {
                             let _ = attr;
                             (c as u32) % self.screen.max_base_colors()
@@ -474,6 +482,10 @@ impl<'a> ScreenSink<'a> {
             SgrAttribute::Background(color) => {
                 match color {
                     Color::Base(c) => {
+                        if skypix {
+                            attr.set_background_color(crate::amiga_screen_buffer::skypix_impl::ansi_color(c));
+                            return;
+                        }
                         let col = {
                             let _ = attr;
                             (c as u32) % self.screen.max_base_colors()

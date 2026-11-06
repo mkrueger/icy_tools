@@ -372,7 +372,23 @@ fn test_ansi_cursor_position() {
     parser.parse(b"\x1B[10;20H", &mut sink);
 
     assert!(!sink.ansi_commands.is_empty());
-    assert!(sink.ansi_commands[0].contains("CursorPosition"));
+    assert_eq!(sink.ansi_commands, ["CsiCursorPosition(10, 20)"]);
+}
+
+#[test]
+fn test_ansi_horizontal_absolute_and_default_positions() {
+    let mut parser = SkypixParser::new();
+    let mut sink = TestSink::new();
+    parser.parse(b"\x1b[20G\x1b[G\x1b[H\x1b[0;0f", &mut sink);
+    assert_eq!(
+        sink.ansi_commands,
+        [
+            "CsiCursorHorizontalAbsolute(20)",
+            "CsiCursorHorizontalAbsolute(1)",
+            "CsiCursorPosition(1, 1)",
+            "CsiCursorPosition(1, 1)"
+        ]
+    );
 }
 
 #[test]

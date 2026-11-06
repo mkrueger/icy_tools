@@ -1,15 +1,10 @@
 use crate::{
-    BACKSPACE, BELL, Blink, CARRIAGE_RETURN, Color, CommandParser, CommandSink, DELETE, Direction, EraseInDisplayMode, EraseInLineMode, FORM_FEED, Intensity,
-    LINE_FEED, SgrAttribute, TAB, TerminalCommand, VERTICAL_TAB, Wrapping, flush_input,
+    flush_input, Blink, Color, CommandParser, CommandSink, Direction, EraseInDisplayMode, EraseInLineMode, Intensity, SgrAttribute, TerminalCommand, Wrapping,
+    BACKSPACE, BELL, CARRIAGE_RETURN, DELETE, FORM_FEED, LINE_FEED, TAB, VERTICAL_TAB,
 };
 
 mod commands;
-pub use commands::{CrcTransferMode, DisplayMode, FillMode, SkypixCommand, command_numbers};
-
-/// ANSI color to Amiga/Skypix color mapping (normal intensity)
-/// ANSI: Black=0, Red=1, Green=2, Yellow=3, Blue=4, Magenta=5, Cyan=6, White=7
-/// Maps to Skypix palette indices for normal colors
-const AMIGA_COLOR_OFFSETS: [u8; 8] = [0, 3, 4, 6, 1, 7, 5, 2];
+pub use commands::{command_numbers, CrcTransferMode, DisplayMode, FillMode, SkypixCommand};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum State {
@@ -436,7 +431,7 @@ impl SkypixParser {
                 let Some(col) = self.ansi_cursor_param(sink, 1) else {
                     return;
                 };
-                sink.emit(TerminalCommand::CsiCursorPosition(row - 1, col - 1));
+                sink.emit(TerminalCommand::CsiCursorPosition(row, col));
             }
             b'J' => {
                 // Erase Display
@@ -481,7 +476,7 @@ impl SkypixParser {
             b'm' => {
                 // SGR - Select Graphic Rendition (colors and text effects)
                 // Note: This is a simplified ANSI subset for SkyPix compatibility.
-                // Bold mode persists until reset with SGR 0.
+                // Bold mode persists until reset with SGR 0 or 22.
                 if self.builder.params.is_empty() {
                     sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Reset));
                 } else {
@@ -497,25 +492,26 @@ impl SkypixParser {
                             3 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Italic(true))),
                             5 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Blink(Blink::Slow))),
                             7 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Inverse(true))),
-                            30..=37 => {
-                                // Use bold color table if Bold mode is active
-                                sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
-                                    AMIGA_COLOR_OFFSETS[(param - 30) as usize],
-                                ))));
-                            }
-                            40..=47 => {
-                                // Background colors don't have bold variants in Skypix
-                                sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(
-                                    AMIGA_COLOR_OFFSETS[(param - 40) as usize],
-                                ))));
-                            }
+                            22 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Intensity(Intensity::Normal))),
+                            30..=37 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
+                                (param - 30) as u8,
+                            )))),
+                            40..=47 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(
+                                (param - 40) as u8,
+                            )))),
+                            90..=97 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Foreground(Color::Base(
+                                (param - 90 + 8) as u8,
+                            )))),
+                            100..=107 => sink.emit(TerminalCommand::CsiSelectGraphicRendition(SgrAttribute::Background(Color::Base(
+                                (param - 100 + 8) as u8,
+                            )))),
                             _ => {
                                 sink.report_error(
                                     crate::ParseError::InvalidParameter {
                                         command: "SGR",
                                         value: format!("{}", param),
                                         expected: Some(
-                                            "0 (reset), 1 (bold), 3 (italic), 5 (blink), 7 (inverse), 30-37 (foreground), or 40-47 (background)".to_string(),
+                                            "0 (reset), 1/22 (intensity), 3 (italic), 5 (blink), 7 (inverse), 30-37/90-97 (foreground), or 40-47/100-107 (background)".to_string(),
                                         ),
                                     },
                                     crate::ErrorLevel::Warning,
@@ -540,7 +536,7 @@ impl SkypixParser {
                 let Some(column) = self.ansi_cursor_param(sink, 0) else {
                     return;
                 };
-                sink.emit(TerminalCommand::CsiCursorHorizontalAbsolute(column - 1));
+                sink.emit(TerminalCommand::CsiCursorHorizontalAbsolute(column));
             }
             b'L' => {
                 // IL - Insert Line: Insert n blank lines at cursor position
