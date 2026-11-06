@@ -310,12 +310,8 @@ impl<'a> ScreenSink<'a> {
     /// Get the current caret attribute with `inverse_video` applied if active
     fn display_attribute(&self) -> crate::TextAttribute {
         let mut attr = self.screen.caret().attribute;
-        if self.screen.graphics_type() == crate::GraphicsType::Skypix && attr.is_bold() {
-            if let crate::AttributeColor::Palette(index) = attr.foreground_color() {
-                if let Some(ansi_index) = crate::amiga_screen_buffer::skypix_impl::ANSI_TO_SKYPIX.iter().position(|&color| color == index) {
-                    attr.set_foreground_color(crate::amiga_screen_buffer::skypix_impl::ansi_color(ansi_index as u8 + 8));
-                }
-            }
+        if self.screen.graphics_type() == crate::GraphicsType::Skypix {
+            attr.set_foreground_color(crate::amiga_screen_buffer::skypix_impl::foreground_color(attr));
         }
         if self.screen.terminal_state().inverse_video {
             let fg = attr.foreground_color();

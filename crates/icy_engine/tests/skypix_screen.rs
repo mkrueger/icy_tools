@@ -250,6 +250,50 @@ fn skypix_palette_resets_preserve_rendered_ansi_bright_colors() {
 }
 
 #[test]
+fn skypix_ansi_bright_colors_do_not_alias_native_palette_entries() {
+    for color in 0..8 {
+        let rgb = icy_engine::DOS_DEFAULT_PALETTE[icy_engine::ansi_to_internal_palette_index(color + 8) as usize].rgb();
+        let packed = u32::from(rgb.0 / 17) | (u32::from(rgb.1 / 17) << 4) | (u32::from(rgb.2 / 17) << 8);
+        for reset in ["\x1b[12!", "\x1b[17;1!", "\x1b[17;2!", "\x1b[99!", "\x1b[11;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0!"] {
+            let input = format!("\x1b[11;0;{packed};0;0;0;0;0;0;0;0;0;0;0;0;0;0!\x1b[{}mA{reset}", 90 + color);
+            let screen = parse_skypix(input.as_bytes());
+            let (_, pixels) = screen.render_to_rgba(&RenderOptions::default());
+            assert!(
+                pixels.chunks_exact(4).any(|pixel| pixel == [rgb.0, rgb.1, rgb.2, 255]),
+                "bright color {color}, reset {reset:?}"
+            );
+            assert!(screen.screen().iter().any(|&pixel| pixel >= 16));
+        }
+    }
+}
+
+#[test]
+fn skypix_equivalent_bright_sgr_forms_use_the_same_text_and_drawing_colors() {
+    for color in 0..8 {
+        let bold = parse_skypix(format!("\x1b[1;{}mA\x1b[1;100;100!", 30 + color).as_bytes());
+        let explicit = parse_skypix(format!("\x1b[{}mA\x1b[1;100;100!", 90 + color).as_bytes());
+        let rgb = icy_engine::DOS_DEFAULT_PALETTE[icy_engine::ansi_to_internal_palette_index(color + 8) as usize].rgb();
+        assert_eq!(bold.palette().rgb(u32::from(bold.screen()[100 * 640 + 100])), rgb);
+        assert_eq!(
+            bold.render_to_rgba(&RenderOptions::default()),
+            explicit.render_to_rgba(&RenderOptions::default()),
+            "bright color {color}"
+        );
+    }
+}
+
+#[test]
+fn skypix_bright_color_slots_are_reused_across_palette_resets() {
+    let (mut screen, mut parser) = ScreenMode::SkyPix.create_screen(TerminalEmulation::Skypix, None);
+    for _ in 0..32 {
+        for color in 90..98 {
+            parser.parse(format!("\x1b[{color}mA\x1b[12!").as_bytes(), &mut ScreenSink::new(&mut *screen));
+        }
+    }
+    assert_eq!(screen.palette().len(), 24);
+}
+
+#[test]
 fn skypix_cursor_motion_cancels_pending_wrap_and_clamps_to_full_cells() {
     for command in [&b"\x08"[..], b"\x1b[D", b"\x1b[80G", b"\x1b[H", b"\x1b[2J"] {
         let mut input = vec![b'A'; 80];

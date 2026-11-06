@@ -3,7 +3,7 @@ use icy_parser_core::{DisplayMode, SkypixCommand};
 use super::sky_paint::SkyPaint;
 use crate::{fonts::skypix::get_amiga_font, AttributeColor, BitFont, EditableScreen, Screen, Size, DOS_DEFAULT_PALETTE, SKYPIX_PALETTE, SKYPIX_PALETTE_8};
 
-pub(crate) const ANSI_TO_SKYPIX: [u8; 8] = [0, 3, 4, 6, 1, 7, 5, 2];
+const ANSI_TO_SKYPIX: [u8; 8] = [0, 3, 4, 6, 1, 7, 5, 2];
 
 pub(crate) fn ansi_color(index: u8) -> AttributeColor {
     if index < 8 {
@@ -12,6 +12,18 @@ pub(crate) fn ansi_color(index: u8) -> AttributeColor {
         let color = &DOS_DEFAULT_PALETTE[crate::ansi_to_internal_palette_index(u32::from(index)) as usize];
         AttributeColor::Rgb(color.r, color.g, color.b)
     }
+}
+
+pub(crate) fn foreground_color(attribute: crate::TextAttribute) -> AttributeColor {
+    let color = attribute.foreground_color();
+    if attribute.is_bold() {
+        if let AttributeColor::Palette(index) = color {
+            if let Some(ansi_index) = ANSI_TO_SKYPIX.iter().position(|&pen| pen == index) {
+                return ansi_color(ansi_index as u8 + 8);
+            }
+        }
+    }
+    color
 }
 
 fn set_native_palette(buf: &mut super::AmigaScreenBuffer, colors: &[crate::Color]) {
@@ -66,7 +78,7 @@ pub const SKYPIX_SCREEN_SIZE: Size = Size { width: 640, height: 200 };
 
 fn execute_skypix_command(buf: &mut super::AmigaScreenBuffer, paint: &mut SkyPaint, cmd: SkypixCommand) {
     // Get current pen colors from caret attribute
-    let pen_a = buf.resolve_color(buf.caret().attribute.foreground_color());
+    let pen_a = buf.resolve_color(foreground_color(buf.caret().attribute));
     match cmd {
         SkypixCommand::Comment { .. } => {
             // Command 0: Comments are ignored

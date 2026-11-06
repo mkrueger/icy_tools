@@ -8,6 +8,8 @@
   use the correct row and column, and full 80-column lines defer wrapping.
 - SkyPix renders ANSI bright colors (including dark gray) without replacing
   native SkyPix pen colors.
+- SkyPix keeps ANSI bright colors independent of matching native palette entries
+  and applies bold intensity consistently to text and graphics.
 
 ## 0.9.2 - 2026-11-02
 

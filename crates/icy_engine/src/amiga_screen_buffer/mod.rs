@@ -168,6 +168,19 @@ impl AmigaScreenBuffer {
 
     fn resolve_color(&mut self, color: crate::AttributeColor) -> u8 {
         match color {
+            crate::AttributeColor::Rgb(r, g, b) if self.graphics_type == GraphicsType::Skypix => {
+                // Native pens can be reprogrammed independently of ANSI RGB colors.
+                let color = crate::Color::new(r, g, b);
+                let existing = self
+                    .palette
+                    .color_iter()
+                    .enumerate()
+                    .skip(16)
+                    .find_map(|(index, entry)| (*entry == color).then_some(index));
+                let index = existing.unwrap_or_else(|| self.palette.len().max(16));
+                self.palette.set_color(index as u32, color);
+                index as u8
+            }
             crate::AttributeColor::Rgb(r, g, b) => self.palette.insert_color_rgb(r, g, b) as u8,
             crate::AttributeColor::Palette(index) | crate::AttributeColor::ExtendedPalette(index) => index,
             crate::AttributeColor::Transparent => 0,
