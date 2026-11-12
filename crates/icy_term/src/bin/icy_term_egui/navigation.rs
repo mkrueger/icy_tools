@@ -7,12 +7,11 @@ pub enum ClickAction {
     Command(bool, String),
 }
 
-pub fn click_action(screen: &dyn Screen, position: icy_engine::Position) -> Option<ClickAction> {
-    for field in screen.mouse_fields() {
-        if field.style.is_mouse_button() && field.contains(position.x, position.y) {
-            if let Some(command) = &field.host_command {
-                return Some(ClickAction::Command(field.style.reset_screen_after_click(), command.clone()));
-            }
+/// `position` is the text cell (for hyperlinks); `pixel` is the screen pixel (for RIP/IGS mouse fields).
+pub fn click_action(screen: &dyn Screen, position: icy_engine::Position, pixel: icy_engine::Position) -> Option<ClickAction> {
+    if let Some(field) = icy_engine::clickable_mouse_field_at(screen.mouse_fields(), pixel) {
+        if let Some(command) = &field.host_command {
+            return Some(ClickAction::Command(field.style.reset_screen_after_click(), command.clone()));
         }
     }
     for link in screen.hyperlinks() {
@@ -229,6 +228,20 @@ mod tests {
         screen.set_char((0, 0).into(), AttributedChar::new('\u{b3}', Default::default()));
         screen.set_selection(Selection::new((0, 0))).unwrap();
         assert_eq!(selected_text(&screen).as_deref(), Some("\u{2502}"));
+    }
+
+    #[test]
+    fn rip_mouse_fields_are_clicked_by_pixel_not_cell() {
+        let (mut screen, mut parser) = icy_engine::ScreenMode::Rip.create_screen(icy_engine::TerminalEmulation::Rip, None);
+        // RIP_MOUSE at pixels x 20-120, y 8-40 sending "a".
+        parser.parse(b"!|1M000K083C141000000a\n", &mut icy_engine::ScreenSink::new(&mut *screen));
+        let command = |cell: (i32, i32), pixel: (i32, i32)| match click_action(&*screen, cell.into(), pixel.into()) {
+            Some(ClickAction::Command(_, command)) => Some(command),
+            _ => None,
+        };
+        assert_eq!(command((8, 3), (70, 24)).as_deref(), Some("a"));
+        // Cell (50, 20) used to match the region's pixel numbers; its pixel is (400, 160).
+        assert_eq!(command((50, 20), (400, 160)), None);
     }
 
     #[test]

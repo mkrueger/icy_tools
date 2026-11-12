@@ -517,6 +517,16 @@ impl MouseField {
     }
 }
 
+/// Finds the clickable mouse field (RIP button or mouse region, IGS zone) at `pixel`.
+///
+/// Fields are stored in the screen's pixel space (e.g. 640x350 for RIP), so `pixel`
+/// must be in that space too, not a text cell. The first field defined wins.
+pub fn clickable_mouse_field_at(fields: &[MouseField], pixel: Position) -> Option<&MouseField> {
+    fields
+        .iter()
+        .find(|field| field.style.is_mouse_button() && field.host_command.is_some() && field.contains(pixel.x, pixel.y))
+}
+
 impl Bgi {
     pub fn new(file_path: PathBuf, resolution: Size) -> Bgi {
         Bgi {
