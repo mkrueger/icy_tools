@@ -854,11 +854,7 @@ impl TerminalApp {
                     let action = response.hover_pos().and_then(|position| {
                         let info = self.terminal.render_info.read();
                         let (column, row) = info.screen_to_cell(position.x, position.y)?;
-                        let (pixel_x, pixel_y) = info.screen_to_terminal_pixels(position.x, position.y)?;
-                        let pixel = icy_engine::Position::new(
-                            (pixel_x + self.terminal.scroll_x()).floor() as i32,
-                            (pixel_y / if info.scan_lines { 2.0 } else { 1.0 } + self.terminal.scroll_y()).floor() as i32,
-                        );
+                        let pixel = info.screen_to_document_pixel(position.x, position.y, self.terminal.scroll_x(), self.terminal.scroll_y())?;
                         let position = icy_engine::Position::new(
                             column + (self.terminal.scroll_x() / info.font_width.max(1.0)) as i32,
                             row + (self.terminal.scroll_y() / info.font_height.max(1.0)) as i32,

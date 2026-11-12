@@ -10,9 +10,7 @@ pub enum ClickAction {
 /// `position` is the text cell (for hyperlinks); `pixel` is the screen pixel (for RIP/IGS mouse fields).
 pub fn click_action(screen: &dyn Screen, position: icy_engine::Position, pixel: icy_engine::Position) -> Option<ClickAction> {
     if let Some(field) = icy_engine::clickable_mouse_field_at(screen.mouse_fields(), pixel) {
-        if let Some(command) = &field.host_command {
-            return Some(ClickAction::Command(field.style.reset_screen_after_click(), command.clone()));
-        }
+        return Some(ClickAction::Command(field.style.reset_screen_after_click(), field.host_command.clone()?));
     }
     for link in screen.hyperlinks() {
         if screen.is_position_in_range(position, link.position, link.length) {

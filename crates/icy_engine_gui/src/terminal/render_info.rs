@@ -87,6 +87,18 @@ impl RenderInfo {
         Some((cell_x, cell_y))
     }
 
+    /// Convert screen coordinates to a pixel in the screen's own pixel space
+    /// (scan lines undone, scroll offset applied), e.g. 640x350 for RIP.
+    /// Returns None if the coordinates are outside the rendered area.
+    pub fn screen_to_document_pixel(&self, screen_x: f32, screen_y: f32, scroll_x: f32, scroll_y: f32) -> Option<icy_engine::Position> {
+        let (term_x, term_y) = self.screen_to_terminal_pixels(screen_x, screen_y)?;
+        let line_scale = if self.scan_lines { 2.0 } else { 1.0 };
+        Some(icy_engine::Position::new(
+            (term_x + scroll_x).floor() as i32,
+            (term_y / line_scale + scroll_y).floor() as i32,
+        ))
+    }
+
     /// Convert screen coordinates to terminal-local pixel coordinates for dragging.
     /// Unlike screen_to_terminal_pixels, this allows coordinates outside the viewport
     /// for smooth drag operations that extend beyond the canvas bounds.
@@ -216,5 +228,33 @@ mod tests {
         };
 
         assert_eq!(info.screen_to_cell(79.0, 63.0), Some((9, 1)));
+    }
+
+    #[test]
+    fn maps_screen_to_document_pixel_with_scroll_and_scan_lines() {
+        let info = RenderInfo {
+            display_scale: 2.0,
+            viewport_x: 10.0,
+            viewport_width: 1280.0,
+            viewport_height: 800.0,
+            terminal_width: 640.0,
+            terminal_height: 400.0,
+            ..Default::default()
+        };
+        assert_eq!(
+            info.screen_to_document_pixel(10.0 + 141.0, 49.0, 0.0, 0.0),
+            Some(icy_engine::Position::new(70, 24))
+        );
+        assert_eq!(
+            info.screen_to_document_pixel(10.0 + 141.0, 49.0, 8.0, 16.0),
+            Some(icy_engine::Position::new(78, 40))
+        );
+        assert_eq!(info.screen_to_document_pixel(5.0, 49.0, 0.0, 0.0), None);
+
+        let scan_lines = RenderInfo { scan_lines: true, ..info };
+        assert_eq!(
+            scan_lines.screen_to_document_pixel(10.0 + 141.0, 201.0, 0.0, 0.0),
+            Some(icy_engine::Position::new(70, 50))
+        );
     }
 }
