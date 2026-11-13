@@ -57,19 +57,11 @@ impl TerminalMouseEvent {
 
     /// Helper to check for a RIP mouse field at the click position.
     /// Returns (clear_screen, command) if a RIP field is found.
+    ///
+    /// Mouse fields are stored in screen pixels, so this tests `terminal_pixel_position`.
     pub fn get_rip_field(&self, screen: &dyn icy_engine::Screen) -> Option<(bool, String)> {
-        let cell = self.text_position?;
-        for mouse_field in screen.mouse_fields() {
-            if !mouse_field.style.is_mouse_button() {
-                continue;
-            }
-            if mouse_field.contains(cell.x, cell.y) {
-                if let Some(cmd) = &mouse_field.host_command {
-                    return Some((mouse_field.style.reset_screen_after_click(), cmd.clone()));
-                }
-            }
-        }
-        None
+        let field = icy_engine::clickable_mouse_field_at(screen.mouse_fields(), self.terminal_pixel_position?)?;
+        Some((field.style.reset_screen_after_click(), field.host_command.clone()?))
     }
 }
 

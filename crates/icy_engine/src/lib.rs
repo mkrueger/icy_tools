@@ -168,7 +168,7 @@ pub mod clipboard;
 pub mod paint;
 pub use paint::*;
 
-pub use palette_screen_buffer::bgi::MouseField;
+pub use palette_screen_buffer::bgi::{clickable_mouse_field_at, MouseField};
 
 mod screen_modes;
 pub use screen_modes::*;

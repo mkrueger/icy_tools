@@ -854,11 +854,12 @@ impl TerminalApp {
                     let action = response.hover_pos().and_then(|position| {
                         let info = self.terminal.render_info.read();
                         let (column, row) = info.screen_to_cell(position.x, position.y)?;
+                        let pixel = info.screen_to_document_pixel(position.x, position.y, self.terminal.scroll_x(), self.terminal.scroll_y())?;
                         let position = icy_engine::Position::new(
                             column + (self.terminal.scroll_x() / info.font_width.max(1.0)) as i32,
                             row + (self.terminal.scroll_y() / info.font_height.max(1.0)) as i32,
                         );
-                        navigation::click_action(&**self.terminal.screen.lock(), position)
+                        navigation::click_action(&**self.terminal.screen.lock(), position, pixel)
                     });
                     if action.is_some() {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);

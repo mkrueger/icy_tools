@@ -243,11 +243,7 @@ impl CRTShaderState {
 
     /// Map mouse coordinates to pixel position using shared RenderInfo from shader.
     pub fn map_mouse_to_pixel(&self, render_info: &crate::RenderInfo, mx: f32, my: f32, scroll_x: f32, scroll_y: f32) -> Option<Position> {
-        let (term_x, mut term_y) = render_info.screen_to_terminal_pixels(mx, my)?;
-        if render_info.scan_lines {
-            term_y /= 2.0;
-        }
-        Some(Position::new((term_x + scroll_x).floor() as i32, (term_y + scroll_y).floor() as i32))
+        render_info.screen_to_document_pixel(mx, my, scroll_x, scroll_y)
     }
 
     /// Map mouse coordinates to cell position without bounds checking.

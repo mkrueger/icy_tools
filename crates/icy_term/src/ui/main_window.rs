@@ -1741,10 +1741,9 @@ impl MainWindow {
             }
             // Check RIP fields if no hyperlink found
             if cursor.is_none() {
-                for mouse_field in screen.mouse_fields() {
-                    if mouse_field.style.is_mouse_button() && mouse_field.contains(cell.x, cell.y) {
+                if let Some(pixel) = evt.terminal_pixel_position {
+                    if icy_engine::clickable_mouse_field_at(screen.mouse_fields(), pixel).is_some() {
                         cursor = Some(mouse::Interaction::Pointer);
-                        break;
                     }
                 }
             }
